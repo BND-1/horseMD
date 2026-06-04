@@ -232,8 +232,11 @@ input, textarea { font-family: inherit; }
   padding: 8px 0;
   gap: 4px;
   z-index: 20;
+  /* Empty areas of the activity bar drag the window too (top-left corner). */
+  -webkit-app-region: drag;
 }
 .activity-item {
+  -webkit-app-region: no-drag;
   width: 40px;
   height: 40px;
   display: grid;
@@ -278,8 +281,14 @@ input, textarea { font-family: inherit; }
   overflow: hidden;
 }
 .app.is-win .topbar { padding-right: 140px; }
-.topbar .drag-no,
+/* The whole top bar drags the window; only the actual interactive controls
+   opt out. Crucially the tab STRIP background stays draggable — only the tab
+   pills and buttons are no-drag — so there's a generous grab area up top. */
 .topbar .tabs,
+.topbar .tabs-scroll { -webkit-app-region: drag; }
+.topbar .drag-no,
+.topbar .tab,
+.topbar .tab-new,
 .topbar input { -webkit-app-region: no-drag; }
 .topbar-spacer {
   flex: 0 0 auto;
