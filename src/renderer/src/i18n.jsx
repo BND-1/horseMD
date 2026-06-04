@@ -85,7 +85,10 @@ export const STRINGS = {
     'block.h4': 'Heading 4',
     'block.h5': 'Heading 5',
     'block.h6': 'Heading 6',
-    'block.heading': 'Heading'
+    'block.heading': 'Heading',
+
+    // editor
+    'editor.placeholder': 'Type / for commands, or just start writing…'
   },
 
   zh: {
@@ -158,7 +161,9 @@ export const STRINGS = {
     'block.h4': '标题 4',
     'block.h5': '标题 5',
     'block.h6': '标题 6',
-    'block.heading': '标题'
+    'block.heading': '标题',
+
+    'editor.placeholder': '输入 / 调出命令，或直接开始写…'
   }
 }
 

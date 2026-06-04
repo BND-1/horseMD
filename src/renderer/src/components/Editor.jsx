@@ -52,6 +52,10 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
         // and hides the native caret (invisible in table cells). We use the
         // native caret styled via `caret-color` instead.
         [CrepeFeature.Cursor]: false
+      },
+      featureConfigs: {
+        // Localized empty-block placeholder (replaces Crepe's "Please enter").
+        [CrepeFeature.Placeholder]: { text: t('editor.placeholder'), mode: 'block' }
       }
     })
 
@@ -279,6 +283,24 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
         const toolbarObserver = new MutationObserver(scanToolbars)
         toolbarObserver.observe(document.body, { childList: true, subtree: true })
         cleanups.push(() => toolbarObserver.disconnect())
+        }
+
+        // Typora-style title: a brand-new / empty document starts its first
+        // line as a Heading 1. Done before the baseline below so the new tab
+        // isn't marked dirty.
+        if (view) {
+          const doc = view.state.doc
+          const first = doc.firstChild
+          const headingType = view.state.schema.nodes.heading
+          if (
+            headingType &&
+            doc.childCount === 1 &&
+            first &&
+            first.type.name === 'paragraph' &&
+            first.content.size === 0
+          ) {
+            view.dispatch(view.state.tr.setNodeMarkup(0, headingType, { level: 1 }))
+          }
         }
 
         const md = crepe.getMarkdown()
