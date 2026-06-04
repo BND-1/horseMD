@@ -417,7 +417,7 @@ function Welcome({ onNew, onOpen, onOpenFolder }) {
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <h1>mini_md</h1>
+        <h1>horse</h1>
         <p>A calmer place to write Markdown — many files, one window.</p>
         <div className="welcome-actions">
           <button className="btn-primary" onClick={onNew}>

@@ -1,4 +1,4 @@
-# mini_md
+# horse
 
 A beautiful, modern **Markdown editor** — a Typora alternative built around one idea Typora gets wrong: **every file opens as a tab in the same window**, not a new app instance. Browse a whole folder in the sidebar, flip between files in tabs, and write in a clean WYSIWYG editor.
 
