@@ -380,7 +380,6 @@ button:focus-visible,
   pointer-events: none;
   border-right: none;
 }
-}
 .pane-center {
   flex: 1;
   min-width: 0;
