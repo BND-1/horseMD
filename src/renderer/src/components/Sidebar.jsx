@@ -31,10 +31,20 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
     loadDir(workspace.rootPath)
   }, [workspace, loadDir])
 
-  // Focus the inline input when creating state changes
+  // Focus the inline input when creating state changes, and select filename
   useEffect(() => {
     if (creating) {
-      setTimeout(() => createInputRef.current?.focus(), 30)
+      setTimeout(() => {
+        const input = createInputRef.current
+        if (input) {
+          input.focus()
+          if (creating.selectRange) {
+            input.setSelectionRange(creating.selectRange[0], creating.selectRange[1])
+          } else {
+            input.select()
+          }
+        }
+      }, 30)
     }
   }, [creating])
 
@@ -75,7 +85,7 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
   // Start inline creation for a file
   const startNewFile = (dirNode) => {
     const dir = dirNode ? dirNode.path : workspace.rootPath
-    setCreating({ dir, type: 'file', value: 'untitled.md' })
+    setCreating({ dir, type: 'file', value: 'untitled.md', selectRange: [0, 8] })
     // Make sure the directory is expanded
     if (dirNode) {
       setExpanded((s) => new Set(s).add(dir))
