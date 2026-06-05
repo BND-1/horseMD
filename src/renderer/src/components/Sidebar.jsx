@@ -12,6 +12,9 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
   const [expanded, setExpanded] = useState(() => new Set())
   const [menu, setMenu] = useState(null) // { x, y, node }
   const [rename, setRename] = useState(null) // { path, value }
+  // Inline creation: { dir, type: 'file'|'folder', value }
+  const [creating, setCreating] = useState(null)
+  const createInputRef = useRef(null)
 
   const loadDir = useCallback(async (dir) => {
     const nodes = await window.api.readDir(dir)
@@ -24,8 +27,16 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
     if (!workspace) return
     setExpanded(new Set([workspace.rootPath]))
     setChildrenMap({})
+    setCreating(null)
     loadDir(workspace.rootPath)
   }, [workspace, loadDir])
+
+  // Focus the inline input when creating state changes
+  useEffect(() => {
+    if (creating) {
+      setTimeout(() => createInputRef.current?.focus(), 30)
+    }
+  }, [creating])
 
   // Refresh all currently-loaded dirs when the watcher fires
   useEffect(() => {
@@ -61,32 +72,51 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
     if (childrenMap[p] !== undefined) await loadDir(p)
   }
 
-  const doNewFile = async (dirNode) => {
+  // Start inline creation for a file
+  const startNewFile = (dirNode) => {
     const dir = dirNode ? dirNode.path : workspace.rootPath
-    let name = window.prompt(t('prompt.newFile'), 'untitled.md')
-    if (!name) return
-    if (!/\.[a-z0-9]+$/i.test(name)) name += '.md'
-    const path = join(dir, name)
-    try {
-      await window.api.createFile(path, '')
-      if (dirNode) {
-        setExpanded((s) => new Set(s).add(dir))
-        if (!childrenMap[dir]) await loadDir(dir)
-      }
-      await loadDir(dir)
-      onOpenFile(path)
-    } catch (e) {
-      window.alert(t('err.createFile') + e.message)
+    setCreating({ dir, type: 'file', value: 'untitled.md' })
+    // Make sure the directory is expanded
+    if (dirNode) {
+      setExpanded((s) => new Set(s).add(dir))
+      if (!childrenMap[dir]) loadDir(dir)
     }
   }
 
-  const doNewFolder = async (dirNode) => {
+  // Start inline creation for a folder
+  const startNewFolder = (dirNode) => {
     const dir = dirNode ? dirNode.path : workspace.rootPath
-    const name = window.prompt(t('prompt.newFolder'), t('prompt.newFolderDefault'))
+    setCreating({ dir, type: 'folder', value: t('prompt.newFolderDefault') })
+    if (dirNode) {
+      setExpanded((s) => new Set(s).add(dir))
+      if (!childrenMap[dir]) loadDir(dir)
+    }
+  }
+
+  // Commit the inline creation
+  const commitCreate = async () => {
+    if (!creating) return
+    const { dir, type, value } = creating
+    const name = value.trim()
+    setCreating(null)
     if (!name) return
-    await window.api.createDir(join(dir, name))
-    await loadDir(dir)
-    setExpanded((s) => new Set(s).add(dir))
+
+    try {
+      if (type === 'file') {
+        let fileName = name
+        if (!/\.[a-z0-9]+$/i.test(fileName)) fileName += '.md'
+        const path = join(dir, fileName)
+        await window.api.createFile(path, '')
+        await loadDir(dir)
+        onOpenFile(path)
+      } else {
+        await window.api.createDir(join(dir, name))
+        await loadDir(dir)
+        setExpanded((s) => new Set(s).add(dir))
+      }
+    } catch (e) {
+      window.alert((type === 'file' ? t('err.createFile') : 'Could not create folder: ') + e.message)
+    }
   }
 
   const doDelete = async (node) => {
@@ -119,6 +149,26 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
   }
 
   const rootNodes = childrenMap[workspace.rootPath] || []
+
+  // Render the inline creation input
+  const renderCreatingInput = (depth) => (
+    <div className="tree-row" style={{ paddingLeft: 8 + depth * 14 }}>
+      <span className="tree-chevron" />
+      <Icon name={creating.type === 'file' ? 'file' : 'folder'} size={15} className="tree-icon" />
+      <input
+        ref={createInputRef}
+        className="tree-rename"
+        value={creating.value}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setCreating({ ...creating, value: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitCreate()
+          if (e.key === 'Escape') setCreating(null)
+        }}
+        onBlur={commitCreate}
+      />
+    </div>
+  )
 
   const renderNode = (node, depth) => {
     const isDir = node.type === 'dir'
@@ -161,6 +211,8 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
             <span className="tree-label">{node.name}</span>
           )}
         </div>
+        {/* Inline creation input inside this directory */}
+        {isDir && isOpen && creating && creating.dir === node.path && renderCreatingInput(depth + 1)}
         {isDir && isOpen && (childrenMap[node.path] || []).map((c) => renderNode(c, depth + 1))}
       </div>
     )
@@ -173,10 +225,10 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
           {workspace.rootName}
         </span>
         <div className="sidebar-head-actions">
-          <button title={t('side.newFile')} onClick={() => doNewFile(null)}>
+          <button title={t('side.newFile')} onClick={() => startNewFile(null)}>
             <Icon name="file-plus" size={15} />
           </button>
-          <button title={t('side.newFolder')} onClick={() => doNewFolder(null)}>
+          <button title={t('side.newFolder')} onClick={() => startNewFolder(null)}>
             <Icon name="folder-plus" size={15} />
           </button>
           <button title={t('side.collapseAll')} onClick={() => setExpanded(new Set([workspace.rootPath]))}>
@@ -185,7 +237,9 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
         </div>
       </div>
       <div className="tree" onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, node: null }) }}>
-        {rootNodes.length === 0 ? (
+        {/* Inline creation at root level */}
+        {creating && creating.dir === workspace.rootPath && renderCreatingInput(0)}
+        {rootNodes.length === 0 && !creating ? (
           <div className="tree-empty">{t('side.empty')}</div>
         ) : (
           rootNodes.map((n) => renderNode(n, 0))
@@ -194,8 +248,8 @@ export default function Sidebar({ workspace, activePath, onOpenFile, refreshNonc
 
       {menu && (
         <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => { doNewFile(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFile')}</button>
-          <button onClick={() => { doNewFolder(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFolder')}</button>
+          <button onClick={() => { startNewFile(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFile')}</button>
+          <button onClick={() => { startNewFolder(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFolder')}</button>
           {menu.node && <div className="menu-sep" />}
           {menu.node && <button onClick={() => { setRename({ path: menu.node.path, value: menu.node.name }); setMenu(null) }}>{t('side.rename')}</button>}
           {menu.node && <button onClick={() => { window.api.showInFolder(menu.node.path); setMenu(null) }}>{t('side.reveal')}</button>}
