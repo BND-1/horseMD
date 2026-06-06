@@ -169,13 +169,6 @@ a:hover .arrow-pull { transform: translateY(2px); }
   text-align: center;
 }
 
-/* 规格表下的功能照 */
-.photo-sub {
-  max-width: none;
-  padding: 0;
-  margin-top: clamp(36px, 5vh, 52px);
-}
-
 /* hero 信息行 */
 .hero-strip {
   display: flex; flex-wrap: wrap; justify-content: center;
@@ -302,6 +295,23 @@ a:hover .arrow-pull { transform: translateY(2px); }
 .swatch:hover { color: var(--fg); background: #f1eee7; }
 .swatch.active { color: var(--bg); background: var(--fg); }
 .swatch.active::before { border-color: var(--bg); }
+
+/* 手机端：色票换成 3 列网格，换行不再破边框 */
+@media (max-width: 640px) {
+  .theme-picker {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+  .swatch {
+    justify-content: center;
+    padding: 12px 8px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .swatch:nth-child(3n) { border-right: none; }
+  .swatch:nth-child(n+4) { border-bottom: none; }
+}
 
 /* ───────────────────────────────────────────────────────────
    页脚
