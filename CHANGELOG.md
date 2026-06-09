@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.1.6] - 2026-06-09
 
+### Changed
+- New/empty documents now start as a normal **paragraph** instead of forcing the
+  first line to be a Heading 1 — so you can type body text right away (make a
+  heading with `#` / `Ctrl+1` / the toolbar when you want one). The forced title
+  meant you couldn't write body without first typing a title and pressing Enter.
+
+### Fixed
+- Creating / renaming / moving / duplicating to a name that already exists now
+  shows a clear "name already exists" message instead of a raw `EEXIST` error,
+  and never overwrites the existing file.
+
 ### Added
 - **Loading skeleton** for large documents — pulsing gray placeholder bars while
   the editor parses/renders, so opening *or switching to* a big file isn't a
