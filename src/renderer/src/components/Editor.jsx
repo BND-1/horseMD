@@ -558,11 +558,32 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
         })
         }
 
-        // NOTE: a brand-new document is left as a normal paragraph (not forced
-        // to Heading 1). Forcing H1 meant the first line was always a title, so
-        // you couldn't just start writing body text — you had to type a title
-        // and press Enter first. A plain paragraph lets you type body straight
-        // away, and you can still make a heading with `#`/Ctrl+1/the toolbar.
+        // Typora-style new document: first line is an empty Heading 1 (title),
+        // with an empty paragraph below it. The title is there if you want it,
+        // but the body block lets you skip the title and start writing straight
+        // away (click it or press ↓). Done before the baseline below so the new
+        // tab isn't marked dirty.
+        if (view) {
+          const { state } = view
+          const doc = state.doc
+          const first = doc.firstChild
+          const headingType = state.schema.nodes.heading
+          const paragraphType = state.schema.nodes.paragraph
+          if (
+            headingType &&
+            paragraphType &&
+            doc.childCount === 1 &&
+            first &&
+            first.type.name === 'paragraph' &&
+            first.content.size === 0
+          ) {
+            let tr = state.tr.setNodeMarkup(0, headingType, { level: 1 })
+            tr = tr.insert(tr.doc.content.size, paragraphType.create())
+            // Leave the cursor in the title; the body paragraph is one ↓ / click away.
+            tr = tr.setSelection(TextSelection.create(tr.doc, 1))
+            view.dispatch(tr)
+          }
+        }
 
         const md = crepe.getMarkdown()
         onChange?.(md, true)

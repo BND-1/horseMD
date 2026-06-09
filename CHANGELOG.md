@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.1.6] - 2026-06-09
 
 ### Changed
-- New/empty documents now start as a normal **paragraph** instead of forcing the
-  first line to be a Heading 1 — so you can type body text right away (make a
-  heading with `#` / `Ctrl+1` / the toolbar when you want one). The forced title
-  meant you couldn't write body without first typing a title and pressing Enter.
+- New/empty documents now start as an empty **Heading 1 plus an empty body
+  paragraph** below it. The title is there if you want it, but you can skip it
+  and start writing body text straight away (click the line below or press ↓).
+  Previously the doc was *only* a forced H1, so you couldn't write body without
+  first typing a title and pressing Enter.
 
 ### Fixed
 - Creating / renaming / moving / duplicating to a name that already exists now
