@@ -6,6 +6,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-06-10
+
+### Added
+- **Split view** — show two documents side by side, both fully editable. Open a
+  tab into the right pane from its right-click menu ("Open in Split"), or toggle
+  with the split button in the top bar; close it with the ✕ on the right pane.
+  The two panes are independent editors (no re-mount when toggling), and Save /
+  Export act on whichever pane you're editing.
+- **Tab right-click menu** — copy the file path, copy the file name, reveal the
+  file in Finder/Explorer, open it in a split pane, close, or close others.
+- **Copy feedback** — the code-block "Copy" button now flashes a green ✓ and a
+  brief "Copied" toast, so the click clearly registers. (The button label is also
+  localized.)
+
+### Fixed
+- **Crash on launch from the recursive file watcher.** If the saved workspace was
+  a relative path (e.g. `"."`) or the filesystem root, the watcher recursed the
+  whole filesystem — under Finder/launchd the working directory is `/`, so `"."`
+  meant watching `/dev`, `/System/Volumes`, … — producing a flood of
+  `EACCES`/`EAGAIN`/`EBUSY` errors that aborted the app on startup. The watcher
+  now only watches absolute paths, skips the filesystem root and system/device
+  trees, doesn't follow symlinks, and swallows per-path errors; the renderer
+  ignores a non-absolute restored workspace; and a process-level guard keeps any
+  stray async error from taking the app down.
+- **Unsaved scratch / new tabs now survive a restart.** Untitled tabs with edits
+  were silently lost when HorseMD closed; they're now persisted and restored on
+  the next launch (saved files are still reopened from disk).
+- **Code-block text selection is readable on the light themes.** Selecting text
+  inside a code block previously rendered near-black-on-black; it now uses the
+  soft accent highlight with legible syntax colors.
+- **Typing lag in large / unsaved documents.** Session state was re-serialized
+  and written to disk on every keystroke; it's now debounced (and flushed on
+  close), so editing big documents stays smooth.
+
+### Added (more)
+- **Resizable split** — drag the divider between the two panes to change their
+  ratio.
+- **Unified right-click menus.** The tab menu and the sidebar file menu now offer
+  the same file actions — Copy Path, Copy Name, Reveal, Open in Split, Rename,
+  Duplicate, Export as PDF, Delete — so you get the same options wherever you
+  right-click a file.
+
+### Changed
+- **Windows installer: the install location is now selectable**, and uninstalling
+  (or updating) only removes the files HorseMD shipped — any files you saved
+  inside the install folder are left untouched.
+
 ## [0.1.6] - 2026-06-09
 
 ### Changed

@@ -264,5 +264,43 @@ crepe.editor.config((ctx) => {
 
 打开大文档有可感知的渲染耗时，之前是一段空白。加一个骨架屏（`.editor-skeleton`，波动的灰色占位条）。
 
-- **按内容大小触发，不按时间**：实测同一个 30 万字文档冷启动要 ~1.15s、热启动 50ms 内就好，时间延迟方案不可靠。改成 `initialContent.length > 20000` 才显示——大文件一定有反馈、小文件绝不闪。
+- **按内容大小触发，不按时间**：实测同一个 30 万字文档冷启动要 ~1.15s、热启动 50ms 内就好，时间延迟方案不可靠。用 `initialContent.length > 8000` 才显示——大文件一定有反馈、小文件绝不闪。
 - 骨架在 `!loaded && isLargeDoc` 时渲染，编辑器 ready（`crepe.create()` 完成）后移除；位置和正文对齐。
+- **移除时机要用 `flushSync`**，否则会和已渲染正文重叠几百毫秒——见下方 bug 16。
+
+---
+
+## 致命 bug 13：相对路径工作区让文件监听器递归整个文件系统、启动即崩
+
+现象：用 Finder/launchd 打开打包版**秒崩黑屏**（`open` 启动崩，但从终端直接跑二进制不崩）。崩溃报告是主进程 `SIGABRT`，栈在 libuv/c-ares。
+
+根因：会话里存了一个**相对路径**的工作区（`rootPath: "."`，测试时混进去的）。chokidar 监听 `"."` 时按**进程当前目录**解析——Finder/launchd 启动时 CWD 是 `/`，于是去递归监听整个文件系统（`/dev`、`/System/Volumes`…），`EACCES`/`EAGAIN`/`EBUSY` 错误刷屏，未处理 → `abort()`。从终端跑不崩，是因为 shell 的 CWD 是仓库目录。
+
+修法（多层）：
+- `watch:start` **只监听绝对路径**，拒绝受限根（`isRestrictedRoot`：`/`、`.`、`..`、相对路径、`/dev`、`/System/Volumes` 等），`followSymlinks:false`，每个 watcher 加 `'error'` 处理吞掉权限错。
+- `extractArgs()` 把启动参数 `resolve()` 成绝对路径，并跳过 app 自身目录（dev 下 argv 含 `.`）。
+- 渲染层 `sanitizeWorkspace()` 丢弃非绝对路径的恢复工作区；`onOpenFolderPath` 同样校验。
+- 主进程加 `process.on('unhandledRejection'/'uncaughtException')` 兜底，任何漏网异步错误都不再能崩掉应用。
+- 顺带：主进程网络请求（更新检查）改用 Electron `net.fetch`（Chromium 网络栈），不用 Node 全局 `fetch`（其 c-ares 解析在未签名应用 + launchd 下也可能 abort）。
+
+## bug 14：标签右键"重命名"点了没反应
+
+`renameTabFile` 用了 `window.prompt` —— **Electron 渲染层不支持 `prompt()`**（直接抛 "prompt() is not supported"），所以重命名静默失效。（文件树的重命名没事，因为它用的是行内 `<input>`，不是 prompt。）
+
+修法：改成自研的内联弹窗 `RenameModal`（居中输入框，默认选中不含扩展名的部分，回车确认 / Esc 取消）。`window.confirm` / `window.alert` 仍可用，只有 `prompt` 不行。
+
+## bug 15：重文档（无空行）富文本渲染卡死十几秒
+
+现象：切到某些"大文件"主线程**冻结 10 秒**、期间点啥都没反应。实测一个 81KB 文件冻结 10.2 秒。
+
+根因：该文件 2735 行里**只有 2 个空行**——Markdown 把它压成几个超大段落，单段内有上千个换行节点，ProseMirror 近乎平方级渲染。和文件大小关系不大，关键是**缺少空行分段**。
+
+修法：`isHeavyDoc()`（连续非空行 > 150 行，或总长 > 400KB）识别重文档，默认用纯文本极速模式打开，顶栏给"渲染为富文本"按需加载。见 [features.md](./features.md) 第 16b 节。
+
+## bug 16：骨架屏与已渲染正文重叠几百毫秒
+
+现象：大文档（尤其切源码↔富文本时）正文已经画出来了，骨架屏还压在上面好几百毫秒。
+
+根因：`crepe.create()` 完成后在**同一个回调**里先做了重活（`getMarkdown()` 整篇序列化 + `onChange` 触发大纲/字数重算），最后才 `setLoaded(true)`。React 把这一整段的状态更新批处理到结尾才重绘，所以"清骨架屏"的重绘被重活挡住了。
+
+修法：内容一进 DOM 就**用 `flushSync(() => setLoaded(true))` 同步移除骨架屏**（绕过批处理），再把序列化/`onChange` 推迟到下一帧。骨架屏阈值也从 `> 20000` 降到 `> 8000` 让反馈更早。

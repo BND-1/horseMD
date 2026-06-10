@@ -47,6 +47,9 @@ src/
     src/
       main.jsx             React 挂载点
       App.jsx              应用外壳（最核心，详见下文）
+      paths.js             纯工具：路径/文件名/版本/重文档判定/genId/会话
+      find.js              文档内查找的高亮/匹配纯函数
+      ui.js                fireToast + copyToClipboard（toast 通道单一来源）
       blocks.js            块类型定义（正文/H1–H6）共享数据
       themes.js            主题注册表（6 套配色）
       i18n.jsx             中英文翻译表 + I18nProvider 上下文
@@ -54,8 +57,15 @@ src/
       assets/logo.png      首页 logo（应用图标副本）
       components/
         Editor.jsx         Crepe 编辑器封装 + 块控件 + 各种增强
+        editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换（Editor 的纯函数）
+        editor-images.js   相对图片路径解析为 file:// （纯函数）
+        editor-copy.js     富文本复制的内联样式（纯函数）
         Sidebar.jsx        文件树侧边栏
-        Tabs.jsx           顶部标签条
+        Tabs.jsx           顶部标签条 + 右键菜单
+        Welcome.jsx        首页/欢迎页（logo、版本、最近文件）
+        WindowControls.jsx Windows 自绘窗口按钮
+        UpdateToast.jsx    更新提示浮层
+        RenameModal.jsx    标签重命名弹窗（Electron 无 window.prompt）
         Outline.jsx        大纲面板（从内容解析标题）
         CommandPalette.jsx 命令面板（Ctrl+P 模糊跳转）
         StatusBar.jsx      底部状态栏 + 块切换器 + 主题/语言选择

@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, net } from 'electron'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, basename, extname } from 'node:path'
+import { dirname, join, basename, extname, resolve } from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync, statSync, constants as fsConstants } from 'node:fs'
 import chokidar from 'chokidar'
@@ -80,6 +80,19 @@ let isQuitting = false
 const watchers = new Map() // folder path -> watcher
 const fileWatchers = new Map() // file path -> { watcher, timer }
 
+// ---- Safety net: never let a stray async error abort the whole app ----
+// chokidar (and other fs/network async work) can reject with EACCES/EPERM when
+// it touches a path we can't read — e.g. watching a folder whose subtree
+// includes restricted system files. With Node's default unhandled-rejection
+// behaviour an unhandled one of these would crash (SIGABRT) the main process on
+// launch. Log and swallow instead; the watcher's own error handler does the rest.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection (ignored):', reason?.message || reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception (ignored):', err?.message || err)
+})
+
 // ---- Single instance: route any second launch into the existing window ----
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -99,16 +112,29 @@ if (!gotLock) {
 function extractArgs(argv) {
   const files = []
   const folders = []
+  // The app's own directory (in dev, argv includes "." / the project path). Never
+  // open it as a workspace — that's how a bogus relative/CWD workspace slipped in.
+  let appDir = null
+  try {
+    appDir = resolve(app.getAppPath())
+  } catch {
+    /* not ready yet */
+  }
   for (const a of argv.slice(1)) {
-    if (a.startsWith('-') || !existsSync(a)) continue
+    if (a.startsWith('-')) continue
+    // Resolve to an absolute path so a relative arg (e.g. ".") never becomes a
+    // workspace that later resolves against the process CWD.
+    const abs = resolve(a)
+    if (appDir && abs === appDir) continue
+    if (!existsSync(abs)) continue
     let st
     try {
-      st = statSync(a)
+      st = statSync(abs)
     } catch {
       continue
     }
-    if (st.isDirectory()) folders.push(a)
-    else if (MD_RE.test(a)) files.push(a)
+    if (st.isDirectory()) folders.push(abs)
+    else if (MD_RE.test(abs)) files.push(abs)
   }
   return { files, folders }
 }
@@ -385,15 +411,42 @@ ipcMain.handle('fs:openFolderTree', async (_e, dir) => ({
   children: await readTree(dir)
 }))
 
+// Paths we must never descend into: system/device trees that throw EACCES/EPERM
+// when watched, plus the usual noise dirs. Watching e.g. "/" would otherwise hit
+// /dev/* device files and crash the watcher.
+const WATCH_IGNORE_RE =
+  /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/
+// An absolute path: POSIX "/…", Windows "C:\…"/"C:/…", or a UNC "\\…".
+const isAbsolutePath = (p) => /^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p)
+const isRestrictedRoot = (p) => {
+  const norm = (p || '').replace(/[\\/]+$/, '')
+  if (norm === '' || norm === '/' || norm === '.' || norm === '..') return true
+  // A relative path (e.g. ".") resolves against the process CWD — which is "/"
+  // when the app is launched by Finder/launchd, so watching it would recurse the
+  // whole filesystem (/dev, /System…) and crash. Only ever watch absolute paths.
+  if (!isAbsolutePath(norm)) return true
+  // macOS system/device trees that are unreadable and would crash a recursive watch.
+  return /^\/(dev|proc|System\/Volumes|private\/var\/(db|folders)|\.vol)(\/|$)/.test(norm)
+}
+
 // Watch a folder; notify renderer on changes (debounced lightly by chokidar)
 ipcMain.handle('watch:start', async (_e, dir) => {
   if (watchers.has(dir)) return true
+  // Don't recursively watch the filesystem root or restricted system trees —
+  // they contain device/permission-protected files that make the watch throw.
+  if (isRestrictedRoot(dir)) return false
   const w = chokidar.watch(dir, {
-    ignored: (p) => /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/.test(p),
+    ignored: (p) => WATCH_IGNORE_RE.test(p) || isRestrictedRoot(p),
     ignoreInitial: true,
     depth: 12,
+    // Don't follow symlinks (they can point into restricted trees) and don't let
+    // permission errors bubble up as fatal.
+    followSymlinks: false,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
   })
+  // Swallow watcher errors (EACCES/EPERM on protected paths) so they never become
+  // an unhandled rejection that crashes the process.
+  w.on('error', (err) => console.error('watch:start error (ignored):', err?.message || err))
   let timer = null
   const ping = () => {
     clearTimeout(timer)
@@ -443,6 +496,7 @@ ipcMain.handle('watch:file', async (_e, path) => {
     }, 80)
   }
   w.on('change', notify).on('add', notify)
+  w.on('error', (err) => console.error('watch:file error (ignored):', err?.message || err))
   fileWatchers.set(path, entry)
   return true
 })
@@ -507,7 +561,12 @@ ipcMain.on('app:cancel-close', () => {
 // the renderer can show a "new version available" prompt. No download here.
 ipcMain.handle('update:check', async () => {
   try {
-    const res = await fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
+    // Use Electron's net (Chromium's network stack), NOT Node's global fetch:
+    // Node's fetch resolves DNS via the bundled c-ares, which can abort() the
+    // whole main process for an unsigned app launched by Finder/launchd (observed
+    // as an instant crash on open). net.fetch goes through Chromium's resolver,
+    // which fails gracefully instead of crashing.
+    const res = await net.fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' }
     })
     if (!res.ok) return { ok: false }

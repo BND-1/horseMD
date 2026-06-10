@@ -37,9 +37,12 @@ macOS Gatekeeper blocks first launch (right-click → Open, or
 src/main/index.js      main process: window, IPC (fs/dialog/watch), menu, file watching
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
-  App.jsx              shell: tabs, state, session, theme, lang, welcome, editor routing
+  App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
   components/Editor.jsx  Crepe wrapper + block controls + enhancements
   components/{Sidebar,Tabs,Outline,CommandPalette,StatusBar,icons}.jsx
+  components/{Welcome,WindowControls,UpdateToast,RenameModal}.jsx  leaf views split out of App
+  components/editor-{html,images,copy}.js  Editor's pure helpers (HTML node view, img paths, rich-copy)
+  {paths,find,ui}.js   pure helpers: path/name/doc/session · find-in-doc · toast+clipboard
   {blocks,themes,i18n,onboarding}.{js,jsx}
   styles/app.css       all styles + theme variables
 build/                 icon.ico (Windows) + icon.icns (macOS) + installer.nsh (NSIS uninstall: keep user files)
@@ -98,6 +101,19 @@ docs/                  architecture / features / implementation-notes / developm
   `closeTab`).
 - **App version** is injected at build time via Vite `define` (`__APP_VERSION__`
   in `electron.vite.config.mjs`, from `package.json`); shown on the welcome page.
+- **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
+  (`split` is the live derived flag: right tab exists, differs from `activeId`,
+  not on Home). The two panes are **flex siblings inside `.editor-area`** (a flex
+  row) — visibility is driven by per-tab `display`/`order`, NOT by re-parenting,
+  so toggling split never re-creates an editor (no Crepe re-parse). `editorHostRef`
+  stays on the left/active pane (find, outline, scroll-ratio target it);
+  `focusedTabRef` tracks the last-focused pane so Save/Export hit the pane you're
+  editing. The right pane never shows global source mode.
+- **Unsaved scratch tabs persist**: the session stores untitled (pathless) tabs
+  whose content is dirty under `untitled: [{title, content}]`, and the mount
+  restore recreates them (with `savedContent: ''` so they stay marked unsaved).
+  Saved files are still reopened from disk via `openPaths`. The onboarding/welcome
+  doc is skipped if either `openPaths` or `untitled` is present.
 - **State**: session is `localStorage["minimd.session.v1"]`; onboarding flag is
   `localStorage["horsemd.onboarded.v1"]`; dismissed update notice is
   `localStorage["horsemd.update.dismissed"]`. Themes are `body` classes
@@ -106,6 +122,20 @@ docs/                  architecture / features / implementation-notes / developm
   (`CSS.highlights` + `Highlight`), not `window.find` — it searches only the
   editor body (rich `view.dom` / source `<textarea>`), never UI text, and paints
   ranges without mutating the DOM. See the find helpers in `App.jsx`.
+- **File watcher must stay crash-proof.** chokidar recursively watching a tree
+  with permission-protected paths throws a flood of `EACCES`/`EAGAIN`/`EBUSY`
+  that, left unhandled, `abort()`s the whole main process on launch. The trap:
+  a **relative** workspace path like `"."` resolves against the process CWD, which
+  is `/` under Finder/launchd → it watches `/dev`, `/System/Volumes`, … (works in
+  `npm run dev` only because the shell's CWD is the repo). So `watch:start` only
+  watches **absolute** paths and refuses restricted roots (`isRestrictedRoot`:
+  `/`, `.`, `..`, relative, `/dev`, `/System/Volumes`, …), ignores system trees,
+  sets `followSymlinks:false`, and every watcher has an `'error'` handler; the
+  renderer drops a non-absolute restored workspace (`sanitizeWorkspace`); and a
+  process-level `unhandledRejection`/`uncaughtException` guard in `main/index.js`
+  is the final safety net. Don't remove these. Also: main-process network calls
+  use Electron's `net.fetch` (Chromium stack), not Node's global `fetch` (its
+  c-ares resolver can abort an unsigned app under launchd).
 - **Don't commit `dist/` or `out/`** (gitignored). `build/icon.*` IS tracked.
 
 ## Testing

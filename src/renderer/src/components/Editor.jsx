@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Crepe, CrepeFeature } from '@milkdown/crepe'
 import { editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import { imageBlockConfig } from '@milkdown/kit/component/image-block'
@@ -9,6 +10,10 @@ import '@milkdown/crepe/theme/frame.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
 import { BLOCK_TYPES, blockById, currentBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
+import { fireToast } from '../ui.js'
+import { renderHtmlNodeView, convertBlock } from './editor-html.js'
+import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
+import { inlineRichStyles } from './editor-copy.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -70,7 +75,11 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
   // skeleton. Only large documents (which actually take a moment to render) show
   // it, so small files never flash a placeholder.
   const [loaded, setLoaded] = useState(false)
-  const isLargeDoc = (initialContent?.length || 0) > 20000
+  // Below this, docs parse fast enough to create synchronously. At or above it we
+  // show a skeleton and defer create past a paint, so opening / switching to a
+  // biggish doc shows feedback (and lets a queued click through) before the
+  // synchronous ProseMirror parse blocks the main thread.
+  const isLargeDoc = (initialContent?.length || 0) > 8000
 
   useEffect(() => {
     const host = hostRef.current
@@ -105,7 +114,11 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
       },
       featureConfigs: {
         // Localized empty-block placeholder (replaces Crepe's "Please enter").
-        [CrepeFeature.Placeholder]: { text: t('editor.placeholder'), mode: 'block' }
+        [CrepeFeature.Placeholder]: { text: t('editor.placeholder'), mode: 'block' },
+        // Localize the code-block "Copy" button label. (Visual feedback on click
+        // is added via a delegated handler below + CSS, since Crepe gives no
+        // built-in "Copied!" state.)
+        [CrepeFeature.CodeMirror]: { copyText: t('code.copy') }
       }
     })
 
@@ -248,6 +261,13 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
           view = crepe.editor?.view
         }
         viewRef.current = view
+
+        // Content is in the DOM now — remove the loading skeleton SYNCHRONOUSLY
+        // (flushSync) so it's gone before the heavy getMarkdown + onChange work
+        // below. A plain setState here would be batched and its repaint blocked by
+        // that work, leaving the skeleton visibly overlapping the rendered text
+        // for hundreds of ms (worse when toggling source↔rich on a big doc).
+        flushSync(() => setLoaded(true))
 
         const onKeydown = (e) => {
           if (!(e.ctrlKey || e.metaKey) || e.altKey) return
@@ -402,13 +422,27 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
           setTimeout(tryFocus, 0)
         }
 
+        // --- Code-block "Copy" button → flash the button + show a toast ---
+        // Crepe copies to the clipboard itself but gives no visible feedback, so
+        // a click feels unresponsive. We add a transient .hm-copied class (CSS
+        // turns the label green with a ✓) and fire a global toast.
+        const onCopyBtn = (e) => {
+          const btn = e.target.closest?.('.copy-button')
+          if (!btn || !view.dom.contains(btn)) return
+          btn.classList.add('hm-copied')
+          setTimeout(() => btn.classList.remove('hm-copied'), 1100)
+          fireToast(tRef.current('code.copied'))
+        }
+
         view.dom.addEventListener('click', onLinkClick, true)
         view.dom.addEventListener('click', onImgClick, true)
         view.dom.addEventListener('click', onCaptionBtn)
+        view.dom.addEventListener('click', onCopyBtn, true)
         view.dom.addEventListener('copy', onCopy, true)
         cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onImgClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onCaptionBtn))
+        cleanups.push(() => view.dom.removeEventListener('click', onCopyBtn, true))
         cleanups.push(() => view.dom.removeEventListener('copy', onCopy, true))
 
         // --- Resolve relative image paths against the file's folder ---
@@ -585,11 +619,6 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
           }
         }
 
-        const md = crepe.getMarkdown()
-        onChange?.(md, true)
-        ready = true
-        setLoaded(true)
-        reportActiveBlock()
         // Produce a clean, inline-styled HTML snapshot of the whole document
         // for PDF export (reuses the rich-copy styling; flattens CodeMirror code
         // blocks to plain <pre><code> so they render predictably).
@@ -633,6 +662,24 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
         }
         apiRef.current = { setBlock, getDocHTML }
         onReady?.({ setBlock, getView: () => viewRef.current, getDocHTML })
+
+        // Compute the initial markdown snapshot (content baseline for dirty
+        // tracking / outline / word count). On a big doc serializing the whole
+        // document is non-trivial, so for large docs defer it past a paint —
+        // setLoaded(true) above has already cleared the skeleton, so this runs
+        // after the rendered content is on screen instead of holding it back.
+        const finishInitial = () => {
+          if (destroyed) return
+          const md = crepe.getMarkdown()
+          onChange?.(md, true)
+          ready = true
+          reportActiveBlock()
+        }
+        if (isLargeDoc) {
+          requestAnimationFrame(() => requestAnimationFrame(finishInitial))
+        } else {
+          finishInitial()
+        }
       })
       .catch((err) => console.error('Crepe init failed', err))
 
@@ -786,164 +833,4 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
       )}
     </>
   )
-}
-
-// ----------------------------- raw HTML rendering -----------------------------
-
-// Block-level tags whose HTML we render visually (rather than show as source).
-// Targeted at the common case — HTML tables pasted into Markdown — plus a few
-// other safe block containers. Inline fragments (a stray <b>, <span>) fall back
-// to the default escaped-text rendering so unbalanced bits can't break layout.
-const RENDER_HTML_RE =
-  /^\s*<(table|thead|tbody|tfoot|tr|td|th|div|details|summary|figure|figcaption|section|article|dl|center|sub|sup|kbd|mark|abbr|u|ins|del)[\s/>]/i
-
-// Strip <script>/<style> and inline event handlers so rendering local HTML can't
-// run code. Tables/fragments parse correctly inside a <template>.
-function sanitizeHtml(html) {
-  const tpl = document.createElement('template')
-  tpl.innerHTML = html
-  tpl.content.querySelectorAll('script, style').forEach((el) => el.remove())
-  tpl.content.querySelectorAll('*').forEach((el) => {
-    for (const attr of [...el.attributes]) {
-      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name)
-      else if (/^(href|src)$/i.test(attr.name) && /^\s*javascript:/i.test(attr.value)) {
-        el.removeAttribute(attr.name)
-      }
-    }
-  })
-  return tpl.innerHTML
-}
-
-// ProseMirror node view for Milkdown's `html` node. Renders recognized block
-// HTML as real DOM; leaves other html nodes to their default text rendering.
-function renderHtmlNodeView(node) {
-  const value = node.attrs?.value || ''
-  if (!RENDER_HTML_RE.test(value)) {
-    // Not something we render — mimic the default: escaped text in a span.
-    const span = document.createElement('span')
-    span.setAttribute('data-type', 'html')
-    span.textContent = value
-    return { dom: span, ignoreMutation: () => true }
-  }
-  const dom = document.createElement('div')
-  dom.className = 'hm-html-block'
-  dom.setAttribute('data-type', 'html')
-  dom.contentEditable = 'false'
-  dom.innerHTML = sanitizeHtml(value)
-  // The node is an atom with no editable content; ignore inner DOM mutations so
-  // ProseMirror doesn't try to reconcile the rendered HTML.
-  return { dom, ignoreMutation: () => true, stopEvent: () => false }
-}
-
-// Convert the block containing the cursor to a different type. Operates on the
-// textblock the selection actually sits in and commits through the view so
-// ProseMirror's state stays in sync.
-function convertBlock(view, typeName, attrs = {}) {
-  const { state } = view
-  const { schema, selection } = state
-  const { $from } = selection
-
-  const targetType = schema.nodes[typeName]
-  if (!targetType) return
-
-  let depth = $from.depth
-  while (depth > 0 && !$from.node(depth).isTextblock) depth--
-  const node = depth >= 0 ? $from.node(depth) : null
-  if (!node) return
-
-  // No-op if it's already exactly what we'd convert to.
-  if (node.type.name === typeName) {
-    if (typeName === 'heading' && node.attrs.level === attrs.level) return
-    if (typeName === 'paragraph') return
-  }
-
-  const pos = $from.before(depth)
-  view.dispatch(state.tr.setNodeMarkup(pos, targetType, attrs))
-}
-
-// ----------------------------- image paths -----------------------------
-
-function dirOf(path) {
-  if (!path) return null
-  const norm = path.replace(/\\/g, '/')
-  const i = norm.lastIndexOf('/')
-  return i >= 0 ? norm.slice(0, i) : null
-}
-
-// A src is "relative" if it has no scheme (http:, data:, file:…), is not a
-// protocol-relative URL, and is not an absolute filesystem path.
-function isRelativePath(src) {
-  if (!src) return false
-  if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return false // http:, data:, file:, C: …
-  if (src.startsWith('//')) return false
-  if (src.startsWith('/')) return false
-  return true
-}
-
-function resolveToFileUrl(baseDir, src) {
-  const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '')
-  const isWin = /^[a-zA-Z]:/.test(base)
-  const segs = base.split('/')
-  for (const part of src.replace(/\\/g, '/').split('/')) {
-    if (part === '' || part === '.') continue
-    if (part === '..') segs.pop()
-    else segs.push(part)
-  }
-  const joined = segs.join('/')
-  const url = isWin ? 'file:///' + joined : 'file://' + (joined.startsWith('/') ? joined : '/' + joined)
-  return encodeURI(url)
-}
-
-// ----------------------------- rich-text copy -----------------------------
-
-// Curated light-theme styles so pasted content keeps its formatting in apps
-// that ignore external CSS (WeChat, email, Notion…).
-const COPY_STYLES = {
-  H1: 'font-size:1.8em;font-weight:700;line-height:1.3;margin:0.6em 0 0.4em;',
-  H2: 'font-size:1.5em;font-weight:700;line-height:1.3;margin:0.6em 0 0.4em;',
-  H3: 'font-size:1.3em;font-weight:600;line-height:1.3;margin:0.6em 0 0.4em;',
-  H4: 'font-size:1.1em;font-weight:600;margin:0.6em 0 0.3em;',
-  H5: 'font-size:1em;font-weight:600;margin:0.6em 0 0.3em;',
-  H6: 'font-size:1em;font-weight:600;color:#57606a;margin:0.6em 0 0.3em;',
-  P: 'margin:0.6em 0;line-height:1.7;',
-  STRONG: 'font-weight:700;',
-  B: 'font-weight:700;',
-  EM: 'font-style:italic;',
-  I: 'font-style:italic;',
-  A: 'color:#0969da;text-decoration:underline;',
-  BLOCKQUOTE: 'border-left:4px solid #d0d7de;padding-left:14px;color:#57606a;margin:0.6em 0;',
-  PRE: 'background:#f6f8fa;padding:14px 16px;border-radius:8px;overflow:auto;font-family:Consolas,Monaco,monospace;font-size:0.9em;line-height:1.5;margin:0.6em 0;',
-  UL: 'padding-left:1.6em;margin:0.6em 0;',
-  OL: 'padding-left:1.6em;margin:0.6em 0;',
-  LI: 'margin:0.3em 0;line-height:1.7;',
-  TABLE: 'border-collapse:collapse;margin:0.6em 0;',
-  TH: 'border:1px solid #d0d7de;padding:6px 12px;background:#f6f8fa;font-weight:700;text-align:left;',
-  TD: 'border:1px solid #d0d7de;padding:6px 12px;',
-  HR: 'border:none;border-top:1px solid #d0d7de;margin:1em 0;',
-  IMG: 'max-width:100%;'
-}
-
-function inlineRichStyles(root) {
-  root.querySelectorAll('*').forEach((el) => {
-    // strip editor-only attributes
-    el.removeAttribute('class')
-    el.removeAttribute('contenteditable')
-    el.removeAttribute('data-hm-resolved')
-
-    const tag = el.tagName
-    if (tag === 'CODE') {
-      // Inline code vs. code inside a <pre> block.
-      if (el.closest('pre')) {
-        el.setAttribute('style', 'background:none;padding:0;color:inherit;font-family:inherit;')
-      } else {
-        el.setAttribute(
-          'style',
-          'background:#f2f2f2;color:#c0341d;padding:2px 5px;border-radius:4px;font-family:Consolas,Monaco,monospace;font-size:0.9em;'
-        )
-      }
-      return
-    }
-    const style = COPY_STYLES[tag]
-    if (style) el.setAttribute('style', style)
-  })
 }

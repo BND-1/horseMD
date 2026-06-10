@@ -40,7 +40,9 @@ interface speaks both **English and 中文**.
 
 **Beyond Typora**
 
-- **Tabs** — many files in one window (`Ctrl/Cmd+Tab` to cycle); a `+` in the top bar for a new doc
+- **Tabs** — many files in one window (`Ctrl/Cmd+Tab` to cycle); a `+` in the top bar for a new doc; right-click a tab to copy its path / name, reveal it in Finder/Explorer, or close others
+- **Split view** — two documents side by side, both editable (right-click a tab → "Open in Split", or the split button in the top bar; close with the ✕ on the right pane)
+- **Unsaved scratch tabs survive a restart** — a new, never-saved doc is still there next time you open HorseMD
 - **Folder workspace** — a file tree with create / rename / duplicate / delete / reveal / export-PDF, plus **drag-and-drop to move** and expand-all / collapse-all
 - **Open in the same window** — double-clicking a file in Finder/Explorer adds a tab; "Open with HorseMD" on a folder opens it as a workspace
 - **Command palette** (`Ctrl/Cmd+P`) — fuzzy-jump to any file or command

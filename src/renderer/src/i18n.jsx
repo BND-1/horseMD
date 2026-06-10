@@ -136,6 +136,25 @@ export const STRINGS = {
 
     // editor
     'editor.placeholder': 'Type / for commands, or just start writing…',
+    'code.copy': 'Copy',
+    'code.copied': 'Copied',
+
+    // tab context menu
+    'tab.copyPath': 'Copy File Path',
+    'tab.copyName': 'Copy File Name',
+    'tab.reveal': 'Reveal in Folder',
+    'tab.openRight': 'Open in Split (Right)',
+    'tab.close': 'Close',
+    'tab.closeOthers': 'Close Others',
+    'tab.noPath': 'Unsaved file — save it first',
+
+    // split view
+    'split.toggle': 'Split editor',
+    'split.close': 'Close split',
+    'split.drag': 'Drag to resize',
+    'split.needTwo': 'Open another file to use split view.',
+    'heavy.notice': 'Large file — shown as plain text to stay fast.',
+    'heavy.loadRich': 'Render as rich text',
 
     // update
     'update.title': 'Update available',
@@ -263,6 +282,23 @@ export const STRINGS = {
     'block.heading': '标题',
 
     'editor.placeholder': '输入 / 唤起命令，或开始写…',
+    'code.copy': '复制',
+    'code.copied': '已复制',
+
+    'tab.copyPath': '复制文件路径',
+    'tab.copyName': '复制文件名',
+    'tab.reveal': '打开所在文件夹',
+    'tab.openRight': '在右侧分屏打开',
+    'tab.close': '关闭',
+    'tab.closeOthers': '关闭其他',
+    'tab.noPath': '未保存的文件，请先保存',
+
+    'split.toggle': '分屏',
+    'split.close': '关闭分屏',
+    'split.drag': '拖动调整比例',
+    'split.needTwo': '再打开一个文件即可使用分屏。',
+    'heavy.notice': '大文件 —— 已用纯文本模式打开以保持流畅。',
+    'heavy.loadRich': '渲染为富文本',
 
     'update.title': '发现新版本',
     'update.download': '前往下载',

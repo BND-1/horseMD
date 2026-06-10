@@ -1,22 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
+import { baseName, dirName as parentDir, joinPath as join, isMarkdownName, isValidName, isExistsError } from '../paths.js'
+import { copyToClipboard } from '../ui.js'
 
-const join = (dir, name) => `${dir.replace(/[\\/]+$/, '')}/${name}`
-const baseName = (p) => p.split(/[\\/]/).pop()
-const parentDir = (p) => p.replace(/[\\/][^\\/]*$/, '')
-
-const isMarkdownName = (name) => /\.(md|markdown|mdx)$/i.test(name)
-
-// A new/renamed item name must be a single path segment — no separators (which
-// would move it elsewhere or traverse out), and not "." / "..".
-const isValidName = (name) => !!name && !/[\\/:*?"<>|]/.test(name) && name !== '.' && name !== '..'
-
-// Does this fs error mean "a file/folder with that name already exists"?
-const isExistsError = (e) => /eexist|already exists/i.test(e?.message || '')
-
-export default function Sidebar({ workspace, activePath, onOpenFile, onExportPdf, refreshNonce }) {
+export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight, onExportPdf, refreshNonce }) {
   const { t } = useI18n()
+  const copyText = (text) => copyToClipboard(text, t('code.copied'))
   const [childrenMap, setChildrenMap] = useState({}) // path -> nodes[]
   const [expanded, setExpanded] = useState(() => new Set())
   const [menu, setMenu] = useState(null) // { x, y, node }
@@ -443,13 +433,22 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onExportPdf
         }} onClick={(e) => e.stopPropagation()}>
           <button onClick={() => { startNewFile(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFile')}</button>
           <button onClick={() => { startNewFolder(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFolder')}</button>
+          {menu.node?.type === 'file' && onOpenRight && (
+            <>
+              <div className="menu-sep" />
+              <button onClick={() => { onOpenRight(menu.node.path); setMenu(null) }}>{t('tab.openRight')}</button>
+            </>
+          )}
+          {menu.node && <div className="menu-sep" />}
+          {menu.node && <button onClick={() => { copyText(menu.node.path); setMenu(null) }}>{t('tab.copyPath')}</button>}
+          {menu.node && <button onClick={() => { copyText(menu.node.name); setMenu(null) }}>{t('tab.copyName')}</button>}
+          {menu.node && <button onClick={() => { window.api.showInFolder(menu.node.path); setMenu(null) }}>{t('side.reveal')}</button>}
           {menu.node && <div className="menu-sep" />}
           {menu.node && <button onClick={() => { setRename({ path: menu.node.path, value: menu.node.name }); setMenu(null) }}>{t('side.rename')}</button>}
           {menu.node?.type === 'file' && <button onClick={() => { doDuplicate(menu.node); setMenu(null) }}>{t('side.duplicate')}</button>}
           {menu.node?.type === 'file' && isMarkdownName(menu.node.name) && (
             <button onClick={() => { onExportPdf?.(menu.node.path); setMenu(null) }}>{t('side.exportPdf')}</button>
           )}
-          {menu.node && <button onClick={() => { window.api.showInFolder(menu.node.path); setMenu(null) }}>{t('side.reveal')}</button>}
           {menu.node && <div className="menu-sep" />}
           {menu.node && <button className="danger" onClick={() => { doDelete(menu.node); setMenu(null) }}>{t('side.delete')}</button>}
         </div>

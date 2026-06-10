@@ -459,6 +459,147 @@ button:focus-visible,
   }
 }
 
+/* ---- Tab right-click context menu ---- */
+.tab-ctxmenu {
+  position: fixed;
+  z-index: 200;
+  min-width: 196px;
+  padding: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: menuFadeIn 0.12s var(--ease-out);
+  -webkit-app-region: no-drag;
+}
+.tab-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.tab-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.tab-menu-item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.tab-menu-item.danger {
+  color: var(--danger);
+}
+.tab-menu-item.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.tab-menu-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--border-soft);
+}
+
+/* ---- Rename modal (tab menu → Rename; Electron has no window.prompt) ---- */
+.hm-rename-modal {
+  position: fixed;
+  left: 50%;
+  top: 32%;
+  transform: translateX(-50%);
+  z-index: 210;
+  width: 380px;
+  max-width: 86vw;
+  padding: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-rename-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.hm-rename-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.hm-rename-input:focus {
+  border-color: var(--accent);
+}
+.hm-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.hm-rename-actions button {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--hover);
+  color: var(--text);
+  transition: background 0.12s, color 0.12s;
+}
+.hm-rename-actions button:hover {
+  background: var(--active);
+}
+.hm-rename-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.hm-rename-actions button.primary:hover {
+  background: var(--accent-strong);
+}
+
+/* ---- Transient toast (copy feedback, etc.) ---- */
+.hm-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--status-h, 28px) + 28px);
+  transform: translateX(-50%);
+  z-index: 250;
+  padding: 8px 16px;
+  background: var(--text-strong);
+  color: var(--bg-editor);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  animation: hm-toast-in 0.22s var(--ease-out);
+}
+@keyframes hm-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Code-block "Copy" button: transient confirmation after a click. */
+.milkdown .copy-button {
+  transition: color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+}
+.milkdown .copy-button.hm-copied {
+  color: var(--success);
+}
+.milkdown .copy-button.hm-copied::after {
+  content: " ✓";
+  font-weight: 700;
+}
+
 /* ---- Custom Windows caption buttons (minimize / maximize / close) ---- */
 .win-controls {
   display: flex;
@@ -605,6 +746,19 @@ button:focus-visible,
   background: var(--accent);
   border-radius: 2px 2px 0 0;
   box-shadow: 0 0 8px var(--accent-glow);
+}
+/* In split view, the non-focused pane's tab stays highlighted (it's open), but
+   its underline is a quiet muted line — no accent, no glow — so the focused
+   pane's tab clearly leads. */
+.tab.active.split-peer {
+  color: var(--text);
+}
+.tab.active.split-peer::after {
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  box-shadow: none;
 }
 .tab-title {
   overflow: hidden;
@@ -890,8 +1044,125 @@ button:focus-visible,
 /* =====================================================
    Editor
    ===================================================== */
+/* Editor area: a flex row holding the editor panes (left = active tab,
+   right = split tab). Fills the center pane below the (absolute) find bar. */
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  position: relative;
+}
+/* "Large file shown as plain text" notice + opt-in to rich rendering. */
+.hm-heavy-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 8px 6px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.hm-heavy-banner button {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background 0.12s var(--ease-out);
+}
+.hm-heavy-banner button:hover {
+  background: var(--accent-strong);
+}
+
+/* Which pane is focused is shown by the tab underline (accent vs. muted) — see
+   .tab.active.split-peer. The panes themselves stay clean (no lines/tints), so
+   split view reads as simply two documents side by side. */
+
+/* Divider between the two panes: a comfortable 7px drag target showing only a
+   centered 1px hairline, so it reads as a clean separator but stays easy to grab.
+   On hover the line thickens to 2px accent. */
+.hm-split-divider {
+  flex: 0 0 7px;
+  align-self: stretch;
+  position: relative;
+  z-index: 10;
+  cursor: col-resize;
+}
+.hm-split-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+  transition: background 0.15s var(--ease-out), width 0.15s var(--ease-out);
+}
+.hm-split-divider:hover::before {
+  width: 2px;
+  background: var(--accent);
+}
+/* While dragging the divider, force the resize cursor and kill selection. */
+body.hm-col-resizing,
+body.hm-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+/* Floating right-pane header: file name + close-split button. */
+.hm-split-bar {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 40%;
+  padding: 3px 4px 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
+.hm-split-name {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-split-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+.hm-split-close:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+
 .editor-scroll {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   /* No smooth scroll on the edit surface: it turns every implicit
      scroll-into-view (on click/select) into a visible upward slide.
@@ -1206,6 +1477,7 @@ button:focus-visible,
 .source-editor {
   flex: 1;
   width: 100%;
+  min-width: 0;
   resize: none;
   border: none;
   outline: none;
@@ -1805,6 +2077,21 @@ body.dark .milkdown {
 }
 .milkdown .ProseMirror pre code::selection {
   background: var(--accent-soft);
+}
+
+/* CodeMirror code blocks draw their selection with a layer div
+   (.cm-selectionBackground), not the native ::selection — without an explicit
+   rule it falls back to CodeMirror's default (a dark blue), which on the light
+   themes turns the highlighted text near-black-on-black and unreadable. Paint it
+   with our soft accent and keep the syntax colors as the (legible) text. */
+.milkdown .cm-editor .cm-selectionBackground,
+.milkdown .cm-editor.cm-focused .cm-selectionBackground,
+.milkdown .cm-editor ::selection {
+  background: var(--accent-soft) !important;
+}
+.milkdown .cm-editor .cm-content ::selection {
+  /* keep the token's own color so highlighted code stays readable */
+  color: inherit;
 }
 
 /* Inline code */

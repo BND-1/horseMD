@@ -9,119 +9,26 @@ import { Icon } from './components/icons.jsx'
 import { THEMES, DEFAULT_THEME, applyTheme } from './themes.js'
 import { I18nProvider, translate, DEFAULT_LANG } from './i18n.jsx'
 import { welcomeDoc } from './onboarding.js'
+import Welcome from './components/Welcome.jsx'
+import WindowControls from './components/WindowControls.jsx'
+import UpdateToast from './components/UpdateToast.jsx'
+import RenameModal from './components/RenameModal.jsx'
+import { fireToast, HM_TOAST_EVENT } from './ui.js'
 import logoUrl from './assets/logo.png'
+import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
+import {
+  isNewerVersion, isAbsolutePath, sanitizeWorkspace, baseName, dirName, joinPath,
+  isPlainTextDoc, isHeavyDoc, genId, LS, loadSession
+} from './paths.js'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
 const UPDATE_DISMISS_KEY = 'horsemd.update.dismissed'
-
-// App version, injected at build time from package.json (see electron.vite.config).
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
-
-// --------------------------- find-in-document helpers ----------------------
-// Search is scoped to the editor content only (the rich .ProseMirror element or
-// the source <textarea>), never the find bar or other UI — so the text typed in
-// the find box is never itself matched. Highlighting uses the CSS Custom
-// Highlight API, which paints ranges without touching the DOM.
-const FIND_HL = 'hm-find'
-const FIND_HL_CUR = 'hm-find-current'
-const findHighlightSupported =
-  typeof window !== 'undefined' && !!window.CSS?.highlights && typeof window.Highlight === 'function'
-
-function clearFindHighlights() {
-  if (!findHighlightSupported) return
-  CSS.highlights.delete(FIND_HL)
-  CSS.highlights.delete(FIND_HL_CUR)
-}
-function findRangesInEl(root, query) {
-  const ranges = []
-  if (!root || !query) return ranges
-  const q = query.toLowerCase()
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let node
-  while ((node = walker.nextNode())) {
-    const val = node.nodeValue
-    if (!val) continue
-    const lower = val.toLowerCase()
-    let idx = lower.indexOf(q)
-    while (idx !== -1) {
-      const r = document.createRange()
-      r.setStart(node, idx)
-      r.setEnd(node, idx + query.length)
-      ranges.push(r)
-      idx = lower.indexOf(q, idx + query.length)
-    }
-  }
-  return ranges
-}
-function paintFindHighlights(ranges, activeIdx) {
-  if (!findHighlightSupported) return
-  CSS.highlights.delete(FIND_HL)
-  CSS.highlights.delete(FIND_HL_CUR)
-  if (!ranges.length) return
-  CSS.highlights.set(FIND_HL, new Highlight(...ranges))
-  if (ranges[activeIdx]) {
-    const cur = new Highlight(ranges[activeIdx])
-    cur.priority = 1
-    CSS.highlights.set(FIND_HL_CUR, cur)
-  }
-}
-function scrollRangeIntoView(range, scroller) {
-  if (!range || !scroller) return
-  const rect = range.getBoundingClientRect()
-  const sr = scroller.getBoundingClientRect()
-  if (!rect.height && !rect.width) return
-  if (rect.top < sr.top + 12 || rect.bottom > sr.bottom - 12) {
-    scroller.scrollTop += (rect.top + rect.bottom) / 2 - (sr.top + sr.bottom) / 2
-  }
-}
-function matchIndices(text, query) {
-  const out = []
-  if (!text || !query) return out
-  const lower = text.toLowerCase()
-  const q = query.toLowerCase()
-  let idx = lower.indexOf(q)
-  while (idx !== -1) {
-    out.push(idx)
-    idx = lower.indexOf(q, idx + query.length)
-  }
-  return out
-}
-
-// Compare dotted versions: is `a` newer than `b`? (e.g. '0.1.5' > '0.1.4')
-function isNewerVersion(a, b) {
-  const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0)
-  const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0)
-    if (d !== 0) return d > 0
-  }
-  return false
-}
-
-const baseName = (p) => (p ? p.split(/[\\/]/).pop() : 'Untitled')
-const dirName = (p) => (p ? p.replace(/[\\/][^\\/]*$/, '') : '')
-// Files that open in the rich Markdown editor. Anything else with a path (e.g.
-// .txt) is treated as plain text and opened in the fast textarea — feeding plain
-// text through Milkdown collapses its line breaks and bogs down on large files.
-const MD_DOC_RE = /\.(md|markdown|mdx)$/i
-const isPlainTextDoc = (tab) => !!(tab && tab.path && !MD_DOC_RE.test(tab.path))
-let idCounter = 0
-const genId = () => `t${++idCounter}_${Date.now()}`
-
-const LS = 'minimd.session.v1'
-const loadSession = () => {
-  try {
-    return JSON.parse(localStorage.getItem(LS)) || {}
-  } catch {
-    return {}
-  }
-}
 
 export default function App() {
   const session = useRef(loadSession()).current
   const [tabs, setTabs] = useState([])
   const [activeId, setActiveId] = useState(null)
-  const [workspace, setWorkspace] = useState(session.workspace || null)
+  const [workspace, setWorkspace] = useState(sanitizeWorkspace(session.workspace))
   const [sidebarOpen, setSidebarOpen] = useState(session.sidebarOpen ?? true)
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
   const [theme, setTheme] = useState(session.theme || DEFAULT_THEME)
@@ -136,6 +43,18 @@ export default function App() {
   // returning to a document doesn't re-create its editor). Cleared whenever a
   // tab is activated or a file is opened.
   const [home, setHome] = useState(false)
+  // Split view: id of the tab shown in the right pane (null = no split). The left
+  // pane always shows the active tab; the right pane shows this one. A second,
+  // independent editor — both panes are fully editable. Driven by the tab
+  // right-click menu ("Open in Split") and the top-bar toggle.
+  const [splitId, setSplitId] = useState(null)
+  // Fraction of the editor area given to the left pane (0..1), dragged via the
+  // divider between the two panes.
+  const [splitRatio, setSplitRatio] = useState(0.5)
+  // Which split pane is focused ('left' = active tab, 'right' = split tab). A tab
+  // click loads into the focused pane, so both panes are switchable from the one
+  // tab strip. Always 'left' when not split.
+  const [focusedPane, setFocusedPane] = useState('left')
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [files, setFiles] = useState([])
   const [find, setFind] = useState({ open: false, query: '', matches: 0, active: 0 })
@@ -144,8 +63,14 @@ export default function App() {
   const findRangesRef = useRef([])
   // "New version available" toast — populated by the startup update check below.
   const [update, setUpdate] = useState(null)
+  // Transient bottom-center toast (e.g. "Copied"), fired via a `hm:toast` event.
+  const [toast, setToast] = useState(null)
+  // Rename-from-tab-menu modal: { id, value } or null. (Electron has no
+  // window.prompt, so renaming a tab's file uses this small inline dialog.)
+  const [renameState, setRenameState] = useState(null)
 
   const editorHostRef = useRef(null) // active rich editor's scroll container
+  const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const sourceRef = useRef(null) // active source-mode <textarea>
   const scrollRatioRef = useRef(null) // pending scroll position to restore across a mode switch
   const findInputRef = useRef(null)
@@ -154,15 +79,41 @@ export default function App() {
   // single ref would get stuck on whichever editor mounted last; keying by tab
   // id lets commands act on the *currently active* document.
   const editorApis = useRef({})
+  // The tab id of whichever editor pane last had focus — so Save / Export target
+  // the pane you're actually editing in split view, not always the left one.
+  const focusedTabRef = useRef(null)
+  // Latest session snapshot, kept in a ref so the close/flush path can persist it
+  // synchronously without waiting on the debounced write.
+  const sessionRef = useRef(null)
+  // Write the latest snapshot now (close / pagehide / debounce all funnel here,
+  // so the persisted shape lives in exactly one place).
+  const flushSession = useCallback(() => {
+    if (!sessionRef.current) return
+    try {
+      localStorage.setItem(LS, JSON.stringify(sessionRef.current))
+    } catch {
+      /* quota / serialization failure — skip this snapshot */
+    }
+  }, [])
   const [activeBlock, setActiveBlock] = useState('paragraph')
   // Lazy mounting: a rich (Crepe) editor is only created once its tab has been
   // activated, then kept mounted so later tab switches stay instant. This keeps
   // startup/session-restore fast — only the active tab spins up an editor
   // instead of every restored tab parsing its whole document at once.
   const [mountedIds, setMountedIds] = useState(() => new Set())
+  // Tab ids the user explicitly chose to render richly despite being "heavy"
+  // (would otherwise open in the fast plain-text editor to avoid a long freeze).
+  const [richForced, setRichForced] = useState(() => new Set())
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId) || null, [tabs, activeId])
   const activePath = activeTab?.path || null
+  // Split is "live" only when the right-pane tab exists and differs from the
+  // active (left) one. Hidden on the welcome/home screen.
+  const splitTab = useMemo(
+    () => (splitId != null ? tabs.find((t) => t.id === splitId) || null : null),
+    [tabs, splitId]
+  )
+  const split = !home && !!splitTab && splitId !== activeId
   // Always-current activeId for callbacks that fire after a tab switch.
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -188,6 +139,16 @@ export default function App() {
       }
       return changed ? next : prev
     })
+    setRichForced((prev) => {
+      if (!prev.size) return prev
+      let changed = false
+      const next = new Set()
+      for (const id of prev) {
+        if (live.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
   }, [tabs])
 
   // Mark the active tab as mounted (and keep it mounted thereafter).
@@ -195,6 +156,25 @@ export default function App() {
     if (activeId == null) return
     setMountedIds((prev) => (prev.has(activeId) ? prev : new Set(prev).add(activeId)))
   }, [activeId])
+
+  // The right-pane tab must be mounted too (it's a second visible editor).
+  useEffect(() => {
+    if (splitId == null) return
+    setMountedIds((prev) => (prev.has(splitId) ? prev : new Set(prev).add(splitId)))
+  }, [splitId])
+
+  // Drop the split when its tab is gone, or it collapsed onto the active tab
+  // (e.g. the user clicked the right-pane's tab in the strip).
+  useEffect(() => {
+    if (splitId != null && (splitId === activeId || !tabs.some((t) => t.id === splitId))) {
+      setSplitId(null)
+    }
+  }, [tabs, splitId, activeId])
+
+  // Once there's no right pane, tab clicks must target the left pane again.
+  useEffect(() => {
+    if (splitId == null && focusedPane !== 'left') setFocusedPane('left')
+  }, [splitId, focusedPane])
 
   // ----------------------------- theme / i18n -----------------------------
   useEffect(() => {
@@ -295,7 +275,8 @@ export default function App() {
           content,
           savedContent: content,
           mtimeMs,
-          reloadNonce: 0
+          reloadNonce: 0,
+          heavy: isHeavyDoc(content)
         }
         tabsRef.current = [...tabsRef.current, newTab] // keep snapshot current for the next iteration
         setTabs((prev) => [...prev, newTab])
@@ -365,6 +346,147 @@ export default function App() {
     },
     []
   )
+
+  // Show a tab in the right (split) pane. If it's currently the active tab, move
+  // the left pane to a different tab so the two panes differ.
+  const openRight = useCallback((id) => {
+    setHome(false)
+    if (id === activeIdRef.current) {
+      const others = tabsRef.current.filter((t) => t.id !== id)
+      if (!others.length) return // only one tab — nothing to split against
+      setActiveId(others[others.length - 1].id)
+    }
+    setSplitId(id)
+  }, [])
+
+  // Toggle split: off → on picks the next tab as the right pane; on → off closes it.
+  const toggleSplit = useCallback(() => {
+    setSplitId((cur) => {
+      if (cur != null) return null
+      const list = tabsRef.current
+      if (list.length < 2) {
+        fireToast(tRef.current('split.needTwo'))
+        return null
+      }
+      const i = list.findIndex((t) => t.id === activeIdRef.current)
+      return list[(i + 1) % list.length].id
+    })
+    setHome(false)
+  }, [])
+
+  // Drag the divider between the two split panes to change their ratio.
+  const startSplitDrag = useCallback((e) => {
+    e.preventDefault()
+    const area = editorAreaRef.current
+    if (!area) return
+    const rect = area.getBoundingClientRect()
+    const onMove = (ev) => {
+      const r = (ev.clientX - rect.left) / rect.width
+      setSplitRatio(Math.min(0.8, Math.max(0.2, r)))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.classList.remove('hm-col-resizing')
+    }
+    document.body.classList.add('hm-col-resizing')
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
+
+  // Open a file (by path) directly into the right split pane — used by the
+  // sidebar's "Open in Split" so it works even if the file isn't open yet.
+  const openFileRight = useCallback(
+    async (path) => {
+      await openPaths([path])
+      const norm = (path || '').replace(/\\/g, '/')
+      const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
+      if (tab) openRight(tab.id)
+    },
+    [openPaths, openRight]
+  )
+
+  // --- File operations shared by the tab menu and the sidebar menu, so both
+  //     right-click menus offer the same actions on a file. ---
+  // Open the rename dialog for a tab's file (Electron has no window.prompt).
+  const renameTabFile = useCallback((id) => {
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab?.path) return
+    setRenameState({ id, value: baseName(tab.path) })
+  }, [])
+
+  // Commit a tab-file rename from the dialog.
+  const commitTabRename = useCallback(async (id, rawName) => {
+    setRenameState(null)
+    const tab = tabsRef.current.find((t) => t.id === id)
+    const name = (rawName || '').trim()
+    if (!tab?.path || !name) return
+    if (name === baseName(tab.path)) return
+    if (/[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
+      window.alert(tRef.current('err.invalidName') + name)
+      return
+    }
+    const newPath = joinPath(dirName(tab.path), name)
+    try {
+      await window.api.rename(tab.path, newPath)
+      setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, path: newPath, title: name } : t)))
+      setRefreshNonce((n) => n + 1)
+    } catch (e) {
+      window.alert(
+        /eexist|already exists/i.test(e.message)
+          ? tRef.current('err.nameExists')
+          : tRef.current('err.rename') + e.message
+      )
+    }
+  }, [])
+
+  const duplicateTabFile = useCallback(async (id) => {
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab?.path) return
+    try {
+      await window.api.duplicate(tab.path)
+      setRefreshNonce((n) => n + 1)
+    } catch (e) {
+      window.alert(
+        /eexist|already exists/i.test(e.message)
+          ? tRef.current('err.nameExists')
+          : tRef.current('err.duplicate') + e.message
+      )
+    }
+  }, [])
+
+  const deleteTabFile = useCallback(async (id) => {
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab?.path) return
+    if (!window.confirm(tRef.current('confirm.trash', { name: tab.title }))) return
+    try {
+      await window.api.deleteItem(tab.path)
+      // Remove the tab outright (the file is gone; don't re-prompt about unsaved edits).
+      setTabs((prev) => {
+        const idx = prev.findIndex((x) => x.id === id)
+        const next = prev.filter((x) => x.id !== id)
+        setActiveId((cur) => (cur !== id ? cur : next.length ? next[Math.min(idx, next.length - 1)].id : null))
+        return next
+      })
+      setRefreshNonce((n) => n + 1)
+    } catch (e) {
+      window.alert(tRef.current('err.delete') + e.message)
+    }
+  }, [])
+
+  // Close every tab except `keepId` (from the tab right-click menu).
+  const closeOthers = useCallback((keepId) => {
+    setTabs((prev) => {
+      const others = prev.filter((t) => t.id !== keepId)
+      const firstDirty = others.find((t) => t.content !== t.savedContent)
+      if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
+        return prev
+      }
+      setActiveId(keepId)
+      setSplitId(null)
+      return prev.filter((t) => t.id === keepId)
+    })
+  }, [])
 
   const writeTab = useCallback(async (tab, targetPath) => {
     const { mtimeMs } = await window.api.writeFile(targetPath, tab.content)
@@ -469,7 +591,8 @@ export default function App() {
             content,
             savedContent: content,
             mtimeMs,
-            reloadNonce: t.reloadNonce + 1
+            reloadNonce: t.reloadNonce + 1,
+            heavy: isHeavyDoc(content)
           }
         })
       )
@@ -518,21 +641,37 @@ export default function App() {
   }, [])
 
   // ------------------------- menu / shortcuts ----------------------
+  // In split view, target the pane you're actually editing (last focused), as
+  // long as it's one of the two visible panes; otherwise the active (left) tab.
+  const pickEditableId = () => {
+    const f = focusedTabRef.current
+    if (f && (f === activeId || f === splitId)) return f
+    return activeId
+  }
+
   const handlers = useRef({})
   handlers.current = {
     home: () => setHome(true),
     new: newTab,
     open: async () => openPaths(await window.api.openFiles()),
     openFolder,
-    save: () => activeId && saveTab(activeId),
-    saveAs: () => activeId && saveTab(activeId, true),
+    save: () => {
+      const id = pickEditableId()
+      if (id) saveTab(id)
+    },
+    saveAs: () => {
+      const id = pickEditableId()
+      if (id) saveTab(id, true)
+    },
     exportPdf: async () => {
-      const html = editorApis.current[activeId]?.getDocHTML?.()
+      const id = pickEditableId()
+      const html = editorApis.current[id]?.getDocHTML?.()
       if (!html) {
         window.alert(tRef.current('error.exportPdfUnavailable'))
         return
       }
-      const base = (activeTab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
+      const tab = tabs.find((x) => x.id === id)
+      const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
       await window.api.exportPDF(html, base + '.pdf')
     },
     closeTab: () => activeId && closeTab(activeId),
@@ -561,7 +700,7 @@ export default function App() {
     const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
     // A folder path arriving from Explorer's "Open with HorseMD" folder menu.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
-      if (!dir) return
+      if (!dir || !isAbsolutePath(dir)) return // never open a relative path as a workspace
       setWorkspace({ rootPath: dir, rootName: baseName(dir) })
       setSidebarMode('files')
       setSidebarOpen(true)
@@ -570,6 +709,9 @@ export default function App() {
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
     const offClose = window.api.onAppCloseRequest?.(() => {
+      // Flush the latest session before we (maybe) quit, so a recent edit that's
+      // still inside the debounce window isn't lost.
+      flushSession()
       const dirty = tabsRef.current.some((t) => t.content !== t.savedContent)
       if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
         window.api.confirmAppClose()
@@ -623,17 +765,42 @@ export default function App() {
 
   useEffect(() => {
     const paths = (session.openPaths || []).filter(Boolean)
+    const untitled = (session.untitled || []).filter((u) => u && (u.content || '').trim())
+    // Recreate unsaved scratch tabs (no path) from the last session.
+    const addUntitled = () => {
+      if (!untitled.length) return null
+      const created = untitled.map((u) => ({
+        id: genId(),
+        path: null,
+        title: u.title || tRef.current('tab.untitled'),
+        content: u.content,
+        // No prior save, so the baseline is empty → the tab shows as unsaved.
+        savedContent: '',
+        mtimeMs: null,
+        reloadNonce: 0,
+        heavy: isHeavyDoc(u.content)
+      }))
+      tabsRef.current = [...tabsRef.current, ...created]
+      setTabs((prev) => [...prev, ...created])
+      return created
+    }
     // Restore silently: skip files that were deleted/moved since last session
     // without popping an error for each one.
-    if (paths.length) openPaths(paths, true).then(() => {
-      if (session.activePath) {
-        setTabs((prev) => {
-          const t = prev.find((x) => x.path === session.activePath)
-          if (t) setActiveId(t.id)
-          return prev
-        })
-      }
-    })
+    if (paths.length) {
+      openPaths(paths, true).then(() => {
+        addUntitled()
+        if (session.activePath) {
+          setTabs((prev) => {
+            const t = prev.find((x) => x.path === session.activePath)
+            if (t) setActiveId(t.id)
+            return prev
+          })
+        }
+      })
+    } else {
+      const created = addUntitled()
+      if (created && created.length) setActiveId(created[0].id)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -647,10 +814,35 @@ export default function App() {
       sidebarOpen,
       sidebarMode,
       openPaths: tabs.map((t) => t.path).filter(Boolean),
+      // Persist unsaved scratch/new tabs (no path, with edited content) so they
+      // survive a restart — closing the app no longer silently loses them. Only
+      // dirty tabs are stored, so the untouched welcome doc / empty new tabs
+      // don't keep coming back. Saved files are reopened from disk instead.
+      untitled: tabs
+        .filter((t) => !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .map((t) => ({ title: t.title, content: t.content })),
       activePath
     }
-    localStorage.setItem(LS, JSON.stringify(data))
-  }, [workspace, theme, lang, recents, sidebarOpen, sidebarMode, tabs, activePath])
+    sessionRef.current = data
+    // Debounce the write: this effect runs on every keystroke (tabs/content
+    // change), and JSON.stringify-ing the whole session — including the full
+    // text of large unsaved scratch docs — plus a synchronous localStorage write
+    // on every keypress is enough to make typing in big documents stutter. Wait
+    // for a brief pause, then write once. The close path flushes the last edit.
+    const id = setTimeout(flushSession, 400)
+    return () => clearTimeout(id)
+  }, [workspace, theme, lang, recents, sidebarOpen, sidebarMode, tabs, activePath, flushSession])
+
+  // Flush the pending session snapshot immediately when the window is closing,
+  // so the debounce above never drops the user's last few keystrokes.
+  useEffect(() => {
+    window.addEventListener('pagehide', flushSession)
+    window.addEventListener('beforeunload', flushSession)
+    return () => {
+      window.removeEventListener('pagehide', flushSession)
+      window.removeEventListener('beforeunload', flushSession)
+    }
+  }, [flushSession])
 
   // ------------------------- update check (notify-only) ------------
   useEffect(() => {
@@ -667,6 +859,24 @@ export default function App() {
     }
   }, [])
 
+  // Lightweight transient toast (copy feedback, etc.). Any component can fire one
+  // via `fireToast(msg)` from ui.js.
+  useEffect(() => {
+    let timer = null
+    const onToast = (e) => {
+      const msg = e?.detail
+      if (!msg) return
+      setToast({ msg, key: Date.now() + Math.random() })
+      clearTimeout(timer)
+      timer = setTimeout(() => setToast(null), 1600)
+    }
+    window.addEventListener(HM_TOAST_EVENT, onToast)
+    return () => {
+      window.removeEventListener(HM_TOAST_EVENT, onToast)
+      clearTimeout(timer)
+    }
+  }, [])
+
   const dismissUpdate = useCallback(() => {
     setUpdate((u) => {
       if (u) localStorage.setItem(UPDATE_DISMISS_KEY, u.latest)
@@ -678,8 +888,9 @@ export default function App() {
   useEffect(() => {
     if (localStorage.getItem(ONBOARDED_KEY)) return
     localStorage.setItem(ONBOARDED_KEY, '1')
-    // Only greet on a genuinely fresh start (no restored session).
-    if ((session.openPaths || []).filter(Boolean).length) return
+    // Only greet on a genuinely fresh start (no restored session — neither saved
+    // files nor unsaved scratch tabs).
+    if ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length) return
     const doc = welcomeDoc(session.lang || DEFAULT_LANG)
     const id = genId()
     setTabs((prev) => [
@@ -816,16 +1027,36 @@ export default function App() {
         <Tabs
           tabs={tabs}
           activeId={home ? null : activeId}
+          splitId={home ? null : splitId}
+          focusedPane={focusedPane}
           onActivate={(id) => {
-            setActiveId(id)
             setHome(false)
+            // Load into whichever pane is focused, so both panes are switchable.
+            if (split && focusedPane === 'right' && id !== activeId) {
+              setSplitId(id)
+            } else {
+              setActiveId(id)
+            }
           }}
           onClose={closeTab}
           onNew={newTab}
+          onCloseOthers={closeOthers}
+          onOpenRight={openRight}
+          onRename={renameTabFile}
+          onDuplicate={duplicateTabFile}
+          onDelete={deleteTabFile}
+          onExportPdf={exportPathToPdf}
         />
         <div className="topbar-spacer" />
         <button className="icon-btn drag-no" title={`${t('welcome.newFile')} (Ctrl+N)`} onClick={newTab}>
           <Icon name="plus" size={18} />
+        </button>
+        <button
+          className={`icon-btn drag-no${split ? ' active' : ''}`}
+          title={split ? t('split.close') : t('split.toggle')}
+          onClick={toggleSplit}
+        >
+          <Icon name="columns" size={16} />
         </button>
         <button className="icon-btn drag-no" title="Command palette (Ctrl+P)" onClick={() => setPaletteOpen(true)}>
           <Icon name="command" size={16} />
@@ -841,6 +1072,7 @@ export default function App() {
                 workspace={workspace}
                 activePath={activePath}
                 onOpenFile={(p) => openPaths([p])}
+                onOpenRight={openFileRight}
                 onExportPdf={exportPathToPdf}
                 refreshNonce={refreshNonce}
               />
@@ -883,59 +1115,123 @@ export default function App() {
             </div>
           )}
 
-          {/* Editors stay mounted even while the Home page is shown (they're just
-              hidden), so returning to a document doesn't re-create its editor.
-              Each tab picks its editor: plain-text docs (.txt) and global source
-              mode use the textarea (active tab only — cheap); Markdown docs use
-              Crepe and stay mounted after first activation. */}
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeId
-            if (isPlainTextDoc(tab) || (sourceMode && isActive)) {
-              if (!isActive) return null
+          {/* Editor area — a flex row so the active (left) and split (right) tabs
+              can sit side by side. Editors are siblings here; only the one(s) in
+              view are shown (the rest are display:none but stay mounted, so tab
+              switches / toggling split never re-create an editor). Hidden as a
+              whole on the welcome/home screen so it doesn't fight Welcome for space. */}
+          <div
+            ref={editorAreaRef}
+            className={`editor-area${split ? ' is-split' : ''}`}
+            style={{ display: home || !activeTab ? 'none' : undefined }}
+          >
+            {tabs.map((tab) => {
+              // Which pane (if any) this tab occupies. `split` already excludes
+              // home and the case where the two ids are equal.
+              const isLeft = !home && tab.id === activeId
+              const isRight = split && tab.id === splitId
+              const inView = isLeft || isRight
+              // Flex order: left pane (1) · divider (2) · right pane (3).
+              // Irrelevant for hidden tabs (display:none removes them from layout).
+              const order = isRight ? 3 : 1
+              // Mark the focused pane (only meaningful while split) so the user
+              // can see which pane a tab click will load into.
+              const isFocusedPane = split && ((isRight && focusedPane === 'right') || (isLeft && focusedPane === 'left'))
+              const paneClass =
+                (isRight ? ' hm-pane-right' : isLeft ? ' hm-pane-left' : '') + (isFocusedPane ? ' hm-focused' : '')
+              const onPaneFocus = () => {
+                focusedTabRef.current = tab.id
+                if (split) setFocusedPane(isRight ? 'right' : 'left')
+              }
+              // In split view the left pane holds a fixed fraction; the right pane
+              // grows to fill the rest. Outside split, panes fill the row.
+              const paneFlex = split && isLeft ? `0 0 calc(${(splitRatio * 100).toFixed(2)}% - 3px)` : undefined
+
+              // Plain-text docs always use the textarea; "heavy" Markdown docs do
+              // too until the user opts into rich (avoids a multi-second freeze);
+              // the active pane also uses it in global source mode. The right pane
+              // never shows global source mode.
+              const heavyAsSource = tab.heavy && !richForced.has(tab.id)
+              const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLeft)
+              if (usesTextarea) {
+                if (!inView) return null
+                return (
+                  <textarea
+                    key={tab.id}
+                    ref={isLeft ? sourceRef : undefined}
+                    className={`source-editor${paneClass}`}
+                    value={tab.content}
+                    spellCheck={false}
+                    style={{ order, flex: paneFlex }}
+                    onFocus={onPaneFocus}
+                    onMouseDown={onPaneFocus}
+                    onChange={(e) => updateContent(tab.id, e.target.value, false)}
+                  />
+                )
+              }
+              // Lazy mount: don't create a Crepe editor for a tab the user hasn't
+              // opened yet (keeps session-restore of many tabs fast). Panes in
+              // view always mount; visited tabs stay mounted.
+              if (!inView && !mountedIds.has(tab.id)) return null
               return (
-                <textarea
-                  key={tab.id}
-                  ref={isActive ? sourceRef : undefined}
-                  className="source-editor"
-                  value={tab.content}
-                  spellCheck={false}
-                  style={{ display: home ? 'none' : undefined }}
-                  onChange={(e) => updateContent(tab.id, e.target.value, false)}
-                />
+                <div
+                  // Include reloadNonce so an external-edit reload remounts the
+                  // Crepe editor with the new content (the create effect only
+                  // runs on mount). tab switches keep the same key → stay mounted.
+                  key={`${tab.id}:${tab.reloadNonce}`}
+                  className={`editor-scroll${paneClass}`}
+                  ref={isLeft && !sourceMode ? editorHostRef : undefined}
+                  style={{ display: inView ? undefined : 'none', order, flex: paneFlex }}
+                  onFocusCapture={onPaneFocus}
+                  onMouseDownCapture={onPaneFocus}
+                >
+                  <Editor
+                    tabId={`${tab.id}:${tab.reloadNonce}`}
+                    initialContent={tab.content}
+                    docPath={tab.path}
+                    onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
+                    onReady={(api) => {
+                      editorApis.current[tab.id] = api
+                    }}
+                    onActiveBlock={(id) => {
+                      if (tab.id === activeIdRef.current) setActiveBlock(id)
+                    }}
+                  />
+                </div>
               )
-            }
-            // Hidden when this isn't the visible view: a background tab, the
-            // active tab shown as source, or while the Home page is up.
-            const hidden = !isActive || sourceMode || home
-            // Lazy mount: don't create a Crepe editor for a tab the user hasn't
-            // opened yet (keeps session-restore of many tabs fast). The active
-            // tab always mounts; visited tabs stay mounted.
-            if (!isActive && !mountedIds.has(tab.id)) return null
-            return (
-              <div
-                // Include reloadNonce so an external-edit reload remounts the
-                // Crepe editor with the new content (the create effect only
-                // runs on mount). tab switches keep the same key → stay mounted.
-                key={`${tab.id}:${tab.reloadNonce}`}
-                className="editor-scroll"
-                ref={isActive && !sourceMode && !home ? editorHostRef : undefined}
-                style={{ display: hidden ? 'none' : undefined }}
-              >
-                <Editor
-                  tabId={`${tab.id}:${tab.reloadNonce}`}
-                  initialContent={tab.content}
-                  docPath={tab.path}
-                  onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
-                  onReady={(api) => {
-                    editorApis.current[tab.id] = api
-                  }}
-                  onActiveBlock={(id) => {
-                    if (tab.id === activeIdRef.current) setActiveBlock(id)
-                  }}
-                />
+            })}
+
+            {/* Heavy-doc notice: this Markdown file is shown as plain source to
+                stay responsive; offer a one-click switch to the rich editor. */}
+            {!home && activeTab && activeTab.heavy && !richForced.has(activeTab.id) && (
+              <div className="hm-heavy-banner">
+                <span>{t('heavy.notice')}</span>
+                <button onClick={() => setRichForced((s) => new Set(s).add(activeTab.id))}>
+                  {t('heavy.loadRich')}
+                </button>
               </div>
-            )
-          })}
+            )}
+
+            {split && (
+              <div
+                className="hm-split-divider"
+                style={{ order: 2 }}
+                onMouseDown={startSplitDrag}
+                title={t('split.drag')}
+              />
+            )}
+
+            {split && (
+              <div className="hm-split-bar">
+                <span className="hm-split-name" title={splitTab?.path || splitTab?.title}>
+                  {splitTab?.title}
+                </span>
+                <button className="hm-split-close" title={t('split.close')} onClick={() => setSplitId(null)}>
+                  <Icon name="close" size={13} />
+                </button>
+              </div>
+            )}
+          </div>
 
           {(home || !activeTab) && (
             <Welcome
@@ -972,6 +1268,21 @@ export default function App() {
         onOpenFile={(p) => openPaths([p])}
       />
 
+      {toast && (
+        <div className="hm-toast" role="status" key={toast.key}>
+          {toast.msg}
+        </div>
+      )}
+
+      {renameState && (
+        <RenameModal
+          t={t}
+          initial={renameState.value}
+          onConfirm={(name) => commitTabRename(renameState.id, name)}
+          onCancel={() => setRenameState(null)}
+        />
+      )}
+
       {update && (
         <UpdateToast
           t={t}
@@ -986,134 +1297,5 @@ export default function App() {
       )}
     </div>
     </I18nProvider>
-  )
-}
-
-// Custom Windows/Linux caption buttons (the native overlay is disabled in the
-// main process). macOS uses its native traffic lights, so this isn't rendered
-// there. The maximize icon reflects the live window state.
-function WindowControls({ t }) {
-  const [max, setMax] = useState(false)
-  useEffect(() => {
-    let alive = true
-    window.api.windowIsMaximized?.().then((v) => alive && setMax(!!v))
-    const off = window.api.onWindowMaximized?.((v) => setMax(!!v))
-    return () => {
-      alive = false
-      off?.()
-    }
-  }, [])
-  return (
-    <div className="win-controls drag-no">
-      <button className="win-ctrl" title={t('tip.minimize')} onClick={() => window.api.windowMinimize()}>
-        <Icon name="win-min" size={14} strokeWidth={1.6} />
-      </button>
-      <button
-        className="win-ctrl"
-        title={t(max ? 'tip.restore' : 'tip.maximize')}
-        onClick={async () => setMax(!!(await window.api.windowToggleMaximize()))}
-      >
-        <Icon name={max ? 'win-restore' : 'win-max'} size={13} strokeWidth={1.6} />
-      </button>
-      <button className="win-ctrl close" title={t('tip.close')} onClick={() => window.api.windowClose()}>
-        <Icon name="close" size={14} />
-      </button>
-    </div>
-  )
-}
-
-// Notify-only "new version available" toast — slides in at the bottom-right.
-function UpdateToast({ t, latest, current, onDownload, onDismiss }) {
-  return (
-    <div className="update-toast" role="alert">
-      <button className="update-toast-close" onClick={onDismiss} title={t('update.later')}>
-        <Icon name="close" size={13} />
-      </button>
-      <div className="update-toast-head">
-        <span className="update-toast-icon">
-          <Icon name="sparkle" size={18} />
-        </span>
-        <div className="update-toast-text">
-          <div className="update-toast-title">{t('update.title')}</div>
-          <div className="update-toast-sub">
-            v{current} <span className="update-toast-arrow">→</span> <b>v{latest}</b>
-          </div>
-        </div>
-      </div>
-      <button className="update-toast-primary" onClick={onDownload}>
-        {t('update.download')}
-      </button>
-    </div>
-  )
-}
-
-function relTime(ts, lang, t) {
-  if (!ts) return ''
-  const diff = Date.now() - ts
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return t('time.justNow')
-  if (min < 60) return t('time.minutesAgo', { n: min })
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return t('time.hoursAgo', { n: hr })
-  const days = Math.floor(hr / 24)
-  if (days === 1) return t('time.yesterday')
-  try {
-    return new Date(ts).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', {
-      month: 'short',
-      day: 'numeric'
-    })
-  } catch {
-    return ''
-  }
-}
-
-function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder, onOpenRecent }) {
-  return (
-    <div className="welcome">
-      <div className="welcome-card">
-        <img className="welcome-logo" src={logoUrl} alt="HorseMD" />
-        <h1>
-          HorseMD
-          {APP_VERSION && <span className="welcome-version">v{APP_VERSION}</span>}
-        </h1>
-        <p className="welcome-tagline">{t('welcome.tagline')}</p>
-        <div className="welcome-actions">
-          <button className="btn-primary" onClick={onNew}>
-            <Icon name="file-plus" size={16} /> {t('welcome.newFile')}
-          </button>
-          <button onClick={onOpen}>
-            <Icon name="file" size={16} /> {t('welcome.openFile')}
-          </button>
-          <button onClick={onOpenFolder}>
-            <Icon name="folder" size={16} /> {t('welcome.openFolder')}
-          </button>
-        </div>
-
-        {recents && recents.length > 0 && (
-          <div className="welcome-recents">
-            <div className="welcome-recents-head">{t('welcome.recent')}</div>
-            <div className="welcome-recents-list">
-              {recents.map((r) => (
-                <button key={r.path} className="recent-item" onClick={() => onOpenRecent(r.path)} title={r.path}>
-                  <Icon name="file" size={16} className="recent-icon" />
-                  <span className="recent-main">
-                    <span className="recent-name">{r.name}</span>
-                    <span className="recent-path">{r.dir}</span>
-                  </span>
-                  <span className="recent-time">{relTime(r.openedAt, lang, t)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="welcome-hints">
-          <span><kbd>Ctrl</kbd><kbd>P</kbd> {t('hint.palette')}</span>
-          <span><kbd>Ctrl</kbd><kbd>B</kbd> {t('hint.sidebar')}</span>
-          <span><kbd>Ctrl</kbd><kbd>N</kbd> {t('hint.new')}</span>
-          <span><kbd>Ctrl</kbd><kbd>S</kbd> {t('hint.save')}</span>
-        </div>
-      </div>
-    </div>
   )
 }
