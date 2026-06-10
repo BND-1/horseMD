@@ -1222,14 +1222,9 @@ export default function App() {
             )}
 
             {split && (
-              <div className="hm-split-bar">
-                <span className="hm-split-name" title={splitTab?.path || splitTab?.title}>
-                  {splitTab?.title}
-                </span>
-                <button className="hm-split-close" title={t('split.close')} onClick={() => setSplitId(null)}>
-                  <Icon name="close" size={13} />
-                </button>
-              </div>
+              <button className="hm-split-close" title={t('split.close')} onClick={() => setSplitId(null)}>
+                <Icon name="close" size={14} />
+              </button>
             )}
           </div>
 

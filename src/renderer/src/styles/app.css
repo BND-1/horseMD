@@ -1122,42 +1122,26 @@ body.hm-col-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
-/* Floating right-pane header: file name + close-split button. */
-.hm-split-bar {
+/* Close-split: a bare ✕ at the right pane's top-right (no filename label). The
+   native title gives a hover tooltip. Faint until hovered, so it stays unobtrusive. */
+.hm-split-close {
   position: absolute;
   top: 8px;
-  right: 14px;
+  right: 12px;
   z-index: 25;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 40%;
-  padding: 3px 4px 3px 10px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-}
-.hm-split-name {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.hm-split-close {
-  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: var(--muted);
-  transition: background 0.12s, color 0.12s;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--faint);
+  opacity: 0.6;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
 }
 .hm-split-close:hover {
   background: var(--hover);
   color: var(--text-strong);
+  opacity: 1;
 }
 
 .editor-scroll {
@@ -2092,6 +2076,13 @@ body.dark .milkdown {
 .milkdown .cm-editor .cm-content ::selection {
   /* keep the token's own color so highlighted code stays readable */
   color: inherit;
+}
+/* Don't highlight the "active line" in code blocks — entering a code block would
+   otherwise paint a band across the caret's line (and the first line on open).
+   The caret alone is enough. */
+.milkdown .cm-editor .cm-activeLine,
+.milkdown .cm-editor .cm-activeLineGutter {
+  background: transparent;
 }
 
 /* Inline code */

@@ -209,10 +209,22 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
       }
       const kind = id === 'paragraph' ? 'text' : 'heading'
       const label = id === 'paragraph' ? tRef.current('block.paragraph') : def.short
-      // Sit in the gutter just left of the text; if the window is too narrow for
-      // that, tuck the tag against the pane's left edge instead.
-      const align = blockLeft - 10 - r.left >= 46 ? 'right' : 'left'
-      const x = align === 'right' ? blockLeft - 10 : r.left + 6
+      // The badge's right edge: normally 10px left of the text. But Crepe's block
+      // drag-handle (shown on hover) also lives in that gutter — when it's visible
+      // on the caret's line, tuck the badge just left of the handle so the two
+      // sit side by side instead of overlapping. The badge stays visible either way.
+      let badgeRight = blockLeft - 10
+      const handle = document.querySelector('.milkdown-block-handle[data-show="true"]')
+      if (handle) {
+        const hr = handle.getBoundingClientRect()
+        if (hr.width && hr.height && coords.bottom > hr.top && coords.top < hr.bottom) {
+          badgeRight = Math.min(badgeRight, hr.left - 6)
+        }
+      }
+      // Sit in the gutter; if the window is too narrow for that, tuck the tag
+      // against the pane's left edge instead.
+      const align = badgeRight - r.left >= 46 ? 'right' : 'left'
+      const x = align === 'right' ? badgeRight : r.left + 6
       setLevel({ label, kind, align, top: (coords.top + coords.bottom) / 2, x })
     }
 
@@ -320,6 +332,11 @@ export default function Editor({ initialContent, docPath, onChange, onReady, onA
             scrollEl.addEventListener('scroll', onScroll, { passive: true })
             cleanups.push(() => scrollEl.removeEventListener('scroll', onScroll))
           }
+          // Re-evaluate the badge as the mouse moves (the block drag-handle shows
+          // on hover) so the badge can step aside when the handle appears.
+          const onMove = () => scheduleLevel()
+          view.dom.addEventListener('mousemove', onMove, { passive: true })
+          cleanups.push(() => view.dom.removeEventListener('mousemove', onMove))
         }
         document.addEventListener('selectionchange', onSelChange)
         cleanups.push(() => document.removeEventListener('selectionchange', onSelChange))
