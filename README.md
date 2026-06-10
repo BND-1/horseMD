@@ -4,137 +4,160 @@
 [![Release](https://img.shields.io/github/v/release/BND-1/horseMD?include_prereleases)](https://github.com/BND-1/horseMD/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-**English** · [简体中文](./README.zh-CN.md)
+[English](./README.en.md) · **简体中文**
 
-A calm, modern **Markdown editor** — a Typora alternative built around the one
-thing Typora gets wrong: **every file opens as a tab in the same window**, not a
-new app instance. Browse a whole folder in the sidebar, flip between files in
-tabs, and write in a clean WYSIWYG editor.
+一款温暖、现代的 **Markdown 编辑器** —— 一个更顺手的 Typora 替代品，核心理念是
+Typora 做反了的那件事：**每个文件都作为标签页在同一个窗口里打开**，而不是新开一个
+程序。左侧文件树浏览整个文件夹，标签页之间随手切换，在干净的所见即所得编辑器里
+书写。
 
-![HorseMD — folder workspace, tabs, and live WYSIWYG rendering](./docs/screenshots/hero_light.png)
+![HorseMD —— 文件夹工作区、标签页与所见即所得实时渲染](./docs/screenshots/hero_light.png)
 
-## Why HorseMD
+## 为什么是 HorseMD
 
-Most Markdown editors make you choose between a beautiful WYSIWYG canvas and a
-real multi-file workflow. HorseMD gives you both: a **single window** that holds
-your whole folder in a file tree, every open document in a **tab**, and an
-in-place live-preview editor powered by [Milkdown](https://milkdown.dev/)
-(ProseMirror). It runs on **Windows and macOS** from one codebase, and the whole
-interface speaks both **English and 中文**.
+大多数 Markdown 编辑器逼你二选一：要么漂亮的所见即所得，要么真正的多文件工作流。
+HorseMD 两个都给你：一个**单窗口**装下整个文件夹的文件树、每个打开的文档都是一个
+**标签页**，编辑器基于 [Milkdown](https://milkdown.dev/)（ProseMirror）原地实时
+预览。一套代码同时跑在 **Windows 和 macOS** 上，整个界面**中英文**实时可切。
 
-## Features
+## 功能
 
-**Editing — everything Typora has**
+**编辑 —— Typora 有的都有**
 
-- Seamless **WYSIWYG live preview** — type Markdown, see it render in place
-- Slash menu (`/`) for inserting blocks; smart lists, selection toolbar, link tooltips
-- Tables, fenced **code blocks with syntax highlighting**, **LaTeX math**, images, task lists, blockquotes
-- **Source mode** toggle (`Ctrl/Cmd+/`) for raw Markdown — keeps scroll position
-- **Plain-text files (`.txt`) open in a fast plain editor** — no markdown reflow, instant on huge files
-- Rich-text copy with inline styles (paste into WeChat / email / Notion keeps formatting)
-- **Export to PDF** (`Ctrl/Cmd+Shift+E`) — clean print layout, no editor chrome
-- Relative-path images resolve against the file's folder (display only — your file stays untouched)
-- **Double-click an image to view it enlarged** in a lightbox (Esc / click to close)
-- **Raw HTML tables** (`<table>…</table>` in the Markdown) render as real tables, like Typora — display only, the source is preserved
-- A floating **block-level badge** tracks the caret (H1…H6 / Text)
+- 流畅的**所见即所得实时预览** —— 输入 Markdown，原地渲染
+- 行首 `/` 斜杠菜单插入块；智能列表、选中工具条、链接悬浮提示
+- 表格、**带语法高亮的代码块**、**LaTeX 数学公式**、图片、任务列表、引用块
+- **源码模式**切换（`Ctrl/Cmd+/`）查看原始 Markdown —— 保持滚动位置
+- **纯文本文件（`.txt`）用快速纯文本编辑器打开** —— 不走 Markdown 重排，大文件秒开
+- 富文本复制（带内联样式）—— 粘到公众号 / 邮件 / Notion 也能保留格式
+- **导出为 PDF**（`Ctrl/Cmd+Shift+E`）—— 排版干净，不带编辑器控件
+- 相对路径图片按文件所在目录解析（仅显示用，不改动你的文件内容）
+- **双击图片放大查看**（灯箱预览，点背景 / Esc 关闭；单击仍可选中图片、加说明）
+- **原生 HTML 表格**（文档里直接写的 `<table>…</table>`）渲染成真正的表格，和 Typora 一样 —— 仅显示，源码原样保留
+- 跟随光标的**浮动块级标记**（H1…H6 / 正文）
 
-**Beyond Typora**
+**超出 Typora**
 
-- **Tabs** — many files in one window (`Ctrl/Cmd+Tab` to cycle); a `+` in the top bar for a new doc
-- **Folder workspace** — a file tree with create / rename / duplicate / delete / reveal / export-PDF, plus **drag-and-drop to move** and expand-all / collapse-all
-- **Open in the same window** — double-clicking a file in Finder/Explorer adds a tab; "Open with HorseMD" on a folder opens it as a workspace
-- **Command palette** (`Ctrl/Cmd+P`) — fuzzy-jump to any file or command
-- **Find in file** (`Ctrl/Cmd+F`) — highlights matches in the document with a live count
-- **Outline panel** (`Ctrl+Shift+L`) — click a heading to jump
-- Live word / character count & reading time
-- Session restore — reopens your folder and tabs
-- Auto-refreshing file tree & open files — watches for external changes
-- **Home button** in the activity bar — back to the welcome page anytime (open tabs stay loaded)
-- **Loading skeleton** for large documents, so opening a big file isn't a blank pause
-- Unsaved-changes warning when closing the window or quitting (not just closing a tab)
-- Notify-only update check — tells you when a new release is out (no auto-download)
+- **标签页** —— 多文件同窗（`Ctrl/Cmd+Tab` 循环切换）；顶栏一个 `+` 快速新建文档
+- **文件夹工作区** —— 文件树，原地新建 / 重命名 / 复制一份 / 删除 / 在访达中显示 / 导出 PDF，支持**拖拽移动**与展开全部 / 折叠全部
+- **在同一窗口打开** —— 双击文件 → 加一个标签；对文件夹"用 HorseMD 打开" → 作为工作区打开
+- **命令面板**（`Ctrl/Cmd+P`）—— 模糊跳转到任意文件或命令
+- **文档内查找**（`Ctrl/Cmd+F`）—— 在文档里高亮匹配并实时计数
+- **大纲面板**（`Ctrl+Shift+L`）—— 点标题即跳转
+- 实时字数 / 字符数与阅读时长
+- 会话恢复 —— 重新打开你的文件夹和标签
+- 文件树与打开的文件自动刷新 —— 监听外部改动
+- **主页按钮**（活动栏）—— 随时回到欢迎页（已打开的标签仍保持加载）
+- **大文档加载骨架屏** —— 打开大文件不再是一段空白
+- 关闭窗口 / 退出时提醒未保存（不只是关标签）
+- 仅通知的更新检查 —— 有新版本时提示（不自动下载）
 
-Command palette — fuzzy-jump to any file or command:
+命令面板 —— 模糊跳转到任意文件或命令：
 
-![Command palette](./docs/screenshots/command_palette.png)
+![命令面板](./docs/screenshots/command_palette.png)
 
-## Themes
+## 主题
 
-Six polished themes — warm light/dark plus four muted **Morandi** palettes —
-switchable with `Ctrl+Shift+T` or the status-bar picker.
+六套精心调过的主题 —— 暖光 / 暖夜，外加四套低饱和的**莫兰迪**配色 ——
+`Ctrl+Shift+T` 或状态栏选择器切换。
 
-| Warm Light | Warm Dark | Morandi Dusk |
+| 暖光 | 暖夜 | 莫兰迪·暮 |
 | :---: | :---: | :---: |
-| ![Warm Light](./docs/screenshots/hero_light.png) | ![Warm Dark](./docs/screenshots/theme_dark.png) | ![Morandi Dusk](./docs/screenshots/theme_morandi_dusk.png) |
-| **Morandi Sage** | **Morandi Rose** | **Morandi Mist** |
-| ![Morandi Sage](./docs/screenshots/theme_morandi_sage.png) | ![Morandi Rose](./docs/screenshots/theme_morandi_rose.png) | ![Morandi Mist](./docs/screenshots/theme_morandi_mist.png) |
+| ![暖光](./docs/screenshots/hero_light.png) | ![暖夜](./docs/screenshots/theme_dark.png) | ![莫兰迪·暮](./docs/screenshots/theme_morandi_dusk.png) |
+| **莫兰迪·灰绿** | **莫兰迪·豆沙** | **莫兰迪·雾蓝** |
+| ![莫兰迪·灰绿](./docs/screenshots/theme_morandi_sage.png) | ![莫兰迪·豆沙](./docs/screenshots/theme_morandi_rose.png) | ![莫兰迪·雾蓝](./docs/screenshots/theme_morandi_mist.png) |
 
-## Keyboard shortcuts
+## 快捷键
 
-| Action             | Shortcut                      |
+| 操作               | 快捷键                        |
 | ------------------ | ----------------------------- |
-| New file           | `Ctrl/Cmd+N`                  |
-| Open file          | `Ctrl/Cmd+O`                  |
-| Open folder        | `Ctrl/Cmd+Shift+O`            |
-| Save / Save As     | `Ctrl/Cmd+S` / `…+Shift+S`    |
-| Export as PDF      | `Ctrl/Cmd+Shift+E`            |
-| Close tab          | `Ctrl/Cmd+W`                  |
-| Command palette    | `Ctrl/Cmd+P`                  |
-| Find in file       | `Ctrl/Cmd+F`                  |
-| Toggle sidebar     | `Ctrl/Cmd+B`                  |
-| Toggle outline     | `Ctrl+Shift+L`                |
-| Toggle source mode | `Ctrl/Cmd+/`                  |
-| Toggle theme       | `Ctrl+Shift+T`                |
-| Cycle tabs         | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| 新建文件           | `Ctrl/Cmd+N`                  |
+| 打开文件           | `Ctrl/Cmd+O`                  |
+| 打开文件夹         | `Ctrl/Cmd+Shift+O`            |
+| 保存 / 另存为      | `Ctrl/Cmd+S` / `…+Shift+S`    |
+| 导出为 PDF         | `Ctrl/Cmd+Shift+E`            |
+| 关闭标签           | `Ctrl/Cmd+W`                  |
+| 命令面板           | `Ctrl/Cmd+P`                  |
+| 文档内查找         | `Ctrl/Cmd+F`                  |
+| 切换侧边栏         | `Ctrl/Cmd+B`                  |
+| 切换大纲           | `Ctrl+Shift+L`                |
+| 切换源码模式       | `Ctrl/Cmd+/`                  |
+| 切换主题           | `Ctrl+Shift+T`                |
+| 循环标签           | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 
-## Install
+## 安装
 
-Download the latest installer from [**Releases**](https://github.com/BND-1/horseMD/releases):
+去 [**Releases 页面**](https://github.com/BND-1/horseMD/releases/latest) 下载最新版安装包。
 
-- **Windows** — `HorseMD Setup x.x.x.exe`. Builds are currently **unsigned**, so
-  SmartScreen may warn on first run: click **More info → Run anyway**.
-- **macOS** — `HorseMD-x.x.x.dmg` (Apple Silicon). Builds are **unsigned and not
-  notarized** yet, so Gatekeeper may say the app is damaged. Drag it to
-  Applications, then run once in Terminal:
+> ℹ️ 安装包目前**没有花钱买签名**，所以 Windows / macOS 第一次打开都会拦一下——**不是病毒、不是真的损坏**，按下面步骤放行即可。代码完全开源，可自行查看 / 构建。
 
-  ```bash
-  xattr -cr /Applications/HorseMD.app
-  ```
+### 🍎 macOS 安装（新手请按这个来）
 
-  and open it normally. (Signing & notarization are planned — see the [CHANGELOG](./CHANGELOG.md).)
+1. 确认你的芯片：左上角 **苹果菜单 →「关于本机」**，看到 **「Apple M1 / M2 / M3…」** 就是 Apple Silicon。下载 **`HorseMD-x.x.x-arm64.dmg`**。
+2. 双击下载好的 `.dmg`，把里面的 **HorseMD 图标拖到「应用程序」文件夹**。
+3. **第一次打开**（重要）：直接双击通常会提示 **「已损坏，无法打开」或「无法验证开发者」**——这是因为没签名，正常现象。任选一种方法放行：
 
-## Develop
+   - **方法 A（最简单，推荐）**：打开「访达 →『应用程序』」，找到 HorseMD，**按住 Control 键点它（或右键）→ 选「打开」**，在弹窗里再点一次 **「打开」**。之后就能像普通软件一样双击使用了。
+   - **方法 B（如果方法 A 仍提示「已损坏」）**：打开「**终端**」（在「启动台 → 其他 → 终端」，或 Spotlight 搜 `终端`），把下面这行**整段复制粘贴进去、按回车**：
+
+     ```bash
+     xattr -cr /Applications/HorseMD.app
+     ```
+
+     然后再回到「应用程序」双击 HorseMD 即可正常打开。
+
+> 这一步**每台电脑只需做一次**，以后更新版本一般也不用再弄。
+
+### 🪟 Windows 安装
+
+1. 下载 **`HorseMD-Setup-x.x.x.exe`**，双击运行。
+2. 若弹出蓝色的 **SmartScreen**「Windows 已保护你的电脑」，点 **「更多信息」→「仍要运行」**。
+3. 按提示安装（可以自己选安装目录），完成后从开始菜单或桌面打开。
+
+> 签名与公证在计划中 —— 见 [CHANGELOG](./CHANGELOG.md)。
+
+## 社群 & 支持
+
+用得顺手的话，欢迎来玩 🐎
+
+| 加群交流学习 | 请我喝杯咖啡 |
+| :---: | :---: |
+| <img src="./docs/community/wechat-group.jpg" width="240" alt="HorseMD 交流群"> | <img src="./docs/community/coffee.jpg" width="240" alt="请作者喝咖啡"> |
+| 微信扫码进群，一起交流 Markdown 写作、提需求、报 bug | 觉得好用就请作者喝杯咖啡，是持续更新的最大动力 ☕ |
+
+> 群二维码会定期失效更新；如果扫码过期，欢迎来 [Issues](https://github.com/BND-1/horseMD/issues) 留言或留意仓库里最新的二维码。
+
+## 开发
 
 ```bash
-npm install        # if Electron's binary download is blocked, set a mirror first:
+npm install        # 若 Electron 二进制下载被墙，先设镜像：
                    #   ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
-npm run dev        # hot-reload dev mode
-npm run build      # bundle main + preload + renderer into out/
-npm start          # run the built app
-npm run dist       # package for the host OS (Windows NSIS / macOS dmg+zip)
+npm run dev        # 热重载开发模式
+npm run build      # 构建 main + preload + renderer 到 out/
+npm start          # 运行构建产物
+npm run dist       # 按当前系统出包（Windows NSIS / macOS dmg+zip）
 ```
 
-Working in this repo with an AI agent? Start from [CLAUDE.md](./CLAUDE.md).
+用 AI 助手在本仓库里干活？从 [CLAUDE.md](./CLAUDE.md) 开始。
 
-## Tech
+## 技术栈
 
-Electron + Vite + React shell, with **Milkdown Crepe** (ProseMirror) as the
-editor engine. The shell — tabs, file tree, command palette, outline, theming,
-i18n — is custom. See [`docs/`](./docs/README.md) for architecture, feature
-implementation, and the bugs/decisions log.
+Electron + Vite + React 外壳，编辑器引擎用 **Milkdown Crepe**（基于 ProseMirror）。
+外壳（标签页、文件树、命令面板、大纲、主题、多语言）全部自研。架构、功能实现、
+踩坑与决策记录见 [`docs/`](./docs/README.md)。
 
-## Docs
+## 文档
 
-- [docs/architecture.md](./docs/architecture.md) — tech stack, process model, structure, data flow
-- [docs/features.md](./docs/features.md) — how each feature works (mapped to files)
-- [docs/implementation-notes.md](./docs/implementation-notes.md) — root causes of key bugs, design decisions
-- [docs/development.md](./docs/development.md) — develop, build, Windows/macOS packaging, CDP e2e tests
+- [docs/architecture.md](./docs/architecture.md) —— 技术栈、进程模型、目录结构、数据流
+- [docs/features.md](./docs/features.md) —— 每个功能的用法与实现（对应到文件）
+- [docs/implementation-notes.md](./docs/implementation-notes.md) —— 关键 bug 的根因与修法、设计决策
+- [docs/development.md](./docs/development.md) —— 开发、构建、Windows/macOS 打包、CDP 自动化测试
 
-## Contributing
+## 贡献
 
-Issues and PRs are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md). Found a
-security problem? Please report it privately via [SECURITY.md](./SECURITY.md).
+欢迎提 Issue 和 PR —— 见 [CONTRIBUTING.md](./CONTRIBUTING.md)。发现安全问题？
+请通过 [SECURITY.md](./SECURITY.md) 私下报告。
 
-## License
+## 许可证
 
 [MIT](./LICENSE) © 杨庭毅 ([yangsir.net](https://yangsir.net))
