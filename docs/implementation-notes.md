@@ -304,3 +304,33 @@ crepe.editor.config((ctx) => {
 根因：`crepe.create()` 完成后在**同一个回调**里先做了重活（`getMarkdown()` 整篇序列化 + `onChange` 触发大纲/字数重算），最后才 `setLoaded(true)`。React 把这一整段的状态更新批处理到结尾才重绘，所以"清骨架屏"的重绘被重活挡住了。
 
 修法：内容一进 DOM 就**用 `flushSync(() => setLoaded(true))` 同步移除骨架屏**（绕过批处理），再把序列化/`onChange` 推迟到下一帧。骨架屏阈值也从 `> 20000` 降到 `> 8000` 让反馈更早。
+
+## bug 17：代码块进入时默认高亮"当前行"
+
+CodeMirror 默认带 `highlightActiveLine`，进入代码块/打开时会给光标所在行(及打开时的第一行)画一条横向高亮带,显得多余。用 CSS 把 `.cm-activeLine` / `.cm-activeLineGutter` 背景设为透明,只留光标标示位置。
+
+## bug 18：浮动块级标记与拖拽手柄重叠
+
+跟随光标的 H1/H2/正文 浮动标记和 Crepe 的块级拖拽手柄(⠿,悬停出现)都在文本左侧的 gutter,会重叠。
+
+- 第一版改成"有手柄就藏标记" —— 但手柄一悬停就出现(鼠标常停在编辑区),导致标记几乎一直看不到,过头了。
+- 最终:**两个都显示、标记避让** —— 当手柄出现在光标所在行时,把标记的右边缘挪到手柄左侧(`badgeRight = min(默认, handle.left - 6)`),并加 `mousemove → scheduleLevel` 让标记随手柄出现而重定位。键盘编辑(无悬停)时标记照常显示。
+
+## bug 19：点击表格单元格出现刺眼的选中线框
+
+ProseMirror 默认 `.ProseMirror-selectednode { outline: 2px solid #8cf }`(生硬浅蓝方框),加上 Crepe 给选中单元格的强调色描边,点击表格时会出现一圈和主题违和的"线框"(Windows 上尤其明显)。
+
+- 表格:`.milkdown-table-block` 内的节点/单元格选中**一律不画 outline**(多格范围选择的柔和填充保留)。
+- 其他节点(图片、HTML 块):把 `.ProseMirror-selectednode` 从硬蓝 `#8cf` 换成**主题色柔光**(`--accent-soft`)。
+- 列宽拖拽手柄的硬编码蓝 `#adf` 也换成主题强调色。
+
+## 重构：从 App.jsx / Editor.jsx 拆出纯函数与叶子组件
+
+`App.jsx`(1598 行)、`Editor.jsx`(992 行)过大。按"纯函数 + 仅靠 props 的叶子组件"低风险原则拆分,**核心 `App()` / 编辑器主体保持不动**(状态/ref/effect 高度耦合,拆了易引 bug):
+
+- `find.js`(查找高亮)、`paths.js`(路径/文件名/版本/重文档判定/会话/genId)、`ui.js`(`fireToast` + `copyToClipboard`)。
+- `components/{Welcome,WindowControls,UpdateToast,RenameModal}.jsx`。
+- `components/editor-{html,images,copy}.js`(HTML 节点视图、图片路径、富文本复制)。
+- 顺带去重:路径/文件名/校验 helper、toast+剪贴板、会话写盘(收敛成一个 `flushSession`)。
+
+App.jsx 降到 ~1300、Editor.jsx ~836。冒烟测试 10/10 通过,行为不变。

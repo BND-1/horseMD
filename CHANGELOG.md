@@ -9,49 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.1.7] - 2026-06-10
 
 ### Added
-- **Split view** — show two documents side by side, both fully editable. Open a
-  tab into the right pane from its right-click menu ("Open in Split"), or toggle
-  with the split button in the top bar; close it with the ✕ on the right pane.
-  The two panes are independent editors (no re-mount when toggling), and Save /
-  Export act on whichever pane you're editing.
-- **Tab right-click menu** — copy the file path, copy the file name, reveal the
-  file in Finder/Explorer, open it in a split pane, close, or close others.
-- **Copy feedback** — the code-block "Copy" button now flashes a green ✓ and a
-  brief "Copied" toast, so the click clearly registers. (The button label is also
-  localized.)
-
-### Fixed
-- **Crash on launch from the recursive file watcher.** If the saved workspace was
-  a relative path (e.g. `"."`) or the filesystem root, the watcher recursed the
-  whole filesystem — under Finder/launchd the working directory is `/`, so `"."`
-  meant watching `/dev`, `/System/Volumes`, … — producing a flood of
-  `EACCES`/`EAGAIN`/`EBUSY` errors that aborted the app on startup. The watcher
-  now only watches absolute paths, skips the filesystem root and system/device
-  trees, doesn't follow symlinks, and swallows per-path errors; the renderer
-  ignores a non-absolute restored workspace; and a process-level guard keeps any
-  stray async error from taking the app down.
-- **Unsaved scratch / new tabs now survive a restart.** Untitled tabs with edits
-  were silently lost when HorseMD closed; they're now persisted and restored on
-  the next launch (saved files are still reopened from disk).
-- **Code-block text selection is readable on the light themes.** Selecting text
-  inside a code block previously rendered near-black-on-black; it now uses the
-  soft accent highlight with legible syntax colors.
-- **Typing lag in large / unsaved documents.** Session state was re-serialized
-  and written to disk on every keystroke; it's now debounced (and flushed on
-  close), so editing big documents stays smooth.
-
-### Added (more)
-- **Resizable split** — drag the divider between the two panes to change their
-  ratio.
-- **Unified right-click menus.** The tab menu and the sidebar file menu now offer
-  the same file actions — Copy Path, Copy Name, Reveal, Open in Split, Rename,
-  Duplicate, Export as PDF, Delete — so you get the same options wherever you
-  right-click a file.
+- **Split view** — two documents side by side, both fully editable. Open a tab
+  into the right pane from its (or a file-tree row's) right-click menu, or toggle
+  with the split button in the top bar. **Drag the divider** to resize; **click a
+  pane, then a tab** to switch that pane's file (the focused pane is shown by its
+  tab underline). The two panes are independent editors that never re-mount, and
+  Save / Export act on whichever pane you're editing.
+- **Unified right-click menus** — the tab menu and the sidebar file-tree menu now
+  offer the same file actions: Copy Path, Copy Name, Reveal in Finder/Explorer,
+  Open in Split, Rename, Duplicate, Export as PDF, Delete (plus Close / Close
+  Others on tabs; New File / New Folder in the tree).
+- **Copy feedback** — the code-block "Copy" button flashes a green ✓ and shows a
+  brief "Copied" toast; its label is localized.
+- **Heavy documents open instantly** — a Markdown file that would freeze the rich
+  editor (a huge run of lines with no blank-line breaks, or > ~400 KB) opens in
+  the fast plain-text editor, with a one-click **"Render as rich text"** to load
+  the WYSIWYG view on demand.
 
 ### Changed
 - **Windows installer: the install location is now selectable**, and uninstalling
-  (or updating) only removes the files HorseMD shipped — any files you saved
+  *or updating* only removes the files HorseMD shipped — any files you saved
   inside the install folder are left untouched.
+- **Cleaner split UI** — a 1px hairline divider, a single faint ✕ (hover-tooltip)
+  to close the split, and the focused pane marked by its tab's accent underline
+  (the other pane's tab stays subtly underlined).
+
+### Fixed
+- **Crash on launch from the recursive file watcher.** A saved workspace that was
+  a relative path (e.g. `"."`) or the filesystem root made the watcher recurse the
+  whole filesystem — under Finder/launchd the CWD is `/`, so `"."` meant watching
+  `/dev`, `/System/Volumes`, … — a flood of `EACCES`/`EAGAIN`/`EBUSY` that aborted
+  the app on startup (often seen as an instant crash / black window). The watcher
+  now only watches absolute paths, skips the root and system/device trees, doesn't
+  follow symlinks, and swallows per-path errors; the renderer ignores a
+  non-absolute restored workspace; launch args resolve to absolute (the app's own
+  directory is never opened); and a process-level guard catches stray async errors.
+- **Tab-menu "Rename" did nothing** — it used `window.prompt`, which Electron
+  doesn't support; it now opens a small inline rename dialog.
+- **Unsaved scratch / new tabs survive a restart** — untitled tabs with edits were
+  silently lost on close; they're now persisted and restored (saved files are
+  still reopened from disk).
+- **Light-theme code-block selection was unreadable** (near-black-on-black); it now
+  uses the soft accent highlight with legible syntax colors.
+- **Code blocks no longer highlight the "active line"** on entry/first line — the
+  caret alone marks the position.
+- **The floating block badge (H1/H2/Text) no longer overlaps the block drag-handle**
+  — it tucks to the handle's left so both stay visible.
+- **Clicking a table cell no longer shows an out-of-place selection wireframe** — the
+  hard blue node/cell outline is removed for tables (the soft cell-range fill stays);
+  elsewhere the selected-node ring is a subtle theme accent.
+- **Loading skeleton no longer overlaps already-rendered content** (it's cleared
+  synchronously the moment content renders, before the heavy post-processing).
+- **Typing lag in large / unsaved documents** — session state is no longer
+  re-serialized to disk on every keystroke (debounced, flushed on close).
+- Main-process update check uses Electron's `net.fetch` (Chromium stack) instead of
+  Node's `fetch`, avoiding a c-ares abort on some unsigned-app launches.
+
+### Internal
+- Refactored `App.jsx` (1598 → ~1300) and `Editor.jsx` (992 → ~836): extracted pure
+  helpers and leaf components (`find.js`, `paths.js`, `ui.js`,
+  `components/{Welcome,WindowControls,UpdateToast,RenameModal}.jsx`,
+  `components/editor-{html,images,copy}.js`) and deduplicated shared helpers. No
+  behavior change.
 
 ## [0.1.6] - 2026-06-09
 
