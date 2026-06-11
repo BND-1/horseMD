@@ -14,6 +14,7 @@ import WindowControls from './components/WindowControls.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import RenameModal from './components/RenameModal.jsx'
 import { fireToast, HM_TOAST_EVENT } from './ui.js'
+import { DEFAULT_PAGE_WIDTH, normalizePageWidth } from './page-width.js'
 import logoUrl from './assets/logo.png'
 import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
 import {
@@ -33,6 +34,7 @@ export default function App() {
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
   const [theme, setTheme] = useState(session.theme || DEFAULT_THEME)
   const [lang, setLang] = useState(session.lang || DEFAULT_LANG)
+  const [pageWidth, setPageWidth] = useState(normalizePageWidth(session.pageWidth || DEFAULT_PAGE_WIDTH))
   const [recents, setRecents] = useState(session.recents || [])
   const [sourceMode, setSourceMode] = useState(false)
   // Live mirror of sourceMode for ref-based reads inside stable callbacks.
@@ -810,6 +812,7 @@ export default function App() {
       workspace,
       theme,
       lang,
+      pageWidth,
       recents,
       sidebarOpen,
       sidebarMode,
@@ -831,7 +834,7 @@ export default function App() {
     // for a brief pause, then write once. The close path flushes the last edit.
     const id = setTimeout(flushSession, 400)
     return () => clearTimeout(id)
-  }, [workspace, theme, lang, recents, sidebarOpen, sidebarMode, tabs, activePath, flushSession])
+  }, [workspace, theme, lang, pageWidth, recents, sidebarOpen, sidebarMode, tabs, activePath, flushSession])
 
   // Flush the pending session snapshot immediately when the window is closing,
   // so the debounce above never drops the user's last few keystrokes.
@@ -990,7 +993,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}`}>
+    <div className={`app page-width-${pageWidth}${platformClass}`}>
       <div className="activity-bar">
         <button
           className={`activity-item activity-home${home ? ' active' : ''}`}
@@ -1139,6 +1142,7 @@ export default function App() {
               const isFocusedPane = split && ((isRight && focusedPane === 'right') || (isLeft && focusedPane === 'left'))
               const paneClass =
                 (isRight ? ' hm-pane-right' : isLeft ? ' hm-pane-left' : '') + (isFocusedPane ? ' hm-focused' : '')
+              const widthClass = ` page-width-${pageWidth}`
               const onPaneFocus = () => {
                 focusedTabRef.current = tab.id
                 if (split) setFocusedPane(isRight ? 'right' : 'left')
@@ -1159,7 +1163,7 @@ export default function App() {
                   <textarea
                     key={tab.id}
                     ref={isLeft ? sourceRef : undefined}
-                    className={`source-editor${paneClass}`}
+                    className={`source-editor${paneClass}${widthClass}`}
                     value={tab.content}
                     spellCheck={false}
                     style={{ order, flex: paneFlex }}
@@ -1179,7 +1183,7 @@ export default function App() {
                   // Crepe editor with the new content (the create effect only
                   // runs on mount). tab switches keep the same key → stay mounted.
                   key={`${tab.id}:${tab.reloadNonce}`}
-                  className={`editor-scroll${paneClass}`}
+                  className={`editor-scroll${paneClass}${widthClass}`}
                   ref={isLeft && !sourceMode ? editorHostRef : undefined}
                   style={{ display: inView ? undefined : 'none', order, flex: paneFlex }}
                   onFocusCapture={onPaneFocus}
@@ -1249,6 +1253,8 @@ export default function App() {
         cycleTheme={cycleTheme}
         lang={lang}
         setLang={setLang}
+        pageWidth={pageWidth}
+        setPageWidth={setPageWidth}
         sourceMode={sourceMode}
         onToggleSource={toggleSource}
         activeBlock={activeBlock}

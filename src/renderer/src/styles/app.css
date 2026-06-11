@@ -1145,6 +1145,8 @@ body.hm-col-resizing * {
 }
 
 .editor-scroll {
+  --hm-doc-content-width: 800px;
+  --hm-doc-side-pad: 60px;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -1153,6 +1155,16 @@ body.hm-col-resizing * {
      Outline/find jumps pass `behavior: 'smooth'` explicitly when wanted. */
   overflow-anchor: none;
   position: relative; /* containing block for the loading skeleton */
+}
+.editor-scroll.page-width-wide,
+.source-editor.page-width-wide {
+  --hm-doc-content-width: 1040px;
+  --hm-doc-side-pad: 56px;
+}
+.editor-scroll.page-width-full,
+.source-editor.page-width-full {
+  --hm-doc-content-width: 100%;
+  --hm-doc-side-pad: 40px;
 }
 
 /* Loading skeleton: pulsing gray placeholder bars while a (large) document is
@@ -1163,9 +1175,10 @@ body.hm-col-resizing * {
   top: 0;
   left: 0;
   right: 0;
-  max-width: 800px;
+  width: min(100%, calc(var(--hm-doc-content-width) + (var(--hm-doc-side-pad) * 2)));
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 24px 60px;
+  padding: 24px var(--hm-doc-side-pad);
   pointer-events: none;
   animation: hmSkelFade 0.15s var(--ease-out) both;
 }
@@ -1191,9 +1204,10 @@ body.hm-col-resizing * {
   50% { opacity: 0.9; }
 }
 .editor-host {
-  max-width: 800px;
+  width: min(100%, calc(var(--hm-doc-content-width) + (var(--hm-doc-side-pad) * 2)));
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 16px 60px 60vh;
+  padding: 16px var(--hm-doc-side-pad) 60vh;
 }
 .milkdown { background: transparent !important; }
 .milkdown .ProseMirror { padding: 0 !important; }
@@ -1459,6 +1473,8 @@ body.hm-col-resizing * {
 }
 
 .source-editor {
+  --hm-doc-content-width: 800px;
+  --hm-doc-side-pad: 60px;
   flex: 1;
   width: 100%;
   min-width: 0;
@@ -1470,7 +1486,7 @@ body.hm-col-resizing * {
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.75;
-  padding: 40px max(60px, calc((100% - 800px) / 2)) 60vh;
+  padding: 40px max(var(--hm-doc-side-pad), calc((100% - var(--hm-doc-content-width)) / 2)) 60vh;
   user-select: text;
 }
 
