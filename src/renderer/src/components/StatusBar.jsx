@@ -4,6 +4,7 @@ import { BLOCK_TYPES, blockById, labelForBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { THEMES, themeById } from '../themes.js'
 import { LANGS } from '../i18n.jsx'
+import { PAGE_WIDTHS } from '../page-width.js'
 
 function stats(md) {
   const text = (md || '')
@@ -124,12 +125,43 @@ function LangSwitch({ lang, setLang }) {
   )
 }
 
+function PageWidthPicker({ pageWidth, setPageWidth }) {
+  const { t } = useI18n()
+  const { open, setOpen, ref } = usePopover()
+  return (
+    <div className="block-switch" ref={ref}>
+      <button className="status-btn" onClick={() => setOpen((v) => !v)} title={t('tip.pageWidth')}>
+        <Icon name="columns" size={14} /> {t('pageWidth.' + pageWidth)}
+        <span className="block-switch-caret">▾</span>
+      </button>
+      {open && (
+        <div className="block-switch-menu">
+          {PAGE_WIDTHS.map((item) => (
+            <button
+              key={item.id}
+              className={`block-menu-item${item.id === pageWidth ? ' active' : ''}`}
+              onClick={() => {
+                setPageWidth(item.id)
+                setOpen(false)
+              }}
+            >
+              <span className="block-menu-name">{t('pageWidth.' + item.id)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function StatusBar({
   tab,
   theme,
   setTheme,
   lang,
   setLang,
+  pageWidth,
+  setPageWidth,
   sourceMode,
   onToggleSource,
   activeBlock,
@@ -166,6 +198,7 @@ export default function StatusBar({
         <button className="status-btn" onClick={onToggleSource} title={t('tip.toggleSource')}>
           <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
         </button>
+        <PageWidthPicker pageWidth={pageWidth} setPageWidth={setPageWidth} />
         <ThemePicker theme={theme} setTheme={setTheme} />
         <LangSwitch lang={lang} setLang={setLang} />
         <button
