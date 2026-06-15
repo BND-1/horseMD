@@ -1057,7 +1057,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}`}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}`}>
       <div className="activity-bar">
         <button
           className={`activity-item activity-home${home ? ' active' : ''}`}
@@ -1091,6 +1091,15 @@ export default function App() {
       </div>
 
       <div className="topbar">
+        {isMobile && (
+          <button
+            className="icon-btn drag-no hm-menu-btn"
+            title={t('cmd.files')}
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
+            <Icon name="menu" size={20} />
+          </button>
+        )}
         <Tabs
           tabs={tabs}
           activeId={home ? null : activeId}
@@ -1139,6 +1148,10 @@ export default function App() {
         </button>
         {window.api.platform === 'win32' && <WindowControls t={t} />}
       </div>
+
+      {isMobile && sidebarOpen && (
+        <div className="hm-scrim" onClick={() => setSidebarOpen(false)} />
+      )}
 
       <div className="body">
         <aside className={`pane-left${sidebarOpen ? '' : ' collapsed'}`}>

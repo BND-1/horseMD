@@ -28,6 +28,7 @@ const paths = {
   save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8',
   command: 'M18 3a3 3 0 0 0-3 3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3',
   heading: 'M6 4v16 M18 4v16 M6 12h12',
+  menu: 'M3 6h18 M3 12h18 M3 18h18',
   settings: 'M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6',
   width: 'M4 5v14 M20 5v14 M8 12h8 M10 9l-3 3 3 3 M14 9l3 3-3 3',
   image:

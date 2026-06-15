@@ -2686,24 +2686,29 @@ body.dark .milkdown {
 /* =====================================================
    Mobile (Capacitor: iOS / Android)
    Every rule here is scoped under .app.is-mobile, so the desktop layout is
-   completely untouched. Goals: fit a phone screen (full-width editor, no 800px
-   page cap), respect the notch / home indicator (safe-area insets), turn the
-   sidebar into an overlay drawer instead of squashing the editor, and give
-   touch-sized hit targets.
+   completely untouched. On a phone there is NO permanent left rail (it would
+   steal width and feel cramped next to text): the editor is edge-to-edge, and
+   the activity rail + file/outline sidebar slide in together as one drawer,
+   opened by the top-bar ☰ button and closed by the scrim or the rail's button.
    ===================================================== */
 
-/* Push the whole app inside the safe area (notch, home indicator, landscape
-   ears). box-sizing:border-box (global) keeps the grid at height:100%. */
 .app.is-mobile {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  position: relative; /* anchor the slide-in drawer + scrim overlays */
+  --activity-bar-w: 0; /* collapse the grid's left column so content is full width */
+  /* Grow the top/bottom bars into the safe area (notch / home indicator) rather
+     than padding the whole app, which would offset the absolute drawer. */
+  grid-template-rows:
+    calc(var(--topbar-h) + env(safe-area-inset-top))
+    1fr
+    calc(var(--status-h) + env(safe-area-inset-bottom));
 }
+.app.is-mobile .topbar { padding-top: env(safe-area-inset-top); }
+.app.is-mobile .statusbar { padding-bottom: env(safe-area-inset-bottom); }
 
-/* Touch-friendly hit targets in the bars. */
-.app.is-mobile .activity-item { width: 46px; height: 46px; }
+/* Touch-friendly hit targets. */
+.app.is-mobile .activity-item { width: 48px; height: 48px; }
 .app.is-mobile .icon-btn { width: 40px; height: 40px; }
+.app.is-mobile .hm-menu-btn { margin-right: 2px; }
 
 /* Editor fills the screen — ignore the desktop 800px page-width preset and the
    wide horizontal gutters. !important overrides the inline --editor-max-width
@@ -2720,25 +2725,57 @@ body.dark .milkdown {
   padding-right: 18px !important;
 }
 
-/* Sidebar becomes an overlay drawer that floats above the editor (which stays
-   full-width underneath) instead of a flex sibling that squashes it. The big
-   spread box-shadow doubles as a dimming backdrop with zero extra markup. */
-.app.is-mobile .body { position: relative; }
-.app.is-mobile .pane-left {
+/* ---- Slide-in drawer: activity rail + sidebar panel ---- */
+/* Both are positioned against .app and hidden off-screen by default. */
+.app.is-mobile .activity-bar {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: min(80vw, 320px);
-  max-width: min(80vw, 320px);
-  z-index: 30;
-  box-shadow: 0 0 0 100vw rgba(0, 0, 0, 0.3), 2px 0 18px rgba(0, 0, 0, 0.2);
+  width: 56px;
+  padding-top: calc(env(safe-area-inset-top) + 10px);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
+  transform: translateX(-100%);
+  transition: transform 0.25s var(--ease-out);
+  z-index: 42;
 }
-/* Closed: slide fully out and drop the backdrop. */
+.app.is-mobile .pane-left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 56px;
+  width: min(76vw, 300px);
+  max-width: min(76vw, 300px);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  transform: translateX(calc(-100% - 56px));
+  transition: transform 0.25s var(--ease-out);
+  z-index: 41;
+  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.2);
+}
+/* Keep the panel a real drawer even when the desktop .collapsed class is on it
+   (visibility is driven by the transform below, not width/opacity). */
 .app.is-mobile .pane-left.collapsed {
-  width: 0;
-  max-width: 0;
-  box-shadow: none;
+  width: min(76vw, 300px);
+  max-width: min(76vw, 300px);
+  opacity: 1;
+  pointer-events: auto;
+  border-right: 1px solid var(--border-soft);
+}
+.app.is-mobile.drawer-open .activity-bar { transform: translateX(0); }
+.app.is-mobile.drawer-open .pane-left { transform: translateX(0); }
+
+/* Dim scrim behind the drawer; tap anywhere outside to close. */
+.app.is-mobile .hm-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.38);
+  animation: hmScrimFade 0.2s var(--ease-out);
+}
+@keyframes hmScrimFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Hide controls that don't apply on a phone: the page-width preset (the editor
