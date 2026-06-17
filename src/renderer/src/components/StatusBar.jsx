@@ -268,7 +268,6 @@ function LangSwitch({ lang, setLang }) {
 // the bottom bar on a phone — word counts, source toggle, theme, language,
 // GitHub — so the bar itself stays to just the block type + this one button.
 function MobileMore({
-  s,
   dirty,
   onSave,
   sourceMode,
@@ -308,10 +307,6 @@ function MobileMore({
             {dirty && <span className="hm-sheet-save-dot" />}
           </button>
           <div className="theme-menu-sep" />
-          <div className="hm-sheet-counts">
-            {t('status.words', { n: s.words })} · {t('status.chars', { n: s.chars })} ·{' '}
-            {t('status.read', { n: s.readMin })}
-          </div>
           <button
             className="block-menu-item"
             onClick={() => {
@@ -405,9 +400,13 @@ export default function StatusBar({
       <div className="status-left">
         {tab ? (
           isMobile ? (
-            <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>
-              {dirty ? '● ' + t('status.modified') : '✓ ' + t('status.saved')}
-            </span>
+            <>
+              <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>{dirty ? '●' : '✓'}</span>
+              <span className="status-counts">
+                {t('status.words', { n: s.words })} · {t('status.chars', { n: s.chars })} ·{' '}
+                {t('status.read', { n: s.readMin })}
+              </span>
+            </>
           ) : (
             <>
               <span className="status-path" title={tab.path || t('status.unsaved')}>
@@ -427,7 +426,6 @@ export default function StatusBar({
         {isMobile ? (
           tab && (
             <MobileMore
-              s={s}
               dirty={dirty}
               onSave={onSave}
               sourceMode={sourceMode}
