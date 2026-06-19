@@ -2761,7 +2761,12 @@ body.dark .milkdown {
    and the hm-full-width body class alike. */
 .app.is-mobile .editor-host,
 .app.is-mobile .editor-skeleton {
-  max-width: none !important;
+  /* A reading width, centered: on a phone the column is narrower than this so it
+     stays effectively full-width; on a tablet/large screen it caps the line
+     length for comfortable reading instead of bleeding edge-to-edge. */
+  max-width: 760px !important;
+  margin-left: auto;
+  margin-right: auto;
   padding-left: 18px !important;
   padding-right: 18px !important;
 }
