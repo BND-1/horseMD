@@ -44,7 +44,7 @@
     "@capacitor/cli": "^8.4.0",
     "@capacitor/ios": "^8.4.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^34.0.0",
+    "electron": "^34.5.8",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
     "react": "^18.3.1",

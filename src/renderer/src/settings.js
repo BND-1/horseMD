@@ -40,7 +40,14 @@ export const DEFAULT_SETTINGS = {
   // (a local object URL). When set, it's run like Typora's "custom command":
   // the image file path is appended as an argument and the command prints the
   // resulting URL to stdout.
-  imageUploadCommand: ''
+  imageUploadCommand: '',
+  aiProvider: 'openai',
+  aiOpenaiApiKey: '',
+  aiOpenaiBaseUrl: '',
+  aiOpenaiModel: 'gpt-4o-mini',
+  aiDeepseekApiKey: '',
+  aiDeepseekBaseUrl: 'https://api.deepseek.com/v1',
+  aiDeepseekModel: 'deepseek-chat'
 }
 
 function normalizeWidth(w) {
@@ -63,7 +70,24 @@ export function loadSettings() {
       pageWidth: normalizeWidth(raw.pageWidth ?? DEFAULT_PAGE_WIDTH),
       fontSize: normalizeFontSize(raw.fontSize ?? DEFAULT_FONT_SIZE),
       imageUploadCommand:
-        typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : ''
+        typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
+      aiProvider: raw.aiProvider === 'deepseek' ? 'deepseek' : 'openai',
+      aiOpenaiApiKey: typeof raw.aiOpenaiApiKey === 'string' ? raw.aiOpenaiApiKey : raw.aiApiKey || '',
+      aiOpenaiBaseUrl:
+        typeof raw.aiOpenaiBaseUrl === 'string' ? raw.aiOpenaiBaseUrl : raw.aiBaseUrl || '',
+      aiOpenaiModel:
+        typeof raw.aiOpenaiModel === 'string' && raw.aiOpenaiModel.trim()
+          ? raw.aiOpenaiModel
+          : raw.aiModel || DEFAULT_SETTINGS.aiOpenaiModel,
+      aiDeepseekApiKey: typeof raw.aiDeepseekApiKey === 'string' ? raw.aiDeepseekApiKey : '',
+      aiDeepseekBaseUrl:
+        typeof raw.aiDeepseekBaseUrl === 'string' && raw.aiDeepseekBaseUrl.trim()
+          ? raw.aiDeepseekBaseUrl
+          : DEFAULT_SETTINGS.aiDeepseekBaseUrl,
+      aiDeepseekModel:
+        typeof raw.aiDeepseekModel === 'string' && raw.aiDeepseekModel.trim()
+          ? raw.aiDeepseekModel
+          : DEFAULT_SETTINGS.aiDeepseekModel
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

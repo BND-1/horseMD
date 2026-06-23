@@ -14,6 +14,7 @@ import WindowControls from './components/WindowControls.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import RenameModal from './components/RenameModal.jsx'
 import ImageHostButton from './components/ImageHostButton.jsx'
+import AiPanel from './components/AiPanel.jsx'
 import { loadSettings, saveSettings, applyPageWidth, applyFontSize } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
 import { fireToast, HM_TOAST_EVENT } from './ui.js'
@@ -51,6 +52,7 @@ export default function App() {
   const sourceModeRef = useRef(sourceMode)
   sourceModeRef.current = sourceMode
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   // "Home" shows the welcome/landing page while keeping open tabs mounted (so
   // returning to a document doesn't re-create its editor). Cleared whenever a
   // tab is activated or a file is opened.
@@ -90,6 +92,10 @@ export default function App() {
   const editorHostRef = useRef(null) // active rich editor's scroll container
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const sourceRef = useRef(null) // active source-mode <textarea>
+  const sourceGhostRef = useRef(null) // visual copy of the last selection while textarea is blurred
+  const sourceSelectionRef = useRef(null) // last non-empty source selection, survives focus moving to AI
+  const [sourceFocused, setSourceFocused] = useState(false)
+  const [sourceSelectionTick, setSourceSelectionTick] = useState(0)
   const scrollRatioRef = useRef(null) // pending scroll position to restore across a mode switch
   const findInputRef = useRef(null)
   // Registry of each tab's editor API (by tab id). Several markdown editors can
@@ -393,6 +399,43 @@ export default function App() {
         }
         return { ...t, content: md }
       })
+    )
+  }, [])
+
+  const getAiSelection = useCallback(() => {
+    const tab = tabsRef.current.find((t) => t.id === activeIdRef.current)
+    const el = sourceRef.current
+    if (!tab || !el) return null
+    if (el.selectionStart !== el.selectionEnd) {
+      sourceSelectionRef.current = { tabId: tab.id, start: el.selectionStart, end: el.selectionEnd, text: el.value.slice(el.selectionStart, el.selectionEnd) }
+    }
+    return sourceSelectionRef.current?.tabId === tab.id ? sourceSelectionRef.current : null
+  }, [])
+
+  const rememberSourceSelection = useCallback((tabId, el) => {
+    if (!el || el.selectionStart === el.selectionEnd) return
+    const next = { tabId, start: el.selectionStart, end: el.selectionEnd, text: el.value.slice(el.selectionStart, el.selectionEnd) }
+    const prev = sourceSelectionRef.current
+    sourceSelectionRef.current = next
+    if (!prev || prev.tabId !== next.tabId || prev.start !== next.start || prev.end !== next.end || prev.text !== next.text) {
+      setSourceSelectionTick((n) => n + 1)
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!sourceGhostRef.current || !sourceRef.current) return
+    sourceGhostRef.current.scrollTop = sourceRef.current.scrollTop
+    sourceGhostRef.current.scrollLeft = sourceRef.current.scrollLeft
+  }, [sourceFocused, sourceSelectionTick, activeId])
+
+  const applyAiText = useCallback((selection, text) => {
+    const tab = tabsRef.current.find((t) => t.id === activeIdRef.current)
+    if (!tab || !selection || selection.tabId !== tab.id || !text) return
+    const next = (tab.content || '').slice(0, selection.start) + text + (tab.content || '').slice(selection.end)
+    sourceSelectionRef.current = { tabId: tab.id, start: selection.start, end: selection.start + text.length, text }
+    setSourceSelectionTick((n) => n + 1)
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tab.id ? { ...t, content: next, reloadNonce: t.reloadNonce + 1 } : t))
     )
   }, [])
 
@@ -1277,6 +1320,15 @@ export default function App() {
         <button className="icon-btn drag-no" title="Command palette (Ctrl+P)" onClick={() => setPaletteOpen(true)}>
           <Icon name="command" size={16} />
         </button>
+        {!isMobile && (
+          <button
+            className={`icon-btn drag-no${aiOpen ? ' on' : ''}`}
+            title={t('ai.title')}
+            onClick={() => setAiOpen((v) => !v)}
+          >
+            <Icon name="sparkle" size={16} />
+          </button>
+        )}
         {window.api.platform === 'win32' && <WindowControls t={t} />}
       </div>
 
@@ -1375,18 +1427,47 @@ export default function App() {
               const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLeft)
               if (usesTextarea) {
                 if (!inView) return null
+                const selection = sourceSelectionRef.current?.tabId === tab.id ? sourceSelectionRef.current : null
+                const showGhostSelection = isLeft && !sourceFocused && selection?.text
                 return (
-                  <textarea
+                  <div
                     key={tab.id}
-                    ref={isLeft ? sourceRef : undefined}
-                    className={`source-editor${paneClass}`}
-                    value={tab.content}
-                    spellCheck={false}
+                    className={`source-wrap${paneClass}`}
                     style={{ order, flex: paneFlex }}
-                    onFocus={onPaneFocus}
-                    onMouseDown={onPaneFocus}
-                    onChange={(e) => updateContent(tab.id, e.target.value, false)}
-                  />
+                  >
+                    {showGhostSelection && (
+                      <pre
+                        ref={sourceGhostRef}
+                        className="source-selection-ghost"
+                        aria-hidden="true"
+                      >{tab.content.slice(0, selection.start)}<mark>{selection.text}</mark>{tab.content.slice(selection.end)}</pre>
+                    )}
+                    <textarea
+                      ref={isLeft ? sourceRef : undefined}
+                      className="source-editor"
+                      value={tab.content}
+                      spellCheck={false}
+                      onFocus={(e) => {
+                        setSourceFocused(true)
+                        onPaneFocus()
+                      }}
+                      onBlur={() => setSourceFocused(false)}
+                      onMouseDown={onPaneFocus}
+                      onMouseUp={(e) => rememberSourceSelection(tab.id, e.currentTarget)}
+                      onKeyUp={(e) => rememberSourceSelection(tab.id, e.currentTarget)}
+                      onSelect={(e) => rememberSourceSelection(tab.id, e.currentTarget)}
+                      onScroll={(e) => {
+                        if (sourceGhostRef.current) {
+                          sourceGhostRef.current.scrollTop = e.currentTarget.scrollTop
+                          sourceGhostRef.current.scrollLeft = e.currentTarget.scrollLeft
+                        }
+                      }}
+                      onChange={(e) => {
+                        rememberSourceSelection(tab.id, e.currentTarget)
+                        updateContent(tab.id, e.target.value, false)
+                      }}
+                    />
+                  </div>
                 )
               }
               // Lazy mount: don't create a Crepe editor for a tab the user hasn't
@@ -1461,6 +1542,17 @@ export default function App() {
             />
           )}
         </main>
+        {!isMobile && aiOpen && (
+          <AiPanel
+            t={t}
+            tab={home ? null : activeTab}
+            settings={settings}
+            onChangeSettings={updateSettings}
+            getSelection={getAiSelection}
+            onApply={applyAiText}
+            onClose={() => setAiOpen(false)}
+          />
+        )}
       </div>
 
       <StatusBar

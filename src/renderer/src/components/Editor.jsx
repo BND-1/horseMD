@@ -209,7 +209,34 @@ export default function Editor({
         // Localize the code-block "Copy" button label. (Visual feedback on click
         // is added via a delegated handler below + CSS, since Crepe gives no
         // built-in "Copied!" state.)
-        [CrepeFeature.CodeMirror]: { copyText: t('code.copy') }
+        [CrepeFeature.CodeMirror]: { copyText: t('code.copy') },
+        [CrepeFeature.BlockEdit]: {
+          textGroup: {
+            label: '文本',
+            text: { label: '正文' },
+            h1: { label: '一级标题' },
+            h2: { label: '二级标题' },
+            h3: { label: '三级标题' },
+            h4: { label: '四级标题' },
+            h5: { label: '五级标题' },
+            h6: { label: '六级标题' },
+            quote: { label: '引用' },
+            divider: { label: '分割线' }
+          },
+          listGroup: {
+            label: '列表',
+            bulletList: { label: '无序列表' },
+            orderedList: { label: '有序列表' },
+            taskList: { label: '任务列表' }
+          },
+          advancedGroup: {
+            label: '高级',
+            image: { label: '图片' },
+            codeBlock: { label: '代码块' },
+            table: { label: '表格' },
+            math: { label: '公式' }
+          }
+        }
       }
     })
 

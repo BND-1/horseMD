@@ -806,6 +806,70 @@ ipcMain.on('app:cancel-close', () => {
   isQuitting = false
 })
 
+// ----------------------------- AI chat -------------------------------------
+// OpenAI-compatible chat endpoint. The renderer owns UI/settings; main owns the
+// network call so API keys do not get exposed to third-party page contexts.
+async function aiFetch(endpoint, options) {
+  try {
+    return await net.fetch(endpoint, options)
+  } catch (err) {
+    if (!String(err?.message || err).includes('ERR_SSL_CLIENT_AUTH_CERT_NEEDED')) throw err
+    return fetch(endpoint, options)
+  }
+}
+
+ipcMain.handle('ai:chat', async (_e, { apiKey, baseUrl, model, messages }) => {
+  try {
+    if (!apiKey || !model) return { ok: false, error: 'Missing API key or model' }
+    const root = String(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
+    const endpoint = root.endsWith('/chat/completions')
+      ? root
+      : root.endsWith('/models')
+        ? root.replace(/\/models$/, '/chat/completions')
+        : `${root}/chat/completions`
+    const res = await aiFetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.2
+      })
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error?.message || `HTTP ${res.status}` }
+    return { ok: true, text: data?.choices?.[0]?.message?.content || '' }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) }
+  }
+})
+
+ipcMain.handle('ai:models', async (_e, { apiKey, baseUrl }) => {
+  try {
+    if (!apiKey || !baseUrl) return { ok: false, error: 'Missing API key or base URL' }
+    const root = String(baseUrl).replace(/\/+$/, '')
+    const endpoint = root.endsWith('/models')
+      ? root
+      : root.endsWith('/chat/completions')
+        ? root.replace(/\/chat\/completions$/, '/models')
+        : `${root}/models`
+    const res = await aiFetch(endpoint, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error?.message || `HTTP ${res.status}` }
+    const models = Array.isArray(data?.data)
+      ? data.data.map((m) => m?.id).filter(Boolean)
+      : []
+    return { ok: true, models }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) }
+  }
+})
+
 // ----------------------------- update check --------------------------------
 // Notify-only update check: ask GitHub for the latest *published* release
 // (drafts/prereleases are excluded by this endpoint) and report its version so

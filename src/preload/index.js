@@ -67,6 +67,10 @@ const api = {
   // update check (notify-only)
   checkUpdate: () => ipcRenderer.invoke('update:check'),
 
+  // AI chat (OpenAI-compatible endpoints)
+  aiChat: (payload) => ipcRenderer.invoke('ai:chat', payload),
+  aiModels: (payload) => ipcRenderer.invoke('ai:models', payload),
+
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.
   confirmAppClose: () => ipcRenderer.send('app:confirm-close'),

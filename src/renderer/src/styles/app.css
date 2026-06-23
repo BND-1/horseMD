@@ -1159,6 +1159,335 @@ button:focus-visible,
   position: relative;
 }
 
+.ai-panel {
+  flex: 0 0 360px;
+  width: 360px;
+  min-width: 320px;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-soft);
+  min-height: 0;
+}
+.ai-head {
+  height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ai-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-title > div {
+  display: grid;
+  gap: 2px;
+}
+.ai-provider-line {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.ai-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ai-settings {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ai-settings input,
+.ai-compose textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.ai-settings input {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.ai-settings input:focus,
+.ai-compose textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.ai-settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ai-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ai-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.ai-mode-tabs button {
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-mode-tabs button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+.ai-msg {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  word-break: break-word;
+}
+.ai-msg.user {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border-soft));
+}
+.ai-msg-role {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.ai-msg-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.ai-msg.user .ai-msg-body {
+  white-space: pre-wrap;
+}
+.ai-msg-body p,
+.ai-msg-body ul,
+.ai-msg-body blockquote,
+.ai-msg-body pre {
+  margin: 0 0 8px;
+}
+.ai-msg-body > :last-child {
+  margin-bottom: 0;
+}
+.ai-msg-body ul {
+  padding-left: 18px;
+}
+.ai-msg-body blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.ai-msg-body pre {
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+}
+.ai-msg-body code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.ai-msg-body :not(pre) > code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+.ai-md-h {
+  margin: 10px 0 6px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.ai-md-h1 { font-size: 16px; }
+.ai-md-h2 { font-size: 15px; }
+.ai-md-h3 { font-size: 14px; }
+.ai-busy {
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-compose {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.ai-compose textarea {
+  min-height: 72px;
+  max-height: 160px;
+  resize: vertical;
+  padding: 9px 44px 9px 9px;
+  font-size: 13px;
+}
+.ai-compose .ai-send {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: white;
+  padding: 0;
+}
+.ai-compose .ai-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ai-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+.ai-modal {
+  width: min(520px, calc(100vw - 32px));
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.ai-modal-head {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.ai-provider-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+.ai-provider-tabs button {
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: var(--hover);
+}
+.ai-provider-tabs button.active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.ai-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.ai-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.ai-form input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  outline: none;
+}
+.ai-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.ai-model-row {
+  display: flex;
+  gap: 8px;
+}
+.ai-model-row input {
+  min-width: 0;
+  flex: 1;
+}
+.ai-model-row select {
+  height: 34px;
+  flex: 0 0 110px;
+  max-width: 110px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  outline: none;
+}
+.ai-model-row button {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ai-model-row button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ai-model-status {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.ai-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}
+.ai-modal-foot button {
+  height: 32px;
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
 /* =====================================================
    Tabs
    ===================================================== */
@@ -1945,10 +2274,18 @@ body.hm-full-width .editor-skeleton {
   content: var(--hm-placeholder, attr(data-placeholder));
 }
 
-.source-editor {
+.source-wrap {
   flex: 1;
   width: 100%;
+  min-height: 0;
   min-width: 0;
+  position: relative;
+  background: var(--bg-editor);
+}
+.source-editor,
+.source-selection-ghost {
+  width: 100%;
+  height: 100%;
   resize: none;
   border: none;
   outline: none;
@@ -1959,9 +2296,33 @@ body.hm-full-width .editor-skeleton {
   font-size: calc(var(--editor-font-size, 16px) - 2px);
   line-height: 1.75;
   padding: 40px max(60px, calc((100% - var(--editor-max-width, 800px)) / 2)) 60vh;
+  margin: 0;
+}
+.source-editor {
+  position: relative;
   user-select: text;
 }
-body.hm-full-width .source-editor {
+.source-selection-ghost {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  color: transparent;
+  z-index: 1;
+}
+.source-selection-ghost mark {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  color: transparent;
+  border-radius: 2px;
+}
+.source-selection-ghost + .source-editor {
+  background: transparent;
+  z-index: 2;
+}
+body.hm-full-width .source-editor,
+body.hm-full-width .source-selection-ghost {
   padding-left: 60px;
   padding-right: 60px;
 }
@@ -2812,7 +3173,8 @@ body.dark .milkdown {
   padding-right: 18px !important;
 }
 .app.is-mobile .editor-skeleton { padding-top: 18px; }
-.app.is-mobile .source-editor {
+.app.is-mobile .source-editor,
+.app.is-mobile .source-selection-ghost {
   padding-left: 18px !important;
   padding-right: 18px !important;
 }
