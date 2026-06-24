@@ -1276,7 +1276,7 @@ export default function App() {
           title={t('git.title')}
           onClick={() => handlers.current.toggleGit()}
         >
-          <Icon name="git" size={20} />
+          <Icon name="source-control" size={21} strokeWidth={2} />
           {gitChangeCount > 0 && <span className="activity-badge">{gitChangeCount > 99 ? '99+' : gitChangeCount}</span>}
         </button>
         <div className="activity-spacer" />

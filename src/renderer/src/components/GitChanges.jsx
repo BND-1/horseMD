@@ -191,12 +191,18 @@ function formatCommitTime(commit) {
   return (commit.absolute || commit.relative || '').replace(/\s+[+-]\d{4}$/, '')
 }
 
+function isCheckoutBlockedByChanges(error) {
+  const msg = String(error || '')
+  return /local changes|would be overwritten|commit your changes|stash/i.test(msg)
+}
+
 export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpenDiff, onChanged }) {
   const { t } = useI18n()
   const [state, setState] = useState({
     loading: false,
     busy: false,
     error: '',
+    repository: true,
     initialized: false,
     files: [],
     staged: [],
@@ -209,6 +215,8 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
   const [selectedCommit, setSelectedCommit] = useState(null)
   const [commitFiles, setCommitFiles] = useState([])
   const [branchOpen, setBranchOpen] = useState(false)
+  const [branchCreateOpen, setBranchCreateOpen] = useState(false)
+  const [branchMenu, setBranchMenu] = useState(null)
   const [newBranch, setNewBranch] = useState('')
   const [historyHeight, setHistoryHeight] = useState(260)
   const [hoverCommit, setHoverCommit] = useState(null)
@@ -216,8 +224,10 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
   const [commitDialog, setCommitDialog] = useState(null)
   const [commitBranchName, setCommitBranchName] = useState('')
   const [deleteBranchName, setDeleteBranchName] = useState('')
+  const [discardFile, setDiscardFile] = useState(null)
   const [detailHeight, setDetailHeight] = useState(0)
   const detailRef = useRef(null)
+  const branchFooterRef = useRef(null)
   const graphCols = useMemo(() => {
     const longest = Math.max(2, ...state.commits.map((c) => graphLaneCount(c.graph)))
     return Math.min(18, longest)
@@ -291,20 +301,49 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     }
   }, [commitMenu])
 
+  useEffect(() => {
+    if (!branchMenu) return undefined
+    const close = () => setBranchMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [branchMenu])
+
+  useEffect(() => {
+    if (!branchOpen && !branchCreateOpen) return undefined
+    const close = (e) => {
+      if (branchFooterRef.current?.contains(e.target)) return
+      setBranchOpen(false)
+      setBranchCreateOpen(false)
+      setNewBranch('')
+    }
+    window.addEventListener('pointerdown', close, true)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('pointerdown', close, true)
+      window.removeEventListener('keydown', close)
+    }
+  }, [branchOpen, branchCreateOpen])
+
   const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (!workspace?.rootPath) {
-      setState({ loading: false, busy: false, error: '', initialized: false, files: [], staged: [], unstaged: [], commits: [], summary: null, branches: [] })
+      setState({ loading: false, busy: false, error: '', repository: true, initialized: false, files: [], staged: [], unstaged: [], commits: [], summary: null, branches: [] })
       return
     }
     setState((s) => ({ ...s, loading: quiet ? s.loading : true, error: '' }))
     const res = await window.api.gitStatus(workspace.rootPath)
-    const history = res.ok ? await window.api.gitHistory(workspace.rootPath) : { ok: false, commits: [] }
-    const summary = res.ok ? await window.api.gitSummary(workspace.rootPath) : { ok: false }
-    const branches = res.ok ? await window.api.gitBranches(workspace.rootPath) : { ok: false, branches: [] }
+    const repository = res.ok ? res.repository !== false : true
+    const history = res.ok && repository ? await window.api.gitHistory(workspace.rootPath) : { ok: false, commits: [] }
+    const summary = res.ok && repository ? await window.api.gitSummary(workspace.rootPath) : { ok: false }
+    const branches = res.ok && repository ? await window.api.gitBranches(workspace.rootPath) : { ok: false, branches: [] }
     setState({
       loading: false,
       busy: false,
       error: res.ok ? '' : res.error,
+      repository,
       initialized: !!res.initialized,
       files: res.files || [],
       staged: res.staged || [],
@@ -351,6 +390,10 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     return res
   }
 
+  const initRepository = async () => {
+    await runGit((root) => window.api.gitInit(root))
+  }
+
   const commit = async () => {
     const ok = await runGit((root) => window.api.gitCommit(root, message))
     if (ok) setMessage('')
@@ -362,6 +405,10 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     setSelectedCommit(same ? null : commit)
     setCommitFiles([])
     if (same) return
+    if (Array.isArray(commit.files)) {
+      setCommitFiles(commit.files)
+      return
+    }
     const res = await window.api.gitCommitFiles(workspace.rootPath, commit.hash)
     if (!res?.ok) {
       setState((s) => ({ ...s, error: res?.error || t('git.failed') }))
@@ -410,13 +457,49 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     const ok = await runGit((root) => window.api.gitCreateBranch(root, name))
     if (ok) {
       setNewBranch('')
+      setBranchCreateOpen(false)
       setBranchOpen(false)
     }
   }
 
-  const checkoutBranch = async (name) => {
-    const ok = await runGit((root) => window.api.gitCheckoutBranch(root, name))
-    if (ok) setBranchOpen(false)
+  const checkoutBranch = async (name, options = {}) => {
+    const branch = String(name || '').trim()
+    if (!workspace?.rootPath || !branch) return false
+    setState((s) => ({ ...s, busy: true, error: '' }))
+    const res = await window.api.gitCheckoutBranch(workspace.rootPath, branch, options)
+    if (!res?.ok) {
+      const error = res?.error || t('git.failed')
+      if (!options.merge && isCheckoutBlockedByChanges(error)) {
+        setState((s) => ({ ...s, busy: false, error: '' }))
+        setBranchOpen(false)
+        setBranchMenu(null)
+        setCommitDialog({ type: 'checkoutBranch', branch: { name: branch }, error })
+      } else if (options.merge) {
+        setState((s) => ({ ...s, busy: false, error: '' }))
+        setCommitDialog((dialog) => dialog?.type === 'checkoutBranch' ? { ...dialog, error } : dialog)
+      } else {
+        setState((s) => ({ ...s, busy: false, error }))
+      }
+      return false
+    }
+    await refresh({ quiet: true })
+    onChanged?.()
+    setCommitDialog((dialog) => dialog?.type === 'checkoutBranch' ? null : dialog)
+    setBranchMenu(null)
+    setBranchCreateOpen(false)
+    setBranchOpen(false)
+    return true
+  }
+
+  const confirmCheckoutBranch = async () => {
+    const name = commitDialog?.branch?.name
+    if (!name) return
+    const ok = await checkoutBranch(name, { merge: true })
+    if (ok) {
+      setBranchMenu(null)
+      setBranchCreateOpen(false)
+      setBranchOpen(false)
+    }
   }
 
   const createBranchAtCommit = async () => {
@@ -454,8 +537,16 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     const ok = await runGit((root) => window.api.gitDeleteBranch(root, name))
     if (ok) {
       setDeleteBranchName('')
+      setBranchMenu(null)
       setCommitDialog(null)
     }
+  }
+
+  const discardChange = async () => {
+    if (!discardFile) return
+    const status = `${discardFile.x || ''}${discardFile.y || ''}`
+    const ok = await runGit((root) => window.api.gitDiscardFile(root, discardFile.rel, status, discardFile.from))
+    if (ok) setDiscardFile(null)
   }
 
   const renderFile = (f, staged) => (
@@ -463,6 +554,14 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
       <button className="git-row" title={f.from ? `${f.from} -> ${f.rel}` : f.rel} onClick={() => openChangedFileDiff(f, staged)}>
         <span className={`git-badge s-${statusText(f)}`}>{statusText(f)}</span>
         <span className="git-file">{f.rel}</span>
+      </button>
+      <button
+        className="git-action danger"
+        title="放弃本次变更"
+        disabled={state.busy}
+        onClick={() => setDiscardFile({ ...f, staged })}
+      >
+        <Icon name="discard" size={14} strokeWidth={1.9} />
       </button>
       <button
         className="git-action"
@@ -505,6 +604,12 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
       </div>
       {!workspace ? (
         <div className="sidebar-empty"><Icon name="git" size={26} /><p>{t('side.noFolder')}</p></div>
+      ) : state.repository === false ? (
+        <div className="git-empty git-init-empty">
+          <Icon name="source-control" size={30} strokeWidth={2} />
+          <p>{t('git.noRepository')}</p>
+          <button disabled={state.busy} onClick={initRepository}>{t('git.initRepository')}</button>
+        </div>
       ) : state.error ? (
         <div className="git-empty">{state.error}</div>
       ) : state.loading && !state.files.length && !state.commits.length ? (
@@ -524,7 +629,7 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
                   }
                 }}
                 placeholder={t('git.message')}
-                rows={3}
+                rows={1}
               />
               <button disabled={state.busy || !message.trim() || state.staged.length === 0} onClick={commit}>
                 <Icon name="check" size={14} />
@@ -783,20 +888,38 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
                     </div>
                   </>
                 )}
+                {commitDialog.type === 'checkoutBranch' && (
+                  <>
+                    <div className="git-modal-head">切换分支</div>
+                    <div className="git-modal-body">
+                      <p>当前工作区有未提交改动，Git 阻止了直接切换。确认后会保留当前改动并尝试切换到目标分支。</p>
+                      <div className="git-modal-commit">{commitDialog.branch.name}</div>
+                      {commitDialog.error && <div className="git-error">{commitDialog.error}</div>}
+                    </div>
+                    <div className="git-modal-foot">
+                      <button onClick={() => setCommitDialog(null)}>取消</button>
+                      <button className="primary" disabled={state.busy} onClick={confirmCheckoutBranch}>保留改动并切换</button>
+                    </div>
+                  </>
+                )}
                 {commitDialog.type === 'deleteBranch' && (
                   <>
                     <div className="git-modal-head">删除分支</div>
                     <div className="git-modal-body">
                       <p>删除分支前请确认该分支已经不需要，或者已经合并到主分支。当前分支不能删除。</p>
-                      <label>
-                        <span>要删除的分支</span>
-                        <select value={deleteBranchName} onChange={(e) => setDeleteBranchName(e.target.value)} autoFocus>
-                          <option value="">选择分支</option>
-                          {state.branches.filter((b) => !b.current).map((b) => (
-                            <option key={b.name} value={b.name}>{b.name}</option>
-                          ))}
-                        </select>
-                      </label>
+                      {commitDialog.branch ? (
+                        <div className="git-modal-commit">{deleteBranchName}</div>
+                      ) : (
+                        <label>
+                          <span>要删除的分支</span>
+                          <select value={deleteBranchName} onChange={(e) => setDeleteBranchName(e.target.value)} autoFocus>
+                            <option value="">选择分支</option>
+                            {state.branches.filter((b) => !b.current).map((b) => (
+                              <option key={b.name} value={b.name}>{b.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                     </div>
                     <div className="git-modal-foot">
                       <button onClick={() => setCommitDialog(null)}>取消</button>
@@ -807,31 +930,118 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
               </div>
             </div>
           )}
+          {discardFile && (
+            <div className="git-modal-backdrop" onMouseDown={() => setDiscardFile(null)}>
+              <div className="git-modal" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="git-modal-head">放弃本次变更</div>
+                <div className="git-modal-body">
+                  <p>这会丢弃该文件当前未提交的改动，未跟踪文件会被删除。此操作不能从软件内撤回。</p>
+                  <div className="git-modal-commit">{discardFile.rel}</div>
+                </div>
+                <div className="git-modal-foot">
+                  <button onClick={() => setDiscardFile(null)}>取消</button>
+                  <button className="danger" disabled={state.busy} onClick={discardChange}>确认放弃</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
-      {workspace && (
-        <div className="git-footer">
-          <button className="git-branch-btn" onClick={() => setBranchOpen((v) => !v)}>
-            <Icon name="git" size={13} /> {state.summary?.branch || 'HEAD'}
-          </button>
+      {workspace && state.repository !== false && (
+        <div className="git-footer" ref={branchFooterRef}>
+          <div className="git-branch-controls">
+            <button
+              className="git-branch-btn"
+              onClick={() => {
+                setBranchCreateOpen(false)
+                setBranchOpen((v) => !v)
+              }}
+            >
+              <Icon name="git" size={13} /> {state.summary?.branch || 'HEAD'}
+            </button>
+            <button
+              className={`git-branch-icon${branchCreateOpen ? ' active' : ''}`}
+              title={t('git.newBranch')}
+              onClick={() => {
+                setNewBranch('')
+                setBranchOpen(false)
+                setBranchCreateOpen((v) => !v)
+              }}
+            >
+              <Icon name={branchCreateOpen ? 'minus' : 'plus'} size={13} />
+            </button>
+          </div>
           <span>{state.commits.length} {t('git.commits')}</span>
           {branchOpen && (
             <div className="git-branch-pop">
               <div className="git-branch-title">{t('git.branch')}</div>
-              <div className="git-branch-new">
-                <input value={newBranch} onChange={(e) => setNewBranch(e.target.value)} placeholder={t('git.newBranch')} />
-                <button disabled={!newBranch.trim() || state.busy} onClick={createBranch}>
-                  <Icon name="plus" size={13} />
-                </button>
-              </div>
               <div className="git-branch-list">
                 {state.branches.map((b) => (
-                  <button key={b.name} className={b.current ? 'active' : ''} disabled={b.current || state.busy} onClick={() => checkoutBranch(b.name)}>
+                  <button
+                    key={b.name}
+                    className={b.current ? 'active' : ''}
+                    disabled={state.busy}
+                    onClick={() => {
+                      if (!b.current) checkoutBranch(b.name)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setBranchMenu({
+                        branch: b,
+                        x: Math.min(e.clientX, window.innerWidth - 208),
+                        y: Math.min(e.clientY, window.innerHeight - 90)
+                      })
+                    }}
+                  >
                     <Icon name={b.current ? 'check' : 'git'} size={13} />
                     <span>{b.name}</span>
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+          {branchCreateOpen && (
+            <div className="git-branch-create-pop">
+              <div className="git-branch-title">{t('git.newBranch')}</div>
+              <div className="git-branch-new">
+                <input
+                  value={newBranch}
+                  onChange={(e) => setNewBranch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createBranch()
+                    if (e.key === 'Escape') {
+                      setNewBranch('')
+                      setBranchCreateOpen(false)
+                    }
+                  }}
+                  placeholder={t('git.newBranch')}
+                  autoFocus
+                />
+                <button disabled={!newBranch.trim() || state.busy} onClick={createBranch}>
+                  <Icon name="check" size={13} />
+                </button>
+              </div>
+            </div>
+          )}
+          {branchMenu && (
+            <div
+              className="context-menu git-branch-menu"
+              style={{ left: Math.max(8, branchMenu.x), top: Math.max(8, branchMenu.y) }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="danger"
+                disabled={branchMenu.branch.current}
+                onClick={() => {
+                  if (branchMenu.branch.current) return
+                  setDeleteBranchName(branchMenu.branch.name)
+                  setCommitDialog({ type: 'deleteBranch', branch: branchMenu.branch })
+                  setBranchMenu(null)
+                  setBranchOpen(false)
+                }}
+              >
+                删除分支...
+              </button>
             </div>
           )}
         </div>

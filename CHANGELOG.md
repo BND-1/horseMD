@@ -6,6 +6,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-24
+
+HorseMD becomes a Markdown document workspace with built-in AI assistance and
+local Git management.
+
+### Added
+- **AI sidebar.** Open an AI chat from the top bar, start new conversations, and
+  render assistant replies as Markdown.
+- **AI provider settings.** Configure OpenAI-compatible endpoints and DeepSeek,
+  fetch available models from the configured API, then choose the exact model
+  manually.
+- **Selection-based AI editing.** Ask AI to rewrite, format, summarize, or adjust
+  only the selected Markdown range instead of replacing the whole document.
+- **Git management sidebar.** View working tree and staged changes, stage /
+  unstage files, discard single-file changes, write a commit message, and commit
+  to the local repository.
+- **Graphical commit history.** Show branch routes, branch labels, commit
+  details, changed files, and side-by-side diff tabs for commits and worktree
+  changes.
+- **Branch actions.** Switch branches, create branches, delete branches with
+  confirmation, create a branch from a commit, merge a commit into the current
+  branch, and hard-reset the current branch to a selected commit.
+- **Manual repository initialization.** Non-Git folders now show an explicit
+  initialization action instead of silently creating a repository.
+
+### Changed
+- Removed mobile-focused project code and dependencies from this desktop branch.
+- Improved source-control icons, discard-change affordances, branch popovers,
+  and commit-message layout.
+- Commit history now preloads changed-file lists, so expanding a commit can show
+  files immediately without a second Git query.
+
 ## [0.3.0] - 2026-06-19
 
 HorseMD adds a batch of editor and UI improvements, plus an important desktop

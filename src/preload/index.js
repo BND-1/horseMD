@@ -28,11 +28,13 @@ const api = {
 
   // git
   gitStatus: (root) => ipcRenderer.invoke('git:status', root),
+  gitInit: (root) => ipcRenderer.invoke('git:init', root),
   gitHistory: (root) => ipcRenderer.invoke('git:history', root),
   gitSummary: (root) => ipcRenderer.invoke('git:summary', root),
   gitStage: (root, rel) => ipcRenderer.invoke('git:stage', root, rel),
   gitUnstage: (root, rel) => ipcRenderer.invoke('git:unstage', root, rel),
   gitStageAll: (root) => ipcRenderer.invoke('git:stageAll', root),
+  gitDiscardFile: (root, rel, status, from) => ipcRenderer.invoke('git:discardFile', root, rel, status, from),
   gitCommit: (root, message) => ipcRenderer.invoke('git:commit', root, message),
   gitCommitFiles: (root, hash) => ipcRenderer.invoke('git:commitFiles', root, hash),
   gitCommitDiff: (root, hash, rel) => ipcRenderer.invoke('git:commitDiff', root, hash, rel),
@@ -40,7 +42,7 @@ const api = {
   gitBranches: (root) => ipcRenderer.invoke('git:branches', root),
   gitCreateBranch: (root, name) => ipcRenderer.invoke('git:createBranch', root, name),
   gitCreateBranchAt: (root, name, hash) => ipcRenderer.invoke('git:createBranchAt', root, name, hash),
-  gitCheckoutBranch: (root, name) => ipcRenderer.invoke('git:checkoutBranch', root, name),
+  gitCheckoutBranch: (root, name, options) => ipcRenderer.invoke('git:checkoutBranch', root, name, options),
   gitDeleteBranch: (root, name) => ipcRenderer.invoke('git:deleteBranch', root, name),
   gitMergeCommit: (root, hash) => ipcRenderer.invoke('git:mergeCommit', root, hash),
   gitRestoreToCommit: (root, hash) => ipcRenderer.invoke('git:restoreToCommit', root, hash),

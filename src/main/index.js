@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, net } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { dirname, join, basename, extname, resolve, sep } from 'node:path'
+import { dirname, join, basename, extname, resolve, relative, sep } from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync, statSync, realpathSync, constants as fsConstants } from 'node:fs'
 import { exec } from 'node:child_process'
@@ -514,7 +514,8 @@ function parseCommitFiles(out, root) {
   const parts = String(out).split('\0').filter(Boolean)
   const rows = []
   for (let i = 0; i < parts.length; i++) {
-    const status = parts[i]
+    const status = parts[i].trim()
+    if (!status) continue
     const renamed = status.startsWith('R') || status.startsWith('C')
     const from = renamed ? parts[++i] : null
     const rel = parts[++i]
@@ -527,6 +528,19 @@ function parseCommitFiles(out, root) {
     })
   }
   return rows
+}
+
+function parseCommitFilesByHash(out, root) {
+  const map = new Map()
+  for (const record of String(out).split('\x1e')) {
+    if (!record.trim()) continue
+    const firstSep = record.indexOf('\0')
+    if (firstSep < 0) continue
+    const hash = record.slice(0, firstSep).trim().replace(/^\n+/, '')
+    if (!validCommit(hash)) continue
+    map.set(hash, parseCommitFiles(record.slice(firstSep + 1), root))
+  }
+  return map
 }
 
 function parseBranches(out) {
@@ -572,20 +586,23 @@ ipcMain.handle('git:status', async (_e, root) => {
   try {
     const out = await execText('git status --porcelain=v1 -z', { cwd: root })
     const files = parseGitStatus(out, root)
-    return { ok: true, files, ...splitGitStatus(files) }
+    return { ok: true, repository: true, files, ...splitGitStatus(files) }
   } catch (e) {
     const msg = e?.message || String(e)
     if (/not a git repository/i.test(msg)) {
-      try {
-        await execText('git init', { cwd: root })
-        const out = await execText('git status --porcelain=v1 -z', { cwd: root })
-        const files = parseGitStatus(out, root)
-        return { ok: true, initialized: true, files, ...splitGitStatus(files) }
-      } catch (initErr) {
-        return { ok: false, error: initErr?.message || String(initErr), files: [] }
-      }
+      return { ok: true, repository: false, files: [], staged: [], unstaged: [] }
     }
     return { ok: false, error: e?.message || String(e), files: [] }
+  }
+})
+
+ipcMain.handle('git:init', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  try {
+    await execText('git init', { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
   }
 })
 
@@ -643,6 +660,30 @@ ipcMain.handle('git:stageAll', async (_e, root) => {
   }
 })
 
+ipcMain.handle('git:discardFile', async (_e, root, rel, status, from) => {
+  if (!root || !isAbsolutePath(root) || !rel) return { ok: false, error: 'Invalid path.' }
+  const fileStatus = String(status || '')
+  const rootAbs = resolve(root)
+  const paths = [rel, from].filter(Boolean)
+  for (const p of paths) {
+    const target = resolve(rootAbs, p)
+    const back = relative(rootAbs, target)
+    if (!back || back.startsWith('..') || isAbsolutePath(back)) return { ok: false, error: 'Invalid path.' }
+  }
+  try {
+    if (fileStatus.includes('?')) {
+      await fs.rm(resolve(rootAbs, rel), { force: true, recursive: true })
+    } else if (fileStatus[0] === 'A') {
+      await execText(`git rm -f -- ${shellQuote(rel)}`, { cwd: root })
+    } else {
+      await execText(`git restore --staged --worktree -- ${paths.map(shellQuote).join(' ')}`, { cwd: root })
+    }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
 ipcMain.handle('git:commit', async (_e, root, message) => {
   if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
   const msg = String(message || '').trim()
@@ -658,15 +699,21 @@ ipcMain.handle('git:commit', async (_e, root, message) => {
 ipcMain.handle('git:history', async (_e, root) => {
   if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.', commits: [] }
   try {
-    const [graphOut, messageOut] = await Promise.all([
+    const [graphOut, messageOut, filesOut] = await Promise.all([
       execText('git log --graph --branches --date=relative --pretty=format:%x1f%H%x1f%d%x1f%s%x1f%cr%x1f%an%x1f%ci -n 80', { cwd: root }),
-      execText('git log --branches --pretty=format:%x1e%H%x1f%B -n 80', { cwd: root })
+      execText('git log --branches --pretty=format:%x1e%H%x1f%B -n 80', { cwd: root }),
+      execText('git log --branches --name-status --find-renames -z --pretty=format:%x1e%H%x00 -n 80', { cwd: root })
     ])
     const commits = parseGitGraphHistory(graphOut, parseGitMessages(messageOut))
+    const commitFiles = parseCommitFilesByHash(filesOut, root)
     const commitBranches = await mapCommitBranches(root, commits.filter((commit) => commit.kind !== 'graph'))
     return {
       ok: true,
-      commits: commits.map((commit) => commit.kind === 'graph' ? commit : ({ ...commit, branches: commitBranches.get(commit.hash) || [] }))
+      commits: commits.map((commit) => commit.kind === 'graph' ? commit : ({
+        ...commit,
+        branches: commitBranches.get(commit.hash) || [],
+        files: commitFiles.get(commit.hash) || []
+      }))
     }
   } catch (e) {
     const msg = e?.message || String(e)
@@ -746,12 +793,13 @@ ipcMain.handle('git:createBranchAt', async (_e, root, name, hash) => {
   }
 })
 
-ipcMain.handle('git:checkoutBranch', async (_e, root, name) => {
+ipcMain.handle('git:checkoutBranch', async (_e, root, name, options = {}) => {
   if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
   const branch = String(name || '').trim()
   if (!validBranch(branch)) return { ok: false, error: 'Invalid branch name.' }
   try {
-    await execText(`git checkout ${shellQuote(branch)}`, { cwd: root })
+    const merge = options && typeof options === 'object' && options.merge
+    await execText(`git switch ${merge ? '--merge ' : ''}${shellQuote(branch)}`, { cwd: root })
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e?.message || String(e) }
