@@ -89,8 +89,7 @@ function AdjustGroup({ title, valueLabel, presets, activeIndex, onPick, pct, fro
 
 // Combined "layout" control: ONE secondary status-bar button → a popover that
 // holds both the font-size and editor-width adjusters. Replaces the two separate
-// status-bar buttons so the bar stays uncluttered. `hm-pagewidth` lets mobile
-// hide it via CSS (mobile sets size in the "more" sheet and forces full width).
+// status-bar buttons so the bar stays uncluttered.
 function LayoutControl({ fontSize, onSetFontSize, pageWidth, onSetPageWidth }) {
   const { t } = useI18n()
   const { open, setOpen, ref } = usePopover()
@@ -301,143 +300,10 @@ function LangSwitch({ lang, setLang }) {
   )
 }
 
-// Mobile: a single "•••" popover that folds together the controls that crowd
-// the bottom bar on a phone — word counts, source toggle, theme, language,
-// GitHub — so the bar itself stays to just the block type + this one button.
-function MobileMore({
-  dirty,
-  onSave,
-  sourceMode,
-  onToggleSource,
-  theme,
-  setTheme,
-  lang,
-  setLang,
-  customThemes = [],
-  customTheme,
-  onPickCustom,
-  onRefreshThemes,
-  fontSize,
-  onSetFontSize
-}) {
-  const { t } = useI18n()
-  const { open, setOpen, ref } = usePopover()
-  const stepFont = (delta) =>
-    onSetFontSize(Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, fontSize + delta)))
-  const toggle = () => {
-    if (!open) onRefreshThemes?.()
-    setOpen((v) => !v)
-  }
-  return (
-    <div className="block-switch" ref={ref}>
-      <button className="status-btn hm-more-btn" onClick={toggle} title={t('status.more')}>
-        <Icon name="more" size={16} />
-        <span>{t('status.more')}</span>
-      </button>
-      {open && (
-        <div className="block-switch-menu hm-status-sheet">
-          <button
-            className={`block-menu-item hm-sheet-save${dirty ? ' dirty' : ''}`}
-            onClick={() => {
-              onSave?.()
-              setOpen(false)
-            }}
-          >
-            <Icon name="save" size={15} />
-            <span className="block-menu-name">{t('status.save')}</span>
-            {dirty && <span className="hm-sheet-save-dot" />}
-          </button>
-          <div className="theme-menu-sep" />
-          <button
-            className="block-menu-item"
-            onClick={() => {
-              onToggleSource()
-              setOpen(false)
-            }}
-          >
-            <Icon name="code" size={14} />
-            <span className="block-menu-name">
-              {sourceMode ? t('status.source') : t('status.rich')}
-            </span>
-          </button>
-
-          <div className="theme-menu-label">{t('settings.fontSize')}</div>
-          <div className="hm-sheet-fontsize">
-            <button
-              className="hm-fontstep"
-              onClick={() => stepFont(-1)}
-              disabled={fontSize <= FONT_SIZE_MIN}
-              aria-label="−"
-            >
-              −
-            </button>
-            <span className="hm-fontstep-value">{fontSize}px</span>
-            <button
-              className="hm-fontstep"
-              onClick={() => stepFont(1)}
-              disabled={fontSize >= FONT_SIZE_MAX}
-              aria-label="+"
-            >
-              +
-            </button>
-          </div>
-
-          <div className="theme-menu-label">{t('tip.toggleTheme')}</div>
-          <div className="hm-sheet-themes">
-            {THEMES.map((th) => (
-              <button
-                key={th.id}
-                className={`hm-sheet-swatch${!customTheme && th.id === theme ? ' active' : ''}`}
-                style={{ background: th.swatch }}
-                title={lang === 'zh' ? th.zh : th.en}
-                onClick={() => setTheme(th.id)}
-              />
-            ))}
-            {customThemes.map((c) => (
-              <button
-                key={c.file}
-                className={`hm-sheet-swatch hm-sheet-swatch-custom${customTheme === c.file ? ' active' : ''}`}
-                title={c.name}
-                onClick={() => onPickCustom?.(c.file)}
-              />
-            ))}
-          </div>
-
-          <div className="theme-menu-label">{t('tip.language')}</div>
-          <div className="hm-sheet-langs">
-            {LANGS.map((l) => (
-              <button
-                key={l.id}
-                className={`block-menu-item${l.id === lang ? ' active' : ''}`}
-                onClick={() => setLang(l.id)}
-              >
-                <span className="block-menu-name">{l.label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="theme-menu-sep" />
-          <button
-            className="block-menu-item theme-menu-action"
-            onClick={() => {
-              window.api.openExternal('https://github.com/BND-1/horseMD')
-              setOpen(false)
-            }}
-          >
-            <Icon name="github" size={13} />
-            <span className="block-menu-name">GitHub</span>
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function StatusBar({
   tab,
-  isMobile,
   onSave,
-  onShare,
+  onDiff,
   theme,
   setTheme,
   lang,
@@ -462,88 +328,52 @@ export default function StatusBar({
     <div className="statusbar">
       <div className="status-left">
         {tab ? (
-          isMobile ? (
-            <>
-              <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>{dirty ? '●' : '✓'}</span>
-              <span className="status-counts">
-                {t('status.words', { n: s.words })} · {t('status.chars', { n: s.chars })} ·{' '}
-                {t('status.read', { n: s.readMin })}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="status-path" title={tab.path || t('status.unsaved')}>
-                {tab.path || t('status.unsaved')}
-              </span>
-              <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>
-                {dirty ? '● ' + t('status.modified') : '✓ ' + t('status.saved')}
-              </span>
-            </>
-          )
+          <>
+            <span className="status-path" title={tab.path || t('status.unsaved')}>
+              {tab.path || t('status.unsaved')}
+            </span>
+            <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>
+              {dirty ? '● ' + t('status.modified') : '✓ ' + t('status.saved')}
+            </span>
+            {dirty && (
+              <button className="status-btn status-diff-btn" onClick={onDiff} title={t('diff.title')}>
+                {t('diff.button')}
+              </button>
+            )}
+          </>
         ) : (
           <span className="status-path">{t('status.ready')}</span>
         )}
       </div>
       <div className="status-right">
-        {isMobile ? (
-          tab && (
-            <>
-              {window.api.capabilities?.canShare && (
-                <button className="status-btn hm-share-btn" onClick={onShare} title={t('status.share')}>
-                  <Icon name="share" size={17} />
-                  <span>{t('status.shareShort')}</span>
-                </button>
-              )}
-              <MobileMore
-                dirty={dirty}
-                onSave={onSave}
-                sourceMode={sourceMode}
-                onToggleSource={onToggleSource}
-                theme={theme}
-                setTheme={setTheme}
-                lang={lang}
-                setLang={setLang}
-                customThemes={customThemes}
-                customTheme={customTheme}
-                onPickCustom={onPickCustom}
-                onRefreshThemes={onRefreshThemes}
-                fontSize={fontSize}
-                onSetFontSize={onSetFontSize}
-              />
-            </>
-          )
-        ) : (
-          <>
-            {tab && <StatsControl stats={s} />}
-            <button className="status-btn" onClick={onToggleSource} title={t('tip.toggleSource')}>
-              <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
-            </button>
-            <LayoutControl
-              fontSize={fontSize}
-              onSetFontSize={onSetFontSize}
-              pageWidth={pageWidth}
-              onSetPageWidth={onSetPageWidth}
-            />
-            <ThemePicker
-              theme={theme}
-              setTheme={setTheme}
-              customThemes={customThemes}
-              customTheme={customTheme}
-              onPickCustom={onPickCustom}
-              onRefreshThemes={onRefreshThemes}
-              onOpenThemesFolder={onOpenThemesFolder}
-              onGetMoreThemes={onGetMoreThemes}
-            />
-            <LangSwitch lang={lang} setLang={setLang} />
-            <button
-              className="status-btn"
-              onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}
-              title="GitHub — github.com/BND-1/horseMD"
-            >
-              <Icon name="github" size={14} />
-            </button>
-          </>
-        )}
+        {tab && <StatsControl stats={s} />}
+        <button className="status-btn" onClick={onToggleSource} title={t('tip.toggleSource')}>
+          <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
+        </button>
+        <LayoutControl
+          fontSize={fontSize}
+          onSetFontSize={onSetFontSize}
+          pageWidth={pageWidth}
+          onSetPageWidth={onSetPageWidth}
+        />
+        <ThemePicker
+          theme={theme}
+          setTheme={setTheme}
+          customThemes={customThemes}
+          customTheme={customTheme}
+          onPickCustom={onPickCustom}
+          onRefreshThemes={onRefreshThemes}
+          onOpenThemesFolder={onOpenThemesFolder}
+          onGetMoreThemes={onGetMoreThemes}
+        />
+        <LangSwitch lang={lang} setLang={setLang} />
+        <button
+          className="status-btn"
+          onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}
+          title="GitHub - github.com/BND-1/horseMD"
+        >
+          <Icon name="github" size={14} />
+        </button>
       </div>
     </div>
   )

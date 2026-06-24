@@ -25,11 +25,7 @@ export default function CommandPalette({ open, onClose, commands, files, onOpenF
     if (open) {
       setQuery('')
       setSel(0)
-      // Desktop: focus the field so you can type right away. Mobile: don't —
-      // auto-focusing pops the on-screen keyboard before you've picked anything.
-      // Tapping the field still focuses it (and shows the keyboard) on demand.
-      const isMobile = window.api?.platform === 'ios' || window.api?.platform === 'android'
-      if (!isMobile) setTimeout(() => inputRef.current?.focus(), 0)
+      setTimeout(() => inputRef.current?.focus(), 0)
     }
   }, [open])
 

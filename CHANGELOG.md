@@ -8,14 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.3.0] - 2026-06-19
 
-HorseMD goes mobile, plus a batch of editor & UI improvements and an important
-desktop crash fix.
+HorseMD adds a batch of editor and UI improvements, plus an important desktop
+crash fix.
 
 ### Added
-- **Mobile apps — iOS & Android.** HorseMD now runs on phones and tablets
-  (Capacitor): open / edit / save local Markdown, share & export files out, with
-  themes, i18n, outline, and the command palette all working. Android ships as an
-  APK on the release page; iOS is built from source (free Apple ID signing).
 - **Adjustable font size.** A status-bar control sets the editor body font size
   (presets + fine-tune slider) — combined with the page-width control into one
   **Layout** button.
@@ -38,7 +34,6 @@ desktop crash fix.
   the counts merged into a **stats** button; the block-type switcher was removed
   (block type is still changeable via the floating badge, the selection toolbar,
   right-click, the slash menu, and Ctrl/Cmd+1–6 / Ctrl/Cmd+0).
-- **Mobile:** the command palette no longer auto-opens the on-screen keyboard.
 
 ### Fixed
 - **Inline code "wouldn't stop"** (#10) — text typed after a closing backtick kept
@@ -76,7 +71,7 @@ page width, in-cell line breaks, an Intel macOS build, and a nicer update prompt
   notes.
 - **Intel macOS build** — the macOS target now ships both Apple Silicon (arm64)
   and Intel (x64).
-- A project [ROADMAP.md](./ROADMAP.md) (incl. planned Android & iOS).
+- A project [ROADMAP.md](./ROADMAP.md).
 
 ### Changed
 - **Denser tables** — much tighter rows (cell paragraph margins removed, smaller

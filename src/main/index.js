@@ -14,6 +14,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
 
+function execText(command, options = {}) {
+  return new Promise((resolve, reject) => {
+    exec(command, { windowsHide: true, maxBuffer: 1024 * 1024, ...options }, (err, stdout, stderr) => {
+      if (err) {
+        err.message = stderr || err.message
+        reject(err)
+      } else {
+        resolve(stdout)
+      }
+    })
+  })
+}
+
 // Print stylesheet for PDF export — a clean, warm reading layout.
 const PDF_CSS = `
   @page { size: A4; margin: 20mm 18mm; }
@@ -413,6 +426,383 @@ ipcMain.handle('fs:openFolderTree', async (_e, dir) => ({
   root: { name: basename(dir), path: dir, type: 'dir' },
   children: await readTree(dir)
 }))
+
+function parseGitStatus(out, root) {
+  const parts = String(out).split('\0').filter(Boolean)
+  const rows = []
+  for (let i = 0; i < parts.length; i++) {
+    const item = parts[i]
+    const x = item[0] || ' '
+    const y = item[1] || ' '
+    const rel = item.slice(3)
+    const renamed = x === 'R' || x === 'C'
+    const from = renamed ? parts[++i] : null
+    rows.push({ x, y, rel: rel.replace(/\\/g, '/'), from: from?.replace(/\\/g, '/') || null, path: join(root, rel) })
+  }
+  return rows
+}
+
+function splitGitStatus(files) {
+  const staged = []
+  const unstaged = []
+  for (const f of files) {
+    if (f.x && f.x !== ' ' && f.x !== '?') staged.push({ ...f, area: 'staged' })
+    if ((f.y && f.y !== ' ') || f.x === '?') unstaged.push({ ...f, area: 'unstaged' })
+  }
+  return { staged, unstaged }
+}
+
+function parseGitGraphHistory(out, messages = new Map()) {
+  return String(out)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const marker = line.indexOf('\x1f')
+      if (marker < 0) {
+        const graph = line.trimEnd()
+        return graph ? { kind: 'graph', graph } : null
+      }
+      const graph = line.slice(0, marker)
+      const [hash = '', refs = '', subject = '', relative = '', author = '', absolute = ''] = line.slice(marker + 1).split('\x1f')
+      return { kind: 'commit', graph, hash, refs, subject, relative, author, absolute, message: messages.get(hash) || subject }
+    })
+    .filter((c) => c?.graph)
+}
+
+async function mapCommitBranches(root, commits) {
+  const wanted = new Set(commits.map((c) => c.hash).filter(Boolean))
+  if (!wanted.size) return new Map()
+  const out = await execText('git for-each-ref --format=%(refname:short)%09%(symref) refs/heads refs/remotes', { cwd: root })
+  const refs = String(out)
+    .split(/\r?\n/)
+    .map((line) => {
+      const [name = '', symref = ''] = line.split('\t')
+      return { name: name.trim(), symref: symref.trim() }
+    })
+    .filter((ref) => ref.name && !ref.symref && !ref.name.endsWith('/HEAD'))
+    .map((ref) => ref.name)
+  const pairs = await Promise.all(refs.map(async (name) => {
+    try {
+      const hashes = await execText(`git rev-list -n 500 ${shellQuote(name)}`, { cwd: root })
+      return [name, String(hashes).split(/\r?\n/).filter((hash) => wanted.has(hash))]
+    } catch {
+      return [name, []]
+    }
+  }))
+  const map = new Map([...wanted].map((hash) => [hash, []]))
+  for (const [name, hashes] of pairs) {
+    for (const hash of hashes) map.get(hash)?.push(name)
+  }
+  return map
+}
+
+function parseGitMessages(out) {
+  const messages = new Map()
+  String(out)
+    .split('\x1e')
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .forEach((record) => {
+      const [hash = '', ...messageParts] = record.split('\x1f')
+      const message = messageParts.join('\x1f').trim()
+      if (hash) messages.set(hash, message)
+    })
+  return messages
+}
+
+function parseCommitFiles(out, root) {
+  const parts = String(out).split('\0').filter(Boolean)
+  const rows = []
+  for (let i = 0; i < parts.length; i++) {
+    const status = parts[i]
+    const renamed = status.startsWith('R') || status.startsWith('C')
+    const from = renamed ? parts[++i] : null
+    const rel = parts[++i]
+    if (!rel) continue
+    rows.push({
+      status: status[0] || 'M',
+      rel: rel.replace(/\\/g, '/'),
+      from: from?.replace(/\\/g, '/') || null,
+      path: join(root, rel)
+    })
+  }
+  return rows
+}
+
+function parseBranches(out) {
+  return String(out)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const [head = '', name = ''] = line.split('\t')
+      return { name, current: head === '*' }
+    })
+    .filter((b) => b.name)
+}
+
+function validCommit(value) {
+  return /^[0-9a-fA-F]{4,64}$/.test(String(value || ''))
+}
+
+function validBranch(value) {
+  const name = String(value || '').trim()
+  return name && !/[\s~^:?*[\\\]]/.test(name) && !name.includes('..') && !name.startsWith('/') && !name.endsWith('/') && !name.endsWith('.')
+}
+
+function shellQuote(value) {
+  return `"${String(value).replace(/"/g, '\\"')}"`
+}
+
+function buildAddedFilePatch(root, rel, content) {
+  const normalized = String(rel || '').replace(/\\/g, '/')
+  const lines = String(content ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
+  return [
+    `diff --git a/${normalized} b/${normalized}`,
+    'new file mode 100644',
+    '--- /dev/null',
+    `+++ b/${normalized}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`)
+  ].join('\n')
+}
+
+ipcMain.handle('git:status', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  try {
+    const out = await execText('git status --porcelain=v1 -z', { cwd: root })
+    const files = parseGitStatus(out, root)
+    return { ok: true, files, ...splitGitStatus(files) }
+  } catch (e) {
+    const msg = e?.message || String(e)
+    if (/not a git repository/i.test(msg)) {
+      try {
+        await execText('git init', { cwd: root })
+        const out = await execText('git status --porcelain=v1 -z', { cwd: root })
+        const files = parseGitStatus(out, root)
+        return { ok: true, initialized: true, files, ...splitGitStatus(files) }
+      } catch (initErr) {
+        return { ok: false, error: initErr?.message || String(initErr), files: [] }
+      }
+    }
+    return { ok: false, error: e?.message || String(e), files: [] }
+  }
+})
+
+ipcMain.handle('git:summary', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, branch: '', ahead: 0, behind: 0 }
+  try {
+    const branch = (await execText('git branch --show-current', { cwd: root })).trim() || 'HEAD'
+    let ahead = 0
+    let behind = 0
+    try {
+      const counts = (await execText('git rev-list --left-right --count @{upstream}...HEAD', { cwd: root })).trim().split(/\s+/)
+      behind = Number(counts[0] || 0)
+      ahead = Number(counts[1] || 0)
+    } catch {
+      /* no upstream */
+    }
+    return { ok: true, branch, ahead, behind }
+  } catch (e) {
+    return { ok: false, branch: '', ahead: 0, behind: 0, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:stage', async (_e, root, rel) => {
+  if (!root || !isAbsolutePath(root) || !rel) return { ok: false, error: 'Invalid path.' }
+  try {
+    await execText(`git add -- ${shellQuote(rel)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:unstage', async (_e, root, rel) => {
+  if (!root || !isAbsolutePath(root) || !rel) return { ok: false, error: 'Invalid path.' }
+  try {
+    await execText(`git restore --staged -- ${shellQuote(rel)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    try {
+      await execText(`git rm --cached -r -- ${shellQuote(rel)}`, { cwd: root })
+      return { ok: true }
+    } catch {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }
+})
+
+ipcMain.handle('git:stageAll', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  try {
+    await execText('git add -A', { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:commit', async (_e, root, message) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  const msg = String(message || '').trim()
+  if (!msg) return { ok: false, error: 'Commit message is required.' }
+  try {
+    await execText(`git commit -m ${shellQuote(msg)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:history', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.', commits: [] }
+  try {
+    const [graphOut, messageOut] = await Promise.all([
+      execText('git log --graph --branches --date=relative --pretty=format:%x1f%H%x1f%d%x1f%s%x1f%cr%x1f%an%x1f%ci -n 80', { cwd: root }),
+      execText('git log --branches --pretty=format:%x1e%H%x1f%B -n 80', { cwd: root })
+    ])
+    const commits = parseGitGraphHistory(graphOut, parseGitMessages(messageOut))
+    const commitBranches = await mapCommitBranches(root, commits.filter((commit) => commit.kind !== 'graph'))
+    return {
+      ok: true,
+      commits: commits.map((commit) => commit.kind === 'graph' ? commit : ({ ...commit, branches: commitBranches.get(commit.hash) || [] }))
+    }
+  } catch (e) {
+    const msg = e?.message || String(e)
+    if (/does not have any commits yet|your current branch .* does not have any commits/i.test(msg)) {
+      return { ok: true, commits: [] }
+    }
+    return { ok: false, error: msg, commits: [] }
+  }
+})
+
+ipcMain.handle('git:commitFiles', async (_e, root, hash) => {
+  if (!root || !isAbsolutePath(root) || !validCommit(hash)) return { ok: false, error: 'Invalid commit.', files: [] }
+  try {
+    const out = await execText(`git show --name-status --format= --find-renames -z ${hash}`, { cwd: root })
+    return { ok: true, files: parseCommitFiles(out, root) }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), files: [] }
+  }
+})
+
+ipcMain.handle('git:commitDiff', async (_e, root, hash, rel) => {
+  if (!root || !isAbsolutePath(root) || !validCommit(hash) || !rel) return { ok: false, error: 'Invalid diff request.', patch: '' }
+  try {
+    const out = await execText(`git show --format= --find-renames --unified=80 ${hash} -- ${shellQuote(rel)}`, { cwd: root })
+    return { ok: true, patch: out }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), patch: '' }
+  }
+})
+
+ipcMain.handle('git:worktreeDiff', async (_e, root, rel, staged, status) => {
+  if (!root || !isAbsolutePath(root) || !rel) return { ok: false, error: 'Invalid diff request.', patch: '' }
+  try {
+    if (!staged && String(status || '').includes('?')) {
+      const content = await fs.readFile(join(root, rel), 'utf8')
+      return { ok: true, patch: buildAddedFilePatch(root, rel, content) }
+    }
+    const scope = staged ? '--cached ' : ''
+    const out = await execText(`git diff ${scope}--find-renames --unified=80 -- ${shellQuote(rel)}`, { cwd: root })
+    return { ok: true, patch: out }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), patch: '' }
+  }
+})
+
+ipcMain.handle('git:branches', async (_e, root) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.', branches: [] }
+  try {
+    const out = await execText('git branch --format="%(HEAD)\t%(refname:short)"', { cwd: root })
+    return { ok: true, branches: parseBranches(out) }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), branches: [] }
+  }
+})
+
+ipcMain.handle('git:createBranch', async (_e, root, name) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  const branch = String(name || '').trim()
+  if (!validBranch(branch)) return { ok: false, error: 'Invalid branch name.' }
+  try {
+    await execText(`git checkout -b ${shellQuote(branch)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:createBranchAt', async (_e, root, name, hash) => {
+  if (!root || !isAbsolutePath(root) || !validCommit(hash)) return { ok: false, error: 'Invalid branch request.' }
+  const branch = String(name || '').trim()
+  if (!validBranch(branch)) return { ok: false, error: 'Invalid branch name.' }
+  try {
+    await execText(`git checkout -b ${shellQuote(branch)} ${hash}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:checkoutBranch', async (_e, root, name) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  const branch = String(name || '').trim()
+  if (!validBranch(branch)) return { ok: false, error: 'Invalid branch name.' }
+  try {
+    await execText(`git checkout ${shellQuote(branch)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:deleteBranch', async (_e, root, name) => {
+  if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.' }
+  const branch = String(name || '').trim()
+  if (!validBranch(branch)) return { ok: false, error: 'Invalid branch name.' }
+  try {
+    const current = (await execText('git branch --show-current', { cwd: root })).trim()
+    if (branch === current) return { ok: false, error: 'Cannot delete the current branch.' }
+    await execText(`git branch -D ${shellQuote(branch)}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:mergeCommit', async (_e, root, hash) => {
+  if (!root || !isAbsolutePath(root) || !validCommit(hash)) return { ok: false, error: 'Invalid commit.' }
+  try {
+    const dirty = await execText('git status --porcelain=v1', { cwd: root })
+    if (dirty.trim()) return { ok: false, error: '请先提交或还原当前改动，再执行合并。' }
+    try {
+      await execText(`git merge-base --is-ancestor ${hash} HEAD`, { cwd: root })
+      return { ok: false, error: '该提交已经包含在当前分支中，无需合并。' }
+    } catch {
+      /* selected commit is not an ancestor of HEAD */
+    }
+    await execText(`git merge --no-ff --no-edit ${hash}`, { cwd: root })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+ipcMain.handle('git:restoreToCommit', async (_e, root, hash) => {
+  if (!root || !isAbsolutePath(root) || !validCommit(hash)) return { ok: false, error: 'Invalid commit.' }
+  try {
+    const target = (await execText(`git rev-parse --verify ${shellQuote(hash)}`, { cwd: root })).trim()
+    await execText(`git reset --hard ${target}`, { cwd: root })
+    const head = (await execText('git rev-parse HEAD', { cwd: root })).trim()
+    const shortHead = (await execText('git rev-parse --short HEAD', { cwd: root })).trim()
+    const branch = (await execText('git branch --show-current', { cwd: root })).trim() || 'HEAD'
+    return { ok: head === target, branch, head, shortHead, error: head === target ? '' : 'HEAD did not move to the selected commit.' }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
 
 // Paths we must never descend into: system/device trees that throw EACCES/EPERM
 // when watched, plus the usual noise dirs. Watching e.g. "/" would otherwise hit

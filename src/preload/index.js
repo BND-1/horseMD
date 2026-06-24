@@ -26,6 +26,25 @@ const api = {
   listFiles: (root) => ipcRenderer.invoke('fs:listFiles', root),
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
 
+  // git
+  gitStatus: (root) => ipcRenderer.invoke('git:status', root),
+  gitHistory: (root) => ipcRenderer.invoke('git:history', root),
+  gitSummary: (root) => ipcRenderer.invoke('git:summary', root),
+  gitStage: (root, rel) => ipcRenderer.invoke('git:stage', root, rel),
+  gitUnstage: (root, rel) => ipcRenderer.invoke('git:unstage', root, rel),
+  gitStageAll: (root) => ipcRenderer.invoke('git:stageAll', root),
+  gitCommit: (root, message) => ipcRenderer.invoke('git:commit', root, message),
+  gitCommitFiles: (root, hash) => ipcRenderer.invoke('git:commitFiles', root, hash),
+  gitCommitDiff: (root, hash, rel) => ipcRenderer.invoke('git:commitDiff', root, hash, rel),
+  gitWorktreeDiff: (root, rel, staged, status) => ipcRenderer.invoke('git:worktreeDiff', root, rel, staged, status),
+  gitBranches: (root) => ipcRenderer.invoke('git:branches', root),
+  gitCreateBranch: (root, name) => ipcRenderer.invoke('git:createBranch', root, name),
+  gitCreateBranchAt: (root, name, hash) => ipcRenderer.invoke('git:createBranchAt', root, name, hash),
+  gitCheckoutBranch: (root, name) => ipcRenderer.invoke('git:checkoutBranch', root, name),
+  gitDeleteBranch: (root, name) => ipcRenderer.invoke('git:deleteBranch', root, name),
+  gitMergeCommit: (root, hash) => ipcRenderer.invoke('git:mergeCommit', root, hash),
+  gitRestoreToCommit: (root, hash) => ipcRenderer.invoke('git:restoreToCommit', root, hash),
+
   // watch
   watchStart: (dir) => ipcRenderer.invoke('watch:start', dir),
   watchStop: (dir) => ipcRenderer.invoke('watch:stop', dir),
@@ -87,11 +106,7 @@ const api = {
 
   platform: process.platform,
 
-  // Feature capabilities for the renderer to gate UI uniformly across desktop /
-  // mobile (mobile provides its own set via the Capacitor shim). Exposed HERE,
-  // not added later in the renderer: contextBridge freezes this object, so
-  // assigning `window.api.capabilities` from the renderer throws ("object is not
-  // extensible") and white-screens the app. Desktop supports everything.
+  // Feature capabilities for the renderer to gate optional desktop features.
   capabilities: {
     folderWorkspace: true,
     watch: true,

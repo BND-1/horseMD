@@ -153,7 +153,7 @@ Electron + Vite + React 外壳，编辑器引擎用 **Milkdown Crepe**（基于 
 
 ## 文档
 
-- [ROADMAP.md](./ROADMAP.md) —— 已完成 / 近期计划 / 远期(含安卓、iOS 移动端)
+- [ROADMAP.md](./ROADMAP.md) —— 已完成 / 近期计划 / 远期
 - [docs/architecture.md](./docs/architecture.md) —— 技术栈、进程模型、目录结构、数据流
 - [docs/features.md](./docs/features.md) —— 每个功能的用法与实现（对应到文件）
 - [docs/implementation-notes.md](./docs/implementation-notes.md) —— 关键 bug 的根因与修法、设计决策

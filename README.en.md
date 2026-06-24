@@ -156,7 +156,7 @@ implementation, and the bugs/decisions log.
 
 ## Docs
 
-- [ROADMAP.md](./ROADMAP.md) — shipped / near-term / longer-term (incl. Android & iOS mobile)
+- [ROADMAP.md](./ROADMAP.md) — shipped / near-term / longer-term
 - [docs/architecture.md](./docs/architecture.md) — tech stack, process model, structure, data flow
 - [docs/features.md](./docs/features.md) — how each feature works (mapped to files)
 - [docs/implementation-notes.md](./docs/implementation-notes.md) — root causes of key bugs, design decisions

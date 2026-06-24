@@ -20,29 +20,14 @@
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
-    "dist:dir": "electron-vite build && electron-builder --dir",
-    "build:mobile": "vite build --config vite.mobile.config.mjs",
-    "cap:sync": "npm run build:mobile && cap sync",
-    "cap:ios": "npm run build:mobile && cap sync ios && cap open ios",
-    "cap:android": "npm run build:mobile && cap sync android && cap open android",
-    "dist:android": "npm run build:mobile && cap sync android && cd android && ./gradlew assembleRelease"
+    "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
-    "@capacitor/app": "^8.1.0",
-    "@capacitor/browser": "^8.0.3",
-    "@capacitor/core": "^8.4.0",
-    "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/share": "^8.0.1",
-    "@capacitor/status-bar": "^8.0.2",
-    "@capawesome/capacitor-file-picker": "^8.0.2",
     "@milkdown/crepe": "^7.6.5",
     "chokidar": "^4.0.3",
     "mermaid": "^11.15.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.4.0",
-    "@capacitor/cli": "^8.4.0",
-    "@capacitor/ios": "^8.4.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^34.5.8",
     "electron-builder": "^25.1.8",

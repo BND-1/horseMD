@@ -9,8 +9,8 @@ const I18N = {
     'hero.kicker': '免费 · 开源 · 不要账号',
     'hero.l1': '一个窗口，', 'hero.l2': '装下所有 .md 文件',
     'hero.sub': '一个免费的 Typora 平替，但不止于此。',
-    'cta.win': '下载 Windows 版', 'cta.mac': 'macOS 下载 & 安装', 'cta.android': '下载安卓 APK',
-    'hero.note': '构建未签名 — Windows：更多信息 → 仍要运行 · macOS（Apple 芯片 / Intel 均可）：右键 → 打开 · 安卓：安装 APK 时允许"未知来源"',
+    'cta.win': '下载 Windows 版', 'cta.mac': 'macOS 下载 & 安装',
+    'hero.note': '构建未签名 — Windows：更多信息 → 仍要运行 · macOS（Apple 芯片 / Intel 均可）：右键 → 打开',
     'hero.caption': 'HORSEMD · 文件树 / 标签页 / 所见即所得',
     'strip.tabs': '标签页', 'strip.tree': '文件树', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 套主题',
     'features.title': '它能做什么',
@@ -22,15 +22,15 @@ const I18N = {
     'themes.light': '明亮', 'themes.dark': '暗夜', 'themes.mist': '雾',
     'themes.sage': '鼠尾草', 'themes.rose': '玫瑰', 'themes.dusk': '暮色',
     '_title': 'HorseMD — 一个窗口，装下所有 .md 文件',
-    '_desc': 'HorseMD：免费开源的 Typora 平替。标签页 + 文件树 + 所见即所得，Windows、macOS 与 Android。',
+    '_desc': 'HorseMD：免费开源的 Typora 平替。标签页 + 文件树 + 所见即所得，Windows 与 macOS。',
   },
   en: {
     'nav.features': 'FEATURES', 'nav.themes': 'THEMES',
     'hero.kicker': 'FREE · OPEN SOURCE · NO ACCOUNT',
     'hero.l1': 'One window.', 'hero.l2': 'Every .md file.',
     'hero.sub': 'A free Typora alternative, and then some.',
-    'cta.win': 'Download for Windows', 'cta.mac': 'macOS — download & install', 'cta.android': 'Download Android APK',
-    'hero.note': 'Unsigned builds — Windows: More info → Run anyway · macOS (Apple Silicon / Intel): right-click → Open · Android: allow "unknown sources" when installing the APK',
+    'cta.win': 'Download for Windows', 'cta.mac': 'macOS — download & install',
+    'hero.note': 'Unsigned builds — Windows: More info → Run anyway · macOS (Apple Silicon / Intel): right-click → Open',
     'hero.caption': 'HORSEMD · FILE TREE / TABS / WYSIWYG',
     'strip.tabs': 'Tabs', 'strip.tree': 'File tree', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 themes',
     'features.title': 'What it does',
@@ -42,7 +42,7 @@ const I18N = {
     'themes.light': 'Light', 'themes.dark': 'Dark', 'themes.mist': 'Mist',
     'themes.sage': 'Sage', 'themes.rose': 'Rose', 'themes.dusk': 'Dusk',
     '_title': 'HorseMD — One window. Every .md file.',
-    '_desc': 'HorseMD: a free Typora alternative with tabs and a file-tree workspace. Open source, for Windows, macOS and Android.',
+    '_desc': 'HorseMD: a free Typora alternative with tabs and a file-tree workspace. Open source, for Windows and macOS.',
   },
 }
 
@@ -124,8 +124,6 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
     const assets = rel.assets || []
     const win = assets.find(a => /\.exe$/i.test(a.name))
     if (win) document.getElementById('dlWin').href = win.browser_download_url
-    const apk = assets.find(a => /\.apk$/i.test(a.name))
-    if (apk) document.getElementById('dlAndroid').href = apk.browser_download_url
     // macOS button intentionally points to the GitHub install guide (#安装),
     // NOT the direct .dmg — unsigned builds need the "right-click → Open" /
     // xattr step, so we send first-timers to the step-by-step instructions.

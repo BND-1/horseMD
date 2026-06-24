@@ -7,9 +7,7 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-/* App-like behavior on touch devices: kill double-tap-to-zoom (which otherwise
-   magnifies a blank tap and overflows the layout) and iOS text auto-inflation.
-   No effect on desktop (mouse input ignores touch-action). */
+/* App-like behavior on touch devices: kill double-tap-to-zoom. */
 html {
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
@@ -383,6 +381,24 @@ button:focus-visible,
 }
 .activity-home:hover .activity-logo,
 .activity-home.active .activity-logo { opacity: 1; }
+.activity-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-editor);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--bg-elevated);
+}
 
 /* Top Bar */
 .topbar {
@@ -1026,7 +1042,7 @@ button:focus-visible,
    carries a ✕. Lets the message wrap instead of staying a one-line pill. */
 .hm-toast.sticky {
   pointer-events: auto;
-  /* Center it on screen (works the same on iOS & Android WebViews). */
+  /* Center it on screen. */
   top: 50%;
   bottom: auto;
   transform: translate(-50%, -50%);
@@ -1169,6 +1185,646 @@ button:focus-visible,
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border-soft);
   min-height: 0;
+}
+
+.git-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.git-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.git-body.is-busy {
+  cursor: progress;
+}
+.git-changes-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+.git-error {
+  margin: 0 0 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.git-commit-box {
+  display: grid;
+  gap: 7px;
+  padding: 2px 0 10px;
+}
+.git-commit-box textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 58px;
+  max-height: 130px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  outline: none;
+}
+.git-commit-box textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.git-commit-box button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg-editor);
+  font-size: 12px;
+  font-weight: 700;
+}
+.git-commit-box button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.git-section + .git-section {
+  margin-top: 12px;
+}
+.git-section-title {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.git-section-title button {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.git-section-title button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.git-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.git-row-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.git-row-wrap:hover {
+  background: var(--hover);
+}
+.git-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+}
+.git-badge {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--bg-editor);
+  background: var(--muted);
+}
+.git-badge.s-M { background: var(--accent); }
+.git-badge.s-A { background: var(--success); }
+.git-badge.s-D { background: var(--danger); }
+.git-badge.s-R { background: var(--accent-strong); }
+.git-badge.s-U { background: var(--faint); }
+.git-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.git-action {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  opacity: 0;
+}
+.git-row-wrap:hover .git-action {
+  opacity: 1;
+}
+.git-action:hover {
+  background: var(--active);
+  color: var(--text);
+}
+.git-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.git-empty {
+  padding: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.git-empty.inline {
+  padding: 8px 6px 10px;
+  font-size: 12px;
+}
+.git-history {
+  flex: 0 0 auto;
+  min-height: 120px;
+  margin-top: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-soft);
+}
+.git-history .git-section-title {
+  flex: 0 0 26px;
+}
+.git-history-resizer {
+  flex: 0 0 7px;
+  position: relative;
+  cursor: row-resize;
+}
+.git-history-resizer::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 3px;
+  height: 1px;
+  background: var(--border);
+}
+.git-history-resizer:hover::before {
+  height: 2px;
+  background: var(--accent);
+}
+.hm-row-resizing,
+.hm-row-resizing * {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
+.git-graph {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 8px 8px;
+}
+.git-commit {
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(var(--graph-cols, 2) * 14px) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  min-height: 28px;
+  text-align: left;
+  color: inherit;
+  min-width: 0;
+  overflow: visible;
+}
+.git-commit:hover,
+.git-commit.active {
+  background: transparent;
+}
+.git-commit-block {
+  position: relative;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.git-commit-block > * {
+  position: relative;
+  z-index: 3;
+}
+.git-commit-block.graph-spacer {
+  height: 12px;
+  padding-left: 7px;
+  pointer-events: none;
+}
+.git-graph-svg {
+  display: block;
+  width: calc(var(--graph-cols, 2) * 14px);
+  height: 28px;
+  overflow: visible;
+}
+.git-graph-svg.compact {
+  height: 12px;
+}
+.git-graph-line {
+  fill: none;
+  stroke: var(--lane-color);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.git-graph-node {
+  fill: var(--lane-color);
+  stroke: color-mix(in srgb, var(--bg-sidebar) 85%, transparent);
+  stroke-width: 2;
+}
+.git-graph-node.selected circle:first-child {
+  fill: color-mix(in srgb, var(--bg-sidebar) 80%, transparent);
+  stroke: var(--lane-color);
+  stroke-width: 3;
+}
+.git-graph-node.selected circle:last-child {
+  fill: var(--lane-color);
+  stroke: none;
+}
+.git-commit:hover .git-graph-node,
+.git-commit.active .git-graph-node {
+  stroke: color-mix(in srgb, var(--hover) 85%, transparent);
+}
+.git-commit-main {
+  min-width: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  border-radius: var(--radius-sm);
+  padding: 0 7px;
+}
+.git-commit:hover .git-commit-main,
+.git-commit.active .git-commit-main {
+  background: var(--hover);
+}
+.git-commit-subject {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 18px;
+  min-height: 18px;
+}
+.git-commit-subject > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-commit-branches {
+  flex: 0 0 auto;
+  max-width: min(190px, 52%);
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(-1px);
+  transition: opacity 0.12s var(--ease-out), filter 0.12s var(--ease-out);
+}
+.git-commit-branch-chip {
+  min-width: 0;
+  max-width: 88px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--branch-chip-color) 82%, #ffffff 18%);
+  border-radius: 999px;
+  color: #fff;
+  background: color-mix(in srgb, var(--branch-chip-color) 88%, #111 12%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.git-commit:hover .git-commit-branches,
+.git-commit.active .git-commit-branches,
+.git-commit-branches:hover {
+  opacity: 1;
+  filter: brightness(1.05);
+}
+.git-refs {
+  flex: 0 1 auto;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--active);
+  color: var(--accent-strong);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.git-commit-detail {
+  margin: 2px 0 8px calc((var(--graph-cols, 2) * 14px) + 24px);
+  padding-left: 0;
+}
+.git-commit-pop {
+  position: fixed;
+  z-index: 240;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+.git-commit-pop-time {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.git-commit-pop-msg {
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+.git-commit-pop-branches {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.git-commit-pop-branches > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+.git-commit-pop-branches span {
+  max-width: 180px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--active);
+  color: var(--accent-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-commit-menu {
+  z-index: 250;
+  min-width: 210px;
+}
+.git-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+.git-modal {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.git-modal-head {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+  font-weight: 800;
+}
+.git-modal-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.git-modal-body p {
+  margin: 0;
+}
+.git-modal-commit {
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.git-modal label {
+  display: grid;
+  gap: 6px;
+}
+.git-modal label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.git-modal input,
+.git-modal select {
+  height: 32px;
+  width: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  outline: none;
+}
+.git-modal input:focus,
+.git-modal select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.git-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.git-modal-foot button {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+}
+.git-modal-foot button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.git-modal-foot button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+}
+.git-modal-foot button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.git-footer {
+  position: relative;
+  flex: 0 0 auto;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.git-footer span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-branch-btn {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.git-branch-btn:hover {
+  color: var(--text);
+}
+.git-branch-pop {
+  position: absolute;
+  left: 8px;
+  bottom: 30px;
+  z-index: 80;
+  width: min(260px, calc(100% - 16px));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.git-branch-title {
+  padding: 2px 4px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.git-branch-new {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.git-branch-new input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.git-branch-new input:focus {
+  border-color: var(--accent);
+}
+.git-branch-new button,
+.git-branch-list button {
+  border-radius: var(--radius-sm);
+}
+.git-branch-new button {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.git-branch-new button:hover,
+.git-branch-list button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.git-branch-new button:disabled,
+.git-branch-list button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.git-branch-list {
+  max-height: 180px;
+  overflow: auto;
+}
+.git-branch-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  color: var(--text);
+  text-align: left;
+}
+.git-branch-list button.active {
+  color: var(--accent-strong);
+  background: var(--active);
 }
 .ai-head {
   height: 44px;
@@ -1864,6 +2520,120 @@ button:focus-visible,
   flex-direction: row;
   position: relative;
 }
+.git-diff-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.git-diff-tab {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-editor);
+}
+.git-diff-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.git-diff-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+.git-diff-sub {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.git-diff-split-head {
+  flex: 0 0 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.git-diff-split-head span {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+.git-diff-split-head span + span {
+  border-left: 1px solid var(--border-soft);
+}
+.git-diff-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.git-diff-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 760px;
+  min-height: 22px;
+}
+.git-diff-cell {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.git-diff-cell + .git-diff-cell {
+  border-left: 1px solid var(--border-soft);
+}
+.git-diff-cell code {
+  padding: 1px 14px 1px 8px;
+  font-family: inherit;
+  color: var(--text);
+}
+.git-diff-no {
+  padding: 1px 10px 1px 0;
+  border-right: 1px solid var(--border-soft);
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+}
+.git-diff-cell.add {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+.git-diff-cell.del,
+.git-diff-cell.old.del,
+.git-diff-row.change .git-diff-cell.old {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+.git-diff-row.change .git-diff-cell.new {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+.git-diff-cell.empty {
+  background: color-mix(in srgb, var(--faint) 5%, transparent);
+}
+.git-diff-hunk {
+  min-width: 760px;
+  padding: 4px 14px;
+  background: var(--active);
+  color: var(--accent-strong);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.git-diff-empty {
+  padding: 18px;
+  color: var(--muted);
+}
 /* "Large file shown as plain text" notice + opt-in to rich rendering. */
 .hm-heavy-banner {
   position: absolute;
@@ -2445,6 +3215,87 @@ body.hm-full-width .source-selection-ghost {
 .status-btn:hover {
   background: var(--hover);
   color: var(--text);
+}
+.status-diff-btn {
+  color: var(--accent-strong);
+}
+
+.hm-diff-modal {
+  position: fixed;
+  inset: 6vh 6vw;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  min-width: 640px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-diff-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.hm-diff-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.hm-diff-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hm-diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 0;
+  background: var(--bg-editor);
+}
+.hm-diff-empty {
+  padding: 20px;
+  color: var(--muted);
+}
+.hm-diff-row {
+  display: grid;
+  grid-template-columns: 48px 48px 22px minmax(0, 1fr);
+  min-height: 22px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hm-diff-row.add { background: color-mix(in srgb, var(--success) 14%, transparent); }
+.hm-diff-row.del { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.hm-diff-no {
+  padding: 0 8px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.hm-diff-mark {
+  color: var(--muted);
+  user-select: none;
+}
+.hm-diff-row code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+.hm-diff-gap {
+  padding: 4px 18px;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
 }
 /* Right-side items never shrink; the path yields space instead. As a last resort
    on very narrow windows, drop the word/char/read counts first — never the
@@ -3131,262 +3982,3 @@ body.dark .milkdown {
   color: var(--muted);
 }
 
-/* =====================================================
-   Mobile (Capacitor: iOS / Android)
-   Every rule here is scoped under .app.is-mobile, so the desktop layout is
-   completely untouched. On a phone there is NO permanent left rail (it would
-   steal width and feel cramped next to text): the editor is edge-to-edge, and
-   the activity rail + file/outline sidebar slide in together as one drawer,
-   opened by the top-bar ☰ button and closed by the scrim or the rail's button.
-   ===================================================== */
-
-.app.is-mobile {
-  position: relative; /* anchor the slide-in drawer + scrim overlays */
-  --activity-bar-w: 0; /* collapse the grid's left column so content is full width */
-  /* Grow the top/bottom bars into the safe area (notch / home indicator) rather
-     than padding the whole app, which would offset the absolute drawer. */
-  grid-template-rows:
-    calc(var(--topbar-h) + env(safe-area-inset-top))
-    1fr
-    calc(var(--status-h) + env(safe-area-inset-bottom));
-}
-.app.is-mobile .topbar { padding-top: env(safe-area-inset-top); }
-.app.is-mobile .statusbar { padding-bottom: env(safe-area-inset-bottom); }
-
-/* Touch-friendly hit targets. */
-.app.is-mobile .activity-item { width: 48px; height: 48px; }
-.app.is-mobile .icon-btn { width: 40px; height: 40px; }
-.app.is-mobile .hm-menu-btn { margin-right: 2px; }
-
-/* Editor fills the screen — ignore the desktop 800px page-width preset and the
-   wide horizontal gutters. !important overrides the inline --editor-max-width
-   and the hm-full-width body class alike. */
-.app.is-mobile .editor-host,
-.app.is-mobile .editor-skeleton {
-  /* A reading width, centered: on a phone the column is narrower than this so it
-     stays effectively full-width; on a tablet/large screen it caps the line
-     length for comfortable reading instead of bleeding edge-to-edge. */
-  max-width: 760px !important;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 18px !important;
-  padding-right: 18px !important;
-}
-.app.is-mobile .editor-skeleton { padding-top: 18px; }
-.app.is-mobile .source-editor,
-.app.is-mobile .source-selection-ghost {
-  padding-left: 18px !important;
-  padding-right: 18px !important;
-}
-
-/* Typography tuned for a phone: the desktop heading scale (h1 = 2.25em ≈ 36px)
-   is oversized on a narrow column, so step the headings down and tighten the
-   space above them; keep body at 16px for comfortable reading. */
-.app.is-mobile .milkdown .ProseMirror { line-height: 1.7; }
-.app.is-mobile .milkdown .ProseMirror h1 { font-size: 1.75em; }
-.app.is-mobile .milkdown .ProseMirror h2 { font-size: 1.42em; }
-.app.is-mobile .milkdown .ProseMirror h3 { font-size: 1.2em; }
-.app.is-mobile .milkdown .ProseMirror h4 { font-size: 1.1em; }
-.app.is-mobile .milkdown .ProseMirror h1,
-.app.is-mobile .milkdown .ProseMirror h2,
-.app.is-mobile .milkdown .ProseMirror h3,
-.app.is-mobile .milkdown .ProseMirror h4,
-.app.is-mobile .milkdown .ProseMirror h5,
-.app.is-mobile .milkdown .ProseMirror h6 {
-  margin-top: 1.3em;
-  margin-bottom: 0.5em;
-}
-
-/* ---- Slide-in drawer: activity rail + sidebar panel ---- */
-/* Both are positioned against .app and hidden off-screen by default. */
-.app.is-mobile .activity-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 56px;
-  padding-top: calc(env(safe-area-inset-top) + 10px);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
-  transform: translateX(-100%);
-  transition: transform 0.25s var(--ease-out);
-  z-index: 42;
-}
-.app.is-mobile .pane-left {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 56px;
-  width: min(76vw, 300px);
-  max-width: min(76vw, 300px);
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  transform: translateX(calc(-100% - 56px));
-  transition: transform 0.25s var(--ease-out);
-  z-index: 41;
-  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.2);
-}
-/* Keep the panel a real drawer even when the desktop .collapsed class is on it
-   (visibility is driven by the transform below, not width/opacity). */
-.app.is-mobile .pane-left.collapsed {
-  width: min(76vw, 300px);
-  max-width: min(76vw, 300px);
-  opacity: 1;
-  pointer-events: auto;
-  border-right: 1px solid var(--border-soft);
-}
-.app.is-mobile.drawer-open .activity-bar { transform: translateX(0); }
-.app.is-mobile.drawer-open .pane-left { transform: translateX(0); }
-
-/* Dim scrim behind the drawer; tap anywhere outside to close. */
-.app.is-mobile .hm-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  background: rgba(0, 0, 0, 0.38);
-  animation: hmScrimFade 0.2s var(--ease-out);
-}
-@keyframes hmScrimFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Hide controls that don't apply on a phone: the page-width preset (the editor
-   is always full width here) and the desktop keyboard-shortcut hints. */
-.app.is-mobile .hm-pagewidth { display: none; }
-.app.is-mobile .welcome-hints { display: none; }
-/* The floating "Text / H1" caret badge is desktop affordance; drop it on phones. */
-.app.is-mobile .hm-level-badge { display: none !important; }
-/* Vertical scroll only: editor-scroll has overflow-y:auto but no overflow-x, so
-   per CSS it computes to auto and the whole article pans sideways when anything
-   is too wide. Clip it horizontally (wide code blocks still scroll internally)
-   and wrap long words/URLs so they don't force the page wider. */
-.app.is-mobile .editor-scroll { overflow-x: hidden; }
-.app.is-mobile .milkdown .ProseMirror { overflow-wrap: break-word; }
-/* No window-drag handle needed on touch — let tabs use the full width. */
-.app.is-mobile .topbar-spacer { min-width: 0; }
-
-/* "•••" sheet that folds the crowded status-bar controls into one menu. */
-.app.is-mobile .hm-status-sheet { min-width: 232px; max-width: 80vw; }
-.app.is-mobile .hm-sheet-counts {
-  padding: 4px 10px 8px;
-  font-size: 12px;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border-soft);
-  margin-bottom: 4px;
-}
-.app.is-mobile .hm-sheet-themes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  padding: 4px 10px 8px;
-}
-.app.is-mobile .hm-sheet-swatch {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  box-shadow: 0 0 0 1px var(--border) inset;
-}
-.app.is-mobile .hm-sheet-swatch.active { border-color: var(--accent); }
-.app.is-mobile .hm-sheet-swatch-custom { background: var(--accent); }
-.app.is-mobile .hm-sheet-langs { display: flex; gap: 4px; }
-.app.is-mobile .hm-sheet-langs .block-menu-item { flex: 1; justify-content: center; }
-
-/* Font-size stepper in the mobile "more" sheet: −  16px  + */
-.app.is-mobile .hm-sheet-fontsize {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 10px 8px;
-}
-.app.is-mobile .hm-fontstep {
-  width: 40px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: 19px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.app.is-mobile .hm-fontstep:disabled { opacity: 0.4; }
-.app.is-mobile .hm-fontstep:active { background: var(--bg-hover); }
-.app.is-mobile .hm-fontstep-value {
-  flex: 1;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-/* The "•••" is the only control on the right of the mobile status bar and the
-   gateway to settings, so give it an obvious pill affordance + bigger target. */
-/* Borderless icon+text buttons in the bottom bar ("Export", "⋯ More"). */
-.app.is-mobile .hm-more-btn,
-.app.is-mobile .hm-share-btn {
-  height: 28px;
-  padding: 0 6px;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.app.is-mobile .hm-more-btn:active,
-.app.is-mobile .hm-share-btn:active { color: var(--text); }
-
-/* Word / char / read counts shown inline at the bottom (moved out of the menu). */
-.app.is-mobile .status-left { gap: 8px; }
-.app.is-mobile .status-counts {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Tab close ✕: always visible on touch (no hover to reveal it) + bigger target. */
-.app.is-mobile .tab-close {
-  opacity: 1;
-  width: 22px;
-  height: 22px;
-}
-
-/* ------- Touch ergonomics (applies on touch devices; desktop unaffected) -------
-   On touch, :hover sticks after a tap so a button stays highlighted as if still
-   pressed/selected. Neutralize the lingering hover background and give a real
-   press (:active) response instead, so a tap reads as a tap. */
-@media (hover: none) {
-  .icon-btn:hover,
-  .activity-item:hover,
-  .status-btn:hover,
-  .tab:hover,
-  .tab-close:hover,
-  .block-menu-item:hover,
-  .hm-more-btn:hover {
-    background: transparent;
-  }
-  .icon-btn:active,
-  .activity-item:active,
-  .status-btn:active,
-  .block-menu-item:active,
-  .hm-more-btn:active,
-  .tab-menu-item:active {
-    background: var(--hover);
-  }
-  .tab-close:active {
-    background: var(--active);
-    color: var(--text);
-  }
-}
-.app.is-mobile .hm-sheet-save { font-weight: 600; }
-.app.is-mobile .hm-sheet-save-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-left: auto;
-}

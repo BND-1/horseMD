@@ -116,7 +116,7 @@ export default function Editor({
     cleanups.push(() => liveEditors.delete(self))
 
     // Read an image file as a base64 data: URL — the last-resort persistent src
-    // (survives save & reload, unlike a blob: URL) for untitled docs / mobile.
+    // (survives save & reload, unlike a blob: URL) for untitled docs.
     const fileToDataUrl = (file) =>
       new Promise((resolve) => {
         const r = new FileReader()
@@ -129,7 +129,7 @@ export default function Editor({
     // never dies on reload (the "screenshots lost after save & reopen" bug):
     //   1. image-host command configured → upload, use the returned URL
     //   2. saved document → write into ./assets and use a relative path (Typora)
-    //   3. untitled doc / mobile / any failure → inline base64 data: URL
+    //   3. untitled doc / any failure → inline base64 data: URL
     const persistImage = async (file) => {
       const cmd = (uploadCmdRef.current || '').trim()
       if (cmd) {

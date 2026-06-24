@@ -5,24 +5,6 @@ dist/
 *.log
 .DS_Store
 
-# mobile (Capacitor) build output + native build artifacts
-dist-mobile/
-ios/App/Pods/
-ios/App/App/public/
-ios/App/build/
-ios/DerivedData/
-android/.gradle/
-android/app/build/
-android/build/
-android/local.properties
-android/app/src/main/assets/public/
-.capacitor/
-
-# Android release signing — NEVER commit these (lose the keystore = can't update the app)
-android/key.properties
-*.keystore
-*.jks
-
 # local test fixtures (generated)
 test-articles/
 
@@ -30,5 +12,3 @@ test-articles/
 build/_*.png
 *参考*.html
 
-# device build (xcodebuild -derivedDataPath)
-ios/App/build-device/
