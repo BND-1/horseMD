@@ -18,6 +18,8 @@ import ImageHostButton from './components/ImageHostButton.jsx'
 import AiPanel from './components/AiPanel.jsx'
 import DiffModal from './components/DiffModal.jsx'
 import GitDiffView from './components/GitDiffView.jsx'
+import SourceSyncModal from './components/SourceSyncModal.jsx'
+import { useAppDialog } from './components/AppDialog.jsx'
 import { loadSettings, saveSettings, applyPageWidth, applyFontSize } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
 import { fireToast, HM_TOAST_EVENT } from './ui.js'
@@ -38,6 +40,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState(sanitizeWorkspace(session.workspace))
   const [sidebarOpen, setSidebarOpen] = useState(session.sidebarOpen ?? true)
   const [sidebarMode, setSidebarMode] = useState(['files', 'outline', 'git'].includes(session.sidebarMode) ? session.sidebarMode : 'files')
+  const [mountedSidebarModes, setMountedSidebarModes] = useState(() => new Set([sidebarMode]))
   const [theme, setTheme] = useState(session.theme || DEFAULT_THEME)
   // Active custom CSS theme (filename in userData/themes), or null. Overlays the
   // built-in base theme. `customThemes` is the list scanned from that folder.
@@ -82,6 +85,9 @@ export default function App() {
   // window.prompt, so renaming a tab's file uses this small inline dialog.)
   const [renameState, setRenameState] = useState(null)
   const [diffOpen, setDiffOpen] = useState(false)
+  const [sourceSync, setSourceSync] = useState(null)
+  const [sourceSyncBusy, setSourceSyncBusy] = useState(false)
+  const { alert: showAlert, confirm: showConfirm, node: appDialogNode } = useAppDialog()
   // User preferences (page width, image-host command). Persisted separately from
   // the session; see settings.js.
   const [settings, setSettings] = useState(loadSettings)
@@ -135,6 +141,8 @@ export default function App() {
     [tabs, splitId]
   )
   const split = !home && !!splitTab && splitId !== activeId
+  const visibleAiTab = aiOpen && !home ? activeTab : null
+  const visibleOutlineContent = sidebarOpen && sidebarMode === 'outline' ? (activeTab?.content || '') : ''
   // Always-current activeId for callbacks that fire after a tab switch.
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -213,6 +221,15 @@ export default function App() {
   useEffect(() => {
     if (splitId == null && focusedPane !== 'left') setFocusedPane('left')
   }, [splitId, focusedPane])
+
+  useEffect(() => {
+    setMountedSidebarModes((prev) => {
+      if (prev.has(sidebarMode)) return prev
+      const next = new Set(prev)
+      next.add(sidebarMode)
+      return next
+    })
+  }, [sidebarMode])
 
   // ----------------------------- theme / i18n -----------------------------
   useEffect(() => {
@@ -379,9 +396,12 @@ export default function App() {
         // Startup restore skips missing files quietly; an explicit open (clicking
         // a Recent, File > Open) still tells the user what happened.
         if (!silent) {
-          window.alert(
-            tRef.current(missing ? 'error.fileMissing' : 'error.openFailed', { name: baseName(path) })
-          )
+          await showAlert({
+            title: tRef.current(missing ? 'dialog.infoTitle' : 'dialog.errorTitle'),
+            message: tRef.current(missing ? 'error.fileMissing' : 'error.openFailed', { name: baseName(path) }),
+            type: missing ? 'warning' : 'error',
+            confirmText: tRef.current('dialog.ok')
+          })
         }
       }
     }
@@ -413,7 +433,8 @@ export default function App() {
             savedContent: patch,
             patch,
             commitSubject: payload.commitSubject,
-            commitTime: payload.commitTime
+            commitTime: payload.commitTime,
+            source: payload.source
           }
         : t
       tabsRef.current = tabsRef.current.map(updateTab)
@@ -437,13 +458,94 @@ export default function App() {
       patch: payload.patch || '',
       fileRel: payload.fileRel,
       commitSubject: payload.commitSubject,
-      commitTime: payload.commitTime
+      commitTime: payload.commitTime,
+      source: payload.source
     }
     tabsRef.current = [...tabsRef.current, tab]
     setTabs((prev) => [...prev, tab])
     setActiveId(id)
     setHome(false)
-  }, [])
+  }, [showAlert])
+
+  const openFileFromSidebar = useCallback((p) => openPaths([p]), [openPaths])
+
+  const revertGitDiffHunk = useCallback(async (tab, patch) => {
+    if (!workspace?.rootPath || tab?.source !== 'worktree' || !tab?.fileRel || !patch) return
+    if (typeof window.api.gitRevertWorktreeHunk !== 'function') {
+      await showAlert({
+        title: tRef.current('dialog.infoTitle'),
+        message: '请重启应用后再使用块还原功能。',
+        type: 'warning',
+        confirmText: tRef.current('dialog.ok')
+      })
+      return
+    }
+    const res = await window.api.gitRevertWorktreeHunk?.(workspace.rootPath, tab.fileRel, patch)
+    if (!res?.ok) {
+      await showAlert({
+        title: tRef.current('dialog.errorTitle'),
+        message: '无法还原此差异块。通常是因为文件在打开 diff 后又被修改、保存，或者这个块和其他改动有重叠。请重新打开该文件的 diff 后再试。\n\n' + (res?.error || ''),
+        type: 'error',
+        confirmText: tRef.current('dialog.ok')
+      })
+      return
+    }
+    const nextPatch = res.patch || ''
+    const updateTab = (item) => item.id === tab.id
+      ? { ...item, content: nextPatch, savedContent: nextPatch, patch: nextPatch }
+      : item
+    tabsRef.current = tabsRef.current.map(updateTab)
+    setTabs((prev) => prev.map(updateTab))
+    setRefreshNonce((n) => n + 1)
+    refreshGitCount()
+  }, [workspace?.rootPath, refreshGitCount, showAlert])
+
+  const applySourceSync = useCallback(async () => {
+    if (!workspace?.rootPath || !sourceSync?.path) return
+    setSourceSyncBusy(true)
+    try {
+      const toSource = sourceSync.direction === 'toSource'
+      const syncFn = toSource ? window.api.sourceSyncToSource : window.api.sourceSync
+      if (typeof syncFn !== 'function') {
+        await showAlert({ title: tRef.current('dialog.infoTitle'), message: tRef.current('source.reloadNeeded'), confirmText: tRef.current('dialog.ok') })
+        return
+      }
+      const res = await syncFn(workspace.rootPath, sourceSync.path)
+      if (!res?.ok) {
+        await showAlert({ title: tRef.current('dialog.errorTitle'), message: res?.error || tRef.current('source.syncFailed'), type: 'error', confirmText: tRef.current('dialog.ok') })
+        return
+      }
+      if (!toSource) {
+        setTabs((prev) => prev.map((tab) => tab.path === sourceSync.path
+          ? {
+              ...tab,
+              content: res.content,
+              savedContent: res.content,
+              mtimeMs: res.mtimeMs,
+              reloadNonce: tab.reloadNonce + 1,
+              heavy: isHeavyDoc(res.content)
+            }
+          : tab
+        ))
+      }
+      setRefreshNonce((n) => n + 1)
+      refreshGitCount()
+      setSourceSync(null)
+    } catch (e) {
+      await showAlert({ title: tRef.current('dialog.errorTitle'), message: (tRef.current('source.syncFailed') || 'Could not sync source file: ') + e.message, type: 'error', confirmText: tRef.current('dialog.ok') })
+    } finally {
+      setSourceSyncBusy(false)
+    }
+  }, [workspace?.rootPath, sourceSync, refreshGitCount, showAlert])
+
+  const beginSourceSync = useCallback((payload) => {
+    const openTab = tabsRef.current.find((tab) => tab.path === payload?.path)
+    if (openTab && openTab.content !== openTab.savedContent) {
+      showAlert({ title: tRef.current('dialog.unsavedTitle'), message: tRef.current('source.unsavedBlock'), type: 'warning', confirmText: tRef.current('dialog.ok') })
+      return
+    }
+    setSourceSync(payload)
+  }, [showAlert])
 
   const updateContent = useCallback((id, md, isInitial) => {
     setTabs((prev) =>
@@ -498,12 +600,19 @@ export default function App() {
   }, [])
 
   const closeTab = useCallback(
-    (id) => {
+    async (id) => {
+      const tabToClose = tabsRef.current.find((x) => x.id === id)
+      if (tabToClose && tabToClose.content !== tabToClose.savedContent) {
+        const ok = await showConfirm({
+          title: tRef.current('dialog.unsavedTitle'),
+          message: tRef.current('confirm.closeUnsaved', { name: tabToClose.title }),
+          type: 'warning',
+          confirmText: tRef.current('dialog.continue'),
+          cancelText: tRef.current('edit.cancel')
+        })
+        if (!ok) return
+      }
       setTabs((prev) => {
-        const tab = prev.find((x) => x.id === id)
-        if (tab && tab.content !== tab.savedContent) {
-          if (!window.confirm(tRef.current('confirm.closeUnsaved', { name: tab.title }))) return prev
-        }
         const idx = prev.findIndex((x) => x.id === id)
         const next = prev.filter((x) => x.id !== id)
         setActiveId((cur) => {
@@ -514,7 +623,7 @@ export default function App() {
         return next
       })
     },
-    []
+    [showConfirm]
   )
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move
@@ -593,7 +702,7 @@ export default function App() {
     if (!tab?.path || !name) return
     if (name === baseName(tab.path)) return
     if (/[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
-      window.alert(tRef.current('err.invalidName') + name)
+      await showAlert({ title: tRef.current('dialog.errorTitle'), message: tRef.current('err.invalidName') + name, type: 'error', confirmText: tRef.current('dialog.ok') })
       return
     }
     const newPath = joinPath(dirName(tab.path), name)
@@ -602,13 +711,16 @@ export default function App() {
       setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, path: newPath, title: name } : t)))
       setRefreshNonce((n) => n + 1)
     } catch (e) {
-      window.alert(
-        /eexist|already exists/i.test(e.message)
+      await showAlert({
+        title: tRef.current('dialog.errorTitle'),
+        message: /eexist|already exists/i.test(e.message)
           ? tRef.current('err.nameExists')
-          : tRef.current('err.rename') + e.message
-      )
+          : tRef.current('err.rename') + e.message,
+        type: 'error',
+        confirmText: tRef.current('dialog.ok')
+      })
     }
-  }, [])
+  }, [showAlert])
 
   const duplicateTabFile = useCallback(async (id) => {
     const tab = tabsRef.current.find((t) => t.id === id)
@@ -617,18 +729,29 @@ export default function App() {
       await window.api.duplicate(tab.path)
       setRefreshNonce((n) => n + 1)
     } catch (e) {
-      window.alert(
-        /eexist|already exists/i.test(e.message)
+      await showAlert({
+        title: tRef.current('dialog.errorTitle'),
+        message: /eexist|already exists/i.test(e.message)
           ? tRef.current('err.nameExists')
-          : tRef.current('err.duplicate') + e.message
-      )
+          : tRef.current('err.duplicate') + e.message,
+        type: 'error',
+        confirmText: tRef.current('dialog.ok')
+      })
     }
-  }, [])
+  }, [showAlert])
 
   const deleteTabFile = useCallback(async (id) => {
     const tab = tabsRef.current.find((t) => t.id === id)
     if (!tab?.path) return
-    if (!window.confirm(tRef.current('confirm.trash', { name: tab.title }))) return
+    const ok = await showConfirm({
+      title: tRef.current('dialog.deleteTitle'),
+      message: tRef.current('confirm.trash', { name: tab.title }),
+      detail: tab.path,
+      type: 'danger',
+      confirmText: tRef.current('dialog.deleteConfirm'),
+      cancelText: tRef.current('edit.cancel')
+    })
+    if (!ok) return
     try {
       await window.api.deleteItem(tab.path)
       // Remove the tab outright (the file is gone; don't re-prompt about unsaved edits).
@@ -640,23 +763,30 @@ export default function App() {
       })
       setRefreshNonce((n) => n + 1)
     } catch (e) {
-      window.alert(tRef.current('err.delete') + e.message)
+      await showAlert({ title: tRef.current('dialog.errorTitle'), message: tRef.current('err.delete') + e.message, type: 'error', confirmText: tRef.current('dialog.ok') })
     }
-  }, [])
+  }, [showAlert, showConfirm])
 
   // Close every tab except `keepId` (from the tab right-click menu).
-  const closeOthers = useCallback((keepId) => {
+  const closeOthers = useCallback(async (keepId) => {
+    const othersNow = tabsRef.current.filter((t) => t.id !== keepId)
+    const firstDirty = othersNow.find((t) => t.content !== t.savedContent)
+    if (firstDirty) {
+      const ok = await showConfirm({
+        title: tRef.current('dialog.unsavedTitle'),
+        message: tRef.current('confirm.closeUnsaved', { name: firstDirty.title }),
+        type: 'warning',
+        confirmText: tRef.current('dialog.continue'),
+        cancelText: tRef.current('edit.cancel')
+      })
+      if (!ok) return
+    }
     setTabs((prev) => {
-      const others = prev.filter((t) => t.id !== keepId)
-      const firstDirty = others.find((t) => t.content !== t.savedContent)
-      if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
-        return prev
-      }
       setActiveId(keepId)
       setSplitId(null)
       return prev.filter((t) => t.id === keepId)
     })
-  }, [])
+  }, [showConfirm])
 
   const writeTab = useCallback(async (tab, targetPath) => {
     try {
@@ -722,13 +852,13 @@ export default function App() {
         if (!html) await new Promise((r) => setTimeout(r, 75))
       }
       if (!html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
+        await showAlert({ title: tRef.current('dialog.infoTitle'), message: tRef.current('error.exportPdfUnavailable'), confirmText: tRef.current('dialog.ok') })
         return
       }
       const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
       await window.api.exportPDF(html, base + '.pdf')
     },
-    [openPaths]
+    [openPaths, showAlert]
   )
 
   // --------------------------- workspace ---------------------------
@@ -912,7 +1042,7 @@ export default function App() {
       const id = pickEditableId()
       const html = editorApis.current[id]?.getDocHTML?.()
       if (!html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
+        showAlert({ title: tRef.current('dialog.infoTitle'), message: tRef.current('error.exportPdfUnavailable'), confirmText: tRef.current('dialog.ok') })
         return
       }
       const tab = tabs.find((x) => x.id === id)
@@ -947,7 +1077,7 @@ export default function App() {
   useEffect(() => {
     const offMenu = window.api.onMenu((cmd) => handlers.current[cmd]?.())
     const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
-    // A folder path arriving from Explorer's "Open with HorseMD" folder menu.
+    // A folder path arriving from Explorer's "Open with AIxiao" folder menu.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
       if (!dir || !isAbsolutePath(dir)) return // never open a relative path as a workspace
       setWorkspace({ rootPath: dir, rootName: baseName(dir) })
@@ -957,12 +1087,19 @@ export default function App() {
     const onOpenFolderEvt = () => openFolder()
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
-    const offClose = window.api.onAppCloseRequest?.(() => {
+    const offClose = window.api.onAppCloseRequest?.(async () => {
       // Flush the latest session before we (maybe) quit, so a recent edit that's
       // still inside the debounce window isn't lost.
       flushSession()
       const dirty = tabsRef.current.some((t) => t.content !== t.savedContent)
-      if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+      const ok = !dirty || await showConfirm({
+        title: tRef.current('dialog.unsavedTitle'),
+        message: tRef.current('confirm.quitUnsaved'),
+        type: 'warning',
+        confirmText: tRef.current('dialog.continue'),
+        cancelText: tRef.current('edit.cancel')
+      })
+      if (ok) {
         window.api.confirmAppClose()
       } else {
         window.api.cancelAppClose?.()
@@ -975,7 +1112,7 @@ export default function App() {
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openPaths, openFolder])
+  }, [openPaths, openFolder, showConfirm])
 
   // Ctrl+Tab cycling + restore session tabs on first mount
   useEffect(() => {
@@ -1255,7 +1392,7 @@ export default function App() {
           title={t('nav.home')}
           onClick={() => handlers.current.home()}
         >
-          <img className="activity-logo" src={logoUrl} alt="HorseMD" />
+          <img className="activity-logo" src={logoUrl} alt="AIxiao" />
         </button>
         <button
           className={`activity-item${sidebarMode === 'files' ? ' active' : ''}`}
@@ -1344,28 +1481,39 @@ export default function App() {
 
       <div className="body">
         <aside className={`pane-left${sidebarOpen ? '' : ' collapsed'}`}>
-          {sidebarOpen && (
-            sidebarMode === 'files' ? (
+          <>
+            {mountedSidebarModes.has('files') && (
+              <div className="sidebar-slot" style={{ display: sidebarMode === 'files' ? 'contents' : 'none' }}>
               <Sidebar
                 workspace={workspace}
                 activePath={activePath}
-                onOpenFile={(p) => openPaths([p])}
+                onOpenFile={openFileFromSidebar}
                 onOpenRight={openFileRight}
                 onExportPdf={exportPathToPdf}
+                onSourceSync={beginSourceSync}
+                showAlert={showAlert}
+                showConfirm={showConfirm}
                 refreshNonce={refreshNonce}
               />
-            ) : sidebarMode === 'git' ? (
+              </div>
+            )}
+            {mountedSidebarModes.has('git') && (
+              <div className="sidebar-slot" style={{ display: sidebarMode === 'git' ? 'contents' : 'none' }}>
               <GitChanges
                 workspace={workspace}
-                refreshNonce={refreshNonce}
-                onOpenFile={(p) => openPaths([p])}
+                onOpenFile={openFileFromSidebar}
                 onOpenDiff={openGitDiffTab}
                 onChanged={refreshGitCount}
+                onCountChanged={setGitChangeCount}
               />
-            ) : (
-              <Outline content={activeTab?.content || ''} activeIndex={activeHeading} onJump={jumpToHeading} />
-            )
-          )}
+              </div>
+            )}
+            {mountedSidebarModes.has('outline') && (
+              <div className="sidebar-slot" style={{ display: sidebarMode === 'outline' ? 'contents' : 'none' }}>
+              <Outline content={visibleOutlineContent} activeIndex={activeHeading} onJump={jumpToHeading} />
+              </div>
+            )}
+          </>
         </aside>
 
         <main className="pane-center">
@@ -1437,7 +1585,7 @@ export default function App() {
                 if (!inView) return null
                 return (
                   <div key={tab.id} className={`git-diff-wrap${paneClass}`} style={{ order, flex: paneFlex }} onMouseDown={onPaneFocus}>
-                    <GitDiffView tab={tab} />
+                    <GitDiffView tab={tab} onRevertHunk={revertGitDiffHunk} />
                   </div>
                 )
               }
@@ -1565,17 +1713,19 @@ export default function App() {
             />
           )}
         </main>
-        {aiOpen && (
-          <AiPanel
-            t={t}
-            tab={home ? null : activeTab}
-            settings={settings}
-            onChangeSettings={updateSettings}
-            getSelection={getAiSelection}
-            onApply={applyAiText}
-            onClose={() => setAiOpen(false)}
-          />
-        )}
+        <aside className={`pane-ai${aiOpen ? '' : ' collapsed'}`}>
+          <div className="pane-ai-inner" aria-hidden={!aiOpen}>
+            <AiPanel
+              t={t}
+              tab={visibleAiTab}
+              settings={settings}
+              onChangeSettings={updateSettings}
+              getSelection={getAiSelection}
+              onApply={applyAiText}
+              onClose={() => setAiOpen(false)}
+            />
+          </div>
+        </aside>
       </div>
 
       <StatusBar
@@ -1634,6 +1784,16 @@ export default function App() {
       {diffOpen && activeTab && (
         <DiffModal t={t} tab={activeTab} onClose={() => setDiffOpen(false)} />
       )}
+      {sourceSync && (
+        <SourceSyncModal
+          t={t}
+          sync={sourceSync}
+          busy={sourceSyncBusy}
+          onConfirm={applySourceSync}
+          onClose={() => setSourceSync(null)}
+        />
+      )}
+      {appDialogNode}
 
       {update && (
         <UpdateToast

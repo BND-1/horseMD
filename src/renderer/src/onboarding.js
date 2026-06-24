@@ -1,9 +1,9 @@
 // First-run onboarding document, shown as the first tab after install.
-// Localized; introduces what HorseMD is, its features, and how to use it.
+// Localized; introduces what AIxiao is, its features, and how to use it.
 
-const EN = `# Welcome to HorseMD 🐎
+const EN = `# Welcome to AIxiao 🐎
 
-**HorseMD** is a warm, modern **Markdown editor** — a Typora alternative built
+**AIxiao** is a warm, modern **Markdown editor** — a Typora alternative built
 around one idea: *every file opens as a tab in the same window*, not a new app
 instance. Browse a whole folder in the sidebar, flip between files in tabs, and
 write in a clean WYSIWYG editor.
@@ -48,9 +48,9 @@ write in a clean WYSIWYG editor.
 Happy writing! ✨
 `
 
-const ZH = `# 欢迎使用 HorseMD 🐎
+const ZH = `# 欢迎使用 AIxiao 🐎
 
-**HorseMD** 是一款温暖、现代的 **Markdown 编辑器** —— 一个 Typora 的替代品，
+**AIxiao** 是一款温暖、现代的 **Markdown 编辑器** —— 一个 Typora 的替代品，
 核心理念只有一个：*每个文件都在同一个窗口里作为标签页打开*，而不是新开一个程序。
 在侧边栏浏览整个文件夹，用标签页在文件之间切换，在干净的所见即所得编辑器里写作。
 
@@ -95,7 +95,7 @@ const ZH = `# 欢迎使用 HorseMD 🐎
 
 export function welcomeDoc(lang) {
   return {
-    title: lang === 'zh' ? '欢迎使用 HorseMD.md' : 'Welcome to HorseMD.md',
+    title: lang === 'zh' ? '欢迎使用 AIxiao.md' : 'Welcome to AIxiao.md',
     content: lang === 'zh' ? ZH : EN
   }
 }

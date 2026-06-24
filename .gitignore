@@ -2,6 +2,7 @@ node_modules/
 node_cache/
 out/
 dist/
+.horsemd/
 *.log
 .DS_Store
 

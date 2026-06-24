@@ -28,7 +28,8 @@ async function getMermaid() {
 }
 
 const curTheme = () => (document.body.classList.contains('dark') ? 'dark' : 'default')
-const keyFor = (theme, code) => theme + '::' + code
+const renderConfigVersion = 'flowchart-svg-labels-v1'
+const keyFor = (theme, code) => renderConfigVersion + '::' + theme + '::' + code
 
 // Render `code` to an SVG (async, cached). `refresh` re-dispatches the plugin so
 // the freshly-cached SVG replaces the "rendering…" placeholder.
@@ -40,7 +41,24 @@ async function ensureRender(theme, code, refresh) {
   try {
     const mermaid = await getMermaid()
     // Re-initialize per render so the diagram matches the current theme.
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme })
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      htmlLabels: false,
+      theme,
+      flowchart: {
+        htmlLabels: false,
+        useMaxWidth: false,
+        nodeSpacing: 30,
+        rankSpacing: 36,
+        padding: 14,
+        diagramPadding: 8,
+        wrappingWidth: 220
+      },
+      themeVariables: {
+        fontSize: '15px'
+      }
+    })
     const { svg } = await mermaid.render(id, code)
     cache.set(k, { svg })
   } catch (e) {
@@ -58,6 +76,10 @@ function renderDom(code, refresh, t) {
   const wrap = document.createElement('div')
   wrap.className = 'hm-mermaid-preview'
   wrap.setAttribute('contenteditable', 'false')
+  wrap.tabIndex = 0
+  wrap.addEventListener('wheel', (event) => handleFocusedPreviewWheel(wrap, event), {
+    passive: false
+  })
   const trimmed = (code || '').trim()
   if (!trimmed) {
     wrap.classList.add('hm-mermaid-hint')
@@ -68,6 +90,8 @@ function renderDom(code, refresh, t) {
   const c = cache.get(keyFor(theme, trimmed))
   if (c && c.svg) {
     wrap.innerHTML = c.svg
+    const svg = wrap.querySelector('svg')
+    if (svg) normalizeSvg(svg)
   } else if (c && c.error) {
     wrap.classList.add('hm-mermaid-error')
     wrap.textContent = t('mermaid.error') + ' ' + c.error
@@ -77,6 +101,69 @@ function renderDom(code, refresh, t) {
     ensureRender(theme, trimmed, refresh)
   }
   return wrap
+}
+
+function handleFocusedPreviewWheel(wrap, event) {
+  if (!wrap.contains(document.activeElement) || event.ctrlKey) return
+
+  const deltaY = normalizeWheelDelta(event.deltaY, event.deltaMode, wrap.clientHeight)
+  if (!deltaY) return
+
+  const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight)
+  const prevTop = wrap.scrollTop
+  const nextTop = clamp(prevTop + deltaY, 0, maxTop)
+  const consumedY = nextTop - prevTop
+  const restY = deltaY - consumedY
+
+  if (maxTop > 0) wrap.scrollTop = nextTop
+  if (Math.abs(restY) > 0.5) findEditorScroller(wrap)?.scrollBy({ top: restY })
+
+  event.stopPropagation()
+  event.preventDefault()
+}
+
+function normalizeWheelDelta(delta, mode, pageSize) {
+  if (mode === 1) return delta * 16
+  if (mode === 2) return delta * pageSize
+  return delta
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function findEditorScroller(node) {
+  const scroller = node.closest('.editor-scroll')
+  if (isVerticallyScrollable(scroller)) return scroller
+  return findScrollableParent(node)
+}
+
+function findScrollableParent(node) {
+  let cur = node.parentElement
+  while (cur) {
+    if (isVerticallyScrollable(cur)) return cur
+    cur = cur.parentElement
+  }
+  return document.scrollingElement || document.documentElement
+}
+
+function isVerticallyScrollable(el) {
+  if (!el) return false
+  const style = window.getComputedStyle(el)
+  return /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1
+}
+
+function normalizeSvg(svg) {
+  const viewBox = svg.getAttribute('viewBox')
+  const width = Number.parseFloat(svg.getAttribute('width') || '')
+  const height = Number.parseFloat(svg.getAttribute('height') || '')
+  if (!viewBox && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  }
+  if (Number.isFinite(width) && width > 0) svg.style.width = `${Math.ceil(width)}px`
+  if (Number.isFinite(height) && height > 0) svg.style.height = `${Math.ceil(height)}px`
+  svg.style.maxWidth = 'none'
+  svg.style.overflow = 'visible'
 }
 
 // Render status of a code, used in the decoration key so the widget DOM is

@@ -369,8 +369,8 @@ export default function StatusBar({
         <LangSwitch lang={lang} setLang={setLang} />
         <button
           className="status-btn"
-          onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}
-          title="GitHub - github.com/BND-1/horseMD"
+          onClick={() => window.api.openExternal('https://github.com/jia-yawei/AIxiao')}
+          title="GitHub - github.com/jia-yawei/AIxiao"
         >
           <Icon name="github" size={14} />
         </button>

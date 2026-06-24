@@ -1,187 +1,77 @@
-# HorseMD
+# AIxiao
 
-[![CI](https://github.com/BND-1/horseMD/actions/workflows/ci.yml/badge.svg)](https://github.com/BND-1/horseMD/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/BND-1/horseMD?include_prereleases)](https://github.com/BND-1/horseMD/releases)
+[![Release](https://img.shields.io/github/v/release/jia-yawei/AIxiao?include_prereleases)](https://github.com/jia-yawei/AIxiao/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-[English](./README.en.md) · **简体中文**
+AIxiao 是一款面向 Markdown 文档整理和写作的桌面工具，基于 Electron + React + Milkdown Crepe 构建。它保留了 Typora 风格的所见即所得编辑体验，并在此基础上加入了 AI 对话、局部改写、Git 管理、文件夹工作区和外部文档同步等功能。
 
-一款温暖、现代的 **Markdown 文档工作台** —— 一个更顺手的 Typora 替代品，核心理念是
-Typora 做反了的那件事：**每个文件都作为标签页在同一个窗口里打开**，而不是新开一个
-程序。左侧文件树浏览整个文件夹，标签页之间随手切换，在干净的所见即所得编辑器里
-书写；内置 AI 对话和 Git 管理，让文档编写、局部改写、变更对比与本地提交都在一个
-窗口里完成。
+> 当前截图还没有完全同步到最新界面，README 暂不展示旧截图，避免和实际版本不一致。后续更新截图后再补充。
 
-![HorseMD —— 文件夹工作区、标签页与所见即所得实时渲染](./docs/screenshots/hero_light.png)
+## 主要功能
 
-## 为什么是 HorseMD
-
-大多数 Markdown 编辑器逼你二选一：要么漂亮的所见即所得，要么真正的多文件工作流。
-HorseMD 两个都给你：一个**单窗口**装下整个文件夹的文件树、每个打开的文档都是一个
-**标签页**，编辑器基于 [Milkdown](https://milkdown.dev/)（ProseMirror）原地实时
-预览。现在它还内置了面向文档的 **AI 侧边栏** 和类 VS Code 的 **Git 管理**，适合把
-一个文件夹当作长期维护的 Markdown 文档库。一套代码同时跑在 **Windows 和 macOS**
-上，整个界面**中英文**实时可切。
-
-## 功能
-
-**编辑 —— Typora 有的都有**
-
-- 流畅的**所见即所得实时预览** —— 输入 Markdown，原地渲染
-- 行首 `/` 斜杠菜单插入块；智能列表、选中工具条、链接悬浮提示
-- 表格（**单元格内可换行**）、**带语法高亮的代码块**、**LaTeX 数学公式**、**Mermaid 图表**、图片、任务列表、引用块
-- **可配置图床** —— 粘贴 / 拖入 / 上传图片走你的上传命令（类 Typora），自动插入返回链接
-- **源码模式**切换（`Ctrl/Cmd+/`）查看原始 Markdown —— 保持滚动位置
-- **纯文本文件（`.txt`）用快速纯文本编辑器打开** —— 不走 Markdown 重排，大文件秒开
-- 富文本复制（带内联样式）—— 粘到公众号 / 邮件 / Notion 也能保留格式
-- **导出为 PDF**（`Ctrl/Cmd+Shift+E`）—— 排版干净，不带编辑器控件
-- 相对路径图片按文件所在目录解析（仅显示用，不改动你的文件内容）
-- **双击图片放大查看**（灯箱预览，点背景 / Esc 关闭；单击仍可选中图片、加说明）
-- **原生 HTML 表格**（文档里直接写的 `<table>…</table>`）渲染成真正的表格，和 Typora 一样 —— 仅显示，源码原样保留
-- 跟随光标的**浮动块级标记**（H1…H6 / 正文）
-
-**超出 Typora**
-
-- **标签页** —— 多文件同窗（`Ctrl/Cmd+Tab` 循环切换）；顶栏一个 `+` 快速新建文档；标签右键可复制路径 / 复制文件名 / 打开所在文件夹 / 关闭其他
-- **分屏** —— 两个文档左右并排、都可编辑（标签右键"在右侧分屏打开"或顶栏分屏按钮，右上 ✕ 关闭）
-- **AI 侧边栏** —— 顶栏 AI 图标打开；支持新对话、Markdown 渲染回答、OpenAI 兼容接口和 DeepSeek 配置、自动获取可用模型并手动选择
-- **AI 局部改写** —— 选中一段 Markdown 后让 AI 只处理选区，适合表格整理、格式调整、摘要补写和局部重写
-- **Git 管理** —— 类 VS Code 的源代码管理侧边栏：查看工作区/暂存区变更、暂存/取消暂存、丢弃单文件改动、输入提交消息并提交到本地仓库
-- **提交历史图形化** —— 类 Git Graph 的提交路线、分支标签、提交详情、右键从提交新建分支/合并/恢复；点击提交或变更文件可打开左右对比 Diff 标签
-- **分支管理** —— 在 Git 管理侧边栏里查看当前分支、切换分支、新建分支、右键删除分支；非 Git 文件夹可手动初始化仓库
-- **自定义页面宽度** —— 状态栏分段预设（窄/中/宽/全宽）+ 微调滑块
-- **自定义主题** —— 把 `.css` 丢进主题文件夹即可，**可直接迁移 Typora 主题**
-- **未保存草稿不丢** —— 新建但没保存的临时文档，关掉再开也还在
-- **文件夹工作区** —— 文件树，原地新建 / 重命名 / 复制一份 / 删除 / 在访达中显示 / 导出 PDF，支持**拖拽移动**与展开全部 / 折叠全部
-- **在同一窗口打开** —— 双击文件 → 加一个标签；对文件夹"用 HorseMD 打开" → 作为工作区打开
-- **命令面板**（`Ctrl/Cmd+P`）—— 模糊跳转到任意文件或命令
-- **文档内查找**（`Ctrl/Cmd+F`）—— 在文档里高亮匹配并实时计数
-- **大纲面板**（`Ctrl+Shift+L`）—— 点标题即跳转
-- 实时字数 / 字符数与阅读时长
-- 会话恢复 —— 重新打开你的文件夹和标签
-- 文件树与打开的文件自动刷新 —— 监听外部改动
-- **主页按钮**（活动栏）—— 随时回到欢迎页（已打开的标签仍保持加载）
-- **大文档加载骨架屏** —— 打开大文件不再是一段空白
-- 关闭窗口 / 退出时提醒未保存（不只是关标签）
-- 仅通知的更新检查 —— 有新版本时提示**并展示更新内容**（不自动下载）
-
-命令面板 —— 模糊跳转到任意文件或命令：
-
-![命令面板](./docs/screenshots/command_palette.png)
-
-## 主题
-
-六套精心调过的主题 —— 暖光 / 暖夜，外加四套低饱和的**莫兰迪**配色 ——
-`Ctrl+Shift+T` 或状态栏选择器切换。
-
-| 暖光 | 暖夜 | 莫兰迪·暮 |
-| :---: | :---: | :---: |
-| ![暖光](./docs/screenshots/hero_light.png) | ![暖夜](./docs/screenshots/theme_dark.png) | ![莫兰迪·暮](./docs/screenshots/theme_morandi_dusk.png) |
-| **莫兰迪·灰绿** | **莫兰迪·豆沙** | **莫兰迪·雾蓝** |
-| ![莫兰迪·灰绿](./docs/screenshots/theme_morandi_sage.png) | ![莫兰迪·豆沙](./docs/screenshots/theme_morandi_rose.png) | ![莫兰迪·雾蓝](./docs/screenshots/theme_morandi_mist.png) |
-
-## 快捷键
-
-| 操作               | 快捷键                        |
-| ------------------ | ----------------------------- |
-| 新建文件           | `Ctrl/Cmd+N`                  |
-| 打开文件           | `Ctrl/Cmd+O`                  |
-| 打开文件夹         | `Ctrl/Cmd+Shift+O`            |
-| 保存 / 另存为      | `Ctrl/Cmd+S` / `…+Shift+S`    |
-| 导出为 PDF         | `Ctrl/Cmd+Shift+E`            |
-| 关闭标签           | `Ctrl/Cmd+W`                  |
-| 命令面板           | `Ctrl/Cmd+P`                  |
-| 文档内查找         | `Ctrl/Cmd+F`                  |
-| 切换侧边栏         | `Ctrl/Cmd+B`                  |
-| 切换大纲           | `Ctrl+Shift+L`                |
-| 切换源码模式       | `Ctrl/Cmd+/`                  |
-| 切换主题           | `Ctrl+Shift+T`                |
-| 循环标签           | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+- Markdown 所见即所得编辑，支持源码模式切换
+- 文件夹工作区、文件树、多标签页和左右分屏
+- Mermaid 流程图、LaTeX 公式、代码高亮、表格、图片和任务列表
+- AI 对话侧边栏，支持 OpenAI 兼容接口和 DeepSeek
+- AI 局部改写：可只修改当前选中的 Markdown 内容
+- Git 管理：查看变更、暂存、取消暂存、提交、分支管理和提交历史
+- Diff 标签页：查看工作区变更和历史提交差异
+- 外部 Markdown 文件/文件夹导入，并支持手动同步来源
+- 自定义主题、页面宽度、图床上传命令
+- 未保存草稿、会话和最近文件恢复
 
 ## AI 与 Git
 
-HorseMD 1.0.0 开始把 Markdown 编辑器扩展成文档工作台：
+AIxiao 的 AI 功能偏向文档写作场景：总结内容、调整格式、整理表格、改写选区。模型由用户在设置窗口中配置，软件不会内置 API Key。
 
-- AI 配置在独立设置窗口中完成，不占用对话侧边栏空间；OpenAI 兼容中转接口需要填写接口地址和 Key，DeepSeek 可使用官方 API。
-- 模型列表会通过接口自动获取，获取后手动选择具体模型，避免软件替你猜测使用哪个模型。
-- AI 可以只基于当前打开文档和你选中的内容工作；需要改某个表格或某段文字时，先在编辑器中选中源码，再让 AI 只应用到选区。
-- Git 管理只做本地文档变更管理，不强制推送远程；适合在保存和提交前查看每个文件的差异。
-- 如果打开的文件夹还不是 Git 仓库，软件会显示初始化入口，由你手动确认后再创建仓库。
+Git 功能用于本地文档变更管理，方便在保存和提交前查看差异。它不会自动推送远程仓库；是否提交、是否推送都由用户自己决定。
 
 ## 安装
 
-去 [**Releases 页面**](https://github.com/BND-1/horseMD/releases/latest) 下载最新版安装包。
+前往 [Releases](https://github.com/jia-yawei/AIxiao/releases/latest) 下载最新版。
 
-> ℹ️ 安装包目前**没有花钱买签名**，所以 Windows / macOS 第一次打开都会拦一下——**不是病毒、不是真的损坏**，按下面步骤放行即可。代码完全开源，可自行查看 / 构建。
+Windows 版本通常下载：
 
-### 🍎 macOS 安装（新手请按这个来）
+```text
+AIxiao Setup 1.0.0.exe
+```
 
-1. 确认你的芯片：左上角 **苹果菜单 →「关于本机」**：
-   - 看到 **「Apple M1 / M2 / M3…」**（Apple Silicon）→ 下载 **`HorseMD-x.x.x-arm64.dmg`**。
-   - 看到 **「Intel」** → 下载 **`HorseMD-x.x.x.dmg`**（不带 `-arm64` 后缀的那个）。
-2. 双击下载好的 `.dmg`，把里面的 **HorseMD 图标拖到「应用程序」文件夹**。
-3. **第一次打开**（重要）：直接双击通常会提示 **「已损坏，无法打开」或「无法验证开发者」**——这是因为没签名，正常现象。任选一种方法放行：
-
-   - **方法 A（最简单，推荐）**：打开「访达 →『应用程序』」，找到 HorseMD，**按住 Control 键点它（或右键）→ 选「打开」**，在弹窗里再点一次 **「打开」**。之后就能像普通软件一样双击使用了。
-   - **方法 B（如果方法 A 仍提示「已损坏」）**：打开「**终端**」（在「启动台 → 其他 → 终端」，或 Spotlight 搜 `终端`），把下面这行**整段复制粘贴进去、按回车**：
-
-     ```bash
-     xattr -cr /Applications/HorseMD.app
-     ```
-
-     然后再回到「应用程序」双击 HorseMD 即可正常打开。
-
-> 这一步**每台电脑只需做一次**，以后更新版本一般也不用再弄。
-
-### 🪟 Windows 安装
-
-1. 下载 **`HorseMD-Setup-x.x.x.exe`**，双击运行。
-2. 若弹出蓝色的 **SmartScreen**「Windows 已保护你的电脑」，点 **「更多信息」→「仍要运行」**。
-3. 按提示安装（可以自己选安装目录），完成后从开始菜单或桌面打开。
-
-> 签名与公证在计划中 —— 见 [CHANGELOG](./CHANGELOG.md)。
-
-## 社群 & 支持
-
-用得顺手的话，欢迎来玩 🐎 一起交流 Markdown 写作、提需求、报 bug。
-
-| 加我微信 · 拉你进群 | 微信群（直接扫码） | 请我喝杯咖啡 ☕ |
-| :---: | :---: | :---: |
-| <img src="./docs/community/wechat-personal.jpg" width="220" alt="作者微信"> | <img src="./docs/community/wechat-group.jpg" width="220" alt="HorseMD 交流群"> | <img src="./docs/community/coffee.jpg" width="220" alt="请作者喝咖啡"> |
-| 加好友备注「HorseMD」，拉你进群，也欢迎直接交流 | 扫码进群（群码会定期更新，**过期就加左边的微信**） | 觉得好用，请作者喝杯咖啡，是持续更新的最大动力 |
+当前安装包未进行代码签名，Windows 可能会弹出 SmartScreen 提示。点击“更多信息”后选择“仍要运行”即可。
 
 ## 开发
 
 ```bash
-npm install        # 若 Electron 二进制下载被墙，先设镜像：
-                   #   ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
-npm run dev        # 热重载开发模式
-npm run build      # 构建 main + preload + renderer 到 out/
-npm start          # 运行构建产物
-npm run dist       # 按当前系统出包（Windows NSIS / macOS dmg+zip）
+npm install
+npm run dev
+npm run build
+npm run dist
 ```
 
-用 AI 助手在本仓库里干活？从 [CLAUDE.md](./CLAUDE.md) 开始。
+如果 Windows 终端找不到 `npm`，可以使用完整路径：
 
-## 技术栈
+```powershell
+& "C:\Program Files\nodejs\npm.cmd" run dist
+```
 
-Electron + Vite + React 外壳，编辑器引擎用 **Milkdown Crepe**（基于 ProseMirror）。
-外壳（标签页、文件树、命令面板、大纲、主题、多语言）全部自研。架构、功能实现、
-踩坑与决策记录见 [`docs/`](./docs/README.md)。
+只生成解压版：
 
-## 文档
+```powershell
+& "C:\Program Files\nodejs\npm.cmd" run dist:dir
+```
 
-- [ROADMAP.md](./ROADMAP.md) —— 已完成 / 近期计划 / 远期
-- [docs/architecture.md](./docs/architecture.md) —— 技术栈、进程模型、目录结构、数据流
-- [docs/features.md](./docs/features.md) —— 每个功能的用法与实现（对应到文件）
-- [docs/implementation-notes.md](./docs/implementation-notes.md) —— 关键 bug 的根因与修法、设计决策
-- [docs/development.md](./docs/development.md) —— 开发、构建、Windows/macOS 打包、CDP 自动化测试
+如果 Electron 或 electron-builder 下载较慢，可以设置镜像：
 
-## 贡献
+```powershell
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+```
 
-欢迎提 Issue 和 PR —— 见 [CONTRIBUTING.md](./CONTRIBUTING.md)。发现安全问题？
-请通过 [SECURITY.md](./SECURITY.md) 私下报告。
+## 致谢
+
+AIxiao 基于开源项目 HorseMD fork 并继续扩展。感谢原作者和原项目贡献者提供了优秀的 Markdown 编辑器基础，包括 Electron 外壳、Milkdown 编辑体验、文件树、多标签页、主题和大量工程实现。
+
+本项目会继续遵守原项目的开源许可，并在此基础上维护 AI、Git 管理和文档工作流相关功能。
 
 ## 许可证
 
-[MIT](./LICENSE) © 杨庭毅 ([yangsir.net](https://yangsir.net))
+[MIT](./LICENSE)

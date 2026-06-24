@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import { useI18n } from '../i18n.jsx'
 
 export function parseHeadings(md) {
@@ -25,7 +25,7 @@ export function parseHeadings(md) {
   return out
 }
 
-export default function Outline({ content, activeIndex = -1, onJump }) {
+function Outline({ content, activeIndex = -1, onJump }) {
   const { t } = useI18n()
   const headings = useMemo(() => parseHeadings(content), [content])
   // The currently-viewed heading's row, kept scrolled into view (like the file
@@ -62,3 +62,5 @@ export default function Outline({ content, activeIndex = -1, onJump }) {
     </div>
   )
 }
+
+export default memo(Outline)

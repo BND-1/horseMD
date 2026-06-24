@@ -13,6 +13,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
+const IMPORT_FOLDER_MD_RE = /\.(md|markdown|mdx)$/i
+const isAbsolutePath = (p) => /^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p)
 
 function execText(command, options = {}) {
   return new Promise((resolve, reject) => {
@@ -174,6 +176,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     show: false,
+    title: 'AIxiao',
     backgroundColor: '#1a1b20',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     // macOS: place the traffic lights at a fixed spot so the renderer can
@@ -303,6 +306,168 @@ ipcMain.handle('dialog:saveAs', async (_e, defaultName) => {
   return res.canceled ? null : res.filePath
 })
 
+function assertInsideRoot(root, target) {
+  if (!root || !target) throw new Error('Invalid path.')
+  const rootAbs = resolve(root)
+  const targetAbs = resolve(target)
+  const back = relative(rootAbs, targetAbs)
+  if (back.startsWith('..') || isAbsolutePath(back)) throw new Error('Path is outside workspace.')
+  return { rootAbs, targetAbs, rel: back.replace(/\\/g, '/') }
+}
+
+function sourceMapPath(root) {
+  return join(root, '.horsemd', 'sources.json')
+}
+
+async function readSourceMap(root) {
+  try {
+    const raw = await fs.readFile(sourceMapPath(root), 'utf8')
+    const data = JSON.parse(raw)
+    return { files: Array.isArray(data.files) ? data.files : [] }
+  } catch {
+    return { files: [] }
+  }
+}
+
+async function writeSourceMap(root, data) {
+  const dir = join(root, '.horsemd')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(join(dir, '.gitignore'), '*\n', 'utf8')
+  await fs.writeFile(sourceMapPath(root), JSON.stringify({ files: data.files || [] }, null, 2) + '\n', 'utf8')
+}
+
+function uniqueImportTarget(destDir, name) {
+  const ext = extname(name)
+  const stem = basename(name, ext)
+  let target = join(destDir, name)
+  let i = 2
+  while (existsSync(target)) target = join(destDir, `${stem} ${i++}${ext}`)
+  return target
+}
+
+async function collectImportSources(selected) {
+  const acc = []
+  const walk = async (root, dir, depth = 0) => {
+    if (depth > 30 || acc.length > 5000) return
+    let entries
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || IGNORED_DIRS.has(entry.name)) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(root, full, depth + 1)
+      } else if (IMPORT_FOLDER_MD_RE.test(entry.name)) {
+        acc.push({ source: full, baseRoot: root, rel: relative(root, full) })
+      }
+    }
+  }
+
+  for (const item of selected) {
+    const abs = resolve(item)
+    let stat
+    try {
+      stat = await fs.stat(abs)
+    } catch {
+      continue
+    }
+    if (stat.isDirectory()) {
+      await walk(abs, abs)
+    } else {
+      acc.push({ source: abs, baseRoot: null, rel: basename(abs) })
+    }
+  }
+  return acc
+}
+
+ipcMain.handle('source:importFile', async (_e, workspaceRoot, destDir, options = {}) => {
+  const { rootAbs, targetAbs: destAbs } = assertInsideRoot(workspaceRoot, destDir)
+  const folderMode = options?.mode === 'folder'
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: folderMode ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+    filters: folderMode ? undefined : [
+      { name: 'Markdown / Text', extensions: MD_EXTS },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  })
+  if (res.canceled || !res.filePaths?.length) return { canceled: true, files: [] }
+
+  const map = await readSourceMap(rootAbs)
+  const imported = []
+  const sources = await collectImportSources(res.filePaths)
+  for (const item of sources) {
+    const sourceAbs = resolve(item.source)
+    const relParts = (item.rel || basename(sourceAbs)).split(/[\\/]+/).filter(Boolean)
+    const targetDir = item.baseRoot && relParts.length > 1 ? join(destAbs, ...relParts.slice(0, -1)) : destAbs
+    await fs.mkdir(targetDir, { recursive: true })
+    const target = uniqueImportTarget(targetDir, relParts[relParts.length - 1] || basename(sourceAbs))
+    if (sourceAbs.toLowerCase() === resolve(target).toLowerCase()) throw new Error('Source and target are the same file.')
+    await fs.copyFile(sourceAbs, target, fsConstants.COPYFILE_EXCL)
+    const { rel } = assertInsideRoot(rootAbs, target)
+    map.files = map.files.filter((item) => item.local !== rel)
+    map.files.push({
+      local: rel,
+      source: sourceAbs,
+      lastSyncedAt: new Date().toISOString()
+    })
+    imported.push({ path: target, rel, source: sourceAbs })
+  }
+  await writeSourceMap(rootAbs, map)
+  return { ok: true, files: imported }
+})
+
+ipcMain.handle('source:status', async (_e, workspaceRoot, localPath) => {
+  const { rootAbs, targetAbs, rel } = assertInsideRoot(workspaceRoot, localPath)
+  const map = await readSourceMap(rootAbs)
+  const entry = map.files.find((item) => item.local === rel)
+  if (!entry) return { ok: true, linked: false }
+  if (!existsSync(entry.source)) return { ok: false, linked: true, source: entry.source, error: 'Source file is missing.' }
+  const [localContent, sourceContent] = await Promise.all([
+    fs.readFile(targetAbs, 'utf8'),
+    fs.readFile(entry.source, 'utf8')
+  ])
+  return {
+    ok: true,
+    linked: true,
+    rel,
+    source: entry.source,
+    localContent,
+    sourceContent,
+    same: localContent === sourceContent,
+    lastSyncedAt: entry.lastSyncedAt || ''
+  }
+})
+
+ipcMain.handle('source:sync', async (_e, workspaceRoot, localPath) => {
+  const { rootAbs, targetAbs, rel } = assertInsideRoot(workspaceRoot, localPath)
+  const map = await readSourceMap(rootAbs)
+  const entry = map.files.find((item) => item.local === rel)
+  if (!entry) return { ok: false, error: 'This file has no source link.' }
+  if (!existsSync(entry.source)) return { ok: false, error: 'Source file is missing.' }
+  const sourceContent = await fs.readFile(entry.source, 'utf8')
+  await fs.writeFile(targetAbs, sourceContent, 'utf8')
+  entry.lastSyncedAt = new Date().toISOString()
+  await writeSourceMap(rootAbs, map)
+  const stat = await fs.stat(targetAbs)
+  return { ok: true, content: sourceContent, mtimeMs: stat.mtimeMs }
+})
+
+ipcMain.handle('source:syncToSource', async (_e, workspaceRoot, localPath) => {
+  const { rootAbs, targetAbs, rel } = assertInsideRoot(workspaceRoot, localPath)
+  const map = await readSourceMap(rootAbs)
+  const entry = map.files.find((item) => item.local === rel)
+  if (!entry) return { ok: false, error: 'This file has no source link.' }
+  if (!existsSync(entry.source)) return { ok: false, error: 'Source file is missing.' }
+  const localContent = await fs.readFile(targetAbs, 'utf8')
+  await fs.writeFile(entry.source, localContent, 'utf8')
+  entry.lastSyncedAt = new Date().toISOString()
+  await writeSourceMap(rootAbs, map)
+  return { ok: true }
+})
+
 // Export the current document (inline-styled HTML from the renderer) to a PDF
 // by rendering it in a hidden window and using Chromium's printToPDF.
 ipcMain.handle('export:pdf', async (_e, { html, defaultName }) => {
@@ -367,7 +532,7 @@ ipcMain.handle('fs:createDir', async (_e, path) => {
   return true
 })
 
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
+const IGNORED_DIRS = new Set(['.git', '.horsemd', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
 
 async function readTree(dir, depth = 0) {
   let entries
@@ -437,7 +602,9 @@ function parseGitStatus(out, root) {
     const rel = item.slice(3)
     const renamed = x === 'R' || x === 'C'
     const from = renamed ? parts[++i] : null
-    rows.push({ x, y, rel: rel.replace(/\\/g, '/'), from: from?.replace(/\\/g, '/') || null, path: join(root, rel) })
+    const normalized = rel.replace(/\\/g, '/')
+    if (normalized === '.horsemd' || normalized.startsWith('.horsemd/')) continue
+    rows.push({ x, y, rel: normalized, from: from?.replace(/\\/g, '/') || null, path: join(root, rel) })
   }
   return rows
 }
@@ -759,6 +926,28 @@ ipcMain.handle('git:worktreeDiff', async (_e, root, rel, staged, status) => {
   }
 })
 
+ipcMain.handle('git:revertWorktreeHunk', async (_e, root, rel, patch) => {
+  if (!root || !isAbsolutePath(root) || !rel || !patch) return { ok: false, error: 'Invalid hunk request.' }
+  let tmp = null
+  try {
+    assertInsideRoot(root, join(root, rel))
+    const normalized = String(rel).replace(/\\/g, '/')
+    const text = String(patch).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (!text.includes(`diff --git a/${normalized} b/${normalized}`) || !/^@@ /m.test(text)) {
+      return { ok: false, error: 'Invalid hunk patch.' }
+    }
+    tmp = join(tmpdir(), `horsemd-hunk-${Date.now()}-${Math.random().toString(16).slice(2)}.patch`)
+    await fs.writeFile(tmp, text.endsWith('\n') ? text : text + '\n', 'utf8')
+    await execText(`git apply --reverse --unidiff-zero --whitespace=nowarn ${shellQuote(tmp)}`, { cwd: root })
+    const out = await execText(`git diff --find-renames --unified=80 -- ${shellQuote(rel)}`, { cwd: root })
+    return { ok: true, patch: out }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  } finally {
+    if (tmp) await fs.unlink(tmp).catch(() => {})
+  }
+})
+
 ipcMain.handle('git:branches', async (_e, root) => {
   if (!root || !isAbsolutePath(root)) return { ok: false, error: 'No workspace.', branches: [] }
   try {
@@ -857,8 +1046,6 @@ ipcMain.handle('git:restoreToCommit', async (_e, root, hash) => {
 // /dev/* device files and crash the watcher.
 const WATCH_IGNORE_RE =
   /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/
-// An absolute path: POSIX "/…", Windows "C:\…"/"C:/…", or a UNC "\\…".
-const isAbsolutePath = (p) => /^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p)
 const isRestrictedRoot = (p) => {
   const norm = (p || '').replace(/[\\/]+$/, '')
   if (norm === '' || norm === '/' || norm === '.' || norm === '..') return true
@@ -1319,8 +1506,8 @@ ipcMain.handle('update:check', async () => {
     // whole main process for an unsigned app launched by Finder/launchd (observed
     // as an instant crash on open). net.fetch goes through Chromium's resolver,
     // which fails gracefully instead of crashing.
-    const res = await net.fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' }
+    const res = await net.fetch('https://api.github.com/repos/jia-yawei/AIxiao/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'AIxiao-Updater' }
     })
     if (!res.ok) return { ok: false }
     const data = await res.json()
@@ -1329,7 +1516,7 @@ ipcMain.handle('update:check', async () => {
       ok: true,
       latest,
       current: app.getVersion(),
-      url: data.html_url || 'https://github.com/BND-1/horseMD/releases',
+      url: data.html_url || 'https://github.com/jia-yawei/AIxiao/releases',
       // The release notes (Markdown) so the prompt can show "what's new". Capped
       // so a huge changelog can't bloat the IPC payload / the toast.
       name: typeof data.name === 'string' ? data.name : '',

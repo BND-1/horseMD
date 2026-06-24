@@ -12,6 +12,7 @@ const api = {
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   saveAs: (defaultName) => ipcRenderer.invoke('dialog:saveAs', defaultName),
+  importSourceFile: (workspaceRoot, destDir, options) => ipcRenderer.invoke('source:importFile', workspaceRoot, destDir, options),
   exportPDF: (html, defaultName) => ipcRenderer.invoke('export:pdf', { html, defaultName }),
 
   // fs
@@ -25,6 +26,9 @@ const api = {
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
   listFiles: (root) => ipcRenderer.invoke('fs:listFiles', root),
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
+  sourceStatus: (workspaceRoot, localPath) => ipcRenderer.invoke('source:status', workspaceRoot, localPath),
+  sourceSync: (workspaceRoot, localPath) => ipcRenderer.invoke('source:sync', workspaceRoot, localPath),
+  sourceSyncToSource: (workspaceRoot, localPath) => ipcRenderer.invoke('source:syncToSource', workspaceRoot, localPath),
 
   // git
   gitStatus: (root) => ipcRenderer.invoke('git:status', root),
@@ -39,6 +43,7 @@ const api = {
   gitCommitFiles: (root, hash) => ipcRenderer.invoke('git:commitFiles', root, hash),
   gitCommitDiff: (root, hash, rel) => ipcRenderer.invoke('git:commitDiff', root, hash, rel),
   gitWorktreeDiff: (root, rel, staged, status) => ipcRenderer.invoke('git:worktreeDiff', root, rel, staged, status),
+  gitRevertWorktreeHunk: (root, rel, patch) => ipcRenderer.invoke('git:revertWorktreeHunk', root, rel, patch),
   gitBranches: (root) => ipcRenderer.invoke('git:branches', root),
   gitCreateBranch: (root, name) => ipcRenderer.invoke('git:createBranch', root, name),
   gitCreateBranchAt: (root, name, hash) => ipcRenderer.invoke('git:createBranchAt', root, name, hash),

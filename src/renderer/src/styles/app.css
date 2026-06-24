@@ -397,7 +397,6 @@ button:focus-visible,
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: 0 0 0 2px var(--bg-elevated);
 }
 
 /* Top Bar */
@@ -701,26 +700,134 @@ button:focus-visible,
   background: var(--border-soft);
 }
 
-/* ---- Rename modal (tab menu → Rename; Electron has no window.prompt) ---- */
-.hm-rename-modal {
+.app-dialog-backdrop {
   position: fixed;
-  left: 50%;
-  top: 32%;
-  transform: translateX(-50%);
-  z-index: 210;
-  width: 380px;
-  max-width: 86vw;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: rgba(0, 0, 0, 0.24);
+  animation: fadeIn 0.12s var(--ease-out);
+}
+.app-dialog {
+  width: min(430px, calc(100vw - 40px));
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
   padding: 16px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-float);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.app-dialog-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.app-dialog.warning .app-dialog-icon {
+  color: #b7791f;
+  background: color-mix(in srgb, #d69e2e 16%, transparent);
+}
+.app-dialog.danger .app-dialog-icon,
+.app-dialog.error .app-dialog-icon {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+.app-dialog-main {
+  min-width: 0;
+}
+.app-dialog-title {
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.app-dialog-message {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.app-dialog-detail {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.app-dialog-actions,
+.hm-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 15px;
+}
+.app-dialog-actions button,
+.hm-rename-actions button {
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.app-dialog-actions button:hover,
+.hm-rename-actions button:hover {
+  background: var(--hover);
+}
+.app-dialog-actions button.primary,
+.hm-rename-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.app-dialog-actions button.primary:hover,
+.hm-rename-actions button.primary:hover {
+  background: var(--accent-strong);
+}
+.app-dialog-actions button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ---- Rename modal (tab menu → Rename; Electron has no window.prompt) ---- */
+.hm-rename-modal {
+  position: fixed;
+  left: 50%;
+  top: 28%;
+  transform: translateX(-50%);
+  z-index: 260;
+  width: min(390px, calc(100vw - 40px));
+  padding: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   animation: menuFadeIn 0.12s var(--ease-out);
 }
 .hm-rename-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--text-strong);
   margin-bottom: 10px;
 }
 .hm-rename-input {
@@ -736,31 +843,6 @@ button:focus-visible,
 .hm-rename-input:focus {
   border-color: var(--accent);
 }
-.hm-rename-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 14px;
-}
-.hm-rename-actions button {
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  background: var(--hover);
-  color: var(--text);
-  transition: background 0.12s, color 0.12s;
-}
-.hm-rename-actions button:hover {
-  background: var(--active);
-}
-.hm-rename-actions button.primary {
-  background: var(--accent);
-  color: #fff;
-}
-.hm-rename-actions button.primary:hover {
-  background: var(--accent-strong);
-}
-
 /* ============================================================
    Lightweight popovers (page width · image host)
    Minimal, roomy, with a sliding segmented control. Shared base
@@ -994,18 +1076,54 @@ button:focus-visible,
 /* ---- Mermaid live preview (rendered under a ```mermaid code block) ---- */
 .hm-mermaid-preview {
   margin: 2px 0 16px;
-  padding: 16px 18px;
+  padding: 12px 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
   display: flex;
-  justify-content: center;
-  overflow-x: auto;
+  justify-content: flex-start;
+  overflow: hidden;
   user-select: none;
+  max-height: 680px;
+  scrollbar-width: none;
+  outline: none;
+}
+.hm-mermaid-preview:focus,
+.hm-mermaid-preview:focus-within {
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.hm-mermaid-preview:focus {
+  border-color: var(--accent);
+}
+.hm-mermaid-preview::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.hm-mermaid-preview:focus::-webkit-scrollbar,
+.hm-mermaid-preview:focus-within::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 .hm-mermaid-preview svg {
-  max-width: 100%;
-  height: auto;
+  display: block;
+  flex: none;
+  max-width: none;
+  overflow: visible;
+}
+.milkdown .ProseMirror .hm-mermaid-preview .nodeLabel,
+.milkdown .ProseMirror .hm-mermaid-preview .edgeLabel {
+  font-size: 15px;
+  white-space: normal;
+}
+.hm-mermaid-preview svg foreignObject {
+  overflow: visible;
+}
+.milkdown .ProseMirror .hm-mermaid-preview svg foreignObject div,
+.milkdown .ProseMirror .hm-mermaid-preview svg foreignObject span,
+.milkdown .ProseMirror .hm-mermaid-preview svg foreignObject p {
+  margin: 0;
+  padding: 0;
 }
 .hm-mermaid-hint {
   color: var(--faint);
@@ -1175,15 +1293,46 @@ button:focus-visible,
   position: relative;
 }
 
-.ai-panel {
+.pane-ai {
   flex: 0 0 360px;
   width: 360px;
   min-width: 320px;
   max-width: 420px;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border-soft);
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  transition: flex-basis 0.25s var(--ease-out),
+              width 0.25s var(--ease-out),
+              min-width 0.25s var(--ease-out),
+              max-width 0.25s var(--ease-out),
+              opacity 0.2s var(--ease-out);
+}
+.pane-ai.collapsed {
+  flex-basis: 0;
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-left: none;
+}
+.pane-ai-inner {
+  width: 360px;
+  height: 100%;
+  transform: translateX(0);
+  transition: transform 0.25s var(--ease-out), opacity 0.18s var(--ease-out);
+}
+.pane-ai.collapsed .pane-ai-inner {
+  transform: translateX(18px);
+  opacity: 0;
+}
+.ai-panel {
+  width: 360px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -2707,10 +2856,33 @@ button:focus-visible,
 .git-diff-hunk {
   min-width: 760px;
   padding: 4px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   background: var(--active);
   color: var(--accent-strong);
   border-top: 1px solid var(--border-soft);
   border-bottom: 1px solid var(--border-soft);
+}
+.git-diff-revert {
+  flex: none;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+}
+.git-diff-revert:hover {
+  background: var(--hover);
+  color: var(--accent-strong);
 }
 .git-diff-empty {
   padding: 18px;
@@ -3378,6 +3550,37 @@ body.hm-full-width .source-selection-ghost {
   font-size: 12px;
   border-top: 1px solid var(--border-soft);
   border-bottom: 1px solid var(--border-soft);
+}
+.source-sync-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.source-sync-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.source-sync-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-editor);
+}
+.source-sync-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.source-sync-note {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));
+  color: var(--muted);
+  font-size: 12px;
 }
 /* Right-side items never shrink; the path yields space instead. As a last resort
    on very narrow windows, drop the word/char/read counts first — never the

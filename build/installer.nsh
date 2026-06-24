@@ -1,6 +1,6 @@
-; Custom NSIS hooks for HorseMD.
+; Custom NSIS hooks for AIxiao.
 ;
-; 1) Adds an "Open with HorseMD" entry to the right-click menu of folders, so a
+; 1) Adds an "Open with AIxiao" entry to the right-click menu of folders, so a
 ;    whole directory can be opened as a workspace straight from Explorer.
 ; 2) Makes uninstall SURGICAL: it removes only the files we installed, so a file
 ;    the user saved inside the install folder (e.g. a Markdown note next to the
@@ -11,19 +11,19 @@
 
 !macro customInstall
   ; Right-clicking a folder
-  WriteRegStr HKCU "Software\Classes\Directory\shell\HorseMD" "" "Open with HorseMD"
-  WriteRegStr HKCU "Software\Classes\Directory\shell\HorseMD" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
-  WriteRegStr HKCU "Software\Classes\Directory\shell\HorseMD\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+  WriteRegStr HKCU "Software\Classes\Directory\shell\AIxiao" "" "Open with AIxiao"
+  WriteRegStr HKCU "Software\Classes\Directory\shell\AIxiao" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+  WriteRegStr HKCU "Software\Classes\Directory\shell\AIxiao\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
 
   ; Right-clicking the empty background inside a folder
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\HorseMD" "" "Open with HorseMD"
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\HorseMD" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\HorseMD\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%V"'
+  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AIxiao" "" "Open with AIxiao"
+  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AIxiao" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\AIxiao\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%V"'
 !macroend
 
 !macro customUnInstall
-  DeleteRegKey HKCU "Software\Classes\Directory\shell\HorseMD"
-  DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\HorseMD"
+  DeleteRegKey HKCU "Software\Classes\Directory\shell\AIxiao"
+  DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\AIxiao"
 !macroend
 
 ; Replaces electron-builder's default "RMDir /r $INSTDIR" — which would wipe the

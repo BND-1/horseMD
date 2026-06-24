@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
 import { baseName, dirName as parentDir, joinPath as join, isMarkdownName, isValidName, isExistsError } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 
-export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight, onExportPdf, refreshNonce }) {
+function Sidebar({ workspace, activePath, onOpenFile, onOpenRight, onExportPdf, onSourceSync, showAlert, showConfirm, refreshNonce }) {
   const { t } = useI18n()
   const copyText = (text) => copyToClipboard(text, t('code.copied'))
+  const alertUser = showAlert || ((options) => Promise.resolve(window.alert(typeof options === 'string' ? options : options?.message)))
+  const confirmUser = showConfirm || ((options) => Promise.resolve(window.confirm(typeof options === 'string' ? options : options?.message)))
   const [childrenMap, setChildrenMap] = useState({}) // path -> nodes[]
   const [expanded, setExpanded] = useState(() => new Set())
   const [menu, setMenu] = useState(null) // { x, y, node }
@@ -163,7 +165,7 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
     }
     if (!isValidName(name)) {
       committingRef.current = false
-      window.alert((t('err.invalidName') || 'Invalid name: ') + name)
+      await alertUser({ title: t('dialog.errorTitle'), message: (t('err.invalidName') || 'Invalid name: ') + name, type: 'error', confirmText: t('dialog.ok') })
       return
     }
 
@@ -181,23 +183,34 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
         setExpanded((s) => new Set(s).add(dir))
       }
     } catch (e) {
-      window.alert(
-        isExistsError(e)
+      await alertUser({
+        title: t('dialog.errorTitle'),
+        message: isExistsError(e)
           ? t('err.nameExists')
-          : (type === 'file' ? t('err.createFile') : t('err.createFolder')) + e.message
-      )
+          : (type === 'file' ? t('err.createFile') : t('err.createFolder')) + e.message,
+        type: 'error',
+        confirmText: t('dialog.ok')
+      })
     } finally {
       committingRef.current = false
     }
   }
 
   const doDelete = async (node) => {
-    if (!window.confirm(t('confirm.trash', { name: node.name }))) return
+    const ok = await confirmUser({
+      title: t('dialog.deleteTitle'),
+      message: t('confirm.trash', { name: node.name }),
+      detail: node.path,
+      type: 'danger',
+      confirmText: t('dialog.deleteConfirm'),
+      cancelText: t('edit.cancel')
+    })
+    if (!ok) return
     try {
       await window.api.deleteItem(node.path)
       await refreshParentOf(node.path)
     } catch (e) {
-      window.alert((t('err.delete') || 'Could not delete: ') + e.message)
+      await alertUser({ title: t('dialog.errorTitle'), message: (t('err.delete') || 'Could not delete: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
     }
   }
 
@@ -206,7 +219,55 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
       await window.api.duplicate(node.path)
       await refreshParentOf(node.path)
     } catch (e) {
-      window.alert(isExistsError(e) ? t('err.nameExists') : (t('err.duplicate') || 'Could not duplicate: ') + e.message)
+      await alertUser({ title: t('dialog.errorTitle'), message: isExistsError(e) ? t('err.nameExists') : (t('err.duplicate') || 'Could not duplicate: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
+    }
+  }
+
+  const importSourceFiles = async (dirNode, mode = 'file') => {
+    if (!workspace) return
+    if (typeof window.api.importSourceFile !== 'function') {
+      await alertUser({ title: t('dialog.infoTitle'), message: t('source.reloadNeeded'), confirmText: t('dialog.ok') })
+      return
+    }
+    const destDir = dirNode?.type === 'dir' ? dirNode.path : workspace.rootPath
+    try {
+      const res = await window.api.importSourceFile(workspace.rootPath, destDir, { mode })
+      if (res?.canceled) return
+      if (!res?.files?.length) {
+        await alertUser({ title: t('dialog.infoTitle'), message: t('source.noImportFiles'), confirmText: t('dialog.ok') })
+        return
+      }
+      await loadDir(destDir)
+      setExpanded((s) => new Set(s).add(destDir))
+      if (res?.files?.[0]?.path) onOpenFile(res.files[0].path)
+    } catch (e) {
+      await alertUser({ title: t('dialog.errorTitle'), message: (t('source.importFailed') || 'Could not import source file: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
+    }
+  }
+
+  const syncSourceFile = async (node, direction = 'fromSource') => {
+    if (!workspace || !node?.path || node.type !== 'file') return
+    if (typeof window.api.sourceStatus !== 'function') {
+      await alertUser({ title: t('dialog.infoTitle'), message: t('source.reloadNeeded'), confirmText: t('dialog.ok') })
+      return
+    }
+    if (direction === 'toSource' && typeof window.api.sourceSyncToSource !== 'function') {
+      await alertUser({ title: t('dialog.infoTitle'), message: t('source.reloadNeeded'), confirmText: t('dialog.ok') })
+      return
+    }
+    try {
+      const res = await window.api.sourceStatus(workspace.rootPath, node.path)
+      if (!res?.linked) {
+        await alertUser({ title: t('dialog.infoTitle'), message: t('source.notLinked') || 'This file has no source link.', confirmText: t('dialog.ok') })
+        return
+      }
+      if (!res.ok) {
+        await alertUser({ title: t('dialog.errorTitle'), message: res.error || t('source.missing'), type: 'error', confirmText: t('dialog.ok') })
+        return
+      }
+      onSourceSync?.({ ...res, path: node.path, name: node.name, direction })
+    } catch (e) {
+      await alertUser({ title: t('dialog.errorTitle'), message: (t('source.syncFailed') || 'Could not sync source file: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
     }
   }
 
@@ -245,7 +306,7 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
     try {
       await window.api.rename(srcPath, join(destDir, baseName(srcPath)))
     } catch (e) {
-      window.alert(isExistsError(e) ? t('err.nameExists') : (t('err.move') || 'Could not move: ') + e.message)
+      await alertUser({ title: t('dialog.errorTitle'), message: isExistsError(e) ? t('err.nameExists') : (t('err.move') || 'Could not move: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
       return
     }
     await refreshParentOf(srcPath)
@@ -280,7 +341,7 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
     setRename(null)
     if (!clean || clean === baseName(path)) return
     if (!isValidName(clean)) {
-      window.alert((t('err.invalidName') || 'Invalid name: ') + clean)
+      await alertUser({ title: t('dialog.errorTitle'), message: (t('err.invalidName') || 'Invalid name: ') + clean, type: 'error', confirmText: t('dialog.ok') })
       return
     }
     committingRef.current = true
@@ -288,7 +349,7 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
       await window.api.rename(path, join(parentDir(path), clean))
       await refreshParentOf(path)
     } catch (e) {
-      window.alert(isExistsError(e) ? t('err.nameExists') : (t('err.rename') || 'Could not rename: ') + e.message)
+      await alertUser({ title: t('dialog.errorTitle'), message: isExistsError(e) ? t('err.nameExists') : (t('err.rename') || 'Could not rename: ') + e.message, type: 'error', confirmText: t('dialog.ok') })
     } finally {
       committingRef.current = false
     }
@@ -489,14 +550,18 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
       {menu && (
         <div className="context-menu" style={{
           left: Math.min(menu.x, window.innerWidth - 210),
-          top: Math.min(menu.y, window.innerHeight - 340)
+          top: Math.min(menu.y, window.innerHeight - 370)
         }} onClick={(e) => e.stopPropagation()}>
           <button onClick={() => { startNewFile(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFile')}</button>
           <button onClick={() => { startNewFolder(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('side.ctxNewFolder')}</button>
+          <button onClick={() => { importSourceFiles(menu.node?.type === 'dir' ? menu.node : null); setMenu(null) }}>{t('source.import')}</button>
+          <button onClick={() => { importSourceFiles(menu.node?.type === 'dir' ? menu.node : null, 'folder'); setMenu(null) }}>{t('source.importFolder')}</button>
           {menu.node?.type === 'file' && onOpenRight && (
             <>
               <div className="menu-sep" />
               <button onClick={() => { onOpenRight(menu.node.path); setMenu(null) }}>{t('tab.openRight')}</button>
+              <button onClick={() => { syncSourceFile(menu.node); setMenu(null) }}>{t('source.sync')}</button>
+              <button onClick={() => { syncSourceFile(menu.node, 'toSource'); setMenu(null) }}>{t('source.syncToSource')}</button>
             </>
           )}
           {menu.node && <div className="menu-sep" />}
@@ -516,3 +581,5 @@ export default function Sidebar({ workspace, activePath, onOpenFile, onOpenRight
     </div>
   )
 }
+
+export default memo(Sidebar)

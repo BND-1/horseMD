@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './icons.jsx'
 
 const SYSTEM_PROMPT =
@@ -79,7 +80,7 @@ function renderMarkdown(md) {
   return out
 }
 
-export default function AiPanel({ t, tab, settings, onChangeSettings, getSelection, onApply, onClose }) {
+function AiPanel({ t, tab, settings, onChangeSettings, getSelection, onApply, onClose }) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -229,7 +230,7 @@ export default function AiPanel({ t, tab, settings, onChangeSettings, getSelecti
           <Icon name="chevron-up" size={16} />
         </button>
       </div>
-      {settingsOpen && (
+      {settingsOpen && createPortal((
         <div className="ai-modal-backdrop" onMouseDown={() => setSettingsOpen(false)}>
           <div className="ai-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ai-modal-head">
@@ -280,7 +281,9 @@ export default function AiPanel({ t, tab, settings, onChangeSettings, getSelecti
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </aside>
   )
 }
+
+export default memo(AiPanel)

@@ -29,9 +29,9 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <img className="welcome-logo" src={logoUrl} alt="HorseMD" />
+        <img className="welcome-logo" src={logoUrl} alt="AIxiao" />
         <h1>
-          HorseMD
+          AIxiao
           {APP_VERSION && <span className="welcome-version">v{APP_VERSION}</span>}
         </h1>
         <p className="welcome-tagline">{t('welcome.tagline')}</p>

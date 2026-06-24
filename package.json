@@ -1,16 +1,16 @@
 {
-  "name": "horse",
+  "name": "aixiao",
   "version": "1.0.0",
-  "description": "HorseMD Markdown Editor",
+  "description": "AIxiao Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/BND-1/horseMD.git"
+    "url": "https://github.com/jia-yawei/AIxiao.git"
   },
-  "homepage": "https://github.com/BND-1/horseMD#readme",
+  "homepage": "https://github.com/jia-yawei/AIxiao#readme",
   "bugs": {
-    "url": "https://github.com/BND-1/horseMD/issues"
+    "url": "https://github.com/jia-yawei/AIxiao/issues"
   },
   "main": "out/main/index.js",
   "type": "module",
@@ -37,8 +37,8 @@
     "vite": "^6.0.7"
   },
   "build": {
-    "appId": "com.horsemd.app",
-    "productName": "HorseMD",
+    "appId": "com.aixiao.app",
+    "productName": "AIxiao",
     "files": [
       "out/**/*"
     ],
@@ -46,8 +46,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "BND-1",
-        "repo": "horseMD"
+        "owner": "jia-yawei",
+        "repo": "AIxiao"
       }
     ],
     "mac": {

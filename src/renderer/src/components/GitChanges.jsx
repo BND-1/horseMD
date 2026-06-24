@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
@@ -196,7 +196,7 @@ function isCheckoutBlockedByChanges(error) {
   return /local changes|would be overwritten|commit your changes|stash/i.test(msg)
 }
 
-export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpenDiff, onChanged }) {
+function GitChanges({ workspace, onOpenFile, onOpenDiff, onChanged, onCountChanged }) {
   const { t } = useI18n()
   const [state, setState] = useState({
     loading: false,
@@ -331,14 +331,20 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
   const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (!workspace?.rootPath) {
       setState({ loading: false, busy: false, error: '', repository: true, initialized: false, files: [], staged: [], unstaged: [], commits: [], summary: null, branches: [] })
+      onCountChanged?.(0)
       return
     }
     setState((s) => ({ ...s, loading: quiet ? s.loading : true, error: '' }))
     const res = await window.api.gitStatus(workspace.rootPath)
     const repository = res.ok ? res.repository !== false : true
-    const history = res.ok && repository ? await window.api.gitHistory(workspace.rootPath) : { ok: false, commits: [] }
-    const summary = res.ok && repository ? await window.api.gitSummary(workspace.rootPath) : { ok: false }
-    const branches = res.ok && repository ? await window.api.gitBranches(workspace.rootPath) : { ok: false, branches: [] }
+    onCountChanged?.(res.ok && repository ? (res.files?.length || 0) : 0)
+    const [history, summary, branches] = res.ok && repository
+      ? await Promise.all([
+          window.api.gitHistory(workspace.rootPath),
+          window.api.gitSummary(workspace.rootPath),
+          window.api.gitBranches(workspace.rootPath)
+        ])
+      : [{ ok: false, commits: [] }, { ok: false }, { ok: false, branches: [] }]
     setState({
       loading: false,
       busy: false,
@@ -352,9 +358,9 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
       commits: history.commits || [],
       branches: branches.branches || []
     })
-  }, [workspace?.rootPath])
+  }, [workspace?.rootPath, onCountChanged])
 
-  useEffect(() => { refresh() }, [refresh, refreshNonce])
+  useEffect(() => { refresh() }, [refresh])
 
   useEffect(() => {
     setDetailHeight(0)
@@ -1049,3 +1055,5 @@ export default function GitChanges({ workspace, refreshNonce, onOpenFile, onOpen
     </div>
   )
 }
+
+export default memo(GitChanges)
