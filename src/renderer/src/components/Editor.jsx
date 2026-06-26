@@ -261,7 +261,14 @@ export default function Editor({
         // Localize the code-block "Copy" button label. (Visual feedback on click
         // is added via a delegated handler below + CSS, since Crepe gives no
         // built-in "Copied!" state.)
-        [CrepeFeature.CodeMirror]: { copyText: t('code.copy') },
+        [CrepeFeature.CodeMirror]: {
+          copyText: t('code.copy'),
+          // previewToggleText is consumed by the feature to BUILD the toggle
+          // button, so it must live in the feature config (not codeBlockConfig)
+          // — otherwise the Mermaid Hide/Edit label stays English.
+          previewToggleText: (previewOnly) =>
+            previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode')
+        },
         // Localize the slash (`/`) command menu (otherwise always English). The
         // slash menu is part of the BlockEdit feature (there's no SlashCommand
         // enum member), so its config lives under [BlockEdit].
@@ -300,9 +307,7 @@ export default function Editor({
         renderPreview: createMermaidPreviewRenderer((k) => tRef.current(k)),
         previewOnlyByDefault: true,
         previewLabel: t('mermaid.diagram'),
-        previewLoading: t('mermaid.rendering'),
-        previewToggleText: (previewOnly) =>
-          previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode')
+        previewLoading: t('mermaid.rendering')
       }))
       ctx.update(prosePluginsCtx, (plugins) => [
         ...plugins,
