@@ -73,9 +73,14 @@ body.light {
   --accent-soft: rgba(200, 107, 53, 0.15);
   --accent-glow: rgba(200, 107, 53, 0.3);
 
-  /* Code blocks */
+  /* Code blocks. --code-bg is the soft inline/block tint; --code-block-bg is the
+     darker background for CodeMirror (syntax-highlighted) code blocks — oneDark's
+     token colors are tuned for a dark surface, so the block must be dark for the
+     code to read clearly. */
   --code-bg: #f2efe8;
   --code-border: #ddd9d2;
+  --code-block-bg: #2a2730;
+  --code-block-border: rgba(0, 0, 0, 0.25);
 
   /* Semantic */
   --danger: #c93b3b;
@@ -121,6 +126,9 @@ body.dark {
   /* Code blocks */
   --code-bg: #24201c;
   --code-border: #3a3630;
+  /* CodeMirror block sits a shade deeper than the page so it reads as a block. */
+  --code-block-bg: #100e0b;
+  --code-block-border: rgba(255, 255, 255, 0.06);
 
   /* Semantic */
   --danger: #ff7070;
@@ -164,6 +172,7 @@ body.theme-morandi-dark {
   --border: #3a3f49; --border-soft: #313640; --hover: #323843; --active: #3d4450; --hover-elevated: #2e333c;
   --accent: #92a3b8; --accent-strong: #aebfd2; --accent-soft: rgba(146, 163, 184, 0.18); --accent-glow: rgba(146, 163, 184, 0.32);
   --code-bg: #2b2f37; --code-border: #3a3f49; --danger: #cf7a76; --success: #8aa888;
+  --code-block-bg: #16191f; --code-block-border: rgba(255,255,255,0.06);
 }
 
 /* Theme/language switcher bits */
@@ -2682,6 +2691,30 @@ body.dark .milkdown {
 .milkdown .cm-editor .cm-activeLineGutter {
   background: transparent;
 }
+
+/* CodeMirror (syntax-highlighted) code blocks: give them a dark surface so
+   oneDark's token colors read clearly, with padding + rounded corners matching
+   the plain <pre> blocks. Without this the block sat on the warm page
+   background and the gray oneDark text was washed out (issue: "code not
+   prominent"). */
+.milkdown .cm-editor {
+  background: var(--code-block-bg) !important;
+  border: 1px solid var(--code-block-border);
+  border-radius: var(--radius-md);
+  margin: 1.5em 0;
+  font-size: 0.92em;
+}
+.milkdown .cm-editor .cm-scroller {
+  padding: 14px 16px;
+  line-height: 1.6;
+}
+.milkdown .cm-editor .cm-gutters {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+}
+/* The plain (non-CodeMirror) code block keeps its tinted look; only the
+   editable highlighted blocks go dark. */
 
 /* Inline code */
 .milkdown .ProseMirror code:not(pre code) {
