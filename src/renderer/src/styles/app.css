@@ -1825,6 +1825,7 @@ body.hm-full-width .editor-skeleton {
   background: #ffd84d;
 }
 /* Color picker that drops out of the highlighter button. */
+/* Highlight color picker — a small card that drops out of the pen button. */
 .hm-highlight-pop {
   position: absolute;
   top: 100%;
@@ -1835,21 +1836,44 @@ body.hm-full-width .editor-skeleton {
   z-index: 20;
 }
 .toolbar-item.hm-highlight-item:hover .hm-highlight-pop,
-.hm-highlight-pop:hover {
+.hm-highlight-pop:hover,
+.hm-highlight-pop:focus-within {
   display: flex;
 }
+.hm-highlight-pop-inner {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
 .hm-hl-swatch {
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 2px solid var(--border);
-  margin: 0 3px;
+  border: 2px solid var(--border-soft);
+  margin: 0;
   cursor: pointer;
   padding: 0;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+  transition: transform 0.1s var(--ease-out), border-color 0.1s var(--ease-out);
 }
-.hm-hl-swatch.hm-hl-yellow { background: #fff3a3; }
-.hm-hl-swatch.hm-hl-red { background: #ffc6c6; }
-.hm-hl-swatch.hm-hl-blue { background: #bcd9ff; }
+.hm-hl-swatch:hover {
+  transform: scale(1.12);
+  border-color: var(--text);
+}
+.hm-hl-swatch:active {
+  transform: scale(0.96);
+}
+.hm-hl-swatch.hm-hl-yellow { background: #ffe66b; }
+.hm-hl-swatch.hm-hl-red { background: #ff9a9a; }
+.hm-hl-swatch.hm-hl-blue { background: #9cc6ff; }
+body.dark .hm-hl-swatch.hm-hl-yellow { background: #c9a93a; }
+body.dark .hm-hl-swatch.hm-hl-red { background: #b85555; }
+body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
 .hm-heading-pop {
   position: absolute;
   top: 100%;

@@ -836,6 +836,8 @@ export default function Editor({
 
           const pop = document.createElement('div')
           pop.className = 'hm-highlight-pop'
+          const inner = document.createElement('div')
+          inner.className = 'hm-highlight-pop-inner'
           for (const color of HIGHLIGHT_COLORS) {
             const sw = document.createElement('button')
             sw.type = 'button'
@@ -855,8 +857,9 @@ export default function Editor({
               const v = target?.getView?.()
               if (v) applyHighlightInView(v, color)
             })
-            pop.appendChild(sw)
+            inner.appendChild(sw)
           }
+          pop.appendChild(inner)
           item.appendChild(pop)
           item.addEventListener('mousedown', (e) => e.preventDefault()) // keep selection
           toolbar.appendChild(divider)
