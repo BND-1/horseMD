@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.jsx'
 import Tabs from './components/Tabs.jsx'
 import Outline from './components/Outline.jsx'
 import StatusBar from './components/StatusBar.jsx'
+import SaveFab from './components/SaveFab.jsx'
 import CommandPalette from './components/CommandPalette.jsx'
 import { Icon } from './components/icons.jsx'
 import { THEMES, DEFAULT_THEME, applyTheme } from './themes.js'
@@ -1514,6 +1515,11 @@ export default function App() {
         onSetLineHeight={(v) => updateSettings({ lineHeight: v })}
         paragraphSpacing={settings.paragraphSpacing}
         onSetParagraphSpacing={(v) => updateSettings({ paragraphSpacing: v })}
+      />
+
+      <SaveFab
+        visible={!home && !!activeTab && activeTab.content !== activeTab.savedContent}
+        onSave={() => handlers.current.save()}
       />
 
       <CommandPalette

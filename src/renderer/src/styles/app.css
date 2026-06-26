@@ -2172,16 +2172,40 @@ body.hm-full-width .source-editor {
   background: var(--hover);
   color: var(--text);
 }
-/* The Save button (status-left) only shows when the tab is dirty; tint it with
-   the accent so it reads as the action to take, without a heavy fill. */
-.status-btn.hm-save-btn {
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  font-weight: 600;
-}
-.status-btn.hm-save-btn:hover {
-  background: var(--accent);
+/* Floating Save action button — bottom-right of the editor area, only while the
+   active tab is dirty. Fixed position so it never shifts with the path length. */
+.hm-save-fab {
+  position: fixed;
+  right: 26px;
+  bottom: 56px; /* clear the status bar */
+  z-index: 120;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #fff;
+  background: var(--accent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  animation: hmFabIn 0.14s var(--ease-out);
+  transition: transform 0.12s var(--ease-out), background 0.12s var(--ease-out);
+}
+.hm-save-fab:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+.hm-save-fab:active {
+  transform: translateY(0) scale(0.95);
+}
+@keyframes hmFabIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (max-width: 820px) {
+  .hm-save-fab { right: 16px; bottom: 64px; }
 }
 /* Right-side items never shrink; the path yields space instead. As a last resort
    on very narrow windows, drop the word/char/read counts first — never the
