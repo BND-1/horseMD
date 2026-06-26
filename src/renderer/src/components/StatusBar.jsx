@@ -365,9 +365,20 @@ export default function StatusBar({
               <span className="status-path" title={tab.path || t('status.unsaved')}>
                 {tab.path || t('status.unsaved')}
               </span>
-              <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>
-                {dirty ? '● ' + t('status.modified') : '✓ ' + t('status.saved')}
-              </span>
+              {dirty ? (
+                // Explicit Save button — appears only when there are unsaved
+                // changes, the moment a user is most likely to want it. Avoids
+                // a permanent button (Save is also Ctrl/Cmd+S).
+                <button
+                  className="status-btn hm-save-btn"
+                  onClick={onSave}
+                  title={t('tip.save')}
+                >
+                  <Icon name="save" size={13} /> {t('status.save')}
+                </button>
+              ) : (
+                <span className={`status-dot ok`}>{'✓ ' + t('status.saved')}</span>
+              )}
             </>
           )
         ) : (

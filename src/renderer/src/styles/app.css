@@ -2157,6 +2157,17 @@ body.hm-full-width .source-editor {
   background: var(--hover);
   color: var(--text);
 }
+/* The Save button (status-left) only shows when the tab is dirty; tint it with
+   the accent so it reads as the action to take, without a heavy fill. */
+.status-btn.hm-save-btn {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.status-btn.hm-save-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
 /* Right-side items never shrink; the path yields space instead. As a last resort
    on very narrow windows, drop the word/char/read counts first — never the
    toggles or the GitHub link. */
