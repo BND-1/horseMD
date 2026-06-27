@@ -28,7 +28,7 @@ import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
-import { createMdPastePlugin } from './editor-md-paste.js'
+import { attachMdPasteHandler } from './editor-md-paste.js'
 import remarkFrontmatter from 'remark-frontmatter'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
@@ -322,19 +322,6 @@ export default function Editor({
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
-        // Parse pasted ```fences into code_block nodes (so pasted ```mermaid
-        // renders instead of getting mangled). See editor-md-paste.js.
-        createMdPastePlugin((md) => {
-          // Run Milkdown's own remark parser (same pipeline as opening a file)
-          // so pasted Markdown — headings, tables, math, mermaid, code — renders.
-          try {
-            const parser = ctx.get(parserCtx)
-            parser.run(ctx.get(remarkCtx), md)
-            return parser.toDoc()
-          } catch {
-            return null
-          }
-        }),
         // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
         // into the same block) back into one block per diagram.
         createMermaidSplitPlugin()
@@ -789,6 +776,20 @@ export default function Editor({
         view.dom.addEventListener('copy', onCopy, true)
         view.dom.addEventListener('paste', onPasteImage, true)
         view.dom.addEventListener('drop', onDropImage, true)
+        // Markdown paste (capture phase — runs before ProseMirror's handler so
+        // text/html doesn't bypass us). Parses pasted Markdown source via
+        // Milkdown's own remark pipeline. See editor-md-paste.js.
+        cleanups.push(
+          attachMdPasteHandler(view, (md) => {
+            try {
+              // parserCtx is a FUNCTION (text) => Doc (ParserState.create returns
+              // a closure). Call it directly — it runs the full remark pipeline.
+              return crepe.editor.ctx.get(parserCtx)(md)
+            } catch {
+              return null
+            }
+          })
+        )
         cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onImgClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onCaptionBtn))
