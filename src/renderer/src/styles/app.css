@@ -1687,6 +1687,54 @@ body.hm-full-width .editor-skeleton {
   margin: 0.6em 0;
   overflow-x: auto;
 }
+/* YAML front matter card (--- block at the top of a doc). */
+.hm-frontmatter-wrap { margin: 0 0 1.4em; }
+.hm-frontmatter {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  font-size: 0.9em;
+}
+.hm-frontmatter-head {
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.hm-frontmatter-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0;
+  margin: 0;
+  padding: 8px 14px;
+}
+.hm-frontmatter-grid dt {
+  grid-column: 1;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 3px 16px 3px 0;
+  white-space: nowrap;
+}
+.hm-frontmatter-grid dd {
+  grid-column: 2;
+  margin: 0;
+  padding: 3px 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.hm-frontmatter-raw {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .hm-html-block table {
   border-collapse: collapse;
   width: 100%;
@@ -2159,45 +2207,75 @@ body.hm-full-width .source-editor {
   color: var(--text);
 }
 /* Floating Save action button — bottom-right of the editor area, only while the
-   active tab is dirty. A soft pill (elevated surface + accent text), not a heavy
-   solid circle, so it sits lightly over the content. Fixed position so it never
+   active tab is dirty. An icon disc by default; on hover it gracefully expands
+   into a pill revealing the "Save" label (so it stays light over the content and
+   only asks for attention when you reach for it). Fixed position so it never
    shifts with the path length. */
 .hm-save-fab {
   position: fixed;
-  right: 26px;
-  bottom: 56px; /* clear the status bar */
+  right: 28px;
+  bottom: 58px; /* clear the status bar */
   z-index: 120;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 40px;
-  padding: 0 16px 0 13px;
+  height: 42px;
+  padding: 0;
+  width: 42px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   color: var(--accent-strong);
   background: var(--bg-elevated);
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.05);
   cursor: pointer;
-  animation: hmFabIn 0.14s var(--ease-out);
-  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out),
-    background 0.12s var(--ease-out);
+  animation: hmFabIn 0.2s var(--ease-out);
+  transition: width 0.24s var(--ease-out), padding 0.24s var(--ease-out),
+    background 0.18s var(--ease-out), box-shadow 0.18s var(--ease-out),
+    transform 0.18s var(--ease-out);
+}
+.hm-save-fab > svg {
+  flex: none;
+  transition: transform 0.24s var(--ease-out);
+}
+.hm-save-fab > span {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.24s var(--ease-out), opacity 0.2s var(--ease-out);
 }
 .hm-save-fab:hover {
+  width: auto;
+  padding: 0 17px 0 14px;
+  gap: 7px;
   background: var(--accent-soft);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
-  transform: translateY(-1px);
+  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 4px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+.hm-save-fab:hover > span {
+  max-width: 5em;
+  opacity: 1;
+}
+.hm-save-fab:hover > svg {
+  transform: scale(1.06);
 }
 .hm-save-fab:active {
-  transform: translateY(0) scale(0.97);
+  transform: translateY(0) scale(0.96);
 }
 @keyframes hmFabIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  from { opacity: 0; transform: translateY(10px) scale(0.85); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @media (max-width: 820px) {
-  .hm-save-fab { right: 16px; bottom: 64px; }
+  .hm-save-fab { right: 18px; bottom: 66px; }
+  /* No hover on touch — keep it a clean icon disc, but always show the label so
+     the action is obvious on a phone. */
+  .hm-save-fab { width: auto; padding: 0 16px 0 13px; gap: 7px; }
+  .hm-save-fab > span { max-width: 5em; opacity: 1; }
 }
 /* Right-side items never shrink; the path yields space instead. As a last resort
    on very narrow windows, drop the word/char/read counts first — never the

@@ -29,6 +29,8 @@ import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
 import { createMdPastePlugin } from './editor-md-paste.js'
+import remarkFrontmatter from 'remark-frontmatter'
+import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
@@ -290,7 +292,11 @@ export default function Editor({
     // overwrite every component node view (image-block captions, CodeMirror code
     // blocks, tables, list items). Appending here merges with them.
     crepe.editor.config((ctx) => {
-      ctx.update(nodeViewCtx, (views) => [...views, ['html', (node) => renderHtmlNodeView(node)]])
+      ctx.update(nodeViewCtx, (views) => [
+        ...views,
+        ['html', (node) => renderHtmlNodeView(node)],
+        ['frontmatter', (node) => renderFrontmatterNodeView(node)]
+      ])
       // Localize the image caption / upload text to the current language.
       applyImageText(ctx, tRef.current)
       // Route the image-block / inline-image "Upload" button through the image
@@ -346,6 +352,9 @@ export default function Editor({
       }))
       ctx.update(remarkPluginsCtx, (plugins) => [
         ...plugins,
+        // Parse the `---` YAML block at the top of a doc into a `yaml` node
+        // (handled by the frontmatter block schema).
+        { plugin: remarkFrontmatter, options: undefined },
         { plugin: brToBreakRemarkPlugin, options: undefined },
         // Merge fragmented inline HTML (<span>x</span>) into whole fragments so
         // the html node view can render them (issue #14).
@@ -368,6 +377,9 @@ export default function Editor({
     // Pass the array — editor.use() registers only its first arg (it wraps in
     // [...].flat()), so spreading would drop every feature after the first.
     crepe.editor.use(highlightFeatures)
+    // YAML front matter (`---` block at the top) — a block node rendered as a
+    // structured key/value card (see editor-frontmatter.js).
+    crepe.editor.use(frontmatterSchema)
     crepeRef.current = crepe
 
     // Convert the block the cursor sits in to a given block id (paragraph/h1…h6).
@@ -1024,7 +1036,7 @@ export default function Editor({
                 '.tools-button-group, .button-group, .cm-panel, .cm-tooltip, ' +
                 '.preview-panel, .cell-handle, .line-handle, .handle, .add-button, ' +
                 '.operation, .operation-item, .drag-preview, .milkdown-block-handle, ' +
-                '.milkdown-toolbar, .image-resize-handle, .label-wrapper'
+                '.milkdown-toolbar, .image-resize-handle, .label-wrapper, .hm-frontmatter-wrap'
             )
             .forEach((el) => el.remove())
           // Flatten CodeMirror editors to plain <pre><code>.

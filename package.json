@@ -37,7 +37,8 @@
     "@capawesome/capacitor-file-picker": "^8.0.2",
     "@milkdown/crepe": "^7.6.5",
     "chokidar": "^4.0.3",
-    "mermaid": "^11.15.0"
+    "mermaid": "^11.15.0",
+    "remark-frontmatter": "^5.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.0",
