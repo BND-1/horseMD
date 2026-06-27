@@ -24,7 +24,7 @@ import { fireToast } from '../ui.js'
 import { renderHtmlNodeView, convertBlock, remarkMergeInlineHtml } from './editor-html.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
-import { createMermaidPreviewRenderer } from './editor-mermaid.js'
+import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
 import { createMdPastePlugin } from './editor-md-paste.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
@@ -316,7 +316,10 @@ export default function Editor({
         tableBreakKeymap(),
         // Parse pasted ```fences into code_block nodes (so pasted ```mermaid
         // renders instead of getting mangled). See editor-md-paste.js.
-        createMdPastePlugin()
+        createMdPastePlugin(),
+        // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
+        // into the same block) back into one block per diagram.
+        createMermaidSplitPlugin()
       ])
       // Table-cell line break — serialize a break to <br> inside a cell, and parse
       // inline <br> back into a break (see editor-tablebreak.js). Also serialize

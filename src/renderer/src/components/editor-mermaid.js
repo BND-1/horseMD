@@ -107,3 +107,71 @@ export function createMermaidPreviewRenderer(getT) {
     return html // a string return sets the preview immediately (sync path)
   }
 }
+
+// Mermaid diagram-type keywords that START a new diagram. Used to split a block
+// that accidentally holds two diagrams (e.g. pasting a 2nd diagram into a
+// non-empty mermaid block appends it, mashing both into one parse error).
+import { Plugin, PluginKey } from '@milkdown/prose/state'
+const DIAGRAM_TYPES = [
+  'flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram',
+  'stateDiagram-v2', 'erDiagram', 'gantt', 'pie', 'journey', 'gitGraph',
+  'mindmap', 'timeline', 'quadrantChart', 'requirementDiagram', 'C4Context',
+  'sankey-beta', 'block-beta', 'architecture-beta', 'packet-beta'
+]
+const DIAGRAM_START = new RegExp('^(?:' + DIAGRAM_TYPES.join('|') + ')\\b', 'i')
+
+// Split mermaid source into one chunk per diagram (each begins with a diagram
+// keyword). Returns [] for a single/empty diagram.
+function splitDiagrams(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n')
+  const segs = []
+  let cur = null
+  for (const line of lines) {
+    if (DIAGRAM_START.test(line.trim())) {
+      if (cur) segs.push(cur)
+      cur = [line]
+    } else {
+      if (!cur) cur = []
+      cur.push(line)
+    }
+  }
+  if (cur) segs.push(cur)
+  return segs
+    .map((s) => s.join('\n').replace(/^\n+/, '').replace(/\s+$/, ''))
+    .filter((s) => s.trim())
+}
+
+// appendTransaction plugin: when a mermaid block ends up holding 2+ diagrams,
+// split it into one code_block per diagram. Catches the "paste a 2nd diagram
+// into the block" mashup (the paste itself is handled by CodeMirror, below the
+// ProseMirror layer, so we react after the fact). Idempotent — each resulting
+// block has one diagram, so it won't re-split.
+export function createMermaidSplitPlugin() {
+  return new Plugin({
+    key: new PluginKey('hm-mermaid-split'),
+    appendTransaction(transs, _oldState, newState) {
+      if (!transs.some((t) => t.docChanged)) return null
+      const jobs = []
+      newState.doc.descendants((node, pos) => {
+        if (
+          node.type.name === 'code_block' &&
+          String(node.attrs.language || '').toLowerCase() === 'mermaid'
+        ) {
+          const segs = splitDiagrams(node.textContent)
+          if (segs.length > 1) jobs.push({ pos, size: node.nodeSize, segs })
+        }
+        return true
+      })
+      if (!jobs.length) return null
+      const tr = newState.tr
+      // Replace from the last block back so earlier positions stay valid.
+      jobs.sort((a, b) => b.pos - a.pos)
+      for (const { pos, size, segs } of jobs) {
+        const type = newState.schema.nodes.code_block
+        const nodes = segs.map((s) => type.create({ language: 'mermaid' }, s ? newState.schema.text(s) : null))
+        tr.replaceWith(pos, pos + size, nodes)
+      }
+      return tr.setMeta('addToHistory', false)
+    }
+  })
+}
