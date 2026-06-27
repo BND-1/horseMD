@@ -836,6 +836,35 @@ export default function App() {
     }
   }, [home, sidebarOpen, sidebarMode, sourceMode, activeId])
 
+  // Outline heading list, taken from the RENDERED document (the editor's actual
+  // h1…h6 elements) — not regex'd from the markdown string. This matches how
+  // jumpToHeading finds them, so the two stay in sync, and it recognizes every
+  // heading the editor renders (ATX `#`, Setext, and HTML <h1>) regardless of
+  // how the source wrote it.
+  const [outlineHeadings, setOutlineHeadings] = useState([])
+  useEffect(() => {
+    if (home) {
+      setOutlineHeadings([])
+      return
+    }
+    let raf = 0
+    const read = () => {
+      raf = 0
+      // Scope to the ProseMirror content so the slash menu (whose group labels
+      // are <h6> and floats inside the editor host) doesn't leak into the outline.
+      const pm = editorHostRef.current?.querySelector('.ProseMirror')
+      if (!pm) return
+      const els = pm.querySelectorAll('h1, h2, h3, h4, h5, h6')
+      setOutlineHeadings(
+        [...els].map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
+      )
+    }
+    raf = requestAnimationFrame(read)
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [home, activeId, activeTab?.content, sourceMode])
+
   // ------------------------- menu / shortcuts ----------------------
   // In split view, target the pane you're actually editing (last focused), as
   // long as it's one of the two visible panes; otherwise the active (left) tab.
@@ -1311,7 +1340,7 @@ export default function App() {
                 refreshNonce={refreshNonce}
               />
             ) : (
-              <Outline content={activeTab?.content || ''} activeIndex={activeHeading} onJump={jumpToHeading} />
+              <Outline headings={outlineHeadings} activeIndex={activeHeading} onJump={jumpToHeading} />
             )
           )}
         </aside>

@@ -1,41 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useI18n } from '../i18n.jsx'
 
-export function parseHeadings(md) {
-  const lines = (md || '').split('\n')
-  const out = []
-  let inFence = false
-  let fence = ''
-  lines.forEach((line) => {
-    const fm = line.match(/^(\s*)(```+|~~~+)/)
-    if (fm) {
-      const marker = fm[2][0]
-      if (!inFence) {
-        inFence = true
-        fence = marker
-      } else if (marker === fence) {
-        inFence = false
-      }
-      return
-    }
-    if (inFence) return
-    const hm = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/)
-    if (hm) out.push({ level: hm[1].length, text: unescapeMd(hm[2].trim()) })
-  })
-  return out
-}
+// Outline panel. The heading list comes from the parent (App), which reads the
+// editor's RENDERED h1…h6 elements — so every heading the document shows is
+// listed, no matter how its source wrote it (ATX `#`, Setext, or HTML <h1>),
+// and the list stays in lockstep with jumpToHeading (same DOM order).
 
-// Unescape Markdown backslash escapes (e.g. `\_` → `_`) so the outline shows
-// the same text the rendered heading does — otherwise a title containing `_`
-// shows a stray backslash (issue #12). We only undo escapes, never strip chars,
-// so a legitimate underscore stays (matches the body).
-function unescapeMd(s) {
-  return s.replace(/\\([\\`*{}[\]()#+\-.!_~|>])/g, '$1')
-}
-
-export default function Outline({ content, activeIndex = -1, onJump }) {
+export default function Outline({ headings = [], activeIndex = -1, onJump }) {
   const { t } = useI18n()
-  const headings = useMemo(() => parseHeadings(content), [content])
   // The currently-viewed heading's row, kept scrolled into view (like the file
   // tree reveals the open file). Guarded so we only scroll on a real change.
   const activeRef = useRef(null)
