@@ -68,7 +68,7 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
                       onClick={(e) => { e.stopPropagation(); onRemoveRecent(r.path) }}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      <Icon name="close" size={12} />
+                      <Icon name="close" size={13} />
                     </button>
                   )}
                 </div>

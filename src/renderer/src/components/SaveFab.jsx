@@ -9,13 +9,9 @@ export default function SaveFab({ visible, onSave }) {
   const { t } = useI18n()
   if (!visible) return null
   return (
-    <button
-      className="hm-save-fab"
-      onClick={onSave}
-      title={t('tip.save')}
-      aria-label={t('status.save')}
-    >
-      <Icon name="save" size={20} />
+    <button className="hm-save-fab" onClick={onSave} title={t('tip.save')} aria-label={t('status.save')}>
+      <Icon name="save" size={16} />
+      <span>{t('status.save')}</span>
     </button>
   )
 }

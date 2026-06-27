@@ -2159,32 +2159,38 @@ body.hm-full-width .source-editor {
   color: var(--text);
 }
 /* Floating Save action button — bottom-right of the editor area, only while the
-   active tab is dirty. Fixed position so it never shifts with the path length. */
+   active tab is dirty. A soft pill (elevated surface + accent text), not a heavy
+   solid circle, so it sits lightly over the content. Fixed position so it never
+   shifts with the path length. */
 .hm-save-fab {
   position: fixed;
   right: 26px;
   bottom: 56px; /* clear the status bar */
   z-index: 120;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  border: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: var(--accent);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px 0 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--bg-elevated);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   animation: hmFabIn 0.14s var(--ease-out);
-  transition: transform 0.12s var(--ease-out), background 0.12s var(--ease-out);
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out),
+    background 0.12s var(--ease-out);
 }
 .hm-save-fab:hover {
-  background: var(--accent-strong);
+  background: var(--accent-soft);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
   transform: translateY(-1px);
 }
 .hm-save-fab:active {
-  transform: translateY(0) scale(0.95);
+  transform: translateY(0) scale(0.97);
 }
 @keyframes hmFabIn {
   from { opacity: 0; transform: translateY(8px) scale(0.9); }
@@ -2459,25 +2465,26 @@ body.hm-full-width .source-editor {
   color: var(--faint);
   white-space: nowrap;
 }
-/* Remove-from-recent ✕ — only revealed on hover/focus so the list stays calm. */
+/* Remove-from-recent ✕ — always visible (faint), full + accented on hover. */
 .recent-remove {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  margin-left: 4px;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--faint);
+  color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.12s var(--ease-out), background 0.12s var(--ease-out);
+  opacity: 0.5;
+  transition: opacity 0.12s var(--ease-out), background 0.12s var(--ease-out),
+    color 0.12s var(--ease-out);
 }
 .recent-item:hover .recent-remove,
 .recent-remove:focus-visible { opacity: 1; }
-.recent-remove:hover { background: var(--hover); color: var(--text); }
+.recent-remove:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .recent-remove:active { background: var(--active); }
 
 .welcome-hints {
