@@ -1873,6 +1873,14 @@ body.hm-full-width .editor-skeleton {
   border-radius: 50%;
   background: #ffd84d;
 }
+/* Source-readable review markup button in the selection toolbar. */
+.milkdown .milkdown-toolbar .toolbar-item.hm-review-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
 /* Color picker that drops out of the highlighter button. */
 /* Highlight color picker — a small card that drops out of the pen button. */
 .hm-highlight-pop {
@@ -1923,6 +1931,52 @@ body.hm-full-width .editor-skeleton {
 body.dark .hm-hl-swatch.hm-hl-yellow { background: #c9a93a; }
 body.dark .hm-hl-swatch.hm-hl-red { background: #b85555; }
 body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
+.hm-review-pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-top: 8px;
+  display: none;
+  z-index: 20;
+}
+.toolbar-item.hm-review-item:hover .hm-review-pop,
+.hm-review-pop:hover,
+.hm-review-pop:focus-within {
+  display: block;
+}
+.hm-review-pop-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 148px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-review-action {
+  min-height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.hm-review-action:hover,
+.hm-review-action:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  outline: none;
+}
 .hm-heading-pop {
   position: absolute;
   top: 100%;
@@ -3009,6 +3063,62 @@ body.dark .milkdown {
 body.dark .milkdown .ProseMirror mark.hm-hl-yellow { background: #7a6c12; }
 body.dark .milkdown .ProseMirror mark.hm-hl-red { background: #7a3434; }
 body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
+
+/* Source-readable review markers stay raw text, with kind-specific decoration. */
+.milkdown .ProseMirror .hm-review-mark {
+  color: inherit;
+  padding: 0.03em 0.18em;
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.milkdown .ProseMirror .hm-review-add {
+  background: #e3f8e9;
+  border-bottom: 2px solid #2f9f67;
+  text-decoration-line: underline;
+  text-decoration-color: #2f9f67;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.15em;
+}
+.milkdown .ProseMirror .hm-review-del {
+  background: #ffe5e5;
+  text-decoration-line: line-through;
+  text-decoration-color: #d13b3b;
+  text-decoration-thickness: 1.5px;
+}
+.milkdown .ProseMirror .hm-review-sub {
+  background: #fff0c2;
+  border-bottom: 2px solid #c38313;
+}
+.milkdown .ProseMirror .hm-review-comment {
+  background: #eeeaf7;
+  border-bottom: 2px solid #8475aa;
+}
+.milkdown .ProseMirror .hm-review-highlight {
+  background: #e0f0ff;
+  border-bottom: 2px solid #4d8fd6;
+}
+body.dark .milkdown .ProseMirror .hm-review-add {
+  background: #1d4630;
+  border-bottom-color: #58c98a;
+  text-decoration-color: #58c98a;
+}
+body.dark .milkdown .ProseMirror .hm-review-del {
+  background: #562828;
+  text-decoration-color: #ff7979;
+}
+body.dark .milkdown .ProseMirror .hm-review-sub {
+  background: #574313;
+  border-bottom-color: #e3b34a;
+}
+body.dark .milkdown .ProseMirror .hm-review-comment {
+  background: #34303f;
+  border-bottom-color: #aa9ccc;
+}
+body.dark .milkdown .ProseMirror .hm-review-highlight {
+  background: #223e5c;
+  border-bottom-color: #75aee9;
+}
 /* Inline raw HTML rendered as real DOM (e.g. <span style>, <sub>) — inline. */
 .hm-html-inline {
   display: inline;

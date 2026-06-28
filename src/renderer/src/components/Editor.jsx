@@ -32,6 +32,11 @@ import { attachMdPasteHandler } from './editor-md-paste.js'
 import remarkFrontmatter from 'remark-frontmatter'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
+import {
+  REVIEW_KINDS,
+  applyReviewMarkupInView,
+  createReviewDecorationPlugin
+} from './editor-review.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -322,6 +327,9 @@ export default function Editor({
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
+        // Source-readable review markers stay visible in rich mode, but get
+        // tinted by kind so they are easy to spot while editing.
+        createReviewDecorationPlugin(),
         // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
         // into the same block) back into one block per diagram.
         createMermaidSplitPlugin()
@@ -935,6 +943,45 @@ export default function Editor({
           item.appendChild(pop)
         }
 
+        const REVIEW_ACTIONS = [
+          [REVIEW_KINDS.addition, 'review.add'],
+          [REVIEW_KINDS.deletion, 'review.delete'],
+          [REVIEW_KINDS.substitution, 'review.substitute'],
+          [REVIEW_KINDS.comment, 'review.comment'],
+          [REVIEW_KINDS.highlight, 'review.highlight']
+        ]
+        const injectReviewButton = (toolbar) => {
+          const item = appendToolbarItem(
+            toolbar,
+            'hm-review-item',
+            'Review markup',
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M4 12h9"/><path d="M4 18h7"/><path d="M17 9l3 3-3 3"/><path d="M14 12h6"/></svg>'
+          )
+          if (!item) return
+          const pop = document.createElement('div')
+          pop.className = 'hm-review-pop'
+          const inner = document.createElement('div')
+          inner.className = 'hm-review-pop-inner'
+          for (const [kind, labelKey] of REVIEW_ACTIONS) {
+            const b = document.createElement('button')
+            b.type = 'button'
+            b.className = 'hm-review-action hm-review-action-' + kind
+            b.textContent = tRef.current(labelKey)
+            b.title = b.textContent
+            b.addEventListener('mousedown', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            })
+            b.addEventListener('click', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              editorForToolbar(toolbar).getApi()?.applyReviewMarkup(kind)
+            })
+            inner.appendChild(b)
+          }
+          pop.appendChild(inner)
+          item.appendChild(pop)
+        }
 
         // Inject synchronously (no requestAnimationFrame — it's throttled when
         // the window is occluded, which would skip injection). The scan is cheap
@@ -944,7 +991,7 @@ export default function Editor({
         // so it doesn't matter which instance injected it.
         // Crepe's toolbar buttons carry no label/identifier in the DOM, so we
         // add tooltips by their fixed order: bold, italic, strikethrough, inline
-        // code, link. Both of OUR injected items are excluded (titled above).
+        // code, link. Our injected items are excluded (titled above).
         const addToolbarTitles = (toolbar) => {
           const tips = [
             tRef.current('tb.bold'),
@@ -954,7 +1001,9 @@ export default function Editor({
             tRef.current('tb.link')
           ]
           toolbar
-            .querySelectorAll('.toolbar-item:not(.hm-heading-item):not(.hm-highlight-item)')
+            .querySelectorAll(
+              '.toolbar-item:not(.hm-heading-item):not(.hm-highlight-item):not(.hm-review-item)'
+            )
             .forEach((btn, i) => {
               if (tips[i] && btn.title !== tips[i]) btn.title = tips[i]
             })
@@ -963,6 +1012,7 @@ export default function Editor({
           document.querySelectorAll('.milkdown-toolbar').forEach((tb) => {
             injectHeadingButton(tb)
             injectHighlightButton(tb)
+            injectReviewButton(tb)
             addToolbarTitles(tb)
           })
           updateHighlightActive()
@@ -1081,8 +1131,22 @@ export default function Editor({
             /* editor tearing down */
           }
         }
-        apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight }
-        onReady?.({ setBlock, getView: () => viewRef.current, getDocHTML, getMarkdown, toggleHighlight })
+        const applyReviewMarkup = (kind) => {
+          const result = applyReviewMarkupInView(viewRef.current, kind)
+          if (!result.ok && result.reason === 'multiline') {
+            fireToast(tRef.current('review.inlineOnly'))
+          }
+          return result.ok
+        }
+        apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight, applyReviewMarkup }
+        onReady?.({
+          setBlock,
+          getView: () => viewRef.current,
+          getDocHTML,
+          getMarkdown,
+          toggleHighlight,
+          applyReviewMarkup
+        })
 
         // Compute the initial markdown snapshot (content baseline for dirty
         // tracking / outline / word count). On a big doc serializing the whole
