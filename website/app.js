@@ -109,15 +109,23 @@ document.querySelectorAll('.swatch').forEach(btn => {
   })
 })
 
-/* ── 按访客系统突出对应的下载按钮 ────────────────────────── */
-const isMac = /mac/i.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent)
-document.getElementById(isMac ? 'dlWin' : 'dlMac').classList.replace('btn-solid', 'btn-ghost')
+/* ── 按访客系统突出对应平台的下载卡 ──────────────────────── */
+// 当前系统的卡置顶强调，其它平台降为次要。
+const ua = navigator.userAgent
+let primaryOs = 'windows'
+if (/Macintosh|Mac OS X/i.test(ua)) primaryOs = 'macos'
+else if (/Android/i.test(ua)) primaryOs = 'android'
+const OS_OF = { dlWin: 'windows', dlMac: 'macos', dlAndroid: 'android' }
+for (const [id, os] of Object.entries(OS_OF)) {
+  document.getElementById(id).classList.add(os === primaryOs ? 'dl-primary' : 'dl-secondary')
+}
 
 /* ── GitHub Releases：填充版本号与安装包直链 + 国内加速镜像 ── */
-// 加速前缀把 GitHub release 附件包一层公益加速（ghfast.top），国内下载不转圈。
-// 主按钮走 GitHub 原链（海外用户首选），"国内加速" 走加速前缀。
-// 注：macOS 主按钮故意指向安装指南（未签名需右键打开说明），加速链同样指向指南。
-//     安卓主按钮走 Gitee（国内快），"海外 GitHub" 指向 GitHub release。
+// 三个平台主按钮统一走 GitHub 原始 release（海外用户首选、链接最稳）。
+// "国内加速" 走 ghfast.top 公益前缀包一层 GitHub 链接，国内下载不转圈。
+//   - Windows / macOS: GitHub 直链 + ghfast 加速
+//   - Android: GitHub 直链 + Gitee 镜像（Gitee 对 APK 更稳，不走 ghfast）
+// 注：macOS 主按钮 + 加速都指向安装指南页（未签名需右键打开说明）。
 const CN = 'https://ghfast.top/'
 fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
   .then(r => (r.ok ? r.json() : null))
@@ -138,8 +146,8 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
     // macOS: 主按钮 + 国内加速都指向安装指南页（未签名构建需说明）
     const macGuide = 'https://github.com/BND-1/horseMD#%E5%AE%89%E8%A3%85'
     document.getElementById('dlMacCn').href = CN + macGuide
-    // Android: 海外 GitHub（主按钮是 Gitee）
+    // Android: 主按钮走 GitHub 直链（"国内加速" 是 Gitee 镜像，HTML 里已固定）
     const apk = assets.find(a => /\.apk$/i.test(a.name))
-    if (apk) document.getElementById('dlAndroidGh').href = apk.browser_download_url
+    if (apk) document.getElementById('dlAndroid').href = apk.browser_download_url
   })
   .catch(() => { /* 静默回退到 releases 页 */ })
