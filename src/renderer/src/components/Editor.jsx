@@ -607,9 +607,25 @@ export default function Editor({
           cleanups.push(() => view.dom.removeEventListener('focus', onFocus))
           const scrollEl = host.closest('.editor-scroll')
           if (scrollEl) {
-            const onScroll = () => scheduleLevel()
+            // Scrolling only moves the caret's on-screen position (the caret
+            // itself doesn't move), so the level badge needn't reflow every
+            // 200ms mid-scroll. Refresh it ONCE after scrolling settles — this
+            // drops the per-tick full-doc reflow that janked large docs (#17).
+            // (Typing / selection / mouse-hover still use the leading 200ms
+            // scheduleLevel above.)
+            let scrollLevelTimer = 0
+            const onScroll = () => {
+              if (scrollLevelTimer) clearTimeout(scrollLevelTimer)
+              scrollLevelTimer = setTimeout(() => {
+                scrollLevelTimer = 0
+                refreshLevel()
+              }, 150)
+            }
             scrollEl.addEventListener('scroll', onScroll, { passive: true })
-            cleanups.push(() => scrollEl.removeEventListener('scroll', onScroll))
+            cleanups.push(() => {
+              scrollEl.removeEventListener('scroll', onScroll)
+              if (scrollLevelTimer) clearTimeout(scrollLevelTimer)
+            })
           }
           // Re-evaluate the badge as the mouse moves (the block drag-handle shows
           // on hover) so the badge can step aside when the handle appears.

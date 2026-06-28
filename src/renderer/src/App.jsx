@@ -802,49 +802,80 @@ export default function App() {
     }
     const scroller = editorHostRef.current
     if (!scroller) return
-    let scrollTimer = 0
-    let lastRun = 0
-    let cachedHeadings = null
-    let retryRaf = 0
+
+    // Reflow-free scrollspy. The previous version re-queried and called
+    // getBoundingClientRect() on EVERY heading on every throttle tick. On a
+    // large doc each call forces a full-document layout recalc, which
+    // (a) froze the main thread during scroll (#17 "chase" lag) and (b) used a
+    // leading-edge-only throttle with no trailing update — so when scrolling
+    // stopped the last compute was up to 300ms stale and the outline landed on
+    // the WRONG heading. Fix: measure each heading's content-offset ONCE (a
+    // single layout pass, rebuilt every 2s / on resize), then compare against
+    // the cheap scrollTop on scroll. No layout read per frame, so it can update
+    // every frame and always reflects the exact current position.
+    let tops = null // heading content-offsets (px from content top); stable across scroll
+    let builtAt = 0
+    let raf = 0
+    let lastIdx = -1
     let tries = 0
-    const compute = () => {
-      // Cache heading elements between scroll events (rebuild only every 2s or
-      // when the doc changes — avoids re-querying on every throttle tick).
-      const now = Date.now()
-      if (!cachedHeadings || now - lastRun > 2000) {
-        cachedHeadings = scroller.querySelectorAll(
-          '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
-        )
-        lastRun = now
-      }
-      if (!cachedHeadings.length) {
-        cachedHeadings = null
-        if (tries++ < 30) retryRaf = requestAnimationFrame(compute)
+
+    const build = () => {
+      const els = scroller.querySelectorAll(
+        '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
+      )
+      if (!els.length) {
+        tops = null
         return
       }
-      const threshold = scroller.getBoundingClientRect().top + 90
+      // Read every rect in one synchronous block = ONE reflow, not N. Convert
+      // each to a content-offset (Y = rect.top − scroller.top + scrollTop); Y is
+      // invariant under scrolling, so the cache stays valid while scrolling.
+      const base = scroller.getBoundingClientRect().top
+      const top0 = scroller.scrollTop
+      tops = new Array(els.length)
+      for (let i = 0; i < els.length; i++) tops[i] = els[i].getBoundingClientRect().top - base + top0
+      builtAt = Date.now()
+    }
+    const compute = () => {
+      raf = 0
+      const now = Date.now()
+      if (!tops || now - builtAt > 2000) {
+        build()
+        if (!tops) {
+          // Editor still mounting (no headings yet) — retry briefly.
+          if (tries++ < 30) raf = requestAnimationFrame(compute)
+          return
+        }
+        tries = 0
+      }
+      // scrollTop is a cheap scroll-offset read — no layout, no reflow — so this
+      // can run every frame without freezing and lands on the exact heading.
+      const limit = scroller.scrollTop + 90
       let idx = 0
-      for (let i = 0; i < cachedHeadings.length; i++) {
-        if (cachedHeadings[i].getBoundingClientRect().top <= threshold) idx = i
+      for (let i = 0; i < tops.length; i++) {
+        if (tops[i] <= limit) idx = i
         else break
       }
-      setActiveHeading(idx)
+      if (idx !== lastIdx) {
+        lastIdx = idx
+        setActiveHeading(idx) // only re-render the outline when the active row actually changes
+      }
     }
-    const onScroll = () => {
-      if (scrollTimer) return
-      // Throttle: at most once per 300ms, not per animation frame. This keeps
-      // the main thread free during fast scrolling (fixes the "chase" lag).
-      scrollTimer = setTimeout(() => {
-        scrollTimer = 0
-        compute()
-      }, 300)
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(compute) // coalesce to ≤ once per frame
     }
     compute()
-    scroller.addEventListener('scroll', onScroll, { passive: true })
+    scroller.addEventListener('scroll', schedule, { passive: true })
+    // Resize (and the layout-settings popover) reflow heading offsets → rebuild.
+    const invalidate = () => {
+      tops = null
+      schedule()
+    }
+    window.addEventListener('resize', invalidate, { passive: true })
     return () => {
-      if (scrollTimer) clearTimeout(scrollTimer)
-      if (retryRaf) cancelAnimationFrame(retryRaf)
-      scroller.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+      scroller.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', invalidate)
     }
   }, [home, sidebarOpen, sidebarMode, sourceMode, activeId])
 
