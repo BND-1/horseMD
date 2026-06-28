@@ -127,9 +127,20 @@ a { color: inherit; text-decoration: none; }
 }
 .hero-sub strong { font-weight: 500; }
 
-.hero-cta {
-  display: flex; gap: 12px; margin-top: 44px;
-  justify-content: center; flex-wrap: wrap;
+/* 下载区 — 每平台一行：主按钮 + 镜像小链接 */
+.dl-platforms {
+  margin-top: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+.dl-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
@@ -143,6 +154,15 @@ a { color: inherit; text-decoration: none; }
 .btn-solid:hover { background: #650014; }
 .btn-ghost { border: 1px solid var(--rule-strong); color: var(--fg); }
 .btn-ghost:hover { border-color: var(--fg); }
+.dl-mirror {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color .3s;
+}
+.dl-mirror:hover { color: var(--fg); }
 .arrow-pull { display: inline-block; transition: transform .3s ease; }
 a:hover .arrow-pull { transform: translateY(2px); }
 
@@ -354,7 +374,3 @@ a:hover .arrow-pull { transform: translateY(2px); }
   .js .reveal, .js .split-line > span { transition: none; transform: none; opacity: 1; }
   html { scroll-behavior: auto; }
 }
-
-/* Gitee / GitHub cross-link in the hero note */
-.hero-gitee { font-size: 12px; }
-.hero-gitee a { color: var(--accent, #c86b35); text-decoration: underline; }

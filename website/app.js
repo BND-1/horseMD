@@ -10,9 +10,8 @@ const I18N = {
     'hero.l1': '一个窗口，', 'hero.l2': '装下所有 .md 文件',
     'hero.sub': '一个免费的 Typora 平替，但不止于此。',
     'cta.win': '下载 Windows 版', 'cta.mac': 'macOS 下载 & 安装', 'cta.android': '下载安卓 APK',
+    'cta.mirror': '国内加速 ↓', 'cta.mirrorAlt': '海外 GitHub ↓',
     'hero.note': '构建未签名 — Windows：更多信息 → 仍要运行 · macOS（Apple 芯片 / Intel 均可）：右键 → 打开 · 安卓：安装 APK 时允许"未知来源"',
-    'hero.giteePrefix': '国内用户可从',
-    'hero.giteeSuffix': '下载 · ',
     'hero.caption': 'HORSEMD · 文件树 / 标签页 / 所见即所得',
     'strip.tabs': '标签页', 'strip.tree': '文件树', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 套主题',
     'features.title': '它能做什么',
@@ -32,9 +31,8 @@ const I18N = {
     'hero.l1': 'One window.', 'hero.l2': 'Every .md file.',
     'hero.sub': 'A free Typora alternative, and then some.',
     'cta.win': 'Download for Windows', 'cta.mac': 'macOS — download & install', 'cta.android': 'Download Android APK',
+    'cta.mirror': 'CN mirror ↓', 'cta.mirrorAlt': 'GitHub ↓',
     'hero.note': 'Unsigned builds — Windows: More info → Run anyway · macOS (Apple Silicon / Intel): right-click → Open · Android: allow "unknown sources" when installing the APK',
-    'hero.giteePrefix': 'Users in China can download from',
-    'hero.giteeSuffix': ' · or ',
     'hero.caption': 'HORSEMD · FILE TREE / TABS / WYSIWYG',
     'strip.tabs': 'Tabs', 'strip.tree': 'File tree', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 themes',
     'features.title': 'What it does',
@@ -115,7 +113,12 @@ document.querySelectorAll('.swatch').forEach(btn => {
 const isMac = /mac/i.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent)
 document.getElementById(isMac ? 'dlWin' : 'dlMac').classList.replace('btn-solid', 'btn-ghost')
 
-/* ── GitHub Releases：填充版本号与安装包直链 ─────────────── */
+/* ── GitHub Releases：填充版本号与安装包直链 + 国内加速镜像 ── */
+// 加速前缀把 GitHub release 附件包一层公益加速（ghfast.top），国内下载不转圈。
+// 主按钮走 GitHub 原链（海外用户首选），"国内加速" 走加速前缀。
+// 注：macOS 主按钮故意指向安装指南（未签名需右键打开说明），加速链同样指向指南。
+//     安卓主按钮走 Gitee（国内快），"海外 GitHub" 指向 GitHub release。
+const CN = 'https://ghfast.top/'
 fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
   .then(r => (r.ok ? r.json() : null))
   .then(rel => {
@@ -126,12 +129,17 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
       document.getElementById('footVersion').textContent = ver
     }
     const assets = rel.assets || []
+    // Windows: 直链 + 国内加速
     const win = assets.find(a => /\.exe$/i.test(a.name))
-    if (win) document.getElementById('dlWin').href = win.browser_download_url
+    if (win) {
+      document.getElementById('dlWin').href = win.browser_download_url
+      document.getElementById('dlWinCn').href = CN + win.browser_download_url
+    }
+    // macOS: 主按钮 + 国内加速都指向安装指南页（未签名构建需说明）
+    const macGuide = 'https://github.com/BND-1/horseMD#%E5%AE%89%E8%A3%85'
+    document.getElementById('dlMacCn').href = CN + macGuide
+    // Android: 海外 GitHub（主按钮是 Gitee）
     const apk = assets.find(a => /\.apk$/i.test(a.name))
-    if (apk) document.getElementById('dlAndroid').href = apk.browser_download_url
-    // macOS button intentionally points to the GitHub install guide (#安装),
-    // NOT the direct .dmg — unsigned builds need the "right-click → Open" /
-    // xattr step, so we send first-timers to the step-by-step instructions.
+    if (apk) document.getElementById('dlAndroidGh').href = apk.browser_download_url
   })
   .catch(() => { /* 静默回退到 releases 页 */ })
