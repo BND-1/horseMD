@@ -43,6 +43,7 @@ function testWrapping() {
   assert.equal(wrapReviewSelection('abc', 1, 2, REVIEW_KINDS.substitution).text, 'a{~~b~>~~}c')
   assert.equal(wrapReviewSelection('abc', 1, 2, REVIEW_KINDS.highlight).text, 'a{==b==}{>><<}c')
   assert.equal(wrapReviewSelection('abc', 1, 1, REVIEW_KINDS.comment).text, 'a{>><<}bc')
+  assert.equal(wrapReviewSelection('abcd', 1, 3, REVIEW_KINDS.comment).text, 'a{>><<}bcd')
 
   assert.deepEqual(wrapReviewSelection('abc', 1, 2, REVIEW_KINDS.addition), {
     text: 'a{++b++}c',
@@ -69,8 +70,16 @@ function testWrapping() {
     selectionStart: 4,
     selectionEnd: 4
   })
+  assert.deepEqual(wrapReviewSelection('abcd', 1, 3, REVIEW_KINDS.comment), {
+    text: 'a{>><<}bcd',
+    selectionStart: 4,
+    selectionEnd: 4
+  })
 
   assert.deepEqual(wrapReviewSelection('a\nb', 0, 3, REVIEW_KINDS.addition), {
+    error: 'multiline'
+  })
+  assert.deepEqual(wrapReviewSelection('a\nb', 0, 3, REVIEW_KINDS.substitution), {
     error: 'multiline'
   })
   assert.deepEqual(wrapReviewSelection('a\nb', 0, 3, REVIEW_KINDS.highlight), {

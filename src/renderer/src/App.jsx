@@ -24,13 +24,19 @@ import {
   applyParagraphSpacing
 } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
-import { fireToast, HM_TOAST_EVENT } from './ui.js'
+import { fireToast, copyToClipboard, HM_TOAST_EVENT } from './ui.js'
 import logoUrl from './assets/logo.png'
 import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
 import {
   isNewerVersion, isAbsolutePath, sanitizeWorkspace, baseName, dirName, joinPath,
   isPlainTextDoc, isHeavyDoc, genId, LS, loadSession
 } from './paths.js'
+import {
+  REVIEW_KINDS,
+  wrapReviewSelection,
+  applyReviewDecision,
+  buildReviewAiPrompt
+} from './reviewMarkup.js'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
 const UPDATE_DISMISS_KEY = 'horsemd.update.dismissed'
@@ -874,6 +880,79 @@ export default function App() {
     return activeId
   }
 
+  const getEditableTab = () => {
+    const id = pickEditableId()
+    return tabsRef.current.find((tab) => tab.id === id) || null
+  }
+
+  const usesActiveSourceTextarea = (tab) =>
+    tab?.id === activeIdRef.current &&
+    sourceRef.current &&
+    (sourceModeRef.current || isPlainTextDoc(tab) || (tab.heavy && !richForced.has(tab.id)))
+
+  const applyReviewMarkupToActive = (kind) => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+
+    setHome(false)
+    if (usesActiveSourceTextarea(tab)) {
+      const el = sourceRef.current
+      const result = wrapReviewSelection(tab.content, el.selectionStart, el.selectionEnd, kind)
+      if (result.error === 'multiline') {
+        fireToast(tRef.current('review.inlineOnly'))
+        return
+      }
+      updateContent(tab.id, result.text, false)
+      requestAnimationFrame(() => {
+        const nextEl = sourceRef.current
+        if (nextEl && pickEditableId() === tab.id) {
+          nextEl.focus()
+          nextEl.setSelectionRange(result.selectionStart, result.selectionEnd)
+        }
+      })
+      return
+    }
+
+    const applied = editorApis.current[tab.id]?.applyReviewMarkup?.(kind)
+    if (applied == null) fireToast(tRef.current('review.noDocument'))
+  }
+
+  const applyReviewDecisionToActive = (decision) => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+
+    const next = applyReviewDecision(tab.content, decision)
+    if (next === tab.content) {
+      fireToast(tRef.current('review.noMarks'))
+      return
+    }
+
+    setHome(false)
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === tab.id
+          ? { ...t, content: next, reloadNonce: t.reloadNonce + 1, heavy: isHeavyDoc(next) }
+          : t
+      )
+    )
+    fireToast(tRef.current(decision === 'accept' ? 'review.acceptedAll' : 'review.rejectedAll'))
+  }
+
+  const copyReviewPrompt = () => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+    copyToClipboard(buildReviewAiPrompt(tab.content), tRef.current('review.promptCopied'))
+  }
+
   const handlers = useRef({})
   handlers.current = {
     home: () => {
@@ -920,7 +999,15 @@ export default function App() {
       setHome(false)
       setFind((f) => ({ ...f, open: true }))
       setTimeout(() => findInputRef.current?.focus(), 0)
-    }
+    },
+    reviewAdd: () => applyReviewMarkupToActive(REVIEW_KINDS.addition),
+    reviewDelete: () => applyReviewMarkupToActive(REVIEW_KINDS.deletion),
+    reviewSubstitute: () => applyReviewMarkupToActive(REVIEW_KINDS.substitution),
+    reviewComment: () => applyReviewMarkupToActive(REVIEW_KINDS.comment),
+    reviewHighlight: () => applyReviewMarkupToActive(REVIEW_KINDS.highlight),
+    reviewCopyPrompt: copyReviewPrompt,
+    reviewAcceptAll: () => applyReviewDecisionToActive('accept'),
+    reviewRejectAll: () => applyReviewDecisionToActive('reject')
   }
 
   useEffect(() => {
@@ -1152,7 +1239,20 @@ export default function App() {
         { id: 'cmd.outline', title: t('cmd.outline'), icon: 'outline', run: () => handlers.current.toggleOutline() },
         { id: 'cmd.source', title: t('cmd.source'), icon: 'code', run: () => handlers.current.toggleSource() },
         { id: 'cmd.theme', title: t('cmd.theme'), icon: 'moon', run: () => handlers.current.toggleTheme() },
-        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() }
+        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() },
+        { id: 'cmd.reviewAdd', title: t('cmd.reviewAdd'), icon: 'review', run: () => handlers.current.reviewAdd() },
+        { id: 'cmd.reviewDelete', title: t('cmd.reviewDelete'), icon: 'review', run: () => handlers.current.reviewDelete() },
+        {
+          id: 'cmd.reviewSubstitute',
+          title: t('cmd.reviewSubstitute'),
+          icon: 'review',
+          run: () => handlers.current.reviewSubstitute()
+        },
+        { id: 'cmd.reviewComment', title: t('cmd.reviewComment'), icon: 'review', run: () => handlers.current.reviewComment() },
+        { id: 'cmd.reviewHighlight', title: t('cmd.reviewHighlight'), icon: 'review', run: () => handlers.current.reviewHighlight() },
+        { id: 'cmd.reviewCopyPrompt', title: t('cmd.reviewCopyPrompt'), icon: 'review', run: () => handlers.current.reviewCopyPrompt() },
+        { id: 'cmd.reviewAcceptAll', title: t('cmd.reviewAcceptAll'), icon: 'review', run: () => handlers.current.reviewAcceptAll() },
+        { id: 'cmd.reviewRejectAll', title: t('cmd.reviewRejectAll'), icon: 'review', run: () => handlers.current.reviewRejectAll() }
       ].filter(Boolean)
     },
     [t]
