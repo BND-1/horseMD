@@ -4,6 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/BND-1/horseMD?include_prereleases)](https://github.com/BND-1/horseMD/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+> **GitHub**: [BND-1/horseMD](https://github.com/BND-1/horseMD) ·
+> **Gitee (China mirror)**: [yty11167/horse-md](https://gitee.com/yty11167/horse-md) ·
+> **Website**: [horsemd.yangsir.net](https://horsemd.yangsir.net)
+
 **English** · [简体中文](./README.md)
 
 A calm, modern **Markdown editor** — a Typora alternative built around the one

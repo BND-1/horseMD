@@ -4,6 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/BND-1/horseMD?include_prereleases)](https://github.com/BND-1/horseMD/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+> **GitHub**: [BND-1/horseMD](https://github.com/BND-1/horseMD) ·
+> **Gitee（国内镜像）**: [yty11167/horse-md](https://gitee.com/yty11167/horse-md) ·
+> **官网**: [horsemd.yangsir.net](https://horsemd.yangsir.net)
+
 [English](./README.en.md) · **简体中文**
 
 一款温暖、现代的 **Markdown 编辑器** —— 一个更顺手的 Typora 替代品，核心理念是

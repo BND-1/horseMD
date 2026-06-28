@@ -354,3 +354,7 @@ a:hover .arrow-pull { transform: translateY(2px); }
   .js .reveal, .js .split-line > span { transition: none; transform: none; opacity: 1; }
   html { scroll-behavior: auto; }
 }
+
+/* Gitee / GitHub cross-link in the hero note */
+.hero-gitee { font-size: 12px; }
+.hero-gitee a { color: var(--accent, #c86b35); text-decoration: underline; }
