@@ -126,45 +126,43 @@ if (isLargeDoc) {
 
 ### 🟢 P0 — 立即见效、改动小、风险低
 
-**P0-1. `isHeavyDoc` 增加「总行数」阈值**
+> **✅ 已实施（commit `35d41e1`）**：P0-1 + P0-3a/b/c 全部完成。P0-2 待做。
 
-让「行数极多」的文件直接走 textarea 回退，绕开 ProseMirror 全量解析。
+**P0-1. `isHeavyDoc` 增加「总行数」阈值** ✅ 已实施
 
-```js
-const HEAVY_MAX_BLOCK_LINES = 150
-const HEAVY_MAX_TOTAL = 400000
-const HEAVY_MAX_LINES = 50000          // 新增：超过 5 万行直接判 heavy
-export function isHeavyDoc(content) {
-  if (!content) return false
-  if (content.length > HEAVY_MAX_TOTAL) return true
-  let run = 0, lines = 0
-  for (const line of content.split('\n')) {     // split 已生成数组，lines 计数零额外成本
-    if (++lines > HEAVY_MAX_LINES) return true   // 行数超限 → heavy
-    if (/^[ \t]*$/.test(line)) run = 0
-    else if (++run > HEAVY_MAX_BLOCK_LINES) return true
-  }
-  return false
-}
-```
+`paths.js` — 新增 `HEAVY_MAX_LINES = 50000`，在现有的 `split('\n')` 循环中顺带计行数（零额外成本）。超过 5 万行直接判 heavy → textarea 回退。
 
-- **效果**：用户的 32 万行文件（无论 0.5 MB 数据是否矛盾）立即秒开为 textarea，按需点「渲染为富文本」。
-- **代价**：5 万行以上的「正常结构」富文本文档会被默认当文本打开，需手动切富文本。阈值可调（5 万 / 2 万 / 1 万，看实际富文本性能曲线）。
-- **风险**：极低。只新增一个判断分支，不动编辑器核心。
+- **效果**：用户的 32 万行文件立即秒开为 textarea，按需点「渲染为富文本」。
+- **代价**：5 万行以上的「正常结构」富文本文档会被默认当文本打开，需手动切富文本。
 - **局限**：治标——用户仍想看富文本时会卡，只是把卡顿从「打开就卡」变成「主动点富文本才卡」。
 
-**P0-2. 读取时预检大小，超大文件给提示**
+**P0-2. 读取时预检大小，超大文件给提示** ⬜ 未做
 
-在 `fs:readFile` 前 `fs.stat`，超过某阈值（如 2 MB）时给 main→renderer 一个标志位，UI 提示「文档较大，建议用纯文本模式」，甚至直接 `isHeavyDoc` 之前就拦截。避免「读进来才发现卡」。
+在 `fs:readFile` 前 `fs.stat`，超过某阈值（如 2 MB）时给 main→renderer 一个标志位，UI 提示「文档较大，建议用纯文本模式」。避免「读进来才发现卡」。
 
-- **效果**：用户体验预期更清晰，避免无响应的困惑。
+- **效果**：用户体验预期更清晰。
 - **风险**：低。
 
-**P0-3. 大文档禁用大纲自动刷新 / 节流更狠**
+**P0-3a. 大纲 scrollspy（reflow-free 重写）** ✅ 已实施（二次优化）
 
-对 heavy 标记的文档，大纲默认不实时刷新（改为手动「刷新大纲」按钮），或把 `App.jsx:844-866` 的 rAF 节流加长到 1–2 s，且在 heavy 文档上直接跳过。
+`App.jsx` outline active-heading 效果。
+- 初版：从每帧 rAF 改为每 **300ms** 节流。解决了主线程被占满，但留下两个问题——
+  ① 节流仍是 leading-edge（`if (scrollTimer) return`），**没有 trailing 更新**：松手后最后一次 compute 是 300ms 前的位置，大纲停在**错误的标题**上；
+  ② 每次 compute 仍 `getBoundingClientRect()` 遍历全部标题，大文档上每次都是**全文档强制 reflow**。
+- **二次优化**：把每个标题的「内容偏移量」`Y = rect.top − scroller.top + scrollTop` **只测一次**（单次布局 pass，每 2s / resize 重建），滚动时只比 `scrollTop`（**零布局读取**）。于是可以**每帧更新**、永远落在当前标题——既不卡，高亮/大纲面板自动滚动也都精准。`Outline.jsx` 的 `scrollIntoView` 依赖 `activeIndex` 变化，所以这一处同时修了「高亮停错」和「大纲不跟滚」。
+- **根因关联**：原 leading-only 节流 + 每帧全文档 reflow = issue #17 滚动追赶 + 大纲停错，是同一根因。
 
-- **效果**：打字时少一次全 DOM 扫描。
-- **风险**：中。需保证富文本模式下大纲仍可用。
+**P0-3b. `refreshLevel`（滚动路径改 trailing）** ✅ 已实施（二次优化）
+
+`Editor.jsx` 浮动块类型徽标（level badge，跟随光标）。
+- 初版：从每帧 rAF 改为每 **200ms** 节流。typing/selection 仍走这个 leading 节流。
+- **二次优化**：滚动时光标本身不动（只是屏幕位置变），徽标无需每 200ms 重算——把**滚动 handler** 改成「停止 150ms 后算一次」(trailing)，干掉滚动时每 200ms 的全文档 reflow（`coordsAtPos` + `getBoundingClientRect`）。typing / selectionchange / mousemove 仍用原 200ms leading 节流，行为不变。
+
+**P0-3c. 大纲标题列表 debounce** ✅ 已实施
+
+`App.jsx` outline heading-list 效果：
+- 从每次按键（`rAF` after content change）改为编辑空闲 **500ms** 后扫描一次。
+- 大文档上 `querySelectorAll` 整棵 DOM 是主要按键延迟来源。
 
 ---
 
@@ -216,28 +214,28 @@ export function isHeavyDoc(content) {
 
 ## 四、推荐执行顺序
 
-| 步骤 | 做什么 | 预期效果 | 工作量 |
-|---|---|---|---|
-| **1（P0-1）** | `isHeavyDoc` 加 `HEAVY_MAX_LINES` 阈值 | 用户文件立即从「打开就卡几十秒」→「秒开为文本，可按需切富文本」 | 半小时 |
-| **2（P0-2）** | 读取前 `stat` 预检 + UI 提示 | 超大文件给预期，不再无响应困惑 | 1 小时 |
-| **3（P0-3）** | heavy 文档跳过/节流大纲自动刷新 | 切富文本后打字更跟手 | 1 小时 |
-| 4（可选） | 根据实测决定要不要上 P1 的分片/虚拟化 | 富文本也能丝滑 | 数天～数周 |
+| 步骤 | 做什么 | 预期效果 | 工作量 | 状态 |
+|---|---|---|---|---|
+| **1（P0-1）** | `isHeavyDoc` 加 `HEAVY_MAX_LINES` 阈值 | 用户文件立即从「打开就卡几十秒」→「秒开为文本，可按需切富文本」 | 半小时 | ✅ 已完成 |
+| **2（P0-2）** | 读取前 `stat` 预检 + UI 提示 | 超大文件给预期，不再无响应困惑 | 1 小时 | ⬜ 待做 |
+| **3（P0-3a）** | 大纲 scrollspy 节流 300ms + 缓存 heading 元素 | 滚动不再追赶（#17）；打字时少一次全 DOM 扫描 | 1 小时 | ✅ 已完成 |
+| **3（P0-3b）** | `refreshLevel` 节流 200ms | 快速滚动时主线程不被强制 reflow 卡住 | 20 分钟 | ✅ 已完成 |
+| **3（P0-3c）** | 大纲标题列表 debounce 500ms | 大文档打字时不再每键全 DOM 扫描 | 20 分钟 | ✅ 已完成 |
+| 4（可选） | 根据实测决定要不要上 P1 的分片/虚拟化 | 富文本也能丝滑 | 数天～数周 | ⬜ 待评估 |
 
-**第一步就能解决用户当前问题**（让文件秒开）。后续是否投入 P1/P2，取决于「有多少用户需要在富文本模式下编辑超大文档」这个产品判断——大多数 Markdown 用户的日常文档是几千行以内，P0 足够。
+**第一步 + 第三步已完成**（大文件秒开 + 滚动追赶修复）。后续是否投入 P1/P2，取决于「有多少用户需要在富文本模式下编辑超大文档」这个产品判断——大多数 Markdown 用户的日常文档是几千行以内，P0 足够。
 
 ---
 
 ## 五、关键代码位置索引（供实施时定位）
 
-| 文件:行 | 内容 |
-|---|---|
-| `src/renderer/src/paths.js:40-60` | `isHeavyDoc` —— P0-1 改这里 |
-| `src/main/index.js:319-323` | `fs:readFile` —— P0-2 加 stat 预检 |
-| `src/renderer/src/App.jsx:344,362` | 读取 content + 判 heavy |
-| `src/renderer/src/App.jsx:1417-1434` | heavy → textarea 路由 |
-| `src/renderer/src/App.jsx:1468-1477` | heavy 横幅 + 「渲染为富文本」按钮 |
-| `src/renderer/src/App.jsx:844-866` | 大纲全 DOM 扫描 —— P0-3 节流 |
-| `src/renderer/src/components/Editor.jsx:159` | `isLargeDoc = length > 8000` |
-| `src/renderer/src/components/Editor.jsx:510` | `crepe.create()` 同步解析渲染 |
-| `src/renderer/src/components/Editor.jsx:1107-1119` | 两层 rAF defer（只 defer，未减阻塞）|
-| `src/renderer/src/components/Editor.jsx:484-498` | `refreshLevel` typing reflow（已 rAF 合并）|
+| 文件 | 内容 | 状态 |
+|---|---|---|
+| `src/renderer/src/paths.js` `isHeavyDoc()` | P0-1：`HEAVY_MAX_LINES = 50000` 行数阈值 | ✅ 已改 |
+| `src/main/index.js` `fs:readFile` handler | P0-2：加 stat 预检 | ⬜ 待做 |
+| `src/renderer/src/App.jsx` outline scrollspy | P0-3a：reflow-free 重写（偏移量测一次 / 滚动只比 scrollTop / 每帧更新） | ✅ 已改（二次） |
+| `src/renderer/src/App.jsx` outline heading-list | P0-3c：setTimeout 500ms debounce | ✅ 已改 |
+| `src/renderer/src/components/Editor.jsx` 滚动 handler | P0-3b：滚动停止 150ms 后算一次（trailing）；`scheduleLevel` typing/selection 仍 200ms leading | ✅ 已改（二次） |
+| `src/renderer/src/components/Editor.jsx` `crepe.create()` | P1-1：同步解析渲染——分片/虚拟化的改造目标 | 未改 |
+| `src/renderer/src/components/Editor.jsx` `isLargeDoc` | `length > 8000` 两层 rAF defer（只 defer，未减阻塞）| 未改 |
+| `src/renderer/src/App.jsx` heavy → textarea 路由 | 配合 `isHeavyDoc` 走纯文本 | 已有 |

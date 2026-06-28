@@ -77,7 +77,12 @@ docs/                  architecture / features / implementation-notes / developm
   `MD_DOC_RE` in `App.jsx`. `.md/.markdown/.mdx` open in the Crepe rich editor;
   `.txt` (and any other file with a path) opens in the **plain textarea** —
   feeding plain text through Milkdown collapses line breaks and hangs on large
-  files. New untitled tabs (no path) use the rich editor.
+  files. New untitled tabs (no path) use the rich editor. **Heavy docs**
+  (> 50 K lines, > 400 K chars, or > 150 consecutive non-blank lines — see
+  `isHeavyDoc` in `paths.js`) also default to the textarea; the user can opt
+  into rich per-tab via the banner button. See
+  [`docs/performance-large-doc.md`](./docs/performance-large-doc.md) for the
+  full analysis and remaining P1/P2 optimization options.
 - **ProseMirror view**: get it via `crepe.editor.ctx.get(editorViewCtx)` —
   `crepe.editor.view` is `undefined` in this Milkdown version.
 - **Crepe content callback**: register `crepe.on(markdownUpdated)` **before**
