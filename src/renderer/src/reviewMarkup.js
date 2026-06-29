@@ -337,6 +337,15 @@ export function normalizeReviewMarkupMarkdown(markdown) {
       if (!core) return raw
       return `${leading}{==${core}==}{>>${comment}<<}${trailing}`
     })
+    // Substitution `{~~old~>new~~}` collides with GFM strikethrough (`~~`), so
+    // remark escapes the tildes on serialize (`\~`). A file saved by a build
+    // without review-markup (or any round-trip) can end up with the marker
+    // backslash-escaped, which then won't parse back into the strike mark the
+    // renderer looks for → the substitution stops rendering (while {++}/{--}
+    // are fine — no GFM collision). Restore ALL escaped forms:
+    //   {\~\~old\~>new\~\~}  → {~~old~>new~~}   (fully escaped)
+    //   {~~old\~>new~~}      → {~~old~>new~~}   (only the separator escaped)
+    .replace(/\{\\~\\~([\s\S]*?)\\~>([\s\S]*?)\\~\\~\}/g, '{~~$1~>$2~~}')
     .replace(/\{~~([\s\S]*?)\\~>([\s\S]*?)~~\}/g, '{~~$1~>$2~~}')
 }
 
