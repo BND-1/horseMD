@@ -16,7 +16,18 @@ const INLINE_RE = new RegExp(`^\\s*<(${INLINE_TAGS})[\\s/>]`, 'i')
 
 // Strip <script>/<style> and inline event handlers so rendering local HTML can't
 // run code. Tables/fragments parse correctly inside a <template>.
+//
+// Memoized by the raw HTML string: an html node's attrs.value is immutable (it
+// round-trips unchanged on save), but the node view is reconstructed whenever
+// ProseMirror re-renders it (decoration/selection changes). Re-parsing +
+// sweeping every attribute each time is wasteful on a doc with many raw-HTML
+// tables — the cache returns the sanitized string instantly. Capped (FIFO) so a
+// pathological variety of fragments can't grow it without bound.
+const SANITIZE_CACHE = new Map()
+const SANITIZE_CACHE_MAX = 256
 function sanitizeHtml(html) {
+  const cached = SANITIZE_CACHE.get(html)
+  if (cached !== undefined) return cached
   const tpl = document.createElement('template')
   tpl.innerHTML = html
   tpl.content.querySelectorAll('script, style').forEach((el) => el.remove())
@@ -28,7 +39,12 @@ function sanitizeHtml(html) {
       }
     }
   })
-  return tpl.innerHTML
+  const out = tpl.innerHTML
+  if (SANITIZE_CACHE.size >= SANITIZE_CACHE_MAX) {
+    SANITIZE_CACHE.delete(SANITIZE_CACHE.keys().next().value)
+  }
+  SANITIZE_CACHE.set(html, out)
+  return out
 }
 
 // ProseMirror node view for Milkdown's `html` node. Renders recognized HTML as

@@ -6,7 +6,7 @@ import { useI18n } from '../i18n.jsx'
 // listed, no matter how its source wrote it (ATX `#`, Setext, or HTML <h1>),
 // and the list stays in lockstep with jumpToHeading (same DOM order).
 
-export default function Outline({ headings = [], activeIndex = -1, onJump }) {
+export default function Outline({ headings = [], activeIndex = -1, onJump, loading = false }) {
   const { t } = useI18n()
   const activeRef = useRef(null) // the row matching activeIndex
   const panelRef = useRef(null) // the scroll container (.outline-list)
@@ -59,7 +59,20 @@ export default function Outline({ headings = [], activeIndex = -1, onJump }) {
     <div className="outline">
       <div className="panel-head">{t('outline.title')}</div>
       <div className="outline-list" ref={panelRef}>
-        {headings.length === 0 ? (
+        {loading ? (
+          // A huge doc is still streaming in (chunked parse) — its heading list
+          // isn't complete yet, so show a skeleton instead of a partial/empty list.
+          <div className="outline-skeleton" aria-hidden="true">
+            <div className="ol-skel-line" style={{ width: '68%' }} />
+            <div className="ol-skel-line ind" style={{ width: '88%' }} />
+            <div className="ol-skel-line ind" style={{ width: '54%' }} />
+            <div className="ol-skel-line" style={{ width: '76%' }} />
+            <div className="ol-skel-line ind" style={{ width: '92%' }} />
+            <div className="ol-skel-line" style={{ width: '60%' }} />
+            <div className="ol-skel-line ind" style={{ width: '72%' }} />
+            <div className="ol-skel-line" style={{ width: '84%' }} />
+          </div>
+        ) : headings.length === 0 ? (
           <div className="outline-empty">{t('outline.empty')}</div>
         ) : (
           <>

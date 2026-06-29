@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
 import { THEMES, themeById } from '../themes.js'
@@ -335,7 +335,23 @@ export default function StatusBar({
   onGetMoreThemes
 }) {
   const { t } = useI18n()
-  const s = useMemo(() => stats(tab?.content), [tab?.content])
+  // Debounce the (O(n) over the whole document) stats compute: recompute
+  // ~400ms after typing pauses instead of on every keystroke. On large docs the
+  // per-keystroke regex sweep was a real typing-lag source, especially on
+  // Windows. Update immediately on tab switch (different id) so the count tracks
+  // the active doc without the debounce delay; a trailing fire after the last
+  // edit keeps the final value correct.
+  const [s, setS] = useState(() => stats(tab?.content))
+  const lastTabId = useRef(tab?.id)
+  useEffect(() => {
+    if (lastTabId.current !== tab?.id) {
+      lastTabId.current = tab?.id
+      setS(stats(tab?.content))
+      return
+    }
+    const id = setTimeout(() => setS(stats(tab?.content)), 400)
+    return () => clearTimeout(id)
+  }, [tab?.id, tab?.content])
   const dirty = tab && tab.content !== tab.savedContent
   return (
     <div className="statusbar">

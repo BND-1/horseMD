@@ -480,9 +480,15 @@ ipcMain.handle('watch:file', async (_e, path) => {
     // "atomic replace" (write temp + rename over), which swaps the file's inode
     // and makes a native single-file watch go deaf after the first such save.
     // Polling re-stats the path, so it keeps catching changes regardless.
+    // Interval is 1s (not chokidar's 400ms default): with N open tabs that is N
+    // libuv stats every second indefinitely, and on Windows each stat is hooked
+    // by Defender real-time scanning — the threadpool contention worsened the
+    // background load (and thus large-doc responsiveness). An external edit is
+    // still detected within ~1s. (The renderer already ignores same/older-mtime
+    // echoes on file:changed, so a slower poll costs nothing but detection lag.)
     usePolling: true,
-    interval: 400,
-    binaryInterval: 600,
+    interval: 1000,
+    binaryInterval: 1200,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
   })
   const entry = { watcher: w, timer: null }

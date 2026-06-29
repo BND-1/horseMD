@@ -39,6 +39,48 @@ import {
 } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 
+// ── Chunked async parsing for huge documents (Typora-style progressive render) ──
+// Milkdown/ProseMirror parse the WHOLE markdown string synchronously in
+// crepe.create(), which is O(n²)-ish — a 1M-char doc freezes the main thread for
+// minutes ("Not Responding"). content-visibility can't help: the freeze is the
+// PARSE, not paint. So for docs above CHUNK_THRESHOLD we instead create the
+// editor with only the FIRST chunk (fast first paint), then parse + append the
+// remaining chunks in the background on requestIdleCallback (yielding between
+// chunks so the UI never freezes, and breaking the quadratic blowup into linear
+// per-chunk parses). The editor is read-only during load; cv already gives the
+// "blank off-screen → render on scroll" behaviour for the loaded content.
+const CHUNK_THRESHOLD = 120000 // above this, parse incrementally
+const CHUNK_SIZE = 40000 // chars per chunk (first chunk renders in ~one frame)
+// Split markdown into parse-safe chunks at blank-line boundaries, never inside a
+// fenced code block. Each chunk is valid standalone markdown, so parsing it
+// separately reconstructs its blocks correctly (lists/tables/headings stay whole
+// because they're blank-line-delimited).
+function splitMarkdown(md, target) {
+  if (!md) return []
+  const lines = md.split('\n')
+  const chunks = []
+  let cur = []
+  let len = 0
+  let inFence = false
+  let fence = null
+  for (const line of lines) {
+    const m = line.match(/^\s*(```|~~~)/)
+    if (m) {
+      if (!inFence) { inFence = true; fence = m[1] }
+      else if (fence && line.includes(fence)) { inFence = false; fence = null }
+    }
+    cur.push(line)
+    len += line.length + 1
+    if (!inFence && len >= target && /^\s*$/.test(line)) {
+      chunks.push(cur.join('\n'))
+      cur = []
+      len = 0
+    }
+  }
+  if (cur.length) chunks.push(cur.join('\n'))
+  return chunks
+}
+
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
 // toolbars) can coexist. The heading button injected into a toolbar resolves its
@@ -135,7 +177,9 @@ export default function Editor({
   imageUploadCommand,
   onChange,
   onReady,
-  onActiveBlock
+  onActiveBlock,
+  onStructureChange,
+  onLoadingChange
 }) {
   const { t } = useI18n()
   const tRef = useRef(t)
@@ -163,6 +207,11 @@ export default function Editor({
   // biggish doc shows feedback (and lets a queued click through) before the
   // synchronous ProseMirror parse blocks the main thread.
   const isLargeDoc = (initialContent?.length || 0) > 8000
+  // Huge docs are split into chunks and parsed incrementally (see splitMarkdown):
+  // the first chunk is the editor's initial content, the rest are appended in the
+  // background after create(). `chunks` is null for normal-sized docs.
+  const chunks = (initialContent?.length || 0) > CHUNK_THRESHOLD ? splitMarkdown(initialContent, CHUNK_SIZE) : null
+  const firstContent = chunks ? chunks[0] : initialContent || ''
 
   useEffect(() => {
     const host = hostRef.current
@@ -248,7 +297,7 @@ export default function Editor({
 
     const crepe = new Crepe({
       root: host,
-      defaultValue: normalizeReviewMarkupMarkdown(initialContent || ''),
+      defaultValue: normalizeReviewMarkupMarkdown(firstContent),
       features: {
         [CrepeFeature.SelectionTooltip]: true,
         [CrepeFeature.SlashCommand]: true,
@@ -521,9 +570,15 @@ export default function Editor({
     // create(), so registering afterwards means `markdownUpdated` never fires —
     // which left tab.content (outline, word count, dirty state, and saves!)
     // frozen at the initial value while the editor was actually edited.
+    //
+    // `appending` is set while the remaining chunks of a huge doc are being
+    // parsed+inserted in the background — those dispatches fire markdownUpdated
+    // too, and we must ignore them so tab.content isn't spammed with partial
+    // docs. Only real user edits propagate.
+    let appending = false
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
-        if (ready) onChange?.(normalizeReviewMarkupMarkdown(md), false)
+        if (ready && !appending) onChange?.(normalizeReviewMarkupMarkdown(md), false)
       })
     })
 
@@ -848,22 +903,34 @@ export default function Editor({
             if (root.tagName === 'IMG') fixImg(root)
             else root.querySelectorAll?.('img').forEach(fixImg)
           }
+          // Resolve everything currently in the DOM, then keep new/changed
+          // images resolved as they're pasted/dropped/edited. Coalesce mutation
+          // batches into ONE rAF pass (mirroring the toolbar scan below): the
+          // previous per-batch loop ran a querySelectorAll sweep once per
+          // mutation batch, and a burst of mutations (scrolling back into view,
+          // typing on an image-heavy doc) added a measurable main-thread burst
+          // — worse on Windows. fixImg is idempotent (data-hm-resolved guard),
+          // so a single whole-editor sweep per frame is both correct & cheaper.
           scanImgs(view.dom)
-          const imgObserver = new MutationObserver((muts) => {
-            for (const m of muts) {
-              if (m.type === 'attributes' && m.target.tagName === 'IMG') fixImg(m.target)
-              m.addedNodes?.forEach((n) => {
-                if (n.nodeType === 1) scanImgs(n)
-              })
-            }
-          })
+          let imgScanRaf = 0
+          const scheduleImgScan = () => {
+            if (imgScanRaf) return
+            imgScanRaf = requestAnimationFrame(() => {
+              imgScanRaf = 0
+              scanImgs(view.dom)
+            })
+          }
+          const imgObserver = new MutationObserver(() => scheduleImgScan())
           imgObserver.observe(view.dom, {
             childList: true,
             subtree: true,
             attributes: true,
             attributeFilter: ['src']
           })
-          cleanups.push(() => imgObserver.disconnect())
+          cleanups.push(() => {
+            if (imgScanRaf) cancelAnimationFrame(imgScanRaf)
+            imgObserver.disconnect()
+          })
         }
 
         // --- Inject custom buttons into Crepe's selection toolbar ---
@@ -1180,22 +1247,74 @@ export default function Editor({
           applyReviewMarkup
         })
 
+        // Append the remaining chunks of a huge doc in the background so the open
+        // never freezes the main thread. The editor is read-only during load to
+        // avoid edit/append races; restored after. Yields via setTimeout (NOT
+        // requestIdleCallback — that stops firing when the window is occluded,
+        // which would leave the final yield pending and the editor read-only).
+        const appendChunks = async (rest) => {
+          if (!rest || !rest.length) return
+          appending = true
+          onLoadingChange?.(true) // outline shows a skeleton while the doc streams in
+          const setEditable = (on) => {
+            try { view.setProps({ editable: () => on }) } catch { /* view tearing down */ }
+            try { view.dom.contentEditable = on ? 'true' : 'false' } catch { /* */ }
+          }
+          setEditable(false)
+          let parser = null
+          try { parser = crepe.editor.ctx.get(parserCtx) } catch { /* no parser */ }
+          try {
+            for (const chunkText of rest) {
+              if (destroyed) break
+              let parsed = null
+              // Normalize review markup in each appended chunk too — the PR
+              // applies normalizeReviewMarkupMarkdown to defaultValue, but these
+              // background-appended chunks are parsed directly, so wrap them.
+              try { parsed = parser ? parser(normalizeReviewMarkupMarkdown(chunkText)) : null } catch { /* skip unparseable chunk */ }
+              if (parsed && parsed.content && parsed.content.size > 0 && !destroyed) {
+                view.dispatch(view.state.tr.insert(view.state.doc.content.size, parsed.content))
+              }
+              // Yield to the event loop so paint/input happen between chunks
+              // (setTimeout fires even when occluded; rAF/idle don't).
+              await new Promise((r) => setTimeout(r, 0))
+            }
+          } finally {
+            appending = false
+            setEditable(true)
+            onLoadingChange?.(false)
+            // The full doc is now in the DOM — tell the host to refresh the
+            // outline heading list + scrollspy (they couldn't track it during
+            // load because onChange was suppressed).
+            if (!destroyed) onStructureChange?.()
+          }
+        }
+
         // Compute the initial markdown snapshot (content baseline for dirty
         // tracking / outline / word count). On a big doc serializing the whole
         // document is non-trivial, so for large docs defer it past a paint —
         // setLoaded(true) above has already cleared the skeleton, so this runs
         // after the rendered content is on screen instead of holding it back.
-        const finishInitial = () => {
+        const finishInitial = (rebase) => {
           if (destroyed) return
-          const md = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
-          onChange?.(md, true)
+          // Huge (chunked) docs skip the rebase: serializing the whole rebuilt
+          // doc is itself expensive, and the original markdown is already the
+          // content/savedContent baseline (clean), so no rebase is needed.
+          if (rebase) {
+            try { onChange?.(normalizeReviewMarkupMarkdown(crepe.getMarkdown()), true) } catch { /* */ }
+          }
           ready = true
           reportActiveBlock()
         }
-        if (isLargeDoc) {
-          requestAnimationFrame(() => requestAnimationFrame(finishInitial))
+        if (chunks) {
+          // chunks[0] is already rendered; append the rest in the background,
+          // then finish (no rebase).
+          appendChunks(chunks.slice(1)).then(() => {
+            if (!destroyed) finishInitial(false)
+          })
+        } else if (isLargeDoc) {
+          requestAnimationFrame(() => requestAnimationFrame(() => finishInitial(true)))
         } else {
-          finishInitial()
+          finishInitial(true)
         }
       })
       .catch((err) => console.error('Crepe init failed', err))
