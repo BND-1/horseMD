@@ -150,6 +150,9 @@ export const STRINGS = {
     'find.next': 'Next',
     'find.prev': 'Prev',
     'find.close': 'Close',
+    'find.replace.placeholder': 'Replace',
+    'find.replace': 'Replace',
+    'find.replaceAll': 'All',
 
     // command palette
     'palette.placeholder': 'Search files and commands…',
@@ -176,6 +179,7 @@ export const STRINGS = {
     'cmd.source': 'Toggle Source Mode',
     'cmd.theme': 'Cycle Theme',
     'cmd.find': 'Find in File',
+    'cmd.replace': 'Replace in File',
     'cmd.reviewAdd': 'Review: Mark Addition',
     'cmd.reviewDelete': 'Review: Mark Deletion',
     'cmd.reviewSubstitute': 'Review: Mark Substitution',
@@ -419,6 +423,9 @@ export const STRINGS = {
     'find.next': '下一个',
     'find.prev': '上一个',
     'find.close': '关闭',
+    'find.replace.placeholder': '替换为',
+    'find.replace': '替换',
+    'find.replaceAll': '全部',
 
     'palette.placeholder': '搜索文件和命令…',
     'palette.empty': '无匹配项',
@@ -443,6 +450,7 @@ export const STRINGS = {
     'cmd.source': '切换源码模式',
     'cmd.theme': '切换主题',
     'cmd.find': '在文件中查找',
+    'cmd.replace': '在文件中替换',
     'cmd.reviewAdd': '审阅：标记新增',
     'cmd.reviewDelete': '审阅：标记删除',
     'cmd.reviewSubstitute': '审阅：标记替换',
