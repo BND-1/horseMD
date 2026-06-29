@@ -267,6 +267,10 @@ export function applyReviewDecision(markdown, decision) {
   return resolved + markdown.slice(cursor)
 }
 
+export function normalizeReviewMarkupMarkdown(markdown) {
+  return markdown.replace(/\{~~([\s\S]*?)\\~>([\s\S]*?)~~\}/g, '{~~$1~>$2~~}')
+}
+
 export function buildReviewAiPrompt(markdown) {
   return [
     'You are reviewing Markdown that uses source-readable review markers.',

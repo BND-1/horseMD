@@ -24,7 +24,7 @@ export const highlightAttr = $markAttr('highlight')
 //   - content non-empty, no `=`, no leading/trailing whitespace
 // CJK has no word boundaries, so we don't require whitespace around the `==`
 // (Typora behaves the same): `这是==高亮==的` works.
-const HIGHLIGHT_RE = /(?<![=])(==)([^=\s][^=]*[^=\s]|[^=\s])\1(?![=])/g
+const HIGHLIGHT_RE = /(?<![={])(==)([^=\s][^=]*[^=\s]|[^=\s])\1(?![=])/g
 
 export const highlightSchema = $markSchema('highlight', (ctx) => ({
   attrs: {

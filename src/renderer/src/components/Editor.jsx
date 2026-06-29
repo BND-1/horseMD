@@ -37,6 +37,7 @@ import {
   applyReviewMarkupInView,
   createReviewDecorationPlugin
 } from './editor-review.js'
+import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -511,7 +512,7 @@ export default function Editor({
     // frozen at the initial value while the editor was actually edited.
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
-        if (ready) onChange?.(md, false)
+        if (ready) onChange?.(normalizeReviewMarkupMarkdown(md), false)
       })
     })
 
@@ -1158,7 +1159,7 @@ export default function Editor({
         // after the rendered content is on screen instead of holding it back.
         const finishInitial = () => {
           if (destroyed) return
-          const md = crepe.getMarkdown()
+          const md = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
           onChange?.(md, true)
           ready = true
           reportActiveBlock()

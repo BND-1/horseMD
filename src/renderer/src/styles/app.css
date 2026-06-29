@@ -3132,6 +3132,14 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   font-weight: 700;
   line-height: 1;
 }
+.milkdown .ProseMirror .hm-review-sub-replacement {
+  gap: 0.16em;
+  margin: 0 0.12em;
+}
+.milkdown .ProseMirror .hm-review-sub-replacement .hm-review-mark {
+  display: inline-flex;
+  align-items: center;
+}
 body.dark .milkdown .ProseMirror .hm-review-add {
   background: #1d4630;
   border-bottom-color: #58c98a;

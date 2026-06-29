@@ -5,6 +5,7 @@ import {
   applyReviewDecision,
   buildReviewAiPrompt,
   getReviewMarkupDisplayParts,
+  normalizeReviewMarkupMarkdown,
   scanReviewMarkup,
   wrapReviewSelection
 } from '../src/renderer/src/reviewMarkup.js'
@@ -97,6 +98,17 @@ function testPrompt() {
   assert.ok(prompt.includes(sample))
 }
 
+function testNormalize() {
+  assert.equal(
+    normalizeReviewMarkupMarkdown('A {~~bad\\~>good~~} edit'),
+    'A {~~bad~>good~~} edit'
+  )
+  assert.equal(
+    normalizeReviewMarkupMarkdown('A {~~bad~>good~~} edit'),
+    'A {~~bad~>good~~} edit'
+  )
+}
+
 function simplifyDisplayParts(text, options) {
   return getReviewMarkupDisplayParts(text, options).map((part) => ({
     type: part.type,
@@ -156,6 +168,7 @@ testScanning()
 testWrapping()
 testDecisions()
 testPrompt()
+testNormalize()
 testDisplayParts()
 
 console.log('review-markup tests passed')
