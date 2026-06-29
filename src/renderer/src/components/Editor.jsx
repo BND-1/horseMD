@@ -141,6 +141,28 @@ function remarkReconstructSubstitution() {
 // Only scans textblocks containing {/~/}, so it's cheap on normal typing.
 function createSubstitutionLiveReconstructPlugin() {
   return new Plugin({
+    props: {
+      // PREVENT the strikethrough input rule from firing when the user types
+      // `~` inside an open `{~~...` context (before the closing `}`). The strike
+      // rule matches `~{1,2}` (single AND double tilde), so typing the `~`s of
+      // `{~~old~>new~~}` garbles the marker — the `~` from `~>` and `~~}` get
+      // consumed as single-tilde strikethrough delimiters. By intercepting `~`
+      // in this context and inserting it literally (programmatic transaction,
+      // which doesn't trigger input rules), the marker stays as plain text and
+      // renders via the text-scan path. Normal `~` typing (no `{~` before) is
+      // unaffected.
+      handleTextInput(view, from, to, text) {
+        if (text !== '~') return false
+        const $from = view.state.doc.resolve(from)
+        const textBefore = $from.parent.textBetween(0, $from.parentOffset, '\n')
+        // Inside a `{~...` that hasn't been closed by `}` yet.
+        if (/\{~[^}]*$/.test(textBefore)) {
+          view.dispatch(view.state.tr.insertText(text, from, to))
+          return true
+        }
+        return false
+      }
+    },
     appendTransaction(transs, _oldState, newState) {
       if (!transs.some((tr) => tr.docChanged)) return null
       const tr = newState.tr
