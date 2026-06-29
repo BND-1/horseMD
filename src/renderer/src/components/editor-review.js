@@ -859,7 +859,7 @@ function addParsedSubstitutionParts(entries, index, state, decorations, widgetPa
   if (
     openIndex !== openEntry.text.length - 1 ||
     separator <= 0 ||
-    separator + 2 >= strikeEntry.text.length ||
+    separator + 2 > strikeEntry.text.length ||
     !closeEntry.text.startsWith('}')
   ) {
     return 0
@@ -878,7 +878,14 @@ function addParsedSubstitutionParts(entries, index, state, decorations, widgetPa
     oldText: strikeEntry.text.slice(0, separator),
     newText: strikeEntry.text.slice(separator + 2)
   })
-  return 2
+  // Return 1 (not 2): the loop adds its own +1, so this lands the next iteration
+  // ON the closeEntry. That entry is then re-examined — if it also contains a
+  // following `{` (two adjacent substitutions like `{~~a~>b~~} {~~c~>d~~}`, where
+  // the `} {` between them merges into one text node), the second substitution
+  // is found. Without this, returning 2 skipped the closeEntry and the `{` inside
+  // it, so the second of two adjacent substitutions never rendered. A closeEntry
+  // with no `{` re-examines harmlessly (returns 0).
+  return 1
 }
 
 function addParsedReviewParts(parentEntries, state, decorations, widgetParts) {

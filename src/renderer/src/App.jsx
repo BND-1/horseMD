@@ -125,7 +125,13 @@ export default function App() {
   const flushSession = useCallback(() => {
     if (!sessionRef.current) return
     try {
-      localStorage.setItem(LS, JSON.stringify(sessionRef.current))
+      // Patch unsaved-scratch content from the live mirror so a close-time write
+      // captures edits still inside a tab's debounce window. (commitAllLive, run
+      // before this on the close path, already synced tabsRef.current.)
+      const untitled = tabsRef.current
+        .filter((t) => !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .map((t) => ({ title: t.title, content: t.content }))
+      localStorage.setItem(LS, JSON.stringify({ ...sessionRef.current, untitled }))
     } catch {
       /* quota / serialization failure — skip this snapshot */
     }
@@ -157,6 +163,32 @@ export default function App() {
   // handlers that must not capture a stale `tabs` closure.
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
+  // Uncontrolled-textarea live edits. The heavy/plain-doc <textarea> is rendered
+  // with defaultValue (not value) so typing doesn't re-render App and re-set a
+  // multi-MB value each keystroke — that was the ~218ms/keystroke lag on a 1.28MB
+  // file. Edits land in liveContentRef and are committed to tab.content on a 400ms
+  // debounce, OR synchronously via commitAllLive() before any critical read (save /
+  // close / session / external-reload) — so edits inside the debounce window are
+  // never lost. Only the textarea path uses this; rich editors still call
+  // updateContent() directly (they have no per-keystroke value re-set cost).
+  const liveContentRef = useRef(new Map()) // tab id → latest textarea value (uncommitted)
+  const liveTimersRef = useRef(new Map()) // tab id → debounce timer
+  // Commit one tab's pending textarea edit. Updates the synchronous tabsRef
+  // mirror FIRST (confirmAppClose / saveTab read it), then queues setTabs so
+  // render-time readers (StatusBar, SaveFab) catch up on the next paint.
+  const commitLive = useCallback((id) => {
+    if (!liveContentRef.current.has(id)) return
+    const content = liveContentRef.current.get(id)
+    const timer = liveTimersRef.current.get(id)
+    if (timer) clearTimeout(timer)
+    liveTimersRef.current.delete(id)
+    liveContentRef.current.delete(id)
+    tabsRef.current = tabsRef.current.map((t) => (t.id === id ? { ...t, content } : t))
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, content } : t)))
+  }, [])
+  const commitAllLive = useCallback(() => {
+    for (const id of [...liveContentRef.current.keys()]) commitLive(id)
+  }, [commitLive])
 
   // Drop editor APIs for tabs that have closed.
   useEffect(() => {
@@ -294,6 +326,7 @@ export default function App() {
   // capture it from the outgoing view here, restore it onto the incoming view in
   // the layout effect below once it has rendered.
   const toggleSource = useCallback(() => {
+    commitAllLive() // flush textarea edits so the rich editor picks them up on switch
     const el = sourceModeRef.current ? sourceRef.current : editorHostRef.current
     if (el) {
       const denom = el.scrollHeight - el.clientHeight
@@ -302,7 +335,7 @@ export default function App() {
       scrollRatioRef.current = null
     }
     setSourceMode((v) => !v)
-  }, [])
+  }, [commitAllLive])
 
   useLayoutEffect(() => {
     const ratio = scrollRatioRef.current
@@ -424,11 +457,17 @@ export default function App() {
 
   const closeTab = useCallback(
     (id) => {
+      commitAllLive() // flush textarea edits so the unsaved-check below is accurate
       setTabs((prev) => {
         const tab = prev.find((x) => x.id === id)
         if (tab && tab.content !== tab.savedContent) {
           if (!window.confirm(tRef.current('confirm.closeUnsaved', { name: tab.title }))) return prev
         }
+        // Drop the closing tab's live-edit bookkeeping.
+        const timer = liveTimersRef.current.get(id)
+        if (timer) clearTimeout(timer)
+        liveTimersRef.current.delete(id)
+        liveContentRef.current.delete(id)
         const idx = prev.findIndex((x) => x.id === id)
         const next = prev.filter((x) => x.id !== id)
         setActiveId((cur) => {
@@ -439,7 +478,7 @@ export default function App() {
         return next
       })
     },
-    []
+    [commitAllLive]
   )
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move
@@ -571,17 +610,24 @@ export default function App() {
 
   // Close every tab except `keepId` (from the tab right-click menu).
   const closeOthers = useCallback((keepId) => {
+    commitAllLive()
     setTabs((prev) => {
       const others = prev.filter((t) => t.id !== keepId)
       const firstDirty = others.find((t) => t.content !== t.savedContent)
       if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
         return prev
       }
+      for (const t of others) {
+        const timer = liveTimersRef.current.get(t.id)
+        if (timer) clearTimeout(timer)
+        liveTimersRef.current.delete(t.id)
+        liveContentRef.current.delete(t.id)
+      }
       setActiveId(keepId)
       setSplitId(null)
       return prev.filter((t) => t.id === keepId)
     })
-  }, [])
+  }, [commitAllLive])
 
   const writeTab = useCallback(async (tab, targetPath) => {
     try {
@@ -630,7 +676,8 @@ export default function App() {
 
   const saveTab = useCallback(
     async (id, forceDialog = false) => {
-      const tab = tabs.find((t) => t.id === id)
+      commitAllLive() // flush any textarea edits in the debounce window before reading
+      const tab = tabsRef.current.find((t) => t.id === id)
       if (!tab) return
       let target = tab.path
       if (!target || forceDialog) {
@@ -646,7 +693,7 @@ export default function App() {
       }
       await writeTab(tab, target)
     },
-    [tabs, writeTab, isMobile]
+    [commitAllLive, writeTab, isMobile]
   )
 
   // Commit a mobile "save as": let the platform layer place the named file in
@@ -654,6 +701,7 @@ export default function App() {
   const commitMobileSave = useCallback(
     async (id, rawName) => {
       setSaveNameState(null)
+      commitAllLive()
       const tab = tabsRef.current.find((t) => t.id === id)
       let name = (rawName || '').trim()
       if (!tab || !name) return
@@ -666,7 +714,7 @@ export default function App() {
       if (!target) return
       await writeTab(tab, target)
     },
-    [writeTab]
+    [commitAllLive, writeTab]
   )
 
   // Export a file (by path) to PDF: open/focus it, wait for its editor to mount,
@@ -732,6 +780,7 @@ export default function App() {
   }, [tabs])
 
   const reloadTabFromDisk = useCallback(async (id, path) => {
+    commitAllLive() // so the "don't clobber unsaved" check below sees live edits
     try {
       const { content, mtimeMs } = await window.api.readFile(path)
       setTabs((prev) =>
@@ -741,6 +790,9 @@ export default function App() {
           // never clobber unsaved work.
           if (t.content !== t.savedContent) return t
           if (t.content === content) return { ...t, mtimeMs }
+          // Adopt the on-disk content: drop any stale live-edit entry so the
+          // textarea (keyed by reloadNonce) remounts with the new defaultValue.
+          liveContentRef.current.delete(id)
           return {
             ...t,
             content,
@@ -754,7 +806,7 @@ export default function App() {
     } catch {
       /* file vanished mid-reload; leave the tab as-is */
     }
-  }, [])
+  }, [commitAllLive])
 
   useEffect(() => {
     const off = window.api.onFileChanged(({ path, mtimeMs }) => {
@@ -807,6 +859,12 @@ export default function App() {
   // Throttle to at most once per 300ms (not per frame) and skip entirely while
   // the user is actively scrolling fast (resume on settle).
   const [activeHeading, setActiveHeading] = useState(-1)
+  // Bumped when a chunked-loaded rich doc finishes streaming in (Editor's
+  // onStructureChange) so the outline list + scrollspy refresh against the now-
+  // complete DOM — during load onChange is suppressed, so they can't track the
+  // growing doc via content alone. richLoading drives the outline skeleton.
+  const [richDocVersion, setRichDocVersion] = useState(0)
+  const [richLoading, setRichLoading] = useState(false)
   useEffect(() => {
     if (home || !sidebarOpen || sidebarMode !== 'outline' || sourceMode) {
       setActiveHeading(-1)
@@ -889,7 +947,7 @@ export default function App() {
       scroller.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', invalidate)
     }
-  }, [home, sidebarOpen, sidebarMode, sourceMode, activeId])
+  }, [home, sidebarOpen, sidebarMode, sourceMode, activeId, richDocVersion])
 
   // Outline heading list, taken from the RENDERED document (the editor's actual
   // h1…h6 elements) — not regex'd from the markdown string. This matches how
@@ -924,7 +982,7 @@ export default function App() {
     return () => {
       if (timer) clearTimeout(timer)
     }
-  }, [home, activeId, activeTab?.content, sourceMode])
+  }, [home, activeId, activeTab?.content, sourceMode, richDocVersion])
 
   // ------------------------- menu / shortcuts ----------------------
   // In split view, target the pane you're actually editing (last focused), as
@@ -1079,8 +1137,9 @@ export default function App() {
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
     const offClose = window.api.onAppCloseRequest?.(() => {
-      // Flush the latest session before we (maybe) quit, so a recent edit that's
-      // still inside the debounce window isn't lost.
+      // Flush textarea edits still inside the per-tab debounce window, then write
+      // the session — so a recent keystroke isn't lost on quit.
+      commitAllLive()
       flushSession()
       const dirty = tabsRef.current.some((t) => t.content !== t.savedContent)
       if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
@@ -1576,7 +1635,7 @@ export default function App() {
                 refreshNonce={refreshNonce}
               />
             ) : (
-              <Outline headings={outlineHeadings} activeIndex={activeHeading} onJump={jumpToHeading} />
+              <Outline headings={outlineHeadings} activeIndex={activeHeading} loading={richLoading} onJump={jumpToHeading} />
             )
           )}
         </aside>
@@ -1688,6 +1747,11 @@ export default function App() {
               // never shows global source mode.
               const heavyAsSource = tab.heavy && !richForced.has(tab.id)
               const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLeft)
+              // content-visibility virtualization (see .hm-cv in app.css) kicks in
+              // only for genuinely large RICH documents — small docs and the
+              // textarea path are untouched. ~20k chars ≈ hundreds of blocks,
+              // the range where software-composited scrolling starts to struggle.
+              const largeRich = !usesTextarea && (tab.content?.length || 0) >= 20000
               if (usesTextarea) {
                 if (!inView) return null
                 const setSourceTextareaRef = (el) => {
@@ -1702,15 +1766,24 @@ export default function App() {
                 }
                 return (
                   <textarea
-                    key={tab.id}
+                    key={`${tab.id}:${tab.reloadNonce}`}
                     ref={setSourceTextareaRef}
                     className={`source-editor${paneClass}`}
-                    value={tab.content}
+                    defaultValue={tab.content}
                     spellCheck={false}
                     style={{ order, flex: paneFlex }}
                     onFocus={onPaneFocus}
                     onMouseDown={onPaneFocus}
-                    onChange={(e) => updateContent(tab.id, e.target.value, false)}
+                    onChange={(e) => {
+                      // Uncontrolled: stash the edit and debounce-commit it, so
+                      // typing never re-renders App or re-sets a multi-MB value per
+                      // keystroke. commitAllLive() flushes before save/close/etc.
+                      const v = e.target.value
+                      liveContentRef.current.set(tab.id, v)
+                      const prev = liveTimersRef.current.get(tab.id)
+                      if (prev) clearTimeout(prev)
+                      liveTimersRef.current.set(tab.id, setTimeout(() => commitLive(tab.id), 400))
+                    }}
                   />
                 )
               }
@@ -1724,7 +1797,7 @@ export default function App() {
                   // Crepe editor with the new content (the create effect only
                   // runs on mount). tab switches keep the same key → stay mounted.
                   key={`${tab.id}:${tab.reloadNonce}`}
-                  className={`editor-scroll${paneClass}`}
+                  className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}`}
                   ref={isLeft && !sourceMode ? editorHostRef : undefined}
                   style={{ display: inView ? undefined : 'none', order, flex: paneFlex }}
                   onFocusCapture={onPaneFocus}
@@ -1742,6 +1815,8 @@ export default function App() {
                     onActiveBlock={(id) => {
                       if (tab.id === activeIdRef.current) setActiveBlock(id)
                     }}
+                    onStructureChange={() => setRichDocVersion((v) => v + 1)}
+                    onLoadingChange={setRichLoading}
                   />
                 </div>
               )

@@ -16,7 +16,7 @@ import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
-import { TextSelection } from '@milkdown/prose/state'
+import { TextSelection, Plugin } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
@@ -42,6 +42,198 @@ import {
   createReviewDecorationPlugin
 } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
+import { strikeInputWouldCorruptCriticMarkup } from '../strikeGuard.js'
+
+// ── Chunked async parsing for huge documents (Typora-style progressive render) ──
+// Milkdown/ProseMirror parse the WHOLE markdown string synchronously in
+// crepe.create(), which is O(n²)-ish — a 1M-char doc freezes the main thread for
+// minutes ("Not Responding"). content-visibility can't help: the freeze is the
+// PARSE, not paint. So for docs above CHUNK_THRESHOLD we instead create the
+// editor with only the FIRST chunk (fast first paint), then parse + append the
+// remaining chunks in the background on requestIdleCallback (yielding between
+// chunks so the UI never freezes, and breaking the quadratic blowup into linear
+// per-chunk parses). The editor is read-only during load; cv already gives the
+// "blank off-screen → render on scroll" behaviour for the loaded content.
+const CHUNK_THRESHOLD = 120000 // above this, parse incrementally
+const CHUNK_SIZE = 40000 // chars per chunk (first chunk renders in ~one frame)
+// Split markdown into parse-safe chunks at blank-line boundaries, never inside a
+// fenced code block. Each chunk is valid standalone markdown, so parsing it
+// separately reconstructs its blocks correctly (lists/tables/headings stay whole
+// because they're blank-line-delimited).
+function splitMarkdown(md, target) {
+  if (!md) return []
+  const lines = md.split('\n')
+  const chunks = []
+  let cur = []
+  let len = 0
+  let inFence = false
+  let fence = null
+  for (const line of lines) {
+    const m = line.match(/^\s*(```|~~~)/)
+    if (m) {
+      if (!inFence) { inFence = true; fence = m[1] }
+      else if (fence && line.includes(fence)) { inFence = false; fence = null }
+    }
+    cur.push(line)
+    len += line.length + 1
+    if (!inFence && len >= target && /^\s*$/.test(line)) {
+      chunks.push(cur.join('\n'))
+      cur = []
+      len = 0
+    }
+  }
+  if (cur.length) chunks.push(cur.join('\n'))
+  return chunks
+}
+
+// Reconstruct `{~~old~>new~~}` substitution markers that GFM strikethrough
+// consumed during parse. remark turns `{~~old~>new~~}` into three mdast nodes:
+// text("{") + <delete>old~>new</delete> + text("}"). The decoration plugin's
+// strike-mark path (addParsedSubstitutionParts) then has to re-detect that
+// 3-entry structure to render it — and that detection is fragile (it silently
+// failed in several cases, so substitution didn't render while {++}/{--} did,
+// because those scan literal text). This remark plugin merges the three nodes
+// back into ONE literal text node `{~~old~>new~~}`, so substitution renders via
+// the same robust text-scan path as addition/deletion. Normal strikethrough
+// `~~struck~~` (no surrounding braces) is left untouched — only `{` + delete
+// (containing `~>`) + `}` is reconstructed.
+function remarkReconstructSubstitution() {
+  const textOf = (node) => {
+    if (!node) return ''
+    if (node.value != null) return String(node.value)
+    if (node.children) return node.children.map(textOf).join('')
+    return ''
+  }
+  return (tree) => {
+    const walk = (node) => {
+      if (!node.children) return
+      for (const c of node.children) walk(c)
+      const kids = node.children
+      const out = []
+      for (let i = 0; i < kids.length; i++) {
+        const a = kids[i]
+        const b = kids[i + 1]
+        const c = kids[i + 2]
+        if (
+          a && b && c &&
+          a.type === 'text' && b.type === 'delete' && c.type === 'text' &&
+          /\{$/.test(a.value) && /^\}/.test(c.value) &&
+          textOf(b).includes('~>')
+        ) {
+          // a ends with `{`, b is a strikethrough containing `~>`, c starts with `}`
+          // → merge into one literal `{~~old~>new~~}` text node.
+          out.push({ type: 'text', value: `${a.value.slice(0, -1)}{~~${textOf(b)}~~}${c.value.slice(1)}` })
+          i += 2
+          continue
+        }
+        out.push(a)
+      }
+      node.children = out
+    }
+    walk(tree)
+    return tree
+  }
+}
+
+// Runtime (live-edit) companion to remarkReconstructSubstitution — a BACKSTOP.
+// PREVENTION lives in createStrikeGuardPlugin() (below), which stops the
+// strikethrough input rule from ever firing on a CriticMarkup marker. But some
+// paths can still leave a strike mark adjacent to `{`/`}` in the live doc (a
+// programmatic insert, an IME composition, a plugin that re-applies marks), so
+// this appendTransaction detects the `{` + strike(~>) + `}` (or the garbled
+// `{` + strike(>) + `~}`) triple on every edit and converts it back to literal
+// text `{~~old~>new~~}`, so the robust text-scan path renders it. Only scans
+// textblocks containing {/~/}, so it's cheap on normal typing.
+function createSubstitutionLiveReconstructPlugin() {
+  return new Plugin({
+    appendTransaction(transs, _oldState, newState) {
+      if (!transs.some((tr) => tr.docChanged)) return null
+      const tr = newState.tr
+      let modified = false
+      newState.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return true
+        if (!/[~{}]/.test(node.textContent)) return false
+        const kids = []
+        node.forEach((child, offset) => kids.push({ node: child, pos: pos + 1 + offset }))
+        for (let i = kids.length - 3; i >= 0; i--) {
+          const a = kids[i]
+          const b = kids[i + 1]
+          const c = kids[i + 2]
+          if (!a.node.isText || !b.node.isText || !c.node.isText) continue
+          const aT = a.node.text || ''
+          const bT = b.node.text || ''
+          const cT = c.node.text || ''
+          if (!aT.endsWith('{')) continue
+          const bStrike = b.node.marks.some((m) => /strike|del/i.test(m.type.name))
+          if (!bStrike) continue
+          // Two forms of a strike-marked substitution in the live doc:
+          //   ① clean (parse/insert): strike has `~>` and c starts with `}`.
+          //   ② garbled (TYPED): Milkdown's strikethrough input rule consumed the
+          //      `~` from `~>` and one `~` from the closing `~~}`, so the strike
+          //      text has `>` (no `~>`) and c starts with `~}`. Restore `~>`.
+          let content = null
+          let cSkip = 0
+          if (bT.includes('~>') && cT.startsWith('}')) {
+            content = bT
+            cSkip = 1
+          } else if (bT.includes('>') && !bT.includes('~>') && cT.startsWith('~}')) {
+            content = bT.replace('>', '~>')
+            cSkip = 2
+          }
+          if (content != null) {
+            tr.replaceWith(
+              a.pos,
+              c.pos + c.node.nodeSize,
+              newState.schema.text(`${aT.slice(0, -1)}{~~${content}~~}${cT.slice(cSkip)}`)
+            )
+            modified = true
+          }
+        }
+        return false
+      })
+      return modified ? tr : null
+    }
+  })
+}
+
+// The definitive fix for the CriticMarkup substitution bug. The GFM
+// strikethrough input rule (`~{1,2}…~{1,2}`) collides with `{~~old~>new~~}`: its
+// `~>` and `~~}` tildes look like strike delimiters, AND prosemirror-inputrules'
+// run() matches the regex ANYWHERE in the text-before-cursor (not just at the
+// cursor), so typing ANY character on a line that holds a literal marker makes
+// the rule fire and `markRule` then `tr.delete(textEnd, to)` — wiping from the
+// marker to the cursor and turning the marker into strike. That is the
+// "替换 corrupts / deletes my line" bug, and it is why the {++}/{--} markers
+// (no tilde collision) always worked while substitution didn't.
+//
+// This guard runs its handleTextInput BEFORE the inputRules plugin (it is
+// PREPENDED to prosePluginsCtx). It asks strikeInputWouldCorruptCriticMarkup
+// whether the imminent strike match would eat a CriticMarkup marker; if so, it
+// inserts the typed text LITERALLY (a programmatic transaction, which bypasses
+// input rules) and returns true, so the marker survives as plain text and
+// renders via the text-scan path. Plain `~~strike~~` (no CriticMarkup around)
+// is untouched — the predicate returns false and normal input rules fire.
+function createStrikeGuardPlugin() {
+  return new Plugin({
+    props: {
+      handleTextInput(view, from, to, text) {
+        const $from = view.state.doc.resolve(from)
+        // Mirror prosemirror-inputrules' own textBefore (capped at 500 chars,
+        // the same MAX_MATCH) so the predicate sees exactly what the strike
+        // rule's exec() will see.
+        const textBefore = $from.parent.textBetween(
+          Math.max(0, $from.parentOffset - 500),
+          $from.parentOffset,
+          null,
+          '￼'
+        )
+        if (!strikeInputWouldCorruptCriticMarkup(textBefore, text)) return false
+        view.dispatch(view.state.tr.insertText(text, from, to))
+        return true
+      }
+    }
+  })
+}
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -139,7 +331,9 @@ export default function Editor({
   imageUploadCommand,
   onChange,
   onReady,
-  onActiveBlock
+  onActiveBlock,
+  onStructureChange,
+  onLoadingChange
 }) {
   const { t } = useI18n()
   const tRef = useRef(t)
@@ -167,6 +361,11 @@ export default function Editor({
   // biggish doc shows feedback (and lets a queued click through) before the
   // synchronous ProseMirror parse blocks the main thread.
   const isLargeDoc = (initialContent?.length || 0) > 8000
+  // Huge docs are split into chunks and parsed incrementally (see splitMarkdown):
+  // the first chunk is the editor's initial content, the rest are appended in the
+  // background after create(). `chunks` is null for normal-sized docs.
+  const chunks = (initialContent?.length || 0) > CHUNK_THRESHOLD ? splitMarkdown(initialContent, CHUNK_SIZE) : null
+  const firstContent = chunks ? chunks[0] : initialContent || ''
 
   useEffect(() => {
     const host = hostRef.current
@@ -252,7 +451,7 @@ export default function Editor({
 
     const crepe = new Crepe({
       root: host,
-      defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(initialContent || '')),
+      defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent)),
       features: {
         [CrepeFeature.SelectionTooltip]: true,
         [CrepeFeature.SlashCommand]: true,
@@ -343,6 +542,12 @@ export default function Editor({
         }
       })
       ctx.update(prosePluginsCtx, (plugins) => [
+        // CriticMarkup strike guard FIRST. ProseMirror tries plugin
+        // handleTextInput props in registration order, and the GFM strikethrough
+        // input rule (added by preset-gfm) would otherwise fire on a
+        // substitution marker's tildes and corrupt/delete it. Prepending puts
+        // this guard ahead of the inputRules plugin so it can intercept.
+        createStrikeGuardPlugin(),
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
@@ -359,7 +564,11 @@ export default function Editor({
         }),
         // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
         // into the same block) back into one block per diagram.
-        createMermaidSplitPlugin()
+        createMermaidSplitPlugin(),
+        // Live-edit fix: convert `{`+<strike>~>..</strike>+`}` (formed when the
+        // user types a substitution marker and the strikethrough input rule
+        // fires) back to literal text so it renders via text-scan.
+        createSubstitutionLiveReconstructPlugin()
       ])
       // Table-cell line break — serialize a break to <br> inside a cell, and parse
       // inline <br> back into a break (see editor-tablebreak.js). Also serialize
@@ -383,7 +592,11 @@ export default function Editor({
         { plugin: brToBreakRemarkPlugin, options: undefined },
         // Merge fragmented inline HTML (<span>x</span>) into whole fragments so
         // the html node view can render them (issue #14).
-        { plugin: remarkMergeInlineHtml, options: undefined }
+        { plugin: remarkMergeInlineHtml, options: undefined },
+        // Reconstruct `{~~old~>new~~}` from the `{`+<del>+`}` GFM strikethrough
+        // consumed it into, so substitution renders via text-scan (robust) not
+        // the fragile strike-mark path.
+        { plugin: remarkReconstructSubstitution, options: undefined }
       ])
     })
 
@@ -539,9 +752,15 @@ export default function Editor({
     // create(), so registering afterwards means `markdownUpdated` never fires —
     // which left tab.content (outline, word count, dirty state, and saves!)
     // frozen at the initial value while the editor was actually edited.
+    //
+    // `appending` is set while the remaining chunks of a huge doc are being
+    // parsed+inserted in the background — those dispatches fire markdownUpdated
+    // too, and we must ignore them so tab.content isn't spammed with partial
+    // docs. Only real user edits propagate.
+    let appending = false
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
-        if (ready) onChange?.(normalizeReviewMarkupMarkdown(md), false)
+        if (ready && !appending) onChange?.(normalizeReviewMarkupMarkdown(md), false)
       })
     })
 
@@ -866,22 +1085,34 @@ export default function Editor({
             if (root.tagName === 'IMG') fixImg(root)
             else root.querySelectorAll?.('img').forEach(fixImg)
           }
+          // Resolve everything currently in the DOM, then keep new/changed
+          // images resolved as they're pasted/dropped/edited. Coalesce mutation
+          // batches into ONE rAF pass (mirroring the toolbar scan below): the
+          // previous per-batch loop ran a querySelectorAll sweep once per
+          // mutation batch, and a burst of mutations (scrolling back into view,
+          // typing on an image-heavy doc) added a measurable main-thread burst
+          // — worse on Windows. fixImg is idempotent (data-hm-resolved guard),
+          // so a single whole-editor sweep per frame is both correct & cheaper.
           scanImgs(view.dom)
-          const imgObserver = new MutationObserver((muts) => {
-            for (const m of muts) {
-              if (m.type === 'attributes' && m.target.tagName === 'IMG') fixImg(m.target)
-              m.addedNodes?.forEach((n) => {
-                if (n.nodeType === 1) scanImgs(n)
-              })
-            }
-          })
+          let imgScanRaf = 0
+          const scheduleImgScan = () => {
+            if (imgScanRaf) return
+            imgScanRaf = requestAnimationFrame(() => {
+              imgScanRaf = 0
+              scanImgs(view.dom)
+            })
+          }
+          const imgObserver = new MutationObserver(() => scheduleImgScan())
           imgObserver.observe(view.dom, {
             childList: true,
             subtree: true,
             attributes: true,
             attributeFilter: ['src']
           })
-          cleanups.push(() => imgObserver.disconnect())
+          cleanups.push(() => {
+            if (imgScanRaf) cancelAnimationFrame(imgScanRaf)
+            imgObserver.disconnect()
+          })
         }
 
         // --- Inject custom buttons into Crepe's selection toolbar ---
@@ -1189,6 +1420,64 @@ export default function Editor({
           return result.ok
         }
         apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight, applyReviewMarkup }
+        // DEV-only CDP test hook (scripts/test-substitution.mjs). Exposes the
+        // active editor so the harness can drive the REAL 替换 command, read
+        // markdown, and simulate a markdown paste (parser + remark plugins, so
+        // `{~~old~>new~~}` reconstructs like a real paste). Stripped in prod
+        // builds (import.meta.env.DEV is false after `npm run build`).
+        if (import.meta.env && import.meta.env.DEV) {
+          window.__horsemd = Object.assign(window.__horsemd || {}, {
+            getView: () => viewRef.current,
+            getMarkdown,
+            applyReviewMarkup,
+            focus: () => {
+              viewRef.current && viewRef.current.focus()
+              return true
+            },
+            selectRange: (from, to) => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, from, to)))
+              v.focus()
+              return true
+            },
+            clear: () => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              v.dispatch(v.state.tr.delete(0, v.state.doc.content.size))
+              return true
+            },
+            cursorEnd: () => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              const end = v.state.doc.content.size
+              v.dispatch(
+                v.state.tr
+                  .setSelection(TextSelection.near(v.state.doc.resolve(end), -1))
+                  .scrollIntoView()
+              )
+              v.focus()
+              return end
+            },
+            getHtml: () => {
+              const v = viewRef.current
+              return v ? v.dom.innerHTML : 'no-view'
+            },
+            pasteMarkdown: (md) => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              try {
+                const parser = crepe.editor.ctx.get(parserCtx)
+                const parsed = parser(md)
+                const endPos = v.state.doc.content.size
+                v.dispatch(v.state.tr.insert(endPos, parsed.content).scrollIntoView())
+                return true
+              } catch (e) {
+                return 'err:' + (e && e.message ? e.message : e)
+              }
+            }
+          })
+        }
         onReady?.({
           setBlock,
           getView: () => viewRef.current,
@@ -1198,22 +1487,76 @@ export default function Editor({
           applyReviewMarkup
         })
 
+        // Append the remaining chunks of a huge doc in the background so the open
+        // never freezes the main thread. The editor is read-only during load to
+        // avoid edit/append races; restored after. Yields via setTimeout (NOT
+        // requestIdleCallback — that stops firing when the window is occluded,
+        // which would leave the final yield pending and the editor read-only).
+        const appendChunks = async (rest) => {
+          if (!rest || !rest.length) return
+          appending = true
+          onLoadingChange?.(true) // outline shows a skeleton while the doc streams in
+          const setEditable = (on) => {
+            try { view.setProps({ editable: () => on }) } catch { /* view tearing down */ }
+            try { view.dom.contentEditable = on ? 'true' : 'false' } catch { /* */ }
+          }
+          setEditable(false)
+          let parser = null
+          try { parser = crepe.editor.ctx.get(parserCtx) } catch { /* no parser */ }
+          try {
+            for (const chunkText of rest) {
+              if (destroyed) break
+              let parsed = null
+              // Normalize review markup + display math in each appended chunk
+              // too — defaultValue wraps firstContent with both, but these
+              // background-appended chunks are parsed directly, so wrap them.
+              // (Chunking splits only at blank lines; a normalized $$…$$ block
+              // has no internal blank line, so math never spans two chunks.)
+              try { parsed = parser ? parser(normalizeReviewMarkupMarkdown(normalizeDisplayMath(chunkText))) : null } catch { /* skip unparseable chunk */ }
+              if (parsed && parsed.content && parsed.content.size > 0 && !destroyed) {
+                view.dispatch(view.state.tr.insert(view.state.doc.content.size, parsed.content))
+              }
+              // Yield to the event loop so paint/input happen between chunks
+              // (setTimeout fires even when occluded; rAF/idle don't).
+              await new Promise((r) => setTimeout(r, 0))
+            }
+          } finally {
+            appending = false
+            setEditable(true)
+            onLoadingChange?.(false)
+            // The full doc is now in the DOM — tell the host to refresh the
+            // outline heading list + scrollspy (they couldn't track it during
+            // load because onChange was suppressed).
+            if (!destroyed) onStructureChange?.()
+          }
+        }
+
         // Compute the initial markdown snapshot (content baseline for dirty
         // tracking / outline / word count). On a big doc serializing the whole
         // document is non-trivial, so for large docs defer it past a paint —
         // setLoaded(true) above has already cleared the skeleton, so this runs
         // after the rendered content is on screen instead of holding it back.
-        const finishInitial = () => {
+        const finishInitial = (rebase) => {
           if (destroyed) return
-          const md = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
-          onChange?.(md, true)
+          // Huge (chunked) docs skip the rebase: serializing the whole rebuilt
+          // doc is itself expensive, and the original markdown is already the
+          // content/savedContent baseline (clean), so no rebase is needed.
+          if (rebase) {
+            try { onChange?.(normalizeReviewMarkupMarkdown(crepe.getMarkdown()), true) } catch { /* */ }
+          }
           ready = true
           reportActiveBlock()
         }
-        if (isLargeDoc) {
-          requestAnimationFrame(() => requestAnimationFrame(finishInitial))
+        if (chunks) {
+          // chunks[0] is already rendered; append the rest in the background,
+          // then finish (no rebase).
+          appendChunks(chunks.slice(1)).then(() => {
+            if (!destroyed) finishInitial(false)
+          })
+        } else if (isLargeDoc) {
+          requestAnimationFrame(() => requestAnimationFrame(() => finishInitial(true)))
         } else {
-          finishInitial()
+          finishInitial(true)
         }
       })
       .catch((err) => console.error('Crepe init failed', err))

@@ -1516,6 +1516,19 @@ button:focus-visible,
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+/* Skeleton shown in the outline while a huge document is still streaming in
+   (chunked parse). Mimics a heading list (with indented sub-items) so the user
+   sees "loading" instead of an empty/stale list. Reuses the editor skeleton's
+   pulse. */
+.outline-skeleton { padding: 6px 10px; }
+.ol-skel-line {
+  height: 11px;
+  margin: 9px 0;
+  border-radius: 5px;
+  background: var(--border-soft);
+  animation: hmSkelPulse 1.4s ease-in-out infinite;
+}
+.ol-skel-line.ind { margin-left: 16px; }
 
 /* =====================================================
    Editor
@@ -1629,6 +1642,33 @@ body.hm-col-resizing * {
      Outline/find jumps pass `behavior: 'smooth'` explicitly when wanted. */
   overflow-anchor: none;
   position: relative; /* containing block for the loading skeleton */
+}
+
+/* ── Large-document scroll/open virtualization (Windows perf) ───────────
+   content-visibility:auto lets the browser skip layout, style AND paint for
+   blocks far off-screen, shrinking the live composited layer from "the whole
+   document" down to roughly the viewport. On Windows the editor frequently
+   runs on the SOFTWARE compositor (a blocklisted GPU driver, an RDP/VM
+   session, or a recovered GPU-process crash) — there a non-virtualized
+   ProseMirror doc of thousands of nodes is re-rasterized on the CPU every
+   scroll frame, which is the dominant cause of large-document scroll lag, open
+   lag, and close/teardown lag. macOS is always GPU-composited via Metal, so it
+   was never hit as hard — exactly the reported "fine on Mac, laggy on Windows"
+   split. (All box-shadows in this file are on chrome/popovers, never on
+   per-block editor content, so the remaining cost is pure node count — which
+   this addresses directly.)
+
+   Gated behind .hm-cv (App.jsx adds it to .editor-scroll only for large docs)
+   so the common small-document case is byte-for-byte unchanged. Headings
+   (h1–h6) are deliberately EXCLUDED: the outline scrollspy caches each
+   heading's Y offset via getBoundingClientRect, and keeping headings
+   always-rendered keeps that cache exact. contain-intrinsic-size uses the
+   `auto` keyword so Chromium caches each block's real height after its first
+   render — the scrollbar only adjusts once per block on the first scroll
+   through, then stays stable. */
+.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.5em;
 }
 
 /* Loading skeleton: pulsing gray placeholder bars while a (large) document is
