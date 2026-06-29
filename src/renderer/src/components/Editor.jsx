@@ -16,7 +16,7 @@ import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
-import { TextSelection } from '@milkdown/prose/state'
+import { TextSelection, Plugin } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
@@ -128,6 +128,51 @@ function remarkReconstructSubstitution() {
     walk(tree)
     return tree
   }
+}
+
+// Runtime (live-edit) companion to remarkReconstructSubstitution. When the user
+// TYPES `{~~old~>new~~}` directly in rich mode, Milkdown's strikethrough input
+// rule fires on the closing `~~` and turns `old~>new` into a strike mark — so
+// the live doc ends up `{` + <strike>old~>new</strike> + `}` instead of the
+// literal marker, and the fragile strike-mark decoration path fails to render
+// it (while {++}/{--}, which don't collide, render fine). This appendTransaction
+// detects that `{` + strike(~>) + `}` triple on every edit and converts it back
+// to literal text `{~~old~>new~~}`, so the robust text-scan path renders it.
+// Only scans textblocks containing {/~/}, so it's cheap on normal typing.
+function createSubstitutionLiveReconstructPlugin() {
+  return new Plugin({
+    appendTransaction(transs, _oldState, newState) {
+      if (!transs.some((tr) => tr.docChanged)) return null
+      const tr = newState.tr
+      let modified = false
+      newState.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return true
+        if (!/[~{}]/.test(node.textContent)) return false
+        const kids = []
+        node.forEach((child, offset) => kids.push({ node: child, pos: pos + 1 + offset }))
+        for (let i = kids.length - 3; i >= 0; i--) {
+          const a = kids[i]
+          const b = kids[i + 1]
+          const c = kids[i + 2]
+          if (!a.node.isText || !b.node.isText || !c.node.isText) continue
+          const aT = a.node.text || ''
+          const bT = b.node.text || ''
+          const cT = c.node.text || ''
+          const bStrike = b.node.marks.some((m) => /strike|del/i.test(m.type.name))
+          if (aT.endsWith('{') && bStrike && bT.includes('~>') && cT.startsWith('}')) {
+            tr.replaceWith(
+              a.pos,
+              c.pos + c.node.nodeSize,
+              newState.schema.text(`${aT.slice(0, -1)}{~~${bT}~~}${cT.slice(1)}`)
+            )
+            modified = true
+          }
+        }
+        return false
+      })
+      return modified ? tr : null
+    }
+  })
 }
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
@@ -439,7 +484,11 @@ export default function Editor({
         }),
         // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
         // into the same block) back into one block per diagram.
-        createMermaidSplitPlugin()
+        createMermaidSplitPlugin(),
+        // Live-edit fix: convert `{`+<strike>~>..</strike>+`}` (formed when the
+        // user types a substitution marker and the strikethrough input rule
+        // fires) back to literal text so it renders via text-scan.
+        createSubstitutionLiveReconstructPlugin()
       ])
       // Table-cell line break — serialize a break to <br> inside a cell, and parse
       // inline <br> back into a break (see editor-tablebreak.js). Also serialize
