@@ -248,7 +248,7 @@ export default function Editor({
 
     const crepe = new Crepe({
       root: host,
-      defaultValue: initialContent || '',
+      defaultValue: normalizeReviewMarkupMarkdown(initialContent || ''),
       features: {
         [CrepeFeature.SelectionTooltip]: true,
         [CrepeFeature.SlashCommand]: true,

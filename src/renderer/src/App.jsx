@@ -35,7 +35,8 @@ import {
   REVIEW_KINDS,
   wrapReviewSelection,
   applyReviewDecision,
-  buildReviewAiPrompt
+  buildReviewAiPrompt,
+  normalizeReviewMarkupMarkdown
 } from './reviewMarkup.js'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
@@ -905,7 +906,7 @@ export default function App() {
         return
       }
       const editedEl = sourceEl
-      updateContent(tab.id, result.text, false)
+      updateContent(tab.id, normalizeReviewMarkupMarkdown(result.text), false)
       requestAnimationFrame(() => {
         if (sourceTextareas.current[tab.id] === editedEl) {
           editedEl.focus()

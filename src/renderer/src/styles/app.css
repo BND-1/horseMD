@@ -3094,6 +3094,12 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   background: #e0f0ff;
   border-bottom: 2px solid #4d8fd6;
 }
+.milkdown .ProseMirror .hm-review-mark-active {
+  background: #c7e2ff;
+  outline: 2px solid #2f7fce;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px rgba(77, 143, 214, 0.16);
+}
 .milkdown .ProseMirror .hm-review-widget {
   display: inline-flex;
   align-items: center;
@@ -3171,8 +3177,10 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 1.3rem;
+  min-width: 2.45rem;
   height: 1.3rem;
+  padding: 0 0.34rem;
+  box-sizing: border-box;
   border-radius: 999px;
   background: #4d8fd6;
   color: #ffffff;
@@ -3181,8 +3189,36 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
 }
 .milkdown .ProseMirror .hm-review-card-title {
   min-width: 0;
+  flex: 1 1 auto;
   color: var(--text-strong);
   font-weight: 700;
+}
+.milkdown .ProseMirror .hm-review-card-nav {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button {
+  min-height: 1.45rem;
+  padding: 0.16rem 0.34rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+  cursor: pointer;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button:hover,
+.milkdown .ProseMirror .hm-review-card-nav-button:focus-visible {
+  background: var(--hover);
+  color: var(--text-strong);
+  outline: none;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(77, 143, 214, 0.28);
 }
 .milkdown .ProseMirror .hm-review-card-label {
   display: block;
@@ -3312,6 +3348,11 @@ body.dark .milkdown .ProseMirror .hm-review-sub-arrow {
 body.dark .milkdown .ProseMirror .hm-review-highlight {
   background: #223e5c;
   border-bottom-color: #75aee9;
+}
+body.dark .milkdown .ProseMirror .hm-review-mark-active {
+  background: #315f8d;
+  outline-color: #9ac6f1;
+  box-shadow: 0 0 0 2px rgba(154, 198, 241, 0.2);
 }
 body.dark .milkdown .ProseMirror .hm-review-card {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);

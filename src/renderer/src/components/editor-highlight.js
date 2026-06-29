@@ -21,10 +21,12 @@ export const highlightAttr = $markAttr('highlight')
 
 // Match ==text== without tripping on `===` / `a = b`:
 //   - not adjacent to another `=` (so `===`/trailing `=` are out)
+//   - `==}` cannot open a native highlight; that sequence is the close of
+//     source-readable review markup: `{==text==}{>>comment<<}`.
 //   - content non-empty, no `=`, no leading/trailing whitespace
 // CJK has no word boundaries, so we don't require whitespace around the `==`
 // (Typora behaves the same): `这是==高亮==的` works.
-const HIGHLIGHT_RE = /(?<![={])(==)([^=\s][^=]*[^=\s]|[^=\s])\1(?![=])/g
+export const HIGHLIGHT_RE = /(?<![={])(==)(?!\})([^=\s][^=]*[^=\s]|[^=\s])\1(?![=])/g
 
 export const highlightSchema = $markSchema('highlight', (ctx) => ({
   attrs: {
@@ -154,7 +156,7 @@ export const toggleHighlightCommand = $command('ToggleHighlight', (ctx) => () =>
 
 export const highlightInputRule = $inputRule((ctx) =>
   // Fires as you type the closing `==` (yellow highlight).
-  markRule(/(?:==)([^=]+)(?:==)$/, highlightSchema.type(ctx))
+  markRule(/(?<![={])==(?!\})([^=\s][^=]*[^=\s]|[^=\s])==$/, highlightSchema.type(ctx))
 )
 
 export const highlightKeymap = $useKeymap('highlightKeymap', {

@@ -24,11 +24,16 @@ const REVIEW_CLASS_BY_ROLE = {
   [REVIEW_KINDS.highlight]: 'hm-review-mark hm-review-highlight'
 }
 
-function t(options, key, fallback) {
+function t(options, key, fallback, vars) {
   const getT = options?.getT
-  if (!getT) return fallback
-  const value = getT(key, fallback)
-  return !value || value === key ? fallback : value
+  let value = getT ? getT(key, fallback) : fallback
+  value = !value || value === key ? fallback : value
+  if (vars) {
+    for (const name of Object.keys(vars)) {
+      value = String(value).split(`{${name}}`).join(String(vars[name]))
+    }
+  }
+  return value
 }
 
 function notify(options, key, fallback) {
@@ -94,6 +99,19 @@ function annotationKey(annotation) {
   ].join(':')
 }
 
+function closeReviewGroupState() {
+  return { openGroupKey: null, activeKey: null, activeIndex: 0 }
+}
+
+function makeReviewTextblockGroupKey(start) {
+  return `textblock:${start}`
+}
+
+function parseReviewTextblockGroupStart(groupKey) {
+  const match = String(groupKey || '').match(/^textblock:(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
 function ensureAnnotation(annotation) {
   if (!annotation?.text || !annotation?.comment) return null
   try {
@@ -103,6 +121,186 @@ function ensureAnnotation(annotation) {
       raw,
       key: annotation.key || annotationKey({ ...annotation, raw })
     }
+  } catch {
+    return null
+  }
+}
+
+function compareReviewAnnotations(a, b) {
+  return (
+    (a?.from ?? 0) - (b?.from ?? 0) ||
+    (a?.to ?? 0) - (b?.to ?? 0) ||
+    String(a?.key || '').localeCompare(String(b?.key || ''))
+  )
+}
+
+export function groupReviewAnnotationParts(widgetParts) {
+  const passthrough = []
+  const groups = new Map()
+
+  for (const item of widgetParts || []) {
+    const part = item?.part
+    if (part?.role !== 'comment-margin' || !part.annotation || !part.groupKey) {
+      passthrough.push(item)
+      continue
+    }
+
+    const existing = groups.get(part.groupKey) || {
+      pos: item.pos,
+      part: {
+        type: 'widget',
+        role: 'comment-margin',
+        groupKey: part.groupKey,
+        annotations: []
+      }
+    }
+
+    existing.pos = Math.min(existing.pos, item.pos)
+    existing.part.annotations.push(part.annotation)
+    groups.set(part.groupKey, existing)
+  }
+
+  const grouped = [...groups.values()].map((group) => {
+    const annotations = [...group.part.annotations].sort(compareReviewAnnotations)
+    return {
+      pos: group.pos,
+      part: {
+        ...group.part,
+        annotations,
+        annotation: annotations[0] || null,
+        label: String(annotations.length),
+        title: annotations[0]?.comment || ''
+      }
+    }
+  })
+
+  return [...passthrough, ...grouped].sort((a, b) => {
+    const posDelta = (a?.pos ?? 0) - (b?.pos ?? 0)
+    if (posDelta) return posDelta
+    return String(a?.part?.role || '').localeCompare(String(b?.part?.role || ''))
+  })
+}
+
+export function resolveReviewGroupActiveIndex(annotations, activeKey, preferredIndex = 0) {
+  const list = Array.isArray(annotations) ? annotations : []
+  if (!list.length) return -1
+
+  if (activeKey) {
+    const keyedIndex = list.findIndex((annotation) => annotation?.key === activeKey)
+    if (keyedIndex >= 0) return keyedIndex
+  }
+
+  if (!Number.isInteger(preferredIndex)) return 0
+  return Math.max(0, Math.min(preferredIndex, list.length - 1))
+}
+
+export function cycleReviewGroupActiveIndex(currentIndex, count, direction) {
+  if (!Number.isInteger(count) || count <= 0) return -1
+  const step = direction < 0 ? -1 : 1
+  const index = Number.isInteger(currentIndex) ? currentIndex : 0
+  return ((index + step) % count + count) % count
+}
+
+export function mapReviewTextblockGroupState(pluginState, mapping, docSize) {
+  const state = normalizeReviewPluginState(pluginState)
+  const start = parseReviewTextblockGroupStart(state.openGroupKey)
+  if (!Number.isInteger(start)) return closeReviewGroupState()
+
+  const result = mapping?.mapResult?.(start, -1)
+  if (!result || result.deleted) return closeReviewGroupState()
+
+  const mappedPos = result.pos
+  if (
+    !Number.isInteger(mappedPos) ||
+    mappedPos < 0 ||
+    (Number.isInteger(docSize) && mappedPos > docSize)
+  ) {
+    return closeReviewGroupState()
+  }
+
+  return {
+    ...state,
+    openGroupKey: makeReviewTextblockGroupKey(mappedPos)
+  }
+}
+
+export function getReviewGroupRemovalMeta(part) {
+  const annotations = Array.isArray(part?.annotations)
+    ? part.annotations
+    : part?.annotation
+      ? [part.annotation]
+      : []
+  if (!part?.groupKey || annotations.length <= 1) return { type: 'close' }
+
+  const currentIndex = Number.isInteger(part.activeIndex)
+    ? Math.max(0, Math.min(part.activeIndex, annotations.length - 1))
+    : 0
+
+  return {
+    type: 'activate',
+    groupKey: part.groupKey,
+    activeKey: null,
+    activeIndex: Math.min(currentIndex, annotations.length - 2)
+  }
+}
+
+export function parseParsedHighlightCommentClose(text) {
+  const match = String(text || '').match(/^([ \t]*)\}\{>>([\s\S]*?)<<\}/)
+  if (!match || !match[2]) return null
+  return {
+    leadingText: match[1],
+    comment: match[2],
+    length: match[0].length,
+    syntaxStart: match[1].length
+  }
+}
+
+function normalizeReviewPluginState(pluginState) {
+  return {
+    openGroupKey: pluginState?.openGroupKey || null,
+    activeKey: pluginState?.activeKey || null,
+    activeIndex: Number.isInteger(pluginState?.activeIndex) ? pluginState.activeIndex : 0
+  }
+}
+
+function applyReviewGroupState(widgetParts, pluginState) {
+  const state = normalizeReviewPluginState(pluginState)
+
+  return widgetParts.map(({ pos, part }) => {
+    if (part?.role !== 'comment-margin') return { pos, part }
+
+    const annotations = Array.isArray(part.annotations)
+      ? part.annotations
+      : part.annotation
+        ? [part.annotation]
+        : []
+    const open = Boolean(part.groupKey && part.groupKey === state.openGroupKey)
+    const activeIndex = open
+      ? resolveReviewGroupActiveIndex(annotations, state.activeKey, state.activeIndex)
+      : 0
+    const annotation = annotations[activeIndex >= 0 ? activeIndex : 0] || null
+
+    return {
+      pos,
+      part: {
+        ...part,
+        annotations,
+        annotation,
+        activeIndex,
+        activeKey: annotation?.key || null,
+        indexLabel: annotation ? `${activeIndex + 1} / ${annotations.length}` : '',
+        title: annotation?.comment || part.title || '',
+        open
+      }
+    }
+  })
+}
+
+function getTextblockGroupKey(state, pos) {
+  try {
+    const $pos = state.doc.resolve(pos)
+    const start = $pos.depth > 0 ? $pos.start($pos.depth) : 0
+    return makeReviewTextblockGroupKey(start)
   } catch {
     return null
   }
@@ -124,11 +322,41 @@ function validateAnnotationRange(view, annotation) {
   return current === `{${annotation.text}}{>>${annotation.comment}<<}`
 }
 
-function replaceAnnotationRange(view, annotation, replacement) {
+function replaceAnnotationRange(view, annotation, replacement, reviewMeta = null) {
   if (!validateAnnotationRange(view, annotation)) return false
-  view.dispatch(view.state.tr.insertText(replacement, annotation.from, annotation.to).scrollIntoView())
+  let tr = view.state.tr.insertText(replacement, annotation.from, annotation.to)
+  if (reviewMeta) tr = tr.setMeta(REVIEW_PLUGIN_KEY, reviewMeta)
+  view.dispatch(tr.scrollIntoView())
   view.focus()
   return true
+}
+
+function removeAnnotationMarkup(view, part, options) {
+  const annotation = part.annotation
+  if (!validateAnnotationRange(view, annotation)) {
+    notify(options, 'review.stale', 'Review note changed')
+    return false
+  }
+
+  const replacement =
+    annotation.source === 'raw'
+      ? removeReviewMarker(annotation.raw, markerForAnnotation(annotation))
+      : annotation.text
+  return replaceAnnotationRange(view, annotation, replacement, getReviewGroupRemovalMeta(part))
+}
+
+function activateReviewGroupIndex(view, part, activeIndex) {
+  const annotation = part.annotations?.[activeIndex]
+  if (!annotation) return
+
+  view?.dispatch(
+    view.state.tr.setMeta(REVIEW_PLUGIN_KEY, {
+      type: 'activate',
+      groupKey: part.groupKey,
+      activeKey: annotation.key,
+      activeIndex
+    })
+  )
 }
 
 export function buildReviewParagraphSnippet(parentText, localFrom, localTo, markup) {
@@ -166,17 +394,53 @@ function buildParagraphSnippetFromAnnotation(view, annotation, markup) {
 
 function renderReadMode(card, view, part, options) {
   const annotation = part.annotation
+  const annotations = Array.isArray(part.annotations)
+    ? part.annotations
+    : annotation
+      ? [annotation]
+      : []
+  const activeIndex = Number.isInteger(part.activeIndex)
+    ? part.activeIndex
+    : resolveReviewGroupActiveIndex(annotations, annotation?.key, 0)
   card.replaceChildren()
 
   const header = document.createElement('div')
   header.className = 'hm-review-card-head'
   const number = document.createElement('span')
   number.className = 'hm-review-card-number'
-  number.textContent = part.label || ''
+  number.textContent = part.indexLabel || (annotation ? `${activeIndex + 1} / ${annotations.length}` : '')
   const title = document.createElement('span')
   title.className = 'hm-review-card-title'
   title.textContent = t(options, 'review.cardTitle', 'Review note')
   header.append(number, title)
+
+  if (annotations.length > 1) {
+    const nav = document.createElement('span')
+    nav.className = 'hm-review-card-nav'
+
+    const addNavButton = (key, fallback, direction) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'hm-review-card-nav-button'
+      button.textContent = t(options, key, fallback)
+      button.title = button.textContent
+      button.addEventListener('mousedown', stopWidgetMouseDown)
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        activateReviewGroupIndex(
+          view,
+          part,
+          cycleReviewGroupActiveIndex(activeIndex, annotations.length, direction)
+        )
+      })
+      nav.appendChild(button)
+    }
+
+    addNavButton('review.previous', 'Previous', -1)
+    addNavButton('review.next', 'Next', 1)
+    header.appendChild(nav)
+  }
 
   const textLabel = document.createElement('div')
   textLabel.className = 'hm-review-card-label'
@@ -212,21 +476,15 @@ function renderReadMode(card, view, part, options) {
 
   addButton('review.editMarkup', 'Edit markup', () => renderEditMode(card, view, part, options))
   addButton(
+    'review.doneMarkup',
+    'Done',
+    () => removeAnnotationMarkup(view, part, options),
+    'hm-review-card-primary'
+  )
+  addButton(
     'review.deleteMarkup',
     'Delete',
-    () => {
-      if (!validateAnnotationRange(view, annotation)) {
-        notify(options, 'review.stale', 'Review note changed')
-        return
-      }
-      const replacement =
-        annotation.source === 'raw'
-          ? removeReviewMarker(annotation.raw, markerForAnnotation(annotation))
-          : annotation.text
-      if (replaceAnnotationRange(view, annotation, replacement)) {
-        view.dispatch(view.state.tr.setMeta(REVIEW_PLUGIN_KEY, { type: 'close' }))
-      }
-    },
+    () => removeAnnotationMarkup(view, part, options),
     'hm-review-card-action-danger'
   )
   addButton('review.copyMarkup', 'Copy markup', () => {
@@ -274,7 +532,7 @@ function renderEditMode(card, view, part, options) {
   header.className = 'hm-review-card-head'
   const number = document.createElement('span')
   number.className = 'hm-review-card-number'
-  number.textContent = part.label || ''
+  number.textContent = part.indexLabel || ''
   const title = document.createElement('span')
   title.className = 'hm-review-card-title'
   title.textContent = t(options, 'review.editMarkup', 'Edit markup')
@@ -368,12 +626,18 @@ function createReviewWidget(part, options = {}, view) {
     button.type = 'button'
     button.className = 'hm-review-note-button'
     button.textContent = part.label || ''
+    const noteCount = Array.isArray(part.annotations)
+      ? part.annotations.length
+      : Number(part.label) || 1
     button.setAttribute('aria-expanded', part.open ? 'true' : 'false')
     button.setAttribute(
       'aria-label',
-      part.title
-        ? `Review comment ${part.label}: ${part.title}`
-        : `Review comment ${part.label}`
+      t(
+        options,
+        noteCount === 1 ? 'review.groupAriaLabelOne' : 'review.groupAriaLabelMany',
+        noteCount === 1 ? 'Open 1 review comment' : 'Open {count} review comments',
+        { count: noteCount }
+      )
     )
     button.addEventListener('mousedown', stopWidgetMouseDown)
     button.addEventListener('click', (event) => {
@@ -382,7 +646,9 @@ function createReviewWidget(part, options = {}, view) {
       view?.dispatch(
         view.state.tr.setMeta(REVIEW_PLUGIN_KEY, {
           type: 'toggle',
-          key: part.annotation?.key
+          groupKey: part.groupKey,
+          activeKey: part.annotation?.key,
+          activeIndex: Number.isInteger(part.activeIndex) ? part.activeIndex : 0
         })
       )
     })
@@ -463,11 +729,23 @@ function addInlineDecoration(decorations, from, to, role) {
   )
 }
 
+function addActiveAnnotationDecoration(decorations, annotation) {
+  if (!annotation?.text) return
+  const from = annotation.source === 'raw' ? annotation.from + 3 : annotation.from + 1
+  const to = from + annotation.text.length
+  if (to <= from) return
+  decorations.push(
+    Decoration.inline(from, to, {
+      class: 'hm-review-mark-active'
+    })
+  )
+}
+
 function addWidgetPart(widgetParts, pos, part) {
   widgetParts.push({ pos, part })
 }
 
-function addTextNodeReviewParts(node, pos, state, decorations, widgetParts) {
+function addTextNodeReviewParts(node, pos, state, decorations, widgetParts, groupKey) {
   const revealRange = getRevealRange(state, pos, node.text.length)
   const rawHighlightMarkers = scanHighlightCommentMarkers(node.text)
 
@@ -489,10 +767,11 @@ function addTextNodeReviewParts(node, pos, state, decorations, widgetParts) {
             to: pos + rawMarker.end,
             raw: rawMarker.raw,
             text: rawMarker.content.text,
-            comment: rawMarker.content.comment
+            comment: rawMarker.content.comment,
+            groupKey
           })
         : null
-      addWidgetPart(widgetParts, pos + part.pos, annotation ? { ...part, annotation } : part)
+      addWidgetPart(widgetParts, pos + part.pos, annotation ? { ...part, annotation, groupKey } : part)
       continue
     }
 
@@ -518,18 +797,20 @@ function addParsedHighlightCommentParts(entries, index, state, decorations, widg
   }
 
   const closeEntry = entries[cursor]
-  const match = closeEntry?.text.match(/^\}\{>>([\s\S]*?)<<\}/)
-  if (!match || !match[1] || !highlightedText) return 0
+  const close = parseParsedHighlightCommentClose(closeEntry?.text)
+  const annotationText = highlightedText + (close?.leadingText || '')
+  if (!close || !close.comment || !annotationText) return 0
 
   const from = openEntry.pos + openIndex
-  const to = closeEntry.pos + match[0].length
+  const to = closeEntry.pos + close.length
   if (selectionIntersects(state, from, to)) return 0
   const annotation = ensureAnnotation({
     source: 'parsed',
     from,
     to,
-    text: highlightedText,
-    comment: match[1]
+    text: annotationText,
+    comment: close.comment,
+    groupKey: openEntry.groupKey
   })
   if (!annotation) return 0
 
@@ -542,13 +823,28 @@ function addParsedHighlightCommentParts(entries, index, state, decorations, widg
       REVIEW_KINDS.highlight
     )
   }
+  if (close.leadingText) {
+    addInlineDecoration(
+      decorations,
+      closeEntry.pos,
+      closeEntry.pos + close.leadingText.length,
+      REVIEW_KINDS.highlight
+    )
+    highlightEnd = closeEntry.pos + close.leadingText.length
+  }
   addWidgetPart(widgetParts, highlightEnd, {
     type: 'widget',
     role: 'comment-margin',
-    title: match[1],
-    annotation
+    title: close.comment,
+    annotation,
+    groupKey: openEntry.groupKey
   })
-  addInlineDecoration(decorations, closeEntry.pos, closeEntry.pos + match[0].length, 'syntax')
+  addInlineDecoration(
+    decorations,
+    closeEntry.pos + close.syntaxStart,
+    closeEntry.pos + close.length,
+    'syntax'
+  )
   return cursor - index
 }
 
@@ -617,15 +913,35 @@ export function createReviewDecorationPlugin(options = {}) {
     key: REVIEW_PLUGIN_KEY,
     state: {
       init() {
-        return { openKey: null }
+        return closeReviewGroupState()
       },
       apply(tr, pluginState) {
         const meta = tr.getMeta(REVIEW_PLUGIN_KEY)
+        const state = normalizeReviewPluginState(pluginState)
         if (meta?.type === 'toggle') {
-          return { openKey: pluginState.openKey === meta.key ? null : meta.key || null }
+          if (state.openGroupKey === meta.groupKey) {
+            return closeReviewGroupState()
+          }
+
+          return {
+            openGroupKey: meta.groupKey || null,
+            activeKey: meta.activeKey || null,
+            activeIndex: Number.isInteger(meta.activeIndex) ? meta.activeIndex : 0
+          }
         }
-        if (meta?.type === 'close') return { openKey: null }
-        return pluginState
+        if (meta?.type === 'activate') {
+          return {
+            openGroupKey: meta.groupKey || state.openGroupKey,
+            activeKey: meta.activeKey || null,
+            activeIndex: Number.isInteger(meta.activeIndex) ? meta.activeIndex : state.activeIndex
+          }
+        }
+        if (meta?.type === 'close') return closeReviewGroupState()
+        if (meta) return state
+        if (tr.docChanged) {
+          return mapReviewTextblockGroupState(state, tr.mapping, tr.doc.content.size)
+        }
+        return state
       }
     },
     props: {
@@ -633,40 +949,38 @@ export function createReviewDecorationPlugin(options = {}) {
         const decorations = []
         const widgetParts = []
         const parentEntries = new Map()
-        const pluginState = REVIEW_PLUGIN_KEY.getState(state) || { openKey: null }
+        const pluginState = REVIEW_PLUGIN_KEY.getState(state) || closeReviewGroupState()
 
         state.doc.descendants((node, pos, parent) => {
           if (!node.isText || !node.text) return true
+          const groupKey = getTextblockGroupKey(state, pos)
 
           if (parent) {
             const entries = parentEntries.get(parent) || []
-            entries.push({ node, pos, text: node.text })
+            entries.push({ node, pos, text: node.text, groupKey })
             parentEntries.set(parent, entries)
           }
 
-          addTextNodeReviewParts(node, pos, state, decorations, widgetParts)
+          addTextNodeReviewParts(node, pos, state, decorations, widgetParts, groupKey)
           return true
         })
 
         addParsedReviewParts(parentEntries, state, decorations, widgetParts)
 
-        let commentNumber = 0
-        widgetParts
+        applyReviewGroupState(groupReviewAnnotationParts(widgetParts), pluginState)
           .sort((a, b) => a.pos - b.pos)
           .forEach(({ pos, part }) => {
-            const widgetPart =
-              part.role === 'comment-margin'
-                ? {
-                    ...part,
-                    label: String(++commentNumber),
-                    open: Boolean(part.annotation?.key && part.annotation.key === pluginState.openKey)
-                  }
-                : part
+            const widgetPart = part
+            if (widgetPart.role === 'comment-margin' && widgetPart.open && widgetPart.annotation) {
+              addActiveAnnotationDecoration(decorations, widgetPart.annotation)
+            }
             decorations.push(
               Decoration.widget(pos, (view) => createReviewWidget(widgetPart, options, view), {
                 key:
-                  `${widgetPart.role}:${pos}:${widgetPart.title || ''}:` +
-                  `${widgetPart.label || ''}:${widgetPart.open ? 'open' : 'closed'}`,
+                  `${widgetPart.role}:${pos}:${widgetPart.groupKey || widgetPart.title || ''}:` +
+                  `${widgetPart.label || ''}:${widgetPart.open ? 'open' : 'closed'}:` +
+                  `${widgetPart.activeKey || ''}:${widgetPart.activeIndex ?? ''}:` +
+                  `${widgetPart.annotations?.length || ''}`,
                 side: widgetPart.role === 'comment-margin' ? 1 : -1,
                 marks: [],
                 stopEvent: (event) =>

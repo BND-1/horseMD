@@ -182,9 +182,18 @@ function assertSafeHighlightCommentField(name, value) {
   return stringValue
 }
 
+function splitEdgeSpaces(text) {
+  const leading = text.match(/^[ \t]*/)?.[0] || ''
+  const trailing = text.match(/[ \t]*$/)?.[0] || ''
+  const core = text.slice(leading.length, text.length - trailing.length)
+  return { leading, core, trailing }
+}
+
 export function makeHighlightCommentMarkup(text, comment) {
   const safeText = assertSafeHighlightCommentField('text', text)
   const safeComment = assertSafeHighlightCommentField('comment', comment)
+  const { leading, core, trailing } = splitEdgeSpaces(safeText)
+  if (core) return `${leading}{==${core}==}{>>${safeComment}<<}${trailing}`
 
   return `{==${safeText}==}{>>${safeComment}<<}`
 }
@@ -235,8 +244,13 @@ export function wrapReviewSelection(text, start, end, kind) {
   }
 
   if (kind === REVIEW_KINDS.highlight) {
-    const marker = `{==${selected}==}{>><<}`
-    const selectionStart = start + '{=='.length + selected.length + '==}{>>'.length
+    const { leading, core, trailing } = splitEdgeSpaces(selected)
+    const marker = core
+      ? `${leading}{==${core}==}{>><<}${trailing}`
+      : `{==${selected}==}{>><<}`
+    const selectionStart = core
+      ? start + leading.length + '{=='.length + core.length + '==}{>>'.length
+      : start + '{=='.length + selected.length + '==}{>>'.length
     return {
       text: spliceText(text, start, end, marker),
       selectionStart,
@@ -317,7 +331,13 @@ export function removeReviewMarker(markdown, marker) {
 }
 
 export function normalizeReviewMarkupMarkdown(markdown) {
-  return markdown.replace(/\{~~([\s\S]*?)\\~>([\s\S]*?)~~\}/g, '{~~$1~>$2~~}')
+  return markdown
+    .replace(/\{==([\s\S]*?)==\}\{>>([\s\S]*?)<<\}/g, (raw, text, comment) => {
+      const { leading, core, trailing } = splitEdgeSpaces(text)
+      if (!core) return raw
+      return `${leading}{==${core}==}{>>${comment}<<}${trailing}`
+    })
+    .replace(/\{~~([\s\S]*?)\\~>([\s\S]*?)~~\}/g, '{~~$1~>$2~~}')
 }
 
 const REVIEW_AI_PROMPT_LEGEND = [
