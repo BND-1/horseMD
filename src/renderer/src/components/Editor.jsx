@@ -38,6 +38,7 @@ import {
   createReviewDecorationPlugin
 } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
+import { strikeInputWouldCorruptCriticMarkup } from '../strikeGuard.js'
 
 // ── Chunked async parsing for huge documents (Typora-style progressive render) ──
 // Milkdown/ProseMirror parse the WHOLE markdown string synchronously in
@@ -130,39 +131,17 @@ function remarkReconstructSubstitution() {
   }
 }
 
-// Runtime (live-edit) companion to remarkReconstructSubstitution. When the user
-// TYPES `{~~old~>new~~}` directly in rich mode, Milkdown's strikethrough input
-// rule fires on the closing `~~` and turns `old~>new` into a strike mark — so
-// the live doc ends up `{` + <strike>old~>new</strike> + `}` instead of the
-// literal marker, and the fragile strike-mark decoration path fails to render
-// it (while {++}/{--}, which don't collide, render fine). This appendTransaction
-// detects that `{` + strike(~>) + `}` triple on every edit and converts it back
-// to literal text `{~~old~>new~~}`, so the robust text-scan path renders it.
-// Only scans textblocks containing {/~/}, so it's cheap on normal typing.
+// Runtime (live-edit) companion to remarkReconstructSubstitution — a BACKSTOP.
+// PREVENTION lives in createStrikeGuardPlugin() (below), which stops the
+// strikethrough input rule from ever firing on a CriticMarkup marker. But some
+// paths can still leave a strike mark adjacent to `{`/`}` in the live doc (a
+// programmatic insert, an IME composition, a plugin that re-applies marks), so
+// this appendTransaction detects the `{` + strike(~>) + `}` (or the garbled
+// `{` + strike(>) + `~}`) triple on every edit and converts it back to literal
+// text `{~~old~>new~~}`, so the robust text-scan path renders it. Only scans
+// textblocks containing {/~/}, so it's cheap on normal typing.
 function createSubstitutionLiveReconstructPlugin() {
   return new Plugin({
-    props: {
-      // PREVENT the strikethrough input rule from firing when the user types
-      // `~` inside an open `{~~...` context (before the closing `}`). The strike
-      // rule matches `~{1,2}` (single AND double tilde), so typing the `~`s of
-      // `{~~old~>new~~}` garbles the marker — the `~` from `~>` and `~~}` get
-      // consumed as single-tilde strikethrough delimiters. By intercepting `~`
-      // in this context and inserting it literally (programmatic transaction,
-      // which doesn't trigger input rules), the marker stays as plain text and
-      // renders via the text-scan path. Normal `~` typing (no `{~` before) is
-      // unaffected.
-      handleTextInput(view, from, to, text) {
-        if (text !== '~') return false
-        const $from = view.state.doc.resolve(from)
-        const textBefore = $from.parent.textBetween(0, $from.parentOffset, '\n')
-        // Inside a `{~...` that hasn't been closed by `}` yet.
-        if (/\{~[^}]*$/.test(textBefore)) {
-          view.dispatch(view.state.tr.insertText(text, from, to))
-          return true
-        }
-        return false
-      }
-    },
     appendTransaction(transs, _oldState, newState) {
       if (!transs.some((tr) => tr.docChanged)) return null
       const tr = newState.tr
@@ -209,6 +188,45 @@ function createSubstitutionLiveReconstructPlugin() {
         return false
       })
       return modified ? tr : null
+    }
+  })
+}
+
+// The definitive fix for the CriticMarkup substitution bug. The GFM
+// strikethrough input rule (`~{1,2}…~{1,2}`) collides with `{~~old~>new~~}`: its
+// `~>` and `~~}` tildes look like strike delimiters, AND prosemirror-inputrules'
+// run() matches the regex ANYWHERE in the text-before-cursor (not just at the
+// cursor), so typing ANY character on a line that holds a literal marker makes
+// the rule fire and `markRule` then `tr.delete(textEnd, to)` — wiping from the
+// marker to the cursor and turning the marker into strike. That is the
+// "替换 corrupts / deletes my line" bug, and it is why the {++}/{--} markers
+// (no tilde collision) always worked while substitution didn't.
+//
+// This guard runs its handleTextInput BEFORE the inputRules plugin (it is
+// PREPENDED to prosePluginsCtx). It asks strikeInputWouldCorruptCriticMarkup
+// whether the imminent strike match would eat a CriticMarkup marker; if so, it
+// inserts the typed text LITERALLY (a programmatic transaction, which bypasses
+// input rules) and returns true, so the marker survives as plain text and
+// renders via the text-scan path. Plain `~~strike~~` (no CriticMarkup around)
+// is untouched — the predicate returns false and normal input rules fire.
+function createStrikeGuardPlugin() {
+  return new Plugin({
+    props: {
+      handleTextInput(view, from, to, text) {
+        const $from = view.state.doc.resolve(from)
+        // Mirror prosemirror-inputrules' own textBefore (capped at 500 chars,
+        // the same MAX_MATCH) so the predicate sees exactly what the strike
+        // rule's exec() will see.
+        const textBefore = $from.parent.textBetween(
+          Math.max(0, $from.parentOffset - 500),
+          $from.parentOffset,
+          null,
+          '￼'
+        )
+        if (!strikeInputWouldCorruptCriticMarkup(textBefore, text)) return false
+        view.dispatch(view.state.tr.insertText(text, from, to))
+        return true
+      }
     }
   })
 }
@@ -506,6 +524,12 @@ export default function Editor({
         previewLoading: t('mermaid.rendering')
       }))
       ctx.update(prosePluginsCtx, (plugins) => [
+        // CriticMarkup strike guard FIRST. ProseMirror tries plugin
+        // handleTextInput props in registration order, and the GFM strikethrough
+        // input rule (added by preset-gfm) would otherwise fire on a
+        // substitution marker's tildes and corrupt/delete it. Prepending puts
+        // this guard ahead of the inputRules plugin so it can intercept.
+        createStrikeGuardPlugin(),
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
@@ -1378,6 +1402,64 @@ export default function Editor({
           return result.ok
         }
         apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight, applyReviewMarkup }
+        // DEV-only CDP test hook (scripts/test-substitution.mjs). Exposes the
+        // active editor so the harness can drive the REAL 替换 command, read
+        // markdown, and simulate a markdown paste (parser + remark plugins, so
+        // `{~~old~>new~~}` reconstructs like a real paste). Stripped in prod
+        // builds (import.meta.env.DEV is false after `npm run build`).
+        if (import.meta.env && import.meta.env.DEV) {
+          window.__horsemd = Object.assign(window.__horsemd || {}, {
+            getView: () => viewRef.current,
+            getMarkdown,
+            applyReviewMarkup,
+            focus: () => {
+              viewRef.current && viewRef.current.focus()
+              return true
+            },
+            selectRange: (from, to) => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, from, to)))
+              v.focus()
+              return true
+            },
+            clear: () => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              v.dispatch(v.state.tr.delete(0, v.state.doc.content.size))
+              return true
+            },
+            cursorEnd: () => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              const end = v.state.doc.content.size
+              v.dispatch(
+                v.state.tr
+                  .setSelection(TextSelection.near(v.state.doc.resolve(end), -1))
+                  .scrollIntoView()
+              )
+              v.focus()
+              return end
+            },
+            getHtml: () => {
+              const v = viewRef.current
+              return v ? v.dom.innerHTML : 'no-view'
+            },
+            pasteMarkdown: (md) => {
+              const v = viewRef.current
+              if (!v) return 'no-view'
+              try {
+                const parser = crepe.editor.ctx.get(parserCtx)
+                const parsed = parser(md)
+                const endPos = v.state.doc.content.size
+                v.dispatch(v.state.tr.insert(endPos, parsed.content).scrollIntoView())
+                return true
+              } catch (e) {
+                return 'err:' + (e && e.message ? e.message : e)
+              }
+            }
+          })
+        }
         onReady?.({
           setBlock,
           getView: () => viewRef.current,
