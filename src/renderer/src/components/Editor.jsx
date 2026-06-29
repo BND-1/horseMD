@@ -20,6 +20,9 @@ import { TextSelection } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
+// Latex feature styles + the KaTeX stylesheet it @imports (needed for $$…$$
+// block-math preview + inline $…$ to render with correct fonts/layout).
+import '@milkdown/crepe/theme/common/latex.css'
 import { BLOCK_TYPES, blockById, currentBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
@@ -29,6 +32,7 @@ import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
+import { normalizeDisplayMath } from './editor-math.js'
 import remarkFrontmatter from 'remark-frontmatter'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
@@ -248,7 +252,7 @@ export default function Editor({
 
     const crepe = new Crepe({
       root: host,
-      defaultValue: normalizeReviewMarkupMarkdown(initialContent || ''),
+      defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(initialContent || '')),
       features: {
         [CrepeFeature.SelectionTooltip]: true,
         [CrepeFeature.SlashCommand]: true,
@@ -312,18 +316,32 @@ export default function Editor({
       ctx.update(inlineImageConfig.key, (v) => ({ ...v, onUpload: persistImage }))
       // Offer "Mermaid" in the code-block language picker (3a). Prepended so it
       // shows first; the default CodeMirror languages follow unchanged.
-      ctx.update(codeBlockConfig.key, (v) => ({
-        ...v,
-        languages: [mermaidLanguage, ...(v.languages || [])],
-        // Mermaid: render the diagram as the block's "preview" (the built-in
-        // mechanism LaTeX uses), default to preview-only (source hidden), and put
-        // a Hide/Edit toggle in the toolbar next to Copy. Non-mermaid blocks have
-        // no preview, so their source always shows. See editor-mermaid.js.
-        renderPreview: createMermaidPreviewRenderer((k) => tRef.current(k)),
-        previewOnlyByDefault: true,
-        previewLabel: t('mermaid.diagram'),
-        previewLoading: t('mermaid.rendering')
-      }))
+      // Mermaid renders via the code-block "preview" mechanism — the SAME one
+      // Crepe's Latex feature uses to render $$…$$ block math as KaTeX. Both
+      // register a `renderPreview`, so we CHAIN: mermaid → our renderer;
+      // everything else → the previous renderPreview (Crepe's handles
+      // language "latex"). Without this chain our mermaid renderer would shadow
+      // latex and $$…$$ would fall back to a raw code block.
+      const mermaidRender = createMermaidPreviewRenderer((k) => tRef.current(k))
+      ctx.update(codeBlockConfig.key, (v) => {
+        const prevRender = v.renderPreview
+        return {
+          ...v,
+          languages: [mermaidLanguage, ...(v.languages || [])],
+          renderPreview: (language, text, setPreview) => {
+            if ((language || '').toLowerCase() === 'mermaid') {
+              return mermaidRender(language, text, setPreview)
+            }
+            return prevRender ? prevRender(language, text, setPreview) : null
+          },
+          // Preview-only by default for blocks that HAVE a preview: mermaid +
+          // latex render by default (source hidden, with a Hide/Edit toggle);
+          // plain code blocks have no preview so their source always shows.
+          previewOnlyByDefault: true,
+          previewLabel: t('mermaid.diagram'),
+          previewLoading: t('mermaid.rendering')
+        }
+      })
       ctx.update(prosePluginsCtx, (plugins) => [
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.

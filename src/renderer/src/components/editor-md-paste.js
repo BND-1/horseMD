@@ -12,6 +12,7 @@
 // Never takes over when pasting INTO a code block (append code there).
 import { Slice, Fragment } from '@milkdown/prose/model'
 import { startsAsMermaid } from './editor-mermaid.js'
+import { normalizeDisplayMath } from './editor-math.js'
 
 function looksLikeMarkdown(text) {
   if (/^#{1,6}\s/m.test(text)) return true
@@ -42,7 +43,7 @@ export function attachMdPasteHandler(view, parse) {
       )
       handled = insert(view, Fragment.from(node))
     } else if (looksLikeMarkdown(text)) {
-      const doc = parse(text)
+      const doc = parse(normalizeDisplayMath(text))
       if (doc && doc.content && doc.content.size > 0) {
         handled = insert(view, doc.content)
       }
