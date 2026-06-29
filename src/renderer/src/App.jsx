@@ -1483,8 +1483,14 @@ export default function App() {
           const start = offsets[i]
           next = val.slice(0, start) + repl + val.slice(start + q.length)
         }
-        updateContent(activeId, next, false)
-        requestAnimationFrame(() => runFind(q, all ? 0 : i))
+        // Uncontrolled textarea: write the DOM directly + stash the value so
+        // the debounced commit (and commitAllLive before save/close) persists
+        // it. updateContent() alone wouldn't touch the DOM here, so the
+        // replace would vanish and runFind would re-read the old value.
+        el.value = next
+        liveContentRef.current.set(activeId, next)
+        commitLive(activeId)
+        runFind(q, all ? 0 : i)
         return
       }
 
@@ -1509,7 +1515,7 @@ export default function App() {
       view.focus()
       requestAnimationFrame(() => runFind(q, all ? 0 : i))
     },
-    [activeId, runFind]
+    [activeId, runFind, commitLive]
   )
 
   // Re-run the search when switching tabs while the find bar is open, so ranges
