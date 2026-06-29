@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Source-readable review markup** — keeps review annotations visible in
+  Markdown source, copies AI handoff prompts with the annotated full document,
+  and provides Accept All / Reject All cleanup commands.
+
 ## [0.3.1] - 2026-06-28
 
 A big editor polish release: syntax highlighting, smart paste, YAML front

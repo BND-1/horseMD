@@ -24,13 +24,20 @@ import {
   applyParagraphSpacing
 } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
-import { fireToast, HM_TOAST_EVENT } from './ui.js'
+import { fireToast, copyToClipboard, HM_TOAST_EVENT } from './ui.js'
 import logoUrl from './assets/logo.png'
 import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
 import {
   isNewerVersion, isAbsolutePath, sanitizeWorkspace, baseName, dirName, joinPath,
   isPlainTextDoc, isHeavyDoc, genId, LS, loadSession
 } from './paths.js'
+import {
+  REVIEW_KINDS,
+  wrapReviewSelection,
+  applyReviewDecision,
+  buildReviewAiPrompt,
+  normalizeReviewMarkupMarkdown
+} from './reviewMarkup.js'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
 const UPDATE_DISMISS_KEY = 'horsemd.update.dismissed'
@@ -98,6 +105,7 @@ export default function App() {
   const editorHostRef = useRef(null) // active rich editor's scroll container
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const sourceRef = useRef(null) // active source-mode <textarea>
+  const sourceTextareas = useRef({}) // textarea-backed editors by tab id
   const scrollRatioRef = useRef(null) // pending scroll position to restore across a mode switch
   const findInputRef = useRef(null)
   // Registry of each tab's editor API (by tab id). Several markdown editors can
@@ -154,6 +162,9 @@ export default function App() {
     const live = new Set(tabs.map((t) => t.id))
     for (const id of Object.keys(editorApis.current)) {
       if (!live.has(id)) delete editorApis.current[id]
+    }
+    for (const id of Object.keys(sourceTextareas.current)) {
+      if (!live.has(id)) delete sourceTextareas.current[id]
     }
     // Forget mount records for closed tabs (so the Set doesn't grow unbounded).
     setMountedIds((prev) => {
@@ -918,6 +929,74 @@ export default function App() {
     return activeId
   }
 
+  const getEditableTab = () => {
+    const id = pickEditableId()
+    return tabsRef.current.find((tab) => tab.id === id) || null
+  }
+
+  const applyReviewMarkupToActive = (kind) => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+
+    setHome(false)
+    const sourceEl = sourceTextareas.current[tab.id]
+    if (sourceEl) {
+      const result = wrapReviewSelection(tab.content, sourceEl.selectionStart, sourceEl.selectionEnd, kind)
+      if (result.error === 'multiline') {
+        fireToast(tRef.current('review.inlineOnly'))
+        return
+      }
+      const editedEl = sourceEl
+      updateContent(tab.id, normalizeReviewMarkupMarkdown(result.text), false)
+      requestAnimationFrame(() => {
+        if (sourceTextareas.current[tab.id] === editedEl) {
+          editedEl.focus()
+          editedEl.setSelectionRange(result.selectionStart, result.selectionEnd)
+        }
+      })
+      return
+    }
+
+    const applied = editorApis.current[tab.id]?.applyReviewMarkup?.(kind)
+    if (applied == null) fireToast(tRef.current('review.noDocument'))
+  }
+
+  const applyReviewDecisionToActive = (decision) => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+
+    const next = applyReviewDecision(tab.content, decision)
+    if (next === tab.content) {
+      fireToast(tRef.current('review.noMarks'))
+      return
+    }
+
+    setHome(false)
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === tab.id
+          ? { ...t, content: next, reloadNonce: t.reloadNonce + 1, heavy: isHeavyDoc(next) }
+          : t
+      )
+    )
+    fireToast(tRef.current(decision === 'accept' ? 'review.acceptedAll' : 'review.rejectedAll'))
+  }
+
+  const copyReviewPrompt = () => {
+    const tab = getEditableTab()
+    if (!tab) {
+      fireToast(tRef.current('review.noDocument'))
+      return
+    }
+    copyToClipboard(buildReviewAiPrompt(tab.content), tRef.current('review.promptCopied'))
+  }
+
   const handlers = useRef({})
   handlers.current = {
     home: () => {
@@ -964,7 +1043,14 @@ export default function App() {
       setHome(false)
       setFind((f) => ({ ...f, open: true }))
       setTimeout(() => findInputRef.current?.focus(), 0)
-    }
+    },
+    reviewAdd: () => applyReviewMarkupToActive(REVIEW_KINDS.addition),
+    reviewDelete: () => applyReviewMarkupToActive(REVIEW_KINDS.deletion),
+    reviewSubstitute: () => applyReviewMarkupToActive(REVIEW_KINDS.substitution),
+    reviewHighlight: () => applyReviewMarkupToActive(REVIEW_KINDS.highlight),
+    reviewCopyPrompt: copyReviewPrompt,
+    reviewAcceptAll: () => applyReviewDecisionToActive('accept'),
+    reviewRejectAll: () => applyReviewDecisionToActive('reject')
   }
 
   useEffect(() => {
@@ -1196,7 +1282,19 @@ export default function App() {
         { id: 'cmd.outline', title: t('cmd.outline'), icon: 'outline', run: () => handlers.current.toggleOutline() },
         { id: 'cmd.source', title: t('cmd.source'), icon: 'code', run: () => handlers.current.toggleSource() },
         { id: 'cmd.theme', title: t('cmd.theme'), icon: 'moon', run: () => handlers.current.toggleTheme() },
-        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() }
+        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() },
+        { id: 'cmd.reviewAdd', title: t('cmd.reviewAdd'), icon: 'review', run: () => handlers.current.reviewAdd() },
+        { id: 'cmd.reviewDelete', title: t('cmd.reviewDelete'), icon: 'review', run: () => handlers.current.reviewDelete() },
+        {
+          id: 'cmd.reviewSubstitute',
+          title: t('cmd.reviewSubstitute'),
+          icon: 'review',
+          run: () => handlers.current.reviewSubstitute()
+        },
+        { id: 'cmd.reviewHighlight', title: t('cmd.reviewHighlight'), icon: 'review', run: () => handlers.current.reviewHighlight() },
+        { id: 'cmd.reviewCopyPrompt', title: t('cmd.reviewCopyPrompt'), icon: 'review', run: () => handlers.current.reviewCopyPrompt() },
+        { id: 'cmd.reviewAcceptAll', title: t('cmd.reviewAcceptAll'), icon: 'review', run: () => handlers.current.reviewAcceptAll() },
+        { id: 'cmd.reviewRejectAll', title: t('cmd.reviewRejectAll'), icon: 'review', run: () => handlers.current.reviewRejectAll() }
       ].filter(Boolean)
     },
     [t]
@@ -1462,10 +1560,20 @@ export default function App() {
               const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLeft)
               if (usesTextarea) {
                 if (!inView) return null
+                const setSourceTextareaRef = (el) => {
+                  if (el) {
+                    sourceTextareas.current[tab.id] = el
+                    if (isLeft) sourceRef.current = el
+                    return
+                  }
+                  const existing = sourceTextareas.current[tab.id]
+                  delete sourceTextareas.current[tab.id]
+                  if (isLeft && (!existing || sourceRef.current === existing)) sourceRef.current = null
+                }
                 return (
                   <textarea
                     key={tab.id}
-                    ref={isLeft ? sourceRef : undefined}
+                    ref={setSourceTextareaRef}
                     className={`source-editor${paneClass}`}
                     value={tab.content}
                     spellCheck={false}

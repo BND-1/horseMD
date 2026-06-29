@@ -22,7 +22,7 @@ import '@milkdown/crepe/theme/frame.css'
 import '@milkdown/crepe/theme/common/link-tooltip.css'
 import { BLOCK_TYPES, blockById, currentBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
-import { fireToast } from '../ui.js'
+import { copyToClipboard, fireToast } from '../ui.js'
 import { renderHtmlNodeView, convertBlock, remarkMergeInlineHtml } from './editor-html.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
@@ -32,6 +32,12 @@ import { attachMdPasteHandler } from './editor-md-paste.js'
 import remarkFrontmatter from 'remark-frontmatter'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
+import {
+  REVIEW_KINDS,
+  applyReviewMarkupInView,
+  createReviewDecorationPlugin
+} from './editor-review.js'
+import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -242,7 +248,7 @@ export default function Editor({
 
     const crepe = new Crepe({
       root: host,
-      defaultValue: initialContent || '',
+      defaultValue: normalizeReviewMarkupMarkdown(initialContent || ''),
       features: {
         [CrepeFeature.SelectionTooltip]: true,
         [CrepeFeature.SlashCommand]: true,
@@ -322,6 +328,17 @@ export default function Editor({
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
+        // Rich mode parses source-readable review markers, including right-margin
+        // notes for highlighted comments, while the Markdown source stays raw.
+        createReviewDecorationPlugin({
+          getT: (key, fallback) => {
+            const value = tRef.current(key)
+            return !value || value === key ? fallback : value
+          },
+          notify: (key, fallback) => fireToast(tRef.current(key) || fallback),
+          copyText: (text, doneKey, doneFallback) =>
+            copyToClipboard(text, tRef.current(doneKey) || doneFallback)
+        }),
         // Split a mermaid block that holds 2+ diagrams (e.g. a 2nd paste appended
         // into the same block) back into one block per diagram.
         createMermaidSplitPlugin()
@@ -506,7 +523,7 @@ export default function Editor({
     // frozen at the initial value while the editor was actually edited.
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
-        if (ready) onChange?.(md, false)
+        if (ready) onChange?.(normalizeReviewMarkupMarkdown(md), false)
       })
     })
 
@@ -954,6 +971,48 @@ export default function Editor({
           item.appendChild(pop)
         }
 
+        const reviewLabel = (key, fallback) => {
+          const value = tRef.current(key)
+          return !value || value === key ? fallback : value
+        }
+        const REVIEW_ACTIONS = [
+          [REVIEW_KINDS.addition, 'review.add', 'Addition'],
+          [REVIEW_KINDS.deletion, 'review.delete', 'Deletion'],
+          [REVIEW_KINDS.substitution, 'review.substitute', 'Substitution'],
+          [REVIEW_KINDS.highlight, 'review.highlight', 'Highlight + comment']
+        ]
+        const injectReviewButton = (toolbar) => {
+          const item = appendToolbarItem(
+            toolbar,
+            'hm-review-item',
+            reviewLabel('review.toolbar', 'Review markup'),
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M4 12h9"/><path d="M4 18h7"/><path d="M17 9l3 3-3 3"/><path d="M14 12h6"/></svg>'
+          )
+          if (!item) return
+          const pop = document.createElement('div')
+          pop.className = 'hm-review-pop'
+          const inner = document.createElement('div')
+          inner.className = 'hm-review-pop-inner'
+          for (const [kind, labelKey, fallback] of REVIEW_ACTIONS) {
+            const b = document.createElement('button')
+            b.type = 'button'
+            b.className = 'hm-review-action hm-review-action-' + kind
+            b.textContent = reviewLabel(labelKey, fallback)
+            b.title = b.textContent
+            b.addEventListener('mousedown', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            })
+            b.addEventListener('click', (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              editorForToolbar(toolbar).getApi()?.applyReviewMarkup(kind)
+            })
+            inner.appendChild(b)
+          }
+          pop.appendChild(inner)
+          item.appendChild(pop)
+        }
 
         // Inject synchronously (no requestAnimationFrame — it's throttled when
         // the window is occluded, which would skip injection). The scan is cheap
@@ -963,7 +1022,7 @@ export default function Editor({
         // so it doesn't matter which instance injected it.
         // Crepe's toolbar buttons carry no label/identifier in the DOM, so we
         // add tooltips by their fixed order: bold, italic, strikethrough, inline
-        // code, link. Both of OUR injected items are excluded (titled above).
+        // code, link. Our injected items are excluded (titled above).
         const addToolbarTitles = (toolbar) => {
           const tips = [
             tRef.current('tb.bold'),
@@ -973,7 +1032,9 @@ export default function Editor({
             tRef.current('tb.link')
           ]
           toolbar
-            .querySelectorAll('.toolbar-item:not(.hm-heading-item):not(.hm-highlight-item)')
+            .querySelectorAll(
+              '.toolbar-item:not(.hm-heading-item):not(.hm-highlight-item):not(.hm-review-item)'
+            )
             .forEach((btn, i) => {
               if (tips[i] && btn.title !== tips[i]) btn.title = tips[i]
             })
@@ -982,6 +1043,7 @@ export default function Editor({
           document.querySelectorAll('.milkdown-toolbar').forEach((tb) => {
             injectHeadingButton(tb)
             injectHighlightButton(tb)
+            injectReviewButton(tb)
             addToolbarTitles(tb)
           })
           updateHighlightActive()
@@ -1059,7 +1121,8 @@ export default function Editor({
                 '.tools-button-group, .button-group, .cm-panel, .cm-tooltip, ' +
                 '.preview-panel, .cell-handle, .line-handle, .handle, .add-button, ' +
                 '.operation, .operation-item, .drag-preview, .milkdown-block-handle, ' +
-                '.milkdown-toolbar, .image-resize-handle, .label-wrapper, .hm-frontmatter-wrap'
+                '.milkdown-toolbar, .image-resize-handle, .label-wrapper, .hm-frontmatter-wrap, ' +
+                '.hm-review-widget, .hm-review-card'
             )
             .forEach((el) => el.remove())
           // Flatten CodeMirror editors to plain <pre><code>.
@@ -1100,8 +1163,22 @@ export default function Editor({
             /* editor tearing down */
           }
         }
-        apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight }
-        onReady?.({ setBlock, getView: () => viewRef.current, getDocHTML, getMarkdown, toggleHighlight })
+        const applyReviewMarkup = (kind) => {
+          const result = applyReviewMarkupInView(viewRef.current, kind)
+          if (!result.ok && result.reason === 'multiline') {
+            fireToast(tRef.current('review.inlineOnly'))
+          }
+          return result.ok
+        }
+        apiRef.current = { setBlock, getDocHTML, getMarkdown, toggleHighlight, applyReviewMarkup }
+        onReady?.({
+          setBlock,
+          getView: () => viewRef.current,
+          getDocHTML,
+          getMarkdown,
+          toggleHighlight,
+          applyReviewMarkup
+        })
 
         // Compute the initial markdown snapshot (content baseline for dirty
         // tracking / outline / word count). On a big doc serializing the whole
@@ -1110,7 +1187,7 @@ export default function Editor({
         // after the rendered content is on screen instead of holding it back.
         const finishInitial = () => {
           if (destroyed) return
-          const md = crepe.getMarkdown()
+          const md = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
           onChange?.(md, true)
           ready = true
           reportActiveBlock()

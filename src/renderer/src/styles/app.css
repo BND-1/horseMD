@@ -1873,6 +1873,14 @@ body.hm-full-width .editor-skeleton {
   border-radius: 50%;
   background: #ffd84d;
 }
+/* Source-readable review markup button in the selection toolbar. */
+.milkdown .milkdown-toolbar .toolbar-item.hm-review-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
 /* Color picker that drops out of the highlighter button. */
 /* Highlight color picker — a small card that drops out of the pen button. */
 .hm-highlight-pop {
@@ -1923,6 +1931,52 @@ body.hm-full-width .editor-skeleton {
 body.dark .hm-hl-swatch.hm-hl-yellow { background: #c9a93a; }
 body.dark .hm-hl-swatch.hm-hl-red { background: #b85555; }
 body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
+.hm-review-pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-top: 8px;
+  display: none;
+  z-index: 20;
+}
+.toolbar-item.hm-review-item:hover .hm-review-pop,
+.hm-review-pop:hover,
+.hm-review-pop:focus-within {
+  display: block;
+}
+.hm-review-pop-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 148px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-review-action {
+  min-height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.hm-review-action:hover,
+.hm-review-action:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  outline: none;
+}
 .hm-heading-pop {
   position: absolute;
   top: 100%;
@@ -2644,6 +2698,7 @@ body.dark .milkdown {
   font-size: var(--editor-font-size, 16px);
   /* Line height + paragraph spacing are user-adjustable too. */
   line-height: var(--editor-line-height, 1.8);
+  position: relative;
   user-select: text;
   /* High-contrast caret so the cursor is easy to find while writing */
   caret-color: var(--accent);
@@ -3009,6 +3064,319 @@ body.dark .milkdown {
 body.dark .milkdown .ProseMirror mark.hm-hl-yellow { background: #7a6c12; }
 body.dark .milkdown .ProseMirror mark.hm-hl-red { background: #7a3434; }
 body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
+
+/* Rich mode parses source-readable review markers while the document stays raw Markdown. */
+.milkdown .ProseMirror .hm-review-syntax {
+  display: none;
+}
+.milkdown .ProseMirror .hm-review-mark {
+  color: inherit;
+  padding: 0.03em 0.18em;
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.milkdown .ProseMirror .hm-review-add {
+  background: #e3f8e9;
+  border-bottom: 2px solid #2f9f67;
+  text-decoration-line: underline;
+  text-decoration-color: #2f9f67;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.15em;
+}
+.milkdown .ProseMirror .hm-review-del {
+  background: #ffe5e5;
+  text-decoration-line: line-through;
+  text-decoration-color: #d13b3b;
+  text-decoration-thickness: 1.5px;
+}
+.milkdown .ProseMirror .hm-review-highlight {
+  background: #e0f0ff;
+  border-bottom: 2px solid #4d8fd6;
+}
+.milkdown .ProseMirror .hm-review-mark-active {
+  background: #c7e2ff;
+  outline: 2px solid #2f7fce;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px rgba(77, 143, 214, 0.16);
+}
+.milkdown .ProseMirror .hm-review-widget {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  vertical-align: 0.05em;
+  margin: 0 0.12em;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.milkdown .ProseMirror .hm-review-margin-note {
+  position: absolute;
+  right: -2.7rem;
+  width: 1.65rem;
+  height: 1.65rem;
+  margin: 0;
+  overflow: visible;
+  z-index: 2;
+}
+.milkdown .ProseMirror .hm-review-note-button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: #4d8fd6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(24, 55, 91, 0.22);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.milkdown .ProseMirror .hm-review-note-button:hover,
+.milkdown .ProseMirror .hm-review-note-button:focus-visible {
+  background: #367bc4;
+  outline: none;
+}
+.milkdown .ProseMirror .hm-review-note-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(77, 143, 214, 0.28), 0 2px 8px rgba(24, 55, 91, 0.22);
+}
+.milkdown .ProseMirror .hm-review-margin-note-open {
+  z-index: 24;
+}
+.milkdown .ProseMirror .hm-review-card {
+  position: absolute;
+  top: 1.95rem;
+  right: 0;
+  left: auto;
+  display: block;
+  width: min(18rem, calc(100vw - 48px));
+  max-height: min(27rem, calc(100vh - 96px));
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(24, 31, 42, 0.18);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  cursor: default;
+}
+.milkdown .ProseMirror .hm-review-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+.milkdown .ProseMirror .hm-review-card-number {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 2.45rem;
+  height: 1.3rem;
+  padding: 0 0.34rem;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #4d8fd6;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.milkdown .ProseMirror .hm-review-card-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--text-strong);
+  font-weight: 700;
+}
+.milkdown .ProseMirror .hm-review-card-nav {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button {
+  min-height: 1.45rem;
+  padding: 0.16rem 0.34rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+  cursor: pointer;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button:hover,
+.milkdown .ProseMirror .hm-review-card-nav-button:focus-visible {
+  background: var(--hover);
+  color: var(--text-strong);
+  outline: none;
+}
+.milkdown .ProseMirror .hm-review-card-nav-button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(77, 143, 214, 0.28);
+}
+.milkdown .ProseMirror .hm-review-card-label {
+  display: block;
+  margin: 0.55rem 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.milkdown .ProseMirror .hm-review-card-text,
+.milkdown .ProseMirror .hm-review-card-comment {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.milkdown .ProseMirror .hm-review-card-text {
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  background: #e0f0ff;
+}
+.milkdown .ProseMirror .hm-review-card-comment {
+  white-space: pre-wrap;
+}
+.milkdown .ProseMirror .hm-review-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.milkdown .ProseMirror .hm-review-card-action {
+  min-height: 1.7rem;
+  padding: 0.24rem 0.48rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.milkdown .ProseMirror .hm-review-card-action:hover,
+.milkdown .ProseMirror .hm-review-card-action:focus-visible {
+  background: var(--hover);
+  color: var(--text-strong);
+  outline: none;
+}
+.milkdown .ProseMirror .hm-review-card-primary {
+  border-color: #4d8fd6;
+  background: #4d8fd6;
+  color: #ffffff;
+}
+.milkdown .ProseMirror .hm-review-card-primary:hover,
+.milkdown .ProseMirror .hm-review-card-primary:focus-visible {
+  background: #367bc4;
+  color: #ffffff;
+}
+.milkdown .ProseMirror .hm-review-card-action-danger {
+  color: var(--danger);
+}
+.milkdown .ProseMirror .hm-review-card-input,
+.milkdown .ProseMirror .hm-review-card-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.milkdown .ProseMirror .hm-review-card-input {
+  min-height: 1.9rem;
+  padding: 0.28rem 0.42rem;
+}
+.milkdown .ProseMirror .hm-review-card-textarea {
+  min-height: 4.6rem;
+  padding: 0.4rem 0.42rem;
+  resize: vertical;
+}
+.milkdown .ProseMirror .hm-review-sub-arrow {
+  min-width: 1.55em;
+  height: 1.25em;
+  padding: 0 0.28em;
+  border-radius: 999px;
+  border: 1px solid #c38313;
+  background: #fff0c2;
+  color: #7b4f04;
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+}
+.milkdown .ProseMirror .hm-review-sub-replacement {
+  gap: 0.16em;
+  margin: 0 0.12em;
+}
+.milkdown .ProseMirror .hm-review-sub-replacement .hm-review-mark {
+  display: inline-flex;
+  align-items: center;
+}
+body.dark .milkdown .ProseMirror .hm-review-add {
+  background: #1d4630;
+  border-bottom-color: #58c98a;
+  text-decoration-color: #58c98a;
+}
+body.dark .milkdown .ProseMirror .hm-review-del {
+  background: #562828;
+  text-decoration-color: #ff7979;
+}
+body.dark .milkdown .ProseMirror .hm-review-margin-note {
+  border-color: #161b22;
+}
+body.dark .milkdown .ProseMirror .hm-review-note-button {
+  background: #75aee9;
+  color: #10233a;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.38);
+}
+body.dark .milkdown .ProseMirror .hm-review-note-button:hover,
+body.dark .milkdown .ProseMirror .hm-review-note-button:focus-visible {
+  background: #9ac6f1;
+}
+body.dark .milkdown .ProseMirror .hm-review-sub-arrow {
+  background: #574313;
+  border-color: #e3b34a;
+  color: #ffe0a3;
+}
+body.dark .milkdown .ProseMirror .hm-review-highlight {
+  background: #223e5c;
+  border-bottom-color: #75aee9;
+}
+body.dark .milkdown .ProseMirror .hm-review-mark-active {
+  background: #315f8d;
+  outline-color: #9ac6f1;
+  box-shadow: 0 0 0 2px rgba(154, 198, 241, 0.2);
+}
+body.dark .milkdown .ProseMirror .hm-review-card {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+}
+body.dark .milkdown .ProseMirror .hm-review-card-text {
+  background: #223e5c;
+}
+@media (max-width: 900px) {
+  .milkdown .ProseMirror .hm-review-card {
+    top: 1.95rem;
+    right: 0;
+    left: auto;
+  }
+}
+.app.is-mobile .milkdown .ProseMirror .hm-review-margin-note {
+  right: 0;
+  transform: translateX(0.35rem);
+}
+.app.is-mobile .milkdown .ProseMirror .hm-review-card {
+  top: 1.95rem;
+  right: 0;
+  left: auto;
+  max-width: calc(100vw - 44px);
+}
 /* Inline raw HTML rendered as real DOM (e.g. <span style>, <sub>) — inline. */
 .hm-html-inline {
   display: inline;
