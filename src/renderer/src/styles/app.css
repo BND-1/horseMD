@@ -3181,20 +3181,25 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   overflow: visible;
   z-index: 2;
 }
-/* When a paragraph holds MORE THAN ONE highlight-comment, the margin-notes would
-   all anchor to the same right:-2.7rem spot and overlap (only the last visible).
-   Render those INLINE — each button right after its own highlight — so every
-   number is visible. Single-highlight paragraphs keep the right-margin look.
-   position:relative (not static) so the widget stays the containing block for
-   its absolutely-positioned card (.hm-review-card right:0 top:1.95rem), which
-   therefore still anchors to THIS button, not to .ProseMirror. */
-.milkdown .ProseMirror .hm-review-margin-note.hm-review-margin-crowded {
+/* A stack of all the comment-margin notes on one line, anchored to the right
+   margin. Badges fan (overlap ~40%) when collapsed; hover spreads them so each
+   number is readable. Hovering/clicking a badge opens that note's card (JS). */
+.milkdown .ProseMirror .hm-review-stack-badges {
+  display: inline-flex;
+  align-items: center;
+}
+.milkdown .ProseMirror .hm-review-stack .hm-review-note-button {
   position: relative;
-  right: auto;
-  width: auto;
-  height: auto;
-  vertical-align: middle;
-  margin: 0 0.15em;
+  margin-left: calc(var(--i, 0) * -0.66rem);
+  z-index: calc(10 - var(--i, 0));
+  transition: margin-left 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+}
+.milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button {
+  margin-left: calc(var(--i, 0) * 0.2rem);
+}
+.milkdown .ProseMirror .hm-review-stack .hm-review-note-button:hover {
+  z-index: 20;
+  transform: translateY(-2px);
 }
 .milkdown .ProseMirror .hm-review-note-button {
   display: inline-grid;

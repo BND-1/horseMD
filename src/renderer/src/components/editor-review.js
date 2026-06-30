@@ -672,6 +672,63 @@ function createReviewWidget(part, options = {}, view) {
   const widget = document.createElement('span')
   widget.contentEditable = 'false'
 
+  if (part.role === 'comment-stack') {
+    // A stack of all the comment-margin notes on one line, anchored to the
+    // right margin. Badges fan (overlap) when collapsed; CSS spreads them on
+    // hover. Hovering/clicking a badge opens that note's card.
+    widget.className = `hm-review-widget hm-review-margin-note hm-review-stack${part.openNote ? ' hm-review-margin-note-open' : ''}`
+    const badges = document.createElement('span')
+    badges.className = 'hm-review-stack-badges'
+    part.notes.forEach((note, i) => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'hm-review-note-button'
+      btn.textContent = String(note.noteIndex || i + 1)
+      btn.style.setProperty('--i', i)
+      const open = () =>
+        view?.dispatch(
+          view.state.tr.setMeta(REVIEW_PLUGIN_KEY, {
+            type: 'activate',
+            groupKey: note.groupKey,
+            activeKey: note.annotation?.key,
+            activeIndex: 0
+          })
+        )
+      btn.addEventListener('mousedown', stopWidgetMouseDown)
+      btn.addEventListener('mouseenter', open)
+      btn.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        open()
+      })
+      badges.appendChild(btn)
+    })
+    widget.appendChild(badges)
+
+    // Card for the open note (if any) — reuses renderReadMode (number X/Y,
+    // nav, icon actions, prominent comment).
+    if (part.openNote) {
+      const card = document.createElement('span')
+      card.className = 'hm-review-card'
+      card.setAttribute('role', 'dialog')
+      card.setAttribute('aria-label', t(options, 'review.cardTitle', 'Review note'))
+      card.addEventListener('mousedown', stopWidgetEvent)
+      card.addEventListener('click', stopWidgetEvent)
+      renderReadMode(card, view, part.openNote, options)
+      widget.appendChild(card)
+    }
+
+    // Keep the card open while the pointer is over the stack/card; close on leave.
+    let closeTimer = 0
+    widget.addEventListener('mouseenter', () => window.clearTimeout(closeTimer))
+    widget.addEventListener('mouseleave', () => {
+      closeTimer = window.setTimeout(() => {
+        view?.dispatch(view.state.tr.setMeta(REVIEW_PLUGIN_KEY, { type: 'close' }))
+      }, 220)
+    })
+    return widget
+  }
+
   if (part.role === 'comment-margin') {
     widget.className = `hm-review-widget hm-review-margin-note${part.crowded ? ' hm-review-margin-crowded' : ''}${part.open ? ' hm-review-margin-note-open' : ''}`
     widget.title = part.title || ''
@@ -1078,35 +1135,6 @@ export function createReviewDecorationPlugin(options = {}) {
           pluginState
         ).sort((a, b) => a.pos - b.pos)
 
-        // Detect "crowded" textblocks — a paragraph with MORE THAN ONE
-        // comment-margin widget. Those widgets would all anchor to the same
-        // right-margin spot (position:absolute; right:-2.7rem) and overlap, so
-        // mark them to render INLINE (after their highlight) instead. A
-        // single-highlight paragraph keeps the right-margin look.
-        const cmCountByParent = new Map()
-        for (const item of widgetList) {
-          if (item.part?.role !== 'comment-margin') continue
-          let parentStart = null
-          try {
-            const $pos = state.doc.resolve(item.pos)
-            parentStart = $pos.start($pos.depth)
-          } catch { /* skip */ }
-          if (parentStart != null) {
-            cmCountByParent.set(parentStart, (cmCountByParent.get(parentStart) || 0) + 1)
-          }
-        }
-        for (const item of widgetList) {
-          if (item.part?.role !== 'comment-margin') continue
-          let parentStart = null
-          try {
-            const $pos = state.doc.resolve(item.pos)
-            parentStart = $pos.start($pos.depth)
-          } catch { /* skip */ }
-          if (parentStart != null && (cmCountByParent.get(parentStart) || 0) > 1) {
-            item.part.crowded = true
-          }
-        }
-
         // Global note list (for X/Y numbering + cross-note prev/next nav).
         // widgetList is already sorted by pos, so comment-margin widgets here
         // are in document order.
@@ -1123,31 +1151,54 @@ export function createReviewDecorationPlugin(options = {}) {
           w.part.nextNotePos = next ? next.pos : null
         })
 
+        // Group comment-margin notes by paragraph (textblock) → render ONE
+        // stack widget per paragraph (all the line's badges in one container,
+        // fanned + hover-expandable) instead of one widget per note. A single
+        // note is just a stack of 1 (same right-margin look as before).
+        const stacksByParent = new Map()
+        for (const item of widgetList) {
+          if (item.part?.role !== 'comment-margin') continue
+          let parentStart = item.pos
+          try {
+            const $pos = state.doc.resolve(item.pos)
+            parentStart = $pos.start($pos.depth)
+          } catch { /* fallback to pos */ }
+          if (!stacksByParent.has(parentStart)) stacksByParent.set(parentStart, [])
+          stacksByParent.get(parentStart).push(item)
+        }
+
+        // Non-comment-margin parts (substitution etc.): one widget each, unchanged.
         widgetList.forEach(({ pos, part }) => {
-            const widgetPart = part
-            if (widgetPart.role === 'comment-margin' && widgetPart.open && widgetPart.annotation) {
-              addActiveAnnotationDecoration(decorations, widgetPart.annotation)
-            }
-            decorations.push(
-              Decoration.widget(pos, (view) => createReviewWidget(widgetPart, options, view), {
-                key:
-                  `${widgetPart.role}:${pos}:${widgetPart.groupKey || widgetPart.title || ''}:` +
-                  `${widgetPart.label || ''}:${widgetPart.open ? 'open' : 'closed'}:` +
-                  `${widgetPart.activeKey || ''}:${widgetPart.activeIndex ?? ''}:` +
-                  `${widgetPart.annotations?.length || ''}:` +
-                  `${widgetPart.crowded ? 'crowded' : 'single'}:` +
-                  `${widgetPart.noteIndex ?? ''}/${widgetPart.noteTotal ?? ''}`,
-                side: widgetPart.role === 'comment-margin' ? 1 : -1,
-                marks: [],
-                stopEvent: (event) =>
-                  Boolean(
-                    event.target?.closest?.(
-                      '.hm-review-card, .hm-review-note-button'
-                    )
-                  )
-              })
-            )
-          })
+          if (part.role === 'comment-margin') return // rendered as a stack below
+          decorations.push(
+            Decoration.widget(pos, (view) => createReviewWidget(part, options, view), {
+              key: `${part.role}:${pos}:${part.groupKey || part.title || ''}`,
+              side: -1,
+              marks: [],
+              stopEvent: (event) => Boolean(event.target?.closest?.('.hm-review-card, .hm-review-note-button'))
+            })
+          )
+        })
+
+        // One stack widget per paragraph (positioned at the paragraph's last note).
+        for (const [parentStart, items] of stacksByParent) {
+          const last = items[items.length - 1]
+          const stackNotes = items.map((it) => it.part)
+          const openNote = stackNotes.find((n) => n.open) || null
+          if (openNote?.annotation) addActiveAnnotationDecoration(decorations, openNote.annotation)
+          const stackPart = { role: 'comment-stack', notes: stackNotes, openNote, groupKey: stackNotes[0]?.groupKey }
+          decorations.push(
+            Decoration.widget(last.pos, (view) => createReviewWidget(stackPart, options, view), {
+              key:
+                `comment-stack:${parentStart}:${stackNotes.length}:` +
+                `${openNote?.groupKey || 'closed'}:${stackNotes.map((n) => n.noteIndex ?? '').join(',')}`,
+              side: 1,
+              marks: [],
+              stopEvent: (event) =>
+                Boolean(event.target?.closest?.('.hm-review-card, .hm-review-note-button, .hm-review-stack'))
+            })
+          )
+        }
 
         return DecorationSet.create(state.doc, decorations)
       }
