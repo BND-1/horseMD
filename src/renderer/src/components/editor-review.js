@@ -695,7 +695,6 @@ function createReviewWidget(part, options = {}, view) {
           })
         )
       btn.addEventListener('mousedown', stopWidgetMouseDown)
-      btn.addEventListener('mouseenter', open)
       btn.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
