@@ -1352,6 +1352,12 @@ export default function App() {
       { id, path: null, title: doc.title, content: doc.content, savedContent: doc.content, mtimeMs: null, reloadNonce: 0 }
     ])
     setActiveId(id)
+    // Land on the Outline (导航条) so the welcome doc's heading hierarchy is
+    // visible right away — the doc is written with a clear H1→H2→H3 structure
+    // to demo the outline (click-to-jump + cursor-follow).
+    setHome(false)
+    setSidebarMode('outline')
+    if (!isMobile) setSidebarOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
