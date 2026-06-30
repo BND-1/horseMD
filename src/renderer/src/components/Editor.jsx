@@ -35,6 +35,7 @@ import { attachMdPasteHandler } from './editor-md-paste.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createToolbarScanner } from './editor-toolbar.js'
+import { createBlockControls } from './editor-block-controls.js'
 import remarkFrontmatter from 'remark-frontmatter'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler, toggleHighlightCommand, applyHighlightInView, HIGHLIGHT_COLORS } from './editor-highlight.js'
@@ -604,18 +605,18 @@ export default function Editor({
     crepe.editor.use(frontmatterSchema)
     crepeRef.current = crepe
 
-    // Convert the block the cursor sits in to a given block id (paragraph/h1…h6).
-    const setBlock = (id) => {
-      const view = viewRef.current
-      if (!view) return
-      const def = blockById(id)
-      if (!def) return
-      convertBlock(view, def.name, def.level ? { level: def.level } : {})
-      view.focus()
-      reportActiveBlock()
-      refreshLevel()
-      setCtxMenu(null)
-    }
+    // Block controls (setBlock / reportActiveBlock / refreshLevel / scheduleLevel)
+    // live in editor-block-controls.js; mount them here and reuse the handles.
+    const { setBlock, reportActiveBlock, refreshLevel, scheduleLevel } = createBlockControls({
+      viewRef,
+      host,
+      t: (k) => tRef.current(k),
+      setLevel,
+      setCtxMenu,
+      onActiveBlock,
+      lastBlockRef,
+      cleanups
+    })
 
     // Reflect whether the selection is highlighted onto every injected highlight
     // toolbar button (so it shows an active state, like bold/italic do). Defined
@@ -636,101 +637,6 @@ export default function Editor({
         .querySelectorAll('.milkdown-toolbar .hm-highlight-item')
         .forEach((b) => b.classList.toggle('active', active))
     }
-
-    // Push the cursor's current block type up to the parent (status bar).
-    const reportActiveBlock = () => {
-      const view = viewRef.current
-      if (!view) return
-      const id = currentBlockId(view.state)
-      if (id !== lastBlockRef.current) {
-        lastBlockRef.current = id
-        onActiveBlock?.(id)
-      }
-    }
-
-    // Position the floating level badge next to the caret's line. Hidden when
-    // the editor isn't focused or the caret has scrolled out of view.
-    const refreshLevel = () => {
-      const view = viewRef.current
-      if (!view || !view.hasFocus()) {
-        setLevel(null)
-        return
-      }
-      const sel = view.state.selection
-      let coords
-      try {
-        coords = view.coordsAtPos(sel.from)
-      } catch {
-        return
-      }
-      const scrollEl = host.closest('.editor-scroll')
-      const r = scrollEl
-        ? scrollEl.getBoundingClientRect()
-        : { top: 0, bottom: window.innerHeight, left: 0 }
-      if (coords.bottom < r.top + 2 || coords.top > r.bottom - 2) {
-        setLevel(null)
-        return
-      }
-      const id = currentBlockId(view.state)
-      const def = blockById(id)
-      // Only headings (H1…H6) and plain paragraphs get a badge.
-      if (!def) {
-        setLevel(null)
-        return
-      }
-      // Anchor to the current block's left edge so the tag sits just beside the
-      // text, not floating off at the pane edge.
-      let blockLeft = coords.left
-      try {
-        let el = view.domAtPos(sel.from).node
-        if (el && el.nodeType === 3) el = el.parentElement
-        const pm = view.dom
-        while (el && el !== pm && el.parentElement && el.parentElement !== pm) {
-          el = el.parentElement
-        }
-        if (el && el !== pm) blockLeft = el.getBoundingClientRect().left
-      } catch {
-        /* fall back to the caret x */
-      }
-      const kind = id === 'paragraph' ? 'text' : 'heading'
-      const label = id === 'paragraph' ? tRef.current('block.paragraph') : def.short
-      // The badge's right edge: normally 10px left of the text. But Crepe's block
-      // drag-handle (shown on hover) also lives in that gutter — when it's visible
-      // on the caret's line, tuck the badge just left of the handle so the two
-      // sit side by side instead of overlapping. The badge stays visible either way.
-      let badgeRight = blockLeft - 10
-      const handle = document.querySelector('.milkdown-block-handle[data-show="true"]')
-      if (handle) {
-        const hr = handle.getBoundingClientRect()
-        if (hr.width && hr.height && coords.bottom > hr.top && coords.top < hr.bottom) {
-          badgeRight = Math.min(badgeRight, hr.left - 6)
-        }
-      }
-      // Sit in the gutter; if the window is too narrow for that, tuck the tag
-      // against the pane's left edge instead.
-      const align = badgeRight - r.left >= 46 ? 'right' : 'left'
-      const x = align === 'right' ? badgeRight : r.left + 6
-      setLevel({ label, kind, align, top: (coords.top + coords.bottom) / 2, x })
-    }
-
-    // refreshLevel does forced layout reads (coordsAtPos / getBoundingClientRect).
-    // Selection change and scroll fire on every keystroke; on a large document
-    // that synchronous reflow is the main typing lag AND the main cause of the
-    // scroll "chase" (#17) — the main thread is busy reflowing while the
-    // compositor piles up scroll frames.
-    // Throttle: at most once per 200ms (not per frame). On fast scroll the level
-    // badge simply doesn't update until you pause — a fine trade-off vs freezing.
-    let levelTimer = 0
-    const scheduleLevel = () => {
-      if (levelTimer) return
-      levelTimer = setTimeout(() => {
-        levelTimer = 0
-        refreshLevel()
-      }, 200)
-    }
-    cleanups.push(() => {
-      if (levelTimer) clearTimeout(levelTimer)
-    })
 
     // IMPORTANT: register listeners BEFORE create(). Crepe wires them during
     // create(), so registering afterwards means `markdownUpdated` never fires —
