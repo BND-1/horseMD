@@ -3192,14 +3192,18 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   position: relative;
   margin-left: calc(var(--i, 0) * -0.66rem);
   z-index: calc(10 - var(--i, 0));
-  transition: margin-left 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+  transition: transform 0.15s var(--ease-out);
 }
+/* Spread on hover via TRANSFORM (not margin) — transform is visual-only, so
+   the container's layout/hover area doesn't change. Changing margin on hover
+   moved the badge out from under the pointer → lost :hover → collapsed →
+   badge back under pointer → :hover → ... infinite flicker. */
 .milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button {
-  margin-left: calc(var(--i, 0) * 0.2rem);
+  transform: translateX(calc(var(--i, 0) * 0.86rem));
 }
-.milkdown .ProseMirror .hm-review-stack .hm-review-note-button:hover {
+.milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button:hover {
   z-index: 20;
-  transform: translateY(-2px);
+  transform: translateX(calc(var(--i, 0) * 0.86rem)) translateY(-2px);
 }
 .milkdown .ProseMirror .hm-review-note-button {
   display: inline-grid;
