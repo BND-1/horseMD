@@ -3190,20 +3190,21 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
 }
 .milkdown .ProseMirror .hm-review-stack .hm-review-note-button {
   position: relative;
-  margin-left: calc(var(--i, 0) * -0.66rem);
   z-index: calc(10 - var(--i, 0));
+  /* Collapsed: shift each badge left by 60% of its own width → 40% visible
+     overlap (a fan/deck). Uses % (width-relative) so it's correct regardless
+     of root font-size. Layout stays side-by-side; transform is visual only. */
+  transform: translateX(calc(var(--i, 0) * -60%));
   transition: transform 0.15s var(--ease-out);
 }
-/* Spread on hover via TRANSFORM (not margin) — transform is visual-only, so
-   the container's layout/hover area doesn't change. Changing margin on hover
-   moved the badge out from under the pointer → lost :hover → collapsed →
-   badge back under pointer → :hover → ... infinite flicker. */
+/* Hover: transform → 0, badges at natural side-by-side positions (fully
+   spread, NO overlap). Layout never changes → no hover flicker. */
 .milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button {
-  transform: translateX(calc(var(--i, 0) * 0.86rem));
+  transform: translateX(0);
 }
 .milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button:hover {
   z-index: 20;
-  transform: translateX(calc(var(--i, 0) * 0.86rem)) translateY(-2px);
+  transform: translateY(-2px);
 }
 .milkdown .ProseMirror .hm-review-note-button {
   display: inline-grid;
