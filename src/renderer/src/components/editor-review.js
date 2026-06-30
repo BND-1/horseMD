@@ -718,9 +718,15 @@ function createReviewWidget(part, options = {}, view) {
     }
 
     // Keep the card open while the pointer is over the stack/card; close on leave.
+    // Also toggle an "expanded" class (not CSS :hover) to spread the badges —
+    // :hover flickered when the pointer crossed gaps between circular badges.
     let closeTimer = 0
-    widget.addEventListener('mouseenter', () => window.clearTimeout(closeTimer))
+    widget.addEventListener('mouseenter', () => {
+      window.clearTimeout(closeTimer)
+      widget.classList.add('hm-review-stack-expanded')
+    })
     widget.addEventListener('mouseleave', () => {
+      widget.classList.remove('hm-review-stack-expanded')
       closeTimer = window.setTimeout(() => {
         view?.dispatch(view.state.tr.setMeta(REVIEW_PLUGIN_KEY, { type: 'close' }))
       }, 220)

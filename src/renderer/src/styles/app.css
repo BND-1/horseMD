@@ -3197,12 +3197,13 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   transform: translateX(calc(var(--i, 0) * -60%));
   transition: transform 0.15s var(--ease-out);
 }
-/* Hover: transform → 0, badges at natural side-by-side positions (fully
-   spread, NO overlap). Layout never changes → no hover flicker. */
-.milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button {
+/* Expanded (JS class, toggled on mouseenter/mouseleave — NOT CSS :hover which
+   flickered when the pointer crossed gaps between circular badges). Badges
+   return to natural side-by-side (fully spread, no overlap). */
+.milkdown .ProseMirror .hm-review-stack.hm-review-stack-expanded .hm-review-note-button {
   transform: translateX(0);
 }
-.milkdown .ProseMirror .hm-review-stack:hover .hm-review-note-button:hover {
+.milkdown .ProseMirror .hm-review-stack.hm-review-stack-expanded .hm-review-note-button:hover {
   z-index: 20;
   transform: translateY(-2px);
 }
