@@ -667,6 +667,10 @@ export default function App() {
           sticky: true,
           duration: 5000
         })
+      } else {
+        // Desktop: a brief "Saved ✓" so Ctrl+S / the save button give feedback
+        // (Typora-style). Short-lived so it doesn't linger over writing.
+        fireToast(tRef.current('save.saved'), { duration: 1500 })
       }
     } catch (e) {
       // Never fail silently — surface the real error so saving is debuggable.
