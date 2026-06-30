@@ -3177,6 +3177,21 @@ body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
   overflow: visible;
   z-index: 2;
 }
+/* When a paragraph holds MORE THAN ONE highlight-comment, the margin-notes would
+   all anchor to the same right:-2.7rem spot and overlap (only the last visible).
+   Render those INLINE — each button right after its own highlight — so every
+   number is visible. Single-highlight paragraphs keep the right-margin look.
+   position:relative (not static) so the widget stays the containing block for
+   its absolutely-positioned card (.hm-review-card right:0 top:1.95rem), which
+   therefore still anchors to THIS button, not to .ProseMirror. */
+.milkdown .ProseMirror .hm-review-margin-note.hm-review-margin-crowded {
+  position: relative;
+  right: auto;
+  width: auto;
+  height: auto;
+  vertical-align: middle;
+  margin: 0 0.15em;
+}
 .milkdown .ProseMirror .hm-review-note-button {
   display: inline-grid;
   place-items: center;

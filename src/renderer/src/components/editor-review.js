@@ -639,7 +639,7 @@ function createReviewWidget(part, options = {}, view) {
   widget.contentEditable = 'false'
 
   if (part.role === 'comment-margin') {
-    widget.className = `hm-review-widget hm-review-margin-note${part.open ? ' hm-review-margin-note-open' : ''}`
+    widget.className = `hm-review-widget hm-review-margin-note${part.crowded ? ' hm-review-margin-crowded' : ''}${part.open ? ' hm-review-margin-note-open' : ''}`
     widget.title = part.title || ''
     const button = document.createElement('button')
     button.type = 'button'
@@ -1014,9 +1014,41 @@ export function createReviewDecorationPlugin(options = {}) {
 
         addParsedReviewParts(parentEntries, state, decorations, widgetParts)
 
-        applyReviewGroupState(groupReviewAnnotationParts(widgetParts), pluginState)
-          .sort((a, b) => a.pos - b.pos)
-          .forEach(({ pos, part }) => {
+        const widgetList = applyReviewGroupState(
+          groupReviewAnnotationParts(widgetParts),
+          pluginState
+        ).sort((a, b) => a.pos - b.pos)
+
+        // Detect "crowded" textblocks — a paragraph with MORE THAN ONE
+        // comment-margin widget. Those widgets would all anchor to the same
+        // right-margin spot (position:absolute; right:-2.7rem) and overlap, so
+        // mark them to render INLINE (after their highlight) instead. A
+        // single-highlight paragraph keeps the right-margin look.
+        const cmCountByParent = new Map()
+        for (const item of widgetList) {
+          if (item.part?.role !== 'comment-margin') continue
+          let parentStart = null
+          try {
+            const $pos = state.doc.resolve(item.pos)
+            parentStart = $pos.start($pos.depth)
+          } catch { /* skip */ }
+          if (parentStart != null) {
+            cmCountByParent.set(parentStart, (cmCountByParent.get(parentStart) || 0) + 1)
+          }
+        }
+        for (const item of widgetList) {
+          if (item.part?.role !== 'comment-margin') continue
+          let parentStart = null
+          try {
+            const $pos = state.doc.resolve(item.pos)
+            parentStart = $pos.start($pos.depth)
+          } catch { /* skip */ }
+          if (parentStart != null && (cmCountByParent.get(parentStart) || 0) > 1) {
+            item.part.crowded = true
+          }
+        }
+
+        widgetList.forEach(({ pos, part }) => {
             const widgetPart = part
             if (widgetPart.role === 'comment-margin' && widgetPart.open && widgetPart.annotation) {
               addActiveAnnotationDecoration(decorations, widgetPart.annotation)
@@ -1027,7 +1059,8 @@ export function createReviewDecorationPlugin(options = {}) {
                   `${widgetPart.role}:${pos}:${widgetPart.groupKey || widgetPart.title || ''}:` +
                   `${widgetPart.label || ''}:${widgetPart.open ? 'open' : 'closed'}:` +
                   `${widgetPart.activeKey || ''}:${widgetPart.activeIndex ?? ''}:` +
-                  `${widgetPart.annotations?.length || ''}`,
+                  `${widgetPart.annotations?.length || ''}:` +
+                  `${widgetPart.crowded ? 'crowded' : 'single'}`,
                 side: widgetPart.role === 'comment-margin' ? 1 : -1,
                 marks: [],
                 stopEvent: (event) =>
