@@ -24,20 +24,15 @@ import {
   applyParagraphSpacing
 } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
-import { fireToast, copyToClipboard, HM_TOAST_EVENT } from './ui.js'
+import { fireToast, HM_TOAST_EVENT } from './ui.js'
 import logoUrl from './assets/logo.png'
 import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
 import {
   isNewerVersion, isAbsolutePath, sanitizeWorkspace, baseName, dirName, joinPath,
   isPlainTextDoc, isHeavyDoc, genId, LS, loadSession
 } from './paths.js'
-import {
-  REVIEW_KINDS,
-  wrapReviewSelection,
-  applyReviewDecision,
-  buildReviewAiPrompt,
-  normalizeReviewMarkupMarkdown
-} from './reviewMarkup.js'
+import { REVIEW_KINDS } from './reviewMarkup.js'
+import { createReviewActions } from './lib/reviewActions.js'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
 const UPDATE_DISMISS_KEY = 'horsemd.update.dismissed'
@@ -997,73 +992,19 @@ export default function App() {
     return activeId
   }
 
-  const getEditableTab = () => {
-    const id = pickEditableId()
-    return tabsRef.current.find((tab) => tab.id === id) || null
-  }
-
-  const applyReviewMarkupToActive = (kind) => {
-    const tab = getEditableTab()
-    if (!tab) {
-      fireToast(tRef.current('review.noDocument'))
-      return
-    }
-
-    setHome(false)
-    const sourceEl = sourceTextareas.current[tab.id]
-    if (sourceEl) {
-      const result = wrapReviewSelection(tab.content, sourceEl.selectionStart, sourceEl.selectionEnd, kind)
-      if (result.error === 'multiline') {
-        fireToast(tRef.current('review.inlineOnly'))
-        return
-      }
-      const editedEl = sourceEl
-      updateContent(tab.id, normalizeReviewMarkupMarkdown(result.text), false)
-      requestAnimationFrame(() => {
-        if (sourceTextareas.current[tab.id] === editedEl) {
-          editedEl.focus()
-          editedEl.setSelectionRange(result.selectionStart, result.selectionEnd)
-        }
-      })
-      return
-    }
-
-    const applied = editorApis.current[tab.id]?.applyReviewMarkup?.(kind)
-    if (applied == null) fireToast(tRef.current('review.noDocument'))
-  }
-
-  const applyReviewDecisionToActive = (decision) => {
-    const tab = getEditableTab()
-    if (!tab) {
-      fireToast(tRef.current('review.noDocument'))
-      return
-    }
-
-    const next = applyReviewDecision(tab.content, decision)
-    if (next === tab.content) {
-      fireToast(tRef.current('review.noMarks'))
-      return
-    }
-
-    setHome(false)
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tab.id
-          ? { ...t, content: next, reloadNonce: t.reloadNonce + 1, heavy: isHeavyDoc(next) }
-          : t
-      )
-    )
-    fireToast(tRef.current(decision === 'accept' ? 'review.acceptedAll' : 'review.rejectedAll'))
-  }
-
-  const copyReviewPrompt = () => {
-    const tab = getEditableTab()
-    if (!tab) {
-      fireToast(tRef.current('review.noDocument'))
-      return
-    }
-    copyToClipboard(buildReviewAiPrompt(tab.content), tRef.current('review.promptCopied'))
-  }
+  // Review actions (CriticMarkup) on the active/focused tab. pickEditableId is
+  // shared with the save/export handlers, so it stays here; the rest lives in
+  // lib/reviewActions.js (phase-2 US-1).
+  const review = createReviewActions({
+    pickEditableId,
+    tabsRef,
+    sourceTextareas,
+    editorApis,
+    setHome,
+    updateContent,
+    setTabs,
+    tRef
+  })
 
   const handlers = useRef({})
   handlers.current = {
@@ -1118,13 +1059,13 @@ export default function App() {
       setFind((f) => ({ ...f, open: true }))
       setTimeout(() => replaceInputRef.current?.focus(), 0)
     },
-    reviewAdd: () => applyReviewMarkupToActive(REVIEW_KINDS.addition),
-    reviewDelete: () => applyReviewMarkupToActive(REVIEW_KINDS.deletion),
-    reviewSubstitute: () => applyReviewMarkupToActive(REVIEW_KINDS.substitution),
-    reviewHighlight: () => applyReviewMarkupToActive(REVIEW_KINDS.highlight),
-    reviewCopyPrompt: copyReviewPrompt,
-    reviewAcceptAll: () => applyReviewDecisionToActive('accept'),
-    reviewRejectAll: () => applyReviewDecisionToActive('reject')
+    reviewAdd: () => review.applyReviewMarkupToActive(REVIEW_KINDS.addition),
+    reviewDelete: () => review.applyReviewMarkupToActive(REVIEW_KINDS.deletion),
+    reviewSubstitute: () => review.applyReviewMarkupToActive(REVIEW_KINDS.substitution),
+    reviewHighlight: () => review.applyReviewMarkupToActive(REVIEW_KINDS.highlight),
+    reviewCopyPrompt: () => review.copyReviewPrompt(),
+    reviewAcceptAll: () => review.applyReviewDecisionToActive('accept'),
+    reviewRejectAll: () => review.applyReviewDecisionToActive('reject')
   }
 
   useEffect(() => {
