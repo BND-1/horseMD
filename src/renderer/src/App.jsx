@@ -26,7 +26,7 @@ import {
 import { applyCustomTheme } from './customThemes.js'
 import { fireToast, HM_TOAST_EVENT } from './ui.js'
 import logoUrl from './assets/logo.png'
-import { clearFindHighlights, findRangesInEl, paintFindHighlights, scrollRangeIntoView, matchIndices } from './find.js'
+import { useFindReplace } from './hooks/useFindReplace.js'
 import {
   isNewerVersion, isAbsolutePath, sanitizeWorkspace, baseName, dirName, joinPath,
   isPlainTextDoc, isHeavyDoc, genId, LS, loadSession
@@ -79,10 +79,6 @@ export default function App() {
   const [focusedPane, setFocusedPane] = useState('left')
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [files, setFiles] = useState([])
-  const [find, setFind] = useState({ open: false, query: '', matches: 0, active: 0, replace: '' })
-  // Current match set: Range objects (rich editor) or character offsets (source
-  // textarea). Held in a ref so next/prev don't trigger re-renders.
-  const findRangesRef = useRef([])
   // "New version available" toast — populated by the startup update check below.
   const [update, setUpdate] = useState(null)
   // Transient bottom-center toast (e.g. "Copied"), fired via a `hm:toast` event.
@@ -102,8 +98,6 @@ export default function App() {
   const sourceRef = useRef(null) // active source-mode <textarea>
   const sourceTextareas = useRef({}) // textarea-backed editors by tab id
   const scrollRatioRef = useRef(null) // pending scroll position to restore across a mode switch
-  const findInputRef = useRef(null)
-  const replaceInputRef = useRef(null)
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -1338,143 +1332,12 @@ export default function App() {
     [t]
   )
 
-  // Discriminate the active view: the source <textarea> sets sourceRef only when
-  // it's mounted (source mode or a .txt doc); otherwise we're in the rich editor.
-  const richRoot = () => editorHostRef.current?.querySelector('.ProseMirror') || null
-  const findQueryRef = useRef('')
-  const replaceRef = useRef('')
-  const activeIdxRef = useRef(-1)
-
-  // Run a fresh search for `query`, scoped to the editor content. `preferActive`
-  // is the 0-based match index to land on (clamped) — used after a replace to
-  // stay on the next match instead of jumping back to the first.
-  const runFind = useCallback((query, preferActive = 0) => {
-    const q = query ?? ''
-    findQueryRef.current = q
-    clearFindHighlights()
-    findRangesRef.current = []
-    if (sourceRef.current) {
-      // Source textarea: live-count only (selecting would steal the find input's
-      // focus); Enter / next / prev jump to a match.
-      const hits = matchIndices(sourceRef.current.value, q)
-      findRangesRef.current = hits
-      const i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
-      activeIdxRef.current = i
-      setFind((f) => ({ ...f, matches: hits.length, active: i + 1 }))
-      return
-    }
-    const root = richRoot()
-    const ranges = q ? findRangesInEl(root, q) : []
-    findRangesRef.current = ranges
-    const i = ranges.length ? Math.min(preferActive, ranges.length - 1) : -1
-    activeIdxRef.current = i
-    if (ranges.length) {
-      paintFindHighlights(ranges, i)
-      scrollRangeIntoView(ranges[i], root.closest('.editor-scroll'))
-    }
-    setFind((f) => ({ ...f, matches: ranges.length, active: i + 1 }))
-  }, [])
-
-  // Move to the next / previous match (wrapping around).
-  const stepFind = useCallback((backwards = false) => {
-    const items = findRangesRef.current
-    if (!items.length) return
-    let i = activeIdxRef.current + (backwards ? -1 : 1)
-    if (i < 0) i = items.length - 1
-    if (i >= items.length) i = 0
-    activeIdxRef.current = i
-    if (sourceRef.current) {
-      const el = sourceRef.current
-      el.focus()
-      el.setSelectionRange(items[i], items[i] + findQueryRef.current.length)
-    } else {
-      paintFindHighlights(items, i)
-      scrollRangeIntoView(items[i], richRoot()?.closest('.editor-scroll'))
-    }
-    setFind((f) => ({ ...f, active: i + 1 }))
-  }, [])
-
-  const closeFind = useCallback(() => {
-    clearFindHighlights()
-    findRangesRef.current = []
-    activeIdxRef.current = -1
-    findQueryRef.current = ''
-    // Keep the replace text across open/close (mirrors editors like VSCode).
-    setFind((f) => ({ open: false, query: '', matches: 0, active: 0, replace: f.replace }))
-  }, [])
-
-  // The active rich editor's ProseMirror view (null in source/plain-text mode).
-  // Used to turn a find DOM Range into document positions for replacement.
-  const richView = () => editorApis.current[activeId]?.getView?.() || null
-
-  // Replace the active match (then land on the next), or every match. Works in
-  // both the rich editor (DOM Range → ProseMirror positions, one transaction)
-  // and the source textarea (offsets). Re-runs the search afterwards so counts
-  // stay correct; for a single replace it keeps the cursor on the next match.
-  const applyReplace = useCallback(
-    (all = false) => {
-      const q = findQueryRef.current
-      const repl = replaceRef.current
-      if (!q) return
-      const i = Math.max(0, activeIdxRef.current)
-
-      if (sourceRef.current) {
-        const el = sourceRef.current
-        const val = el.value
-        const offsets = findRangesRef.current // number[] of match starts
-        if (!offsets.length) return
-        let next
-        if (all) {
-          // Bottom-up so earlier offsets stay valid as the string shifts.
-          next = val
-          for (const start of [...offsets].sort((a, b) => b - a)) {
-            next = next.slice(0, start) + repl + next.slice(start + q.length)
-          }
-        } else {
-          const start = offsets[i]
-          next = val.slice(0, start) + repl + val.slice(start + q.length)
-        }
-        // Uncontrolled textarea: write the DOM directly + stash the value so
-        // the debounced commit (and commitAllLive before save/close) persists
-        // it. updateContent() alone wouldn't touch the DOM here, so the
-        // replace would vanish and runFind would re-read the old value.
-        el.value = next
-        liveContentRef.current.set(activeId, next)
-        commitLive(activeId)
-        runFind(q, all ? 0 : i)
-        return
-      }
-
-      const view = richView()
-      const ranges = findRangesRef.current // Range[]
-      if (!view || !ranges.length) return
-      const tr = view.state.tr
-      if (all) {
-        // Convert every range to positions, then replace bottom-up in ONE
-        // transaction so earlier positions don't shift mid-loop.
-        const spans = ranges
-          .map((r) => [view.posAtDOM(r.startContainer, r.startOffset), view.posAtDOM(r.endContainer, r.endOffset)])
-          .sort((a, b) => b[0] - a[0])
-        for (const [from, to] of spans) tr.insertText(repl, from, to)
-      } else {
-        const r = ranges[i]
-        const from = view.posAtDOM(r.startContainer, r.startOffset)
-        const to = view.posAtDOM(r.endContainer, r.endOffset)
-        tr.insertText(repl, from, to)
-      }
-      view.dispatch(tr)
-      view.focus()
-      requestAnimationFrame(() => runFind(q, all ? 0 : i))
-    },
-    [activeId, runFind, commitLive]
-  )
-
-  // Re-run the search when switching tabs while the find bar is open, so ranges
-  // point at the newly-visible document.
-  useEffect(() => {
-    if (find.open) runFind(findQueryRef.current)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId])
+  // Find & replace (issue #19) — state, refs, and runFind/stepFind/closeFind/
+  // applyReplace live in hooks/useFindReplace.js (phase-2 US-2). Returns the
+  // same names the findbar JSX and handlers.find/replace already use, so those
+  // need no change.
+  const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace } =
+    useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, commitLive, liveContentRef })
 
   const platformClass =
     ({ win32: ' is-win', darwin: ' is-mac', ios: ' is-ios is-mobile', android: ' is-android is-mobile' }[
