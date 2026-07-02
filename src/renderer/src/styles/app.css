@@ -1671,10 +1671,22 @@ body.hm-col-resizing * {
    even the shortest real paragraph, so EVERY block grew on first render and
    the cumulative drift caused a visible "page jump" while scrolling (#25).
    5em centers the per-block error → drift drops ~4×. Don't lower it again.
+   #25 FINAL FIX — re-enable scroll anchoring UNDER .hm-cv: when an off-screen
+   block (paragraph OR a tall code block / table — CodeMirror also measures line
+   wrapping lazily on scroll-into-view) renders and grows, the viewport would
+   jump (especially with the base overflow-anchor:none below). overflow-anchor:auto
+   makes Chromium adjust scrollTop to pin the viewport's anchor element, so the
+   height change is absorbed silently instead of jolting the view. Scoped to
+   .hm-cv so small docs (<20k, no CV, no height instability) keep the base
+   overflow-anchor:none unchanged (byte-for-byte). Code blocks / tables STAY
+   under CV (anchoring handles their delta too, so we keep CV's perf win).
    :has(.hm-review-widget) excludes paragraphs holding a review margin-note:
    contain:paint (implied by content-visibility) would clip its absolute
    position:right:-2.7rem button. :has is style-recalc only (no layout), and
    content-visibility already skips style recalc off-screen, so no perf hit. */
+.editor-scroll.hm-cv {
+  overflow-anchor: auto;
+}
 .editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(:has(.hm-review-widget)) {
   content-visibility: auto;
   contain-intrinsic-size: auto 5em;
