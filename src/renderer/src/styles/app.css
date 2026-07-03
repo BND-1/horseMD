@@ -2686,6 +2686,105 @@ body.hm-full-width .settings-preview {
 .settings-section .hm-pop-sep:last-child {
   display: none;
 }
+/* Appearance — theme swatch grid. */
+.settings-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+}
+.settings-swatch {
+  position: relative;
+  height: 56px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+}
+.settings-swatch:hover {
+  transform: translateY(-1px);
+}
+.settings-swatch.active {
+  border-color: var(--text-strong);
+}
+.settings-swatch-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.45));
+  text-align: left;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.settings-row-actions {
+  margin-top: 12px;
+  gap: 12px;
+}
+.settings-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.settings-link-btn:hover {
+  color: var(--accent);
+}
+/* Language — segmented choice. */
+.settings-langs {
+  display: flex;
+  gap: 8px;
+}
+.settings-lang {
+  padding: 7px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+}
+.settings-lang:hover {
+  border-color: var(--accent);
+}
+.settings-lang.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+/* Image host command input. */
+.settings-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-version {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
 .welcome-card {
   text-align: center;
   width: 540px;

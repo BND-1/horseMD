@@ -3,11 +3,10 @@
 // width) with a live preview, spell-check toggle, theme, language, image-host
 // command, and an About section. Opened from the ActivityBar gear button.
 //
-// Sections are added incrementally: US-4 = Proofreading, US-5 = Typography +
-// live preview, US-6 = Appearance / Language / Image host / About. StatusBar
-// quick-controls (排版/主题/语言) stay where they are — this is their
-// full-version home, not a replacement.
-import { useI18n } from '../i18n.jsx'
+// StatusBar quick-controls (排版/主题/语言) stay where they are — this is their
+// full-version home, not a replacement. Built incrementally across US-4/5/6.
+import { useI18n, LANGS } from '../i18n.jsx'
+import { THEMES } from '../themes.js'
 import Toggle from './ui/Toggle.jsx'
 import AdjustGroup from './ui/AdjustGroup.jsx'
 import {
@@ -31,8 +30,21 @@ import {
 
 const round1 = (n) => Math.round(n * 10) / 10
 const round10 = (n) => Math.round(n / 10) * 10
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
 
-export default function SettingsView({ settings, onUpdateSettings }) {
+export default function SettingsView({
+  settings,
+  onUpdateSettings,
+  theme,
+  setTheme,
+  customThemes = [],
+  customTheme,
+  onPickCustom,
+  onOpenThemesFolder,
+  onGetMoreThemes,
+  lang,
+  setLang
+}) {
   const { t } = useI18n()
   const { fontSize, lineHeight, paragraphSpacing, pageWidth } = settings
 
@@ -50,14 +62,11 @@ export default function SettingsView({ settings, onUpdateSettings }) {
         <h1 className="settings-title">{t('settings.pageTitle')}</h1>
         <p className="settings-subtitle">{t('settings.pageSubtitle')}</p>
 
-        {/* Typography — US-5. liveApply writes the CSS var directly during the
-            drag, so both the editor (when you switch back) and the preview below
-            update in real time; the value commits once on pointer-up. */}
+        {/* Typography — live preview + 4 sliders. */}
         <section className="settings-section">
           <div className="settings-section-head">
             <span className="settings-section-title">{t('settings.typography')}</span>
           </div>
-
           <div className="settings-preview markdown-body">
             <h2>{t('settings.previewHeading')}</h2>
             <p>{t('settings.previewBody')}</p>
@@ -65,7 +74,6 @@ export default function SettingsView({ settings, onUpdateSettings }) {
               <li>{t('settings.previewListItem')}</li>
             </ul>
           </div>
-
           <AdjustGroup
             title={t('settings.fontSize')}
             valueLabel={fontSize + ' px'}
@@ -123,7 +131,7 @@ export default function SettingsView({ settings, onUpdateSettings }) {
           />
         </section>
 
-        {/* Proofreading — US-4 */}
+        {/* Proofreading — spell-check toggle. */}
         <section className="settings-section">
           <div className="settings-section-head">
             <span className="settings-section-title">{t('settings.proofreading')}</span>
@@ -141,7 +149,98 @@ export default function SettingsView({ settings, onUpdateSettings }) {
           </div>
         </section>
 
-        {/* Appearance + Language + Image host + About come in US-6 */}
+        {/* Appearance — built-in theme swatches + custom themes. */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.appearance')}</span>
+          </div>
+          <div className="settings-swatches">
+            {THEMES.map((th) => (
+              <button
+                key={th.id}
+                className={`settings-swatch${!customTheme && th.id === theme ? ' active' : ''}`}
+                style={{ background: th.swatch }}
+                title={lang === 'zh' ? th.zh : th.en}
+                onClick={() => setTheme(th.id)}
+              >
+                <span className="settings-swatch-name">{lang === 'zh' ? th.zh : th.en}</span>
+              </button>
+            ))}
+            {customThemes.map((c) => (
+              <button
+                key={c.file}
+                className={`settings-swatch settings-swatch-custom${customTheme === c.file ? ' active' : ''}`}
+                style={{ background: c.swatch || 'var(--accent-soft)' }}
+                title={c.name}
+                onClick={() => onPickCustom && onPickCustom(c.file)}
+              >
+                <span className="settings-swatch-name">{c.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="settings-row settings-row-actions">
+            <button className="settings-link-btn" onClick={() => onOpenThemesFolder && onOpenThemesFolder()}>
+              {t('settings.openThemesFolder')}
+            </button>
+            <button className="settings-link-btn" onClick={() => onGetMoreThemes && onGetMoreThemes()}>
+              {t('settings.getMoreThemes')}
+            </button>
+          </div>
+        </section>
+
+        {/* Language. */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.language')}</span>
+          </div>
+          <div className="settings-langs">
+            {LANGS.map((l) => (
+              <button
+                key={l.id}
+                className={`settings-lang${l.id === lang ? ' active' : ''}`}
+                onClick={() => setLang(l.id)}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Image host — Typora-style custom upload command. */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.imageHost')}</span>
+          </div>
+          <div className="settings-row-text" style={{ marginBottom: 10 }}>
+            <div className="settings-row-desc">{t('settings.imageHostDesc')}</div>
+          </div>
+          <input
+            className="settings-input"
+            type="text"
+            spellCheck={false}
+            placeholder={t('settings.imageHostPlaceholder')}
+            value={settings.imageUploadCommand || ''}
+            onChange={(e) => onUpdateSettings({ imageUploadCommand: e.target.value })}
+          />
+        </section>
+
+        {/* About. */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.about')}</span>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-label">HorseMD {APP_VERSION && <span className="settings-version">{APP_VERSION}</span>}</div>
+          </div>
+          <div className="settings-row settings-row-actions">
+            <button className="settings-link-btn" onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}>
+              GitHub
+            </button>
+            <button className="settings-link-btn" onClick={() => window.api.openExternal('https://gitee.com/yty11167/horse-md')}>
+              Gitee
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   )

@@ -680,7 +680,19 @@ export default function App() {
               ActivityBar gear button opens one). EditorArea skips settings
               tabs, so this sibling renders in their place. */}
           {!home && activeTab?.kind === 'settings' && (
-            <SettingsView settings={settings} onUpdateSettings={updateSettings} />
+            <SettingsView
+              settings={settings}
+              onUpdateSettings={updateSettings}
+              theme={theme}
+              setTheme={pickBuiltinTheme}
+              customThemes={customThemes}
+              customTheme={customTheme}
+              onPickCustom={setCustomTheme}
+              onOpenThemesFolder={() => window.api.themesReveal?.()}
+              onGetMoreThemes={() => window.api.openExternal('https://theme.typora.io/')}
+              lang={lang}
+              setLang={setLang}
+            />
           )}
 
           {(home || !activeTab) && (

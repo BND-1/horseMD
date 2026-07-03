@@ -68,7 +68,7 @@
       "id": "US-5",
       "title": "SettingsView 骨架 + 排版区 + 实时预览",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "抽出 components/ui/AdjustGroup.jsx(从 LayoutControl,供两边复用);LayoutControl 改用抽出的版本(行为不变)。",
         "新建 components/SettingsView.jsx(<500 行):页壳(分节、DNA 样式、menuFadeIn 入场)+ 排版区(字号/行距/段距/页宽,用 AdjustGroup + liveApply 直写 CSS var)+ 实时预览区(标题+正文+代码+列表样本,用同款 CSS var)。",

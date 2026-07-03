@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us5-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us5-build.log",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us6-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us6-build.log\necho \"=== SettingsView line count ===\"\nwc -l src/renderer/src/components/SettingsView.jsx",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -255,14 +255,14 @@
   "hotPaths": [
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 78,
-      "lastAccessed": 1783050614098,
+      "accessCount": 79,
+      "lastAccessed": 1783051336833,
       "type": "file"
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 61,
-      "lastAccessed": 1783050891537,
+      "accessCount": 62,
+      "lastAccessed": 1783051387161,
       "type": "file"
     },
     {
