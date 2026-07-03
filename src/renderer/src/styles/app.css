@@ -3128,10 +3128,13 @@ body.dark .milkdown {
 
 /* Paragraphs — enhanced readability. Vertical spacing is user-adjustable.
    font-size MUST be set here (not just inherited): Milkdown Crepe's reset.css
-   hardcodes `.ProseMirror p { font-size: 16px }`, which would otherwise pin body
-   text (and blockquote/list paragraphs) to 16px and ignore --editor-font-size.
-   app.css specificity (0,2,1) beats Crepe's (0,1,1); headings use em so they
-   already scale. (#25-adjacent: font-size slider now affects body, not just h1-h6.) */
+   hardcodes `.milkdown .ProseMirror p { font-size: 16px }` — the SAME selector +
+   specificity (0,2,1) as this rule. app.css wins because it's imported AFTER
+   Crepe's reset.css in the bundle (main.jsx imports App.jsx → Editor.jsx → Crepe
+   theme CSS before app.css), i.e. by source order. This is the SAME mechanism the
+   heading rules below use to override Crepe's h1–h6 sizes — keep app.css imported
+   last, or these overrides silently break. Without this line the font-size slider
+   only changed headings (em), not body paragraphs (#25-adjacent). */
 .milkdown .ProseMirror p {
   margin: var(--editor-para-spacing, 0.8em) 0;
   line-height: inherit;

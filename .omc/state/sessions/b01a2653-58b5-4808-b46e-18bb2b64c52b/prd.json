@@ -91,7 +91,7 @@
       "id": "US-7",
       "title": "收尾:CSS 打磨 + 全量回归 + 文档 + mac 包",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "CSS 响应式 + 移动端打磨;深浅主题 + 自定义主题下设置页都正常。",
         "全量回归过 docs/manual-test-checklist.md 相关条目(代码块/mermaid/latex/表格/大纲/查找/保存/审阅/自定义主题/源码模式)。",

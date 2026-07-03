@@ -6,3 +6,12 @@
 - Investigation done (3 Explore agents): font-size bug root cause (Crepe reset.css hardcodes .ProseMirror p font-size:16px; app.css headings use em, paragraphs missing font-size); spellcheck hook (view.dom attribute + settings.js, no IPC); tab kind needed; ActivityBar spacer for bottom-left button; Toggle component must be built; design DNA tokens identified.
 
 ## US-1 (in progress): font-size bug
+
+## All stories DONE (US-1..US-7)
+- US-1 font-size fix (ade09ff): .ProseMirror p font-size:var(--editor-font-size). CDP: p/h1/bq-p/li scale 16→20→14.
+- US-2/US-3 tab kind + settings plumbing + ActivityBar gear + mobile entry (f6c0e4f). CDP: open/switch/idempotent/not-persisted.
+- US-4 Toggle + spellcheck (097801d). CDP: attr + LS follow toggle; default off.
+- US-5 typography + live preview + AdjustGroup extraction (8398091). CDP: 4 groups, live var, LayoutControl no regression.
+- US-6 appearance/language/image host/about (f1e1979). CDP: 6 swatches switch theme, 2 langs, image input persists, about v0.4.1.
+- US-7 polish + docs + mac (1bc6b8b). CDP regression smoke: h1/h2/code/table/list render, body=16, source toggle, no exc.
+- Commits: ade09ff, f6c0e4f, 097801d, 8398091, f1e1979, 1bc6b8b. Files: settings.js, Editor.jsx, App.jsx, useFileOps.js, useAppLifecycle.js, shell/{EditorArea,ActivityBar}.jsx, SettingsView.jsx (new), ui/{Toggle,AdjustGroup}.jsx (new), icons.jsx, i18n.jsx, StatusBar.jsx, LayoutControl.jsx, app.css, CLAUDE.md, docs/manual-test-checklist.md, memory.

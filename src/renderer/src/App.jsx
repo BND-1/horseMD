@@ -370,6 +370,10 @@ export default function App() {
   // Show a tab in the right (split) pane. If it's currently the active tab, move
   // the left pane to a different tab so the two panes differ.
   const openRight = useCallback((id) => {
+    // Settings tabs aren't documents — never place one in the split pane (it
+    // would render an empty right pane, since EditorArea skips kind!=='doc').
+    const target = tabsRef.current.find((t) => t.id === id)
+    if (target?.kind !== 'doc') return
     setHome(false)
     if (id === activeIdRef.current) {
       const others = tabsRef.current.filter((t) => t.id !== id)
@@ -379,17 +383,18 @@ export default function App() {
     setSplitId(id)
   }, [])
 
-  // Toggle split: off → on picks the next tab as the right pane; on → off closes it.
+  // Toggle split: off → on picks the next DOC tab as the right pane; on → off closes it.
   const toggleSplit = useCallback(() => {
     setSplitId((cur) => {
       if (cur != null) return null
-      const list = tabsRef.current
-      if (list.length < 2) {
+      const docs = tabsRef.current.filter((t) => t.kind !== 'settings')
+      if (docs.length < 2) {
         fireToast(tRef.current('split.needTwo'))
         return null
       }
-      const i = list.findIndex((t) => t.id === activeIdRef.current)
-      return list[(i + 1) % list.length].id
+      const i = docs.findIndex((t) => t.id === activeIdRef.current)
+      const pick = i >= 0 ? docs[(i + 1) % docs.length].id : docs[0].id
+      return pick
     })
     setHome(false)
   }, [])

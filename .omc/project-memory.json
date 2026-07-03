@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us6-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us6-build.log\necho \"=== SettingsView line count ===\"\nwc -l src/renderer/src/components/SettingsView.jsx",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-fix-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-fix-build.log",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -255,14 +255,14 @@
   "hotPaths": [
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 79,
-      "lastAccessed": 1783051336833,
+      "accessCount": 82,
+      "lastAccessed": 1783052529862,
       "type": "file"
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 63,
-      "lastAccessed": 1783051657405,
+      "accessCount": 67,
+      "lastAccessed": 1783052505325,
       "type": "file"
     },
     {
@@ -273,20 +273,20 @@
     },
     {
       "path": "src/renderer/src/components/Editor.jsx",
-      "accessCount": 35,
-      "lastAccessed": 1783050535376,
+      "accessCount": 36,
+      "lastAccessed": 1783052021261,
       "type": "file"
     },
     {
       "path": "src/renderer/src/hooks/useFileOps.js",
-      "accessCount": 11,
-      "lastAccessed": 1783049526140,
+      "accessCount": 12,
+      "lastAccessed": 1783052013843,
       "type": "file"
     },
     {
       "path": "src/renderer/src/components/shell/EditorArea.jsx",
-      "accessCount": 8,
-      "lastAccessed": 1783050557309,
+      "accessCount": 9,
+      "lastAccessed": 1783052020509,
       "type": "file"
     },
     {
@@ -296,15 +296,15 @@
       "type": "file"
     },
     {
-      "path": "docs/refactor-plan.md",
-      "accessCount": 7,
-      "lastAccessed": 1782820428480,
+      "path": "src/renderer/src/components/StatusBar.jsx",
+      "accessCount": 8,
+      "lastAccessed": 1783052069639,
       "type": "file"
     },
     {
-      "path": "src/renderer/src/components/StatusBar.jsx",
+      "path": "docs/refactor-plan.md",
       "accessCount": 7,
-      "lastAccessed": 1783049929330,
+      "lastAccessed": 1782820428480,
       "type": "file"
     },
     {
@@ -320,21 +320,39 @@
       "type": "file"
     },
     {
+      "path": "src/renderer/src/hooks/useAppLifecycle.js",
+      "accessCount": 6,
+      "lastAccessed": 1783052013918,
+      "type": "file"
+    },
+    {
       "path": "src/renderer/src/lib/menuHandlers.js",
-      "accessCount": 5,
-      "lastAccessed": 1782819925678,
+      "accessCount": 6,
+      "lastAccessed": 1783052053494,
       "type": "file"
     },
     {
       "path": "src/renderer/src/components/shell/ActivityBar.jsx",
-      "accessCount": 5,
-      "lastAccessed": 1783049558824,
+      "accessCount": 6,
+      "lastAccessed": 1783052069578,
       "type": "file"
     },
     {
-      "path": "src/renderer/src/hooks/useAppLifecycle.js",
+      "path": "src/renderer/src/hooks/useOutline.js",
       "accessCount": 5,
-      "lastAccessed": 1783049767080,
+      "lastAccessed": 1783052054457,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/components/LayoutControl.jsx",
+      "accessCount": 5,
+      "lastAccessed": 1783052060297,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/settings.js",
+      "accessCount": 5,
+      "lastAccessed": 1783052060543,
       "type": "file"
     },
     {
@@ -350,27 +368,21 @@
       "type": "file"
     },
     {
-      "path": "src/renderer/src/hooks/useOutline.js",
-      "accessCount": 4,
-      "lastAccessed": 1783010931029,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/settings.js",
-      "accessCount": 4,
-      "lastAccessed": 1783050257239,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/components/LayoutControl.jsx",
-      "accessCount": 4,
-      "lastAccessed": 1783050827595,
-      "type": "file"
-    },
-    {
       "path": "src/renderer/src/components/editor-chunked-parse.js",
       "accessCount": 3,
       "lastAccessed": 1782829127582,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/hooks/useFindReplace.js",
+      "accessCount": 3,
+      "lastAccessed": 1783052054523,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/lib/reviewActions.js",
+      "accessCount": 3,
+      "lastAccessed": 1783052074007,
       "type": "file"
     },
     {
@@ -407,18 +419,6 @@
       "path": "src/renderer/src/onboarding.js",
       "accessCount": 2,
       "lastAccessed": 1782803885229,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/lib/reviewActions.js",
-      "accessCount": 2,
-      "lastAccessed": 1782819636053,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/hooks/useFindReplace.js",
-      "accessCount": 2,
-      "lastAccessed": 1782819636306,
       "type": "file"
     },
     {
