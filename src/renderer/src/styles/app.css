@@ -1640,10 +1640,18 @@ body.hm-col-resizing * {
   /* No smooth scroll on the edit surface: it turns every implicit
      scroll-into-view (on click/select) into a visible upward slide.
      Outline/find jumps pass `behavior: 'smooth'` explicitly when wanted. */
-  overflow-anchor: none; /* overridden to `auto` under .hm-cv (large docs) below —
-     content-visibility there needs anchoring to absorb estimate→real height
-     deltas; small docs keep `none`. Don't remove either rule without reading
-     the .hm-cv block (~L1687) + issue #25. */
+  /* overflow-anchor: auto — keep the viewport pinned when content heights change.
+     Needed because CodeMirror code blocks measure line-wrapping lazily on
+     scroll-into-view (off-screen assumes no-wrap → shorter; on-screen measures
+     real wrap → taller), so a code block GROWS when it scrolls into view. With
+     anchoring off, that growth (and content-visibility estimate→real deltas in
+     large .hm-cv docs) makes the viewport jump up when you stop on a code block
+     (#25). `auto` makes Chromium adjust scrollTop to absorb the delta. This was
+     `none` from afeb9e5 (to fight the Crepe VIRTUAL CURSOR's selection reflow),
+     but the virtual cursor is now disabled ([CrepeFeature.Cursor]: false), so
+     `none`'s original rationale is gone and it was actively causing the jump.
+     Do NOT set back to `none` — see issue #25 + the .hm-cv content-visibility block. */
+  overflow-anchor: auto;
   position: relative; /* containing block for the loading skeleton */
 }
 
@@ -1674,22 +1682,17 @@ body.hm-col-resizing * {
    even the shortest real paragraph, so EVERY block grew on first render and
    the cumulative drift caused a visible "page jump" while scrolling (#25).
    5em centers the per-block error → drift drops ~4×. Don't lower it again.
-   #25 FINAL FIX — re-enable scroll anchoring UNDER .hm-cv: when an off-screen
-   block (paragraph OR a tall code block / table — CodeMirror also measures line
-   wrapping lazily on scroll-into-view) renders and grows, the viewport would
-   jump (especially with the base overflow-anchor:none below). overflow-anchor:auto
-   makes Chromium adjust scrollTop to pin the viewport's anchor element, so the
-   height change is absorbed silently instead of jolting the view. Scoped to
-   .hm-cv so small docs (<20k, no CV, no height instability) keep the base
-   overflow-anchor:none unchanged (byte-for-byte). Code blocks / tables STAY
-   under CV (anchoring handles their delta too, so we keep CV's perf win).
+   #25 — scroll anchoring: the viewport-pinning that absorbs these height deltas
+   lives on the BASE `.editor-scroll { overflow-anchor: auto }` rule above (it
+   applies to ALL docs, not just .hm-cv, because CodeMirror code blocks measure
+   line-wrapping lazily on scroll-into-view regardless of content-visibility —
+   so even small docs jump without anchoring). No separate .hm-cv anchoring rule
+   is needed. Code blocks / tables stay under CV (anchoring handles their delta,
+   so we keep CV's perf win).
    :has(.hm-review-widget) excludes paragraphs holding a review margin-note:
    contain:paint (implied by content-visibility) would clip its absolute
    position:right:-2.7rem button. :has is style-recalc only (no layout), and
    content-visibility already skips style recalc off-screen, so no perf hit. */
-.editor-scroll.hm-cv {
-  overflow-anchor: auto;
-}
 .editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(:has(.hm-review-widget)) {
   content-visibility: auto;
   contain-intrinsic-size: auto 5em;
