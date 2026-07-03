@@ -1,0 +1,24 @@
+FROM node:18-bookworm
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates \
+    wine wine32 wine64 \
+    nsis \
+    osslsigncode \
+    libarchive-tools unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+ENV ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+ENV ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+ENV npm_config_registry=https://registry.npmmirror.com
+
+RUN npm ci --prefer-offline 2>&1 | tail -5
+
+COPY . .
+
+CMD ["bash", "/app/docker-entrypoint-win.sh"]
