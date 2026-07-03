@@ -3,22 +3,40 @@
 // width) with a live preview, spell-check toggle, theme, language, image-host
 // command, and an About section. Opened from the ActivityBar gear button.
 //
-// US-2 ships this shell so the Settings tab routes correctly (EditorArea skips
-// kind!=='doc' tabs; this component renders as a sibling of EditorArea/Welcome).
-// Sections are filled in subsequent stories (US-5 typography + preview, US-6 the
-// rest). StatusBar quick-controls (排版/主题/语言) stay where they are — this is
-// their full-version home, not a replacement.
+// Sections are added incrementally: US-4 adds Proofreading (spell-check toggle);
+// US-5 adds Typography + live preview; US-6 adds Appearance / Language / Image
+// host / About. StatusBar quick-controls (排版/主题/语言) stay where they are —
+// this is their full-version home, not a replacement.
 import { useI18n } from '../i18n.jsx'
+import Toggle from './ui/Toggle.jsx'
 
-export default function SettingsView() {
+export default function SettingsView({ settings, onUpdateSettings }) {
   const { t } = useI18n()
   return (
     <div className="settings-page">
       <div className="settings-card">
         <h1 className="settings-title">{t('settings.pageTitle')}</h1>
         <p className="settings-subtitle">{t('settings.pageSubtitle')}</p>
-        {/* Sections are added in US-5 (typography + live preview) and US-6
-            (appearance / language / image host / about). */}
+
+        {/* Proofreading — US-4 */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.proofreading')}</span>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-text">
+              <div className="settings-row-label">{t('settings.spellcheck')}</div>
+              <div className="settings-row-desc">{t('settings.spellcheckDesc')}</div>
+            </div>
+            <Toggle
+              checked={!!settings.spellcheck}
+              onChange={(v) => onUpdateSettings({ spellcheck: v })}
+              label={t('settings.spellcheck')}
+            />
+          </div>
+        </section>
+
+        {/* Typography + Appearance + Language + Image host + About come in US-5/US-6 */}
       </div>
     </div>
   )

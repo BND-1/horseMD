@@ -2579,6 +2579,66 @@ body.hm-full-width .source-editor {
   letter-spacing: 0.08em;
   color: var(--faint);
 }
+/* A label/description + control row inside a section. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+}
+.settings-row-text {
+  min-width: 0;
+}
+.settings-row-label {
+  font-size: 13.5px;
+  color: var(--text);
+  font-weight: 500;
+}
+.settings-row-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+/* Toggle switch (role=switch). Track + spring-sliding thumb, theme-tokens only. */
+.hm-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  background: var(--hover);
+  cursor: pointer;
+  transition: background 0.18s var(--ease-spring);
+}
+.hm-toggle.on {
+  background: var(--accent);
+}
+.hm-toggle.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.hm-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-editor);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease-spring);
+}
+.hm-toggle.on .hm-toggle-thumb {
+  transform: translateX(16px);
+}
+.hm-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .welcome-card {
   text-align: center;
   width: 540px;

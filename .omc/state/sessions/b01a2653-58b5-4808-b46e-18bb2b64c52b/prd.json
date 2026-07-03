@@ -29,7 +29,7 @@
       "id": "US-2",
       "title": "tab kind 字段 + 设置 tab 管线(路由/持久化/状态栏 gate)",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "tab 对象加 `kind` 字段;现有 file/untitled tab 默认 'doc';新增幂等 `openSettingsTab()`(已有 settings tab 则激活,否则建 kind:'settings' tab 并 active + setHome(false))。",
         "EditorArea 对 kind!=='doc' 的 tab 跳过(不挂编辑器);根容器 display 在 settings tab 激活时为 none。",
@@ -43,7 +43,7 @@
       "id": "US-3",
       "title": "ActivityBar 左下角设置按钮 + gear 图标 + 移动端入口",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "icons.jsx 新增 paths.gear(齿轮);ActivityBar 在 .activity-spacer 后加 .activity-item(gear 图标、tooltip、onSettings、settings tab 激活时 active 高亮)。",
         "App.jsx 把 openSettingsTab 作为 onSettings 传给 ActivityBar。",

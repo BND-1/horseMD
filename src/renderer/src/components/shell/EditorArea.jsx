@@ -25,6 +25,7 @@ export default function EditorArea({
   mountedIds,
   activeTab,
   imageUploadCommand,
+  spellcheck,
   editorAreaRef,
   editorHostRef,
   sourceRef,
@@ -143,6 +144,7 @@ export default function EditorArea({
               initialContent={tab.content}
               docPath={tab.path}
               imageUploadCommand={imageUploadCommand}
+              spellcheck={spellcheck}
               onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
               onReady={(api) => {
                 editorApis.current[tab.id] = api

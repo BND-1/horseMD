@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us23-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us23-build.log",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us4-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us4-build.log",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -255,14 +255,14 @@
   "hotPaths": [
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 76,
-      "lastAccessed": 1783049937676,
+      "accessCount": 78,
+      "lastAccessed": 1783050614098,
       "type": "file"
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 59,
-      "lastAccessed": 1783049984894,
+      "accessCount": 60,
+      "lastAccessed": 1783050632596,
       "type": "file"
     },
     {
@@ -273,14 +273,20 @@
     },
     {
       "path": "src/renderer/src/components/Editor.jsx",
-      "accessCount": 29,
-      "lastAccessed": 1783041691337,
+      "accessCount": 35,
+      "lastAccessed": 1783050535376,
       "type": "file"
     },
     {
       "path": "src/renderer/src/hooks/useFileOps.js",
       "accessCount": 11,
       "lastAccessed": 1783049526140,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/components/shell/EditorArea.jsx",
+      "accessCount": 8,
+      "lastAccessed": 1783050557309,
       "type": "file"
     },
     {
@@ -311,12 +317,6 @@
       "path": "src/renderer/src/components/icons.jsx",
       "accessCount": 6,
       "lastAccessed": 1783049476712,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/components/shell/EditorArea.jsx",
-      "accessCount": 6,
-      "lastAccessed": 1783049541295,
       "type": "file"
     },
     {
@@ -353,6 +353,12 @@
       "path": "src/renderer/src/hooks/useOutline.js",
       "accessCount": 4,
       "lastAccessed": 1783010931029,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/settings.js",
+      "accessCount": 4,
+      "lastAccessed": 1783050257239,
       "type": "file"
     },
     {
@@ -527,12 +533,6 @@
       "path": "src/renderer/src/find.js",
       "accessCount": 1,
       "lastAccessed": 1783010930089,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/settings.js",
-      "accessCount": 1,
-      "lastAccessed": 1783047109361,
       "type": "file"
     },
     {

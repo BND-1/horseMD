@@ -1,17 +1,17 @@
 {
   "version": 1,
   "entries": {
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1783050663278,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
     "445ed27a3872b681d98190bae61ccb84954e1bc4e140df5370be958dee776b3a": {
-      "last_emitted_at_ms": 1783050093757,
+      "last_emitted_at_ms": 1783050419640,
       "message": "Verify changes work after editing. Test functionality before marking complete."
     },
     "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
-      "last_emitted_at_ms": 1783049962228,
+      "last_emitted_at_ms": 1783050289121,
       "message": "Read multiple files in parallel when possible for faster analysis."
-    },
-    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
-      "last_emitted_at_ms": 1783049957252,
-      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
     },
     "788f4d237a34fe3160657b65929cb4e1b937b3388a6213c735d1bb13dbf57671": {
       "last_emitted_at_ms": 1783047140920,
@@ -26,5 +26,5 @@
       "message": "Spawning agent: Explore (inherit) | Task: Settings infra + font-size bug"
     }
   },
-  "updated_at": "2026-07-03T03:41:33.757Z"
+  "updated_at": "2026-07-03T03:51:03.278Z"
 }

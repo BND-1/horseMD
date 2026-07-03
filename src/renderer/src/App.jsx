@@ -654,6 +654,7 @@ export default function App() {
             mountedIds={mountedIds}
             activeTab={activeTab}
             imageUploadCommand={settings.imageUploadCommand}
+            spellcheck={settings.spellcheck}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}
             sourceRef={sourceRef}
@@ -678,7 +679,9 @@ export default function App() {
           {/* Settings page — a full-tab view for kind:'settings' tabs (the
               ActivityBar gear button opens one). EditorArea skips settings
               tabs, so this sibling renders in their place. */}
-          {!home && activeTab?.kind === 'settings' && <SettingsView />}
+          {!home && activeTab?.kind === 'settings' && (
+            <SettingsView settings={settings} onUpdateSettings={updateSettings} />
+          )}
 
           {(home || !activeTab) && (
             <Welcome

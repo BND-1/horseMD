@@ -66,7 +66,12 @@ export const DEFAULT_SETTINGS = {
   // (a local object URL). When set, it's run like Typora's "custom command":
   // the image file path is appended as an argument and the command prints the
   // resulting URL to stdout.
-  imageUploadCommand: ''
+  imageUploadCommand: '',
+  // English spell-check (red wavy underline) in the rich editor. Default OFF
+  // (cleaner for Chinese-first writing). Editor.jsx applies it as the `spellcheck`
+  // attribute on the Crepe `.ProseMirror` contenteditable; other surfaces (the
+  // source textarea, inputs) always opt out via spellCheck={false}.
+  spellcheck: false
 }
 
 function normalizeWidth(w) {
@@ -102,7 +107,8 @@ export function loadSettings() {
         DEFAULT_PARA_SPACING
       ),
       imageUploadCommand:
-        typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : ''
+        typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
+      spellcheck: raw.spellcheck === true
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

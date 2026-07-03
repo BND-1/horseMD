@@ -314,6 +314,7 @@ export default function Editor({
   initialContent,
   docPath,
   imageUploadCommand,
+  spellcheck,
   onChange,
   onReady,
   onActiveBlock,
@@ -327,11 +328,21 @@ export default function Editor({
   // onUpload callback is registered once at create but always uses the latest).
   const uploadCmdRef = useRef(imageUploadCommand)
   uploadCmdRef.current = imageUploadCommand
+  // Live mirror of the spell-check pref: applied to view.dom on mount (below) and
+  // re-applied by the effect when the pref changes.
+  const spellcheckRef = useRef(spellcheck)
+  spellcheckRef.current = spellcheck
   const hostRef = useRef(null)
   const viewRef = useRef(null)
   const apiRef = useRef(null)
   const crepeRef = useRef(null)
   const lastBlockRef = useRef(null)
+  // Re-apply the spellcheck attribute when the pref changes after mount (the
+  // initial value is set during create above).
+  useEffect(() => {
+    const v = viewRef.current
+    if (v?.dom) v.dom.setAttribute('spellcheck', spellcheck ? 'true' : 'false')
+  }, [spellcheck])
   const [ctxMenu, setCtxMenu] = useState(null) // { x, y } viewport coords, or null
   // Floating "block level" indicator that tracks the caret (H1…H6 / Text).
   const [level, setLevel] = useState(null) // { label, kind, top, left } or null
@@ -699,6 +710,10 @@ export default function Editor({
         if (view?.dom) {
           view.dom.id = 'write'
           view.dom.classList.add('markdown-body')
+          // English spell-check (red wavy underline) on the contenteditable.
+          // Default off (settings.spellcheck). Other surfaces (source textarea,
+          // inputs) opt out individually via spellCheck={false}.
+          view.dom.setAttribute('spellcheck', spellcheckRef.current ? 'true' : 'false')
         }
 
         // Content is in the DOM now — remove the loading skeleton SYNCHRONOUSLY
