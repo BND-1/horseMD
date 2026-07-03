@@ -198,6 +198,28 @@ export function useGlobalKeys({
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [handlers])
+
+  // Ctrl+wheel and touchpad pinch-to-zoom. Both generate a wheel event with
+  // ctrlKey=true in Electron (the OS maps pinch gestures to synthetic Ctrl+wheel).
+  // webFrame.setZoomFactor is the correct renderer-side API; it keeps in sync with
+  // the Electron menu's zoom state (same underlying zoom level).
+  useEffect(() => {
+    if (!window.api?.setZoomFactor) return
+    const STEP = 0.1
+    const MIN = 0.5
+    const MAX = 3.0
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      const cur = window.api.getZoomFactor()
+      const next = e.deltaY < 0
+        ? Math.min(MAX, Math.round((cur + STEP) * 10) / 10)
+        : Math.max(MIN, Math.round((cur - STEP) * 10) / 10)
+      window.api.setZoomFactor(next)
+    }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel, { passive: false })
+  }, [])
 }
 
 // Command-palette list (titles localized via t; run dispatches via handlers).

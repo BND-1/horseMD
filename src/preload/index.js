@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
 // Subscribe to a main→renderer channel; returns an unsubscribe function.
 const on = (channel) => (cb) => {
@@ -80,6 +80,9 @@ const api = {
   onFileChanged: on('file:changed'),
   onWindowMaximized: on('window:maximized'),
   onAppCloseRequest: on('app-close-request'),
+
+  setZoomFactor: (f) => webFrame.setZoomFactor(f),
+  getZoomFactor: () => webFrame.getZoomFactor(),
 
   platform: process.platform,
 
