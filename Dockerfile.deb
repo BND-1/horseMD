@@ -1,0 +1,45 @@
+FROM node:18-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    ruby \
+    ruby-dev \
+    gcc \
+    make \
+    dpkg \
+    fakeroot \
+    libarchive-tools \
+    unzip \
+    imagemagick \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libgtk-3-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN gem install fpm --no-document
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+ENV ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+ENV ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+ENV npm_config_registry=https://registry.npmmirror.com
+
+RUN npm ci --prefer-offline 2>&1 | tail -5
+
+COPY . .
+
+CMD ["bash", "/app/docker-entrypoint.sh"]
