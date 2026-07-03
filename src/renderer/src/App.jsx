@@ -109,6 +109,11 @@ export default function App() {
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId) || null, [tabs, activeId])
   const activePath = activeTab?.path || null
+  // Opening the Settings tab auto-closes the sidebar (outline/files) so the
+  // settings page gets full width — the settings page has its own section jump-bar.
+  useEffect(() => {
+    if (!home && activeTab?.kind === 'settings') setSidebarOpen(false)
+  }, [home, activeTab, setSidebarOpen])
   // Split is "live" only when the right-pane tab exists and differs from the
   // active (left) one. Hidden on the welcome/home screen.
   const splitTab = useMemo(

@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-twopane-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-twopane-build.log\necho \"=== SettingsView line count ===\"\nwc -l src/renderer/src/components/SettingsView.jsx",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-onepage-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-onepage-build.log\nwc -l src/renderer/src/components/SettingsView.jsx",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -255,14 +255,14 @@
   "hotPaths": [
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 82,
-      "lastAccessed": 1783052529862,
+      "accessCount": 84,
+      "lastAccessed": 1783062296625,
       "type": "file"
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 71,
-      "lastAccessed": 1783061303094,
+      "accessCount": 77,
+      "lastAccessed": 1783062236692,
       "type": "file"
     },
     {
