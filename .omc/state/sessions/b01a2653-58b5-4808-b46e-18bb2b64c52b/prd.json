@@ -46,7 +46,7 @@
       "id": "US-4",
       "title": "回归",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "代码块编辑/语法高亮/复制/mermaid/LaTeX/表格/大纲/查找替换/保存/审阅/自定义主题/源码模式 过 docs/manual-test-checklist.md 相关条目。",
         "#17 Windows 大文档性能不回归(content-visibility 仍在;若根治改了虚拟化,量化性能)。",
@@ -57,7 +57,7 @@
       "id": "US-5",
       "title": "根治文档 + mac 包",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "CLAUDE.md(Conventions 加代码块 lazy-mount 根因+根治)、docs/manual-test-checklist.md(更新 #25)、docs/performance-large-doc.md(若相关)、记忆(horsemd-perf-large-doc.md / 新建)。",
         "打 mac 包自测。"

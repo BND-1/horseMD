@@ -36,6 +36,18 @@
 // block deletion is unaffected.
 import { CodeMirrorBlock } from '@milkdown/components/code-block'
 
+// Guard against Milkdown API drift: if a future @milkdown/components bump
+// renames/removes these hooks, the patch silently stops applying (lazy-mount
+// returns) — surface that so a version bump doesn't quietly re-introduce #25.
+if (
+  typeof CodeMirrorBlock?.prototype?.renderPlaceholder !== 'function' ||
+  typeof CodeMirrorBlock?.prototype?.initializeCodeMirror !== 'function' ||
+  typeof CodeMirrorBlock?.prototype?.scheduleTeardown !== 'function'
+) {
+  // eslint-disable-next-line no-console
+  console.warn('[horsemd] code-block eager-mount patch: CodeMirrorBlock API changed — #25 jump may return.')
+}
+
 const proto = CodeMirrorBlock.prototype
 
 // (1) Mount the CodeMirror editor EAGERLY at construction instead of showing a

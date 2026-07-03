@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-patch-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-patch-build.log\nrm -rf /tmp/hm-eager-verify-ud\nnode /tmp/hm-eager-verify.mjs 2>&1 | tail -38",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-guard-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-guard-build.log\nrm -rf /tmp/hm-cb-regress-ud\nnode /tmp/hm-codeblock-regress.mjs 2>&1 | tail -10",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -273,8 +273,8 @@
     },
     {
       "path": "src/renderer/src/components/Editor.jsx",
-      "accessCount": 42,
-      "lastAccessed": 1783058199565,
+      "accessCount": 43,
+      "lastAccessed": 1783059133022,
       "type": "file"
     },
     {
