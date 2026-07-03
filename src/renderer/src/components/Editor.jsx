@@ -349,6 +349,9 @@ export default function Editor({
   const [level, setLevel] = useState(null) // { label, kind, top, left } or null
   // Lightbox: the image src currently shown enlarged, or null.
   const [zoom, setZoom] = useState(null)
+  const lightboxScaleRef = useRef(1)
+  const lightboxContentRef = useRef(null)
+  const lightboxTranslateRef = useRef({ x: 0, y: 0 })
   // False until Crepe has parsed and rendered the document — drives the loading
   // skeleton. Only large documents (which actually take a moment to render) show
   // it, so small files never flash a placeholder.
@@ -914,7 +917,7 @@ export default function Editor({
           const now = e.timeStamp || Date.now()
           if (lastImgClick.src === src && now - lastImgClick.at < 350) {
             e.preventDefault()
-            setZoom(src)
+            setZoom({ type: 'img', src })
             lastImgClick = { src: null, at: 0 }
           } else {
             lastImgClick = { src, at: now }
@@ -953,8 +956,19 @@ export default function Editor({
           fireToast(tRef.current('code.copied'))
         }
 
+        const onMermaidClick = (e) => {
+          const svg = e.target.closest?.('.milkdown-code-block .preview svg')
+          if (!svg || !view.dom.contains(svg)) return
+          const clone = svg.cloneNode(true)
+          clone.removeAttribute('width')
+          clone.removeAttribute('height')
+          clone.style.cssText = ''
+          setZoom({ type: 'svg', html: clone.outerHTML })
+        }
+
         view.dom.addEventListener('click', onLinkClick, true)
         view.dom.addEventListener('click', onImgClick, true)
+        view.dom.addEventListener('click', onMermaidClick, true)
         view.dom.addEventListener('click', onCaptionBtn)
         view.dom.addEventListener('click', onCopyBtn, true)
         view.dom.addEventListener('copy', onCopy, true)
@@ -976,6 +990,7 @@ export default function Editor({
         )
         cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onImgClick, true))
+        cleanups.push(() => view.dom.removeEventListener('click', onMermaidClick, true))
         cleanups.push(() => view.dom.removeEventListener('click', onCaptionBtn))
         cleanups.push(() => view.dom.removeEventListener('click', onCopyBtn, true))
         cleanups.push(() => view.dom.removeEventListener('copy', onCopy, true))
@@ -1306,12 +1321,67 @@ export default function Editor({
 
   // Close the image lightbox on Escape.
   useEffect(() => {
-    if (!zoom) return
+    if (!zoom) {
+      lightboxScaleRef.current = 1
+      lightboxTranslateRef.current = { x: 0, y: 0 }
+      return
+    }
     const onKey = (e) => {
       if (e.key === 'Escape') setZoom(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [zoom])
+
+  // Ctrl+wheel inside the lightbox scales the content element only.
+  // Runs capture-phase so it fires before (and blocks) the global wheel handler.
+  useEffect(() => {
+    if (!zoom) return
+    const applyTransform = (el) => {
+      const { x, y } = lightboxTranslateRef.current
+      el.style.transform = `translate(${x}px, ${y}px) scale(${lightboxScaleRef.current})`
+      el.style.transformOrigin = 'center center'
+    }
+    const onWheel = (e) => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      const el = lightboxContentRef.current
+      if (!el) return
+      const delta = e.deltaY < 0 ? 0.1 : -0.1
+      lightboxScaleRef.current = Math.min(10, Math.max(0.2, lightboxScaleRef.current + delta))
+      applyTransform(el)
+    }
+    const onMouseDown = (e) => {
+      const el = lightboxContentRef.current
+      if (!el || !el.contains(e.target) || e.button !== 0) return
+      e.preventDefault()
+      el.style.cursor = 'grabbing'
+      const startX = e.clientX - lightboxTranslateRef.current.x
+      const startY = e.clientY - lightboxTranslateRef.current.y
+      let dragged = false
+      const onMove = (ev) => {
+        dragged = true
+        lightboxTranslateRef.current = { x: ev.clientX - startX, y: ev.clientY - startY }
+        applyTransform(el)
+      }
+      const onUp = () => {
+        el.style.cursor = 'grab'
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        if (dragged) {
+          window.addEventListener('click', (ev) => ev.stopPropagation(), { capture: true, once: true })
+        }
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    }
+    window.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    window.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('wheel', onWheel, { capture: true, passive: false })
+      window.removeEventListener('mousedown', onMouseDown)
+    }
   }, [zoom])
 
   // The floating bar and context menu reuse the same conversion path as the
@@ -1385,7 +1455,10 @@ export default function Editor({
           role="dialog"
           aria-modal="true"
         >
-          <img src={zoom} alt="" />
+          {zoom.type === 'svg'
+            ? <div ref={lightboxContentRef} className="hm-lightbox-svg" dangerouslySetInnerHTML={{ __html: zoom.html }} onClick={(e) => e.stopPropagation()} />
+            : <img ref={lightboxContentRef} src={zoom.src} alt="" onClick={(e) => e.stopPropagation()} />
+          }
           <button
             className="hm-lightbox-close"
             title={t('lightbox.close')}

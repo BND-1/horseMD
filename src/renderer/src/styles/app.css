@@ -1836,6 +1836,7 @@ body.hm-full-width .editor-skeleton {
 .hm-image-lightbox img {
   max-width: 90vw;
   max-height: 90vh;
+  min-width: min(600px, 90vw);
   object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
@@ -1856,6 +1857,29 @@ body.hm-full-width .editor-skeleton {
 }
 .hm-lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
 @keyframes hmLightboxFade { from { opacity: 0; } to { opacity: 1; } }
+
+.hm-lightbox-svg {
+  max-width: 90vw;
+  max-height: 90vh;
+  min-width: min(760px, 90vw);
+  min-height: min(500px, 80vh);
+  overflow: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  padding: 24px;
+  cursor: grab;
+  transform-origin: center center;
+}
+.hm-image-lightbox img {
+  cursor: grab;
+}
+.hm-lightbox-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
 
 /* Block-level hint: a small, quiet tag beside the caret's line naming the
    current block (H1…H6 / 正文). Non-interactive — purely an at-a-glance cue.
