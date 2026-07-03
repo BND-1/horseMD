@@ -6,6 +6,7 @@ dist/
 
 # mobile (Capacitor) build output + native build artifacts
 dist-mobile/
+dist-linux/
 ios/App/Pods/
 ios/App/App/public/
 ios/App/build/
