@@ -2853,10 +2853,16 @@ body.dark .milkdown {
   margin-top: 0;
 }
 
-/* Paragraphs — enhanced readability. Vertical spacing is user-adjustable. */
+/* Paragraphs — enhanced readability. Vertical spacing is user-adjustable.
+   font-size MUST be set here (not just inherited): Milkdown Crepe's reset.css
+   hardcodes `.ProseMirror p { font-size: 16px }`, which would otherwise pin body
+   text (and blockquote/list paragraphs) to 16px and ignore --editor-font-size.
+   app.css specificity (0,2,1) beats Crepe's (0,1,1); headings use em so they
+   already scale. (#25-adjacent: font-size slider now affects body, not just h1-h6.) */
 .milkdown .ProseMirror p {
   margin: var(--editor-para-spacing, 0.8em) 0;
   line-height: inherit;
+  font-size: var(--editor-font-size, 16px);
 }
 .milkdown .ProseMirror > p:first-child {
   margin-top: 0;
