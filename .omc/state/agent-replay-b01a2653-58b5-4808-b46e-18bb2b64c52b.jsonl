@@ -79,3 +79,4 @@
 {"t":0,"agent":"ab18442","agent_type":"architect","event":"agent_stop","success":true,"duration_ms":89210}
 {"t":0,"agent":"a430996","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
 {"t":0,"agent":"a0e22cb","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"a170c2c","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}

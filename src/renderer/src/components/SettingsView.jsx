@@ -39,22 +39,6 @@ export default function SettingsView({
           <TypographyControls settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
         </section>
 
-        {/* Proofreading. */}
-        <section className="settings-block">
-          <h2 className="settings-block-title">{t('settings.proofreading')}</h2>
-          <div className="settings-row">
-            <div className="settings-row-text">
-              <div className="settings-row-label">{t('settings.spellcheck')}</div>
-              <div className="settings-row-desc">{t('settings.spellcheckDesc')}</div>
-            </div>
-            <Toggle
-              checked={!!settings.spellcheck}
-              onChange={(v) => onUpdateSettings({ spellcheck: v })}
-              label={t('settings.spellcheck')}
-            />
-          </div>
-        </section>
-
         {/* Appearance. */}
         <section className="settings-block">
           <h2 className="settings-block-title">{t('settings.appearance')}</h2>
@@ -85,6 +69,22 @@ export default function SettingsView({
           <div className="settings-row settings-row-actions">
             <button className="settings-link-btn" onClick={() => onOpenThemesFolder && onOpenThemesFolder()}>{t('settings.openThemesFolder')}</button>
             <button className="settings-link-btn" onClick={() => onGetMoreThemes && onGetMoreThemes()}>{t('settings.getMoreThemes')}</button>
+          </div>
+        </section>
+
+        {/* Proofreading. */}
+        <section className="settings-block">
+          <h2 className="settings-block-title">{t('settings.proofreading')}</h2>
+          <div className="settings-row">
+            <div className="settings-row-text">
+              <div className="settings-row-label">{t('settings.spellcheck')}</div>
+              <div className="settings-row-desc">{t('settings.spellcheckDesc')}</div>
+            </div>
+            <Toggle
+              checked={!!settings.spellcheck}
+              onChange={(v) => onUpdateSettings({ spellcheck: v })}
+              label={t('settings.spellcheck')}
+            />
           </div>
         </section>
 
@@ -119,6 +119,7 @@ export default function SettingsView({
             <div className="settings-row-label">HorseMD {APP_VERSION && <span className="settings-version">{APP_VERSION}</span>}</div>
           </div>
           <div className="settings-row settings-row-actions">
+            <button className="settings-link-btn" onClick={() => window.api.openExternal('https://horsemd.yangsir.net')}>{t('settings.website')}</button>
             <button className="settings-link-btn" onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}>GitHub</button>
             <button className="settings-link-btn" onClick={() => window.api.openExternal('https://gitee.com/yty11167/horse-md')}>Gitee</button>
           </div>

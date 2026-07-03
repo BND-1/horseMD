@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-nobar-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-nobar-build.log\nwc -l src/renderer/src/components/SettingsView.jsx",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-v3b-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-v3b-build.log\nrm -rf /tmp/hm-v3-ud && node /tmp/hm-v3-verify.mjs 2>&1 | tail -22",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -255,8 +255,8 @@
   "hotPaths": [
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 88,
-      "lastAccessed": 1783065920553,
+      "accessCount": 93,
+      "lastAccessed": 1783071278589,
       "type": "file"
     },
     {
