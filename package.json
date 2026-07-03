@@ -58,6 +58,13 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "build/linux-icons",
+        "to": "linux-icons",
+        "filter": ["**/*"]
+      }
+    ],
     "icon": "build/icon.ico",
     "publish": [
       {
@@ -125,6 +132,47 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon-linux.png",
+      "category": "Office",
+      "executableName": "horsemd",
+      "mimeTypes": ["text/markdown"],
+      "desktop": {
+        "Name": "HorseMD",
+        "Comment": "Warm, modern Markdown editor",
+        "Categories": "Office;TextEditor;",
+        "MimeType": "text/markdown"
+      },
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown Document",
+          "role": "Editor"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown Document",
+          "role": "Editor"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown Document",
+          "role": "Editor"
+        }
+      ]
+    },
+    "deb": {
+      "maintainer": "mini_md <horsemd@yangsir.net>",
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libsecret-1-0"],
+      "afterInstall": "build/installer-resources/after-install.sh",
+      "afterRemove": "build/installer-resources/after-remove.sh"
     }
   }
 }
