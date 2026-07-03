@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us4-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us4-build.log",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-us5-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -2 /tmp/hm-us5-build.log",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -261,8 +261,8 @@
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 60,
-      "lastAccessed": 1783050632596,
+      "accessCount": 61,
+      "lastAccessed": 1783050891537,
       "type": "file"
     },
     {
@@ -362,6 +362,12 @@
       "type": "file"
     },
     {
+      "path": "src/renderer/src/components/LayoutControl.jsx",
+      "accessCount": 4,
+      "lastAccessed": 1783050827595,
+      "type": "file"
+    },
+    {
       "path": "src/renderer/src/components/editor-chunked-parse.js",
       "accessCount": 3,
       "lastAccessed": 1782829127582,
@@ -437,12 +443,6 @@
       "path": "docs/performance-large-doc.md",
       "accessCount": 2,
       "lastAccessed": 1783010813473,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/components/LayoutControl.jsx",
-      "accessCount": 2,
-      "lastAccessed": 1783047213641,
       "type": "file"
     },
     {

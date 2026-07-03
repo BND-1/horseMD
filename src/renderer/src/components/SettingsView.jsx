@@ -3,20 +3,125 @@
 // width) with a live preview, spell-check toggle, theme, language, image-host
 // command, and an About section. Opened from the ActivityBar gear button.
 //
-// Sections are added incrementally: US-4 adds Proofreading (spell-check toggle);
-// US-5 adds Typography + live preview; US-6 adds Appearance / Language / Image
-// host / About. StatusBar quick-controls (排版/主题/语言) stay where they are —
-// this is their full-version home, not a replacement.
+// Sections are added incrementally: US-4 = Proofreading, US-5 = Typography +
+// live preview, US-6 = Appearance / Language / Image host / About. StatusBar
+// quick-controls (排版/主题/语言) stay where they are — this is their
+// full-version home, not a replacement.
 import { useI18n } from '../i18n.jsx'
 import Toggle from './ui/Toggle.jsx'
+import AdjustGroup from './ui/AdjustGroup.jsx'
+import {
+  PAGE_WIDTH_PRESETS,
+  PAGE_WIDTH_MIN,
+  PAGE_WIDTH_MAX,
+  FONT_SIZE_PRESETS,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
+  LINE_HEIGHT_PRESETS,
+  LINE_HEIGHT_MIN,
+  LINE_HEIGHT_MAX,
+  PARA_SPACING_PRESETS,
+  PARA_SPACING_MIN,
+  PARA_SPACING_MAX,
+  applyFontSize,
+  applyLineHeight,
+  applyParagraphSpacing,
+  applyPageWidth
+} from '../settings.js'
+
+const round1 = (n) => Math.round(n * 10) / 10
+const round10 = (n) => Math.round(n / 10) * 10
 
 export default function SettingsView({ settings, onUpdateSettings }) {
   const { t } = useI18n()
+  const { fontSize, lineHeight, paragraphSpacing, pageWidth } = settings
+
+  const fontIdx = FONT_SIZE_PRESETS.findIndex((p) => p.size === fontSize)
+  const lhIdx = LINE_HEIGHT_PRESETS.findIndex((p) => p.value === lineHeight)
+  const psIdx = PARA_SPACING_PRESETS.findIndex((p) => p.value === paragraphSpacing)
+  const isFull = pageWidth === 'full'
+  const widthIdx = PAGE_WIDTH_PRESETS.findIndex((p) =>
+    p.width === 'full' ? isFull : !isFull && pageWidth === p.width
+  )
+
   return (
     <div className="settings-page">
       <div className="settings-card">
         <h1 className="settings-title">{t('settings.pageTitle')}</h1>
         <p className="settings-subtitle">{t('settings.pageSubtitle')}</p>
+
+        {/* Typography — US-5. liveApply writes the CSS var directly during the
+            drag, so both the editor (when you switch back) and the preview below
+            update in real time; the value commits once on pointer-up. */}
+        <section className="settings-section">
+          <div className="settings-section-head">
+            <span className="settings-section-title">{t('settings.typography')}</span>
+          </div>
+
+          <div className="settings-preview markdown-body">
+            <h2>{t('settings.previewHeading')}</h2>
+            <p>{t('settings.previewBody')}</p>
+            <ul>
+              <li>{t('settings.previewListItem')}</li>
+            </ul>
+          </div>
+
+          <AdjustGroup
+            title={t('settings.fontSize')}
+            valueLabel={fontSize + ' px'}
+            presets={FONT_SIZE_PRESETS.map((p) => ({ ...p, label: t('settings.font.' + p.id) }))}
+            activeIndex={fontIdx}
+            onPick={(p) => onUpdateSettings({ fontSize: p.size })}
+            value={fontSize}
+            min={FONT_SIZE_MIN}
+            max={FONT_SIZE_MAX}
+            round={Math.round}
+            onSet={(s) => onUpdateSettings({ fontSize: s })}
+            liveApply={applyFontSize}
+          />
+          <div className="hm-pop-sep" />
+          <AdjustGroup
+            title={t('settings.lineHeight')}
+            valueLabel={round1(lineHeight).toFixed(1)}
+            presets={LINE_HEIGHT_PRESETS.map((p) => ({ ...p, label: t('settings.lineHeightPreset.' + p.id) }))}
+            activeIndex={lhIdx}
+            onPick={(p) => onUpdateSettings({ lineHeight: p.value })}
+            value={lineHeight}
+            min={LINE_HEIGHT_MIN}
+            max={LINE_HEIGHT_MAX}
+            round={round1}
+            onSet={(v) => onUpdateSettings({ lineHeight: v })}
+            liveApply={applyLineHeight}
+          />
+          <div className="hm-pop-sep" />
+          <AdjustGroup
+            title={t('settings.paragraphSpacing')}
+            valueLabel={round1(paragraphSpacing).toFixed(1) + ' em'}
+            presets={PARA_SPACING_PRESETS.map((p) => ({ ...p, label: t('settings.paraSpacingPreset.' + p.id) }))}
+            activeIndex={psIdx}
+            onPick={(p) => onUpdateSettings({ paragraphSpacing: p.value })}
+            value={paragraphSpacing}
+            min={PARA_SPACING_MIN}
+            max={PARA_SPACING_MAX}
+            round={round1}
+            onSet={(v) => onUpdateSettings({ paragraphSpacing: v })}
+            liveApply={applyParagraphSpacing}
+          />
+          <div className="hm-pop-sep" />
+          <AdjustGroup
+            title={t('settings.pageWidth')}
+            valueLabel={isFull ? t('settings.width.full') : pageWidth + ' px'}
+            presets={PAGE_WIDTH_PRESETS.map((p) => ({ ...p, label: t('settings.width.' + p.id) }))}
+            activeIndex={widthIdx}
+            onPick={(p) => onUpdateSettings({ pageWidth: p.width })}
+            value={isFull ? PAGE_WIDTH_MAX : pageWidth}
+            min={PAGE_WIDTH_MIN}
+            max={PAGE_WIDTH_MAX}
+            round={round10}
+            onSet={(w) => onUpdateSettings({ pageWidth: w })}
+            liveApply={applyPageWidth}
+          />
+        </section>
 
         {/* Proofreading — US-4 */}
         <section className="settings-section">
@@ -36,7 +141,7 @@ export default function SettingsView({ settings, onUpdateSettings }) {
           </div>
         </section>
 
-        {/* Typography + Appearance + Language + Image host + About come in US-5/US-6 */}
+        {/* Appearance + Language + Image host + About come in US-6 */}
       </div>
     </div>
   )

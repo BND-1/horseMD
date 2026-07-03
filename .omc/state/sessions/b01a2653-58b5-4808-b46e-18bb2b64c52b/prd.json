@@ -56,7 +56,7 @@
       "id": "US-4",
       "title": "Toggle 开关组件 + 拼写检查设置(默认关)",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "新建 components/ui/Toggle.jsx(role=switch, aria-checked, 用主题 token:--accent/--hover/--bg-editor/--shadow-sm, radius 999px, --ease-spring)。",
         "settings.js DEFAULT_SETTINGS 加 spellcheck:false + normalize/save 兼容。",

@@ -2639,6 +2639,53 @@ body.hm-full-width .source-editor {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Live typography preview — reads the SAME CSS vars as the editor
+   (--editor-font-size / -line-height / -para-spacing / -max-width), so dragging
+   a slider in the Settings page updates this sample in real time. */
+.settings-preview {
+  font-size: var(--editor-font-size, 16px);
+  line-height: var(--editor-line-height, 1.85);
+  max-width: var(--editor-max-width, 800px);
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 18px 22px;
+  margin-bottom: 18px;
+  color: var(--text);
+  overflow: hidden;
+  transition: max-width 0.15s var(--ease-out);
+}
+body.hm-full-width .settings-preview {
+  max-width: 100%;
+}
+.settings-preview h2 {
+  font-size: 1.75em;
+  margin: 0 0 0.4em;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+}
+.settings-preview p {
+  margin: var(--editor-para-spacing, 0.8em) 0;
+}
+.settings-preview ul {
+  margin: var(--editor-para-spacing, 0.8em) 0;
+  padding-left: 1.8em;
+}
+.settings-preview li {
+  margin: 0.5em 0;
+  line-height: 1.75;
+}
+.settings-preview li::marker {
+  color: var(--accent);
+}
+/* The shared AdjustGroup sits a little tighter inside a settings section. */
+.settings-section .hm-adjust-group {
+  padding: 4px 0;
+}
+.settings-section .hm-pop-sep:last-child {
+  display: none;
+}
 .welcome-card {
   text-align: center;
   width: 540px;
