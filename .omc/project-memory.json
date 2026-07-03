@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-guard-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-guard-build.log\nrm -rf /tmp/hm-cb-regress-ud\nnode /tmp/hm-codeblock-regress.mjs 2>&1 | tail -10",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-twopane-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-twopane-build.log\necho \"=== SettingsView line count ===\"\nwc -l src/renderer/src/components/SettingsView.jsx",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -261,8 +261,8 @@
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 67,
-      "lastAccessed": 1783052505325,
+      "accessCount": 71,
+      "lastAccessed": 1783061303094,
       "type": "file"
     },
     {

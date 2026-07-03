@@ -2525,26 +2525,59 @@ body.hm-full-width .source-editor {
   display: grid;
   place-items: center;
 }
-/* Settings page — a full-tab view (kind:'settings'). Scrollable, centered card,
-   same warm Typora DNA as .welcome / .hm-pop. Section styles are added in US-5. */
+/* Settings page — a full-tab view (kind:'settings'). Two-pane: section nav on the
+   left, active section's content on the right (scrollable). Warm Typora DNA. */
 .settings-page {
   flex: 1;
   display: grid;
-  place-items: start center;
-  overflow-y: auto;
-  padding: 48px 24px 80px;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg);
   animation: menuFadeIn 0.18s var(--ease-out);
 }
-.settings-card {
-  width: 680px;
-  max-width: 100%;
+/* Left section nav. */
+.settings-nav {
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-sidebar);
+  padding: 22px 12px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out);
+}
+.settings-nav-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.settings-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+/* Right content pane — one section at a time. */
+.settings-content {
+  overflow-y: auto;
+  padding: 40px 48px 80px;
+  width: 100%;
+  max-width: 780px;
 }
 .settings-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   margin: 0;
   letter-spacing: -0.02em;
@@ -2785,12 +2818,24 @@ body.hm-full-width .settings-preview {
   color: var(--accent-strong);
   font-variant-numeric: tabular-nums;
 }
-/* Mobile — tighter settings page (no activity bar; reached via the ••• sheet). */
+/* Mobile — collapse the two-pane to one column; nav becomes a horizontal strip. */
 .app.is-mobile .settings-page {
-  padding: 24px 14px 64px;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
 }
-.app.is-mobile .settings-card {
-  width: 100%;
+.app.is-mobile .settings-nav {
+  flex-direction: row;
+  overflow-x: auto;
+  border-right: none;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 10px 12px;
+  gap: 4px;
+}
+.app.is-mobile .settings-nav-item {
+  white-space: nowrap;
+}
+.app.is-mobile .settings-content {
+  padding: 24px 16px 64px;
 }
 .app.is-mobile .settings-title {
   font-size: 22px;
