@@ -13,7 +13,7 @@
       "id": "US-1",
       "title": "确定性验证根因(复现 + 量化 + 机制)",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "用 CDP Input.dispatchMouseEvent(mousePressed/moved/Released)在编辑器真鼠标拖选,复现『滚动到代码块+停留+选中→scrollTop 跳』(合成 MouseEvent 不算;必须 Input domain)。记录跳的量级。",
         "量化代码块 placeholder(未挂载,IO 200px 外)高度 vs 挂载后 EditorView 高度的 delta。",
@@ -25,7 +25,7 @@
       "id": "US-2",
       "title": "根治:消除代码块高度差(非 patch/非改 node_modules)",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "基于 US-1 确认的根因,实现根治(消除代码块高度差或让锚定在选区时仍有效)。禁止 global monkey-patch / 改 node_modules。",
         "代码块全部功能零回归:编辑、语法高亮、复制按钮、mermaid 预览(renderPreview 链)、代码块内搜索、语言检测。",
@@ -36,7 +36,7 @@
       "id": "US-3",
       "title": "验证跳页消失",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "用 US-1 的 Input.dispatchMouseEvent 复现方法验证『滚动+停留+选中』scrollTop 不再跳(选区前后 |ΔscrollTop| ≤ 阈值)。",
         "纯滚动停留仍不跳(不回归 overflow-anchor:auto 的成果)。"

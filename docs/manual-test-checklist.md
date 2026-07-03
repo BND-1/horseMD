@@ -75,6 +75,7 @@
 ## L. 代码块(CodeMirror)
 - [ ] ``` 代码块 → 语法高亮 + 深色代码面 + Copy 按钮
 - [ ] 代码块可编辑;Mermaid/LaTeX 块走预览机制(见 L1/M)
+- [ ] **#25 跳页(根因:代码块懒挂载)**:滚到代码块、停留、**选中文字** → 内容**不跳**(eager-mount 修复:`editor-codeblock-eager.js`,代码块打开即挂载、永不卸载,高度恒定);纯滚动停留也不跳(`.editor-scroll` overflow-anchor:auto)。大文档(≥20k,`.hm-cv`)同样验证
 
 ## L1. Mermaid
 - [ ] ```mermaid → 默认渲染图,工具栏 Hide/Edit 切换源码

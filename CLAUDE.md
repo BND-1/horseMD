@@ -136,6 +136,20 @@ docs/                  architecture / features / implementation-notes / developm
   use a custom widget decoration for this — `previewToggleText` must be set on the
   **feature** config (`featureConfigs[CrepeFeature.CodeMirror]`), not
   `codeBlockConfig`, because the feature reads it to build the toggle button.
+- **Code-block eager mount** (`editor-codeblock-eager.js`, #25 root-fix): Milkdown's
+  `CodeMirrorBlock` node view lazy-mounts its CodeMirror editor via an
+  IntersectionObserver(200px) + 5s teardown — a plain placeholder while off-screen,
+  the real editor only in view. The placeholder↔mounted height delta (~127px) is
+  what scroll-anchoring can't absorb when the editor has a selection (Chromium
+  disables `overflow-anchor` for a focused contenteditable w/ selection) → "scroll
+  to a code block, stop, select → page jumps". We modify `CodeMirrorBlock`'s
+  **prototype** (it's exported) to mount EAGERLY (`renderPlaceholder` →
+  `initializeCodeMirror`) and NEVER tear down (`scheduleTeardown` → no-op),
+  keeping the height stable so no delta exists. A nodeView override can't do this
+  (`nodeViewCtx` adds views but can't override `$view`-registered component views;
+  `editorViewOptionsCtx.nodeViews` overwrites ALL component views) — the prototype
+  mod is the surgical fix. `destroy()` still cleans up directly, so no leak. If
+  Milkdown adds a config flag / renames these methods, revisit.
 - **Highlight** (`editor-highlight.js`): `==text==` is a custom Milkdown mark
   (yellow), plus red/blue via toolbar color picker (round-trips as
   `<mark class="hm-hl-…">`). Built as `$markSchema` + a two-way remark plugin
