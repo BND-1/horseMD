@@ -261,8 +261,8 @@
     },
     {
       "path": "src/renderer/src/styles/app.css",
-      "accessCount": 62,
-      "lastAccessed": 1783051387161,
+      "accessCount": 63,
+      "lastAccessed": 1783051657405,
       "type": "file"
     },
     {
@@ -290,6 +290,12 @@
       "type": "file"
     },
     {
+      "path": "docs/manual-test-checklist.md",
+      "accessCount": 8,
+      "lastAccessed": 1783051790098,
+      "type": "file"
+    },
+    {
       "path": "docs/refactor-plan.md",
       "accessCount": 7,
       "lastAccessed": 1782820428480,
@@ -305,12 +311,6 @@
       "path": "src/renderer/src/components/editor-math.js",
       "accessCount": 6,
       "lastAccessed": 1782807573364,
-      "type": "file"
-    },
-    {
-      "path": "docs/manual-test-checklist.md",
-      "accessCount": 6,
-      "lastAccessed": 1782842373064,
       "type": "file"
     },
     {

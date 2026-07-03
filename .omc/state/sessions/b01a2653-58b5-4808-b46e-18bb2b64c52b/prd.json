@@ -80,7 +80,7 @@
       "id": "US-6",
       "title": "设置页其余区:外观/语言/图床/关于",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "SettingsView 加:外观(主题,复用 ThemePicker 逻辑)、语言(复用 LangSwitch)、图床(复用 ImageHostButton 命令输入)、关于(__APP_VERSION__ + GitHub/Gitee 链接)。",
         "i18n 加齐 settings.*(en+zh)。",

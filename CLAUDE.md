@@ -40,8 +40,10 @@ src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
   components/Editor.jsx  Crepe wrapper + block controls + enhancements
   components/{Sidebar,Tabs,Outline,CommandPalette,StatusBar,icons}.jsx
-  components/LayoutControl.jsx  the "排版" popover (font size · line height · paragraph spacing · page width)
+  components/LayoutControl.jsx  the "排版" popover (font size · line height · paragraph spacing · page width); uses the shared ui/AdjustGroup
   components/SaveFab.jsx       floating Save button (shown only while the active tab is dirty)
+  components/SettingsView.jsx  full-tab Settings page (typography + live preview · spell-check · theme · language · image host · about)
+  components/ui/{Toggle,AdjustGroup}.jsx  shared switch + segmented/slider adjuster (reused by SettingsView + LayoutControl)
   components/{Welcome,WindowControls,UpdateToast,RenameModal,ImageHostButton}.jsx  leaf views split out of App
   components/editor-{html,images,copy,highlight,mermaid,tablebreak}.js  Editor helpers: HTML node view · img paths · rich-copy · ==highlight== mark · mermaid preview · table-cell <br>
   hooks/usePopover.js   shared button→popover hook (closes on outside click / Esc)
@@ -154,7 +156,23 @@ docs/                  architecture / features / implementation-notes / developm
   (`--editor-font-size` / `--editor-line-height` / `--editor-para-spacing` /
   `--editor-max-width`) applied live. The slider writes the var DIRECTLY during a
   drag (no React round-trip) and commits once on pointer-up, so reflowing the whole
-  editor per tick stays smooth.
+  editor per tick stays smooth. `ui/AdjustGroup.jsx` is the shared control, reused by
+  both `LayoutControl` (the StatusBar 排版 popover) and the Settings page.
+- **Settings page** (`SettingsView.jsx`): a full-tab view opened from the
+  ActivityBar gear (bottom-left) / mobile `•••` sheet. Tabs carry a `kind` field
+  (`'doc'` default, `'settings'` for this page); `EditorArea` skips `kind!=='doc'`
+  tabs and `App.jsx` renders `<SettingsView>` as a sibling. Settings tabs are
+  transient — `useAppLifecycle` filters `kind!=='doc'` out of session persistence.
+  StatusBar/SaveFab/saveTab gate on `kind!=='settings'` (no save on the page).
+  StatusBar quick-controls (排版/主题/语言) stay — Settings is their full-version home.
+- **Body font-size** (`.milkdown .ProseMirror p`): MUST set
+  `font-size: var(--editor-font-size)`. Milkdown Crepe's `reset.css` hardcodes
+  `.ProseMirror p { font-size: 16px }`; without the override the font-size slider
+  only affects headings (which use `em`), not body paragraphs.
+- **Spell-check** (`settings.spellcheck`, default OFF): applied as the `spellcheck`
+  attribute on the Crepe `.ProseMirror` contenteditable in `Editor.jsx` (on mount +
+  via effect). No IPC — the attribute is enough; all other surfaces opt out via
+  `spellCheck={false}`.
 - **Save**: a floating FAB (`SaveFab.jsx`) appears at the bottom-right only while
   the active tab is dirty. `usePopover` (hooks/) is the shared close-on-outside
   hook for all popovers — don't hand-roll a per-component copy (a previous one

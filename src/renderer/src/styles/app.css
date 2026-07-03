@@ -2785,6 +2785,19 @@ body.hm-full-width .settings-preview {
   color: var(--accent-strong);
   font-variant-numeric: tabular-nums;
 }
+/* Mobile — tighter settings page (no activity bar; reached via the ••• sheet). */
+.app.is-mobile .settings-page {
+  padding: 24px 14px 64px;
+}
+.app.is-mobile .settings-card {
+  width: 100%;
+}
+.app.is-mobile .settings-title {
+  font-size: 22px;
+}
+.app.is-mobile .settings-swatches {
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+}
 .welcome-card {
   text-align: center;
   width: 540px;
