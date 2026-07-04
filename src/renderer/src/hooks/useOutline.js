@@ -14,7 +14,13 @@
 //   editorHostRef — ref to the active rich editor's scroll container
 //   home / sidebarOpen / sidebarMode / sourceMode / activeId / activeTab — view state
 //   isMobile / setSidebarOpen / setHome — drawer affordances for jumpToHeading
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+// Shared heading selector — used by jumpToHeading, the scrollspy, and the list
+// reader. Keeping it in one place ensures they all agree on what counts as a
+// heading (ATX, Setext, and HTML <h1>…<h6> rendered by the editor).
+const HEADING_SEL = '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
+const getHeadings = (host) => (host ? [...host.querySelectorAll(HEADING_SEL)] : [])
 
 export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, isMobile, setSidebarOpen, setHome }) {
   const [activeHeading, setActiveHeading] = useState(-1)
@@ -25,6 +31,10 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
   const [richDocVersion, setRichDocVersion] = useState(0)
   const [richLoading, setRichLoading] = useState(false)
   const [outlineHeadings, setOutlineHeadings] = useState([])
+  // A jump requested while the editor was still loading (chunked parse). Held
+  // here and executed once loading finishes — heading offsets aren't stable
+  // mid-load, so jumping immediately would land wrong + fight the content stream.
+  const pendingJumpRef = useRef(null)
 
   // --------------------------- outline jump ------------------------
   const jumpToHeading = useCallback((index) => {
@@ -35,12 +45,15 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
     // On mobile the outline lives in the drawer; close it so the jumped-to
     // content is actually visible instead of hidden behind the drawer.
     if (isMobile) setSidebarOpen(false)
+    // If the rich editor is still loading (chunked parse on a large doc), queue
+    // the jump — heading offsets shift as content streams in, so scrolling now
+    // would be imprecise + janky. Drained by the effect below on load finish.
+    if (richLoading) {
+      pendingJumpRef.current = index
+      return
+    }
     const doJump = () => {
-      const host = editorHostRef.current
-      if (!host) return false
-      const hs = host.querySelectorAll(
-        '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
-      )
+      const hs = getHeadings(editorHostRef.current)
       const el = hs[index]
       if (!el) return false
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -52,7 +65,18 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
     requestAnimationFrame(() => {
       if (!doJump()) requestAnimationFrame(doJump)
     })
-  }, [setHome, isMobile, setSidebarOpen])
+  }, [setHome, isMobile, setSidebarOpen, richLoading])
+
+  // Drain a queued jump once the editor finishes loading (richLoading false +
+  // richDocVersion bumped). Use 'auto' (instant) — the doc just finished
+  // rendering, smooth would animate on top of the settle.
+  useEffect(() => {
+    if (richLoading || pendingJumpRef.current == null) return
+    const index = pendingJumpRef.current
+    pendingJumpRef.current = null
+    const el = getHeadings(editorHostRef.current)[index]
+    if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' })
+  }, [richLoading, richDocVersion])
 
   // Outline scrollspy: highlight the heading you're currently viewing (the last
   // one scrolled past the top), mirroring how the file tree marks the open file.
@@ -83,9 +107,7 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
     let tries = 0
 
     const build = () => {
-      const els = scroller.querySelectorAll(
-        '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
-      )
+      const els = getHeadings(scroller)
       if (!els.length) {
         tops = null
         return
@@ -152,29 +174,32 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
       setOutlineHeadings([])
       return
     }
+    // During chunked load the DOM has only partial headings — wait for
+    // richDocVersion bump (load finish) before reading, so the outline shows
+    // the COMPLETE list (the loading skeleton covers the wait via richLoading).
+    if (richLoading) return
     // Debounce: the effect re-runs on every content change (every keystroke).
     // On large docs the querySelectorAll scan is expensive. Wait 500ms after the
     // last edit before scanning — headings don't change mid-word.
     let timer = 0
     const read = () => {
       timer = 0
-      const pm = editorHostRef.current?.querySelector('.ProseMirror')
+      const els = getHeadings(editorHostRef.current)
       // No editor mounted (e.g. just closed the file) → clear instead of
       // leaving the previous document's outline hanging (issue #20).
-      if (!pm) {
+      if (!els.length) {
         setOutlineHeadings([])
         return
       }
-      const els = pm.querySelectorAll('h1, h2, h3, h4, h5, h6')
       setOutlineHeadings(
-        [...els].map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
+        els.map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
       )
     }
     timer = setTimeout(read, 500)
     return () => {
       if (timer) clearTimeout(timer)
     }
-  }, [home, activeId, activeTab, sourceMode, richDocVersion, editorHostRef])
+  }, [home, activeId, activeTab, sourceMode, richDocVersion, richLoading, editorHostRef])
 
   return {
     activeHeading,

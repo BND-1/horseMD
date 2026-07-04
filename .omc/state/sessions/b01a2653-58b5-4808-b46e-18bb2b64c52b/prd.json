@@ -1,66 +1,64 @@
 {
-  "task": "根治 HorseMD #25 残余:滚动到代码块+停留+选中文字 → 内容跳页(纯滚动已修好)。验证先行、根治(非 patch/非改 node_modules)、根治文档。",
+  "task": "修 5 个问题: #30 Win Ctrl+W 误关应用 / 大纲加载中跳转不准(#微信) / #28 模式切换丢滚动位置 / #29 文件树显示点目录开关 / #31 标签拖拽排序。",
   "userConstraints": [
-    "确定性验证根因,不假设。",
-    "根治(底层),禁止 global monkey-patch / 改 node_modules / 接受+记录。",
-    "根治文档(CLAUDE.md / docs/manual-test-checklist.md / 记忆)。",
-    "不引新旧 bug:代码块编辑/语法高亮/复制/mermaid/代码块内搜索/语言检测/查找替换/审阅/自定义主题/源码模式/移动端/#17 Windows 大文档性能。跨平台。",
-    "build 0 error;单文件 <500 行(上限 800);一行一 commit,每 story build+验证。"
+    "不引新旧 bug(标签/编辑器/大纲/查找/保存/审阅/设置/主题/移动端/代码块 eager-mount/Mermaid 灯箱/拼写 全不坏)。",
+    "代码解耦、可复用就复用、不堆冗余;单文件 <500 行(上限 800);不往 App.jsx/Editor.jsx 末尾堆代码。",
+    "跨平台(macOS + Windows + 移动端)。npm run build 0 error。一行一 commit,每 story build+验证。"
   ],
-  "hypothesis": "Milkdown code-block node view (node_modules/@milkdown/components/lib/code-block/index.js) IntersectionObserver(200px)+setTimeout 懒挂载/拆卸 CodeMirror EditorView → 高度差;Chromium 在选区时禁用 scroll-anchoring → 选区时锚定失效 → 高度差裸奔 → 跳。未确定性验证。",
   "stories": [
     {
-      "id": "US-1",
-      "title": "确定性验证根因(复现 + 量化 + 机制)",
+      "id": "A",
+      "title": "#30 Windows/Linux Ctrl+W 不再误关整个应用",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "用 CDP Input.dispatchMouseEvent(mousePressed/moved/Released)在编辑器真鼠标拖选,复现『滚动到代码块+停留+选中→scrollTop 跳』(合成 MouseEvent 不算;必须 Input domain)。记录跳的量级。",
-        "量化代码块 placeholder(未挂载,IO 200px 外)高度 vs 挂载后 EditorView 高度的 delta。",
-        "确认机制:选区时 overflow-anchor:auto 是否失效(受控实验:视口上方内容长高,对比无选区 vs 有选区下锚元素 screenY 是否被钉住)。",
-        "progress.txt 写明:确认的根因 + 确定性复现方法 + delta 量级。若根因与假设不同,据实修正后续 story。"
+        "main/index.js: Windows/Linux 不再用裸 { role:'windowMenu' },改成自定义子菜单,close 用 Alt+F4(不含 Ctrl+W),把 Ctrl+W 让给 Close Tab。mac 分支不动(已 Shift+Cmd+W)。",
+        "CDP/逻辑验证: Windows 下 CmdOrCtrl+W 只触发 menuCmd('closeTab'),不触发 window.close();关最后一个标签回 Home 不退出。mac 行为不变。",
+        "build 0 error。"
       ]
     },
     {
-      "id": "US-2",
-      "title": "根治:消除代码块高度差(非 patch/非改 node_modules)",
+      "id": "B",
+      "title": "大纲:加载中跳转排队 + 加载完精确落点(#微信反馈)",
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "基于 US-1 确认的根因,实现根治(消除代码块高度差或让锚定在选区时仍有效)。禁止 global monkey-patch / 改 node_modules。",
-        "代码块全部功能零回归:编辑、语法高亮、复制按钮、mermaid 预览(renderPreview 链)、代码块内搜索、语言检测。",
-        "npm run build 0 error。"
+        "useOutline.js: 分块加载(richLoading)期间大纲不显示部分标题(或标记 loading),richDocVersion bump 后再读完整列表。",
+        "jumpToHeading: 编辑器还在加载时把目标 index 排队,加载完再跳(用 auto 瞬时,不用 smooth 避免与加载竞争);复用现有标题查询逻辑。",
+        "CDP/手动: 打开大文档(≥20k 带多级标题),加载中点最后一条 → 加载完后精确落到那条(无位移/不抖);小文档立即跳仍准。",
+        "build 0 error。"
       ]
     },
     {
-      "id": "US-3",
-      "title": "验证跳页消失",
+      "id": "C",
+      "title": "#28 富文本↔源码模式切换保留滚动位置(按锚点,非比例)",
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "用 US-1 的 Input.dispatchMouseEvent 复现方法验证『滚动+停留+选中』scrollTop 不再跳(选区前后 |ΔscrollTop| ≤ 阈值)。",
-        "纯滚动停留仍不跳(不回归 overflow-anchor:auto 的成果)。"
+        "App.jsx toggleSource/restore: 不再用滚动比例(0-1),改按内容锚点(视口顶部标题或段落 offset)还原;抽共享 helper 给模式切换+大纲复用(解耦)。",
+        "CDP/手动: 富文本停在某标题 → 切源码 → 仍显示该标题附近(误差小);反向亦然。大文档(代码/图片)也准。",
+        "build 0 error。"
       ]
     },
     {
-      "id": "US-4",
-      "title": "回归",
+      "id": "D",
+      "title": "#29 文件树显示点目录(.claude 等)开关",
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "代码块编辑/语法高亮/复制/mermaid/LaTeX/表格/大纲/查找替换/保存/审阅/自定义主题/源码模式 过 docs/manual-test-checklist.md 相关条目。",
-        "#17 Windows 大文档性能不回归(content-visibility 仍在;若根治改了虚拟化,量化性能)。",
-        "build 0 error;无运行异常。"
+        "settings.js 加 showHiddenFiles:false(默认关);main/index.js readTree + 移动端 capacitor-api 接收该设置,开时放行点目录/点文件(仍屏蔽 IGNORED_DIRS 如 .git/node_modules)。",
+        "SettingsView 加 Toggle(复用 ui/Toggle.jsx);i18n(en+zh)。",
+        "CDP/手动: 默认关文件树无 .claude;开关开 → .claude/.cursor 等出现;.git/node_modules 仍屏蔽。重启保持。build 0。"
       ]
     },
     {
-      "id": "US-5",
-      "title": "根治文档 + mac 包",
+      "id": "E",
+      "title": "#31 标签页拖拽排序",
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "CLAUDE.md(Conventions 加代码块 lazy-mount 根因+根治)、docs/manual-test-checklist.md(更新 #25)、docs/performance-large-doc.md(若相关)、记忆(horsemd-perf-large-doc.md / 新建)。",
-        "打 mac 包自测。"
+        "Tabs.jsx HTML5 拖拽(draggable+onDragStart/onDragOver/onDrop)重排 tabs;抽 reorderTabs(from,to) 到 useFileOps(解耦)。session 自动持久化(已有按 tabs 顺序存的逻辑)。拖拽视觉反馈。无新依赖。",
+        "CDP/手动: 拖标签到新位置 → 顺序变 + 重启保持;激活态/关闭/右键菜单不回归。build 0。"
       ]
     }
   ]

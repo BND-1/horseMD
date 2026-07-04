@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-lightbox-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-lightbox-build.log",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-B-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-B-build.log\nwc -l src/renderer/src/hooks/useOutline.js",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -261,8 +261,8 @@
     },
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 84,
-      "lastAccessed": 1783062296625,
+      "accessCount": 85,
+      "lastAccessed": 1783169359317,
       "type": "file"
     },
     {
@@ -281,6 +281,12 @@
       "path": "src/renderer/src/hooks/useFileOps.js",
       "accessCount": 12,
       "lastAccessed": 1783052013843,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/hooks/useOutline.js",
+      "accessCount": 11,
+      "lastAccessed": 1783169909683,
       "type": "file"
     },
     {
@@ -335,12 +341,6 @@
       "path": "src/renderer/src/components/shell/ActivityBar.jsx",
       "accessCount": 6,
       "lastAccessed": 1783052069578,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/hooks/useOutline.js",
-      "accessCount": 5,
-      "lastAccessed": 1783052054457,
       "type": "file"
     },
     {

@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"grep -nE \\\"LayoutControl|StatusBar|<LayoutControl\\\" src/renderer/src/components/shell/StatusBar.jsx | head; echo \\\"---STATUSBAR RENDER---\\\"; sed -n '1,40p' src/renderer/src/components/shel...",
-  "error": "Exit code 1\nugrep: warning: src/renderer/src/components/shell/StatusBar.jsx: No such file or directory\n---STATUSBAR RENDER---\nsed: src/renderer/src/components/shell/StatusBar.jsx: No such file or directory",
-  "timestamp": "2026-07-03T02:54:14.886Z",
+  "tool_input_preview": "{\"command\":\"cd /Users/yangtingyi/vibe_everything/horseMD\\npkill -9 -x HorseMD 2>/dev/null; pkill -9 -f \\\"remote-debugging-port=9222\\\" 2>/dev/null; sleep 1\\nopen -n dist/mac-arm64/HorseMD.app && echo \\...",
+  "error": "Exit code 1\n(eval):3: unmatched \"",
+  "timestamp": "2026-07-04T12:38:35.616Z",
   "retry_count": 1
 }

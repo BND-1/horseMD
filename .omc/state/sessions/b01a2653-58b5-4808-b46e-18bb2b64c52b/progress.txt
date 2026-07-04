@@ -1,16 +1,5 @@
-# Ralph progress — #25 选区触发跳页(根治)
+# Ralph progress — 5 issues (#30/#微信/#28/#29/#31)
 
 ## Iteration 0
-- PRD: 5 stories(US-1 验证 / US-2 根治 / US-3 验证消失 / US-4 回归 / US-5 文档)。
-- 假设(未验证):code-block IntersectionObserver 懒挂载高度差 + Chromium 选区时禁用锚定。
-- 纯滚动跳页已修(overflow-anchor:auto base)。本轮治选区触发。
-
-## US-1 (in progress): 确定性验证
-
-## All stories DONE (US-1..US-5)
-- US-1: 根因确认 — CodeMirrorBlock 懒挂载(IntersectionObserver 200px + 5s teardown),placeholder 131px vs 挂载 258px = delta 127px;选区时 Chromium 禁用 overflow-anchor → delta 裸奔 → 跳。CDP Input.dispatchMouseEvent 复现选中成功但抓不到跳时机(用户实测)。
-- US-2 (a3ec696): 根治 — CodeMirrorBlock.prototype 修改(renderPlaceholder→eager init + scheduleTeardown→no-op)。nodeViewCtx 覆盖被 Milkdown 架构封死(实测),prototype 是外科式根治。用户批准。
-- US-3: CDP 验证 delta=0(屏外/屏内都 258px,hasCm true)。
-- US-4: 回归 PASS — 代码块 CodeMirror 渲染(5 行)/可编辑/复制按钮/mermaid(16 svg)/无异常。
-- US-5: 文档(CLAUDE.md + checklist + 记忆)+ mac 包(打中)。
-- Commits: a3ec696 (fix), 04d300b (docs)。Files: editor-codeblock-eager.js (新), Editor.jsx (side-effect import), CLAUDE.md, docs/manual-test-checklist.md, memory。
+- PRD: 5 stories A(#30)→B(大纲跳转)→C(#28)→D(#29)→E(#31)。
+- 根因已初步排查(见 PRD),Ralph 复核+定方案+修。
