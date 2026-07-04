@@ -904,7 +904,22 @@ function buildMenu() {
         { role: 'toggleDevTools' }
       ]
     },
-    { role: 'windowMenu' }
+    // Windows/Linux: the bare 'windowMenu' role injects { role:'close' } whose
+    // DEFAULT accelerator is CmdOrCtrl+W — which collides with Close Tab (#30),
+    // sometimes closing the whole window/app instead of the tab. Use a custom
+    // submenu so Close binds Alt+F4 (the Windows standard), leaving Ctrl+W for
+    // Close Tab. macOS keeps the bare role (its windowMenu has no 'close').
+    isMac
+      ? { role: 'windowMenu' }
+      : {
+          label: 'Window',
+          submenu: [
+            { role: 'minimize' },
+            { role: 'zoom' },
+            { type: 'separator' },
+            { role: 'close', accelerator: 'Alt+F4' }
+          ]
+        }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
