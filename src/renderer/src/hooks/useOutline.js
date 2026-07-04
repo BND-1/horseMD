@@ -35,21 +35,38 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
   // here and executed once loading finishes — heading offsets aren't stable
   // mid-load, so jumping immediately would land wrong + fight the content stream.
   const pendingJumpRef = useRef(null)
-  // Timer for restoring overflow-anchor after a jump (see doJump).
+  // Timer for restoring overflow-anchor after a jump (see jumpAndStabilize).
   const anchorTimerRef = useRef(0)
+
+  // Scroll to a heading, then poll until the position stabilizes. Async content
+  // (images/mermaid/KaTeX/CV estimate→real) keeps shifting scrollTop after the
+  // jump — re-scroll until 2 consecutive checks agree. overflow-anchor is
+  // disabled during the poll (it fights programmatic scroll) + restored once
+  // stable. Instant (not smooth) — smooth's duration is unpredictable on large
+  // docs + competes with anchoring during the animation.
+  const jumpAndStabilize = (host, el) => {
+    if (!host || !el) return false
+    host.style.overflowAnchor = 'none'
+    clearTimeout(anchorTimerRef.current)
+    let lastST = -1
+    let stable = 0
+    const poll = () => {
+      el.scrollIntoView({ block: 'start' })
+      const st = host.scrollTop
+      if (Math.abs(st - lastST) < 3) {
+        if (++stable >= 2) { host.style.overflowAnchor = ''; return }
+      } else stable = 0
+      lastST = st
+      anchorTimerRef.current = setTimeout(poll, 200)
+    }
+    poll()
+    return true
+  }
 
   // --------------------------- outline jump ------------------------
   const jumpToHeading = useCallback((index) => {
-    // Make sure the document (not the Home page) is showing — otherwise the
-    // active editor is hidden and editorHostRef isn't attached, so the jump
-    // would silently do nothing. setHome(false) is a no-op when already not home.
     setHome(false)
-    // On mobile the outline lives in the drawer; close it so the jumped-to
-    // content is actually visible instead of hidden behind the drawer.
     if (isMobile) setSidebarOpen(false)
-    // If the rich editor is still loading (chunked parse on a large doc), queue
-    // the jump — heading offsets shift as content streams in, so scrolling now
-    // would be imprecise + janky. Drained by the effect below on load finish.
     if (richLoading) {
       pendingJumpRef.current = index
       return
@@ -57,36 +74,25 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
     const doJump = () => {
       const host = editorHostRef.current
       if (!host) return false
-      const hs = getHeadings(host)
-      const el = hs[index]
+      const el = getHeadings(host)[index]
       if (!el) return false
-      // overflow-anchor:auto (#25 code-block-jump fix) fights the smooth
-      // scrollIntoView: after the animation reaches the target, a content-height
-      // change triggers anchoring, pulling scrollTop back to the wrong position.
-      // Temporarily disable it during the jump; restore after the scroll settles.
-      host.style.overflowAnchor = 'none'
-      clearTimeout(anchorTimerRef.current)
-      anchorTimerRef.current = setTimeout(() => { host.style.overflowAnchor = '' }, 700)
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return true
+      return jumpAndStabilize(host, el)
     }
-    // Works synchronously in the normal case; if we just left Home, the editor
-    // needs a frame to re-render and re-attach the ref before we can scroll it.
     if (doJump()) return
     requestAnimationFrame(() => {
       if (!doJump()) requestAnimationFrame(doJump)
     })
   }, [setHome, isMobile, setSidebarOpen, richLoading])
 
-  // Drain a queued jump once the editor finishes loading (richLoading false +
-  // richDocVersion bumped). Use 'auto' (instant) — the doc just finished
-  // rendering, smooth would animate on top of the settle.
+  // Drain a queued jump once the editor finishes loading. Uses the same
+  // poll-and-stabilize logic as jumpToHeading (async content may still settle
+  // after the chunked parse completes).
   useEffect(() => {
     if (richLoading || pendingJumpRef.current == null) return
     const index = pendingJumpRef.current
     pendingJumpRef.current = null
-    const el = getHeadings(editorHostRef.current)[index]
-    if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' })
+    const host = editorHostRef.current
+    if (host) jumpAndStabilize(host, getHeadings(host)[index])
   }, [richLoading, richDocVersion])
 
   // Outline scrollspy: highlight the heading you're currently viewing (the last
