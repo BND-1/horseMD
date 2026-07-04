@@ -21,7 +21,7 @@
       "id": "B",
       "title": "大纲:加载中跳转排队 + 加载完精确落点(#微信反馈)",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "useOutline.js: 分块加载(richLoading)期间大纲不显示部分标题(或标记 loading),richDocVersion bump 后再读完整列表。",
         "jumpToHeading: 编辑器还在加载时把目标 index 排队,加载完再跳(用 auto 瞬时,不用 smooth 避免与加载竞争);复用现有标题查询逻辑。",

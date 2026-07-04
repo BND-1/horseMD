@@ -28,6 +28,7 @@ import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
+import { headingAtRichTop, headingAtSourceTop, scrollRichToHeading, scrollSourceToHeading } from './scrollAnchor.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import {
@@ -88,7 +89,8 @@ export default function App() {
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const sourceRef = useRef(null) // active source-mode <textarea>
   const sourceTextareas = useRef({}) // textarea-backed editors by tab id
-  const scrollRatioRef = useRef(null) // pending scroll position to restore across a mode switch
+  const scrollRatioRef = useRef(null) // fallback: scroll ratio to restore across a mode switch
+  const scrollAnchorRef = useRef(null) // preferred: heading text to restore across a mode switch (#28)
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -286,13 +288,18 @@ export default function App() {
     setCustomTheme(null)
   }, [])
 
-  // Toggle source/rich mode while keeping the reading position. The two modes
-  // use different DOM (a <textarea> vs. the Crepe editor) with different content
-  // heights, so we preserve a *scroll ratio* (0…1) rather than a pixel offset:
-  // capture it from the outgoing view here, restore it onto the incoming view in
-  // the layout effect below once it has rendered.
+  // Toggle source/rich mode while keeping the reading position. Heading TEXT is
+  // content-stable across modes, so we anchor on it (#28); scroll RATIO is the
+  // fallback (imprecise because rich/source heights are non-linearly distributed).
   const toggleSource = useCallback(() => {
     commitAllLive() // flush textarea edits so the rich editor picks them up on switch
+    // Capture heading anchor (precise) from the outgoing view.
+    if (sourceModeRef.current) {
+      scrollAnchorRef.current = headingAtSourceTop(sourceRef.current, sourceRef.current?.value || '')
+    } else {
+      scrollAnchorRef.current = headingAtRichTop(editorHostRef.current)
+    }
+    // Also capture ratio as fallback.
     const el = sourceModeRef.current ? sourceRef.current : editorHostRef.current
     if (el) {
       const denom = el.scrollHeight - el.clientHeight
@@ -304,14 +311,25 @@ export default function App() {
   }, [commitAllLive])
 
   useLayoutEffect(() => {
+    const anchor = scrollAnchorRef.current
     const ratio = scrollRatioRef.current
-    if (ratio == null) return
+    if (anchor == null && ratio == null) return
+    scrollAnchorRef.current = null
     scrollRatioRef.current = null
     const apply = () => {
-      const el = sourceMode ? sourceRef.current : editorHostRef.current
-      if (!el) return
-      const denom = el.scrollHeight - el.clientHeight
-      if (denom > 0) el.scrollTop = ratio * denom
+      // Try heading anchor first — text is content-stable across modes (#28).
+      if (anchor) {
+        if (sourceMode) {
+          if (scrollSourceToHeading(sourceRef.current, sourceRef.current?.value || '', anchor)) return
+        } else if (scrollRichToHeading(editorHostRef.current, anchor)) return
+      }
+      // Fallback: scroll ratio (imprecise for docs with variable-height blocks).
+      if (ratio != null) {
+        const el = sourceMode ? sourceRef.current : editorHostRef.current
+        if (!el) return
+        const denom = el.scrollHeight - el.clientHeight
+        if (denom > 0) el.scrollTop = ratio * denom
+      }
     }
     // Apply immediately, then again as async layout settles — the rich editor
     // (Crepe) fills its content over a few frames after it remounts, growing
