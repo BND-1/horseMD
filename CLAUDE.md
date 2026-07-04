@@ -111,6 +111,12 @@ docs/                  architecture / features / implementation-notes / developm
   `closeTab`).
 - **App version** is injected at build time via Vite `define` (`__APP_VERSION__`
   in `electron.vite.config.mjs`, from `package.json`); shown on the welcome page.
+- **Releases** (GitHub): tag = `vX.X.X`, title = **`HorseMD vX.X.X`** (all 14
+  historical releases unified to this format 2026-07-04 — keep it consistent).
+  Release notes: Chinese, start directly with content (no HorseMD intro),
+  structured as ✨ 新功能 / 🐛 修复 / 📦 下载 + unsigned-warning + full-changelog link.
+  Build full set: mac dmg+zip (arm64+x64) + win nsis --x64 (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
+  `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,
   not on Home). The two panes are **flex siblings inside `.editor-area`** (a flex
