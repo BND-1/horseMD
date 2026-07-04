@@ -50,27 +50,43 @@ export function useOutline({ editorHostRef, home, sidebarOpen, sidebarMode, sour
   // docs + competes with anchoring during the animation.
   const jumpAndStabilize = (host, el) => {
     if (!host || !el) return false
-    // Force the scrollspy to highlight THIS heading during the poll — the tops
-    // cache may be stale (content still settling) → wrong active heading.
     forcedActiveRef.current = getHeadings(host).indexOf(el)
     host.style.overflowAnchor = 'none'
     clearTimeout(anchorTimerRef.current)
+
+    // Target scrollTop: heading at the top of the scroller.
+    const targetTop = el.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop
+
+    // Phase 2: poll-and-stabilize (corrects drift from async content settling).
     let lastST = -1
     let stable = 0
     const poll = () => {
       el.scrollIntoView({ block: 'start' })
       const st = host.scrollTop
       if (Math.abs(st - lastST) < 3) {
-        if (++stable >= 2) {
-          host.style.overflowAnchor = ''
-          forcedActiveRef.current = null // release override → normal scrollspy resumes
-          return
-        }
+        if (++stable >= 2) { host.style.overflowAnchor = ''; forcedActiveRef.current = null; return }
       } else stable = 0
       lastST = st
       anchorTimerRef.current = setTimeout(poll, 200)
     }
-    poll()
+
+    // Phase 1: custom ease-out scroll (NOT behavior:'smooth' — that's unpredictable
+    // on large docs + fights overflow-anchor). Duration proportional to distance
+    // (short hops ~200ms, big jumps up to 500ms), capped. Feels designed, stays
+    // precise. If already there (<5px), skip straight to the poll.
+    const distance = Math.abs(targetTop - host.scrollTop)
+    if (distance < 5) { lastST = -1; stable = 0; poll(); return true }
+    const duration = Math.min(500, Math.max(200, distance / 8))
+    const startTop = host.scrollTop
+    const t0 = performance.now()
+    const ease = (t) => 1 - Math.pow(1 - t, 3) // ease-out cubic: snappy start, smooth settle
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - t0) / duration)
+      host.scrollTop = startTop + (targetTop - startTop) * ease(t)
+      if (t < 1) requestAnimationFrame(animate)
+      else { lastST = -1; stable = 0; poll() }
+    }
+    requestAnimationFrame(animate)
     return true
   }
 
