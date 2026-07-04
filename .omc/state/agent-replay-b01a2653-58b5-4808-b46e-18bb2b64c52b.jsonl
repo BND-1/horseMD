@@ -87,3 +87,9 @@
 {"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:ralph"}
 {"t":0,"agent":"ac24eb5","agent_type":"architect","event":"agent_start","parent_mode":"none"}
 {"t":0,"agent":"ac24eb5","agent_type":"architect","event":"agent_stop","success":true,"duration_ms":151478}
+{"t":0,"agent":"a3b8435","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"a114afc","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"a39d2ae","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"a460db9","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"a439c73","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}
+{"t":0,"agent":"ad692ff","agent_type":"unknown","event":"agent_stop","success":true,"duration_ms":0}

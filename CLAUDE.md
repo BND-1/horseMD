@@ -156,6 +156,28 @@ docs/                  architecture / features / implementation-notes / developm
   `editorViewOptionsCtx.nodeViews` overwrites ALL component views) — the prototype
   mod is the surgical fix. `destroy()` still cleans up directly, so no leak. If
   Milkdown adds a config flag / renames these methods, revisit.
+- **Outline jump** (`useOutline.js` `jumpAndStabilize`): clicking an outline heading
+  triggers a custom ease-out scroll animation (200–500ms, rAF-driven — NOT
+  `behavior:'smooth'`, which is unpredictable on large docs + fights overflow-anchor),
+  then polls every 200ms re-scrolling until the position stabilizes (async content
+  like images/mermaid/CV keeps shifting scrollTop). `overflow-anchor` is temporarily
+  disabled during the poll + restored when stable. `forcedActiveRef` overrides the
+  scrollspy's active heading during the poll (the `tops` cache may be stale mid-settle).
+  Large-doc chunked-load: `richLoading` gates the outline list (skeleton during load)
+  + queues the jump until `richDocVersion` bumps.
+- **Mode-switch scroll** (`scrollAnchor.js`, #28): toggleSource captures the heading
+  TEXT at the viewport top (content-stable across rich/source); the restore effect
+  scrolls to the same heading in the new mode (multi-pass for Crepe async fill),
+  falling back to scroll-ratio if no heading found.
+- **Tab reorder** (`useFileOps.js` `reorderTabs`, #31): HTML5 drag in `Tabs.jsx`
+  (draggable + onDragStart/Over/Drop/End). Close-button area cancels drag. Session
+  persists tabs in array order (existing logic). Mobile skips draggable.
+- **Show hidden files** (`settings.showHiddenFiles`, #29): main `showHidden` global +
+  `settings:setShowHidden` IPC; `readTree`/`listFilesFlat` check it (always skip
+  IGNORED_DIRS). App.jsx useEffect syncs + refreshes the tree.
+- **Windows Ctrl+W** (#30): Win/Linux use a custom Window submenu (`close` binds
+  `Alt+F4`, NOT `Ctrl+W`) instead of the bare `{ role:'windowMenu' }` whose injected
+  `close` defaults to `CmdOrCtrl+W` (collides with Close Tab). mac keeps the bare role.
 - **Highlight** (`editor-highlight.js`): `==text==` is a custom Milkdown mark
   (yellow), plus red/blue via toolbar color picker (round-trips as
   `<mark class="hm-hl-…">`). Built as `$markSchema` + a two-way remark plugin

@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/yangtingyi/vibe_everything/horseMD\\ngrep -n \\\"startsWith\\\\('\\\\\\\\.')\\\" src/main/index.js\",\"description\":\"Find remaining dotfile filters\"}",
-  "error": "Exit code 2\nugrep: error: error at position 21\n(?m)startsWith\\('\\.')\n   mismatched ( )___/",
-  "timestamp": "2026-07-04T13:18:11.261Z",
+  "tool_input_preview": "{\"command\":\"cd /Users/yangtingyi/vibe_everything/horseMD\\ngh issue close 31 --repo BND-1/horseMD --comment '已在 v0.5.0 实现 ✅\\n\\n标签页现在支持拖拽排序 —— 按住标签左右拖,松手固定到新位置,顺序自动持久化(重启保持)。纯 HTML5 drag API,无新依赖。拖拽时有 a...",
+  "error": "Exit code 1\n✓ Closed issue BND-1/horseMD#31 (标签页无法拖拽排序,希望能手动调整标签顺序)\n=== verify all closed ===\n#28: CLOSED\n#29: CLOSED\n#30: CLOSED\nPost \"https://api.github.com/graphql\": unexpected EOF",
+  "timestamp": "2026-07-04T15:45:09.203Z",
   "retry_count": 1
 }

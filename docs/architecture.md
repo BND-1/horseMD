@@ -50,32 +50,53 @@ src/
       paths.js             纯工具：路径/文件名/版本/重文档判定/genId/会话
       find.js              文档内查找的高亮/匹配纯函数
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
-      settings.js          用户偏好（页面宽度 / 图床命令）持久化 + 应用页宽
+      settings.js          用户偏好（排版/图床/拼写/隐藏文件）持久化 + CSS var 应用
+      scrollAnchor.js      模式切换滚动位置保持（标题锚点，#28）
       customThemes.js      注入用户 CSS 主题（迁移自 Typora 的 .css）
       blocks.js            块类型定义（正文/H1–H6）共享数据
       themes.js            主题注册表（6 套配色）
       i18n.jsx             中英文翻译表 + I18nProvider 上下文
       onboarding.js        首次启动的欢迎/介绍文档（中英）
       assets/logo.png      首页 logo（应用图标副本）
+      hooks/
+        useFileOps.js      文件操作（打开/关闭/保存/reorderTabs/openSettingsTab）
+        useOutline.js      大纲（标题列表 + scrollspy + jumpAndStabilize 跳转）
+        useFindReplace.js  查找替换（CSS Highlight API）
+        useAppLifecycle.js 会话持久化 + 恢复 + 更新检查
+        usePopover.js      共享 popover hook（outside-click + Esc 关闭）
       components/
-        Editor.jsx         Crepe 编辑器封装 + 块控件 + 各种增强
-        editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换（Editor 的纯函数）
+        Editor.jsx         Crepe 编辑器封装 + 块控件 + 灯箱 + 拼写检查
+        SettingsView.jsx   设置页（排版/外观/校对/语言/图床/关于）
+        editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换
         editor-images.js   相对图片路径解析为 file:// （纯函数）
         editor-copy.js     富文本复制的内联样式（纯函数）
         editor-mermaid.js  Mermaid widget 装饰插件（懒加载 mermaid）
-        editor-tablebreak.js 表格单元格内换行（<br> 往返：keymap + remark 序列化/解析）
-        ImageHostButton.jsx 顶栏图床配置按钮（自定义上传命令）
-        Sidebar.jsx        文件树侧边栏
-        Tabs.jsx           顶部标签条 + 右键菜单
+        editor-highlight.js ==text== 高亮 mark + 工具栏颜色选择
+        editor-review.js   审阅批注/修订（CriticMarkup 装饰插件）
+        editor-md-paste.js 智能粘贴（Markdown → 富文本）
+        editor-tablebreak.js 表格单元格内换行（<br> 往返）
+        editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
+        LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
+        ImageHostButton.jsx 顶栏图床配置按钮
+        Sidebar.jsx        文件树侧边栏（支持显示隐藏文件 #29）
+        Tabs.jsx           顶部标签条（拖拽排序 #31）+ 右键菜单
         Welcome.jsx        首页/欢迎页（logo、版本、最近文件）
+        SaveFab.jsx        浮动保存按钮（dirty 时显示）
         WindowControls.jsx Windows 自绘窗口按钮
         UpdateToast.jsx    更新提示浮层
-        RenameModal.jsx    标签重命名弹窗（Electron 无 window.prompt）
-        Outline.jsx        大纲面板（从内容解析标题）
+        RenameModal.jsx    标签重命名弹窗
+        Outline.jsx        大纲面板（标题列表 + scrollspy + 软居中）
         CommandPalette.jsx 命令面板（Ctrl+P 模糊跳转）
-        StatusBar.jsx      底部状态栏 + 块切换器 + 主题/语言选择
-        icons.jsx          内联 SVG 图标
-      styles/app.css       全部样式 + 主题变量
+        StatusBar.jsx      底部状态栏 + 块切换器 + 排版/主题/语言
+        icons.jsx          内联 SVG 图标（paths 字典 + Icon 组件 + iconMarkup）
+        ui/
+          Toggle.jsx       通用开关（role=switch，DNA token）
+          AdjustGroup.jsx  分段预设 + 微调滑块（排版共享控件）
+        shell/
+          ActivityBar.jsx  左侧活动栏（Home/Files/Outline/Settings/折叠）
+          EditorArea.jsx   编辑区（lazy mount + 分屏 + heavy-doc 横幅 + .hm-cv）
+          Topbar.jsx       顶栏（标签 + 新建 + 图床 + 命令面板入口）
+      styles/app.css       全部样式 + 主题变量 + content-visibility
 scripts/
   etv.mjs                  端到端测试工具（CDP 驱动，见 development.md）
   inspect.mjs              简易 CDP 状态检查器

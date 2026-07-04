@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-E-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-E-build.log",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-ease-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-ease-build.log\necho \"=== small doc (30 headings): precision + active ===\"\nrm -rf /tmp/hm-oj-ud && node /tmp/hm-outline-jump.mjs 2>&1 | grep -E \"final scrollTop|visible|PASS\"\necho \"=== active heading match ===\"\nrm -rf /tmp/hm-act-ud && node /tmp/hm-active-verify.mjs 2>&1 | grep -E \"clicked:|active|PASS\"\necho \"=== large doc (Vue3): precision ===\"\nrm -rf /tmp/hm-oj-large-ud && node /tmp/hm-oj-large.mjs 2>&1 | grep -E \"final scroll|visible|PASS\"",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -278,27 +278,27 @@
       "type": "file"
     },
     {
+      "path": "src/renderer/src/hooks/useOutline.js",
+      "accessCount": 24,
+      "lastAccessed": 1783178837007,
+      "type": "file"
+    },
+    {
       "path": "src/renderer/src/hooks/useFileOps.js",
       "accessCount": 16,
       "lastAccessed": 1783172392532,
       "type": "file"
     },
     {
-      "path": "src/renderer/src/hooks/useOutline.js",
-      "accessCount": 12,
-      "lastAccessed": 1783172390792,
+      "path": "docs/manual-test-checklist.md",
+      "accessCount": 11,
+      "lastAccessed": 1783182263684,
       "type": "file"
     },
     {
       "path": "src/renderer/src/components/shell/EditorArea.jsx",
       "accessCount": 9,
       "lastAccessed": 1783052020509,
-      "type": "file"
-    },
-    {
-      "path": "docs/manual-test-checklist.md",
-      "accessCount": 9,
-      "lastAccessed": 1783058960827,
       "type": "file"
     },
     {

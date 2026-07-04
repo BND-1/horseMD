@@ -301,6 +301,66 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧内边距与行高(单行行高约从 84px 降到 45px),并对超列宽内容/行内代码自动换行(`word-break`),不再与相邻列重叠。
 
+## 31. 设置页（一站式配置）
+
+- 左下角齿轮（ActivityBar）/ 移动端 ••• 打开设置标签页
+- **排版**：字号 / 行距 / 段距 / 页宽，带**实时预览**（右侧 HorseMD 介绍样例，拖滑块即时反映）
+- **外观**：6 套内置主题 + 自定义 Typora 主题 + 「显示隐藏文件」开关
+- **校对**：英文拼写检查（红色下划线）开关，默认关
+- **语言**：中文 / English
+- **图床**：Typora 式自定义上传命令
+- **关于**：版本号 + 官网 + GitHub / Gitee 链接
+- 打开设置时侧栏自动收起；设置标签页不持久化（纯 transient）
+
+**实现**：`SettingsView.jsx`（kind:'settings' tab）；`ui/Toggle.jsx`（DNA 开关）；`ui/AdjustGroup.jsx`（从 LayoutControl 抽出，共享）；`settings.js`（spellcheck / showHiddenFiles 等 pref）。
+
+## 32. Mermaid 全屏灯箱
+
+- 点击渲染好的 Mermaid 流程图 → 全屏灯箱弹出
+- **Ctrl+滚轮**缩放（0.2×–10×）+ **按住拖拽**平移
+- Esc / 点背景关闭；拖拽后的 click 不会误关
+
+**实现**：`Editor.jsx` onMermaidClick（clone SVG + 去硬编码 width/height）+ lightbox useEffect（capture-phase wheel + drag）。zoom state 从 `null|string` 扩展为 `null|{type:'img',src}|{type:'svg',html}`。来自社区贡献 @digyear PR #27（只取了跨平台灯箱部分）。
+
+## 33. 标签页拖拽排序
+
+- 按住标签左右拖 → 松手固定到新位置，顺序持久化（重启保持）
+- 拖拽时有 accent 色插入指示线；关闭按钮 / 右键菜单 / 中键关闭不受影响
+
+**实现**：`Tabs.jsx`（draggable + onDragStart/Over/Drop/End）+ `useFileOps.js` `reorderTabs(from,to)`。无新依赖。
+
+## 34. 拼写检查开关
+
+- 设置 → 校对 → Toggle（默认关）。仅作用于 `.ProseMirror` contenteditable；其它输入框始终 spellCheck={false}。跨 tab 一致 + 持久化。
+
+**实现**：`settings.js` `spellcheck:false`；`Editor.jsx` 给 `view.dom` 设 `spellcheck` 属性（mount + effect on change）。不需要 IPC。
+
+## 35. 文件树显示隐藏文件
+
+- 设置 → 外观 →「显示隐藏文件」开关（默认关）。开 → `.claude` / `.cursor` / `.github` 等出现；`.git` / `node_modules` 始终隐藏。
+
+**实现**：`main/index.js` `showHidden` 全局 + `settings:setShowHidden` IPC；`readTree` + `listFilesFlat` 检查它；`preload` + `App.jsx` useEffect 同步 + 刷新。
+
+## 36. 大纲跳转 + 模式切换位置保持
+
+**大纲跳转**（根治多轮）：
+- 点击大纲标题 → 自定义 **ease-out 动画**（200–500ms）→ **poll-and-stabilize**（每 200ms 检查，异步内容把位置漂了就重新跳，连续 2 次稳定才恢复锚定）
+- **forcedActiveRef**：跳转期间强制高亮点击的那条（scrollspy 的 tops 缓存可能过期）
+- 大文档分块加载中：不显示部分标题 + 排队跳转，加载完再跳
+- 根因：`overflow-anchor:auto`（#25 修复）和 `scrollIntoView` 打架 → 跳转时临时关锚定
+
+**模式切换位置保持**（#28）：
+- 富文本↔源码切换后，**按标题文本锚点**还原位置（不是滚动比例——两种模式高度分布非线性，比例不精确）
+- `scrollAnchor.js`（67 行）：捕获视口顶部标题文本 + 在新模式里滚到同一标题；比例作 fallback
+
+## 37. 代码块跳页根治（#25 最终修复）
+
+- 滚到代码块、停下、选中文字 → 内容**不再上蹿**（纯滚动 / 选区 / 代码块组合全部不跳）
+
+**根因**：Milkdown `CodeMirrorBlock` node view 懒挂载（IntersectionObserver 200px + 5s teardown）→ placeholder↔mounted 高度差（127px）+ Chromium 选区时禁用 `overflow-anchor` → 跳。
+
+**修复**：`editor-codeblock-eager.js`（prototype 修改 `CodeMirrorBlock`）：`renderPlaceholder`→立即 `initializeCodeMirror`（打开即挂载）+ `scheduleTeardown`→no-op（永不卸载）。高度恒定 → delta=0 → 无论纯滚动还是选区都不跳。带 API 漂移 guard。
+
 ## 快捷键一览
 
 | 操作 | 快捷键 |
