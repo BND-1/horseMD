@@ -34,7 +34,7 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-C-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-C-build.log\nwc -l src/renderer/src/scrollAnchor.js",
+    "buildCommand": "cd /Users/yangtingyi/vibe_everything/horseMD\nnpm run build > /tmp/hm-D-build.log 2>&1; echo \"BUILD_EXIT=$?\"; tail -1 /tmp/hm-D-build.log",
     "testCommand": null,
     "lintCommand": null,
     "devCommand": "npm run dev",
@@ -261,8 +261,8 @@
     },
     {
       "path": "src/renderer/src/App.jsx",
-      "accessCount": 90,
-      "lastAccessed": 1783170463784,
+      "accessCount": 93,
+      "lastAccessed": 1783171350769,
       "type": "file"
     },
     {
@@ -279,8 +279,8 @@
     },
     {
       "path": "src/renderer/src/hooks/useFileOps.js",
-      "accessCount": 12,
-      "lastAccessed": 1783052013843,
+      "accessCount": 13,
+      "lastAccessed": 1783171281962,
       "type": "file"
     },
     {
@@ -311,6 +311,12 @@
       "path": "docs/refactor-plan.md",
       "accessCount": 7,
       "lastAccessed": 1782820428480,
+      "type": "file"
+    },
+    {
+      "path": "src/renderer/src/settings.js",
+      "accessCount": 7,
+      "lastAccessed": 1783171164065,
       "type": "file"
     },
     {
@@ -347,12 +353,6 @@
       "path": "src/renderer/src/components/LayoutControl.jsx",
       "accessCount": 5,
       "lastAccessed": 1783052060297,
-      "type": "file"
-    },
-    {
-      "path": "src/renderer/src/settings.js",
-      "accessCount": 5,
-      "lastAccessed": 1783052060543,
       "type": "file"
     },
     {

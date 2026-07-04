@@ -506,6 +506,7 @@ export function useFileOps({
     setWorkspace,
     files,
     refreshNonce,
+    bumpRefresh,
     reloadTabFromDisk
   }
 }

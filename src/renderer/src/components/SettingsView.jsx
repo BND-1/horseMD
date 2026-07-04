@@ -70,6 +70,17 @@ export default function SettingsView({
             <button className="settings-link-btn" onClick={() => onOpenThemesFolder && onOpenThemesFolder()}>{t('settings.openThemesFolder')}</button>
             <button className="settings-link-btn" onClick={() => onGetMoreThemes && onGetMoreThemes()}>{t('settings.getMoreThemes')}</button>
           </div>
+          <div className="settings-row" style={{ marginTop: 14 }}>
+            <div className="settings-row-text">
+              <div className="settings-row-label">{t('settings.showHiddenFiles')}</div>
+              <div className="settings-row-desc">{t('settings.showHiddenFilesDesc')}</div>
+            </div>
+            <Toggle
+              checked={!!settings.showHiddenFiles}
+              onChange={(v) => onUpdateSettings({ showHiddenFiles: v })}
+              label={t('settings.showHiddenFiles')}
+            />
+          </div>
         </section>
 
         {/* Proofreading. */}

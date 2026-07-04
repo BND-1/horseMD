@@ -368,6 +368,7 @@ export default function App() {
     setWorkspace,
     files,
     refreshNonce,
+    bumpRefresh,
     reloadTabFromDisk
   } = useFileOps({
     tabs,
@@ -389,6 +390,13 @@ export default function App() {
     setSidebarOpen,
     sessionWorkspace: session.workspace
   })
+
+  // Sync the show-hidden-files setting to main (readTree filter) + refresh the
+  // file tree when it changes (#29).
+  useEffect(() => {
+    window.api.setShowHidden?.(settings.showHiddenFiles)
+    bumpRefresh()
+  }, [settings.showHiddenFiles, bumpRefresh])
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move
   // the left pane to a different tab so the two panes differ.

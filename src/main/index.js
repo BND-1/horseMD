@@ -355,6 +355,14 @@ ipcMain.handle('fs:createDir', async (_e, path) => {
 })
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
+// Whether to show dotfiles/dotdirs (.claude, .cursor, etc.) in the file tree.
+// Set from the renderer via the 'settings:setShowHidden' IPC (#29). Default off.
+let showHidden = false
+
+ipcMain.handle('settings:setShowHidden', (_e, val) => {
+  showHidden = !!val
+  return true
+})
 
 async function readTree(dir, depth = 0) {
   let entries
@@ -365,7 +373,9 @@ async function readTree(dir, depth = 0) {
   }
   const nodes = []
   for (const e of entries) {
-    if (e.name.startsWith('.') && e.name !== '.gitignore') continue
+    // Skip dotfiles unless showHidden is on (always allow .gitignore). .git etc.
+    // are always skipped via IGNORED_DIRS regardless of this setting.
+    if (e.name.startsWith('.') && !showHidden && e.name !== '.gitignore') continue
     if (e.isDirectory() && IGNORED_DIRS.has(e.name)) continue
     const full = join(dir, e.name)
     if (e.isDirectory()) {
@@ -392,7 +402,7 @@ async function listFilesFlat(root, dir, acc, depth) {
     return
   }
   for (const e of entries) {
-    if (e.name.startsWith('.')) continue
+    if (e.name.startsWith('.') && !showHidden) continue
     const full = join(dir, e.name)
     if (e.isDirectory()) {
       if (IGNORED_DIRS.has(e.name)) continue

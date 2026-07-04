@@ -25,6 +25,7 @@ const api = {
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
   listFiles: (root) => ipcRenderer.invoke('fs:listFiles', root),
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
+  setShowHidden: (val) => ipcRenderer.invoke('settings:setShowHidden', val),
 
   // watch
   watchStart: (dir) => ipcRenderer.invoke('watch:start', dir),

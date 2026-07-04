@@ -33,7 +33,7 @@
       "id": "C",
       "title": "#28 富文本↔源码模式切换保留滚动位置(按锚点,非比例)",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "App.jsx toggleSource/restore: 不再用滚动比例(0-1),改按内容锚点(视口顶部标题或段落 offset)还原;抽共享 helper 给模式切换+大纲复用(解耦)。",
         "CDP/手动: 富文本停在某标题 → 切源码 → 仍显示该标题附近(误差小);反向亦然。大文档(代码/图片)也准。",

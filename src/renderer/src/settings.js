@@ -71,7 +71,10 @@ export const DEFAULT_SETTINGS = {
   // (cleaner for Chinese-first writing). Editor.jsx applies it as the `spellcheck`
   // attribute on the Crepe `.ProseMirror` contenteditable; other surfaces (the
   // source textarea, inputs) always opt out via spellCheck={false}.
-  spellcheck: false
+  spellcheck: false,
+  // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
+  // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
+  showHiddenFiles: false
 }
 
 function normalizeWidth(w) {
@@ -108,7 +111,8 @@ export function loadSettings() {
       ),
       imageUploadCommand:
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
-      spellcheck: raw.spellcheck === true
+      spellcheck: raw.spellcheck === true,
+      showHiddenFiles: raw.showHiddenFiles === true
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
