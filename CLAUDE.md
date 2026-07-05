@@ -117,6 +117,10 @@ docs/                  architecture / features / implementation-notes / developm
   structured as ✨ 新功能 / 🐛 修复 / 📦 下载 + unsigned-warning + full-changelog link.
   Build full set: mac dmg+zip (arm64+x64) + win nsis --x64 (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
   `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
+  After publishing: `node scripts/gen-latest-json.mjs` → commits `website/latest.json`
+  (the app's China-reachable update-check source — see `update:check` in
+  `main/index.js`, which tries the website first, GitHub API as fallback). Push +
+  redeploy the website so the new version propagates to domestic users.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,
   not on Home). The two panes are **flex siblings inside `.editor-area`** (a flex
