@@ -30,7 +30,7 @@ html {
   /* Writing font — matches the HorseMD website (website/styles.css). */
   --font-write: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
     'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'Space Grotesk', 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
 
   /* Spacing & Radii */
   --radius-sm: 5px;
