@@ -3400,6 +3400,8 @@ body.dark .milkdown {
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   font-size: 0.95em;
+  /* Theme-aware backdrop so the table reads as a unified surface. */
+  background: var(--code-bg);
 }
 .milkdown .ProseMirror th,
 .milkdown .ProseMirror td {
@@ -3424,7 +3426,7 @@ body.dark .milkdown {
   line-height: inherit;
 }
 .milkdown .ProseMirror th {
-  background: var(--code-bg);
+  background: var(--hover-elevated, var(--border-soft));
   font-weight: 600;
   color: var(--text-strong);
 }
