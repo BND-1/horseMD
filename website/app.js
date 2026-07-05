@@ -17,7 +17,7 @@ const I18N = {
     'features.title': '它能做什么',
     'f1.title': '标签页', 'f1.body': '双击一个文件，是多一个标签，不是多一个窗口。',
     'f2.title': '文件夹工作区', 'f2.body': '整个文件夹挂在侧边栏，新建、重命名、删除都不用切出去。',
-    'f3.title': '所见即所得', 'f3.body': '打字就渲染。表格、代码高亮、LaTeX、任务清单都认。',
+    'f3.title': '所见即所得', 'f3.body': '打字就渲染。表格、代码高亮、LaTeX、Mermaid、任务清单都认。',
     'f4.title': '富文本复制', 'f4.body': '复制自带格式，粘进微信公众号、邮件、Notion 都不丢样式。',
     'themes.title': '六套主题',
     'themes.light': '明亮', 'themes.dark': '暗夜', 'themes.mist': '雾',
@@ -38,7 +38,7 @@ const I18N = {
     'features.title': 'What it does',
     'f1.title': 'Tabs', 'f1.body': 'Double-click a file and you get a new tab, not another window.',
     'f2.title': 'Folder workspace', 'f2.body': 'Your folder hangs in the sidebar. Rename, create, delete without leaving.',
-    'f3.title': 'WYSIWYG', 'f3.body': 'Type and it renders. Tables, code highlighting, LaTeX, task lists.',
+    'f3.title': 'WYSIWYG', 'f3.body': 'Type and it renders. Tables, code highlighting, LaTeX, Mermaid, task lists.',
     'f4.title': 'Rich-text copy', 'f4.body': 'Copy keeps formatting. Paste into WeChat, email, or Notion and it stays styled.',
     'themes.title': 'Six themes',
     'themes.light': 'Light', 'themes.dark': 'Dark', 'themes.mist': 'Mist',
@@ -146,8 +146,11 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
     // macOS: 主按钮 + 国内加速都指向安装指南页（未签名构建需说明）
     const macGuide = 'https://github.com/BND-1/horseMD#%E5%AE%89%E8%A3%85'
     document.getElementById('dlMacCn').href = CN + macGuide
-    // Android: 主按钮走 GitHub 直链（"国内加速" 是 Gitee 镜像，HTML 里已固定）
-    const apk = assets.find(a => /\.apk$/i.test(a.name))
-    if (apk) document.getElementById('dlAndroid').href = apk.browser_download_url
   })
+
+// Android: APK 暂停在 v0.3.1（未同步桌面端），直接钉到该版本直链 ——
+// 不从 latest release 找 apk（latest 是桌面版 v0.5.0，无 APK）。
+// 发新 APK 时改这两行版本号即可。
+document.getElementById('dlAndroid').href = 'https://github.com/BND-1/horseMD/releases/download/v0.3.1/HorseMD-0.3.1.apk'
+document.getElementById('dlAndroidGitee').href = 'https://gitee.com/yty11167/horse-md/releases/download/v0.3.1/HorseMD-0.3.1.apk'
   .catch(() => { /* 静默回退到 releases 页 */ })
