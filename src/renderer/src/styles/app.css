@@ -3498,7 +3498,12 @@ body.dark .milkdown {
   line-height: inherit;
 }
 .milkdown .ProseMirror th {
-  background: var(--hover-elevated, var(--border-soft));
+  /* Distinct from the table's --code-bg surface so the header reads clearly in
+     every theme: mixing --text in darkens the header in light themes and
+     lightens it in dark themes (the old --hover-elevated was within ~2 units
+     of --code-bg in light → invisible). A 2px bottom border delimits the row. */
+  background: color-mix(in srgb, var(--code-bg), var(--text) 12%);
+  border-bottom: 2px solid var(--border);
   font-weight: 600;
   color: var(--text-strong);
 }
