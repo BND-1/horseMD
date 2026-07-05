@@ -47,6 +47,9 @@ export default function App() {
   // writing surface front-and-center (desktop keeps its previous default).
   const [sidebarOpen, setSidebarOpen] = useState(session.sidebarOpen ?? !isMobile)
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
+  // Left-pane (outline / file-tree) width — draggable on hover (#resizable-pane).
+  // Persisted in session; .pane-left reads it via the --pane-left-w CSS var.
+  const [paneWidth, setPaneWidth] = useState(session.paneWidth ?? 260)
   const [theme, setTheme] = useState(session.theme || DEFAULT_THEME)
   // Active custom CSS theme (filename in userData/themes), or null. Overlays the
   // built-in base theme. `customThemes` is the list scanned from that folder.
@@ -549,6 +552,7 @@ export default function App() {
     recents,
     sidebarOpen,
     sidebarMode,
+    paneWidth,
     openPaths,
     isMobile,
     tabsRef,
@@ -591,6 +595,29 @@ export default function App() {
   // is what makes the FAB follow whichever pane the user is editing.
   const fabId = pickEditableId()
   const fabTab = (fabId ? tabs.find((t) => t.id === fabId) : null) || activeTab
+
+  // Drag the left-pane's right edge to resize it (outline / file-tree, #resizable-pane).
+  // Reads the live width from the DOM at mousedown so a stale closure never
+  // fights the drag; clamps 200–560. body.resizing-pane disables the width
+  // transition (so it tracks the cursor) + text selection while dragging.
+  const startResize = useCallback((e) => {
+    e.preventDefault()
+    const aside = e.currentTarget.previousElementSibling
+    const startW = aside ? aside.getBoundingClientRect().width : paneWidth
+    const startX = e.clientX
+    document.body.classList.add('resizing-pane')
+    const onMove = (ev) => {
+      const w = Math.max(200, Math.min(560, startW + (ev.clientX - startX)))
+      setPaneWidth(w)
+    }
+    const onUp = () => {
+      document.body.classList.remove('resizing-pane')
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [paneWidth])
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
@@ -643,7 +670,10 @@ export default function App() {
       )}
 
       <div className="body">
-        <aside className={`pane-left${sidebarOpen ? '' : ' collapsed'}`}>
+        <aside
+          className={`pane-left${sidebarOpen ? '' : ' collapsed'}`}
+          style={{ '--pane-left-w': paneWidth + 'px' }}
+        >
           {sidebarOpen && (
             sidebarMode === 'files' ? (
               <Sidebar
@@ -659,6 +689,16 @@ export default function App() {
             )
           )}
         </aside>
+        {sidebarOpen && !isMobile && (
+          <div
+            className="pane-left-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={startResize}
+            onDoubleClick={() => setPaneWidth(260)}
+            title={t('side.resize')}
+          />
+        )}
 
         <main className="pane-center">
           {find.open && (

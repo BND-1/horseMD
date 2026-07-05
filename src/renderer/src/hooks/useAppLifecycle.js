@@ -38,6 +38,7 @@ export function useAppLifecycle({
   recents,
   sidebarOpen,
   sidebarMode,
+  paneWidth,
   openPaths,
   isMobile,
   tabsRef,
@@ -128,6 +129,7 @@ export function useAppLifecycle({
       recents,
       sidebarOpen,
       sidebarMode,
+      paneWidth,
       openPaths: tabs.map((t) => t.path).filter(Boolean),
       // Persist unsaved scratch/new tabs (no path, with edited content) so they
       // survive a restart — closing the app no longer silently loses them. Only
@@ -146,7 +148,7 @@ export function useAppLifecycle({
     // for a brief pause, then write once. The close path flushes the last edit.
     const id = setTimeout(flushSession, 400)
     return () => clearTimeout(id)
-  }, [workspace, theme, customTheme, lang, recents, sidebarOpen, sidebarMode, tabs, activePath, flushSession])
+  }, [workspace, theme, customTheme, lang, recents, sidebarOpen, sidebarMode, paneWidth, tabs, activePath, flushSession])
 
   // Flush the pending session snapshot immediately when the window is closing,
   // so the debounce above never drops the user's last few keystrokes.

@@ -7,8 +7,10 @@
 //
 // StatusBar quick-controls (排版/主题/语言) stay where they are — this is their
 // full-version home, not a replacement.
+import { useState } from 'react'
 import { useI18n, LANGS } from '../i18n.jsx'
 import { THEMES } from '../themes.js'
+import { isNewerVersion } from '../paths.js'
 import Toggle from './ui/Toggle.jsx'
 import AdjustGroup from './ui/AdjustGroup.jsx'
 import {
@@ -129,6 +131,7 @@ export default function SettingsView({
           <div className="settings-row">
             <div className="settings-row-label">HorseMD {APP_VERSION && <span className="settings-version">{APP_VERSION}</span>}</div>
           </div>
+          <UpdateChecker t={t} />
           <div className="settings-row settings-row-actions">
             <button className="settings-link-btn" onClick={() => window.api.openExternal('https://horsemd.yangsir.net')}>{t('settings.website')}</button>
             <button className="settings-link-btn" onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}>GitHub</button>
@@ -193,6 +196,60 @@ function TypographyControls({ settings, onUpdateSettings, t }) {
           </ul>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Manual "check for updates" — calls the same update:check IPC the startup
+// notify-only check uses. Shows checking → up-to-date / new-version-available
+// (with a 前往下载 link). Self-contained: keeps SettingsView lean.
+function UpdateChecker({ t }) {
+  // status: 'idle' | 'checking' | 'uptodate' | 'available' | 'error'
+  const [status, setStatus] = useState('idle')
+  const [info, setInfo] = useState(null) // { latest, url }
+
+  const run = async () => {
+    setStatus('checking')
+    try {
+      const r = await window.api.checkUpdate()
+      if (!r?.ok || !r.latest) { setStatus('error'); return }
+      if (isNewerVersion(r.latest, r.current)) {
+        setInfo({ latest: r.latest, url: r.url })
+        setStatus('available')
+      } else {
+        setStatus('uptodate')
+      }
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="settings-row settings-update-row">
+      <div className="settings-row-text">
+        <div className="settings-row-label">{t('settings.updateTitle')}</div>
+        <div className="settings-row-desc settings-update-status">
+          {status === 'checking' && t('settings.checking')}
+          {status === 'uptodate' && t('settings.upToDate')}
+          {status === 'available' && info && (
+            <span>
+              {t('settings.newVersionAvailable', { v: info.latest })}
+              {' · '}
+              <button className="settings-inline-link" onClick={() => info.url && window.api.openExternal(info.url)}>
+                {t('update.download')} →
+              </button>
+            </span>
+          )}
+          {status === 'error' && t('settings.checkFailed')}
+        </div>
+      </div>
+      <button
+        className="settings-link-btn"
+        onClick={run}
+        disabled={status === 'checking'}
+      >
+        {status === 'checking' ? t('settings.checking') : t('settings.checkUpdate')}
+      </button>
     </div>
   )
 }
