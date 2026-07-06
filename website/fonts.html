@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HorseMD — 获取更多字体</title>
+  <meta name="description" content="为 HorseMD 寻找并安装更多字体：推荐字体站 + macOS / Windows 安装步骤。" />
+  <link rel="icon" type="image/png" href="./assets/icon.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    .page { max-width: 760px; margin: 0 auto; padding: 72px 24px 96px; }
+    .page h1 { font-size: 30px; margin: 0 0 6px; }
+    .page .lede { color: var(--faint, #8a8378); font-size: 15px; margin: 0 0 36px; }
+    .page h2 { font-size: 18px; margin: 40px 0 14px; }
+    .page p, .page li { font-size: 14.5px; line-height: 1.8; color: var(--text, #2a2620); }
+    .page ul { padding-left: 1.2em; margin: 10px 0; }
+    .page a { color: var(--accent, #c86b35); }
+    .page .site-list { display: grid; gap: 10px; margin: 14px 0; }
+    .page .site-card { display: block; padding: 14px 16px; border: 1px solid var(--border-soft, #ddd9d2); border-radius: 10px; background: var(--bg-elevated, #faf8f5); text-decoration: none; transition: border-color .14s; }
+    .page .site-card:hover { border-color: var(--accent, #c86b35); }
+    .page .site-name { font-weight: 600; color: var(--text-strong, #0f0d0a); }
+    .page .site-desc { display: block; font-size: 13px; color: var(--faint, #8a8378); margin-top: 2px; }
+    .page .note { margin: 18px 0; padding: 12px 14px; border-radius: 8px; background: rgba(200,107,53,.08); border-left: 3px solid var(--accent, #c86b35); font-size: 13.5px; }
+    .page code { font-family: ui-monospace, monospace; font-size: 12.5px; background: var(--code-bg, #f2efe8); padding: 1px 6px; border-radius: 4px; }
+    .back { display: inline-block; margin-top: 40px; font-size: 13px; color: var(--faint, #8a8378); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>获取更多字体</h1>
+    <p class="lede">装好系统字体后重启 HorseMD，就能在「设置 → 排版」的字体选择器里选到。</p>
+
+    <h2>推荐字体站</h2>
+    <div class="site-list">
+      <a class="site-card" href="https://fonts.google.com/" target="_blank" rel="noopener">
+        <span class="site-name">Google Fonts</span>
+        <span class="site-desc">海量免费英文字体，可按风格筛选，下载 .ttf</span>
+      </a>
+      <a class="site-card" href="https://www.nerdfonts.com/font-downloads" target="_blank" rel="noopener">
+        <span class="site-name">Nerd Fonts</span>
+        <span class="site-desc">代码字体 + 图标（适合「代码字体」，终端风，含大量连字与符号）</span>
+      </a>
+      <a class="site-card" href="https://www.fontshare.com/" target="_blank" rel="noopener">
+        <span class="site-name">Fontshare</span>
+        <span class="site-desc">高质量免费商用字体（含手写、衬线、显示体）</span>
+      </a>
+      <a class="site-card" href="https://www.maoken.com/" target="_blank" rel="noopener">
+        <span class="site-name">猫啃网</span>
+        <span class="site-desc">中文免费可商用字体合集（思源、霞鹜文楷、未来荧黑 等）</span>
+      </a>
+    </div>
+
+    <h2>几款推荐</h2>
+    <ul>
+      <li><strong>中文文档</strong>：思源黑体 / 思源宋体、霞鹜文楷、未来荧黑</li>
+      <li><strong>英文文档</strong>：Inter、Lora、Crimson Pro</li>
+      <li><strong>代码</strong>：JetBrains Mono、Fira Code、Cascadia Code，或任意一个 <a href="https://www.nerdfonts.com/font-downloads" target="_blank" rel="noopener">Nerd Font</a></li>
+    </ul>
+
+    <h2>怎么装</h2>
+    <p><strong>macOS</strong>：下载字体文件（.ttf / .otf），双击 → 弹出「字体册」点「安装字体」；或把文件拖到 <code>~/Library/Fonts</code>（仅当前用户）或 <code>/Library/Fonts</code>（全体用户）。</p>
+    <p><strong>Windows</strong>：下载 .ttf，右键 →「为所有用户安装」（推荐，避免只在当前会话生效）。</p>
+    <div class="note">
+      ⚠️ 装完字体后<strong>重启 HorseMD</strong>（退出再打开），新字体才会出现在字体选择器里（选择器在打开时枚举一次系统字体）。
+    </div>
+
+    <a class="back" href="./">← 返回 HorseMD 首页</a>
+  </main>
+</body>
+</html>

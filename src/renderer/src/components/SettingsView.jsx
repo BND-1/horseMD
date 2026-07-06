@@ -200,6 +200,13 @@ function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
             t={t}
           />
           <p className="settings-font-hint">{t('settings.fontHint')}</p>
+          <button
+            type="button"
+            className="settings-link-btn settings-font-more-link"
+            onClick={() => window.api.openExternal('https://horsemd.yangsir.net/fonts.html')}
+          >
+            {t('settings.getMoreFonts')} →
+          </button>
         </div>
         <AdjustGroup
           title={t('settings.fontSize')} valueLabel={fontSize + ' px'}
@@ -291,7 +298,7 @@ function FontPicker({ label, value, sample, placeholder, fonts, onLoadFonts, onC
       <span className="settings-font-label">{label}</span>
       <button
         type="button"
-        className={`settings-font-field${open ? ' open' : ''}`}
+        className={`settings-font-field${open ? ' open' : ''}${value ? ' has-value' : ''}`}
         onClick={() => setOpen(!open)}
       >
         <span className="settings-font-now" style={{ fontFamily: value ? `'${value}'` : 'inherit' }}>
