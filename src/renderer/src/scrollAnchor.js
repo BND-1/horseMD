@@ -5,6 +5,11 @@
 // TEXT is content-stable across modes, so we anchor on it instead (ratio is the
 // fallback when no heading is near the viewport top).
 //
+// #41 extends this to the CARET: capture the caret's nearest heading + its text
+// offset from that heading (or a doc-length ratio when there's no heading), then
+// restore the caret to the same place in the new mode after the scroll settles.
+import { TextSelection } from '@milkdown/prose/state'
+//
 // Uses the same heading selector as useOutline.js (duplicated to avoid a cross-
 // module import for a single CSS-selector constant; the two modules are
 // independent and may diverge if one needs a different selector).
@@ -86,4 +91,97 @@ export function scrollSourceToHeading(textarea, md, text) {
   const denom = textarea.scrollHeight - textarea.clientHeight
   if (denom > 0) textarea.scrollTop = (m.index / md.length) * denom
   return true
+}
+
+// ---------------------------------- #41 caret ----------------------------------
+// Capture/restore the CARET across rich↔source switches. The caret is anchored
+// to its NEAREST PRECEDING heading + text offset from that heading (heading text
+// is content-stable across modes, same property #28's scroll relies on). When
+// there's no heading before the caret (untitled / headingless docs), fall back to
+// a doc-length ratio so the caret at least lands in the same region. Returns null
+// when there's nothing to anchor (caller skips caret restore and keeps #28's
+// scroll-only behavior).
+
+// Rich → ? : capture from the ProseMirror view. head = selection head; nearest
+// heading before it (document order); offset = text chars between heading + head.
+export function captureRichCaret(view) {
+  if (!view) return null
+  try {
+    // ProseMirror Selection exposes .head directly (unlike CodeMirror's
+    // selection.main.head — ProseMirror has no .main).
+    const head = view.state.selection.head
+    const heads = []
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'heading') { heads.push({ pos, text: node.textContent }); return false }
+      return true
+    })
+    let pick = null
+    for (const h of heads) { if (h.pos <= head) pick = h; else break }
+    if (pick) {
+      const offset = view.state.doc.textBetween(pick.pos, head, '\n').length
+      return { heading: pick.text, offset }
+    }
+    const size = view.state.doc.content.size
+    return size > 0 ? { ratio: head / size } : null
+  } catch { return null }
+}
+
+// Source → ? : capture from the textarea. nearest heading via parseSourceHeadings.
+export function captureSourceCaret(textarea) {
+  if (!textarea) return null
+  const md = textarea.value || ''
+  const start = textarea.selectionStart || 0
+  let pick = null
+  for (const h of parseSourceHeadings(md)) {
+    if (h.charOffset <= start) pick = h
+    else break
+  }
+  if (pick) return { heading: pick.text, offset: start - pick.charOffset }
+  return md ? { ratio: start / md.length } : null
+}
+
+// ? → Source: set the textarea caret at heading.charOffset + offset (clamped),
+// or the ratio point. Returns true on success.
+export function restoreSourceCaret(textarea, anchor) {
+  if (!textarea || !anchor) return false
+  try {
+    const md = textarea.value || ''
+    let target
+    if (anchor.heading) {
+      const h = parseSourceHeadings(md).find((x) => x.text === anchor.heading)
+      if (!h) return false
+      target = Math.min(h.charOffset + (anchor.offset || 0), md.length)
+    } else {
+      target = Math.round((anchor.ratio || 0) * md.length)
+    }
+    textarea.setSelectionRange(target, target)
+    textarea.focus()
+    return true
+  } catch { return false }
+}
+
+// ? → Rich: set the ProseMirror selection near (headingPos + offset) or the ratio
+// point. TextSelection.near snaps to the closest valid text position, so a rough
+// offset still lands in-section. Returns true on success.
+export function restoreRichCaret(view, anchor) {
+  if (!view || !anchor) return false
+  try {
+    const size = view.state.doc.content.size
+    let target
+    if (anchor.heading) {
+      let hpos = -1
+      view.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'heading' && node.textContent === anchor.heading) { hpos = pos; return false }
+        return true
+      })
+      if (hpos < 0) return false
+      target = Math.min(hpos + (anchor.offset || 0), size)
+    } else {
+      target = Math.round((anchor.ratio || 0) * size)
+    }
+    const $pos = view.state.doc.resolve(Math.max(1, Math.min(target, size)))
+    view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
+    view.focus()
+    return true
+  } catch { return false }
 }

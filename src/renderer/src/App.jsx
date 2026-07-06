@@ -32,7 +32,10 @@ import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
-import { headingAtRichTop, headingAtSourceTop, scrollRichToHeading, scrollSourceToHeading } from './scrollAnchor.js'
+import {
+  headingAtRichTop, headingAtSourceTop, scrollRichToHeading, scrollSourceToHeading,
+  captureRichCaret, captureSourceCaret, restoreRichCaret, restoreSourceCaret
+} from './scrollAnchor.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import {
@@ -107,6 +110,7 @@ export default function App() {
   const sourceTextareas = useRef({}) // textarea-backed editors by tab id
   const scrollRatioRef = useRef(null) // fallback: scroll ratio to restore across a mode switch
   const scrollAnchorRef = useRef(null) // preferred: heading text to restore across a mode switch (#28)
+  const caretAnchorRef = useRef(null) // #41: caret (heading+offset, or ratio) to restore across a mode switch
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -323,40 +327,64 @@ export default function App() {
     } else {
       scrollRatioRef.current = null
     }
+    // #41: capture the CARET too (nearest heading + text offset, or a doc-length
+    // ratio) so the new mode can land it in the same section. Reads the rich PM
+    // view via the editor API (same channel useFindReplace uses).
+    caretAnchorRef.current = sourceModeRef.current
+      ? captureSourceCaret(sourceRef.current)
+      : captureRichCaret(editorApis.current[activeIdRef.current]?.getView?.())
     setSourceMode((v) => !v)
   }, [commitAllLive])
 
   useLayoutEffect(() => {
     const anchor = scrollAnchorRef.current
     const ratio = scrollRatioRef.current
-    if (anchor == null && ratio == null) return
+    const caret = caretAnchorRef.current
+    if (anchor == null && ratio == null && caret == null) return
     scrollAnchorRef.current = null
     scrollRatioRef.current = null
+    caretAnchorRef.current = null
     const apply = () => {
-      // Try heading anchor first — text is content-stable across modes (#28).
+      // Scroll: heading anchor first — text is content-stable across modes (#28).
+      // Ratio runs ONLY if the heading anchor didn't find a match (otherwise it
+      // would override a successful heading scroll).
+      let scrolledByAnchor = false
       if (anchor) {
         if (sourceMode) {
-          if (scrollSourceToHeading(sourceRef.current, sourceRef.current?.value || '', anchor)) return
-        } else if (scrollRichToHeading(editorHostRef.current, anchor)) return
+          scrolledByAnchor = scrollSourceToHeading(sourceRef.current, sourceRef.current?.value || '', anchor)
+        } else {
+          scrolledByAnchor = scrollRichToHeading(editorHostRef.current, anchor)
+        }
       }
-      // Fallback: scroll ratio (imprecise for docs with variable-height blocks).
-      if (ratio != null) {
+      if (!scrolledByAnchor && ratio != null) {
         const el = sourceMode ? sourceRef.current : editorHostRef.current
-        if (!el) return
-        const denom = el.scrollHeight - el.clientHeight
-        if (denom > 0) el.scrollTop = ratio * denom
+        if (el) {
+          const denom = el.scrollHeight - el.clientHeight
+          if (denom > 0) el.scrollTop = ratio * denom
+        }
+      }
+      // #41: restore the caret after the scroll. Best-effort — the new mode's
+      // editor may still be mounting on the early passes (Crepe refills async),
+      // so this naturally retries across the passes below and lands once it's up.
+      if (caret) {
+        if (sourceMode) restoreSourceCaret(sourceRef.current, caret)
+        else restoreRichCaret(editorApis.current[activeIdRef.current]?.getView?.(), caret)
       }
     }
     // Apply immediately, then again as async layout settles — the rich editor
     // (Crepe) fills its content over a few frames after it remounts, growing
-    // scrollHeight, so a single pass would land short.
+    // scrollHeight, so a single pass would land short. The 4th pass (450ms)
+    // covers large docs where Crepe takes longer to fill (reduces the
+    // §1.3→§1.5 drift on big, image/code-heavy docs).
     const raf = requestAnimationFrame(apply)
     const t1 = setTimeout(apply, 90)
     const t2 = setTimeout(apply, 220)
+    const t3 = setTimeout(apply, 450)
     return () => {
       cancelAnimationFrame(raf)
       clearTimeout(t1)
       clearTimeout(t2)
+      clearTimeout(t3)
     }
   }, [sourceMode])
 
