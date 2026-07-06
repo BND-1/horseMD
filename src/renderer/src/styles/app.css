@@ -2921,6 +2921,37 @@ body.hm-full-width .source-editor {
   outline: none;
   border-color: var(--accent);
 }
+/* Document + code font pickers (issue #38) — above the typography sliders. */
+.settings-font-pickers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.settings-font-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-font-label {
+  flex: 0 0 84px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.settings-font-input {
+  flex: 1;
+  min-width: 0;
+  /* A font NAME, not code — show in the UI font, not mono. */
+  font-family: inherit;
+}
+.settings-font-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
 .settings-version {
   margin-left: 8px;
   font-size: 12px;
@@ -3347,6 +3378,11 @@ body.dark .milkdown {
 .milkdown .cm-editor,
 .milkdown .cm-editor .cm-content,
 .milkdown .cm-editor .cm-line {
+  /* Force CodeMirror to read --font-mono (its default theme hard-codes
+     .cm-content to "monospace", ignoring the var — which is why #34's Consolas
+     override and #38's custom code font never reached fenced code blocks).
+     This selector's specificity beats CodeMirror's default. */
+  font-family: var(--font-mono);
   font-feature-settings: normal;
   font-variant-ligatures: none;
   font-variant-east-asian: normal;

@@ -21,7 +21,10 @@ import {
   applyPageWidth,
   applyFontSize,
   applyLineHeight,
-  applyParagraphSpacing
+  applyParagraphSpacing,
+  fontStack,
+  DEFAULT_FONT_WRITE,
+  DEFAULT_FONT_MONO
 } from './settings.js'
 import { applyCustomTheme } from './customThemes.js'
 import { fireToast } from './ui.js'
@@ -612,9 +615,21 @@ export default function App() {
     onMove: (ev, { x, w }) => setPaneWidth(Math.max(PANE_MIN, Math.min(PANE_MAX, w + (ev.clientX - x)))),
   })
 
+  // User font overrides (issue #38). Applied as inline CSS vars on the .app root
+  // so they win over body.light/dark AND — for the code font — the .app.is-win
+  // Consolas rule. Empty font = no inline var, so the default stacks (and the
+  // Windows Consolas fix) still apply. Cascades to the editor + the settings
+  // preview, giving live feedback as the user types a name.
+  const fwStack = fontStack(settings.fontWrite, DEFAULT_FONT_WRITE)
+  const fmStack = fontStack(settings.fontMono, DEFAULT_FONT_MONO)
+  const appFontStyle = {
+    ...(fwStack ? { '--font-write': fwStack } : {}),
+    ...(fmStack ? { '--font-mono': fmStack } : {})
+  }
+
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}`}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}`} style={appFontStyle}>
       <ActivityBar
         home={home}
         sidebarMode={sidebarMode}

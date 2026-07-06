@@ -57,11 +57,31 @@ export const PARA_SPACING_PRESETS = [
 
 const round1 = (n) => Math.round(n * 10) / 10
 
+// Default font stacks (app.css defines the same names on body.light/dark). A
+// user-set font (issue #38) is PREPENDED to these so an unknown glyph still
+// falls back gracefully.
+export const DEFAULT_FONT_WRITE =
+  "'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif"
+export const DEFAULT_FONT_MONO =
+  "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace"
+
+// Build a font-family stack with the user's font first (quoted — names can have
+// spaces, e.g. "Fira Code Nerd Font"). Empty name → null (don't override the
+// default stack, and on Windows let the .app.is-win Consolas rule still apply).
+export const fontStack = (name, base) => {
+  const n = (name || '').trim().replace(/'/g, '')
+  return n ? `'${n}', ${base}` : null
+}
+
 export const DEFAULT_SETTINGS = {
   pageWidth: DEFAULT_PAGE_WIDTH,
   fontSize: DEFAULT_FONT_SIZE,
   lineHeight: DEFAULT_LINE_HEIGHT,
   paragraphSpacing: DEFAULT_PARA_SPACING,
+  // Document (writing) + code font overrides (issue #38). Empty = use the
+  // default stack; otherwise the name leads the stack (e.g. a Nerd Font).
+  fontWrite: '',
+  fontMono: '',
   // Empty = no image host: pasted/uploaded images keep the default behavior
   // (a local object URL). When set, it's run like Typora's "custom command":
   // the image file path is appended as an argument and the command prints the
@@ -112,7 +132,9 @@ export function loadSettings() {
       imageUploadCommand:
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
       spellcheck: raw.spellcheck === true,
-      showHiddenFiles: raw.showHiddenFiles === true
+      showHiddenFiles: raw.showHiddenFiles === true,
+      fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
+      fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : ''
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

@@ -156,6 +156,31 @@ function TypographyControls({ settings, onUpdateSettings, t }) {
   return (
     <div className="settings-typo">
       <div className="settings-typo-controls">
+        {/* Document + code font (issue #38). Text input — type an installed font
+            name (e.g. a Nerd Font for code); empty = default stack. The .app
+            inline CSS var updates live, so the preview + editor react as you
+            type. The code font overrides the Windows Consolas rule too. */}
+        <div className="settings-font-pickers">
+          <label className="settings-font-row">
+            <span className="settings-font-label">{t('settings.fontWrite')}</span>
+            <input
+              className="settings-input settings-font-input" type="text" spellCheck={false}
+              placeholder={t('settings.fontWritePlaceholder')}
+              value={settings.fontWrite || ''}
+              onChange={(e) => onUpdateSettings({ fontWrite: e.target.value })}
+            />
+          </label>
+          <label className="settings-font-row">
+            <span className="settings-font-label">{t('settings.fontMono')}</span>
+            <input
+              className="settings-input settings-font-input" type="text" spellCheck={false}
+              placeholder={t('settings.fontMonoPlaceholder')}
+              value={settings.fontMono || ''}
+              onChange={(e) => onUpdateSettings({ fontMono: e.target.value })}
+            />
+          </label>
+          <p className="settings-font-hint">{t('settings.fontHint')}</p>
+        </div>
         <AdjustGroup
           title={t('settings.fontSize')} valueLabel={fontSize + ' px'}
           presets={FONT_SIZE_PRESETS.map((p) => ({ ...p, label: t('settings.font.' + p.id) }))}
