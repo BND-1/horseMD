@@ -3085,6 +3085,75 @@ body.hm-full-width .source-editor {
   line-height: 1.5;
   color: var(--faint);
 }
+/* 'Get more fonts' — expandable list of external font sites. */
+.settings-font-more {
+  margin-top: 4px;
+}
+.settings-font-more > summary {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.settings-font-more > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-font-more > summary::before {
+  content: '▸ ';
+  color: var(--accent);
+  font-size: 10px;
+}
+.settings-font-more[open] > summary::before {
+  content: '▾ ';
+}
+.settings-font-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.settings-font-more-link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: left;
+}
+.settings-font-more-link:hover {
+  color: var(--accent);
+}
+.settings-font-more-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+/* Pinned footer inside the font picker dropdown (Get more fonts link). */
+.settings-font-footer {
+  flex: 0 0 auto;
+  padding: 8px 9px 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.settings-font-footer-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+.settings-font-footer-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .settings-version {
   margin-left: 8px;
   font-size: 12px;

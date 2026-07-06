@@ -186,6 +186,11 @@ function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
             onLoadFonts={ensureFonts}
             onChange={(fontWrite) => onUpdateSettings({ fontWrite })}
             onHover={(f) => onHoverFont((h) => ({ ...h, write: f }))}
+            footer={
+              <button type="button" className="settings-font-footer-link" onClick={() => window.api.openExternal('https://horsemd.yangsir.net/fonts.html')}>
+                {t('settings.browseMoreFonts')} →
+              </button>
+            }
             t={t}
           />
           <FontPicker
@@ -197,16 +202,14 @@ function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
             onLoadFonts={ensureFonts}
             onChange={(fontMono) => onUpdateSettings({ fontMono })}
             onHover={(f) => onHoverFont((h) => ({ ...h, mono: f }))}
+            footer={
+              <button type="button" className="settings-font-footer-link" onClick={() => window.api.openExternal('https://www.nerdfonts.com/font-downloads')}>
+                {t('settings.browseMoreCodeFonts')} →
+              </button>
+            }
             t={t}
           />
           <p className="settings-font-hint">{t('settings.fontHint')}</p>
-          <button
-            type="button"
-            className="settings-link-btn settings-font-more-link"
-            onClick={() => window.api.openExternal('https://horsemd.yangsir.net/fonts.html')}
-          >
-            {t('settings.getMoreFonts')} →
-          </button>
         </div>
         <AdjustGroup
           title={t('settings.fontSize')} valueLabel={fontSize + ' px'}
@@ -252,7 +255,7 @@ function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
   )
 }
 
-function FontPicker({ label, value, sample, placeholder, fonts, onLoadFonts, onChange, onHover, t }) {
+function FontPicker({ label, value, sample, placeholder, fonts, onLoadFonts, onChange, onHover, footer, t }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const rootRef = useRef(null)
@@ -346,6 +349,7 @@ function FontPicker({ label, value, sample, placeholder, fonts, onLoadFonts, onC
             )}
             {!list.length && <div className="settings-font-empty">{t('settings.fontEmpty')}</div>}
           </div>
+          {footer && <div className="settings-font-footer">{footer}</div>}
         </div>
       )}
     </div>
