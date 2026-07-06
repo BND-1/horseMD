@@ -28,6 +28,7 @@ import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
+import { useColDrag } from './hooks/useColDrag.js'
 import { headingAtRichTop, headingAtSourceTop, scrollRichToHeading, scrollSourceToHeading } from './scrollAnchor.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
@@ -35,6 +36,13 @@ import {
   isAbsolutePath, loadSession
 } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
+
+// Outline / file-tree pane drag bounds (px) — single source for the state init,
+// the drag clamp, and the double-click reset. CSS max-width on .pane-left must
+// stay >= PANE_MAX.
+const PANE_MIN = 160
+const PANE_MAX = 560
+const PANE_DEFAULT = 260
 
 export default function App() {
   const session = useRef(loadSession()).current
@@ -49,7 +57,9 @@ export default function App() {
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
   // Left-pane (outline / file-tree) width — draggable on hover (#resizable-pane).
   // Persisted in session; .pane-left reads it via the --pane-left-w CSS var.
-  const [paneWidth, setPaneWidth] = useState(session.paneWidth ?? 260)
+  const [paneWidth, setPaneWidth] = useState(
+    Math.max(PANE_MIN, Math.min(PANE_MAX, session.paneWidth ?? PANE_DEFAULT))
+  )
   const [theme, setTheme] = useState(session.theme || DEFAULT_THEME)
   // Active custom CSS theme (filename in userData/themes), or null. Overlays the
   // built-in base theme. `customThemes` is the list scanned from that folder.
@@ -435,24 +445,17 @@ export default function App() {
   }, [])
 
   // Drag the divider between the two split panes to change their ratio.
-  const startSplitDrag = useCallback((e) => {
-    e.preventDefault()
-    const area = editorAreaRef.current
-    if (!area) return
-    const rect = area.getBoundingClientRect()
-    const onMove = (ev) => {
-      const r = (ev.clientX - rect.left) / rect.width
-      setSplitRatio(Math.min(0.8, Math.max(0.2, r)))
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.classList.remove('hm-col-resizing')
-    }
-    document.body.classList.add('hm-col-resizing')
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [])
+  const startSplitDrag = useColDrag({
+    bodyClass: 'hm-col-resizing',
+    onStart: () => {
+      const area = editorAreaRef.current
+      return area ? area.getBoundingClientRect() : null
+    },
+    onMove: (ev, rect) => {
+      if (!rect) return
+      setSplitRatio(Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width)))
+    },
+  })
 
   // Open a file (by path) directly into the right split pane — used by the
   // sidebar's "Open in Split" so it works even if the file isn't open yet.
@@ -597,27 +600,17 @@ export default function App() {
   const fabTab = (fabId ? tabs.find((t) => t.id === fabId) : null) || activeTab
 
   // Drag the left-pane's right edge to resize it (outline / file-tree, #resizable-pane).
-  // Reads the live width from the DOM at mousedown so a stale closure never
-  // fights the drag; clamps 200–560. body.resizing-pane disables the width
-  // transition (so it tracks the cursor) + text selection while dragging.
-  const startResize = useCallback((e) => {
-    e.preventDefault()
-    const aside = e.currentTarget.previousElementSibling
-    const startW = aside ? aside.getBoundingClientRect().width : paneWidth
-    const startX = e.clientX
-    document.body.classList.add('resizing-pane')
-    const onMove = (ev) => {
-      const w = Math.max(160, Math.min(560, startW + (ev.clientX - startX)))
-      setPaneWidth(w)
-    }
-    const onUp = () => {
-      document.body.classList.remove('resizing-pane')
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [paneWidth])
+  // Reads the live width from the DOM at mousedown (via useColDrag's onStart) so a
+  // stale closure can't fight the drag; clamps to PANE_MIN..PANE_MAX. The body class
+  // disables the width transition (so it tracks the cursor) + text selection.
+  const startResize = useColDrag({
+    bodyClass: 'resizing-pane',
+    onStart: (e) => {
+      const aside = e.currentTarget.previousElementSibling
+      return { x: e.clientX, w: aside ? aside.getBoundingClientRect().width : PANE_DEFAULT }
+    },
+    onMove: (ev, { x, w }) => setPaneWidth(Math.max(PANE_MIN, Math.min(PANE_MAX, w + (ev.clientX - x)))),
+  })
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
@@ -695,7 +688,7 @@ export default function App() {
             role="separator"
             aria-orientation="vertical"
             onMouseDown={startResize}
-            onDoubleClick={() => setPaneWidth(260)}
+            onDoubleClick={() => setPaneWidth(PANE_DEFAULT)}
             title={t('side.resize')}
           />
         )}

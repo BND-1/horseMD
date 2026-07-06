@@ -689,7 +689,8 @@ async function uploadViaServer(endpoint, name, bytes) {
     if (j && j.success === false) throw new Error(j.message || 'PicGo server returned failure')
   } catch (e) {
     if (!(e instanceof SyntaxError)) throw e // JSON but not the expected shape
-    /* not JSON — fall through to URL extraction */
+    /* JSON parsed but the shape wasn't {success, result[]} (e.g. a bare object).
+       Salvage any URL from the body instead of failing. */
   }
   return parseUploadedUrl(text) // fallback: any http(s) URL in the body
 }

@@ -58,6 +58,9 @@ body.light {
   --text: #2a2620;
   --text-strong: #0f0d0a;
   --muted: #5a5650;
+  /* Icon glyphs on chrome surfaces (.icon-btn, .milkdown-toolbar items). Light
+     tracks --muted (already high-contrast on light bars); dark is deliberately
+     brighter than --muted — dark bars need it for icon visibility (#33). */
   --icon: #5a5650;
   --faint: #8a867e;
 
@@ -1174,9 +1177,6 @@ button:focus-visible,
 .pane-left-resizer:hover::before,
 .pane-left-resizer:active::before {
   opacity: 1;
-}
-.pane-left-resizer:active::before,
-.pane-left-resizer:hover::before {
   background: var(--accent);
 }
 /* While dragging: freeze the width transition (so it tracks the cursor 1:1) and
@@ -3351,16 +3351,12 @@ body.dark .milkdown {
   font-variant-ligatures: none;
   font-variant-east-asian: normal;
 }
-/* Windows-only (#34): whatever the default --font-mono resolves to on Windows,
-   some installs render the ASCII apostrophe (U+0027) curly. Force Consolas
-   (ships with every Windows, straight quotes) ahead of the rest of the stack.
-   Mac and other platforms keep the default stack. */
-.app.is-win .milkdown .ProseMirror pre code,
-.app.is-win .milkdown .ProseMirror pre,
-.app.is-win .milkdown .cm-editor,
-.app.is-win .milkdown .cm-editor .cm-content,
-.app.is-win .milkdown .cm-editor .cm-line {
-  font-family: Consolas, 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+/* Windows-only (#34): override --font-mono so Consolas (on every Windows,
+   straight quotes) leads — some Windows installs render the ASCII apostrophe
+   curly otherwise. pre code AND CodeMirror (--crepe-font-code) both read
+   --font-mono, so this one rule covers every code surface; no selector sprawl. */
+.app.is-win {
+  --font-mono: Consolas, 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
 }
 .milkdown .ProseMirror pre code::selection {
   background: var(--accent-soft);

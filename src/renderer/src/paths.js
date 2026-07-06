@@ -3,6 +3,9 @@
 // renderer. (The main process has its own copies; it can't import this module.)
 
 // Compare dotted versions: is `a` newer than `b`? (e.g. '0.1.5' > '0.1.4')
+// Is semver `a` newer than semver `b`? Call as isNewerVersion(latest, current)
+// → true when an update is available. (a/b order matters; a flipped call would
+// always report "up to date".)
 export function isNewerVersion(a, b) {
   const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0)
   const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0)

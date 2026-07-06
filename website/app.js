@@ -149,7 +149,12 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
   })
   .catch(() => { /* 静默回退到 releases 页 */ })
 
-// Android: 钉到最新 APK 直链(v0.5.2)。Gitee 未同步到 v0.5.2,国内加速走
-// ghfast.top 包 GitHub 直链(和桌面端国内加速一致)。发新 APK 时改这两行版本号。
-document.getElementById('dlAndroid').href = 'https://github.com/BND-1/horseMD/releases/download/v0.5.2/HorseMD-0.5.2.apk'
-document.getElementById('dlAndroidGitee').href = 'https://ghfast.top/https://github.com/BND-1/horseMD/releases/download/v0.5.2/HorseMD-0.5.2.apk'
+// Android APK — single source of truth for the version. Both the GitHub link
+// and the ghfast-wrapped 国内加速 derive from APK_VER, so a release only touches
+// this one constant. (Gitee mirror isn't synced past v0.3.1, so CN goes via
+// ghfast + GitHub like the desktop buttons.) index.html's hrefs are
+// version-agnostic (releases/latest) as the no-JS fallback.
+const APK_VER = '0.5.2'
+const APK_URL = `https://github.com/BND-1/horseMD/releases/download/v${APK_VER}/HorseMD-${APK_VER}.apk`
+document.getElementById('dlAndroid').href = APK_URL
+document.getElementById('dlAndroidGitee').href = CN + APK_URL
