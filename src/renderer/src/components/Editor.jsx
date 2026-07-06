@@ -29,7 +29,7 @@ import { BLOCK_TYPES, blockById, currentBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
 import { renderHtmlNodeView, convertBlock, remarkMergeInlineHtml } from './editor-html.js'
-import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
+import { dirOf, isRelativePath, resolveToFileUrl, uniqueImageName } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
@@ -399,13 +399,18 @@ export default function Editor({
     //   1. image-host command configured → upload, use the returned URL
     //   2. saved document → write into ./assets and use a relative path (Typora)
     //   3. untitled doc / mobile / any failure → inline base64 data: URL
-    const persistImage = async (file) => {
+    const persistImage = async (file, fromClipboard = false) => {
+      // Clipboard screenshots default to collision-prone names (image.png,
+      // QQ_*.png). Stamp a Typora-style timestamp so they never overwrite a
+      // same-named file on the host. Dropped/picked files keep their real name
+      // (host/local dedup handles rare collisions there).
+      const name = fromClipboard ? uniqueImageName(file.name) : (file.name || 'image.png')
       const cmd = (uploadCmdRef.current || '').trim()
       if (cmd) {
         fireToast(tRef.current('imghost.uploading'))
         try {
           const buf = await file.arrayBuffer()
-          const res = await window.api.uploadImage(cmd, file.name || 'image.png', new Uint8Array(buf))
+          const res = await window.api.uploadImage(cmd, name, new Uint8Array(buf))
           if (res?.ok && res.url) {
             fireToast(tRef.current('imghost.uploaded'))
             return res.url
@@ -425,7 +430,7 @@ export default function Editor({
         // Saved doc → write straight into ./assets, use a relative path.
         try {
           const buf = await file.arrayBuffer()
-          const res = await window.api.saveImage(docPath, file.name || 'image.png', new Uint8Array(buf))
+          const res = await window.api.saveImage(docPath, name, new Uint8Array(buf))
           if (res?.ok && res.path) return res.path
         } catch {
           /* fall through */
@@ -436,7 +441,7 @@ export default function Editor({
         // ./assets on first save (Typora-style).
         try {
           const buf = await file.arrayBuffer()
-          const res = await window.api.savePaste(file.name || 'image.png', new Uint8Array(buf))
+          const res = await window.api.savePaste(name, new Uint8Array(buf))
           if (res?.ok && res.url) return res.url
         } catch {
           /* fall through */
@@ -447,8 +452,8 @@ export default function Editor({
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
-    const insertUploadedImage = async (file) => {
-      const url = await persistImage(file)
+    const insertUploadedImage = async (file, fromClipboard = false) => {
+      const url = await persistImage(file, fromClipboard)
       const v = viewRef.current
       if (!v || !url) return
       const imgType = v.state.schema.nodes.image
@@ -882,8 +887,8 @@ export default function Editor({
           const file = imgItem.getAsFile()
           if (!file) return
           e.preventDefault()
-          e.stopPropagation()
-          insertUploadedImage(file)
+          e.stopImmediatePropagation()
+          insertUploadedImage(file, true)
         }
         const onDropImage = (e) => {
           if (!imageHandlingActive(e)) return
@@ -892,7 +897,7 @@ export default function Editor({
           )
           if (!files.length) return
           e.preventDefault()
-          e.stopPropagation()
+          e.stopImmediatePropagation()
           // Move the caret to the drop point before inserting.
           const at = view.posAtCoords({ left: e.clientX, top: e.clientY })
           if (at) {
