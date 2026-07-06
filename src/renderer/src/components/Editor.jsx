@@ -15,6 +15,7 @@ import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
+import { tabAtCursorKeymap } from './editor-codeblock-tab.js' // #39 — Tab inserts at cursor, not re-indent line
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import { TextSelection, Plugin } from '@milkdown/prose/state'
@@ -488,7 +489,10 @@ export default function Editor({
           // button, so it must live in the feature config (not codeBlockConfig)
           // — otherwise the Mermaid Hide/Edit label stays English.
           previewToggleText: (previewOnly) =>
-            previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode')
+            previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode'),
+          // #39: Tab inserts a real tab at the cursor instead of re-indenting the
+          // whole line (Crepe bundles indentWithTab). See editor-codeblock-tab.js.
+          extensions: [tabAtCursorKeymap]
         },
         // Localize the slash (`/`) command menu (otherwise always English). The
         // slash menu is part of the BlockEdit feature (there's no SlashCommand
