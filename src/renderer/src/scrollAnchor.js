@@ -109,13 +109,24 @@ const SNIPPET_LEN = 24
 // prose is identical across modes; only the syntax differs — so a snippet of
 // visible text is a stable cross-mode landmark even when a URL link makes char
 // offsets diverge.
+// Strip markdown syntax so a SOURCE-side caret snippet matches the rich doc's
+// visible text (which has no link/emphasis/code/heading syntax). The visible
+// prose is identical across modes; only the syntax differs — so a snippet of
+// visible text is a stable cross-mode landmark even when a URL link makes char
+// offsets diverge. ORDER MATTERS: strip structural markers (heading/blockquote/
+// list) BEFORE emphasis — otherwise the emphasis `\*` eats a bullet-list `*`
+// first and leaves the trailing space, so the snippet no longer matches.
 const stripMdForSnippet = (s) => s
+  .replace(/^\s{0,3}#{1,6}\s*/gm, '')         // heading markers
+  .replace(/^\s{0,3}>\s?/gm, '')              // blockquote markers
+  .replace(/^\s{0,3}[-*+]\s+/gm, '')          // bullet list markers
+  .replace(/^\s{0,3}\d+\.\s+/gm, '')          // ordered list markers
   .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // image ![alt](url) → alt
   .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // link [text](url) → text
   .replace(/```[\s\S]*?```/g, '')            // fenced code blocks
   .replace(/[`]+/g, '')                       // inline code backticks
-  .replace(/\*\*|__|~~|\*|_/g, '')            // emphasis
-  .replace(/^\s{0,3}#{1,6}\s*/gm, '')         // heading markers
+  .replace(/\*\*|__|~~|\*|_/g, '')            // emphasis (after markers, so it
+                                              // can't swallow a bullet `*`)
 
 // Find the ProseMirror position right AFTER the last occurrence of `snippet` in
 // the doc's visible text (so the caret can land there). -1 if not found. Used
@@ -145,7 +156,13 @@ export function captureRichCaret(view) {
     // selection.main.head — ProseMirror has no .main).
     const head = view.state.selection.head
     const doc = view.state.doc
-    const snippet = doc.textBetween(0, head, '\n').slice(-SNIPPET_LEN)
+    const $head = doc.resolve(head)
+    // Snippet = visible text before the caret WITHIN THE CURRENT TEXTBLOCK only
+    // (not from doc start). Cross-block snippets broke: textBetween joins blocks
+    // with '\n' but source has '\n\n' (blank lines), so the snippet never matched
+    // and it fell back to the (drifting) ratio. Within one block the visible text
+    // is identical in both modes (no markdown markers in rich) → matches verbatim.
+    const snippet = doc.textBetween($head.start(), head).slice(-SNIPPET_LEN)
     const heads = []
     doc.descendants((node, pos) => {
       if (node.type.name === 'heading') { heads.push({ pos, text: node.textContent }); return false }
@@ -167,7 +184,11 @@ export function captureSourceCaret(textarea) {
   if (!textarea) return null
   const md = textarea.value || ''
   const start = textarea.selectionStart || 0
-  const snippet = stripMdForSnippet(md.slice(0, start)).slice(-SNIPPET_LEN)
+  // Snippet = visible text before the caret WITHIN THE CURRENT LINE only, markers
+  // stripped (so it matches the rich doc's marker-free visible text for that same
+  // block). See captureRichCaret for why within-block matters.
+  const lineStart = md.lastIndexOf('\n', start - 1) + 1
+  const snippet = stripMdForSnippet(md.slice(lineStart, start)).slice(-SNIPPET_LEN)
   let pick = null
   for (const h of parseSourceHeadings(md)) {
     if (h.charOffset <= start) pick = h
@@ -184,13 +205,21 @@ export function restoreSourceCaret(textarea, anchor) {
   try {
     const md = textarea.value || ''
     let target
-    if (anchor.heading) {
-      const h = parseSourceHeadings(md).find((x) => x.text === anchor.heading)
-      if (h) target = Math.min(h.charOffset + (anchor.offset || 0), md.length)
-    }
-    if (target == null && anchor.snippet) {
+    // Snippet first (most robust — within-block visible text matches verbatim).
+    if (anchor.snippet) {
       const idx = md.lastIndexOf(anchor.snippet)
       if (idx >= 0) target = Math.min(idx + anchor.snippet.length, md.length)
+    }
+    if (target == null && anchor.heading) {
+      const h = parseSourceHeadings(md).find((x) => x.text === anchor.heading)
+      if (h) {
+        // Heading text starts AFTER the "# " marker — charOffset points at the
+        // line start (with the marker), so skip it. (Without this the caret landed
+        // mid-heading, e.g. "# 一级|标题".)
+        const m = md.slice(h.charOffset).match(/^#{1,6}[ \t]+/)
+        const textOff = h.charOffset + (m ? m[0].length : 0)
+        target = Math.min(textOff + (anchor.offset || 0), md.length)
+      }
     }
     if (target == null) target = Math.round((anchor.ratio || 0) * md.length)
     textarea.setSelectionRange(target, target)
@@ -208,17 +237,21 @@ export function restoreRichCaret(view, anchor) {
     const doc = view.state.doc
     const size = doc.content.size
     let target
-    if (anchor.heading) {
+    // Snippet first (most robust).
+    if (anchor.snippet) {
+      const p = posAfterText(doc, anchor.snippet)
+      if (p > 0) target = Math.min(p, size)
+    }
+    if (target == null && anchor.heading) {
       let hpos = -1
       doc.descendants((node, pos) => {
         if (node.type.name === 'heading' && node.textContent === anchor.heading) { hpos = pos; return false }
         return true
       })
-      if (hpos >= 0) target = Math.min(hpos + (anchor.offset || 0), size)
-    }
-    if (target == null && anchor.snippet) {
-      const p = posAfterText(doc, anchor.snippet)
-      if (p > 0) target = Math.min(p, size)
+      // +1 to skip the heading node's open token (descendants gives the position
+      // before the node; content starts at +1). Without it the caret landed one
+      // char short inside the heading.
+      if (hpos >= 0) target = Math.min(hpos + 1 + (anchor.offset || 0), size)
     }
     if (target == null) target = Math.round((anchor.ratio || 0) * size)
     const $pos = doc.resolve(Math.max(1, Math.min(target, size)))
