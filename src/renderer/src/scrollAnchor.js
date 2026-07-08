@@ -102,25 +102,63 @@ export function scrollSourceToHeading(textarea, md, text) {
 
 // Rich → ? : capture from the ProseMirror view. head = selection head; nearest
 // heading before it (document order); offset = text chars between heading + head.
+const SNIPPET_LEN = 24
+
+// Strip markdown syntax so a SOURCE-side caret snippet matches the rich doc's
+// visible text (which has no link/emphasis/code/heading syntax). The visible
+// prose is identical across modes; only the syntax differs — so a snippet of
+// visible text is a stable cross-mode landmark even when a URL link makes char
+// offsets diverge.
+const stripMdForSnippet = (s) => s
+  .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // image ![alt](url) → alt
+  .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // link [text](url) → text
+  .replace(/```[\s\S]*?```/g, '')            // fenced code blocks
+  .replace(/[`]+/g, '')                       // inline code backticks
+  .replace(/\*\*|__|~~|\*|_/g, '')            // emphasis
+  .replace(/^\s{0,3}#{1,6}\s*/gm, '')         // heading markers
+
+// Find the ProseMirror position right AFTER the last occurrence of `snippet` in
+// the doc's visible text (so the caret can land there). -1 if not found. Used
+// instead of a doc-wide ratio when there's no heading — far more precise because
+// it lands on the same visible text, not on a proportional offset that diverges
+// when markdown syntax (links, code) adds chars to one mode but not the other.
+const posAfterText = (doc, snippet) => {
+  if (!snippet) return -1
+  let chars = ''
+  const poses = [] // poses[i] = PM position right after visible char i
+  doc.descendants((node, pos) => {
+    if (node.isText) {
+      const t = node.text
+      for (let i = 0; i < t.length; i++) { chars += t[i]; poses.push(pos + i + 1) }
+      return false
+    }
+    return true
+  })
+  const idx = chars.lastIndexOf(snippet)
+  return idx >= 0 ? poses[idx + snippet.length - 1] : -1
+}
+
 export function captureRichCaret(view) {
   if (!view) return null
   try {
     // ProseMirror Selection exposes .head directly (unlike CodeMirror's
     // selection.main.head — ProseMirror has no .main).
     const head = view.state.selection.head
+    const doc = view.state.doc
+    const snippet = doc.textBetween(0, head, '\n').slice(-SNIPPET_LEN)
     const heads = []
-    view.state.doc.descendants((node, pos) => {
+    doc.descendants((node, pos) => {
       if (node.type.name === 'heading') { heads.push({ pos, text: node.textContent }); return false }
       return true
     })
     let pick = null
     for (const h of heads) { if (h.pos <= head) pick = h; else break }
     if (pick) {
-      const offset = view.state.doc.textBetween(pick.pos, head, '\n').length
-      return { heading: pick.text, offset }
+      const offset = doc.textBetween(pick.pos, head, '\n').length
+      return { heading: pick.text, offset, snippet }
     }
-    const size = view.state.doc.content.size
-    return size > 0 ? { ratio: head / size } : null
+    const size = doc.content.size
+    return size > 0 ? { ratio: head / size, snippet } : null
   } catch { return null }
 }
 
@@ -129,17 +167,18 @@ export function captureSourceCaret(textarea) {
   if (!textarea) return null
   const md = textarea.value || ''
   const start = textarea.selectionStart || 0
+  const snippet = stripMdForSnippet(md.slice(0, start)).slice(-SNIPPET_LEN)
   let pick = null
   for (const h of parseSourceHeadings(md)) {
     if (h.charOffset <= start) pick = h
     else break
   }
-  if (pick) return { heading: pick.text, offset: start - pick.charOffset }
-  return md ? { ratio: start / md.length } : null
+  if (pick) return { heading: pick.text, offset: start - pick.charOffset, snippet }
+  return md ? { ratio: start / md.length, snippet } : null
 }
 
-// ? → Source: set the textarea caret at heading.charOffset + offset (clamped),
-// or the ratio point. Returns true on success.
+// ? → Source: caret at heading start+offset, else after the snippet's last
+// occurrence, else the ratio point. Returns true on success.
 export function restoreSourceCaret(textarea, anchor) {
   if (!textarea || !anchor) return false
   try {
@@ -147,37 +186,42 @@ export function restoreSourceCaret(textarea, anchor) {
     let target
     if (anchor.heading) {
       const h = parseSourceHeadings(md).find((x) => x.text === anchor.heading)
-      if (!h) return false
-      target = Math.min(h.charOffset + (anchor.offset || 0), md.length)
-    } else {
-      target = Math.round((anchor.ratio || 0) * md.length)
+      if (h) target = Math.min(h.charOffset + (anchor.offset || 0), md.length)
     }
+    if (target == null && anchor.snippet) {
+      const idx = md.lastIndexOf(anchor.snippet)
+      if (idx >= 0) target = Math.min(idx + anchor.snippet.length, md.length)
+    }
+    if (target == null) target = Math.round((anchor.ratio || 0) * md.length)
     textarea.setSelectionRange(target, target)
     textarea.focus()
     return true
   } catch { return false }
 }
 
-// ? → Rich: set the ProseMirror selection near (headingPos + offset) or the ratio
-// point. TextSelection.near snaps to the closest valid text position, so a rough
-// offset still lands in-section. Returns true on success.
+// ? → Rich: caret at heading pos+offset, else after the snippet in visible text,
+// else the ratio point. TextSelection.near snaps to the closest valid text
+// position. Returns true on success.
 export function restoreRichCaret(view, anchor) {
   if (!view || !anchor) return false
   try {
-    const size = view.state.doc.content.size
+    const doc = view.state.doc
+    const size = doc.content.size
     let target
     if (anchor.heading) {
       let hpos = -1
-      view.state.doc.descendants((node, pos) => {
+      doc.descendants((node, pos) => {
         if (node.type.name === 'heading' && node.textContent === anchor.heading) { hpos = pos; return false }
         return true
       })
-      if (hpos < 0) return false
-      target = Math.min(hpos + (anchor.offset || 0), size)
-    } else {
-      target = Math.round((anchor.ratio || 0) * size)
+      if (hpos >= 0) target = Math.min(hpos + (anchor.offset || 0), size)
     }
-    const $pos = view.state.doc.resolve(Math.max(1, Math.min(target, size)))
+    if (target == null && anchor.snippet) {
+      const p = posAfterText(doc, anchor.snippet)
+      if (p > 0) target = Math.min(p, size)
+    }
+    if (target == null) target = Math.round((anchor.ratio || 0) * size)
+    const $pos = doc.resolve(Math.max(1, Math.min(target, size)))
     view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
     view.focus()
     return true
