@@ -247,6 +247,19 @@ docs/                  architecture / features / implementation-notes / developm
   (`slashCommandConfig`), not a `SlashCommand` key (there is no such enum member).
 - **Math**: enable `CrepeFeature.Latex` (off by default). Block math needs `$$` on
   their own lines. Long display math scrolls (`.katex-display { overflow-x:auto }`).
+  Inline math `$x^2$` converts only on the closing `$` (Milkdown input rule
+  `/\$([^$]+)\$/`), so there's no preview while typing the content. `editor-math-preview.js`
+  (#45) adds a live KaTeX tooltip near the caret while typing an unclosed `$<mathy>`
+  span — purely additive (reads state + renders a floating div, no typing change),
+  wired via `prosePluginsCtx` (the channel for raw ProseMirror plugins; `crepe.editor.use`
+  is for Milkdown FEATURES and silently breaks init if you pass a raw `Plugin`).
+  Hides on non-empty selection, code blocks, blur, and non-mathy content (`$5`).
+- **Raw ProseMirror plugins** (keymaps, view plugins like the math preview) go into
+  `prosePluginsCtx` (`ctx.update(prosePluginsCtx, (plugins) => [...plugins, yours])`),
+  NOT `crepe.editor.use(...)`. `crepe.editor.use` is for Milkdown `$nodeSchema`/`$inputRule`/features
+  (highlight, frontmatter, inlineCodeSchema); a raw `new Plugin({...})` passed there
+  silently breaks Crepe init (editor never mounts, no error). See `tableBreakKeymap()`
+  + `mathPreviewPlugin()` for the pattern.
 - **Table-cell line breaks** (`editor-tablebreak.js`): GFM cells are single-line,
   so a break must round-trip as `<br>`. A keymap inserts a hardbreak; a custom
   remark stringify `break` handler emits `<br>` **only inside `tableCell`** (else
