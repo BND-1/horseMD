@@ -13,7 +13,7 @@
 // channel for raw ProseMirror plugins — NOT crepe.editor.use).
 import { Plugin } from '@milkdown/prose/state'
 
-const HIDE_MS = 3000
+const HIDE_MS = 1000
 
 export function toolbarAutohidePlugin() {
   let timer = 0
