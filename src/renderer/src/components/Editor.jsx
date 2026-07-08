@@ -29,6 +29,7 @@ import { BLOCK_TYPES, blockById, currentBlockId } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
 import { renderHtmlNodeView, convertBlock, remarkMergeInlineHtml } from './editor-html.js'
+import { remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js' // unwrap GFM autolinks that swallowed non-ASCII text
 import { dirOf, isRelativePath, resolveToFileUrl, uniqueImageName } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
@@ -615,6 +616,11 @@ export default function Editor({
       }))
       ctx.update(remarkPluginsCtx, (plugins) => [
         ...plugins,
+        // Unwrap GFM autolink-literal links whose URL greedily swallowed
+        // non-ASCII text (e.g. `www.x.cn，中文…` → one bogus link). Runs after
+        // preset-gfm; replaces such links with their text. Valid ASCII
+        // autolinks keep an ASCII URL → untouched.
+        { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
         // Parse the `---` YAML block at the top of a doc into a `yaml` node
         // (handled by the frontmatter block schema), and reconstruct mangled
         // mid-doc `---` blocks (thematicBreak + Setext heading) back into yaml
