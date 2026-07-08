@@ -773,6 +773,24 @@ button:focus-visible,
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-float);
 }
+/* #45: live KaTeX preview while typing inline math ($x^2 before the closing $).
+   Floating, pointer-events-none so it never steals focus/clicks. Same DNA as
+   .hm-pop. KaTeX inherits the editor text color so it matches the doc. */
+.hm-math-preview {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  max-width: 420px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-float);
+  color: var(--text);
+  font-size: 0.95em;
+  line-height: 1.4;
+}
+.hm-math-preview .katex { color: inherit; font-size: 1.05em; }
 .hm-pop-head {
   display: flex;
   align-items: baseline;

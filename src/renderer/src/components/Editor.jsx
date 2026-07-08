@@ -33,6 +33,7 @@ import { dirOf, isRelativePath, resolveToFileUrl, uniqueImageName } from './edit
 import { inlineRichStyles } from './editor-copy.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
+import { mathPreviewPlugin } from './editor-math-preview.js' // #45: live KaTeX preview while typing inline math
 import { attachMdPasteHandler } from './editor-md-paste.js'
 import { normalizeDisplayMath, createMathBlockPromotionPlugin } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
@@ -567,6 +568,11 @@ export default function Editor({
         ...plugins,
         // Table-cell line break (issue #7): keymap first so it wins Enter inside a cell.
         tableBreakKeymap(),
+        // #45: live KaTeX preview tooltip while typing inline math ($x^2 before
+        // the closing $). Additive — reads state, renders a floating div, no
+        // typing regression. (Raw ProseMirror plugin → prosePluginsCtx, NOT
+        // crepe.editor.use which is for Milkdown features.)
+        mathPreviewPlugin(),
         // Rich mode parses source-readable review markers, including right-margin
         // notes for highlighted comments, while the Markdown source stays raw.
         createReviewDecorationPlugin({
