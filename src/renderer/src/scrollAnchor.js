@@ -92,23 +92,17 @@ export function scrollSourceToHeading(textarea, md, text) {
 }
 
 // ---------------------------------- #41 caret ----------------------------------
-// Capture/restore the CARET across rich↔source switches. The caret is anchored
-// to its NEAREST PRECEDING heading + text offset from that heading (heading text
-// is content-stable across modes, same property #28's scroll relies on). When
-// there's no heading before the caret (untitled / headingless docs), fall back to
-// a doc-length ratio so the caret at least lands in the same region. Returns null
-// when there's nothing to anchor (caller skips caret restore and keeps #28's
-// scroll-only behavior).
+// Capture/restore the CARET across rich↔source switches. Anchor order on
+// restore: SNIPPET (primary) → heading → ratio. The snippet is ~24 chars of
+// VISIBLE text before the caret within the current textblock — content-stable
+// across modes (only markdown syntax differs), so it lands on the same text in
+// the other mode even when a URL link / code fence / list marker makes char
+// offsets diverge. Heading + ratio are fallbacks (caret at a block start with no
+// preceding text / snippet not found). Returns null when there's nothing to
+// anchor (caller skips caret restore and keeps #28's scroll-only behavior).
 
-// Rich → ? : capture from the ProseMirror view. head = selection head; nearest
-// heading before it (document order); offset = text chars between heading + head.
 const SNIPPET_LEN = 24
 
-// Strip markdown syntax so a SOURCE-side caret snippet matches the rich doc's
-// visible text (which has no link/emphasis/code/heading syntax). The visible
-// prose is identical across modes; only the syntax differs — so a snippet of
-// visible text is a stable cross-mode landmark even when a URL link makes char
-// offsets diverge.
 // Strip markdown syntax so a SOURCE-side caret snippet matches the rich doc's
 // visible text (which has no link/emphasis/code/heading syntax). The visible
 // prose is identical across modes; only the syntax differs — so a snippet of
