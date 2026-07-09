@@ -198,7 +198,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
       ref.current?.focus()
       ref.current?.select()
     })
-  }, [runFind])
+  }, [runFind, activeId])
 
   return { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind }
 }
