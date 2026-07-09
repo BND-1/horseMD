@@ -619,6 +619,7 @@ export const STRINGS = {
     'tab.reveal': '打开所在文件夹',
     'tab.openRight': '在右侧分屏打开',
     'tab.close': '关闭',
+    'tab.closeRight': '关闭右侧',
     'tab.closeOthers': '关闭其他',
     'tab.noPath': '未保存的文件，请先保存',
 
