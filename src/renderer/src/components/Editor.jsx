@@ -17,6 +17,7 @@ import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
+import { keymap as cmKeymap } from '@codemirror/view'
 import { TextSelection, Plugin } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
@@ -533,6 +534,20 @@ export default function Editor({
         const prevRender = v.renderPreview
         return {
           ...v,
+          // Override CodeMirror's `indentWithTab` (which indents the whole line)
+          // with a Tab handler that inserts a tab character at the cursor — the
+          // expected behavior inside a code block. Prepended so it wins over the
+          // default keymap that Crepe's code-mirror feature registers.
+          extensions: [
+            cmKeymap.of([{
+              key: 'Tab',
+              run: (cmView) => {
+                cmView.dispatch(cmView.state.replaceSelection('\t'))
+                return true
+              }
+            }]),
+            ...(v.extensions || [])
+          ],
           languages: [mermaidLanguage, ...(v.languages || [])],
           renderPreview: (language, text, setPreview) => {
             if ((language || '').toLowerCase() === 'mermaid') {
