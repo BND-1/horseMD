@@ -358,19 +358,32 @@ export default function App() {
     const t1 = setTimeout(apply, 90)
     const t2 = setTimeout(apply, 220)
     const t3 = setTimeout(apply, 450)
-    // Chunked large docs (richLoading) keep streaming content past 450ms, which
-    // would drift the viewport anchor after the last fixed pass. Re-apply until
-    // the load settles (capped at ~2s) so the reading position holds on big docs
-    // too. `cancelled` lets cleanup short-circuit an in-flight tail tick. Only the
-    // rich branch needs this — source mode is plain text (no async fill).
+    // Large docs keep changing layout PAST 450ms in two ways the fixed passes
+    // miss: (1) chunked text parse (richLoading), and (2) the hundreds of remote
+    // <img> re-fetching + re-laying-out when the rich editor re-renders after a
+    // source→rich toggle. Either shifts scrollHeight, so an apply that lands
+    // mid-settle ends up off. So the tail re-applies while richLoading OR while
+    // scrollHeight is still changing, AND does one final pass once the height
+    // stabilizes (so the last apply is on the settled layout = the same layout
+    // the user captured on → the snippet returns to its original spot). `cancelled`
+    // lets cleanup short-circuit an in-flight tick. Only the rich branch needs
+    // this — source mode is plain text (no async fill).
     let cancelled = false
     const tailCleans = []
+    let lastSh = -1
+    let stableTicks = 0
     const tail = (delay) => {
       if (cancelled) return
       const h = setTimeout(() => {
         if (cancelled) return
         apply()
-        if (!sourceMode && richLoadingRef.current && delay < 2000) tail(delay + 300)
+        const sc = editorHostRef.current
+        const curSh = sc ? sc.scrollHeight : 0
+        const heightChanged = curSh > 0 && curSh !== lastSh
+        if (heightChanged) stableTicks = 0; else stableTicks++
+        lastSh = curSh
+        const stillSettling = !sourceMode && (richLoadingRef.current || heightChanged || stableTicks < 1)
+        if (stillSettling && delay < 3000) tail(delay + 300)
       }, delay)
       tailCleans.push(h)
     }

@@ -309,42 +309,58 @@ export function restoreRichCaret(view, anchor) {
 // the reading landmark; restore scrolls it back to the top. Falls back to a
 // scrollTop ratio when no snippet matches.
 
-// ~VIEWPORT_LEN chars of visible text starting at the top of the rich scroller.
-// caretPositionFromPoint(top-center) gives the exact start position; a TreeWalker
-// fallback finds the first text node whose bottom crosses the top edge (the
-// point API can return null over the editor's padding). null if nothing's there.
-const richViewportSnippet = (scroller, view) => {
-  if (!scroller || !view) return null
+// The rich viewport anchor is PURE DOM (no ProseMirror dependency): it reads
+// the text node at the top of the scroller and, on restore, finds that text in
+// the DOM and scrolls it back to the top. This is deliberately NOT routed
+// through view.posAtDOM / view.state.doc.textBetween / posAtText, because on a
+// large, image-dense doc (hundreds of remote <img>s, 100k+ chars) the PM doc ↔
+// DOM mapping can land on the wrong spot or drift as heights settle — whereas
+// the DOM text itself is stable and exactly what the user sees. The caret
+// anchor still uses PM (it needs precise selection math); the viewport anchor
+// only needs "show the same screenful of text", which DOM does best.
+
+// The topmost visible text node + char offset in `scroller`. caretPositionFromPoint
+// (top-center) gives the exact spot; when it hits an <img> (image-dense region)
+// or the editor padding it returns a non-text node, so a TreeWalker fallback
+// finds the first text node whose bottom crosses the top edge. null if none.
+const topTextNode = (scroller) => {
   const doc = scroller.ownerDocument
   const sr = scroller.getBoundingClientRect()
-  let node = null
-  let off = 0
   const cp = doc.caretPositionFromPoint ? doc.caretPositionFromPoint(sr.left + sr.width / 2, sr.top + 6) : null
-  if (cp && cp.offsetNode && cp.offsetNode.nodeType === 3) { node = cp.offsetNode; off = cp.offset }
-  else {
-    const w = doc.createTreeWalker(scroller, NodeFilter.SHOW_TEXT)
-    while (w.nextNode()) {
-      const tn = w.currentNode
-      if (!tn.nodeValue.replace(/\s/g, '')) continue
-      const rr = doc.createRange(); rr.selectNodeContents(tn)
-      if (rr.getBoundingClientRect().bottom > sr.top + 1) { node = tn; off = 0; break }
-    }
+  if (cp && cp.offsetNode && cp.offsetNode.nodeType === 3) return { node: cp.offsetNode, off: cp.offset }
+  const w = doc.createTreeWalker(scroller, NodeFilter.SHOW_TEXT)
+  while (w.nextNode()) {
+    const tn = w.currentNode
+    if (!tn.nodeValue.replace(/\s/g, '')) continue
+    const rr = doc.createRange(); rr.selectNodeContents(tn)
+    if (rr.getBoundingClientRect().bottom > sr.top + 1) return { node: tn, off: 0 }
   }
-  if (!node) return null
-  let pos
-  try { pos = view.posAtDOM(node, off) } catch { return null }
-  const size = view.state.doc.content.size
-  // Forward text from the viewport top, whitespace-normalized so it matches the
-  // source side (whose block gaps differ). Visible text only (no markdown).
-  const fwd = view.state.doc.textBetween(pos, Math.min(pos + 60, size)).replace(/\s+/g, ' ').trim()
-  return fwd.slice(0, VIEWPORT_LEN) || null
+  return null
 }
 
-export function captureRichViewport(scroller, view) {
-  const snippet = richViewportSnippet(scroller, view)
+// `len` RAW chars starting at (node, off), reaching into FOLLOWING text nodes
+// when the start node is shorter. Crossing nodes is required because viewport-
+// top text is often split by inline marks (code, links): "。以 " | "skills" |
+// " 为例…" — a single-node slice would be the tiny "。以 ", which isn't unique.
+// Restore mirrors this with a concatenated buffer, so a cross-node snippet
+// still matches. RAW (no normalization) so capture and restore are byte-identical.
+const forwardDomText = (scroller, node, off, len) => {
+  let s = node.nodeValue.slice(off)
+  if (s.length < len) {
+    const w = scroller.ownerDocument.createTreeWalker(scroller, NodeFilter.SHOW_TEXT)
+    w.currentNode = node
+    while (s.length < len && w.nextNode()) s += w.currentNode.nodeValue
+  }
+  return s.slice(0, len)
+}
+
+export function captureRichViewport(scroller, _view) {
   if (!scroller) return null
   const denom = scroller.scrollHeight - scroller.clientHeight
   const ratio = denom > 0 ? scroller.scrollTop / denom : 0
+  const top = topTextNode(scroller)
+  if (!top) return { snippet: null, ratio }
+  const snippet = forwardDomText(scroller, top.node, top.off, VIEWPORT_LEN) || null
   return { snippet, ratio }
 }
 
@@ -359,23 +375,80 @@ export function captureSourceViewport(textarea) {
   return { snippet, ratio }
 }
 
-// Scroll the rich editor so the viewport-top snippet is back at the top. Finds
-// the occurrence nearest the expected (ratio) position, gets its DOM node, and
-// aligns it to the scroller's top edge. Ratio fallback when the snippet is gone.
-export function restoreRichViewport(scroller, view, anchor) {
-  if (!scroller || !view || !anchor) return false
+// Scroll the rich editor so the viewport-top snippet is back at the top. Builds
+// a RAW concatenated buffer of every text node + an offsets table, so a snippet
+// that SPANS mark/node boundaries (prose with inline code/links) — which no
+// single text node contains — still matches. Among all matches it picks the one
+// whose absolute top is nearest the expected (ratio) position, then aligns it to
+// the scroller's top edge. Pure DOM — robust on large/image-dense docs. Ratio
+// fallback when the snippet isn't found.
+export function restoreRichViewport(scroller, _view, anchor) {
+  if (!scroller || !anchor) return false
   try {
-    const doc = view.state.doc
-    const size = doc.content.size
-    let pos = -1
-    if (anchor.snippet) pos = posAtText(doc, anchor.snippet, anchor.ratio != null ? anchor.ratio * size : -1)
-    if (pos < 0) pos = Math.round((anchor.ratio || 0) * size)
-    if (pos < 0) return false
-    const dom = view.domAtPos(Math.max(0, Math.min(pos, size)))
-    const el = dom.node.nodeType === 3 ? dom.node.parentElement : dom.node
-    if (!el) return false
+    const doc = scroller.ownerDocument
     const sr = scroller.getBoundingClientRect()
-    scroller.scrollTop = scroller.scrollTop + (el.getBoundingClientRect().top - sr.top)
+    const denom = scroller.scrollHeight - scroller.clientHeight
+    if (!anchor.snippet) {
+      if (denom > 0) scroller.scrollTop = (anchor.ratio || 0) * denom
+      return true
+    }
+    const snip = anchor.snippet
+    // Concatenate all text-node values into one buffer; remember each node's
+    // [start, len) so a buffer index maps back to (node, char offset).
+    const w = doc.createTreeWalker(scroller, NodeFilter.SHOW_TEXT)
+    let buf = ''
+    const segs = [] // { node, start, len }
+    while (w.nextNode()) {
+      const tn = w.currentNode
+      const nv = tn.nodeValue
+      if (!nv) continue
+      segs.push({ node: tn, start: buf.length, len: nv.length })
+      buf += nv
+    }
+    // binary-search segs for the segment containing a buffer index
+    const nodeAt = (bi) => {
+      let lo = 0
+      let hi = segs.length - 1
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+        const s = segs[mid]
+        if (bi < s.start) hi = mid - 1
+        else if (bi >= s.start + s.len) lo = mid + 1
+        else return { node: s.node, off: bi - s.start }
+      }
+      return null
+    }
+    const expected = anchor.ratio != null && denom > 0 ? anchor.ratio * scroller.scrollHeight : -1
+    // Find the buffer occurrence nearest the expected position. Try the full
+    // snippet first; if it isn't present (a re-render split a mark differently,
+    // shifting the snippet's tail), fall back to shorter prefixes — the head is
+    // stable and still unique enough with the position hint.
+    let bestBi = -1
+    let bd = Infinity
+    const findNearest = (needle) => {
+      if (!needle) return
+      let from = 0
+      let idx
+      while ((idx = buf.indexOf(needle, from)) >= 0) {
+        const at = nodeAt(idx)
+        if (at) {
+          const r = doc.createRange(); r.setStart(at.node, at.off)
+          const absTop = r.getBoundingClientRect().top + scroller.scrollTop
+          const d = expected > 0 ? Math.abs(absTop - expected) : 0
+          if (bestBi < 0 || d < bd) { bd = d; bestBi = idx }
+        }
+        from = idx + 1
+      }
+    }
+    findNearest(snip)
+    if (bestBi < 0) findNearest(snip.slice(0, Math.ceil(snip.length / 2)))
+    if (bestBi >= 0) {
+      const at = nodeAt(bestBi)
+      const r = doc.createRange(); r.setStart(at.node, at.off)
+      scroller.scrollTop = scroller.scrollTop + (r.getBoundingClientRect().top - sr.top)
+      return true
+    }
+    if (denom > 0) scroller.scrollTop = (anchor.ratio || 0) * denom
     return true
   } catch { return false }
 }

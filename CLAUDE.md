@@ -190,14 +190,32 @@ docs/                  architecture / features / implementation-notes / developm
   in the rich rendering, so it never matched). Matching picks the occurrence
   NEAREST the expected position (`ratio*size` / `ratio*len`) — not `lastIndexOf`
   — so a short snippet like "九" no longer collides with the "九" in "九十分".
-  Restore order per anchor: snippet → heading → ratio. **Multi-pass** (rAF +
-  90/220/450ms) because Crepe fills rich content async after remount; PLUS a
-  `richLoadingRef`-gated tail (re-applies every 300ms up to ~2s while a chunked
-  large doc is still streaming) so the viewport holds on big docs too. **Product
-  behavior (deliberate):** the viewport-top anchor wins — if the caret was
-  off-screen before the toggle (user scrolled away to read), it stays off-screen
-  after; the caret is restored to its TEXT but NOT scrolled into view. This is
-  what makes pure-viewing not drift. **Key files:** `scrollAnchor.js`
+  Restore order per anchor: snippet → heading → ratio. **The VIEWPORT anchor is
+  pure DOM (NOT ProseMirror)** — `captureRichViewport` reads the text node at the
+  scroller top (`caretPositionFromPoint` + a TreeWalker fallback for when the top
+  is an `<img>`), and `restoreRichViewport` finds that text in a concatenated
+  buffer of ALL text nodes (with an index→node map) and aligns it to the top.
+  Pure DOM is deliberate: on a large, image-dense doc (hundreds of remote `<img>`,
+  100k+ chars) the PM doc ↔ DOM mapping drifts, but the DOM text itself is stable.
+  The snippet crosses text-node boundaries (viewport-top prose is often split by
+  inline code/link marks), so single-`nodeValue.includes` matching misses it —
+  hence the buffer. If the full snippet isn't found (a re-render split a mark
+  differently), it retries a half-length prefix (longer=precise, shorter=robust).
+  **Multi-pass** (rAF + 90/220/450ms) because Crepe fills rich content async after
+  remount; PLUS a settle-aware tail (re-applies every 300ms up to ~3s while
+  `richLoading` OR `scrollHeight` is still changing — the latter catches the
+  hundreds of remote `<img>` re-fetching/re-laying-out on the source→rich re-
+  render — then one final pass once the height stabilizes). **Product behavior
+  (deliberate):** the viewport-top anchor wins — if the caret was off-screen
+  before the toggle (user scrolled away to read), it stays off-screen after; the
+  caret is restored to its TEXT but NOT scrolled into view. This is what makes
+  pure-viewing not drift. **Known limit:** `EditorArea.jsx` (~L85
+  `usesTextarea = … || (sourceMode && isLeft)`) UNMOUNTS the Crepe and mounts the
+  textarea on source toggle, so every toggle re-parses the whole doc + reloads
+  its images; on an extreme doc (100k+ chars, 100s of remote images) that re-
+  render is non-deterministic, so the viewport lands within ~0–2 lines (usually
+  exact) rather than pixel-perfect. A full fix would keep Crepe mounted across
+  the toggle (display:none, sync only on source edit) — a larger Editor refactor. **Key files:** `scrollAnchor.js`
   (`capture/restore Rich/Source Caret/Viewport`, `posAtText`/`nearestIndexOf`
   nearest-occurrence, `visibleOccurrences`, `stripMdForSnippet`,
   `parseSourceHeadings`, `scrollSourceToHeading`); `App.jsx` `toggleSource`
