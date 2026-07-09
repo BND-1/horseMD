@@ -32,10 +32,7 @@ import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
-import {
-  headingAtRichTop, headingAtSourceTop, scrollRichToHeading, scrollSourceToHeading,
-  captureRichCaret, captureSourceCaret, restoreRichCaret, restoreSourceCaret
-} from './scrollAnchor.js'
+import { captureRichCaret, captureSourceCaret, restoreRichCaret, restoreSourceCaret } from './scrollAnchor.js'
 import { attachSourceCaret } from './components/editor-source-caret.js' // thick caret in source mode
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
@@ -109,9 +106,7 @@ export default function App() {
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const sourceRef = useRef(null) // active source-mode <textarea>
   const sourceTextareas = useRef({}) // textarea-backed editors by tab id
-  const scrollRatioRef = useRef(null) // fallback: scroll ratio to restore across a mode switch
-  const scrollAnchorRef = useRef(null) // preferred: heading text to restore across a mode switch (#28)
-  const caretAnchorRef = useRef(null) // #41: caret (heading+offset, or ratio) to restore across a mode switch
+  const caretAnchorRef = useRef(null) // caret anchor (snippet/heading/ratio) to restore across a mode switch
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -309,28 +304,14 @@ export default function App() {
     setCustomTheme(null)
   }, [])
 
-  // Toggle source/rich mode while keeping the reading position. Heading TEXT is
-  // content-stable across modes, so we anchor on it (#28); scroll RATIO is the
-  // fallback (imprecise because rich/source heights are non-linearly distributed).
+  // Toggle source/rich mode. The CARET is the single anchor: capture it before
+  // the switch, restore it (snippet → heading → ratio) after, and scroll the
+  // caret into view so the viewport follows. This replaces the old dual system
+  // (#28 scroll-anchor + #41 caret) that fought each other — the scroll landed
+  // on a heading/ratio while the caret was elsewhere, so the user saw the wrong
+  // content and thought the caret "moved".
   const toggleSource = useCallback(() => {
     commitAllLive() // flush textarea edits so the rich editor picks them up on switch
-    // Capture heading anchor (precise) from the outgoing view.
-    if (sourceModeRef.current) {
-      scrollAnchorRef.current = headingAtSourceTop(sourceRef.current, sourceRef.current?.value || '')
-    } else {
-      scrollAnchorRef.current = headingAtRichTop(editorHostRef.current)
-    }
-    // Also capture ratio as fallback.
-    const el = sourceModeRef.current ? sourceRef.current : editorHostRef.current
-    if (el) {
-      const denom = el.scrollHeight - el.clientHeight
-      scrollRatioRef.current = denom > 0 ? el.scrollTop / denom : 0
-    } else {
-      scrollRatioRef.current = null
-    }
-    // #41: capture the CARET too (nearest heading + text offset, or a doc-length
-    // ratio) so the new mode can land it in the same section. Reads the rich PM
-    // view via the editor API (same channel useFindReplace uses).
     caretAnchorRef.current = sourceModeRef.current
       ? captureSourceCaret(sourceRef.current)
       : captureRichCaret(editorApis.current[activeIdRef.current]?.getView?.())
@@ -338,40 +319,18 @@ export default function App() {
   }, [commitAllLive])
 
   useLayoutEffect(() => {
-    const anchor = scrollAnchorRef.current
-    const ratio = scrollRatioRef.current
     const caret = caretAnchorRef.current
-    if (anchor == null && ratio == null && caret == null) return
-    scrollAnchorRef.current = null
-    scrollRatioRef.current = null
+    if (caret == null) return
     caretAnchorRef.current = null
+    // Restore the caret (snippet → heading → ratio). The caret restore itself
+    // scrolls the caret into view (ProseMirror scrollIntoView / textarea focus),
+    // so the viewport ALWAYS shows the caret — no separate scroll restore that
+    // could land on a different viewport + leave the caret off-screen (the
+    // "position changed" complaint). The old heading/ratio scroll fought the
+    // caret; now there's one unified target: the caret.
     const apply = () => {
-      // #41: restore the caret FIRST. Its focus() makes the browser scroll the
-      // caret into view, so doing the scroll restore AFTER (below) lets the
-      // viewport land on the #28 anchor instead of being yanked to the caret —
-      // otherwise the caret's focus-scroll overrides the scroll restore and the
-      // view lands somewhere different each switch.
-      if (caret) {
-        if (sourceMode) restoreSourceCaret(sourceRef.current, caret)
-        else restoreRichCaret(editorApis.current[activeIdRef.current]?.getView?.(), caret)
-      }
-      // Scroll LAST so it wins over the caret's focus-scroll. Heading anchor
-      // first (#28); ratio only if the heading anchor didn't match.
-      let scrolledByAnchor = false
-      if (anchor) {
-        if (sourceMode) {
-          scrolledByAnchor = scrollSourceToHeading(sourceRef.current, sourceRef.current?.value || '', anchor)
-        } else {
-          scrolledByAnchor = scrollRichToHeading(editorHostRef.current, anchor)
-        }
-      }
-      if (!scrolledByAnchor && ratio != null) {
-        const el = sourceMode ? sourceRef.current : editorHostRef.current
-        if (el) {
-          const denom = el.scrollHeight - el.clientHeight
-          if (denom > 0) el.scrollTop = ratio * denom
-        }
-      }
+      if (sourceMode) restoreSourceCaret(sourceRef.current, caret)
+      else restoreRichCaret(editorApis.current[activeIdRef.current]?.getView?.(), caret)
     }
     // Apply immediately, then again as async layout settles — the rich editor
     // (Crepe) fills its content over a few frames after it remounts, growing

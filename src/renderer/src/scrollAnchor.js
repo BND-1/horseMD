@@ -217,9 +217,9 @@ export function restoreSourceCaret(textarea, anchor) {
     }
     if (target == null) target = Math.round((anchor.ratio || 0) * md.length)
     textarea.setSelectionRange(target, target)
-    // preventScroll: focus without scrolling, so the caret restore doesn't fight
-    // the #28 scroll restore (which runs after + sets the viewport).
-    textarea.focus({ preventScroll: true })
+    // Let the browser scroll the caret into view (replaces the old separate
+    // heading/ratio scroll restore).
+    textarea.focus()
     return true
   } catch { return false }
 }
@@ -251,7 +251,10 @@ export function restoreRichCaret(view, anchor) {
     }
     if (target == null) target = Math.round((anchor.ratio || 0) * size)
     const $pos = doc.resolve(Math.max(1, Math.min(target, size)))
-    view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
+    // scrollIntoView: the viewport follows the caret so the user sees it — this
+    // REPLACES the old separate heading/ratio scroll restore (which fought the
+    // caret + landed on a different viewport for headingless docs).
+    view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)).scrollIntoView())
     view.focus()
     return true
   } catch { return false }
