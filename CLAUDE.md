@@ -165,18 +165,39 @@ docs/                  architecture / features / implementation-notes / developm
   scrollspy's active heading during the poll (the `tops` cache may be stale mid-settle).
   Large-doc chunked-load: `richLoading` gates the outline list (skeleton during load)
   + queues the jump until `richDocVersion` bumps.
-- **Mode-switch scroll** (`scrollAnchor.js`, #28): toggleSource captures the heading
-  TEXT at the viewport top (content-stable across rich/source); the restore effect
-  scrolls to the same heading in the new mode (multi-pass for Crepe async fill),
-  falling back to scroll-ratio if no heading found.
-- **Mode-switch caret** (`scrollAnchor.js` `capture*`/`restore*Caret`, #41): the
-  same switch also captures the CARET (nearest heading + text offset from it, or
-  a doc-length ratio for headingless docs) and restores it in the new mode after
-  the scroll settles. Rich side uses the editor-API `getView()` channel + **ProseMirror
-  `view.state.selection.head`** (NOT `selection.main.head` — that's CodeMirror's API;
-  ProseMirror's `Selection` has no `.main`). The restore effect's scroll branch keeps
-  #28's "ratio runs only when the heading anchor misses" semantics via a
-  `scrolledByAnchor` flag (an early `return` would skip the caret restore too).
+- **Mode-switch caret + viewport** (`scrollAnchor.js` + `App.jsx`, #28/#41 — **OPEN BUG,
+  needs Ralph loop**): when toggling rich↔source, the CARET position should be
+  preserved AND visible (viewport follows the caret). Current approach (v0.5.25):
+  toggleSource captures the caret anchor (snippet → heading → ratio); a
+  `[sourceMode]` effect (multi-pass: rAF + 90/220/450ms) restores it via
+  `restoreRichCaret`/`restoreSourceCaret`, which **scroll the caret into view**
+  (ProseMirror `tr.scrollIntoView()` / textarea `focus()`). **History of what was
+  tried (all failed to fully fix):** (1) #28 dual system — separate scroll-restore
+  (heading/ratio) + caret-restore — they fought: scroll landed on heading, caret
+  elsewhere → off-screen → "caret moved". (2) snippet within-textblock anchor —
+  fixed caret precision but viewport still fought. (3) reorder (caret→scroll) +
+  `preventScroll` — mitigated but didn't resolve. (4) v0.5.25 root fix: removed
+  the dual system entirely, caret is the single target + scrollIntoView. **User
+  still reports drift on v0.5.25** — CDP tests show caret MATCHES at multiple
+  positions (50/100/200/300 in caixuetang text) + is visible, so the remaining
+  issue may be: large-doc Crepe async fill timing (>450ms, caret set on incomplete
+  doc then shifts), a real-world scenario CDP can't reproduce, or the user is on
+  an older build. **Ralph should:** reproduce with the user's exact doc + scenario;
+  check if the caret drifts on LARGE docs (>5000 chars, multi-paragraph with
+  headings + links + code); verify the multi-pass timing covers Crepe's fill;
+  consider bumping to more passes or waiting for richDocVersion. **Key files:**
+  `scrollAnchor.js` (`captureRichCaret`/`captureSourceCaret`/`restoreRichCaret`/
+  `restoreSourceCaret`/`posAfterText`/`stripMdForSnippet`/`parseSourceHeadings`),
+  `App.jsx` `toggleSource` (~L315, capture) + `[sourceMode]` effect (~L327,
+  multi-pass restore). **Key API details:** PM `view.state.selection.head` (no
+  `.main`); `editorApis.current[activeId]?.getView?.()` for the PM view;
+  `sourceRef.current` for the textarea; snippet = ~24 visible chars within the
+  current textblock (`$head.start()` for rich, current source line for source);
+  `stripMdForSnippet` strips structural markers (heading/list/blockquote) BEFORE
+  emphasis (else `\*` eats a bullet `*`); `posAfterText` walks text nodes +
+  `lastIndexOf`. **CDP testing gotcha:** N tabs = N mounted editors —
+  `querySelector('.ProseMirror')` may hit a hidden one; use `offsetParent` or
+  filter by content.
 - **Outline in source mode** (`useOutline.js` + `scrollAnchor.parseSourceHeadings`,
   #40): the outline used to blank in source mode. Now the list is regex-parsed from
   the textarea (`parseSourceHeadings`, also used by `headingAtSourceTop` + the #41
