@@ -34,61 +34,44 @@ export const isRestrictedPath = (p) => {
   return /^\/(dev|proc|System\/Volumes|private\/var\/(db|folders)|\.vol)(\/|$)/.test(norm)
 }
 
-// ---- Multi-workspace data model ----
-// A workspace = a named bag of folder roots (multi-root file tree). Sessions
-// persist `workspaces: [{id,name,folderRoots:[abs],createdAt}]` + activeWorkspaceId.
-// `name: null` means "show the first folder's name" (resolved at render).
+// ---- Single-workspace data model ----
+// The workspace is the single, unnamed container for the sidebar file tree. It
+// holds N folder roots (multi-root tree) — that's it. No name, no multiple
+// workspaces, no switching (HorseMD is a writing app, one workspace is enough;
+// users add/remove folders within it). Session persists `folderRoots: [abs,…]`.
 
-// Normalize + validate one workspace: strip relative/restricted/duplicate roots,
-// ensure id/createdAt. Returns null if the input isn't a workspace object.
-function cleanWorkspace(ws) {
-  if (!ws || typeof ws !== 'object') return null
-  const id = typeof ws.id === 'string' && ws.id ? ws.id : genId()
-  const rawRoots = Array.isArray(ws.folderRoots) ? ws.folderRoots : []
-  const seen = new Set()
-  const folderRoots = rawRoots.filter((p) => {
-    if (typeof p !== 'string' || !isAbsolutePath(p) || isRestrictedPath(p)) return false
-    const k = p.replace(/\\/g, '/')
-    if (seen.has(k)) return false
-    seen.add(k)
-    return true
-  })
-  return {
-    id,
-    name: typeof ws.name === 'string' && ws.name ? ws.name : null,
-    folderRoots,
-    createdAt: typeof ws.createdAt === 'number' ? ws.createdAt : Date.now()
-  }
-}
-
-export function sanitizeWorkspaces(list) {
+// Filter to absolute, non-restricted, de-duplicated roots (mirrors main's
+// isRestrictedRoot; a relative/restricted root would crash the chokidar watcher).
+export function sanitizeFolderRoots(list) {
   if (!Array.isArray(list)) return []
-  return list.map(cleanWorkspace).filter(Boolean)
+  const seen = new Set()
+  const out = []
+  for (const p of list) {
+    if (typeof p !== 'string' || !isAbsolutePath(p) || isRestrictedPath(p)) continue
+    const k = p.replace(/\\/g, '/')
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(p)
+  }
+  return out
 }
 
-// Migrate + sanitize the session's workspace state into {workspaces, activeWorkspaceId}.
-// Old session shape: { workspace: {rootPath, rootName} } (single folder).
-// New shape: { workspaces, activeWorkspaceId }.
-export function loadWorkspacesFromSession(session) {
-  if (!session) return { workspaces: [], activeWorkspaceId: null }
+// Migrate the session into a flat folderRoots array. Accepts the current shape
+// { folderRoots } plus two legacy shapes (no data loss across upgrades):
+//   - { workspaces: [{ folderRoots }] }   (the multi-workspace build) → merge all roots
+//   - { workspace: { rootPath } }          (the original single-folder build) → [rootPath]
+export function loadFolderRootsFromSession(session) {
+  if (!session) return []
+  if (Array.isArray(session.folderRoots)) return sanitizeFolderRoots(session.folderRoots)
   if (Array.isArray(session.workspaces)) {
-    const workspaces = sanitizeWorkspaces(session.workspaces)
-    let activeId = session.activeWorkspaceId
-    if (!activeId || !workspaces.some((w) => w.id === activeId)) activeId = workspaces[0]?.id || null
-    return { workspaces, activeWorkspaceId: activeId }
+    const all = session.workspaces.flatMap((w) => (w && Array.isArray(w.folderRoots) ? w.folderRoots : []))
+    return sanitizeFolderRoots(all)
   }
-  // Legacy single-workspace session → migrate into one workspace (no data loss).
   const legacy = session.workspace
   if (legacy && isAbsolutePath(legacy.rootPath) && !isRestrictedPath(legacy.rootPath)) {
-    const ws = cleanWorkspace({
-      id: genId(),
-      name: legacy.rootName || baseName(legacy.rootPath),
-      folderRoots: [legacy.rootPath],
-      createdAt: Date.now()
-    })
-    return { workspaces: [ws], activeWorkspaceId: ws.id }
+    return sanitizeFolderRoots([legacy.rootPath])
   }
-  return { workspaces: [], activeWorkspaceId: null }
+  return []
 }
 
 export const baseName = (p) => (p ? p.split(/[\\/]/).pop() : 'Untitled')

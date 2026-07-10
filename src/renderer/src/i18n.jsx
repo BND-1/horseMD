@@ -327,18 +327,10 @@ export const STRINGS = {
     'slash.kw.table': 'table,grid',
     'slash.kw.math': 'math,latex,tex,formula,$$',
 
-    // multi-workspace
+    // workspace (single, unnamed — just a bag of folder roots)
     'workspace.title': 'Workspace',
-    'workspace.switch': 'Switch workspace',
-    'workspace.new': 'New workspace',
     'workspace.addFolder': 'Add folder',
     'workspace.removeFolder': 'Remove from workspace',
-    'workspace.rename': 'Rename workspace',
-    'workspace.delete': 'Delete workspace',
-    'workspace.confirmDelete': 'Delete workspace "{name}"? The folders on disk are not touched.',
-    'workspace.emptyRoots': 'This workspace has no folders yet.',
-    'workspace.unnamed': 'Untitled workspace',
-    'workspace.none': 'No workspaces yet',
 
     // editor
     'editor.placeholder': 'Type / for commands, or just start writing…',
@@ -681,18 +673,10 @@ export const STRINGS = {
     'slash.kw.table': '表格,表,table,grid',
     'slash.kw.math': '公式,数学公式,数学,math,latex,tex,$$',
 
-    // 多工作区
+    // 工作区(单一、无名 —— 就是一组文件夹)
     'workspace.title': '工作区',
-    'workspace.switch': '切换工作区',
-    'workspace.new': '新建工作区',
     'workspace.addFolder': '添加文件夹',
     'workspace.removeFolder': '从工作区移除',
-    'workspace.rename': '重命名工作区',
-    'workspace.delete': '删除工作区',
-    'workspace.confirmDelete': '确定删除工作区「{name}」？不会删除磁盘上的文件夹。',
-    'workspace.emptyRoots': '这个工作区还没有文件夹。',
-    'workspace.unnamed': '未命名工作区',
-    'workspace.none': '还没有工作区',
 
     'editor.placeholder': '输入 / 唤起命令，或开始写…',
     'code.copy': '复制',

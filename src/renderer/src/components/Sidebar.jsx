@@ -1,21 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
-import { usePopover } from '../hooks/usePopover.js'
 import { baseName, dirName as parentDir, joinPath as join, isMarkdownName, isValidName, isExistsError } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 
 export default function Sidebar({
-  workspaces,
-  activeWorkspace,
-  activeWorkspaceId,
   folderRoots,
-  onSwitchWorkspace,
-  onCreateWorkspace,
   onAddFolder,
   onRemoveFolder,
-  onRenameWorkspace,
-  onDeleteWorkspace,
   activePath,
   onOpenFile,
   onOpenRight,
@@ -46,20 +38,12 @@ export default function Sidebar({
   // Last path we scrolled to — so we reveal a file once when it's opened, not on
   // every later manual expand/collapse of unrelated folders.
   const lastScrolledRef = useRef(null)
-  // Workspace name inline-rename (Electron has no window.prompt).
-  const [renamingWs, setRenamingWs] = useState(false)
-  const [renamingWsValue, setRenamingWsValue] = useState('')
-  const wsPopover = usePopover()
 
   // folderRoots is a fresh array each render; join for a stable effect dep.
   const folderRootsKey = folderRoots.join('\n')
   const defaultRoot = folderRoots[0] || null
   const norm = (p) => (p || '').replace(/\\/g, '/')
   const rootSet = new Set(folderRoots.map(norm))
-  const displayName =
-    activeWorkspace?.name ||
-    (folderRoots[0] ? baseName(folderRoots[0]) : '') ||
-    t('workspace.title')
 
   const loadDir = useCallback(async (dir) => {
     const nodes = await window.api.readDir(dir)
@@ -71,7 +55,6 @@ export default function Sidebar({
   useEffect(() => {
     setChildrenMap({})
     setCreating(null)
-    setRenamingWs(false)
     const roots = folderRootsKey ? folderRootsKey.split('\n') : []
     setExpanded(new Set(roots))
     roots.forEach((r) => loadDir(r))
@@ -329,36 +312,14 @@ export default function Sidebar({
     }
   }
 
-  const commitWsRename = () => {
-    const v = renamingWsValue.trim()
-    setRenamingWs(false)
-    if (activeWorkspace && v && v !== displayName) onRenameWorkspace(activeWorkspace.id, v)
-  }
-
-  const startWsRename = () => {
-    wsPopover.setOpen(false)
-    setRenamingWsValue(displayName)
-    setRenamingWs(true)
-  }
-
-  const startDeleteWs = () => {
-    wsPopover.setOpen(false)
-    if (activeWorkspace && window.confirm(t('workspace.confirmDelete', { name: displayName }))) {
-      onDeleteWorkspace(activeWorkspace.id)
-    }
-  }
-
-  // Empty state: no workspace, or the active workspace has no folder roots yet.
+  // Empty state: no folder roots yet.
   if (!folderRoots.length) {
     return (
       <div className="sidebar-empty">
         <Icon name="folder" size={26} />
-        <p>{activeWorkspace ? t('workspace.emptyRoots') : t('side.noFolder')}</p>
+        <p>{t('side.noFolder')}</p>
         <button className="btn-primary" onClick={() => onAddFolder()}>
           {t('workspace.addFolder')}
-        </button>
-        <button className="btn-link" onClick={() => onCreateWorkspace()}>
-          {t('workspace.new')}
         </button>
       </div>
     )
@@ -504,73 +465,11 @@ export default function Sidebar({
   return (
     <div className="sidebar">
       <div className="sidebar-head">
-        <div className="ws-switcher" ref={wsPopover.ref}>
-          {renamingWs ? (
-            <input
-              className="ws-rename-input"
-              autoFocus
-              value={renamingWsValue}
-              onFocus={(e) => e.target.select()}
-              onChange={(e) => setRenamingWsValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); commitWsRename() }
-                if (e.key === 'Escape') setRenamingWs(false)
-              }}
-              onBlur={commitWsRename}
-            />
-          ) : (
-            <button
-              type="button"
-              className="ws-switcher-btn"
-              title={activeWorkspace ? t('workspace.switch') : t('workspace.title')}
-              onClick={() => wsPopover.setOpen((o) => !o)}
-            >
-              <span className="ws-eyebrow">{t('workspace.title')}</span>
-              <span className="ws-name">{displayName}</span>
-              <Icon name="chevron-right" size={12} className="ws-chev" />
-            </button>
-          )}
-          {wsPopover.open && (
-            <div className="ws-popover" onClick={(e) => e.stopPropagation()}>
-              <div className="ws-list">
-                {workspaces.map((w) => {
-                  const wname = w.name || (w.folderRoots[0] ? baseName(w.folderRoots[0]) : '') || t('workspace.unnamed')
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      className={`ws-item${w.id === activeWorkspaceId ? ' active' : ''}`}
-                      onClick={() => { onSwitchWorkspace(w.id); wsPopover.setOpen(false) }}
-                      title={w.folderRoots.join('\n')}
-                    >
-                      <span className="ws-item-name">{wname}</span>
-                      <span className="ws-item-count">{w.folderRoots.length}</span>
-                    </button>
-                  )
-                })}
-                {!workspaces.length && <div className="ws-empty">{t('workspace.none')}</div>}
-              </div>
-              <div className="menu-sep" />
-              <button type="button" className="ws-action" onClick={() => { onCreateWorkspace(); wsPopover.setOpen(false) }}>
-                <Icon name="file-plus" size={14} /> {t('workspace.new')}
-              </button>
-              <button type="button" className="ws-action" onClick={() => { onAddFolder(); wsPopover.setOpen(false) }}>
-                <Icon name="folder-plus" size={14} /> {t('workspace.addFolder')}
-              </button>
-              {activeWorkspace && (
-                <button type="button" className="ws-action" onClick={startWsRename}>
-                  <Icon name="edit" size={14} /> {t('workspace.rename')}
-                </button>
-              )}
-              {activeWorkspace && workspaces.length > 1 && (
-                <button type="button" className="ws-action danger" onClick={startDeleteWs}>
-                  <Icon name="close" size={14} /> {t('workspace.delete')}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <span className="sidebar-title">{t('workspace.title')}</span>
         <div className="sidebar-head-actions">
+          <button title={t('workspace.addFolder')} onClick={() => onAddFolder()}>
+            <Icon name="folder-plus" size={15} />
+          </button>
           <button title={t('side.newFile')} onClick={() => startNewFile(null)}>
             <Icon name="file-plus" size={15} />
           </button>

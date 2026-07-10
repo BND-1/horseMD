@@ -15,10 +15,10 @@
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen — openFolder affordance (refreshNonce is owned internally)
-//   initialWorkspaces / initialActiveWorkspaceId — migrated + sanitized
-//     workspace state from the session (loadWorkspacesFromSession in paths.js)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { baseName, dirName, joinPath, genId, isHeavyDoc, isAbsolutePath, isRestrictedPath, sanitizeWorkspaces } from '../paths.js'
+//   initialFolderRoots — migrated + sanitized workspace folder roots from the
+//     session (loadFolderRootsFromSession in paths.js)
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { baseName, dirName, joinPath, genId, isHeavyDoc, isAbsolutePath, isRestrictedPath, sanitizeFolderRoots } from '../paths.js'
 import { fireToast } from '../ui.js'
 
 export function useFileOps({
@@ -39,22 +39,15 @@ export function useFileOps({
   setRenameState,
   setSaveNameState,
   setSidebarOpen,
-  initialWorkspaces,
-  initialActiveWorkspaceId
+  initialFolderRoots
 }) {
-  // Multi-workspace: each workspace is a named bag of folder roots (multi-root
-  // file tree). `activeWorkspace` is the one shown in the sidebar; switching it
-  // swaps the whole tree. See paths.js (loadWorkspacesFromSession) for the
-  // session shape + legacy-single-workspace migration.
-  const [workspaces, setWorkspaces] = useState(() => sanitizeWorkspaces(initialWorkspaces))
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState(initialActiveWorkspaceId || null)
-  const activeWorkspace = useMemo(
-    () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
-    [workspaces, activeWorkspaceId]
-  )
-  // folderRoots of the active workspace. Joined into a stable string key so the
-  // watcher/files effects don't re-run every render (the array identity changes).
-  const folderRoots = activeWorkspace?.folderRoots || []
+  // Single (unnamed) workspace = a bag of folder roots (multi-root file tree).
+  // Users add/remove folders within it; there's no name and no workspace
+  // switching. See paths.js (loadFolderRootsFromSession) for the session shape +
+  // legacy migration.
+  const [folderRoots, setFolderRoots] = useState(() => sanitizeFolderRoots(initialFolderRoots))
+  // Joined into a stable string key so the watcher/files effects don't re-run
+  // every render (the array identity changes).
   const folderRootsKey = folderRoots.join('\n')
 
   const [files, setFiles] = useState([])
@@ -437,93 +430,31 @@ export function useFileOps({
   )
 
   // --------------------------- workspace (multi-root) ---------------------------
-  // Add a folder (absolute path) to the active workspace; if there is no active
-  // workspace, create one rooted at this folder. Dedupes roots; rejects
-  // relative/restricted paths (would crash the recursive chokidar watcher).
-  const addFolderToWorkspace = useCallback(
+  // The workspace is a single bag of folder roots. Add/remove folders; there's
+  // no name and no multiple workspaces. Rejects relative/restricted paths (they
+  // would crash the recursive chokidar watcher) and dedupes.
+  const addFolder = useCallback(
     (dir) => {
       if (!dir || !isAbsolutePath(dir) || isRestrictedPath(dir)) return
       const k = (p) => p.replace(/\\/g, '/')
-      if (activeWorkspace) {
-        if (activeWorkspace.folderRoots.some((r) => k(r) === k(dir))) {
-          setSidebarOpen(true)
-          return
-        }
-        setWorkspaces((prev) =>
-          prev.map((w) =>
-            w.id === activeWorkspace.id ? { ...w, folderRoots: [...w.folderRoots, dir] } : w
-          )
-        )
-      } else {
-        const ws = { id: genId(), name: baseName(dir), folderRoots: [dir], createdAt: Date.now() }
-        setWorkspaces((prev) => [...prev, ws])
-        setActiveWorkspaceId(ws.id)
-      }
+      setFolderRoots((prev) => (prev.some((r) => k(r) === k(dir)) ? prev : [...prev, dir]))
       setSidebarOpen(true)
-    },
-    [activeWorkspace, setSidebarOpen]
-  )
-
-  // Create an empty workspace and make it active (folders are added after).
-  const createWorkspace = useCallback(
-    (name) => {
-      const ws = { id: genId(), name: name || null, folderRoots: [], createdAt: Date.now() }
-      setWorkspaces((prev) => [...prev, ws])
-      setActiveWorkspaceId(ws.id)
-      setSidebarOpen(true)
-      return ws
     },
     [setSidebarOpen]
   )
 
-  const switchWorkspace = useCallback(
-    (id) => {
-      if (!workspaces.some((w) => w.id === id)) return
-      setActiveWorkspaceId(id)
-      setSidebarOpen(true)
-    },
-    [workspaces, setSidebarOpen]
-  )
-
-  const renameWorkspace = useCallback((id, name) => {
-    setWorkspaces((prev) => prev.map((w) => (w.id === id ? { ...w, name: name || w.name } : w)))
+  const removeFolder = useCallback((rootPath) => {
+    const k = (p) => p.replace(/\\/g, '/')
+    setFolderRoots((prev) => prev.filter((r) => k(r) !== k(rootPath)))
   }, [])
 
-  const removeFolderFromWorkspace = useCallback(
-    (rootPath) => {
-      if (!activeWorkspace) return
-      const k = (p) => p.replace(/\\/g, '/')
-      setWorkspaces((prev) =>
-        prev.map((w) =>
-          w.id === activeWorkspace.id
-            ? { ...w, folderRoots: w.folderRoots.filter((r) => k(r) !== k(rootPath)) }
-            : w
-        )
-      )
-    },
-    [activeWorkspace]
-  )
-
-  const deleteWorkspace = useCallback(
-    (id) => {
-      setWorkspaces((prev) => prev.filter((w) => w.id !== id))
-      // Fall back to the first remaining workspace (snapshot read is fine here).
-      setActiveWorkspaceId((cur) => {
-        if (cur !== id) return cur
-        const remaining = workspaces.filter((w) => w.id !== id)
-        return remaining[0]?.id || null
-      })
-    },
-    [workspaces]
-  )
-
-  // "Open Folder…" (dialog) = add a folder to the current workspace (create one
-  // if none). This replaces the old "replace the whole workspace" semantics.
+  // "Open Folder…" (dialog) = add a folder to the workspace. This replaces the
+  // old "replace the whole workspace" semantics.
   const openFolder = useCallback(async () => {
     const dir = await window.api.openFolder()
     if (!dir) return
-    addFolderToWorkspace(dir)
-  }, [addFolderToWorkspace])
+    addFolder(dir)
+  }, [addFolder])
 
   // Re-list files across ALL roots of the active workspace (command-palette
   // search). Captured via the stable folderRootsKey so the callback stays fresh.
@@ -631,16 +562,9 @@ export function useFileOps({
     commitMobileSave,
     exportPathToPdf,
     openFolder,
-    workspaces,
-    activeWorkspace,
-    activeWorkspaceId,
     folderRoots,
-    createWorkspace,
-    switchWorkspace,
-    renameWorkspace,
-    addFolderToWorkspace,
-    removeFolderFromWorkspace,
-    deleteWorkspace,
+    addFolder,
+    removeFolder,
     files,
     refreshNonce,
     bumpRefresh,
