@@ -146,6 +146,10 @@ export const STRINGS = {
     // outline
     'outline.title': 'Outline',
     'outline.empty': 'No headings',
+    'outline.expandAll': 'Expand All',
+    'outline.collapseAll': 'Collapse All',
+    'outline.expand': 'Expand',
+    'outline.collapse': 'Collapse',
 
     // find
     'find.placeholder': 'Find in document',
@@ -462,6 +466,10 @@ export const STRINGS = {
 
     'outline.title': '大纲',
     'outline.empty': '暂无标题',
+    'outline.expandAll': '全部展开',
+    'outline.collapseAll': '全部折叠',
+    'outline.expand': '展开',
+    'outline.collapse': '折叠',
 
     'find.placeholder': '在文档中查找',
     'find.next': '下一个',

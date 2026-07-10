@@ -1554,6 +1554,9 @@ body.resizing-pane .pane-left-resizer::before {
   flex: 1;
 }
 .outline-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 5px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1564,6 +1567,45 @@ body.resizing-pane .pane-left-resizer::before {
   text-overflow: ellipsis;
   transition: all 0.12s var(--ease-out);
 }
+.outline-twisty {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  color: var(--faint);
+  cursor: pointer;
+}
+.outline-twisty:hover { background: var(--hover); }
+.outline-twisty-leaf { width: 14px; height: 14px; }
+.outline-item-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-head-actions {
+  display: flex;
+  gap: 2px;
+}
+.outline-head-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.12s var(--ease-out);
+}
+.outline-head-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.outline-head-btn:active:not(:disabled) { background: var(--active); }
+.outline-head-btn:disabled { opacity: 0.35; cursor: default; }
 .outline-item:hover {
   background: var(--hover);
   color: var(--text);
