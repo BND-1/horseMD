@@ -110,6 +110,22 @@ export default function EditorArea({
               style={{ order, flex: paneFlex }}
               onFocus={onPaneFocus}
               onMouseDown={onPaneFocus}
+              onKeyDown={(e) => {
+                // The textarea has padding-bottom: 60vh (to match the rich
+                // editor's scroll-space). This shrinks the browser's "visible
+                // caret area" to ~clientHeight − 60vh, so the native
+                // caret-scroll-on-Enter overcorrects and jumps the viewport.
+                // Save scrollTop on Enter and restore it (via rAF, after the
+                // browser's scroll) when the jump is excessive.
+                if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                  const el = e.target
+                  const saved = el.scrollTop
+                  requestAnimationFrame(() => {
+                    const delta = el.scrollTop - saved
+                    if (delta < -50 || delta > 50) el.scrollTop = saved
+                  })
+                }
+              }}
               onChange={(e) => {
                 // Uncontrolled: stash the edit and debounce-commit it, so
                 // typing never re-renders App or re-sets a multi-MB value per
