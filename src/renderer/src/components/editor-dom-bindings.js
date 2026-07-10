@@ -153,6 +153,12 @@ export function mountEditorDomBindings({
       e.preventDefault()
       e.stopPropagation()
       window.api.openFileUrl(href)
+    } else if (isRelativePath(href) && !href.startsWith('#') && window.api.openFileUrl) {
+      const baseDir = dirOf(docPath)
+      if (!baseDir) return
+      e.preventDefault()
+      e.stopPropagation()
+      window.api.openFileUrl(resolveToFileUrl(baseDir, href))
     }
   }
 
