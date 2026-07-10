@@ -320,7 +320,12 @@ docs/                  architecture / features / implementation-notes / developm
   a query it renders a flat ranked list, without one the grouped full menu. Insert
   semantics are byte-identical to Crepe's block-edit (`clearTextInCurrentBlockCommand`
   then `setBlockType`/`wrapInBlockType`/`addBlockType` with `view.state.schema.nodes`
-  node types). The menu DOM mirrors Crepe's structure (`.milkdown-slash-menu` >
+  node types). **`/<language>`** (e.g. `/java` `/python` `/mermaid` `/js` `/c++`):
+  when the query matches a known language alias (`LANGUAGES` table → canonical
+  name), the generic "code" item is replaced by a "code · <lang>" item that
+  inserts a `code_block` with `attrs.language` preset (Typora/Feishu behavior);
+  `/mermaid` thus yields a diagram block (rendered via the code-block preview).
+  The menu DOM mirrors Crepe's structure (`.milkdown-slash-menu` >
   `.menu-groups` > `.menu-group` > `h6` + `li[svg,span]`, `.hover`/`.active`) so it
   inherits Crepe's `block-edit.css` theme + the bounds-fixer in
   `editor-dom-bindings.js` (which keys off those classes).
