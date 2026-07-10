@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n.jsx'
+import { Icon } from './icons.jsx'
 
 // Outline panel. The heading list comes from the parent (App), which reads the
 // editor's RENDERED h1…h6 elements — so every heading the document shows is
@@ -8,7 +9,7 @@ import { useI18n } from '../i18n.jsx'
 
 export default function Outline({ headings = [], activeIndex = -1, onJump, loading = false }) {
   const { t } = useI18n()
-  const activeRef = useRef(null) // the row matching activeIndex
+  const activeRef = useRef(null) // the visible row that represents activeIndex
   const panelRef = useRef(null) // the scroll container (.outline-list)
   const endpadRef = useRef(null) // trailing spacer so the last row can center
   const lastScrolledRef = useRef(-1) // dedupe — only act on a real active change
@@ -48,25 +49,21 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
     return true
   }
 
-  // Return the ancestor chain (indices) of heading i, from immediate parent
-  // up to the top-level heading.
-  const ancestorsOf = (i) => {
-    const result = []
+  // If the active heading is hidden inside a collapsed branch, highlight the
+  // visible collapsed ancestor instead. The outermost collapsed ancestor is the
+  // row the user can actually see.
+  const collapsedAncestorOf = (i) => {
+    if (i < 0 || i >= headings.length) return -1
+    let result = -1
     let lvl = headings[i].level
     for (let j = i - 1; j >= 0; j--) {
       if (headings[j].level < lvl) {
-        result.push(j)
+        if (collapsed.has(j)) result = j
         lvl = headings[j].level
       }
     }
     return result
   }
-
-  // Prevent collapsing a branch that contains the active heading — the
-  // scrollspy highlight must stay visible at all times. Expanding is always
-  // allowed.
-  const isProtected = (i) =>
-    activeIndex >= 0 && ancestorsOf(activeIndex).includes(i)
 
   const toggle = (i) => {
     setCollapsed((prev) => {
@@ -74,7 +71,6 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
       if (next.has(i)) {
         next.delete(i)
       } else {
-        if (isProtected(i)) return prev // never hide the active row
         next.add(i)
       }
       return next
@@ -83,30 +79,14 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
 
   const expandAll = () => setCollapsed(new Set())
   const collapseAll = () => {
-    // Collapse every heading that has children, except ancestors of the
-    // active heading.
+    // Collapse every heading that has children. If this hides the active
+    // heading, the visible parent row will show the active-contained state.
     const next = new Set()
     for (let i = 0; i < headings.length; i++) {
-      if (hasChildren(i) && !isProtected(i)) next.add(i)
+      if (hasChildren(i)) next.add(i)
     }
     setCollapsed(next)
   }
-
-  // Keep the active heading's ancestor chain expanded so the scrollspy
-  // highlight is always visible, even inside a folded branch.
-  useEffect(() => {
-    if (activeIndex < 0 || activeIndex >= headings.length) return
-    const ancestors = ancestorsOf(activeIndex)
-    if (!ancestors.length) return
-    setCollapsed((prev) => {
-      let changed = false
-      const next = new Set(prev)
-      for (const a of ancestors) {
-        if (next.has(a)) { next.delete(a); changed = true }
-      }
-      return changed ? next : prev
-    })
-  }, [activeIndex, headings])
 
   // Reset the collapsed set whenever the headings *content* changes (edit,
   // reload). Index-based state is only stable while the heading list itself
@@ -121,7 +101,12 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
     }
   }, [headings])
 
-  // Soft-center the active heading. As long as it sits in the middle of the
+  const activeDisplayIndex =
+    activeIndex >= 0 && activeIndex < headings.length
+      ? (isVisible(activeIndex) ? activeIndex : collapsedAncestorOf(activeIndex))
+      : -1
+
+  // Soft-center the visible active row. As long as it sits in the middle of the
   // panel we leave the scroll alone (no jitter when it's already comfortable);
   // but once it drifts into the top/bottom ~25% we scroll the panel so it lands
   // centered. This replaces scrollIntoView({ block: 'nearest' }), which only
@@ -130,8 +115,8 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   useEffect(() => {
     const panel = panelRef.current
     const el = activeRef.current
-    if (activeIndex < 0 || !panel || !el || lastScrolledRef.current === activeIndex) return
-    lastScrolledRef.current = activeIndex
+    if (activeDisplayIndex < 0 || !panel || !el || lastScrolledRef.current === activeDisplayIndex) return
+    lastScrolledRef.current = activeDisplayIndex
     const ph = panel.clientHeight
     if (!ph) return
     const eRect = el.getBoundingClientRect()
@@ -143,7 +128,7 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
       const target = panel.scrollTop + relTop + eRect.height / 2 - ph / 2
       panel.scrollTop = Math.max(0, target)
     }
-  }, [activeIndex])
+  }, [activeDisplayIndex])
 
   // Size a trailing spacer so the FINAL heading can scroll all the way up to the
   // panel's vertical middle — without it, scrollTop clamps at the content end
@@ -163,8 +148,9 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
     return () => ro.disconnect()
   }, [headings.length])
 
-  const anyExpandable = collapsed.size > 0
-  const anyCollapsible = headings.some((_, i) => hasChildren(i) && !collapsed.has(i) && !isProtected(i))
+  const foldable = headings.map((_, i) => i).filter(hasChildren)
+  const allCollapsed = foldable.length > 0 && foldable.every((i) => collapsed.has(i))
+  const toggleAll = allCollapsed ? expandAll : collapseAll
 
   return (
     <div className="outline">
@@ -174,27 +160,12 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
           <span className="outline-head-actions">
             <button
               className="outline-head-btn"
-              onClick={expandAll}
-              title={t('outline.expandAll')}
-              disabled={!anyExpandable}
-              aria-label={t('outline.expandAll')}
+              onClick={toggleAll}
+              title={allCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
+              disabled={foldable.length === 0}
+              aria-label={allCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
             >
-              <svg width="14" height="14" viewBox="0 0 16 20" fill="none">
-                <path d="M4 6L8 2L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M4 12L8 16L12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              className="outline-head-btn"
-              onClick={collapseAll}
-              title={t('outline.collapseAll')}
-              disabled={!anyCollapsible}
-              aria-label={t('outline.collapseAll')}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 20" fill="none">
-                <path d="M4 4L8 8L12 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M4 16L8 12L12 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name={allCollapsed ? 'expand' : 'collapse'} size={15} />
             </button>
           </span>
         )}
@@ -221,11 +192,13 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
               if (!isVisible(i)) return null
               const isParent = hasChildren(i)
               const isCollapsed = collapsed.has(i)
+              const isActive = i === activeDisplayIndex
+              const containsActive = isActive && i !== activeIndex
               return (
                 <div
                   key={i}
-                  ref={i === activeIndex ? activeRef : undefined}
-                  className={`outline-item lvl-${h.level}${i === activeIndex ? ' active' : ''}`}
+                  ref={isActive ? activeRef : undefined}
+                  className={`outline-item lvl-${h.level}${isActive ? ' active' : ''}${containsActive ? ' contained-active' : ''}`}
                   style={{ paddingLeft: 12 + (h.level - 1) * 12 }}
                   onClick={() => onJump(i)}
                   title={h.text}

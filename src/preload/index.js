@@ -10,6 +10,7 @@ const on = (channel) => (cb) => {
 const api = {
   // dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
+  openAttachments: () => ipcRenderer.invoke('dialog:openAttachments'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   saveAs: (defaultName) => ipcRenderer.invoke('dialog:saveAs', defaultName),
   exportPDF: (html, defaultName) => ipcRenderer.invoke('export:pdf', { html, defaultName }),
@@ -54,6 +55,10 @@ const api = {
   // rewrite the Markdown to relative paths; returns { content, changed }.
   inlineForSave: (content, targetPath) =>
     ipcRenderer.invoke('image:inlineForSave', content, targetPath),
+  // copy arbitrary files into the document's assets/ folder and return a
+  // relative Markdown link target.
+  saveAttachment: (docPath, sourcePath) =>
+    ipcRenderer.invoke('attachment:save', docPath, sourcePath),
 
   // custom themes (user CSS files in userData/themes)
   themesList: () => ipcRenderer.invoke('themes:list'),
@@ -102,7 +107,8 @@ const api = {
     nativeMenus: true,
     externalShell: true,
     revealInFolder: true,
-    splitView: true
+    splitView: true,
+    fileAttachments: true
   }
 }
 

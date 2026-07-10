@@ -6,10 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-07-10
+
 ### Added
+- **Per-tab source/rich view state** (#42) — each document tab now remembers
+  whether it is in rich-text or source mode while you switch between tabs. Source
+  buffers are tracked separately so switching tabs no longer drops an edited
+  source textarea.
+- **Attach files from Markdown** (#49) — desktop builds can pick arbitrary
+  files, copy them into a sibling `assets/` folder, and insert normal Markdown
+  links such as `[report.pdf](<assets/report.pdf>)`. Unsupported platforms hide
+  the command through capabilities.
 - **Source-readable review markup** — keeps review annotations visible in
   Markdown source, copies AI handoff prompts with the annotated full document,
   and provides Accept All / Reject All cleanup commands.
+
+### Changed
+- **Outline folding behaves more like a file tree** — one compact expand/collapse
+  control replaces the separate buttons, and folding a parent while reading a
+  child heading now collapses the section instead of doing nothing. If the
+  active heading is hidden inside a collapsed parent, the visible parent shows a
+  contained-active state.
+
+### Fixed
+- **Slash command menu clipping** — the `/` menu is clamped into the visible
+  editor area and its list height shrinks on small windows, so it no longer gets
+  hidden by the app frame or bottom status bar.
+- **Source-mode edits after tab switches** — source textarea content is restored
+  from the live buffer when remounted, and only genuinely edited source buffers
+  are synced back into the rich editor.
 
 ## [0.3.1] - 2026-06-28
 
@@ -398,7 +423,8 @@ page width, in-cell line breaks, an Intel macOS build, and a nicer update prompt
 - Dark/light themes, session restore, single-instance file association.
 - Windows NSIS installer and macOS dmg/zip packaging.
 
-[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/BND-1/horseMD/compare/v0.5.2...v0.5.5
 [0.2.0]: https://github.com/BND-1/horseMD/compare/v0.1.7...v0.2.0
 [0.1.7]: https://github.com/BND-1/horseMD/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/BND-1/horseMD/compare/v0.1.5...v0.1.6

@@ -24,6 +24,7 @@ export function createMenuHandlers({
   openPaths,
   openFolder,
   saveTab,
+  attachFiles,
   closeTab,
   toggleSource,
   cycleTheme,
@@ -52,6 +53,7 @@ export function createMenuHandlers({
       const id = pickEditableId()
       if (id) saveTab(id, true)
     },
+    attachFile: attachFiles,
     exportPdf: async () => {
       const id = pickEditableId()
       const html = editorApis.current[id]?.getDocHTML?.()
@@ -211,6 +213,7 @@ export function useCommands({ t, handlers }) {
         { id: 'cmd.openFolder', title: t('cmd.openFolder'), icon: 'folder', run: () => handlers.current.openFolder() },
         { id: 'cmd.save', title: t('cmd.save'), icon: 'save', run: () => handlers.current.save() },
         { id: 'cmd.saveAs', title: t('cmd.saveAs'), icon: 'save', run: () => handlers.current.saveAs() },
+        caps.fileAttachments && { id: 'cmd.attachFile', title: t('cmd.attachFile'), icon: 'paperclip', run: () => handlers.current.attachFile() },
         // Export-to-PDF needs a save dialog / print pipeline that doesn't exist on mobile.
         caps.pdfExport && { id: 'cmd.exportPdf', title: t('cmd.exportPdf'), icon: 'file', run: () => handlers.current.exportPdf() },
         { id: 'cmd.sidebar', title: t('cmd.sidebar'), icon: 'sidebar', run: () => handlers.current.toggleSidebar() },

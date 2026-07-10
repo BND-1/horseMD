@@ -1621,6 +1621,13 @@ body.resizing-pane .pane-left-resizer::before {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+.outline-item.contained-active .outline-twisty {
+  color: var(--accent-strong);
+}
+.outline-item.contained-active .outline-item-text::after {
+  content: ' ...';
+  color: var(--accent);
+}
 /* Skeleton shown in the outline while a huge document is still streaming in
    (chunked parse). Mimics a heading list (with indented sub-items) so the user
    sees "loading" instead of an empty/stale list. Reuses the editor skeleton's

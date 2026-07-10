@@ -120,12 +120,42 @@
 - `restoreMarkdownOffset` 把 Markdown offset 映射到 ProseMirror selection。
 - `markdownOffsetFromSelection` 把富文本 selection 映射回 Markdown offset。
 - `lastMarkdownRef` 维护当前源 Markdown 供映射使用。
+- `sourceModeIds` 让源码/富文本状态按 tab 独立，而不是全局开关。
+- `sourceEditedIds` 区分“只是切换视图”和“源码真正编辑过”，未编辑源码切回富文本不能 dirty。
+- `liveContentRef` 是 source textarea 重挂后的内容来源，避免切 tab 丢掉未提交源码编辑。
 
 验证：
 
 - 阅读状态切换源码/富文本视口不跳。
 - 可见光标编辑状态切换后光标仍可见且位置稳定。
 - 源码编辑后切回富文本内容更新，未编辑时不重建、不误 dirty。
+- A 标签切源码，B 标签仍富文本；切回 A 仍源码。
+- 源码模式编辑后切到其它 tab 再切回，textarea 内容仍在，保存/切富文本都正确。
+
+## 8a. Slash command menu bounds
+
+- `editor-dom-bindings.js` 监听 Crepe slash menu 的显示和定位。
+- 菜单安全区 = 当前可见 `.editor-scroll` 与浏览器视口的交集。
+- 小窗口或底部触发时压缩 `.menu-groups` 高度，防止被状态栏/窗口边界裁掉。
+
+验证：
+
+- 顶部段落新起一行输入 `/`，菜单完整可见。
+- 文档底部新起一行输入 `/`，菜单完整可见且不盖到底部状态栏外。
+- 760x460 视口下底部输入 `/`，菜单列表高度收缩且仍可滚动。
+
+## 8b. File attachments
+
+- Desktop: `openAttachments()` + `saveAttachment(docPath, sourcePath)` 复制普通文件到同级 `assets/`。
+- Renderer: `attachFiles()` 在当前光标处插入 `[name](<assets/name.ext>)`。
+- Source mode 直接写 textarea selection；rich mode 通过 Markdown offset 插入并 `replaceMarkdown`。
+- Mobile capability `fileAttachments:false`，不要显示不可用入口。
+
+验证：
+
+- 未保存文档插入附件 → 提示先保存。
+- 已保存文档插入 1 个/多个附件 → 文件复制到 `assets/`，链接插入当前位置。
+- 重名附件自动加 `-1` 后缀，不覆盖已有文件。
 
 ## 9. Lightbox
 

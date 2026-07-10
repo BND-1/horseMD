@@ -30,6 +30,7 @@ export default function EditorArea({
   editorHostRef,
   sourceRef,
   sourceTextareas,
+  sourceEditedIds,
   liveContentRef,
   liveTimersRef,
   commitLive,
@@ -115,7 +116,7 @@ export default function EditorArea({
               key={`source:${tab.id}:${tab.reloadNonce}`}
               ref={setSourceTextareaRef}
               className={`source-editor${paneClass}`}
-              defaultValue={tab.content}
+              defaultValue={liveContentRef.current.get(tab.id) ?? tab.content}
               spellCheck={false}
               style={{ order, flex: paneFlex }}
               onFocus={onPaneFocus}
@@ -165,6 +166,7 @@ export default function EditorArea({
                 e.target.__horsemdSourceSelectionUser = true
                 e.target.__horsemdSourceViewportMoved = false
                 e.target.__horsemdSourceSelectionAt = performance.now()
+                sourceEditedIds.current.add(tab.id)
                 const v = e.target.value
                 liveContentRef.current.set(tab.id, v)
                 const prev = liveTimersRef.current.get(tab.id)

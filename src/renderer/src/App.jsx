@@ -40,7 +40,7 @@ import {
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import {
-  isAbsolutePath, isHeavyDoc, loadSession
+  baseName, isAbsolutePath, isHeavyDoc, loadSession
 } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
 
@@ -50,6 +50,13 @@ import { createReviewActions } from './lib/reviewActions.js'
 const PANE_MIN = 160
 const PANE_MAX = 560
 const PANE_DEFAULT = 260
+
+const escapeLinkLabel = (text) =>
+  String(text || 'attachment').replace(/([\\[\]])/g, '\\$1')
+const markdownLinkTarget = (path) =>
+  `<${String(path || '').replace(/[<>]/g, (ch) => (ch === '<' ? '%3C' : '%3E'))}>`
+const attachmentLinkMarkdown = (name, path) =>
+  `[${escapeLinkLabel(name)}](${markdownLinkTarget(path)})`
 
 export default function App() {
   const session = useRef(loadSession()).current
@@ -74,7 +81,15 @@ export default function App() {
   const [customThemes, setCustomThemes] = useState([])
   const [lang, setLang] = useState(session.lang || DEFAULT_LANG)
   const [recents, setRecents] = useState(session.recents || [])
-  const [sourceMode, setSourceMode] = useState(false)
+  // Source/rich mode is a per-tab view state (#42). A tab keeps its current
+  // mode while you switch to another tab, but the state is intentionally not
+  // persisted into the document or session.
+  const [sourceModeIds, setSourceModeIds] = useState(() => new Set())
+  const sourceMode = !!activeId && sourceModeIds.has(activeId)
+  // Source textareas are uncontrolled and can unmount on tab switches. Track
+  // which source buffers were edited so a later source→rich toggle still syncs
+  // the edited Markdown into the still-mounted rich editor.
+  const sourceEditedIds = useRef(new Set())
   // Live mirror of sourceMode for ref-based reads inside stable callbacks.
   const sourceModeRef = useRef(sourceMode)
   sourceModeRef.current = sourceMode
@@ -195,6 +210,9 @@ export default function App() {
     for (const id of Object.keys(sourceTextareas.current)) {
       if (!live.has(id)) delete sourceTextareas.current[id]
     }
+    for (const id of [...sourceEditedIds.current]) {
+      if (!live.has(id)) sourceEditedIds.current.delete(id)
+    }
     // Forget mount records for closed tabs (so the Set doesn't grow unbounded).
     setMountedIds((prev) => {
       let changed = false
@@ -206,6 +224,16 @@ export default function App() {
       return changed ? next : prev
     })
     setRichForced((prev) => {
+      if (!prev.size) return prev
+      let changed = false
+      const next = new Set()
+      for (const id of prev) {
+        if (live.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+    setSourceModeIds((prev) => {
       if (!prev.size) return prev
       let changed = false
       const next = new Set()
@@ -321,11 +349,13 @@ export default function App() {
     if (!sourceEl) return false
     const next = sourceEl.value || ''
     const baseline = sourceEl.__horsemdSourceBaseline ?? ''
-    if (next === baseline) return false
+    const sourceEdited = sourceEditedIds.current.has(id)
+    if (next === baseline && !sourceEdited) return false
 
     const api = editorApis.current[id]
     if (api?.replaceMarkdown?.(next)) {
       sourceEl.__horsemdSourceBaseline = next
+      sourceEditedIds.current.delete(id)
       return true
     }
 
@@ -340,6 +370,7 @@ export default function App() {
       )
     )
     sourceEl.__horsemdSourceBaseline = next
+    sourceEditedIds.current.delete(id)
     return true
   }, [setTabs])
 
@@ -355,6 +386,8 @@ export default function App() {
   const toggleSource = useCallback(() => {
     commitAllLive() // flush textarea edits so the rich editor picks them up on switch
     const id = activeIdRef.current
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!id || tab?.kind === 'settings') return
     const view = editorApis.current[id]?.getView?.()
     if (sourceModeRef.current) {
       // Leaving SOURCE → RICH.
@@ -398,8 +431,13 @@ export default function App() {
       viewportAnchorRef.current = rv
       richViewportAnchorRef.current = rv
     }
-    setSourceMode((v) => !v)
-  }, [commitAllLive, syncSourceToRich])
+    setSourceModeIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [commitAllLive, syncSourceToRich, tabsRef])
 
   useLayoutEffect(() => {
     const caret = caretAnchorRef.current
@@ -638,6 +676,73 @@ export default function App() {
     return activeId
   }
 
+  const replaceTabContent = useCallback((id, content) => {
+    tabsRef.current = tabsRef.current.map((t) => (t.id === id ? { ...t, content, heavy: isHeavyDoc(content) } : t))
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, content, heavy: isHeavyDoc(content) } : t)))
+  }, [setTabs, tabsRef])
+
+  const insertMarkdownIntoTab = useCallback((id, markdown) => {
+    if (!id || !markdown) return false
+    const sourceEl = sourceTextareas.current[id]
+    if (sourceEl) {
+      const start = sourceEl.selectionStart ?? sourceEl.value.length
+      const end = sourceEl.selectionEnd ?? start
+      sourceEl.setRangeText(markdown, start, end, 'end')
+      sourceEl.__horsemdSourceSelectionUser = true
+      sourceEl.__horsemdSourceViewportMoved = false
+      sourceEl.__horsemdSourceSelectionAt = performance.now()
+      sourceEditedIds.current.add(id)
+      liveContentRef.current.set(id, sourceEl.value)
+      commitLive(id)
+      sourceEl.focus()
+      return true
+    }
+
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab || tab.kind === 'settings') return false
+    const api = editorApis.current[id]
+    const current = api?.getMarkdown?.() || tab.content || ''
+    const rawOffset = api?.markdownOffsetFromSelection?.()
+    const pos = Number.isFinite(rawOffset) ? Math.max(0, Math.min(rawOffset, current.length)) : current.length
+    const next = current.slice(0, pos) + markdown + current.slice(pos)
+    if (api?.replaceMarkdown?.(next)) {
+      replaceTabContent(id, next)
+      return true
+    }
+    replaceTabContent(id, next)
+    return true
+  }, [commitLive, editorApis, liveContentRef, replaceTabContent, sourceEditedIds, sourceTextareas, tabsRef])
+
+  const attachFiles = useCallback(async () => {
+    const id = pickEditableId()
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (!tab || tab.kind === 'settings') return
+    if (!window.api.capabilities?.fileAttachments || !window.api.openAttachments || !window.api.saveAttachment) {
+      fireToast(tRef.current('attach.unsupported'), { sticky: true })
+      return
+    }
+    if (!tab.path) {
+      fireToast(tRef.current('attach.needsSave'), { sticky: true })
+      return
+    }
+    commitAllLive()
+    fireToast(tRef.current('attach.picking'), { duration: 1200 })
+    const picked = await window.api.openAttachments()
+    if (!picked?.length) return
+    const links = []
+    for (const path of picked) {
+      const res = await window.api.saveAttachment(tab.path, path)
+      if (!res?.ok) {
+        fireToast(tRef.current('attach.failed', { msg: res?.error || baseName(path) }), { sticky: true })
+        return
+      }
+      links.push(attachmentLinkMarkdown(res.name || baseName(path), res.path))
+    }
+    if (!links.length) return
+    insertMarkdownIntoTab(id, links.join('\n'))
+    fireToast(tRef.current('attach.inserted', { n: links.length }), { duration: 1500 })
+  }, [commitAllLive, insertMarkdownIntoTab, tabsRef, tRef])
+
   // Review actions (CriticMarkup) on the active/focused tab. pickEditableId is
   // shared with the save/export handlers, so it stays here; the rest lives in
   // lib/reviewActions.js (phase-2 US-1).
@@ -668,6 +773,7 @@ export default function App() {
     openPaths,
     openFolder,
     saveTab,
+    attachFiles,
     closeTab,
     toggleSource,
     cycleTheme,
@@ -888,6 +994,7 @@ export default function App() {
             editorHostRef={editorHostRef}
             sourceRef={sourceRef}
             sourceTextareas={sourceTextareas}
+            sourceEditedIds={sourceEditedIds}
             liveContentRef={liveContentRef}
             liveTimersRef={liveTimersRef}
             commitLive={commitLive}

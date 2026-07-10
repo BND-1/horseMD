@@ -6,6 +6,85 @@ import { inlineRichStyles } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
 import { createToolbarScanner } from './editor-toolbar.js'
 
+const clamp = (value, min, max) => {
+  if (max < min) return min
+  return Math.min(max, Math.max(min, value))
+}
+
+const mountSlashMenuBounds = ({ host, scrollEl, cleanups }) => {
+  const root = host
+  const margin = 8
+  let raf = 0
+
+  const schedule = () => {
+    if (raf) return
+    raf = requestAnimationFrame(() => {
+      raf = 0
+      fix()
+    })
+  }
+
+  const fix = () => {
+    const menu = root.querySelector('.milkdown-slash-menu[data-show="true"]')
+    if (!menu || menu.offsetParent === null) return
+    const rect = menu.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+
+    const boundsRect = scrollEl?.getBoundingClientRect?.()
+    const safe = {
+      left: Math.max(0, boundsRect?.left ?? 0) + margin,
+      top: Math.max(0, boundsRect?.top ?? 0) + margin,
+      right: Math.min(window.innerWidth, boundsRect?.right ?? window.innerWidth) - margin,
+      bottom: Math.min(window.innerHeight, boundsRect?.bottom ?? window.innerHeight) - margin
+    }
+    if (safe.right <= safe.left || safe.bottom <= safe.top) return
+
+    const left = Number.parseFloat(menu.style.left || '0')
+    const top = Number.parseFloat(menu.style.top || '0')
+    let nextLeft = left
+    let nextTop = top
+
+    if (rect.left < safe.left) nextLeft += safe.left - rect.left
+    else if (rect.right > safe.right) nextLeft -= rect.right - safe.right
+
+    if (rect.top < safe.top) nextTop += safe.top - rect.top
+    else if (rect.bottom > safe.bottom) nextTop -= rect.bottom - safe.bottom
+
+    nextLeft = clamp(nextLeft, left + safe.left - rect.left, left + safe.right - rect.right)
+    nextTop = clamp(nextTop, top + safe.top - rect.top, top + safe.bottom - rect.bottom)
+
+    if (Math.abs(nextLeft - left) > 0.5) menu.style.left = `${Math.round(nextLeft)}px`
+    if (Math.abs(nextTop - top) > 0.5) menu.style.top = `${Math.round(nextTop)}px`
+
+    const groups = menu.querySelector('.menu-groups')
+    if (groups) {
+      const previousMaxHeight = groups.style.maxHeight
+      const tabGroup = menu.querySelector('.tab-group')
+      const tabHeight = tabGroup?.getBoundingClientRect?.().height || 0
+      const available = Math.max(96, safe.bottom - safe.top - tabHeight - 16)
+      const nextMaxHeight = `${Math.min(420, Math.floor(available))}px`
+      groups.style.maxHeight = nextMaxHeight
+      if (previousMaxHeight !== nextMaxHeight) schedule()
+    }
+  }
+
+  const observer = new MutationObserver(schedule)
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'data-show']
+  })
+  window.addEventListener('resize', schedule)
+  scrollEl?.addEventListener('scroll', schedule, { passive: true })
+  cleanups.push(() => {
+    if (raf) cancelAnimationFrame(raf)
+    observer.disconnect()
+    window.removeEventListener('resize', schedule)
+    scrollEl?.removeEventListener('scroll', schedule)
+  })
+}
+
 export function mountEditorDomBindings({
   view,
   viewRef,
@@ -117,6 +196,7 @@ export function mountEditorDomBindings({
   cleanups.push(() => view.dom.removeEventListener('focus', onFocus))
 
   const scrollEl = host.closest('.editor-scroll')
+  mountSlashMenuBounds({ host, scrollEl, cleanups })
   if (scrollEl) {
     let scrollLevelTimer = 0
     const onScroll = () => {

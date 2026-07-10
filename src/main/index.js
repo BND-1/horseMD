@@ -303,6 +303,14 @@ ipcMain.handle('dialog:openFiles', async () => {
   return res.canceled ? [] : res.filePaths
 })
 
+ipcMain.handle('dialog:openAttachments', async () => {
+  const res = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    title: 'Attach Files'
+  })
+  return res.canceled ? [] : res.filePaths
+})
+
 ipcMain.handle('dialog:openFolder', async () => {
   const res = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
   return res.canceled ? null : res.filePaths[0]
@@ -794,6 +802,43 @@ const uniqueImageFile = (dir, name) => {
   return file
 }
 
+const uniqueAssetFile = (dir, name) => {
+  const safe = (name || 'attachment').replace(/[\\/:*?"<>|]/g, '_') || 'attachment'
+  const ext = extname(safe)
+  const stem = ext ? basename(safe, ext) : safe
+  let file = join(dir, safe)
+  let n = 1
+  while (existsSync(file)) file = join(dir, `${stem}-${n++}${ext}`)
+  return file
+}
+
+ipcMain.handle('attachment:save', async (_e, docPath, sourcePath) => {
+  try {
+    if (!docPath) return { ok: false, error: 'Save the document before attaching files.' }
+    if (!sourcePath) return { ok: false, error: 'No attachment selected.' }
+    const st = await fs.stat(sourcePath)
+    if (!st.isFile()) return { ok: false, error: 'Only files can be attached.' }
+    const assetsDir = join(dirname(docPath), 'assets')
+    await fs.mkdir(assetsDir, { recursive: true })
+
+    const sourceReal = realpathSync(sourcePath)
+    let assetsReal = assetsDir
+    try {
+      assetsReal = realpathSync(assetsDir)
+    } catch {
+      /* just created; resolve() fallback below is enough */
+    }
+    const inAssets = sourceReal.startsWith(resolve(assetsReal) + sep)
+    if (inAssets) return { ok: true, path: 'assets/' + basename(sourcePath), name: basename(sourcePath) }
+
+    const file = uniqueAssetFile(assetsDir, basename(sourcePath))
+    await fs.copyFile(sourcePath, file, fsConstants.COPYFILE_EXCL)
+    return { ok: true, path: 'assets/' + basename(file), name: basename(sourcePath) }
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+})
+
 // The app-global folder where images pasted into an UNSAVED doc are parked (we
 // don't know a document folder yet). Mirrors Typora's global image folder; on
 // the doc's first save they're moved into its ./assets (see image:inlineForSave).
@@ -991,6 +1036,7 @@ function buildMenu() {
         { label: 'New File', accelerator: 'CmdOrCtrl+N', click: menuCmd('new') },
         { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open') },
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: menuCmd('openFolder') },
+        { label: 'Attach File…', click: menuCmd('attachFile') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: menuCmd('saveAs') },

@@ -291,7 +291,8 @@ const capabilities = {
   externalShell: true,
   revealInFolder: false, // no Finder/Explorer on mobile
   splitView: false, // not enough width on a phone
-  canShare: true // system share sheet (export a file out)
+  canShare: true, // system share sheet (export a file out)
+  fileAttachments: false
 }
 
 export function makeCapacitorApi() {
@@ -300,6 +301,7 @@ export function makeCapacitorApi() {
   return {
     // dialogs
     openFiles,
+    openAttachments: async () => [],
     openFolder,
     saveAs,
     exportPDF: async () => ({ ok: false, error: 'unsupported' }),
@@ -340,6 +342,7 @@ export function makeCapacitorApi() {
 
     // image host (no Node subprocess on mobile)
     uploadImage: async () => ({ ok: false, error: 'unsupported' }),
+    saveAttachment: async () => ({ ok: false, error: 'unsupported' }),
 
     // custom themes — none bundled on mobile yet
     themesList: async () => [],
