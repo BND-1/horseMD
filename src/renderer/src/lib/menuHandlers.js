@@ -9,7 +9,6 @@
 //     onAppCloseRequest + the Ctrl+Tab, Ctrl+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
-import { baseName } from '../paths.js'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
 
 export function createMenuHandlers({

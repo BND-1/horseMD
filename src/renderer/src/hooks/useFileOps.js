@@ -15,7 +15,8 @@
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen — openFolder affordance (refreshNonce is owned internally)
-//   sessionWorkspace — initial workspace (sanitizeWorkspace applied here)
+//   initialWorkspaces / initialActiveWorkspaceId — migrated + sanitized
+//     workspace state from the session (loadWorkspacesFromSession in paths.js)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { baseName, dirName, joinPath, genId, isHeavyDoc, isAbsolutePath, isRestrictedPath, sanitizeWorkspaces } from '../paths.js'
 import { fireToast } from '../ui.js'

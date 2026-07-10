@@ -22,7 +22,6 @@ export function isNewerVersion(a, b) {
 // place (and recursively watching "/" crashes the app).
 export const isAbsolutePath = (p) =>
   typeof p === 'string' && (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p))
-export const sanitizeWorkspace = (ws) => (ws && isAbsolutePath(ws.rootPath) ? ws : null)
 
 // Renderer-side mirror of main's isRestrictedRoot: paths we must never treat as
 // a workspace folder root. Watching or listing one (/, /dev, /System/Volumes…)
@@ -65,15 +64,6 @@ function cleanWorkspace(ws) {
 export function sanitizeWorkspaces(list) {
   if (!Array.isArray(list)) return []
   return list.map(cleanWorkspace).filter(Boolean)
-}
-
-// The display name for a workspace: its explicit name, else the first folder's
-// basename, else a localized fallback (passed in so paths.js stays i18n-free).
-export function workspaceDisplayName(ws, fallback) {
-  if (!ws) return fallback || ''
-  if (ws.name) return ws.name
-  if (ws.folderRoots && ws.folderRoots.length) return baseName(ws.folderRoots[0])
-  return fallback || ''
 }
 
 // Migrate + sanitize the session's workspace state into {workspaces, activeWorkspaceId}.
