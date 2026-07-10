@@ -112,6 +112,10 @@ const RUN = {
     if (nt) clearThen(ctx, addBlockTypeCommand.key, { nodeType: nt })
   },
   code: (ctx, view) => clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block') }),
+  // Code block preset to a language (/java, /python, /mermaid, …). mermaid is
+  // included so /mermaid inserts a diagram block (rendered via code-block preview).
+  codeLang: (lang) => (ctx, view) =>
+    clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: lang } }),
   math: (ctx, view) =>
     clearThen(ctx, addBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: 'LaTeX' } }),
   table: (ctx, view) => {
@@ -128,12 +132,74 @@ const RUN = {
 // apply without recreating the editor. ----
 const GROUP_LABEL = { text: 'slash.text', list: 'slash.list', advanced: 'slash.advanced' }
 
-function buildItems(t) {
+// Recognized code-fence languages for "/language" → code-block-with-language.
+// [canonicalName, [aliases]]. When the slash query matches a language, the
+// generic "code" item is replaced by a "code · <lang>" item that inserts a
+// code_block preset to that language (Typora/Feishu behavior). Kept short on
+// purpose — only the languages users actually type.
+const LANGUAGES = [
+  ['javascript', ['js', 'javascript']],
+  ['typescript', ['ts', 'typescript']],
+  ['python', ['py', 'python']],
+  ['java', ['java']],
+  ['go', ['go', 'golang']],
+  ['rust', ['rust', 'rs']],
+  ['cpp', ['cpp', 'c++', 'cxx']],
+  ['csharp', ['csharp', 'c#', 'cs']],
+  ['php', ['php']],
+  ['ruby', ['ruby', 'rb']],
+  ['swift', ['swift']],
+  ['kotlin', ['kotlin', 'kt']],
+  ['scala', ['scala']],
+  ['sql', ['sql']],
+  ['html', ['html']],
+  ['css', ['css']],
+  ['json', ['json']],
+  ['yaml', ['yaml', 'yml']],
+  ['xml', ['xml']],
+  ['bash', ['bash', 'sh', 'shell', 'zsh']],
+  ['powershell', ['powershell', 'ps1']],
+  ['lua', ['lua']],
+  ['dart', ['dart']],
+  ['markdown', ['markdown', 'md']],
+  ['mermaid', ['mermaid', 'mmd']],
+  ['diff', ['diff', 'patch']],
+  ['dockerfile', ['dockerfile']],
+  ['graphql', ['graphql']]
+]
+const LANG_BY_ALIAS = new Map()
+for (const [name, aliases] of LANGUAGES) {
+  LANG_BY_ALIAS.set(name, name)
+  for (const a of aliases) LANG_BY_ALIAS.set(a, name)
+}
+function matchLanguage(query) {
+  const q = (query || '').trim().toLowerCase()
+  return q ? LANG_BY_ALIAS.get(q) || null : null
+}
+function languageKeywords(lang) {
+  const entry = LANGUAGES.find(([n]) => n === lang)
+  return entry ? [...new Set([lang, ...entry[1]])] : [lang]
+}
+
+function buildItems(t, query) {
   const kw = (id) =>
     (t('slash.kw.' + id) || '')
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
+  // When the query names a language, offer a language-specific code block
+  // INSTEAD of the generic one (so /java inserts a java block, not plain code).
+  const lang = matchLanguage(query)
+  const codeItem = lang
+    ? {
+        id: 'code:' + lang,
+        group: 'advanced',
+        label: t('slash.code') + ' · ' + lang,
+        icon: ICON.code,
+        keywords: languageKeywords(lang),
+        run: RUN.codeLang(lang)
+      }
+    : { id: 'code', group: 'advanced', label: t('slash.code'), icon: ICON.code, keywords: kw('code'), run: RUN.code }
   return [
     { id: 'text', group: 'text', label: t('slash.text'), icon: ICON.text, keywords: kw('text'), run: RUN.text },
     { id: 'h1', group: 'text', label: t('block.h1'), icon: textSvg('H1'), keywords: kw('h1'), run: RUN.heading(1) },
@@ -148,7 +214,7 @@ function buildItems(t) {
     { id: 'ordered', group: 'list', label: t('slash.ordered'), icon: ICON.ordered, keywords: kw('ordered'), run: RUN.ordered },
     { id: 'task', group: 'list', label: t('slash.task'), icon: ICON.task, keywords: kw('task'), run: RUN.task },
     { id: 'image', group: 'advanced', label: t('slash.image'), icon: ICON.image, keywords: kw('image'), run: RUN.image },
-    { id: 'code', group: 'advanced', label: t('slash.code'), icon: ICON.code, keywords: kw('code'), run: RUN.code },
+    codeItem,
     { id: 'table', group: 'advanced', label: t('slash.table'), icon: ICON.table, keywords: kw('table'), run: RUN.table },
     { id: 'math', group: 'advanced', label: t('slash.math'), icon: ICON.math, keywords: kw('math'), run: RUN.math }
   ]
@@ -186,7 +252,7 @@ class SlashMenu {
     this.ctx = ctx
     this.view = view
     this.getT = getT
-    this.items = buildItems(getT)
+    this.items = buildItems(getT, '')
     this.filtered = []
     this.selectedIndex = 0
 
@@ -223,7 +289,7 @@ class SlashMenu {
   // like Feishu's narrowing.
   render(query) {
     const q = (query || '').trim().toLowerCase()
-    const all = buildItems(this.getT)
+    const all = buildItems(this.getT, query)
     const t = this.getT
     if (q) {
       const ranked = all
