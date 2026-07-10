@@ -107,6 +107,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 
 - Run `npm run build` before handing off code changes. Use `npm run build:mobile` for shared-renderer or platform-contract changes.
 - `npm run dist` builds installers for the host OS. For fast local macOS testing, `CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir` creates an unsigned unpacked app.
+- Release versions must be monotonically greater than every build that may have been distributed for testing. Do not publish a lower "clean" version after internal builds such as `0.5.29`; auto-update compares semver, so `0.5.5` is treated as older than `0.5.29` and will not be offered.
 - When asking the user to manually test, always rebuild and install the current source first. Never ask the user to test an older installed app or a stale artifact; explicitly verify the installed app was produced after the latest relevant code change.
 - When handing a macOS build to the user for manual testing, do not only overwrite `/Applications/HorseMD.app`. First kill any running HorseMD/Electron processes, then copy the new app, clear quarantine, launch it, and verify the running process points at `/Applications/HorseMD.app` with the intended document. If a specific fix has a marker string, verify `/Applications/HorseMD.app/Contents/Resources/app.asar` contains it before telling the user to test. This avoids macOS reusing an old app process after a reinstall.
 - macOS unsigned app launch may need `xattr -dr com.apple.quarantine /Applications/HorseMD.app`.

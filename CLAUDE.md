@@ -115,6 +115,10 @@ docs/                  architecture / features / implementation-notes / developm
   historical releases unified to this format 2026-07-04 — keep it consistent).
   Release notes: Chinese, start directly with content (no HorseMD intro),
   structured as ✨ 新功能 / 🐛 修复 / 📦 下载 + unsigned-warning + full-changelog link.
+  Release versions must be monotonically greater than every build that may have
+  been distributed for testing: do not publish a lower "clean" version after
+  internal builds such as `0.5.29`, because auto-update compares semver and will
+  treat `0.5.5` as older than `0.5.29`.
   Build full set: mac dmg+zip (arm64+x64) + win nsis --x64 (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
   `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
