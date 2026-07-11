@@ -60,8 +60,8 @@ const attachmentLinkMarkdown = (name, path) =>
 
 export default function App() {
   const session = useRef(loadSession()).current
-  // Migrate + sanitize the session's workspace state once (stable session).
-  // Old single-workspace sessions are migrated into the multi-workspace model.
+  // Migrate + sanitize the session's workspace folder roots once (stable session).
+  // Legacy single-folder and short-lived multi-workspace sessions are flattened.
   const initialFolderRoots = useRef(loadFolderRootsFromSession(session)).current
   // Mobile (Capacitor) builds run the same renderer; a few affordances differ
   // (drawer sidebar, no split/image-host buttons). Desktop is unaffected.

@@ -1,11 +1,15 @@
-# 新功能方案：多工作区 + 飞书式斜杠菜单
+# 新功能方案：单一工作区多根 + 飞书式斜杠菜单
 
 > 2026-07-10 调研 + 设计。确认后用 ralph loop 实施。铁律：不影响现有功能、跨平台、单文件 <800 行。
 
-> ✅ **已实施完成（2026-07-11）** —— 两个功能都已落地、CDP 验收全绿、architect APPROVED。
+> ✅ **已实施完成（2026-07-11）** —— 两个功能都已落地。最终工作区模型已从早期“多个可切换工作区”
+> 收敛为“一个未命名工作区，里面挂多个文件夹根”：顶部固定显示「工作区」；打开文件夹 = 添加一个根；
+> 右键根节点 = 从工作区移除。根节点是挂载点，不允许拖拽移动、重命名或删除真实磁盘文件夹。
 > 飞书式斜杠菜单：`src/renderer/src/components/editor-slash-menu.js`（自建，绕过 Crepe label-only 过滤）。
-> 多工作区：`workspaces:[{id,name,folderRoots,createdAt}]+activeWorkspaceId`，多根文件树 + 切换/新建/重命名/删除 + 旧 session 迁移。
-> 关键决策记录在 `CLAUDE.md` 的「Slash (`/`) menu」与「Multi-workspace」两条 convention，及 `.omc` 的 progress.txt。版本号未改（用户最后统一改）。
+> 工作区：`folderRoots:[absPath,...]`，多根文件树 + 旧 session 迁移（旧 `workspaces:[{folderRoots}]` 会被合并）。
+> 关键决策记录在 `CLAUDE.md` 的「Slash (`/`) menu」与「Workspace / file tree」两条 convention。
+
+> 下面的“多工作区”设计段落是早期方案记录，作为背景保留；实现和回归测试以后以上面的最终模型为准。
 
 ---
 

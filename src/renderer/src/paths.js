@@ -23,6 +23,12 @@ export function isNewerVersion(a, b) {
 export const isAbsolutePath = (p) =>
   typeof p === 'string' && (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p))
 
+export function normalizePathKey(p) {
+  let s = String(p || '').replace(/\\/g, '/')
+  while (s.length > 1 && !/^[a-zA-Z]:\/$/.test(s) && s.endsWith('/')) s = s.slice(0, -1)
+  return s
+}
+
 // Renderer-side mirror of main's isRestrictedRoot: paths we must never treat as
 // a workspace folder root. Watching or listing one (/, /dev, /System/Volumes…)
 // floods the tree with permission-protected files and crashes the recursive
@@ -48,10 +54,10 @@ export function sanitizeFolderRoots(list) {
   const out = []
   for (const p of list) {
     if (typeof p !== 'string' || !isAbsolutePath(p) || isRestrictedPath(p)) continue
-    const k = p.replace(/\\/g, '/')
+    const k = normalizePathKey(p)
     if (seen.has(k)) continue
     seen.add(k)
-    out.push(p)
+    out.push(k)
   }
   return out
 }

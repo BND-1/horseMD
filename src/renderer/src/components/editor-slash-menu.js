@@ -419,6 +419,10 @@ class SlashMenu {
         this.move(event.shiftKey ? -1 : 1)
         return true
       case 'Enter':
+        if (!this.filtered.length) {
+          this.provider.hide()
+          return false
+        }
         event.preventDefault()
         this.runSelected()
         return true

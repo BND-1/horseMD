@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
-import { baseName, dirName as parentDir, joinPath as join, isMarkdownName, isValidName, isExistsError } from '../paths.js'
+import {
+  baseName,
+  dirName as parentDir,
+  joinPath as join,
+  isMarkdownName,
+  isValidName,
+  isExistsError,
+  normalizePathKey
+} from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 
 export default function Sidebar({
@@ -42,8 +50,8 @@ export default function Sidebar({
   // folderRoots is a fresh array each render; join for a stable effect dep.
   const folderRootsKey = folderRoots.join('\n')
   const defaultRoot = folderRoots[0] || null
-  const norm = (p) => (p || '').replace(/\\/g, '/')
-  const rootSet = new Set(folderRoots.map(norm))
+  const rootSet = new Set(folderRoots.map(normalizePathKey))
+  const isRootPath = (p) => rootSet.has(normalizePathKey(p))
 
   const loadDir = useCallback(async (dir) => {
     const nodes = await window.api.readDir(dir)
@@ -75,8 +83,11 @@ export default function Sidebar({
   // only for files inside THIS workspace (under one of its roots).
   useEffect(() => {
     if (!activePath || !folderRoots.length) return
-    const ap = norm(activePath)
-    const root = folderRoots.map(norm).find((r) => ap.startsWith(r + '/'))
+    const ap = normalizePathKey(activePath)
+    const root = folderRoots
+      .map(normalizePathKey)
+      .sort((a, b) => b.length - a.length)
+      .find((r) => ap === r || ap.startsWith(r + '/'))
     if (!root) return // not in this workspace
     let cancelled = false
     ;(async () => {
@@ -85,7 +96,7 @@ export default function Sidebar({
       let guard = 0
       while (d && guard++ < 50) {
         ancestors.unshift(d)
-        if (norm(d) === root) break
+        if (normalizePathKey(d) === root) break
         const up = parentDir(d)
         if (!up || up === d) break
         d = up
@@ -254,8 +265,12 @@ export default function Sidebar({
   // Move a dragged file/folder into a destination directory.
   const moveInto = async (srcPath, destDir) => {
     if (!srcPath || !destDir) return
-    const src = srcPath.replace(/\\/g, '/')
-    const dest = destDir.replace(/\\/g, '/')
+    const src = normalizePathKey(srcPath)
+    const dest = normalizePathKey(destDir)
+    // Workspace roots are mount points, not movable tree items. Moving one would
+    // physically relocate the user's folder but leave folderRoots pointing at the
+    // old path.
+    if (isRootPath(srcPath)) return
     // No-op if it's already in that folder; never move a folder into itself or
     // one of its own descendants.
     if (parentDir(src) === dest) return
@@ -316,11 +331,15 @@ export default function Sidebar({
   if (!folderRoots.length) {
     return (
       <div className="sidebar-empty">
-        <Icon name="folder" size={26} />
-        <p>{t('side.noFolder')}</p>
-        <button className="btn-primary" onClick={() => onAddFolder()}>
-          {t('workspace.addFolder')}
-        </button>
+        <div className="sidebar-empty-panel">
+          <div className="sidebar-empty-icon">
+            <Icon name="folder" size={24} />
+          </div>
+          <button className="btn-primary sidebar-empty-action" onClick={() => onAddFolder()}>
+            <Icon name="folder" size={15} />
+            {t('workspace.addFolder')}
+          </button>
+        </div>
       </div>
     )
   }
@@ -389,15 +408,19 @@ export default function Sidebar({
     const isActive = node.path === activePath
     const renaming = rename && rename.path === node.path
     const isDropTarget = isDir && dragOver === node.path
-    const isRoot = rootSet.has(norm(node.path))
+    const isRoot = isRootPath(node.path)
     return (
       <div key={node.path}>
         <div
           ref={isActive ? activeRowRef : undefined}
           className={`tree-row${isActive ? ' active' : ''}${isDropTarget ? ' drag-over' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
-          draggable={!renaming}
+          draggable={!renaming && !isRoot}
           onDragStart={(e) => {
+            if (isRoot) {
+              e.preventDefault()
+              return
+            }
             dragPathRef.current = node.path
             e.dataTransfer.effectAllowed = 'move'
             e.dataTransfer.setData('text/plain', node.path)
@@ -467,15 +490,17 @@ export default function Sidebar({
       <div className="sidebar-head">
         <span className="sidebar-title">{t('workspace.title')}</span>
         <div className="sidebar-head-actions">
-          <button title={t('workspace.addFolder')} onClick={() => onAddFolder()}>
-            <Icon name="folder-plus" size={15} />
+          <button className="workspace-add-root" title={t('workspace.addFolder')} onClick={() => onAddFolder()}>
+            <Icon name="folder-open" size={15} />
           </button>
+          <span className="sidebar-action-sep" aria-hidden="true" />
           <button title={t('side.newFile')} onClick={() => startNewFile(null)}>
             <Icon name="file-plus" size={15} />
           </button>
           <button title={t('side.newFolder')} onClick={() => startNewFolder(null)}>
             <Icon name="folder-plus" size={15} />
           </button>
+          <span className="sidebar-action-sep" aria-hidden="true" />
           {(() => {
             // Toggle: when everything's collapsed (only roots open), expand all;
             // otherwise collapse back to just the roots. Icon reflects the action.
@@ -544,8 +569,8 @@ export default function Sidebar({
           {menu.node && <button onClick={() => { copyText(menu.node.path); setMenu(null) }}>{t('tab.copyPath')}</button>}
           {menu.node && <button onClick={() => { copyText(menu.node.name); setMenu(null) }}>{t('tab.copyName')}</button>}
           {menu.node && window.api.capabilities?.revealInFolder !== false && <button onClick={() => { window.api.showInFolder(menu.node.path); setMenu(null) }}>{t('side.reveal')}</button>}
-          {menu.node && <div className="menu-sep" />}
-          {menu.node && <button onClick={() => { setRename({ path: menu.node.path, value: menu.node.name }); setMenu(null) }}>{t('side.rename')}</button>}
+          {menu.node && !menu.isRoot && <div className="menu-sep" />}
+          {menu.node && !menu.isRoot && <button onClick={() => { setRename({ path: menu.node.path, value: menu.node.name }); setMenu(null) }}>{t('side.rename')}</button>}
           {menu.node?.type === 'file' && <button onClick={() => { doDuplicate(menu.node); setMenu(null) }}>{t('side.duplicate')}</button>}
           {menu.node?.type === 'file' && isMarkdownName(menu.node.name) && window.api.capabilities?.pdfExport !== false && (
             <button onClick={() => { onExportPdf?.(menu.node.path); setMenu(null) }}>{t('side.exportPdf')}</button>

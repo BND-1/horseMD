@@ -18,7 +18,17 @@
 //   initialFolderRoots — migrated + sanitized workspace folder roots from the
 //     session (loadFolderRootsFromSession in paths.js)
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { baseName, dirName, joinPath, genId, isHeavyDoc, isAbsolutePath, isRestrictedPath, sanitizeFolderRoots } from '../paths.js'
+import {
+  baseName,
+  dirName,
+  joinPath,
+  genId,
+  isHeavyDoc,
+  isAbsolutePath,
+  isRestrictedPath,
+  sanitizeFolderRoots,
+  normalizePathKey
+} from '../paths.js'
 import { fireToast } from '../ui.js'
 
 export function useFileOps({
@@ -436,16 +446,15 @@ export function useFileOps({
   const addFolder = useCallback(
     (dir) => {
       if (!dir || !isAbsolutePath(dir) || isRestrictedPath(dir)) return
-      const k = (p) => p.replace(/\\/g, '/')
-      setFolderRoots((prev) => (prev.some((r) => k(r) === k(dir)) ? prev : [...prev, dir]))
+      setFolderRoots((prev) => sanitizeFolderRoots([...prev, dir]))
       setSidebarOpen(true)
     },
     [setSidebarOpen]
   )
 
   const removeFolder = useCallback((rootPath) => {
-    const k = (p) => p.replace(/\\/g, '/')
-    setFolderRoots((prev) => prev.filter((r) => k(r) !== k(rootPath)))
+    const target = normalizePathKey(rootPath)
+    setFolderRoots((prev) => prev.filter((r) => normalizePathKey(r) !== target))
   }, [])
 
   // "Open Folder…" (dialog) = add a folder to the workspace. This replaces the
