@@ -24,7 +24,7 @@
     "build:mobile": "vite build --config vite.mobile.config.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
     "test:review": "node scripts/review-markup.test.mjs",
-    "test:security": "node scripts/test-main-security.mjs",
+    "test:security": "node scripts/test-main-security.mjs && node scripts/test-pdf-document.mjs",
     "test:criticmarkup": "node scripts/test-strike-guard.mjs && node scripts/test-substitution-headless.mjs",
     "test:core": "npm run test:security && npm run test:source-map && npm run test:review && npm run test:criticmarkup",
     "cap:sync": "npm run build:mobile && cap sync",
