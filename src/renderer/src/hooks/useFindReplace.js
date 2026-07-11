@@ -31,7 +31,7 @@ import {
   matchIndices
 } from '../find.js'
 
-export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, commitLive, liveContentRef }) {
+export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, viewModeKey, commitLive, liveContentRef }) {
   const [find, setFind] = useState({ open: false, query: '', matches: 0, active: 0, replace: '' })
   // Current match set: Range objects (rich editor) or character offsets (source).
   const findRangesRef = useRef([])
@@ -41,6 +41,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   const findInputRef = useRef(null)
   const replaceInputRef = useRef(null)
   const sourceFindTextareaRef = useRef(null)
+  const findContextRef = useRef({ activeId, viewModeKey })
 
   // Discriminate the active view: the source <textarea> sets sourceRef only when
   // it's mounted (source mode or a .txt doc); otherwise we're in the rich editor.
@@ -209,12 +210,19 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     [activeId, runFind, commitLive]
   )
 
-  // Re-run the search when switching tabs while the find bar is open, so ranges
-  // point at the newly-visible document.
+  // DOM Ranges (rich) and numeric offsets (source) are different backends. Any
+  // tab or view-mode switch must rebuild the cache for the newly-visible view.
+  // Preserve the active result while toggling rich/source in the same document;
+  // a different tab starts from its first result.
   useEffect(() => {
-    if (find.open) runFind(findQueryRef.current)
+    const previous = findContextRef.current
+    findContextRef.current = { activeId, viewModeKey }
+    if (find.open) {
+      const preferActive = previous.activeId === activeId ? Math.max(0, activeIdxRef.current) : 0
+      runFind(findQueryRef.current, preferActive)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId])
+  }, [activeId, viewModeKey])
 
   // Open the find bar, pre-filled with the current selection (if any) — like VS
   // Code / Typora. No selection → keep the previous query.

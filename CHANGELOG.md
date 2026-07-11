@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - **Source-mode find navigation** — `Ctrl/Cmd+F` now centers the active textarea
   match, keeps a high-contrast highlight visible, and repaints reliably when
-  Electron throttles animation frames.
+  Electron throttles animation frames. Keeping Find open across rich/source
+  switches now rebuilds the correct Range/offset backend without losing the
+  active result.
 
 ## [0.5.5] - 2026-07-10
 

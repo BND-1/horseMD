@@ -2,6 +2,7 @@
 // --remote-debugging-port first; this verifies selection, scrolling and overlay.
 const port = Number(process.env.CDP_PORT || 9222)
 const commonQuery = process.env.FIND_QUERY || '企业'
+const testModeSwitch = process.argv.includes('--mode-switch')
 const base = `http://127.0.0.1:${port}`
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -124,8 +125,38 @@ async function main() {
   const stepsPass = steps.every((state, index) =>
     state.count.startsWith(`${index + 2}/`) && state.selection[0] >= 0 && revealed(state)
   )
-  const passed = uniquePass && stepsPass
-  console.log(JSON.stringify({ passed, unique: { ...unique, state: uniqueState }, commonQuery, total, steps }, null, 2))
+  let modeSwitch = null
+  if (testModeSwitch) {
+    const countBefore = steps.at(-1)?.count || initial.count
+    const toggleMode = async () => {
+      await evaluate(`([...document.querySelectorAll('.status-btn')].find((button) => button.title?.includes('Ctrl+/'))?.click(), true)`)
+      await sleep(850)
+    }
+    const modeSnapshot = () => evaluate(`(() => {
+      const textarea = document.querySelector('textarea.source-editor')
+      return {
+        mode: textarea ? 'source' : 'rich',
+        count: document.querySelector('.findbar-count')?.textContent || '',
+        selection: textarea ? [textarea.selectionStart, textarea.selectionEnd] : null,
+        sourceMarks: document.querySelectorAll('.hm-source-find-current').length,
+        richMatches: CSS.highlights?.get('hm-find')?.size || 0,
+        richCurrent: CSS.highlights?.get('hm-find-current')?.size || 0
+      }
+    })()`)
+    await toggleMode()
+    const rich = await modeSnapshot()
+    await toggleMode()
+    const source = await modeSnapshot()
+    modeSwitch = {
+      passed: rich.mode === 'rich' && rich.count === countBefore && rich.richMatches === total && rich.richCurrent === 1 &&
+        source.mode === 'source' && source.count === countBefore && source.sourceMarks === 1 &&
+        source.selection?.[0] !== source.selection?.[1],
+      rich,
+      source
+    }
+  }
+  const passed = uniquePass && stepsPass && (!modeSwitch || modeSwitch.passed)
+  console.log(JSON.stringify({ passed, unique: { ...unique, state: uniqueState }, commonQuery, total, steps, modeSwitch }, null, 2))
   ws.close()
   process.exit(passed ? 0 : 2)
 }

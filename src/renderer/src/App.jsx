@@ -140,6 +140,7 @@ export default function App() {
   // lossy PM→Markdown block mapper to infer the same offset again.
   const sourceCaretRoundTripRef = useRef(null)
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
+  const findStateRef = useRef({ open: false, query: '' }) // find owns navigation while an active query survives a mode switch
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -478,6 +479,10 @@ export default function App() {
     //   position holds; no focus (a focus would async-scroll to the off-screen
     //   caret and drift).
     const apply = () => {
+      // useFindReplace rebuilds its backend on rich/source switches. Let that
+      // active result own selection + scroll; delayed caret/viewport passes
+      // would otherwise overwrite it with the pre-switch editor position.
+      if (findStateRef.current.open && findStateRef.current.query) return
       const view = editorApis.current[activeIdRef.current]?.getView?.()
       if (sourceMode) {
         if (caret) {
@@ -701,7 +706,16 @@ export default function App() {
   // (US-6) can close over setFind/findInputRef/replaceInputRef. Returns the same
   // names the findbar JSX uses.
   const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind } =
-    useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, commitLive, liveContentRef })
+    useFindReplace({
+      editorHostRef,
+      sourceRef,
+      editorApis,
+      activeId,
+      viewModeKey: sourceMode,
+      commitLive,
+      liveContentRef
+    })
+  findStateRef.current = { open: find.open, query: find.query }
 
   // In split view, target the pane you're actually editing (last focused), as
   // long as it's one of the two visible panes; otherwise the active (left) tab.
