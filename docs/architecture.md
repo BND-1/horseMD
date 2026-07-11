@@ -40,7 +40,7 @@
 
 ```
 src/
-  main/index.js            主进程：窗口、文件系统 IPC、监听、菜单
+  main/index.js            主进程：窗口生命周期、IPC 装配、菜单
   main/documents.js        打开/保存对话框与 PDF 导出 IPC
   main/filesystem.js       文件读写、目录树与复制 IPC
   main/watchers.js         工作区与单文件监听 IPC

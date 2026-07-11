@@ -4,7 +4,8 @@
 
 HorseMD is an Electron + Vite + React Markdown editor with a shared renderer for desktop and Capacitor mobile builds.
 
-- `src/main/index.js`: Electron main process, IPC, file system access, watchers, menus, PDF export, update checks.
+- `src/main/index.js`: Electron main-process lifecycle, window, IPC assembly, menus, assets, and update checks.
+- `src/main/filesystem.js`, `watchers.js`, `documents.js`: file operations, watchers, dialogs, and PDF export.
 - `src/preload/index.js`: secure `window.api` bridge exposed to the renderer.
 - `src/renderer/src/`: React app, Milkdown editor, hooks, shell components, themes, i18n, platform shim.
 - `src/renderer/src/components/Editor.jsx`: Crepe/ProseMirror editor wrapper; keep new editor features in focused `editor-*.js` helpers when possible.

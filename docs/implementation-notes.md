@@ -298,7 +298,7 @@ crepe.editor.config((ctx) => {
 根因：会话里存了一个**相对路径**的工作区（`rootPath: "."`，测试时混进去的）。chokidar 监听 `"."` 时按**进程当前目录**解析——Finder/launchd 启动时 CWD 是 `/`，于是去递归监听整个文件系统（`/dev`、`/System/Volumes`…），`EACCES`/`EAGAIN`/`EBUSY` 错误刷屏，未处理 → `abort()`。从终端跑不崩，是因为 shell 的 CWD 是仓库目录。
 
 修法（多层）：
-- `watch:start` **只监听绝对路径**，拒绝受限根（`isRestrictedRoot`：`/`、`.`、`..`、相对路径、`/dev`、`/System/Volumes` 等），`followSymlinks:false`，每个 watcher 加 `'error'` 处理吞掉权限错。
+- `watchers.js` 的 `watch:start` **只监听绝对路径**，拒绝受限根（`isRestrictedWatchRoot`：`/`、`.`、`..`、相对路径、`/dev`、`/System/Volumes` 等），`followSymlinks:false`，每个 watcher 加 `'error'` 处理吞掉权限错。
 - `extractArgs()` 把启动参数 `resolve()` 成绝对路径，并跳过 app 自身目录（dev 下 argv 含 `.`）。
 - 渲染层 `sanitizeWorkspace()` 丢弃非绝对路径的恢复工作区；`onOpenFolderPath` 同样校验。
 - 主进程加 `process.on('unhandledRejection'/'uncaughtException')` 兜底，任何漏网异步错误都不再能崩掉应用。
