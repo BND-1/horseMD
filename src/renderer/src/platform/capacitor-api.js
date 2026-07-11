@@ -305,6 +305,7 @@ export function makeCapacitorApi() {
     openFolder,
     saveAs,
     exportPDF: async () => ({ ok: false, error: 'unsupported' }),
+    allowLocalFonts: async () => false,
 
     // fs
     readFile,

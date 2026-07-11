@@ -6,6 +6,7 @@ import { existsSync, statSync, realpathSync, constants as fsConstants } from 'no
 import { exec } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import chokidar from 'chokidar'
+import { canGrantLocalFonts, createLocalFontGrant } from './security.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -81,6 +82,7 @@ let allowClose = false
 let isQuitting = false
 const watchers = new Map() // folder path -> watcher
 const fileWatchers = new Map() // file path -> { watcher, timer }
+let localFontGrant = null
 
 // ---- Safety net: never let a stray async error abort the whole app ----
 // chokidar (and other fs/network async work) can reject with EACCES/EPERM when
@@ -268,16 +270,37 @@ app.whenReady().then(() => {
   for (const d of launched.folders) if (!pendingLaunch.folders.includes(d)) pendingLaunch.folders.push(d)
   ensureThemesDir()
   buildMenu()
-  // Grant the Local Font Access API so the Settings font pickers can enumerate
-  // installed fonts via queryLocalFonts() (issue #38). This is a local editor —
-  // the renderer is trusted app code (Markdown content isn't executed as JS), so
-  // a permissive handler is safe; without it queryLocalFonts() is blocked.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(true))
-  session.defaultSession.setPermissionCheckHandler(() => true)
+  const allowLocalFonts = (webContents, permission, requestingUrl, isMainFrame) =>
+    canGrantLocalFonts({
+      permission,
+      webContentsId: webContents?.id,
+      trustedWebContentsId: mainWindow?.webContents.id,
+      requestingUrl,
+      currentUrl: webContents?.getURL() || '',
+      devRendererUrl: process.env.ELECTRON_RENDERER_URL,
+      isMainFrame,
+      grant: localFontGrant
+    })
+
+  // Electron 34 reports Local Font Access as either `local-fonts` or `unknown`,
+  // depending on the Chromium path. Only grant it briefly after the settings UI
+  // explicitly requests font enumeration; every other permission stays denied.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(allowLocalFonts(webContents, permission, details?.requestingUrl || '', details?.isMainFrame))
+  })
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) =>
+    allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
+  )
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+ipcMain.handle('permissions:allowLocalFonts', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  localFontGrant = createLocalFontGrant(event.sender.id)
+  return true
 })
 
 // A real quit is starting (Cmd/Ctrl+Q, menu Quit, app.quit()). Mark it so the
