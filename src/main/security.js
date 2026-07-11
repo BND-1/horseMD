@@ -1,6 +1,19 @@
 const LOCAL_FONT_PERMISSION_NAMES = new Set(['local-fonts', 'unknown'])
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:'])
 
 export const LOCAL_FONT_GRANT_TTL_MS = 5000
+
+export function getAllowedExternalUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed = new URL(value)
+    if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) return null
+    if ((parsed.protocol === 'https:' || parsed.protocol === 'http:') && !parsed.hostname) return null
+    return parsed.href
+  } catch {
+    return null
+  }
+}
 
 export function createLocalFontGrant(webContentsId, now = Date.now()) {
   return {

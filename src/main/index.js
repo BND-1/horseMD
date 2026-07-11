@@ -6,7 +6,7 @@ import { existsSync, statSync, realpathSync, constants as fsConstants } from 'no
 import { exec } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import chokidar from 'chokidar'
-import { canGrantLocalFonts, createLocalFontGrant } from './security.js'
+import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from './security.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -168,6 +168,13 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+async function openExternalUrl(url) {
+  const allowedUrl = getAllowedExternalUrl(url)
+  if (!allowedUrl) return { ok: false, error: 'Unsupported external URL.' }
+  await shell.openExternal(allowedUrl)
+  return { ok: true }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -207,7 +214,7 @@ function createWindow() {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url)
+    void openExternalUrl(url)
     return { action: 'deny' }
   })
 
@@ -218,7 +225,7 @@ function createWindow() {
     const devUrl = process.env.ELECTRON_RENDERER_URL
     if (devUrl && url.startsWith(devUrl)) return
     event.preventDefault()
-    if (url.startsWith('http')) shell.openExternal(url)
+    void openExternalUrl(url)
   })
 
   // Keep the renderer's maximize/restore button icon in sync with the real
@@ -587,7 +594,12 @@ ipcMain.handle('watch:unfile', async (_e, path) => {
   return true
 })
 
-ipcMain.handle('shell:openExternal', async (_e, url) => shell.openExternal(url))
+ipcMain.handle('shell:openExternal', async (event, url) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, error: 'Untrusted renderer.' }
+  }
+  return openExternalUrl(url)
+})
 ipcMain.handle('shell:openFileUrl', async (_e, url) => {
   try {
     const parsed = new URL(url)

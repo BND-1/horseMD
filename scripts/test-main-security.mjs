@@ -3,6 +3,7 @@ import {
   LOCAL_FONT_GRANT_TTL_MS,
   canGrantLocalFonts,
   createLocalFontGrant,
+  getAllowedExternalUrl,
   isTrustedRendererUrl
 } from '../src/main/security.js'
 
@@ -32,4 +33,13 @@ assert.equal(canGrantLocalFonts({ ...base, requestingUrl: 'https://example.com/'
 assert.equal(isTrustedRendererUrl('http://localhost:5173/settings', 'http://localhost:5173/', 'http://localhost:5173'), true)
 assert.equal(isTrustedRendererUrl('http://127.0.0.1:5173/', 'http://localhost:5173/', 'http://localhost:5173'), false)
 
-console.log('PASS main security: local-font permission is scoped to the trusted main frame')
+assert.equal(getAllowedExternalUrl('https://horsemd.yangsir.net/docs?q=1'), 'https://horsemd.yangsir.net/docs?q=1')
+assert.equal(getAllowedExternalUrl('http://127.0.0.1:36677/image.png'), 'http://127.0.0.1:36677/image.png')
+assert.equal(getAllowedExternalUrl('mailto:hello@example.com'), 'mailto:hello@example.com')
+assert.equal(getAllowedExternalUrl('file:///tmp/document.md'), null, 'file URLs use the dedicated file handler')
+assert.equal(getAllowedExternalUrl('javascript:alert(1)'), null)
+assert.equal(getAllowedExternalUrl('data:text/html,unsafe'), null)
+assert.equal(getAllowedExternalUrl('horsemd://unsafe'), null)
+assert.equal(getAllowedExternalUrl('not a url'), null)
+
+console.log('PASS main security: scoped permissions and external URL protocols')
