@@ -38,7 +38,7 @@ src/main/index.js      main process: window, IPC (fs/dialog/watch), menu, file w
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
-  components/Editor.jsx        lifecycle orchestrator (~578 lines): Crepe create/destroy,
+  components/Editor.jsx        lifecycle orchestrator (~600 lines): Crepe create/destroy,
                           onReady API, chunk-append, new-doc H1 init, lightbox + block-menu JSX.
                           (The heavy logic was split into the editor-* modules below — see
                           docs/editor-feature-inventory.md for the full map.)
@@ -56,8 +56,13 @@ src/renderer/src/
   components/editor-image-persistence.js  image paste/drop → local save / image-host / data-URL fallback
   components/editor-lightbox.js        image/Mermaid lightbox (Esc / Ctrl-wheel zoom / drag-pan)
   components/editor-criticmarkup-plugins.js  CriticMarkup substitution rebuild + IME compositionend + strike guard
-  components/editor-review.js          review decorations + accept/reject + comment widgets (large; split candidate)
+  components/editor-review.js          review plugin state machine + command entry points
+  components/editor-review-decorations.js  CriticMarkup scan + Decoration construction
+  components/editor-review-card.js     review card DOM + edit/navigation actions
   components/editor-{html,images,copy,highlight,mermaid,tablebreak,math,math-preview,autolink,frontmatter,md-paste,toolbar,toolbar-autohide,block-controls,chunked-parse,codeblock-eager,codeblock-tab,source-caret,link-labels}.js  other Editor helpers
+  hooks/useWorkspace.js multi-root workspace state + directory watchers
+  hooks/useSidebarTree.js file-tree loading, expansion + active-file following
+  hooks/useSourceModeSwitch.js per-tab source mode + rich/source sync + anchor restore
   hooks/usePopover.js   shared button→popover hook (closes on outside click / Esc)
   {paths,find,ui,settings,customThemes}.js  pure helpers: session · find · toast · prefs (page width / font / line height / paragraph spacing / image host) · custom-theme injection
   {blocks,themes,i18n,onboarding}.{js,jsx}
@@ -86,7 +91,7 @@ docs/                  architecture / features / implementation-notes / developm
   - launch args: `extractArgs()` in `main/index.js` splits argv into markdown
     **files** (→ `open-paths`, tabs) and **folders** (→ `open-folder`, workspace
     — from the Explorer "Open with HorseMD" folder entry). Keep both handled.
-- **Workspace** (`useFileOps.js` + `paths.js` + `Sidebar.jsx`): a SINGLE, UNNAMED
+- **Workspace** (`useWorkspace.js` + `useSidebarTree.js` + `Sidebar.jsx`): a SINGLE, UNNAMED
   workspace — just a bag of folder roots (`folderRoots: [abs,…]`, persisted in
   session). No name, no multi-workspace, no switching (one workspace is enough for
   a writing app; users add/remove folders within it). The sidebar head shows a
@@ -201,7 +206,7 @@ docs/                  architecture / features / implementation-notes / developm
   - **Crepe stays mounted in source mode** (`EditorArea.jsx`): the source
     `<textarea>` overlays a `display:none` Crepe, so switching back does NOT
     re-parse the doc or reload its images — the rich selection/scroll is retained.
-  - **Source edits sync only when real** (`App.jsx` `syncSourceToRich` → Editor
+  - **Source edits sync only when real** (`useSourceModeSwitch.js` `syncSourceToRich` → Editor
     `replaceMarkdown`): a source buffer equal to baseline is a no-op, so a pure
     view-toggle never dirties the doc or rebuilds Crepe. `sourceEditedIds` is the
     "edited?" signal; `sourceModeIds` makes source/rich **per-tab** (#42).
@@ -211,7 +216,7 @@ docs/                  architecture / features / implementation-notes / developm
     locates the BLOCK (by visible text + occurrence index), then converts the
     in-block char offset — robust against repeated words and against image/link
     atoms that make global visible-char indices diverge between modes.
-  - **Follow vs keep by caret visibility** (`App.jsx` `toggleSource` + effect,
+  - **Follow vs keep by caret visibility** (`useSourceModeSwitch.js` `toggleSource` + effect,
     `scrollAnchor.js` facade → `mode-caret-anchor.js`): rich caret
     visible (editing) → restore caret + follow it (scrollIntoView/focus); caret
     off-screen (reading) → keep the viewport. The textarea carries
@@ -380,7 +385,7 @@ docs/                  architecture / features / implementation-notes / developm
 - **Find**: in-document find uses the **CSS Custom Highlight API**
   (`CSS.highlights` + `Highlight`), not `window.find` — it searches only the
   editor body (rich `view.dom` / source `<textarea>`), never UI text, and paints
-  ranges without mutating the DOM. See the find helpers in `App.jsx`.
+  ranges without mutating the DOM. See `hooks/useFindReplace.js` and `find.js`.
 - **File watcher must stay crash-proof.** chokidar recursively watching a tree
   with permission-protected paths throws a flood of `EACCES`/`EAGAIN`/`EBUSY`
   that, left unhandled, `abort()`s the whole main process on launch. The trap:

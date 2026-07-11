@@ -78,6 +78,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Markdown files (`.md`, `.markdown`, `.mdx`) use rich editing unless classified as heavy. Plain text files with paths use the textarea.
 - Heavy docs are detected in `paths.js` and default to textarea as a fast-open path; the user can opt into rich mode per tab.
 - Source-mode textareas are intentionally uncontrolled. Keep the `liveContentRef` / `commitLive` flow intact; do not convert them to controlled React inputs.
+- The source/rich state machine is owned by `hooks/useSourceModeSwitch.js`; `App.jsx` supplies stable refs and `EditorArea.jsx` owns rendering only.
 - Source/rich switching depends on two independent intents: caret position and reading viewport. Editing toggles follow a visible caret; reading toggles preserve viewport.
 - For the current mode-switch fix, Crepe must stay mounted when source mode is shown. Only sync source back into rich when source text was actually edited.
 - Do not replace source/rich mapping with plain keyword matching. The primary caret path is block-aware Markdown raw-offset mapping; global visible-character positions and snippets/context are fallback only.
@@ -92,7 +93,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 
 ### Feature-Specific Notes
 
-- Review markup lives in `reviewMarkup.js` and `editor-review.js`; protect it with focused script tests when changed.
+- Review parsing lives in `reviewMarkup.js`; plugin state, decoration scanning, and card DOM live in `editor-review.js`, `editor-review-decorations.js`, and `editor-review-card.js`. Protect all four with focused script and real UI tests when changed.
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
@@ -106,6 +107,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Session state uses `localStorage["minimd.session.v1"]`; preferences use `localStorage["horsemd.settings.v1"]`; onboarding and update-dismissal have separate keys.
 - Settings tabs are transient and should not be persisted as document tabs.
 - Unsaved scratch tabs persist through session restore and should remain marked dirty.
+- Multi-root workspace state and directory watchers belong to `hooks/useWorkspace.js`; Sidebar tree loading belongs to `hooks/useSidebarTree.js`.
 
 ### Packaging And Verification
 

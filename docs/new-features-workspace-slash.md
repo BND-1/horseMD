@@ -10,6 +10,8 @@
 > 关键决策记录在 `CLAUDE.md` 的「Slash (`/`) menu」与「Workspace / file tree」两条 convention。
 
 > 下面的“多工作区”设计段落是早期方案记录，作为背景保留；实现和回归测试以后以上面的最终模型为准。
+> 当前模块归属：`useWorkspace.js` 管理多根状态和 watcher，`useSidebarTree.js` 管理树加载与展开，
+> `Sidebar.jsx` 负责交互编排，`SidebarContextMenu.jsx` 只负责菜单视图。
 
 ---
 

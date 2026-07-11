@@ -38,7 +38,7 @@ const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLe
 
 - `src/renderer/src/components/shell/EditorArea.jsx`(L85 卸载/挂载逻辑,重构主战场)
 - `src/renderer/src/components/Editor.jsx`(Crepe 创建/销毁/内容,~1513 行)
-- `src/renderer/src/App.jsx`(`toggleSource` + `[sourceMode]` effect,目前的光标/视口锚点恢复逻辑)
+- `src/renderer/src/hooks/useSourceModeSwitch.js`（`toggleSource` + 模式 effect，当前光标/视口锚点恢复状态机）
 - `src/renderer/src/scrollAnchor.js`（稳定公共 façade）及 `mode-visible-map.js`、`mode-caret-anchor.js`、`mode-viewport-anchor.js`、`mode-source-headings.js`
 
 ## 怎么验证
@@ -77,7 +77,7 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 
 #### 2. 只在源码真正修改后同步到 Crepe
 
-`App.jsx` 增加 `syncSourceToRich(id)`:
+当前由 `useSourceModeSwitch.js` 的 `syncSourceToRich(id)` 负责：
 
 - textarea 内容等于 baseline 时不写回 Crepe。
 - 内容变化时调用 Editor API `replaceMarkdown(next)`。
@@ -214,11 +214,12 @@ node scripts/test-strike-guard.mjs
 - 如果新增 Markdown block 类型,需要同步检查 `editor-source-map.js` 的 mdast/PM kind 映射。
 - 源码粗光标必须在真实大文档前/中/后检查尺寸、可见边界和点击行误差,否则容易重新出现遮字和空白光标。
 
-### 2026-07-11 代码结构审计
+### 2026-07-12 最终代码结构
 
 本轮没有把所有逻辑继续堆进 `App.jsx` / `Editor.jsx`。当前模式切换相关职责如下:
 
-- `App.jsx`（1186 行）:只保留跨视图状态机、切换意图和恢复时序。本轮净增主要是 raw offset 往返来源记录与 viewport/caret 分流。
+- `App.jsx`（954 行）:组合标签、编辑器 ref 和 shell，不再直接实现跨视图状态机。
+- `useSourceModeSwitch.js`（259 行）:唯一负责 per-tab 模式、源码→富文本同步、编辑/阅读意图和延迟锚点恢复。
 - `Editor.jsx`（591 行）:仍是 Crepe 生命周期 owner；只负责同步规范化后的 Markdown snapshot 和暴露 API。
 - `editor-source-map.js`（342 行）:唯一的 Markdown raw offset ↔ ProseMirror pos 块级映射；表格祖先类型在这里归一。
 - `editor-api.js`（204 行）:编辑器公开操作,不再内嵌 CodeMirror DOM 遍历。
@@ -243,9 +244,9 @@ node scripts/test-strike-guard.mjs
 
 仍需控制的技术债:
 
-- `App.jsx` 仍超过 1100 行。模式切换状态机未来可以提取为 `useModeSwitch`,但它依赖 tab registry、Editor API、两个可见 pane 和异步布局恢复；在接口未先稳定前不应为了降行数强拆。
+- `App.jsx` 仍有 954 行，但高风险模式切换已通过稳定 ref 合同提取。后续不得把状态机逻辑回填到 App；只有出现明确独立职责和测试保护时才继续拆。
 - `app.css` 约 4874 行,是当前最大的单文件。建议按 shell/editor/outline/find/review/settings 分文件,保留统一入口与原有 import 顺序,避免层叠优先级回归。
 - 两个 CDP 模式切换脚本合计约 600 行,属于测试驱动代码而非运行时体积。后续可抽共享 CDP client/点击/context helper,但不影响应用包运行复杂度。
 
-结论:本轮运行时代码增加的是结构化映射和边界处理,不是全文关键词补丁；已去掉明确重复与死代码,并完成模式切换按职责分域。下一轮重构优先级是 CSS 分域；`App.jsx` 的状态机提取必须另做接口设计与回归,不应仅为降行数仓促拆分。
+结论:模式切换采用结构化映射和边界处理，不以全文关键词作为主路径；状态机现已提取到 `useSourceModeSwitch.js`。任何后续修改都必须保留 keep-mounted、uncontrolled textarea、只同步真实源码编辑和 caret/viewport 双意图四项合同，并执行双向链路、表格、代码块及真实大文档回归。
 - 模式切换回归最好固定使用真实大文档,小文档无法暴露图片、atom、chunk parse、远程资源加载带来的问题。
