@@ -71,11 +71,16 @@ export function createConfiguredCrepe({
   copyText
 }) {
   const t = getT
+  const platform = window.api?.platform
+  const isMobile = platform === 'ios' || platform === 'android'
   const crepe = new Crepe({
     root: host,
     defaultValue,
     features: {
-      [Feature.SelectionTooltip]: true,
+      // Mobile already presents the native text-selection menu. Showing Crepe's
+      // toolbar at the same time creates two overlapping action surfaces and can
+      // cover the selected text, so mobile keeps the native menu only.
+      [Feature.SelectionTooltip]: !isMobile,
       [Feature.SlashCommand]: true,
       [Feature.BlockEdit]: true,
       [Feature.CodeMirror]: true,

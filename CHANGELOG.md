@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   rename, delete, or drag operations.
 
 ### Changed
+- **Native mobile text selection** — iOS and Android now use only the system
+  selection menu for copy, paste, select-all, lookup, and accessibility actions;
+  HorseMD's desktop formatting toolbar no longer overlaps it after a double-tap
+  or long-press.
 - **Outline starts at a useful depth** — the first two actual hierarchy tiers
   remain visible by default. Documents made entirely of top-level headings stay
   fully expanded, while deeper branches start compact.

@@ -27,6 +27,12 @@
 
 ## 体验改进
 
+### 移动端文本选择不再显示两套菜单
+
+iOS 和 Android 中双击或长按选中文字时，只保留系统原生的复制、粘贴、全选、查词和
+无障碍操作菜单。HorseMD 的桌面格式工具栏不会再同时弹出、遮挡文字；Windows 和 macOS
+仍保留完整的标题、粗体、高亮和 Review 选区工具栏。
+
 ### 大纲默认展示更合理
 
 大纲默认保留文档前两层实际层级：`H1 > H2 > H3` 文档会直接显示 H1 和 H2，
@@ -81,6 +87,7 @@
 - `npm run test:core`
 - `npm run build`
 - `npm run build:mobile`
+- iOS/Android 双击、长按选择文字：只出现系统菜单，复制、粘贴、全选正常。
 - 源码/富文本双向链路、表格、代码块和真实大文档回归。
 - 多根工作区添加、移除、重启恢复、右键菜单和外部变更监听。
 - 所有主题下的斜杠菜单、源码查找高亮和源码光标。
@@ -93,8 +100,9 @@
 | macOS | `HorseMD-0.6.0-arm64.dmg` | Apple Silicon |
 | macOS | `HorseMD-0.6.0.dmg` | Intel x64 |
 | Windows | `HorseMD-Setup-0.6.0.exe` | x64 |
+| Android | `HorseMD-0.6.0.apk` | Universal APK |
 
-> 实际文件名、Android APK 和校验信息以正式构建结果为准。当前构建仍未签名：Windows
+> 实际文件名和校验信息以正式构建结果为准。桌面构建仍未签名：Windows
 > 可能显示 SmartScreen 提示；macOS 可能需要右键打开或清除 quarantine。
 
 ---

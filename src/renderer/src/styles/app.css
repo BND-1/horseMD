@@ -4740,6 +4740,10 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .app.is-mobile .welcome-hints { display: none; }
 /* The floating "Text / H1" caret badge is desktop affordance; drop it on phones. */
 .app.is-mobile .hm-level-badge { display: none !important; }
+/* iOS/Android own text selection, copy/paste and accessibility actions. Crepe's
+   selection tooltip is disabled in editor-crepe-setup; keep this as a defensive
+   fallback so an upstream toolbar cannot overlap the native system menu. */
+.app.is-mobile .milkdown .milkdown-toolbar { display: none !important; }
 /* Vertical scroll only: editor-scroll has overflow-y:auto but no overflow-x, so
    per CSS it computes to auto and the whole article pans sideways when anything
    is too wide. Clip it horizontally (wide code blocks still scroll internally)

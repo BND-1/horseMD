@@ -411,12 +411,16 @@ export function mountEditorDomBindings({
     })
   }
 
-  const { scanToolbars, cleanup: cleanupToolbarScan } = createToolbarScanner({
-    liveEditors,
-    self,
-    t: getT,
-    updateHighlightActive
-  })
-  scanToolbars()
-  cleanups.push(cleanupToolbarScan)
+  const platform = window.api?.platform
+  const isMobile = platform === 'ios' || platform === 'android'
+  if (!isMobile) {
+    const { scanToolbars, cleanup: cleanupToolbarScan } = createToolbarScanner({
+      liveEditors,
+      self,
+      t: getT,
+      updateHighlightActive
+    })
+    scanToolbars()
+    cleanups.push(cleanupToolbarScan)
+  }
 }
