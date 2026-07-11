@@ -25,9 +25,8 @@ import {
   clearFindHighlights,
   clearSourceFindHighlight,
   findRangesInEl,
-  paintSourceFindHighlight,
   paintFindHighlights,
-  scrollTextareaOffsetIntoView,
+  revealSourceFindMatch,
   scrollRangeIntoView,
   matchIndices
 } from '../find.js'
@@ -72,9 +71,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     const i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
     activeIdxRef.current = i
     if (i >= 0 && q) {
-      el.setSelectionRange(hits[i], hits[i] + q.length)
-      scrollTextareaOffsetIntoView(el, hits[i])
-      paintSourceFindHighlight(el, hits[i], hits[i] + q.length)
+      revealSourceFindMatch(el, hits[i], hits[i] + q.length)
       sourceFindTextareaRef.current = el
     }
     setFind((f) => ({ ...f, matches: hits.length, active: i + 1 }))
@@ -129,9 +126,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     const sourceEl = activeSourceTextarea()
     if (sourceEl) {
       const el = sourceEl
-      el.setSelectionRange(items[i], items[i] + findQueryRef.current.length)
-      scrollTextareaOffsetIntoView(el, items[i])
-      paintSourceFindHighlight(el, items[i], items[i] + findQueryRef.current.length)
+      revealSourceFindMatch(el, items[i], items[i] + findQueryRef.current.length)
       sourceFindTextareaRef.current = el
     } else {
       paintFindHighlights(items, i)

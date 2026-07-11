@@ -74,6 +74,7 @@ node scripts/test-strike-guard.mjs
 - `scripts/inspect.mjs` —— 简易状态检查器
 - `scripts/test-mode-switch-chains.mjs` —— 双向连续切换、表格和 CodeMirror 光标语义匹配
 - `scripts/test-mode-switch-10x.mjs` —— 5 个编辑态光标 + 5 个阅读态视口，附带大纲/dirty 稳定性检查
+- `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
 
 ### 用法
 

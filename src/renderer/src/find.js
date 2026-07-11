@@ -50,14 +50,10 @@ export function scrollTextareaOffsetIntoView(textarea, offset) {
     const fontPx = parseFloat(cs.fontSize) || 14
     const linePx = parseFloat(cs.lineHeight) || fontPx * 1.75
     const y = textareaOffsetY(textarea, offset)
-    const margin = Math.max(linePx * 3, 48)
-    const viewTop = textarea.scrollTop
-    const viewBottom = viewTop + textarea.clientHeight
-    if (y < viewTop + margin) {
-      textarea.scrollTop = Math.max(0, y - margin)
-    } else if (y + linePx > viewBottom - margin) {
-      textarea.scrollTop = Math.max(0, y + linePx - textarea.clientHeight + margin)
-    }
+    const maxScroll = Math.max(0, textarea.scrollHeight - textarea.clientHeight)
+    // Keep the active hit unmistakably visible. Minimal edge scrolling put the
+    // hit near the status bar and looked like no navigation on tall windows.
+    textarea.scrollTop = Math.max(0, Math.min(maxScroll, y - (textarea.clientHeight - linePx) / 2))
   } catch {
     // Selection still lands even if mirror measurement fails.
   }
@@ -102,18 +98,31 @@ export function paintSourceFindHighlight(textarea, start, end) {
   textarea.__horsemdSourceFindRange = { start, end }
   if (!textarea.__horsemdSourceFindCleanup) {
     let raf = 0
+    let fallbackTimer = 0
     const schedule = () => {
-      if (raf) return
-      raf = doc.defaultView.requestAnimationFrame(() => {
-        raf = 0
-        renderSourceFindHighlight(textarea)
-      })
+      if (!raf) {
+        raf = doc.defaultView.requestAnimationFrame(() => {
+          raf = 0
+          renderSourceFindHighlight(textarea)
+        })
+      }
+      // Electron can throttle rAF for an occluded/background window. Mirror
+      // the source-caret fallback so a pending frame cannot hide the find hit.
+      if (!fallbackTimer) {
+        fallbackTimer = doc.defaultView.setTimeout(() => {
+          fallbackTimer = 0
+          if (raf) doc.defaultView.cancelAnimationFrame(raf)
+          raf = 0
+          renderSourceFindHighlight(textarea)
+        }, 80)
+      }
     }
     const events = ['scroll', 'input']
     events.forEach((event) => textarea.addEventListener(event, schedule, { passive: true }))
     doc.defaultView.addEventListener('resize', schedule)
     textarea.__horsemdSourceFindCleanup = () => {
       if (raf) doc.defaultView.cancelAnimationFrame(raf)
+      if (fallbackTimer) doc.defaultView.clearTimeout(fallbackTimer)
       events.forEach((event) => textarea.removeEventListener(event, schedule))
       doc.defaultView.removeEventListener('resize', schedule)
       delete textarea.__horsemdSourceFindCleanup
@@ -122,6 +131,14 @@ export function paintSourceFindHighlight(textarea, start, end) {
     }
   }
   renderSourceFindHighlight(textarea)
+}
+
+export function revealSourceFindMatch(textarea, start, end) {
+  if (!textarea || !Number.isInteger(start) || !Number.isInteger(end)) return false
+  textarea.setSelectionRange(start, end)
+  scrollTextareaOffsetIntoView(textarea, start)
+  paintSourceFindHighlight(textarea, start, end)
+  return true
 }
 
 export function clearSourceFindHighlight(textarea) {

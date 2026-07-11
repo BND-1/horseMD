@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Source-mode find navigation** — `Ctrl/Cmd+F` now centers the active textarea
+  match, keeps a high-contrast highlight visible, and repaints reliably when
+  Electron throttles animation frames.
+
 ## [0.5.5] - 2026-07-10
 
 ### Added
