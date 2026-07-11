@@ -51,7 +51,12 @@ src/
       find.js              文档内查找的高亮/匹配纯函数
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
       settings.js          用户偏好（排版/图床/拼写/隐藏文件）持久化 + CSS var 应用
-      scrollAnchor.js      模式切换滚动位置保持（标题锚点，#28）
+      scrollAnchor.js      模式切换稳定 façade（仅 re-export 公共 API）
+      mode-visible-map.js  源码/富文本可见字符 fallback 映射
+      mode-caret-anchor.js 双向光标 capture/restore
+      mode-viewport-anchor.js 阅读视口 capture/restore
+      mode-source-headings.js 源码标题解析与跳转
+      textarea-metrics.js textarea mirror 与字符/像素换算
       customThemes.js      注入用户 CSS 主题（迁移自 Typora 的 .css）
       blocks.js            块类型定义（正文/H1–H6）共享数据
       themes.js            主题注册表（6 套配色）

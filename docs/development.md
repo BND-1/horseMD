@@ -57,12 +57,22 @@ Windows 与 macOS 共用一份配置，在 macOS 上 `npm run dist` 即出 `.dmg
 
 ## 自动化测试：CDP 端到端验证
 
-项目没有传统单测，而是用 **Chrome DevTools Protocol** 连进运行中的 Electron，真实派发鼠标/键盘事件并回读 DOM —— 测的是"用户真实体验"。这套方法定位了好几个隐蔽 bug。
+项目以 **Chrome DevTools Protocol** 端到端验证为主，同时为可纯函数验证的源码映射提供快速 Node 单测。CDP 连进运行中的 Electron，真实派发鼠标/键盘事件并回读 DOM，测的是"用户真实体验"。
+
+```bash
+# 无需启动 Electron：Markdown raw offset ↔ ProseMirror 映射
+npm run test:source-map
+
+# CriticMarkup 输入守卫
+node scripts/test-strike-guard.mjs
+```
 
 ### 工具
 
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/inspect.mjs` —— 简易状态检查器
+- `scripts/test-mode-switch-chains.mjs` —— 双向连续切换、表格和 CodeMirror 光标语义匹配
+- `scripts/test-mode-switch-10x.mjs` —— 5 个编辑态光标 + 5 个阅读态视口，附带大纲/dirty 稳定性检查
 
 ### 用法
 

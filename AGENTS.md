@@ -22,6 +22,7 @@ npm run build
 npm start
 npm run dist
 npm run build:mobile
+npm run test:source-map
 node scripts/test-strike-guard.mjs
 ```
 
@@ -30,6 +31,7 @@ node scripts/test-strike-guard.mjs
 - `npm start`: runs the built app.
 - `npm run dist`: creates the host-platform installer via `electron-builder`.
 - `npm run build:mobile`: builds the Capacitor renderer into `dist-mobile/`.
+- `npm run test:source-map`: runs Markdown raw-offset ↔ ProseMirror mapping tests for tables, duplicate text, code, images, lists, and HTML.
 - `node scripts/test-strike-guard.mjs`: runs CriticMarkup strike regression checks.
 
 ## Coding Style & Naming Conventions
@@ -77,7 +79,8 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Source-mode textareas are intentionally uncontrolled. Keep the `liveContentRef` / `commitLive` flow intact; do not convert them to controlled React inputs.
 - Source/rich switching depends on two independent intents: caret position and reading viewport. Editing toggles follow a visible caret; reading toggles preserve viewport.
 - For the current mode-switch fix, Crepe must stay mounted when source mode is shown. Only sync source back into rich when source text was actually edited.
-- Do not replace source/rich mapping with plain keyword matching. The primary caret path is global visible-character mapping; snippets/context are fallback only.
+- Do not replace source/rich mapping with plain keyword matching. The primary caret path is block-aware Markdown raw-offset mapping; global visible-character positions and snippets/context are fallback only.
+- Keep `scrollAnchor.js` as the stable public facade. Implement visible-stream, caret, viewport, and source-heading changes in the focused `mode-*.js` modules and preserve the facade exports.
 
 ### Performance-Sensitive Areas
 

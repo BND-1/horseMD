@@ -23,8 +23,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   clearFindHighlights,
+  clearSourceFindHighlight,
   findRangesInEl,
+  paintSourceFindHighlight,
   paintFindHighlights,
+  scrollTextareaOffsetIntoView,
   scrollRangeIntoView,
   matchIndices
 } from '../find.js'
@@ -38,13 +41,44 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   const activeIdxRef = useRef(-1)
   const findInputRef = useRef(null)
   const replaceInputRef = useRef(null)
+  const sourceFindTextareaRef = useRef(null)
 
   // Discriminate the active view: the source <textarea> sets sourceRef only when
   // it's mounted (source mode or a .txt doc); otherwise we're in the rich editor.
   const richRoot = () => editorHostRef.current?.querySelector('.ProseMirror') || null
+  const activeSourceTextarea = () => {
+    const isVisibleSource = (el) => {
+      if (!el?.isConnected) return false
+      const rect = el.getBoundingClientRect()
+      const style = el.ownerDocument.defaultView.getComputedStyle(el)
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+    const doc = typeof document !== 'undefined' ? document : editorHostRef.current?.ownerDocument || sourceRef.current?.ownerDocument || null
+    const visible = doc ? [...doc.querySelectorAll('textarea.source-editor')].find(isVisibleSource) : null
+    if (visible) {
+      sourceRef.current = visible
+      return visible
+    }
+    const current = sourceRef.current
+    if (isVisibleSource(current)) return current
+    return null
+  }
   // The active rich editor's ProseMirror view (null in source/plain-text mode).
   // Used to turn a find DOM Range into document positions for replacement.
   const richView = () => editorApis.current[activeId]?.getView?.() || null
+  const runSourceFind = (el, q, preferActive = 0) => {
+    const hits = matchIndices(el.value, q)
+    findRangesRef.current = hits
+    const i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
+    activeIdxRef.current = i
+    if (i >= 0 && q) {
+      el.setSelectionRange(hits[i], hits[i] + q.length)
+      scrollTextareaOffsetIntoView(el, hits[i])
+      paintSourceFindHighlight(el, hits[i], hits[i] + q.length)
+      sourceFindTextareaRef.current = el
+    }
+    setFind((f) => ({ ...f, matches: hits.length, active: i + 1 }))
+  }
 
   // Run a fresh search for `query`, scoped to the editor content. `preferActive`
   // is the 0-based match index to land on (clamped) — used after a replace to
@@ -53,21 +87,25 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     const q = query ?? ''
     findQueryRef.current = q
     clearFindHighlights()
+    const sourceEl = activeSourceTextarea()
+    clearSourceFindHighlight(sourceFindTextareaRef.current || sourceEl)
+    sourceFindTextareaRef.current = null
     findRangesRef.current = []
-    if (sourceRef.current) {
-      const el = sourceRef.current
-      // Source textarea: live-count + SELECT the active match so find is visible.
-      // A textarea can't use the CSS Highlight API, so an (inactive/gray)
-      // selection is the only signal matches are being found — without it, source
-      // find showed just a count and looked broken.
-      const hits = matchIndices(el.value, q)
-      findRangesRef.current = hits
-      const i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
-      activeIdxRef.current = i
-      if (i >= 0 && q) el.setSelectionRange(hits[i], hits[i] + q.length)
-      setFind((f) => ({ ...f, matches: hits.length, active: i + 1 }))
+    if (sourceEl) {
+      // Source textarea: live-count + SELECT/reveal the active match. Textarea
+      // selections are not reliably visible while the FindBar keeps focus, so a
+      // lightweight overlay paints the current match without stealing focus.
+      runSourceFind(sourceEl, q, preferActive)
+      requestAnimationFrame(() => {
+        const latestSourceEl = activeSourceTextarea()
+        if (latestSourceEl && findQueryRef.current === q) runSourceFind(latestSourceEl, q, preferActive)
+      })
       return
     }
+    requestAnimationFrame(() => {
+      const lateSourceEl = activeSourceTextarea()
+      if (lateSourceEl && findQueryRef.current === q) runSourceFind(lateSourceEl, q, preferActive)
+    })
     const root = richRoot()
     const ranges = q ? findRangesInEl(root, q) : []
     findRangesRef.current = ranges
@@ -88,10 +126,13 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     if (i < 0) i = items.length - 1
     if (i >= items.length) i = 0
     activeIdxRef.current = i
-    if (sourceRef.current) {
-      const el = sourceRef.current
-      el.focus()
+    const sourceEl = activeSourceTextarea()
+    if (sourceEl) {
+      const el = sourceEl
       el.setSelectionRange(items[i], items[i] + findQueryRef.current.length)
+      scrollTextareaOffsetIntoView(el, items[i])
+      paintSourceFindHighlight(el, items[i], items[i] + findQueryRef.current.length)
+      sourceFindTextareaRef.current = el
     } else {
       paintFindHighlights(items, i)
       scrollRangeIntoView(items[i], richRoot()?.closest('.editor-scroll'))
@@ -101,6 +142,8 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
 
   const closeFind = useCallback(() => {
     clearFindHighlights()
+    clearSourceFindHighlight(sourceFindTextareaRef.current || activeSourceTextarea())
+    sourceFindTextareaRef.current = null
     findRangesRef.current = []
     activeIdxRef.current = -1
     findQueryRef.current = ''
@@ -119,8 +162,9 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
       if (!q) return
       const i = Math.max(0, activeIdxRef.current)
 
-      if (sourceRef.current) {
-        const el = sourceRef.current
+      const sourceEl = activeSourceTextarea()
+      if (sourceEl) {
+        const el = sourceEl
         const val = el.value
         const offsets = findRangesRef.current // number[] of match starts
         if (!offsets.length) return
@@ -181,8 +225,9 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   // Code / Typora. No selection → keep the previous query.
   const openFind = useCallback((focusReplace = false) => {
     let sel = ''
-    if (sourceRef.current) {
-      const ta = sourceRef.current
+    const sourceEl = activeSourceTextarea()
+    if (sourceEl) {
+      const ta = sourceEl
       if (ta.selectionStart !== ta.selectionEnd) sel = ta.value.slice(ta.selectionStart, ta.selectionEnd)
     } else {
       const view = richView()

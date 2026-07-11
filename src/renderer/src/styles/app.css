@@ -38,7 +38,30 @@ html {
   --radius-lg: 12px;
   --radius-xl: 16px;
 
+  /* Control system */
+  --control-h-sm: 25px;
+  --control-h-md: 34px;
+  --control-px-sm: 11px;
+  --control-px-md: 16px;
+  --control-gap: 8px;
+  --control-radius: var(--radius-md);
+  --control-radius-sm: var(--radius-sm);
+  --control-border-w: 1px;
+  --focus-ring: 0 0 0 3px var(--accent-glow);
+  --popover-bg: var(--bg-elevated);
+  --popover-hover: var(--hover-elevated);
+  --popover-selected: var(--accent-soft);
+  --surface-border: var(--border);
+  --surface-shadow:
+    0 18px 46px rgba(38, 31, 22, 0.22),
+    0 1px 0 rgba(255, 255, 255, 0.55) inset;
+  --editor-block-radius: var(--radius-md);
+  --editor-block-space: 1.35em;
+  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
+
   /* Animation timing */
+  --dur-fast: 0.12s;
+  --dur-normal: 0.18s;
   --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -95,6 +118,14 @@ body.light {
   --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.15);
   --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.2);
+
+  --popover-bg: #fffdf9;
+  --popover-hover: #f0ece5;
+  --popover-selected: #f5e6dc;
+  --surface-border: #b8afa4;
+  --surface-shadow:
+    0 18px 42px rgba(55, 43, 30, 0.22),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
 }
 
 /* =====================================================
@@ -144,6 +175,14 @@ body.dark {
   --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
   --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  --popover-bg: #2a251f;
+  --popover-hover: #37312a;
+  --popover-selected: #3f3329;
+  --surface-border: #5a5148;
+  --surface-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
 /* =====================================================
@@ -156,6 +195,8 @@ body.theme-morandi {
   --border: #c5c8bc; --border-soft: #d9dbd0; --hover: #d7dace; --active: #cbcec1; --hover-elevated: #ecede6;
   --accent: #7d8a6a; --accent-strong: #5f6b4e; --accent-soft: rgba(125, 138, 106, 0.16); --accent-glow: rgba(125, 138, 106, 0.3);
   --code-bg: #eceee6; --code-border: #d9dbd0; --danger: #b3645f; --success: #6f8a66;
+  --popover-bg: #fbfcf7; --popover-hover: #e6e9df; --popover-selected: #e7ecdf; --surface-border: #b2b8a8;
+  --surface-shadow: 0 18px 42px rgba(44, 51, 38, 0.2), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
 }
 body.theme-morandi-rose {
   --bg: #ece5e2; --bg-elevated: #f6f1ef; --bg-sidebar: #e5ddd9; --bg-editor: #f8f4f2; --bg-activity: #dacfca;
@@ -163,6 +204,8 @@ body.theme-morandi-rose {
   --border: #ccc1bc; --border-soft: #ddd4cf; --hover: #ded3ce; --active: #d1c5bf; --hover-elevated: #efe8e5;
   --accent: #a8807b; --accent-strong: #855e59; --accent-soft: rgba(168, 128, 123, 0.18); --accent-glow: rgba(168, 128, 123, 0.32);
   --code-bg: #efe8e5; --code-border: #ddd4cf; --danger: #b85c57; --success: #7d8a6a;
+  --popover-bg: #fffaf8; --popover-hover: #eee3df; --popover-selected: #f1e1dd; --surface-border: #bcaea8;
+  --surface-shadow: 0 18px 42px rgba(62, 42, 36, 0.2), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
 }
 body.theme-morandi-blue {
   --bg: #e4e7ea; --bg-elevated: #f1f3f5; --bg-sidebar: #dce0e4; --bg-editor: #f5f7f8; --bg-activity: #d0d5da;
@@ -170,6 +213,8 @@ body.theme-morandi-blue {
   --border: #c2c8ce; --border-soft: #d6dade; --hover: #d4d9de; --active: #c7cdd3; --hover-elevated: #eaedf0;
   --accent: #7e94a6; --accent-strong: #5d7385; --accent-soft: rgba(126, 148, 166, 0.18); --accent-glow: rgba(126, 148, 166, 0.3);
   --code-bg: #e9edf0; --code-border: #d6dade; --danger: #b3645f; --success: #6f8a87;
+  --popover-bg: #fbfdff; --popover-hover: #e3e9ef; --popover-selected: #e1eaf0; --surface-border: #adb8c3;
+  --surface-shadow: 0 18px 42px rgba(35, 48, 60, 0.2), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
 }
 body.theme-morandi-dark {
   --bg: #21242b; --bg-elevated: #282c34; --bg-sidebar: #23262d; --bg-editor: #262a31; --bg-activity: #1b1e24;
@@ -178,6 +223,13 @@ body.theme-morandi-dark {
   --accent: #92a3b8; --accent-strong: #aebfd2; --accent-soft: rgba(146, 163, 184, 0.18); --accent-glow: rgba(146, 163, 184, 0.32);
   --code-bg: #2b2f37; --code-border: #3a3f49; --danger: #cf7a76; --success: #8aa888;
   --code-block-bg: #16191f; --code-block-border: rgba(255,255,255,0.06);
+  --popover-bg: #343a44;
+  --popover-hover: #424a56;
+  --popover-selected: #465262;
+  --surface-border: #59616d;
+  --surface-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
 }
 
 /* Theme/language switcher bits */
@@ -284,9 +336,9 @@ button:focus-visible,
 .tab:focus-visible,
 .outline-item:focus-visible,
 .palette-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  border-radius: 3px;
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--control-radius-sm);
 }
 
 ::selection {
@@ -314,19 +366,19 @@ button:focus-visible,
 }
 
 /* ===== :active pressed states ===== */
-.tab:active { background: var(--active); transform: scale(0.97); }
+.tab:active { background: var(--active); }
 /* Drag-reorder indicator: accent left border on the tab being hovered (#31). */
 .tab.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
 .activity-item:active { background: var(--active); transform: scale(0.93); }
 .icon-btn:active { background: var(--active); transform: scale(0.92); }
-.tree-row:active { background: var(--active); opacity: 0.85; }
+.tree-row:active { background: var(--active); opacity: 0.9; }
 .outline-item:active { background: var(--active); opacity: 0.85; }
 .palette-item:active { background: var(--active); transform: scale(0.98); }
 .status-btn:active { background: var(--active); }
 .recent-item:active { background: var(--active); opacity: 0.85; }
 .sidebar-head-actions button:active { background: var(--active); transform: scale(0.9); }
 .context-menu button:active { background: var(--active); opacity: 0.85; }
-.findbar button:active { background: var(--active); opacity: 0.8; }
+.findbar button:active { background: var(--active); opacity: 0.9; }
 
 /* =====================================================
    Layout — VSCode Style
@@ -660,10 +712,10 @@ button:focus-visible,
   z-index: 200;
   min-width: 196px;
   padding: 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--surface-shadow);
   animation: menuFadeIn 0.12s var(--ease-out);
   -webkit-app-region: no-drag;
 }
@@ -678,7 +730,10 @@ button:focus-visible,
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .tab-menu-item:hover:not(:disabled) {
   background: var(--hover);
@@ -768,10 +823,10 @@ button:focus-visible,
    ============================================================ */
 .hm-pop {
   padding: 16px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-soft);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--surface-shadow);
 }
 /* #45: live KaTeX preview while typing inline math ($x^2 before the closing $).
    Floating, pointer-events-none so it never steals focus/clicks. Same DNA as
@@ -1257,7 +1312,10 @@ body.resizing-pane .pane-left-resizer::before {
   font-weight: 500;
   white-space: nowrap;
   position: relative;
-  transition: all 0.2s var(--ease-out);
+  transition:
+    background var(--dur-normal) var(--ease-out),
+    color var(--dur-normal) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
   cursor: pointer;
   user-select: none;
 }
@@ -1361,15 +1419,26 @@ body.resizing-pane .pane-left-resizer::before {
 .sidebar-head-actions button {
   display: grid;
   place-items: center;
-  width: 25px;
-  height: 25px;
-  border-radius: var(--radius-sm);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border-radius: var(--control-radius-sm);
   color: var(--muted);
-  transition: all 0.15s var(--ease-out);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .sidebar-head-actions button:hover {
   background: var(--hover);
   color: var(--text);
+}
+.sidebar-head-actions button:active {
+  transform: scale(0.96);
+}
+.sidebar-head-actions button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .sidebar-head-actions button.workspace-add-root {
   color: var(--text);
@@ -1412,7 +1481,11 @@ body.resizing-pane .pane-left-resizer::before {
   font-size: 13.5px;
   white-space: nowrap;
   overflow: hidden;
-  transition: all 0.12s var(--ease-out);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .tree-row:hover {
   background: var(--hover);
@@ -1518,9 +1591,10 @@ body.resizing-pane .pane-left-resizer::before {
 }
 .sidebar-empty .sidebar-empty-action {
   margin-top: 1px;
-  padding: 7px 11px;
+  min-height: var(--control-h-md);
+  padding: 0 var(--control-px-sm);
   font-size: 12.5px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--control-radius-sm);
   background: var(--hover);
   color: var(--text);
   box-shadow: none;
@@ -1530,15 +1604,19 @@ body.resizing-pane .pane-left-resizer::before {
   background: var(--active);
   box-shadow: none;
 }
+.sidebar-empty .sidebar-empty-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 /* Context Menu */
 .context-menu {
   position: fixed;
   z-index: 100;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--surface-shadow);
   padding: 5px;
   min-width: 180px;
   animation: menuFadeIn 0.12s var(--ease-out);
@@ -1559,7 +1637,7 @@ body.resizing-pane .pane-left-resizer::before {
   transition: all 0.1s var(--ease-out);
 }
 .context-menu button:hover {
-  background: var(--hover);
+  background: var(--popover-hover);
   transform: translateX(2px);
 }
 .context-menu button.danger { color: var(--danger); }
@@ -2116,12 +2194,13 @@ body.hm-full-width .editor-skeleton {
    down, so Crepe's `padding: 0 12px 12px` left the first row jammed against the
    top rounded corner ("上面缺一块"). */
 .milkdown .milkdown-slash-menu {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-soft);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--surface-shadow);
   color: var(--text);
   font-family: var(--font-ui);
+  animation: menuFadeIn 0.12s var(--ease-out);
 }
 .milkdown .milkdown-slash-menu .menu-groups {
   padding: 8px 6px 10px;
@@ -2132,7 +2211,7 @@ body.hm-full-width .editor-skeleton {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: color-mix(in srgb, var(--muted) 72%, var(--text) 28%);
   padding: 10px 12px 4px;
   line-height: 16px;
 }
@@ -2153,6 +2232,10 @@ body.hm-full-width .editor-skeleton {
   cursor: pointer;
   color: var(--text);
   list-style: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .milkdown .milkdown-slash-menu .menu-groups .menu-group li.hm-slash-item > svg {
   width: 20px;
@@ -2170,7 +2253,8 @@ body.hm-full-width .editor-skeleton {
 }
 .milkdown .milkdown-slash-menu .menu-groups .menu-group li.hm-slash-item.hover,
 .milkdown .milkdown-slash-menu .menu-groups .menu-group li.hm-slash-item:hover {
-  background: var(--hover);
+  background: var(--popover-hover);
+  color: var(--text-strong);
 }
 .milkdown .milkdown-slash-menu .menu-groups .menu-group li.hm-slash-item.hover > svg {
   color: var(--accent);
@@ -2373,10 +2457,10 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   z-index: 200;
   min-width: 184px;
   padding: 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--surface-shadow);
   animation: menuFadeIn 0.12s var(--ease-out);
 }
 .block-menu-label {
@@ -2385,7 +2469,7 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: color-mix(in srgb, var(--muted) 72%, var(--text) 28%);
 }
 .block-menu-item {
   display: flex;
@@ -2400,15 +2484,19 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .block-menu-item:hover {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: var(--popover-hover);
+  color: var(--text-strong);
 }
 .block-menu-item.active {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
+  background: var(--popover-selected);
 }
 .block-menu-short {
   flex: 0 0 22px;
@@ -2447,11 +2535,11 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   z-index: 200;
   min-width: 184px;
   padding: 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  animation: fadeIn 0.1s var(--ease-out);
+  box-shadow: var(--surface-shadow);
+  animation: menuFadeIn 0.12s var(--ease-out);
 }
 
 /* Prefer the React-controlled, language-aware placeholder over Crepe's static
@@ -2487,11 +2575,10 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
 .source-editor.hm-source-caret-on {
   caret-color: transparent;
 }
-/* Custom thick caret bar (2px vs the native ~1px). Positioned fixed at the
-   caret's pixel coords by the mirror-div measurement. */
+/* Custom source caret: 3px wide and 4px taller than the line box. */
 .hm-source-caret {
   position: fixed;
-  width: 2px;
+  width: 3px;
   background: var(--accent);
   pointer-events: none;
   z-index: 50;
@@ -2517,11 +2604,11 @@ body.hm-full-width .source-editor {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-md);
   padding: 6px 10px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--surface-shadow);
   animation: slideDown 0.2s var(--ease-spring);
 }
 .findbar-row {
@@ -2534,13 +2621,23 @@ body.hm-full-width .source-editor {
   to { opacity: 1; transform: translateY(0); }
 }
 .findbar input {
-  background: transparent;
-  border: none;
+  background: color-mix(in srgb, var(--bg-editor) 70%, transparent);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius-sm);
   outline: none;
   color: var(--text);
   font-size: 13px;
   width: 180px;
-  padding: 2px 6px;
+  padding: 4px 8px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.findbar input:focus {
+  background: var(--bg-editor);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 /* Find matches, painted via the CSS Custom Highlight API (no DOM mutation). */
 ::highlight(hm-find) {
@@ -2550,6 +2647,14 @@ body.hm-full-width .source-editor {
 ::highlight(hm-find-current) {
   background-color: var(--accent);
   color: #fff;
+}
+.hm-source-find-current {
+  position: fixed;
+  z-index: 45;
+  pointer-events: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent);
 }
 .findbar-count {
   font-size: 12px;
@@ -2570,6 +2675,10 @@ body.hm-full-width .source-editor {
   min-height: 28px;
   display: grid;
   place-items: center;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 .findbar button:hover {
   background: var(--hover);
@@ -2641,10 +2750,19 @@ body.hm-full-width .source-editor {
   border-radius: var(--radius-sm);
   font-weight: 500;
   flex-shrink: 0;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 .status-btn:hover {
   background: var(--hover);
   color: var(--text);
+}
+.status-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 /* Floating Save action button — bottom-right of the editor area, only while the
    active tab is dirty. An icon disc by default; on hover it gracefully expands
@@ -2735,8 +2853,8 @@ body.hm-full-width .source-editor {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -2749,10 +2867,10 @@ body.hm-full-width .source-editor {
 }
 .palette {
   width: min(560px, 90vw);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--surface-shadow);
   overflow: hidden;
   animation: paletteSlide 0.25s var(--ease-spring);
 }
@@ -2767,6 +2885,7 @@ body.hm-full-width .source-editor {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
   color: var(--muted);
+  background: color-mix(in srgb, var(--popover-bg) 88%, var(--bg-editor));
 }
 .palette-input input {
   flex: 1;
@@ -2776,6 +2895,9 @@ body.hm-full-width .source-editor {
   color: var(--text);
   font-size: 15px;
   font-weight: 500;
+}
+.palette-input:focus-within {
+  box-shadow: inset 0 -1px 0 var(--accent);
 }
 .palette-list {
   max-height: 45vh;
@@ -2796,14 +2918,17 @@ body.hm-full-width .source-editor {
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text);
-  transition: all 0.1s var(--ease-out);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
   font-weight: 500;
 }
 .palette-item:hover {
-  background: var(--hover);
+  background: var(--popover-hover);
 }
 .palette-item.sel {
-  background: var(--accent-soft);
+  background: var(--popover-selected);
   color: var(--accent-strong);
 }
 .palette-item.sel svg { color: var(--accent); }
@@ -3454,14 +3579,22 @@ body.hm-full-width .source-editor {
 .btn-primary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: var(--radius-md);
+  justify-content: center;
+  gap: var(--control-gap);
+  min-height: var(--control-h-md);
+  padding: 0 var(--control-px-md);
+  border-radius: var(--control-radius);
   font-size: 14px;
   font-weight: 600;
   background: var(--hover);
   color: var(--text);
-  transition: all 0.2s var(--ease-out);
+  border: var(--control-border-w) solid transparent;
+  transition:
+    background var(--dur-normal) var(--ease-out),
+    color var(--dur-normal) var(--ease-out),
+    border-color var(--dur-normal) var(--ease-out),
+    box-shadow var(--dur-normal) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
   box-shadow: var(--shadow-sm);
 }
 .welcome-actions button:hover {
@@ -3469,9 +3602,15 @@ body.hm-full-width .source-editor {
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
+.welcome-actions button:focus-visible,
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-sm);
+}
 .btn-primary,
 .welcome-actions .btn-primary {
   background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent-strong) 26%, transparent);
   color: #fff;
   box-shadow: 0 4px 12px var(--accent-glow);
 }
@@ -3479,7 +3618,8 @@ body.hm-full-width .source-editor {
   background: var(--accent-strong);
   box-shadow: 0 6px 16px var(--accent-glow);
 }
-.welcome-actions button:active {
+.welcome-actions button:active,
+.btn-primary:active {
   transform: translateY(0);
 }
 /* Recent files (welcome screen) */
@@ -3690,19 +3830,18 @@ body.dark .milkdown {
 .milkdown .ProseMirror h6 {
   font-weight: 700;
   line-height: 1.3;
-  margin-top: 1.8em;
-  margin-bottom: 0.6em;
+  margin-top: 1.75em;
+  margin-bottom: 0.55em;
   color: var(--text-strong);
+  letter-spacing: 0;
 }
 .milkdown .ProseMirror h1 {
   font-size: 2.25em;
-  letter-spacing: -0.03em;
   border-bottom: 1px solid var(--border-soft);
   padding-bottom: 0.3em;
 }
 .milkdown .ProseMirror h2 {
   font-size: 1.75em;
-  letter-spacing: -0.02em;
 }
 .milkdown .ProseMirror h3 {
   font-size: 1.4em;
@@ -3719,7 +3858,7 @@ body.dark .milkdown {
   font-weight: 600;
   color: var(--text);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 /* First block sits flush with the top — no leading whitespace */
 .milkdown .ProseMirror > *:first-child {
@@ -3751,22 +3890,25 @@ body.dark .milkdown {
 .milkdown .ProseMirror a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px solid var(--accent-soft);
-  transition: border-color 0.15s var(--ease-out);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 .milkdown .ProseMirror a:hover {
+  color: var(--accent-strong);
   border-color: var(--accent);
 }
 
 /* Blockquotes — Typora style */
 .milkdown .ProseMirror blockquote {
-  margin: 1.5em 0;
-  padding: 0.5em 1.5em;
-  border-left: 4px solid var(--accent);
-  background: var(--accent-soft);
+  margin: var(--editor-block-space) 0;
+  padding: 0.65em 1.1em;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 72%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 56%, transparent);
   color: var(--text);
   font-style: normal;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: 0 var(--editor-block-radius) var(--editor-block-radius) 0;
 }
 .milkdown .ProseMirror blockquote p {
   margin: 0.4em 0;
@@ -3774,11 +3916,11 @@ body.dark .milkdown {
 
 /* Code blocks — Typora style */
 .milkdown .ProseMirror pre {
-  background: var(--code-bg);
+  background: var(--editor-subtle-surface);
   border: 1px solid var(--code-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--editor-block-radius);
   padding: 16px 18px;
-  margin: 1.5em 0;
+  margin: var(--editor-block-space) 0;
   overflow-x: auto;
   line-height: 1.6;
 }
@@ -3848,8 +3990,8 @@ body.dark .milkdown {
 .milkdown .cm-editor {
   background: var(--code-block-bg) !important;
   border: 1px solid var(--code-block-border);
-  border-radius: var(--radius-md);
-  margin: 1.5em 0;
+  border-radius: var(--editor-block-radius);
+  margin: var(--editor-block-space) 0;
   font-size: 0.92em;
 }
 .milkdown .cm-editor .cm-scroller {
@@ -3868,8 +4010,8 @@ body.dark .milkdown {
 .milkdown .ProseMirror code:not(pre code) {
   background: var(--code-bg);
   border: 1px solid var(--code-border);
-  border-radius: 4px;
-  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
   font-size: 0.88em;
   color: var(--accent-strong);
   font-family: var(--font-mono);
@@ -3942,13 +4084,13 @@ body.dark .milkdown {
 .milkdown .ProseMirror table {
   border-collapse: collapse;
   width: 100%;
-  margin: 1.1em 0;
+  margin: var(--editor-block-space) 0;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+  border-radius: var(--editor-block-radius);
+  border: 1px solid var(--border-soft);
   font-size: 0.95em;
   /* Theme-aware backdrop so the table reads as a unified surface. */
-  background: var(--code-bg);
+  background: var(--editor-subtle-surface);
 }
 .milkdown .ProseMirror th,
 .milkdown .ProseMirror td {
@@ -3977,8 +4119,8 @@ body.dark .milkdown {
      every theme: mixing --text in darkens the header in light themes and
      lightens it in dark themes (the old --hover-elevated was within ~2 units
      of --code-bg in light → invisible). A 2px bottom border delimits the row. */
-  background: color-mix(in srgb, var(--code-bg), var(--text) 12%);
-  border-bottom: 2px solid var(--border);
+  background: color-mix(in srgb, var(--editor-subtle-surface), var(--text) 9%);
+  border-bottom: 1px solid var(--border);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -4023,19 +4165,19 @@ body.dark .milkdown {
 /* Horizontal rule — elegant divider */
 .milkdown .ProseMirror hr {
   border: none;
-  height: 2px;
+  height: 1px;
   background: linear-gradient(90deg, transparent, var(--border-soft), transparent);
-  margin: 2.5em 0;
+  margin: 2.35em 0;
 }
 
 /* Images — elegant presentation */
 .milkdown .ProseMirror img {
   max-width: 100%;
   height: auto;
-  border-radius: var(--radius-md);
-  margin: 1.5em auto;
+  border-radius: var(--editor-block-radius);
+  margin: var(--editor-block-space) auto;
   display: block;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* Emphasis */

@@ -35,7 +35,7 @@ import { useColDrag } from './hooks/useColDrag.js'
 import {
   captureRichCaret, captureSourceCaret, restoreRichCaret, restoreSourceCaret,
   captureRichViewport, captureSourceViewport, restoreRichViewport, restoreSourceViewport,
-  isRichCaretVisible, isSourceCaretVisible
+  isRichCaretVisible
 } from './scrollAnchor.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
@@ -134,6 +134,11 @@ export default function App() {
   const caretFollowRef = useRef(false) // was the caret visible at toggle time? visible = editing (follow caret), off-screen = reading (keep viewport)
   const preserveRichCaretFollowRef = useRef(false) // source was not edited/moved, so keep the still-mounted rich selection exactly
   const sourceEnteredWithCaretFollowRef = useRef(false) // rich→source editing/reading intent; reused when source was not touched
+  // A source-origin caret has an exact raw offset. Preserve that coordinate
+  // while the restored rich selection and document remain untouched, so an
+  // immediate rich→source return is exactly reversible instead of asking the
+  // lossy PM→Markdown block mapper to infer the same offset again.
+  const sourceCaretRoundTripRef = useRef(null)
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
@@ -402,7 +407,7 @@ export default function App() {
       const sourceViewportMoved = !!sourceEl && sourceEl.__horsemdSourceViewportMoved === true
       const preserveRichCaret = !sourceTextChanged && !sourceSelectionChanged && !sourceSelectionUser && !sourceViewportMoved
       const hasSourceCaretIntent = sourceTextChanged || sourceSelectionChanged || sourceSelectionUser
-      const followSourceCaret = hasSourceCaretIntent && (sourceSelectionUser && !sourceViewportMoved ? true : isSourceCaretVisible(sourceEl))
+      const followSourceCaret = hasSourceCaretIntent && sourceSelectionUser && !sourceViewportMoved
       caretFollowRef.current = preserveRichCaret ? sourceEnteredWithCaretFollowRef.current : followSourceCaret
       preserveRichCaretFollowRef.current = preserveRichCaret
       if (preserveRichCaret) {
@@ -426,11 +431,23 @@ export default function App() {
       caretFollowRef.current = isRichCaretVisible(view, editorHostRef.current)
       sourceEnteredWithCaretFollowRef.current = caretFollowRef.current
       const richCaret = captureRichCaret(view)
-      const rawOffset = editorApis.current[id]?.markdownOffsetFromSelection?.()
-      if (richCaret && Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
+      const carried = sourceCaretRoundTripRef.current
+      const canReuseSourceOffset = !!carried && carried.id === id &&
+        carried.doc === view?.state.doc && carried.pmPos === view?.state.selection.head
+      const rawOffset = canReuseSourceOffset
+        ? carried.rawOffset
+        : editorApis.current[id]?.markdownOffsetFromSelection?.()
+      if (richCaret && Number.isFinite(rawOffset)) {
+        richCaret.rawOffset = rawOffset
+      }
       caretAnchorRef.current = richCaret
       richCaretAnchorRef.current = richCaret
       const rv = captureRichViewport(editorHostRef.current, view)
+      const viewportRawOffset = editorApis.current[id]?.markdownOffsetFromViewportTop?.()
+      if (rv && Number.isFinite(viewportRawOffset)) {
+        rv.origin = 'rich'
+        rv.rawOffset = viewportRawOffset
+      }
       viewportAnchorRef.current = rv
       richViewportAnchorRef.current = rv
     }
@@ -479,11 +496,25 @@ export default function App() {
       } else {
         if (caret) {
           const api = editorApis.current[activeIdRef.current]
-          const restored = restoreRichCaret(view, caret, follow)
-          if (!restored && Number.isFinite(caret.rawOffset)) api?.restoreMarkdownOffset?.(caret.rawOffset, follow)
+          const rawRestored = caret.origin === 'source' && Number.isFinite(caret.rawOffset)
+            ? api?.restoreMarkdownOffset?.(caret.rawOffset, follow)
+            : false
+          const restored = rawRestored || restoreRichCaret(view, caret, follow)
+          if (restored && caret.origin === 'source' && Number.isFinite(caret.rawOffset)) {
+            sourceCaretRoundTripRef.current = {
+              id: activeIdRef.current,
+              rawOffset: caret.rawOffset,
+              pmPos: view.state.selection.head,
+              doc: view.state.doc
+            }
+          } else if (caret.origin === 'source') {
+            sourceCaretRoundTripRef.current = null
+          }
         }
         else if (preserveRichCaretFollow && follow) view?.focus()
-        if (!follow && viewport) restoreRichViewport(editorHostRef.current, view, viewport)
+        if (!follow && viewport) {
+          restoreRichViewport(editorHostRef.current, view, viewport)
+        }
       }
     }
     // Apply immediately, then again as async layout settles — the rich editor
@@ -534,9 +565,9 @@ export default function App() {
     }
   }, [sourceMode])
 
-  // Source mode uses the browser-native textarea caret. A previous custom thick
-  // caret used mirror-div pixel math, but on large wrapped documents it could
-  // lag behind programmatic scroll restoration and draw over unrelated text.
+  // Source mode attaches a thick caret in EditorArea. Its persistent mirror uses
+  // the textarea client width and DOM Range coordinates so long wrapped documents
+  // do not accumulate the positioning error of the previous marker-based version.
 
   // File operations (open/new/update/close/save/rename/dup/delete/export) +
   // workspace + watcher live in hooks/useFileOps.js (phase-2 US-5). Split ops

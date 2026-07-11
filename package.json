@@ -22,6 +22,7 @@
     "dist": "electron-vite build && electron-builder",
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
+    "test:source-map": "node scripts/test-editor-source-map.mjs",
     "cap:sync": "npm run build:mobile && cap sync",
     "cap:ios": "npm run build:mobile && cap sync ios && cap open ios",
     "cap:android": "npm run build:mobile && cap sync android && cap open android",
@@ -37,9 +38,12 @@
     "@capawesome/capacitor-file-picker": "^8.0.2",
     "@milkdown/crepe": "^7.6.5",
     "chokidar": "^4.0.3",
+    "mdast-util-to-string": "^4.0.0",
     "mermaid": "^11.15.0",
     "pinyin-pro": "^3.28.1",
-    "remark-frontmatter": "^5.0.0"
+    "remark-frontmatter": "^5.0.0",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@capacitor/android": "^8.4.0",
@@ -51,6 +55,7 @@
     "electron-vite": "^3.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "remark-gfm": "^4.0.1",
     "vite": "^6.0.7"
   },
   "build": {

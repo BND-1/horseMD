@@ -212,23 +212,24 @@ docs/                  architecture / features / implementation-notes / developm
     in-block char offset — robust against repeated words and against image/link
     atoms that make global visible-char indices diverge between modes.
   - **Follow vs keep by caret visibility** (`App.jsx` `toggleSource` + effect,
-    `scrollAnchor.js` `isRichCaretVisible` / `isSourceCaretVisible`): caret
+    `scrollAnchor.js` facade → `mode-caret-anchor.js`): rich caret
     visible (editing) → restore caret + follow it (scrollIntoView/focus); caret
     off-screen (reading) → keep the viewport. The textarea carries
     `__horsemdSource*` flags (selectionUser / viewportMoved / selectionAt) so a
     programmatic scroll isn't mistaken for a user scroll. `#50` keeps source
     scrollTop stable across Enter.
-  - `scrollAnchor.js` caret/viewport capture-restore + visible-text helpers remain
-    as the fallback path. Full post-mortem + design: `docs/handoff-mode-switch.md`
+  - `scrollAnchor.js` is a stable facade. Implementations live in
+    `mode-visible-map.js`, `mode-caret-anchor.js`, `mode-viewport-anchor.js`, and
+    `mode-source-headings.js`; visible text remains a fallback path. Full
+    post-mortem + design: `docs/handoff-mode-switch.md`
     (2026-07-09 entry) and `docs/editor-feature-inventory.md` §8. **CDP gotcha:** N
     tabs = N mounted editors — filter `.ProseMirror` by `offsetParent`; place
     carets with real `Input.dispatchMouseEvent` (a raw DOM selection doesn't sync
     PM state).
 - **Outline in source mode** (`useOutline.js` + `scrollAnchor.parseSourceHeadings`,
-  #40): the outline used to blank in source mode. Now the list is regex-parsed from
-  the textarea (`parseSourceHeadings`, also used by `headingAtSourceTop` + the #41
-  caret helpers — single shared regex, constructed fresh per call to avoid a
-  stateful `g`-flag `lastIndex`), the scrollspy maps `scrollTop→char→nearest heading`,
+  #40): the outline used to blank in source mode. Now `mode-source-headings.js`
+  parses CommonMark/GFM headings from the textarea (also used by caret fallback),
+  the scrollspy maps `scrollTop→char→nearest heading`,
   and `jumpToHeading` scrolls the textarea via `scrollSourceToHeading`. A textarea
   `input` listener (debounced) live-refreshes the list. Rich-mode paths are unchanged
   (all source branches are `if (sourceMode)`-gated; the `richLoading` guard became

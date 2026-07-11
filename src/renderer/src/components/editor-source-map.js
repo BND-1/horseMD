@@ -140,12 +140,27 @@ const pmKind = (node) => {
   return 'paragraph'
 }
 
+const isInsideTableCell = (doc, pos) => {
+  try {
+    const $pos = doc.resolve(Math.max(0, Math.min(pos + 1, doc.content.size)))
+    for (let depth = $pos.depth; depth >= 0; depth--) {
+      if (/table.*cell|cell/i.test($pos.node(depth).type?.name || '')) return true
+    }
+  } catch {
+    // Fall back to the node's own type when resolving a transient position.
+  }
+  return false
+}
+
 const collectPmBlocks = (doc) => {
   const blocks = []
   doc.descendants((node, pos) => {
     if (node.isTextblock) {
       blocks.push({
-        kind: pmKind(node),
+        // ProseMirror places a paragraph inside each table_cell. The Markdown
+        // side exposes the cell itself as the block, so inherit the ancestor
+        // type or block occurrence matching will drift into ordinary paragraphs.
+        kind: isInsideTableCell(doc, pos) ? 'tableCell' : pmKind(node),
         pos,
         contentPos: pos + 1,
         text: node.textContent || '',
