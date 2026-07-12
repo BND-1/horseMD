@@ -28,6 +28,7 @@ export default defineConfig({
       { text: '教程首页', link: '/' },
       { text: '快速开始', link: '/getting-started/' },
       { text: '功能指南', link: '/basics/interface' },
+      { text: '加入社区', link: '/community' },
       { text: '官网', link: 'https://horsemd.yangsir.net/' }
     ],
     sidebar: [
