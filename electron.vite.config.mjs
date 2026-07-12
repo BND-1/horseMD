@@ -11,7 +11,11 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.js') }
+        input: { index: resolve(__dirname, 'src/main/index.js') },
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs'
+        }
       }
     }
   },
@@ -26,6 +30,11 @@ export default defineConfig({
     root: resolve(__dirname, 'src/renderer'),
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version)
+    },
+    resolve: {
+      alias: {
+        'cytoscape/dist/cytoscape.umd.js': 'cytoscape/dist/cytoscape.esm.mjs'
+      }
     },
     build: {
       rollupOptions: {
