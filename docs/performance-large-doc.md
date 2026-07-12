@@ -105,7 +105,7 @@ if (isLargeDoc) {
 
 **根因 5：读取非流式**（次要，0.5 MB 影响小）
 
-`fs:readFile`（`main/index.js:319`）整体读，没有 `stat` 预检大小、没有 `createReadStream`。0.5 MB 读+IPC 传输是几十 ms 级，不是卡顿主因，但**大文件场景下应预检并给用户预期**。
+`fs:readFile`（`src/main/filesystem.js`）整体读，没有 `stat` 预检大小、没有 `createReadStream`。0.5 MB 读+IPC 传输是几十 ms 级，不是卡顿主因，但**大文件场景下应预检并给用户预期**。
 
 ---
 
@@ -245,7 +245,7 @@ if (isLargeDoc) {
 | 文件 | 内容 | 状态 |
 |---|---|---|
 | `src/renderer/src/paths.js` `isHeavyDoc()` | P0-1：`HEAVY_MAX_LINES = 50000` 行数阈值 | ✅ 已改 |
-| `src/main/index.js` `fs:readFile` handler | P0-2：加 stat 预检 | ⬜ 待做 |
+| `src/main/filesystem.js` `fs:readFile` handler | P0-2：加 stat 预检 | ⬜ 待做 |
 | `src/renderer/src/App.jsx` outline scrollspy | P0-3a：reflow-free 重写（偏移量测一次 / 滚动只比 scrollTop / 每帧更新） | ✅ 已改（二次） |
 | `src/renderer/src/App.jsx` outline heading-list | P0-3c：setTimeout 500ms debounce | ✅ 已改 |
 | `src/renderer/src/components/Editor.jsx` 滚动 handler | P0-3b：滚动停止 150ms 后算一次（trailing）；`scheduleLevel` typing/selection 仍 200ms leading | ✅ 已改（二次） |

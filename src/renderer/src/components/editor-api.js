@@ -6,6 +6,7 @@ import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { toggleHighlightCommand } from './editor-highlight.js'
+import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 
 const stripEditorOnlyForExport = (clone) => {
   clone
@@ -114,20 +115,41 @@ export function createEditorApi({
       if (!Number.isFinite(pos)) return false
       const size = v.state.doc.content.size
       const safePos = Math.max(1, Math.min(pos, size))
+      const $pos = v.state.doc.resolve(safePos)
+      const inCodeBlock = /code/i.test($pos.parent.type.name)
       let selection
       if (target?.atom) {
         try {
           selection = NodeSelection.create(v.state.doc, Math.max(0, Math.min(pos, size - 1)))
         } catch {
-          selection = TextSelection.near(v.state.doc.resolve(safePos), 1)
+          selection = TextSelection.near($pos, 1)
         }
       } else {
-        selection = TextSelection.near(v.state.doc.resolve(safePos))
+        selection = TextSelection.near($pos)
       }
       const tr = v.state.tr.setSelection(selection)
       if (follow) tr.scrollIntoView()
+      // A CodeMirror node view only forwards ProseMirror's selection while the
+      // outer editor owns focus. Focusing after dispatch would steal focus back
+      // and leave the inner caret outside the visible scroller.
+      if (follow && inCodeBlock) v.focus()
       v.dispatch(tr)
-      if (follow) v.focus()
+      if (follow && inCodeBlock) {
+        try {
+          const scroller = v.dom.closest('.editor-scroll')
+          const sr = scroller?.getBoundingClientRect()
+          const domSelection = v.dom.ownerDocument.getSelection()
+          const domRange = domSelection?.rangeCount ? domSelection.getRangeAt(0) : null
+          const coords = domRange?.getBoundingClientRect()
+          if (scroller && sr && coords && (coords.top < sr.top + 12 || coords.bottom > sr.bottom - 12)) {
+            scroller.scrollTop += (coords.top + coords.bottom) / 2 - (sr.top + sr.bottom) / 2
+          }
+        } catch {
+          // The repeated layout restore in App retries after CodeMirror paints.
+        }
+      } else if (follow) {
+        v.focus()
+      }
       return true
     } catch {
       return false
@@ -141,10 +163,28 @@ export function createEditorApi({
       let head = v.state.selection.head
       const sel = v.dom.ownerDocument.getSelection()
       if (sel && sel.rangeCount && sel.isCollapsed && v.dom.contains(sel.anchorNode)) {
-        head = v.posAtDOM(sel.anchorNode, sel.anchorOffset)
+        head = codeMirrorSelectionInfo(v, sel)?.pmPos ?? v.posAtDOM(sel.anchorNode, sel.anchorOffset)
       }
       const remark = crepe.editor.ctx.get(remarkCtx)
       return pmPosToMarkdownOffset(lastMarkdownRef.current || '', head, v.state.doc, remark)
+    } catch {
+      return null
+    }
+  }
+
+  const markdownOffsetFromViewportTop = () => {
+    const v = viewRef.current
+    if (!v || !crepeRef.current) return null
+    try {
+      const scroller = v.dom.closest('.editor-scroll')
+      if (!scroller) return null
+      const rect = scroller.getBoundingClientRect()
+      const doc = v.dom.ownerDocument
+      const point = doc.caretPositionFromPoint?.(rect.left + rect.width / 2, rect.top + 8)
+      if (!point || !v.dom.contains(point.offsetNode)) return null
+      const pos = v.posAtDOM(point.offsetNode, point.offset)
+      const remark = crepe.editor.ctx.get(remarkCtx)
+      return pmPosToMarkdownOffset(lastMarkdownRef.current || '', pos, v.state.doc, remark)
     } catch {
       return null
     }
@@ -158,6 +198,7 @@ export function createEditorApi({
     applyReviewMarkup,
     replaceMarkdown,
     restoreMarkdownOffset,
-    markdownOffsetFromSelection
+    markdownOffsetFromSelection,
+    markdownOffsetFromViewportTop
   }
 }

@@ -9,7 +9,6 @@
 //     onAppCloseRequest + the Ctrl+Tab, Ctrl+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
-import { baseName } from '../paths.js'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
 
 export function createMenuHandlers({
@@ -106,7 +105,7 @@ export function useGlobalKeys({
   openPaths,
   openFolder,
   isAbsolutePath,
-  setWorkspace,
+  addFolderByPath,
   setSidebarMode,
   setSidebarOpen,
   commitAllLive,
@@ -121,10 +120,11 @@ export function useGlobalKeys({
   useEffect(() => {
     const offMenu = window.api.onMenu((cmd) => handlers.current[cmd]?.())
     const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
-    // A folder path arriving from Explorer's "Open with HorseMD" folder menu.
+    // A folder arriving from Explorer's "Open with HorseMD" folder menu: add it
+    // to the active workspace (multi-root). Never open a relative path.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
-      if (!dir || !isAbsolutePath(dir)) return // never open a relative path as a workspace
-      setWorkspace({ rootPath: dir, rootName: baseName(dir) })
+      if (!dir || !isAbsolutePath(dir)) return
+      addFolderByPath(dir)
       setSidebarMode('files')
       setSidebarOpen(true)
     })
@@ -150,7 +150,7 @@ export function useGlobalKeys({
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openPaths, openFolder, isAbsolutePath, setWorkspace, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers])
+  }, [openPaths, openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers])
 
   // Ctrl+Tab cycling
   useEffect(() => {

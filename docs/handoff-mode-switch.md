@@ -38,8 +38,8 @@ const usesTextarea = isPlainTextDoc(tab) || heavyAsSource || (sourceMode && isLe
 
 - `src/renderer/src/components/shell/EditorArea.jsx`(L85 卸载/挂载逻辑,重构主战场)
 - `src/renderer/src/components/Editor.jsx`(Crepe 创建/销毁/内容,~1513 行)
-- `src/renderer/src/App.jsx`(`toggleSource` + `[sourceMode]` effect,目前的光标/视口锚点恢复逻辑)
-- `src/renderer/src/scrollAnchor.js`(光标/视口锚点的 capture/restore,纯函数,可复用)
+- `src/renderer/src/hooks/useSourceModeSwitch.js`（`toggleSource` + 模式 effect，当前光标/视口锚点恢复状态机）
+- `src/renderer/src/scrollAnchor.js`（稳定公共 façade）及 `mode-visible-map.js`、`mode-caret-anchor.js`、`mode-viewport-anchor.js`、`mode-source-headings.js`
 
 ## 怎么验证
 
@@ -55,13 +55,14 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 
 ### 最终结论
 
-这次问题不是单纯的“关键词匹配不准”,而是模式切换同时踩中了三类不稳定来源:
+这次问题不是单纯的“关键词匹配不准”,而是模式切换同时踩中了四类不稳定来源:
 
 1. 源码模式卸载 Crepe,切回富文本时重建 ProseMirror 文档和图片布局,大文档布局不具备确定性。
 2. 源码和富文本不是同一个线性文本流。图片、链接、标题标记、表格管道、HTML、frontmatter 等在源码里占 raw 字符,在富文本里可能是 atom node 或完全不同的可见文本。
 3. “用户在编辑”与“用户在滚动阅读”的状态判断混在一起。源码 textarea 的 selection、scroll 事件和程序化恢复滚动会互相污染,导致本来应该跟随光标的场景被当成阅读态,或者反过来。
+4. Crepe 首次解析会规范化 Markdown。小文档会把规范化结果回写到标签和源码 textarea,但坐标映射曾继续使用打开文件时的旧 Markdown 快照;富文本算出的 raw offset 因此被应用到另一套源码坐标,造成只在特定文档稳定复现的漂移。
 
-最终修复思路是:保持富文本编辑器挂载,并把光标定位从“关键词/全局可见字符猜测”升级为“Markdown raw offset 与 ProseMirror position 的块级映射”。
+最终修复思路是:保持富文本编辑器挂载,让 `lastMarkdownRef` 始终与 App/textarea 中的当前 Markdown 快照一致,双向都优先使用块级 Markdown raw offset。全局可见字符索引、上下文和比例只处理无法精确映射的结构。连续往返时保留未被用户移动或编辑的来源 raw offset,避免再次反推造成不可逆漂移。
 
 ### 关键改动
 
@@ -76,7 +77,7 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 
 #### 2. 只在源码真正修改后同步到 Crepe
 
-`App.jsx` 增加 `syncSourceToRich(id)`:
+当前由 `useSourceModeSwitch.js` 的 `syncSourceToRich(id)` 负责：
 
 - textarea 内容等于 baseline 时不写回 Crepe。
 - 内容变化时调用 Editor API `replaceMarkdown(next)`。
@@ -90,6 +91,7 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 
 - 用 Milkdown 当前 `remarkCtx` 解析 Markdown,收集 mdast block 的 raw offset 范围和可见文本。
 - 遍历 ProseMirror doc,收集 textblock/atom block 的 pos、contentPos、文本和类型。
+- ProseMirror 表格单元格内部实际是 `table_cell → paragraph`；收集 textblock 时必须检查祖先并把内层 paragraph 归类为 `tableCell`,否则富文本表格光标会按普通段落序号映射到表格后的正文。
 - `markdownOffsetToPmPos(markdown, rawOffset, doc, remark)`:源码 raw offset → ProseMirror pos。
 - `pmPosToMarkdownOffset(markdown, pmPos, doc, remark)`:ProseMirror pos →源码 raw offset。
 
@@ -104,15 +106,19 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 
 #### 4. 双向切换都走 raw offset
 
+Crepe 初始化 rebase 和真实用户编辑触发 `markdownUpdated` 时,都会先更新 `lastMarkdownRef`,再把同一份规范化 Markdown 交给 App。由此保证 textarea 的 `selectionStart`、`markdownOffsetToPmPos()` 和 `pmPosToMarkdownOffset()` 共享同一套源码坐标。
+
 源码 → 富文本:
 
 - `captureSourceCaret()` 捕获 textarea 的 `selectionStart` 作为 `rawOffset`。
 - `Editor.restoreMarkdownOffset(rawOffset, follow)` 使用块级映射恢复 ProseMirror selection。
 - 图片等 atom block 用 `NodeSelection`,普通文本用 `TextSelection.near()`。
+- 命中 CodeMirror 代码块时先让外层 ProseMirror 取得焦点再派发 selection,随后按 CodeMirror 的真实 DOM caret rect 滚动外层容器,保证内部光标可见。
 
 富文本 → 源码:
 
 - `Editor.markdownOffsetFromSelection()` 读取当前 DOM/PM selection。
+- 如果 selection 位于 CodeMirror,不能使用普通 `view.posAtDOM()`（它只能得到代码块边界）；需按 `.cm-line` 累计换行和行内字符,得到代码块内 PM offset。
 - 用 `pmPosToMarkdownOffset()` 反推 raw offset。
 - `restoreSourceCaret()` 优先使用 `anchor.rawOffset`,不再优先使用全局可见字符 index。
 
@@ -133,11 +139,11 @@ CDP 启动:`npx electron . <doc> --user-data-dir=/tmp/x --remote-debugging-port=
 - 用户点击了源码光标:按 raw offset 恢复富文本光标,并跟随光标。
 - 用户只是滚动源码阅读:不跟随旧光标,恢复视口锚点。
 
-#### 6. 去掉源码自绘粗光标
+#### 6. 安全恢复源码粗光标
 
-之前的自绘 caret 用 mirror div 算 textarea 坐标。在超长、自动换行、滚动恢复的源码 textarea 中,它会滞后或算错,出现“光标压在文字上”或“光标在空白处”的视觉问题。
+旧自绘 caret 用 computed width 和 marker span 估算坐标。在超长、自动换行、滚动恢复的源码 textarea 中,滚动条造成约 10px 宽度误差,会累积成数百像素的垂直漂移。
 
-现在源码模式使用浏览器原生 textarea caret。
+新实现仍以浏览器原生 selection 为准,使用持久 mirror text node + collapsed DOM Range 测量字符坐标；mirror 强制匹配 textarea 最终 `clientWidth`,并用 `ResizeObserver` 和挂载后的多帧校准处理滚动条晚于首帧出现的情况。自绘光标为 3px 宽、比行高多 4px,测量点离开 textarea 可视区时直接隐藏。同步调度使用 rAF + 80ms timer fallback；窗口被遮挡、rAF 被 Chromium 节流时也不会留下永久 pending 状态。
 
 #### 7. 避免纯切换触发 dirty
 
@@ -199,12 +205,48 @@ node scripts/test-strike-guard.mjs
 - 只用关键词匹配不够。重复词、相邻段落、短标题都会造成误命中。
 - 全局可见字符 index 也不够。图片和 atom node 让源码与富文本的文本流从结构上不等价。
 - 源码 selection baseline 缺失时,会误把“用户在源码里点过光标”当作“只是查看源码”,从而保留旧富文本光标。
-- textarea 自绘光标在大文档中风险高,尤其是在程序化滚动和换行测量叠加时。
+- textarea 自绘光标在大文档中风险高；必须匹配最终 `clientWidth` 而不是 computed width,并处理滚动条在首帧后改变可用宽度。
 - “是否 dirty”必须和“模式切换/编辑器规范化输出”解耦,否则只是切换视图也会把已保存状态变成可保存。
 
 ### 后续维护建议
 
 - 不要再用全文关键词作为主路径恢复光标。关键词/上下文只能作为兜底。
 - 如果新增 Markdown block 类型,需要同步检查 `editor-source-map.js` 的 mdast/PM kind 映射。
-- 如果恢复源码粗光标,必须先建立 textarea 像素定位的独立回归测试,否则很容易重新出现遮字和空白光标。
+- 源码粗光标必须在真实大文档前/中/后检查尺寸、可见边界和点击行误差,否则容易重新出现遮字和空白光标。
+
+### 2026-07-12 最终代码结构
+
+本轮没有把所有逻辑继续堆进 `App.jsx` / `Editor.jsx`。当前模式切换相关职责如下:
+
+- `App.jsx`（954 行）:组合标签、编辑器 ref 和 shell，不再直接实现跨视图状态机。
+- `useSourceModeSwitch.js`（259 行）:唯一负责 per-tab 模式、源码→富文本同步、编辑/阅读意图和延迟锚点恢复。
+- `Editor.jsx`（591 行）:仍是 Crepe 生命周期 owner；只负责同步规范化后的 Markdown snapshot 和暴露 API。
+- `editor-source-map.js`（342 行）:唯一的 Markdown raw offset ↔ ProseMirror pos 块级映射；表格祖先类型在这里归一。
+- `editor-api.js`（204 行）:编辑器公开操作,不再内嵌 CodeMirror DOM 遍历。
+- `editor-codemirror-selection.js`（49 行）:CodeMirror DOM selection → block/local/PM position 的唯一实现,由 caret capture 与 Editor API 复用。
+- `textarea-metrics.js`（74 行）:textarea mirror 样式、最终 client width、char ↔ pixel 的唯一实现；源码 viewport、查找高亮和粗光标共用。
+- `editor-source-caret.js`（113 行）:只管理粗光标 DOM、闪烁、事件和可视边界,不自行维护 mirror 排版规则。
+
+本轮清理掉的冗余:
+
+- 删除两份 CodeMirror 行/字符累计实现,统一到 `editor-codemirror-selection.js`。
+- 删除源码光标、源码查找和 viewport 各自维护的 mirror width/style 规则,统一到 `textarea-metrics.js`。
+- 删除无调用者的 `scrollMarkdownOffsetToTop()` 和已失效的 `rawOffsetExact` 标记。
+
+本轮按测试先行完成的低风险拆分:
+
+- 新增 `npm run test:source-map`,用真实 remark-gfm AST 与 ProseMirror Schema 覆盖重复段落、表格单元格/内联代码、fenced code、列表、图片和 HTML 六组双向 offset。
+- `scrollAnchor.js` 从约 1010 行降为约 35 行稳定 façade,外部 import 与 10 个公共函数签名不变。
+- `mode-visible-map.js`（约 343 行）承载 visible stream 与 fallback 映射。
+- `mode-caret-anchor.js`（约 368 行）承载编辑态光标 capture/restore。
+- `mode-viewport-anchor.js`（约 252 行）承载阅读态 viewport capture/restore。
+- `mode-source-headings.js`（约 65 行）承载 CommonMark/GFM 源码标题解析和跳转,避免模块循环依赖。
+
+仍需控制的技术债:
+
+- `App.jsx` 仍有 954 行，但高风险模式切换已通过稳定 ref 合同提取。后续不得把状态机逻辑回填到 App；只有出现明确独立职责和测试保护时才继续拆。
+- `app.css` 约 4874 行,是当前最大的单文件。建议按 shell/editor/outline/find/review/settings 分文件,保留统一入口与原有 import 顺序,避免层叠优先级回归。
+- 两个 CDP 模式切换脚本合计约 600 行,属于测试驱动代码而非运行时体积。后续可抽共享 CDP client/点击/context helper,但不影响应用包运行复杂度。
+
+结论:模式切换采用结构化映射和边界处理，不以全文关键词作为主路径；状态机现已提取到 `useSourceModeSwitch.js`。任何后续修改都必须保留 keep-mounted、uncontrolled textarea、只同步真实源码编辑和 caret/viewport 双意图四项合同，并执行双向链路、表格、代码块及真实大文档回归。
 - 模式切换回归最好固定使用真实大文档,小文档无法暴露图片、atom、chunk parse、远程资源加载带来的问题。

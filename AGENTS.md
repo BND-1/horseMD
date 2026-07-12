@@ -4,7 +4,8 @@
 
 HorseMD is an Electron + Vite + React Markdown editor with a shared renderer for desktop and Capacitor mobile builds.
 
-- `src/main/index.js`: Electron main process, IPC, file system access, watchers, menus, PDF export, update checks.
+- `src/main/index.js`: Electron main-process lifecycle, window, IPC assembly, menus, assets, and update checks.
+- `src/main/filesystem.js`, `watchers.js`, `documents.js`: file operations, watchers, dialogs, and PDF export.
 - `src/preload/index.js`: secure `window.api` bridge exposed to the renderer.
 - `src/renderer/src/`: React app, Milkdown editor, hooks, shell components, themes, i18n, platform shim.
 - `src/renderer/src/components/Editor.jsx`: Crepe/ProseMirror editor wrapper; keep new editor features in focused `editor-*.js` helpers when possible.
@@ -22,6 +23,7 @@ npm run build
 npm start
 npm run dist
 npm run build:mobile
+npm run test:source-map
 node scripts/test-strike-guard.mjs
 ```
 
@@ -30,6 +32,7 @@ node scripts/test-strike-guard.mjs
 - `npm start`: runs the built app.
 - `npm run dist`: creates the host-platform installer via `electron-builder`.
 - `npm run build:mobile`: builds the Capacitor renderer into `dist-mobile/`.
+- `npm run test:source-map`: runs Markdown raw-offset ↔ ProseMirror mapping tests for tables, duplicate text, code, images, lists, and HTML.
 - `node scripts/test-strike-guard.mjs`: runs CriticMarkup strike regression checks.
 
 ## Coding Style & Naming Conventions
@@ -75,9 +78,11 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Markdown files (`.md`, `.markdown`, `.mdx`) use rich editing unless classified as heavy. Plain text files with paths use the textarea.
 - Heavy docs are detected in `paths.js` and default to textarea as a fast-open path; the user can opt into rich mode per tab.
 - Source-mode textareas are intentionally uncontrolled. Keep the `liveContentRef` / `commitLive` flow intact; do not convert them to controlled React inputs.
+- The source/rich state machine is owned by `hooks/useSourceModeSwitch.js`; `App.jsx` supplies stable refs and `EditorArea.jsx` owns rendering only.
 - Source/rich switching depends on two independent intents: caret position and reading viewport. Editing toggles follow a visible caret; reading toggles preserve viewport.
 - For the current mode-switch fix, Crepe must stay mounted when source mode is shown. Only sync source back into rich when source text was actually edited.
-- Do not replace source/rich mapping with plain keyword matching. The primary caret path is global visible-character mapping; snippets/context are fallback only.
+- Do not replace source/rich mapping with plain keyword matching. The primary caret path is block-aware Markdown raw-offset mapping; global visible-character positions and snippets/context are fallback only.
+- Keep `scrollAnchor.js` as the stable public facade. Implement visible-stream, caret, viewport, and source-heading changes in the focused `mode-*.js` modules and preserve the facade exports.
 
 ### Performance-Sensitive Areas
 
@@ -88,7 +93,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 
 ### Feature-Specific Notes
 
-- Review markup lives in `reviewMarkup.js` and `editor-review.js`; protect it with focused script tests when changed.
+- Review parsing lives in `reviewMarkup.js`; plugin state, decoration scanning, and card DOM live in `editor-review.js`, `editor-review-decorations.js`, and `editor-review-card.js`. Protect all four with focused script and real UI tests when changed.
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
@@ -102,6 +107,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Session state uses `localStorage["minimd.session.v1"]`; preferences use `localStorage["horsemd.settings.v1"]`; onboarding and update-dismissal have separate keys.
 - Settings tabs are transient and should not be persisted as document tabs.
 - Unsaved scratch tabs persist through session restore and should remain marked dirty.
+- Multi-root workspace state and directory watchers belong to `hooks/useWorkspace.js`; Sidebar tree loading belongs to `hooks/useSidebarTree.js`.
 
 ### Packaging And Verification
 

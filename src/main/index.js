@@ -1,11 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, net, session, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, session, clipboard } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync, statSync, realpathSync, constants as fsConstants } from 'node:fs'
 import { exec } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import chokidar from 'chokidar'
+import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from './security.js'
+import { registerDocumentIpc } from './documents.js'
+import { registerFileSystemIpc } from './filesystem.js'
+import { registerWatcherIpc } from './watchers.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -13,63 +16,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
-
-// Print stylesheet for PDF export — a clean, warm reading layout.
-const PDF_CSS = `
-  @page { size: A4; margin: 20mm 18mm; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; }
-  .doc {
-    font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
-      'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
-    font-size: 14.5px; line-height: 1.75; color: #2a2620;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-    word-wrap: break-word;
-  }
-  .doc > :first-child { margin-top: 0 !important; }
-  .doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 {
-    color: #16130e; font-weight: 700; line-height: 1.3; margin: 1.6em 0 0.6em;
-    page-break-after: avoid;
-  }
-  .doc h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 2px solid #e6e1d8; letter-spacing: -0.01em; }
-  .doc h2 { font-size: 1.5em; padding-bottom: 0.2em; border-bottom: 1px solid #ece7de; }
-  .doc h3 { font-size: 1.25em; }
-  .doc h4 { font-size: 1.05em; }
-  .doc h5 { font-size: 1em; }
-  .doc h6 { font-size: 0.92em; color: #6b655c; }
-  .doc p { margin: 0.85em 0; }
-  .doc a { color: #c86b35; text-decoration: none; border-bottom: 1px solid rgba(200,107,53,.35); }
-  .doc strong { font-weight: 700; color: #16130e; }
-  .doc em { font-style: italic; }
-  .doc ul, .doc ol { margin: 0.8em 0; padding-left: 1.6em; }
-  .doc li { margin: 0.32em 0; }
-  .doc li::marker { color: #c86b35; }
-  .doc blockquote {
-    margin: 1em 0; padding: 0.5em 1.1em; border-left: 3px solid #c86b35;
-    background: rgba(200,107,53,.06); color: #6b655c; border-radius: 0 6px 6px 0;
-    page-break-inside: avoid;
-  }
-  .doc blockquote p { margin: 0.3em 0; }
-  .doc code {
-    font-family: 'SF Mono', SFMono-Regular, Consolas, Monaco, monospace; font-size: 0.88em;
-    background: #f4f1ea; padding: 0.12em 0.4em; border-radius: 4px; color: #b3431f;
-  }
-  .doc pre {
-    background: #f4f1ea; border: 1px solid #e6e1d8; border-radius: 8px;
-    padding: 14px 16px; margin: 1em 0; overflow: hidden; page-break-inside: avoid;
-  }
-  .doc pre code {
-    background: none; padding: 0; color: #2a2620; font-size: 0.86em; line-height: 1.6;
-    white-space: pre-wrap; word-break: break-word;
-  }
-  .doc table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.95em; page-break-inside: avoid; }
-  .doc th, .doc td { border: 1px solid #e6e1d8; padding: 8px 12px; text-align: left; vertical-align: top; }
-  .doc th { background: #f4f1ea; font-weight: 700; color: #16130e; }
-  .doc tr:nth-child(even) td { background: #faf8f4; }
-  .doc img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 1em auto; page-break-inside: avoid; }
-  .doc hr { border: none; border-top: 1px solid #e6e1d8; margin: 1.8em 0; }
-  .doc input[type="checkbox"] { margin-right: 0.4em; }
-`
 
 let mainWindow = null
 // When true, the window is allowed to close without re-prompting (the renderer
@@ -79,8 +25,7 @@ let allowClose = false
 // handler tell "quit the app" apart from "just close the window" (macOS keeps the
 // app running on window close, but Cmd+Q must fully quit).
 let isQuitting = false
-const watchers = new Map() // folder path -> watcher
-const fileWatchers = new Map() // file path -> { watcher, timer }
+let localFontGrant = null
 
 // ---- Safety net: never let a stray async error abort the whole app ----
 // chokidar (and other fs/network async work) can reject with EACCES/EPERM when
@@ -166,6 +111,13 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+async function openExternalUrl(url) {
+  const allowedUrl = getAllowedExternalUrl(url)
+  if (!allowedUrl) return { ok: false, error: 'Unsupported external URL.' }
+  await shell.openExternal(allowedUrl)
+  return { ok: true }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -205,7 +157,7 @@ function createWindow() {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url)
+    void openExternalUrl(url)
     return { action: 'deny' }
   })
 
@@ -216,7 +168,7 @@ function createWindow() {
     const devUrl = process.env.ELECTRON_RENDERER_URL
     if (devUrl && url.startsWith(devUrl)) return
     event.preventDefault()
-    if (url.startsWith('http')) shell.openExternal(url)
+    void openExternalUrl(url)
   })
 
   // Keep the renderer's maximize/restore button icon in sync with the real
@@ -268,16 +220,37 @@ app.whenReady().then(() => {
   for (const d of launched.folders) if (!pendingLaunch.folders.includes(d)) pendingLaunch.folders.push(d)
   ensureThemesDir()
   buildMenu()
-  // Grant the Local Font Access API so the Settings font pickers can enumerate
-  // installed fonts via queryLocalFonts() (issue #38). This is a local editor —
-  // the renderer is trusted app code (Markdown content isn't executed as JS), so
-  // a permissive handler is safe; without it queryLocalFonts() is blocked.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(true))
-  session.defaultSession.setPermissionCheckHandler(() => true)
+  const allowLocalFonts = (webContents, permission, requestingUrl, isMainFrame) =>
+    canGrantLocalFonts({
+      permission,
+      webContentsId: webContents?.id,
+      trustedWebContentsId: mainWindow?.webContents.id,
+      requestingUrl,
+      currentUrl: webContents?.getURL() || '',
+      devRendererUrl: process.env.ELECTRON_RENDERER_URL,
+      isMainFrame,
+      grant: localFontGrant
+    })
+
+  // Electron 34 reports Local Font Access as either `local-fonts` or `unknown`,
+  // depending on the Chromium path. Only grant it briefly after the settings UI
+  // explicitly requests font enumeration; every other permission stays denied.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(allowLocalFonts(webContents, permission, details?.requestingUrl || '', details?.isMainFrame))
+  })
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) =>
+    allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
+  )
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+ipcMain.handle('permissions:allowLocalFonts', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  localFontGrant = createLocalFontGrant(event.sender.id)
+  return true
 })
 
 // A real quit is starting (Cmd/Ctrl+Q, menu Quit, app.quit()). Mark it so the
@@ -292,279 +265,21 @@ app.on('window-all-closed', () => {
 
 // ----------------------------- IPC: file system -----------------------------
 
-ipcMain.handle('dialog:openFiles', async () => {
-  const res = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Markdown', extensions: MD_EXTS },
-      { name: 'All Files', extensions: ['*'] }
-    ]
-  })
-  return res.canceled ? [] : res.filePaths
+registerDocumentIpc(ipcMain, {
+  getMainWindow: () => mainWindow,
+  markdownExtensions: MD_EXTS
 })
 
-ipcMain.handle('dialog:openAttachments', async () => {
-  const res = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    title: 'Attach Files'
-  })
-  return res.canceled ? [] : res.filePaths
-})
+registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
 
-ipcMain.handle('dialog:openFolder', async () => {
-  const res = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
-  return res.canceled ? null : res.filePaths[0]
-})
+registerWatcherIpc(ipcMain, { sendToRenderer })
 
-ipcMain.handle('dialog:saveAs', async (_e, defaultName) => {
-  const res = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: defaultName || 'Untitled.md',
-    filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }]
-  })
-  return res.canceled ? null : res.filePath
-})
-
-// Export the current document (inline-styled HTML from the renderer) to a PDF
-// by rendering it in a hidden window and using Chromium's printToPDF.
-ipcMain.handle('export:pdf', async (_e, { html, defaultName }) => {
-  const res = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: defaultName || 'Untitled.pdf',
-    filters: [{ name: 'PDF', extensions: ['pdf'] }]
-  })
-  if (res.canceled || !res.filePath) return { canceled: true }
-
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><style>${PDF_CSS}</style></head><body><div class="doc">${html}</div></body></html>`
-
-  const tmp = join(app.getPath('temp'), `horsemd-export-${Date.now()}.html`)
-  await fs.writeFile(tmp, doc, 'utf8')
-  const win = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } })
-  try {
-    await win.loadFile(tmp)
-    const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
-    await fs.writeFile(res.filePath, pdf)
-  } finally {
-    if (!win.isDestroyed()) win.destroy()
-    fs.unlink(tmp).catch(() => {})
+ipcMain.handle('shell:openExternal', async (event, url) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, error: 'Untrusted renderer.' }
   }
-  shell.openPath(res.filePath)
-  return { path: res.filePath }
+  return openExternalUrl(url)
 })
-
-ipcMain.handle('fs:readFile', async (_e, path) => {
-  const content = await fs.readFile(path, 'utf8')
-  const stat = await fs.stat(path)
-  return { content, mtimeMs: stat.mtimeMs }
-})
-
-ipcMain.handle('fs:writeFile', async (_e, path, content) => {
-  await fs.writeFile(path, content, 'utf8')
-  const stat = await fs.stat(path)
-  return { mtimeMs: stat.mtimeMs }
-})
-
-ipcMain.handle('fs:rename', async (_e, oldPath, newPath) => {
-  // Don't clobber an existing different file/folder (fs.rename overwrites
-  // silently → data loss). Still allow a case-only rename on case-insensitive
-  // filesystems (e.g. Foo.md → foo.md), where target and source are "the same".
-  if (existsSync(newPath) && newPath.toLowerCase() !== oldPath.toLowerCase()) {
-    throw new Error('A file or folder with that name already exists.')
-  }
-  await fs.rename(oldPath, newPath)
-  return true
-})
-
-ipcMain.handle('fs:delete', async (_e, path) => {
-  await shell.trashItem(path)
-  return true
-})
-
-ipcMain.handle('fs:createFile', async (_e, path, content = '') => {
-  await fs.writeFile(path, content, { flag: 'wx' })
-  return true
-})
-
-ipcMain.handle('fs:createDir', async (_e, path) => {
-  await fs.mkdir(path, { recursive: true })
-  return true
-})
-
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
-// Whether to show dotfiles/dotdirs (.claude, .cursor, etc.) in the file tree.
-// Set from the renderer via the 'settings:setShowHidden' IPC (#29). Default off.
-let showHidden = false
-
-ipcMain.handle('settings:setShowHidden', (_e, val) => {
-  showHidden = !!val
-  return true
-})
-
-async function readTree(dir, depth = 0) {
-  let entries
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const nodes = []
-  for (const e of entries) {
-    // Skip dotfiles unless showHidden is on (always allow .gitignore). .git etc.
-    // are always skipped via IGNORED_DIRS regardless of this setting.
-    if (e.name.startsWith('.') && !showHidden && e.name !== '.gitignore') continue
-    if (e.isDirectory() && IGNORED_DIRS.has(e.name)) continue
-    const full = join(dir, e.name)
-    if (e.isDirectory()) {
-      nodes.push({ name: e.name, path: full, type: 'dir', children: null })
-    } else if (MD_RE.test(e.name)) {
-      nodes.push({ name: e.name, path: full, type: 'file' })
-    }
-  }
-  nodes.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
-  return nodes
-}
-
-ipcMain.handle('fs:readDir', async (_e, dir) => readTree(dir))
-
-async function listFilesFlat(root, dir, acc, depth) {
-  if (depth > 12 || acc.length > 5000) return
-  let entries
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const e of entries) {
-    if (e.name.startsWith('.') && !showHidden) continue
-    const full = join(dir, e.name)
-    if (e.isDirectory()) {
-      if (IGNORED_DIRS.has(e.name)) continue
-      await listFilesFlat(root, full, acc, depth + 1)
-    } else if (MD_RE.test(e.name)) {
-      acc.push({ name: e.name, path: full, rel: full.slice(root.length + 1).replace(/\\/g, '/') })
-    }
-  }
-}
-
-ipcMain.handle('fs:listFiles', async (_e, root) => {
-  const acc = []
-  await listFilesFlat(root, root, acc, 0)
-  return acc
-})
-
-ipcMain.handle('fs:openFolderTree', async (_e, dir) => ({
-  root: { name: basename(dir), path: dir, type: 'dir' },
-  children: await readTree(dir)
-}))
-
-// Paths we must never descend into: system/device trees that throw EACCES/EPERM
-// when watched, plus the usual noise dirs. Watching e.g. "/" would otherwise hit
-// /dev/* device files and crash the watcher.
-const WATCH_IGNORE_RE =
-  /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/
-// An absolute path: POSIX "/…", Windows "C:\…"/"C:/…", or a UNC "\\…".
-const isAbsolutePath = (p) => /^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p)
-const isRestrictedRoot = (p) => {
-  const norm = (p || '').replace(/[\\/]+$/, '')
-  if (norm === '' || norm === '/' || norm === '.' || norm === '..') return true
-  // A relative path (e.g. ".") resolves against the process CWD — which is "/"
-  // when the app is launched by Finder/launchd, so watching it would recurse the
-  // whole filesystem (/dev, /System…) and crash. Only ever watch absolute paths.
-  if (!isAbsolutePath(norm)) return true
-  // macOS system/device trees that are unreadable and would crash a recursive watch.
-  return /^\/(dev|proc|System\/Volumes|private\/var\/(db|folders)|\.vol)(\/|$)/.test(norm)
-}
-
-// Watch a folder; notify renderer on changes (debounced lightly by chokidar)
-ipcMain.handle('watch:start', async (_e, dir) => {
-  if (watchers.has(dir)) return true
-  // Don't recursively watch the filesystem root or restricted system trees —
-  // they contain device/permission-protected files that make the watch throw.
-  if (isRestrictedRoot(dir)) return false
-  const w = chokidar.watch(dir, {
-    ignored: (p) => WATCH_IGNORE_RE.test(p) || isRestrictedRoot(p),
-    ignoreInitial: true,
-    depth: 12,
-    // Don't follow symlinks (they can point into restricted trees) and don't let
-    // permission errors bubble up as fatal.
-    followSymlinks: false,
-    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
-  })
-  // Swallow watcher errors (EACCES/EPERM on protected paths) so they never become
-  // an unhandled rejection that crashes the process.
-  w.on('error', (err) => console.error('watch:start error (ignored):', err?.message || err))
-  let timer = null
-  const ping = () => {
-    clearTimeout(timer)
-    timer = setTimeout(() => sendToRenderer('watch:changed', dir), 120)
-  }
-  w.on('add', ping).on('unlink', ping).on('addDir', ping).on('unlinkDir', ping)
-  watchers.set(dir, w)
-  return true
-})
-
-ipcMain.handle('watch:stop', async (_e, dir) => {
-  const w = watchers.get(dir)
-  if (w) {
-    await w.close()
-    watchers.delete(dir)
-  }
-  return true
-})
-
-// Watch a single open file for external content changes (e.g. an agent edits
-// the file on disk). Emits `file:changed` with the new mtime so the renderer
-// can reload the tab.
-ipcMain.handle('watch:file', async (_e, path) => {
-  if (fileWatchers.has(path)) return true
-  const w = chokidar.watch(path, {
-    ignoreInitial: true,
-    // Poll the file (instead of native fs events). Many editors/tools save via
-    // "atomic replace" (write temp + rename over), which swaps the file's inode
-    // and makes a native single-file watch go deaf after the first such save.
-    // Polling re-stats the path, so it keeps catching changes regardless.
-    // Interval is 1s (not chokidar's 400ms default): with N open tabs that is N
-    // libuv stats every second indefinitely, and on Windows each stat is hooked
-    // by Defender real-time scanning — the threadpool contention worsened the
-    // background load (and thus large-doc responsiveness). An external edit is
-    // still detected within ~1s. (The renderer already ignores same/older-mtime
-    // echoes on file:changed, so a slower poll costs nothing but detection lag.)
-    usePolling: true,
-    interval: 1000,
-    binaryInterval: 1200,
-    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
-  })
-  const entry = { watcher: w, timer: null }
-  const notify = async () => {
-    clearTimeout(entry.timer)
-    entry.timer = setTimeout(async () => {
-      let mtimeMs = 0
-      try {
-        mtimeMs = (await fs.stat(path)).mtimeMs
-      } catch {
-        /* file may have been removed */
-      }
-      sendToRenderer('file:changed', { path, mtimeMs })
-    }, 80)
-  }
-  w.on('change', notify).on('add', notify)
-  w.on('error', (err) => console.error('watch:file error (ignored):', err?.message || err))
-  fileWatchers.set(path, entry)
-  return true
-})
-
-ipcMain.handle('watch:unfile', async (_e, path) => {
-  const entry = fileWatchers.get(path)
-  if (entry) {
-    clearTimeout(entry.timer)
-    await entry.watcher.close()
-    fileWatchers.delete(path)
-  }
-  return true
-})
-
-ipcMain.handle('shell:openExternal', async (_e, url) => shell.openExternal(url))
 ipcMain.handle('shell:openFileUrl', async (_e, url) => {
   try {
     const parsed = new URL(url)
@@ -946,20 +661,6 @@ ipcMain.handle('image:inlineForSave', async (_e, content, targetPath) => {
   } catch {
     return { content, changed: false }
   }
-})
-
-// Copy a file next to itself as "<name> copy<ext>", picking a free name.
-ipcMain.handle('fs:duplicate', async (_e, path) => {
-  const dir = dirname(path)
-  const ext = extname(path)
-  const stem = basename(path, ext)
-  let target = join(dir, `${stem} copy${ext}`)
-  let i = 2
-  while (existsSync(target)) target = join(dir, `${stem} copy ${i++}${ext}`)
-  // COPYFILE_EXCL: fail rather than overwrite if the target appeared between the
-  // existsSync check and the copy (TOCTOU).
-  await fs.copyFile(path, target, fsConstants.COPYFILE_EXCL)
-  return target
 })
 
 // ----------------------------- window controls -----------------------------

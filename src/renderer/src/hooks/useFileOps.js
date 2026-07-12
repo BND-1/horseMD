@@ -1,7 +1,6 @@
-// File operations + workspace/watcher. Extracted verbatim in behavior from
-// App.jsx (phase-2 refactor, US-5). This is the deepest-coupling extraction: it
-// touches the tab store, recents, the uncontrolled-textarea bookkeeping, the
-// editor API registry, and the workspace file-tree/watcher.
+// Document file operations extracted from App.jsx. Renderer-side multi-root
+// workspace state and directory watchers live in useWorkspace.js; this hook
+// keeps open-document operations and their per-file external-change watchers.
 //
 // Split-view ops (openRight/toggleSplit/startSplitDrag/openFileRight) and split
 // state stay in App — they're consumed heavily by the editor-area JSX and are
@@ -14,11 +13,17 @@
 //   editorApis — ref map of tab id → rich editor API (exportPathToPdf getDocHTML)
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
-//   setSidebarOpen — openFolder affordance (refreshNonce is owned internally)
-//   sessionWorkspace — initial workspace (sanitizeWorkspace applied here)
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { baseName, dirName, joinPath, genId, isHeavyDoc, sanitizeWorkspace } from '../paths.js'
+//   setSidebarOpen/initialFolderRoots — forwarded to useWorkspace
+import { useCallback, useEffect, useRef } from 'react'
+import {
+  baseName,
+  dirName,
+  joinPath,
+  genId,
+  isHeavyDoc
+} from '../paths.js'
 import { fireToast } from '../ui.js'
+import { useWorkspace } from './useWorkspace.js'
 
 export function useFileOps({
   tabs,
@@ -38,14 +43,10 @@ export function useFileOps({
   setRenameState,
   setSaveNameState,
   setSidebarOpen,
-  sessionWorkspace
+  initialFolderRoots
 }) {
-  const [workspace, setWorkspace] = useState(sanitizeWorkspace(sessionWorkspace))
-  const [files, setFiles] = useState([])
-  const [refreshNonce, setRefreshNonceLocal] = useState(0)
-  // refreshNonce is exposed to the Sidebar; the file ops + watcher bump it via
-  // this stable callback so the tree refreshes after rename/dup/delete/write.
-  const bumpRefresh = useCallback(() => setRefreshNonceLocal((n) => n + 1), [])
+  const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen })
+  const { bumpRefresh } = workspace
 
   // --------------------------- open files --------------------------
   const openPaths = useCallback(async (paths, silent = false) => {
@@ -420,33 +421,6 @@ export function useFileOps({
     [openPaths, tabsRef, editorApis, tRef]
   )
 
-  // --------------------------- workspace ---------------------------
-  const openFolder = useCallback(async () => {
-    const dir = await window.api.openFolder()
-    if (!dir) return
-    const rootName = baseName(dir)
-    setWorkspace({ rootPath: dir, rootName })
-    setSidebarOpen(true)
-  }, [setWorkspace, setSidebarOpen])
-
-  useEffect(() => {
-    if (!workspace) {
-      setFiles([])
-      return
-    }
-    window.api.watchStart(workspace.rootPath)
-    window.api.listFiles(workspace.rootPath).then(setFiles)
-    return () => window.api.watchStop(workspace.rootPath)
-  }, [workspace])
-
-  useEffect(() => {
-    const off = window.api.onWatchChanged(() => {
-      bumpRefresh()
-      if (workspace) window.api.listFiles(workspace.rootPath).then(setFiles)
-    })
-    return off
-  }, [workspace, bumpRefresh])
-
   // --------- auto-reload open files edited by external programs ----------
   const watchedRef = useRef(new Set())
 
@@ -517,12 +491,7 @@ export function useFileOps({
     saveTab,
     commitMobileSave,
     exportPathToPdf,
-    openFolder,
-    workspace,
-    setWorkspace,
-    files,
-    refreshNonce,
-    bumpRefresh,
+    ...workspace,
     reloadTabFromDisk
   }
 }

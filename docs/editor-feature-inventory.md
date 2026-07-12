@@ -198,10 +198,11 @@ npm run build:mobile
 
 涉及模式切换时追加真实大文档 CDP 验证。
 
-## 已知测试脚本问题
+## 自动化测试入口
 
-`node scripts/review-markup.test.mjs` 当前在 Node 22 下会因为直接导入 `.jsx`
-报 `ERR_UNKNOWN_FILE_EXTENSION`。这不是功能失败，而是脚本加载方式需要后续修正。
+`npm run test:core` 会运行主进程安全边界、源码映射、Review 标记和
+CriticMarkup 回归。Review 的纯状态逻辑位于 `editor-review-model.js`，测试不再
+间接加载 JSX/DOM 依赖，因此 Node 20/22 均可直接执行。
 
 ## 本轮重构拆分记录
 
@@ -274,3 +275,87 @@ CDP 验证：
 
 - 临时综合文档：相对图片解析为 `file://`、代码块复制按钮存在、Mermaid/LaTeX/HTML/review 渲染、源码/富文本往返、切换不 dirty、图片 lightbox 打开和 Esc 关闭。
 - 真实大文档：阅读位置 35%、65%、88% 往返，滚动比例稳定；多候选真实点击光标覆盖前段和后段，源码/富文本往返后光标可见、上下文一致、已保存状态不变。
+
+## 第三轮重构拆分记录
+
+2026-07-11 将 Review 的文档扫描与 Decoration 数据构建从
+`editor-review.js` 搬到 `editor-review-decorations.js`。外部继续只通过
+`createReviewDecorationPlugin`、`applyReviewMarkupInView` 等原有 API 使用 Review；
+卡片 DOM、事件处理和 ProseMirror plugin 状态机没有改动。
+
+- `editor-review.js`：1090 → 744 行，保留插件状态、widget/card 交互和命令入口。
+- `editor-review-decorations.js`：328 行，负责 raw/parsed CriticMarkup 扫描、inline
+  decorations 和 comment widget 描述。
+- 新增 `npm run test:review-ui`，不依赖 DEV 私有 Hook，可直接验证开发构建或安装包。
+
+真实 UI 回归在搬迁过程中发现并拦截了一次遗漏 import：构建可以通过，但点击批注时
+transaction 会抛出运行时错误。恢复依赖后，两个同段批注的堆叠、第二张卡片内容、
+addition/deletion/substitution 渲染均通过 CDP 验证。
+
+## 第四轮重构拆分记录
+
+2026-07-11 将多根目录工作区状态、命令面板文件列表和目录 Watcher 从
+`useFileOps.js` 搬到 `useWorkspace.js`。`useFileOps` 继续原样返回工作区字段，
+所以 `App.jsx`、`Sidebar.jsx` 和菜单调用合同不变；已打开文档的逐文件 Watcher
+仍留在 `useFileOps`，继续受 dirty 内容保护。
+
+- `useFileOps.js`：582 → 500 行。
+- `useWorkspace.js`：77 行。
+- 真实 Electron 验证：连续加入两个绝对路径根目录，两个根节点及文件树同时显示；
+  右键移除其中一个后，侧栏和 `minimd.session.v1.folderRoots` 同步更新。
+
+## 第五轮重构拆分记录
+
+2026-07-11 将 Review 卡片的读态、编辑态、复制/完成/删除动作和跨批注导航提取到
+`editor-review-card.js`。`REVIEW_PLUGIN_KEY` 由插件模块显式传入，避免循环依赖和重复
+PluginKey；`editor-review.js` 的原有公开导出保持不变。
+
+- `editor-review.js`：744 → 359 行，只保留 widget 容器、插件状态机和命令入口。
+- `editor-review-card.js`：371 行，集中管理卡片 DOM 与 annotation transaction。
+- CDP 验证：第二张批注卡片定位为 `2 / 2`，进入编辑态字段正确，取消后恢复读态，
+  点击完成后只剩一个高亮和一个批注按钮；addition/deletion/substitution 同时正常。
+
+## 第六轮重构拆分记录
+
+2026-07-11 将 Sidebar 的目录加载/展开/跟随当前文件状态提取到 `useSidebarTree.js`，
+并将右键菜单提取为无状态 `SidebarContextMenu.jsx`。创建、重命名和拖放仍留在
+`Sidebar.jsx`，继续共享同一个提交锁与父目录刷新流程。
+
+- `Sidebar.jsx`：584 → 465 行。
+- `useSidebarTree.js`：99 行。
+- `SidebarContextMenu.jsx`：72 行。
+- 真实 UI 验证：双根目录加载；根节点折叠/展开；当前文件打开后自动高亮；根目录菜单
+  不提供重命名/删除；Markdown 文件菜单保留分屏、复制、重命名、副本、PDF 和删除；
+  移除根目录后侧栏与会话同步。
+
+## 第七轮重构拆分记录
+
+2026-07-11 在先冻结双向切换基线后，将 per-tab 源码模式、源码→富文本同步、编辑/阅读
+意图和延迟锚点恢复提取到 `useSourceModeSwitch.js`。Hook 不渲染 textarea，也不读取
+Find/Outline 内部状态，只通过稳定 ref 接收查找导航权和大文档加载状态。
+
+- `App.jsx`：1200 → 954 行。
+- `useSourceModeSwitch.js`：259 行。
+- 普通文档双向连续切换 10/10；表格文字、表格行内代码、CodeMirror 代码块专项通过。
+- 真实 12 万字/183 图文档：5 个编辑态光标 + 5 个阅读态视口全部通过，大纲与 dirty 稳定。
+- 源码真实编辑后同步回富文本并保持 dirty；仅查看切换不触发 dirty。
+- 查找栏保持打开时富文本↔源码往返，当前结果、选区和高亮保持。
+
+## 当前开发基线（2026-07-12）
+
+本轮行为保持型重构已经结束，用户完成安装包回归并确认通过。当前关键文件规模：
+
+| 文件 | 行数 | 当前职责 |
+|---|---:|---|
+| `App.jsx` | 954 | shell 与跨功能组合 |
+| `Editor.jsx` | 591 | Crepe 生命周期编排与公开 API |
+| `editor-review.js` | 359 | Review 插件状态机与命令入口 |
+| `Sidebar.jsx` | 465 | 文件树交互编排 |
+| `useFileOps.js` | 497 | 文件/标签操作与单文件 watcher |
+| `useSourceModeSwitch.js` | 259 | source/rich 状态机与锚点恢复 |
+
+开始大型新功能前必须先确定模块边界和行为合同。编辑器能力进入聚焦的 `editor-*.js` helper；
+工作区状态进入 `useWorkspace`；树状态进入 `useSidebarTree`；模式切换只由
+`useSourceModeSwitch` 维护。不得为了开发速度重新向 `App.jsx` 或 `Editor.jsx` 堆积成块逻辑。
+共享 renderer 变更至少执行桌面与移动构建；高风险编辑器改动还要按
+`docs/manual-test-checklist.md` 做真实 Electron 回归。

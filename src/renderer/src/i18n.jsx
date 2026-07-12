@@ -307,6 +307,30 @@ export const STRINGS = {
     'slash.code': 'Code',
     'slash.table': 'Table',
     'slash.math': 'Math',
+    // Feishu-style slash: comma-joined match keywords (label is also matched).
+    // Include English + symbol tokens so /h1 /# /ol /- /1. all work.
+    'slash.empty': 'No matching blocks',
+    'slash.kw.text': 'text,paragraph,body,p',
+    'slash.kw.h1': 'h1,h 1,heading,heading 1,head 1,title 1,#',
+    'slash.kw.h2': 'h2,h 2,heading,heading 2,head 2,title 2,##',
+    'slash.kw.h3': 'h3,h 3,heading,heading 3,head 3,title 3,###',
+    'slash.kw.h4': 'h4,h 4,heading,heading 4,head 4,title 4,####',
+    'slash.kw.h5': 'h5,h 5,heading,heading 5,head 5,title 5,#####',
+    'slash.kw.h6': 'h6,h 6,heading,heading 6,head 6,title 6,######',
+    'slash.kw.quote': 'quote,blockquote,>',
+    'slash.kw.divider': 'divider,hr,horizontal rule,---',
+    'slash.kw.bullet': 'bullet,bullet list,unordered list,ul,-,*',
+    'slash.kw.ordered': 'ordered,ordered list,numbered list,ol,1.',
+    'slash.kw.task': 'task,task list,todo,checklist,[]',
+    'slash.kw.image': 'image,img,picture,!,![]',
+    'slash.kw.code': 'code,code block,codeblock,```',
+    'slash.kw.table': 'table,grid',
+    'slash.kw.math': 'math,latex,tex,formula,$$',
+
+    // workspace (single, unnamed — just a bag of folder roots)
+    'workspace.title': 'Workspace',
+    'workspace.addFolder': 'Add folder',
+    'workspace.removeFolder': 'Remove from workspace',
 
     // editor
     'editor.placeholder': 'Type / for commands, or just start writing…',
@@ -629,6 +653,30 @@ export const STRINGS = {
     'slash.code': '代码',
     'slash.table': '表格',
     'slash.math': '公式',
+    // 飞书式斜杠:逗号分隔的匹配关键词(label 也会参与匹配)。
+    // 中文+英文+符号都包含,确保 /h1 /# /ol /- /1. /标题1 都能筛中。
+    'slash.empty': '没有匹配的块',
+    'slash.kw.text': '正文,文本,段落,text,paragraph,p',
+    'slash.kw.h1': '标题1,标题 1,一级标题,大标题,h1,h 1,heading,heading 1,title 1,#',
+    'slash.kw.h2': '标题2,标题 2,二级标题,h2,h 2,heading,heading 2,##',
+    'slash.kw.h3': '标题3,标题 3,三级标题,h3,h 3,heading,heading 3,###',
+    'slash.kw.h4': '标题4,标题 4,四级标题,h4,h 4,heading,heading 4,####',
+    'slash.kw.h5': '标题5,标题 5,五级标题,h5,h 5,heading,heading 5,#####',
+    'slash.kw.h6': '标题6,标题 6,六级标题,h6,h 6,heading,heading 6,######',
+    'slash.kw.quote': '引用,引用块,引言,quote,blockquote,>',
+    'slash.kw.divider': '分割线,分隔线,横线,divider,hr,---',
+    'slash.kw.bullet': '无序列表,项目列表,符号列表,bullet,bullet list,ul,-,*',
+    'slash.kw.ordered': '有序列表,数字列表,编号列表,ordered,ordered list,ol,1.',
+    'slash.kw.task': '任务列表,待办,待办事项,任务,task,task list,todo,[]',
+    'slash.kw.image': '图片,图像,图,image,img,!,![]',
+    'slash.kw.code': '代码,代码块,code,codeblock,```',
+    'slash.kw.table': '表格,表,table,grid',
+    'slash.kw.math': '公式,数学公式,数学,math,latex,tex,$$',
+
+    // 工作区(单一、无名 —— 就是一组文件夹)
+    'workspace.title': '工作区',
+    'workspace.addFolder': '添加文件夹',
+    'workspace.removeFolder': '从工作区移除',
 
     'editor.placeholder': '输入 / 唤起命令，或开始写…',
     'code.copy': '复制',

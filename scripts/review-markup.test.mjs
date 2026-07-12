@@ -20,7 +20,7 @@ import {
   mapReviewTextblockGroupState,
   parseParsedHighlightCommentClose,
   resolveReviewGroupActiveIndex
-} from '../src/renderer/src/components/editor-review.js'
+} from '../src/renderer/src/components/editor-review-model.js'
 import { HIGHLIGHT_RE } from '../src/renderer/src/components/editor-highlight.js'
 
 const sample =
@@ -302,8 +302,20 @@ function testDisplayParts() {
   assert.deepEqual(simplifyDisplayParts('{>>note<<}'), [])
 
   assert.deepEqual(simplifyDisplayParts('{>><<}'), [])
-  assert.deepEqual(simplifyDisplayParts('{~~old~>~~}'), [])
-  assert.deepEqual(simplifyDisplayParts('{==focus==}{>><<}'), [])
+  assert.deepEqual(simplifyDisplayParts('{~~old~>~~}'), [
+    { type: 'syntax', role: 'syntax', start: 0, end: 3, pos: undefined, label: undefined, title: undefined },
+    { type: 'content', role: 'substitution-old', start: 3, end: 6, pos: undefined, label: undefined, title: undefined },
+    { type: 'syntax', role: 'syntax', start: 6, end: 8, pos: undefined, label: undefined, title: undefined },
+    { type: 'widget', role: 'substitution-arrow', start: undefined, end: undefined, pos: 8, label: '->', title: undefined },
+    { type: 'syntax', role: 'syntax', start: 8, end: 11, pos: undefined, label: undefined, title: undefined }
+  ])
+  assert.deepEqual(simplifyDisplayParts('{==focus==}{>><<}'), [
+    { type: 'syntax', role: 'syntax', start: 0, end: 3, pos: undefined, label: undefined, title: undefined },
+    { type: 'content', role: 'highlight', start: 3, end: 8, pos: undefined, label: undefined, title: undefined },
+    { type: 'syntax', role: 'syntax', start: 8, end: 14, pos: undefined, label: undefined, title: undefined },
+    { type: 'widget', role: 'comment-margin', start: undefined, end: undefined, pos: 8, label: undefined, title: '' },
+    { type: 'syntax', role: 'syntax', start: 14, end: 17, pos: undefined, label: undefined, title: undefined }
+  ])
 
   assert.deepEqual(simplifyDisplayParts('{>>note<<}', { revealRange: { start: 4, end: 4 } }), [])
   assert.equal(
@@ -359,9 +371,9 @@ function testReviewAnnotationGrouping() {
   assert.equal(reviewGroups.length, 2)
   assert.equal(reviewGroups[0].pos, 8)
   assert.equal(reviewGroups[0].part.groupKey, 'paragraph:1')
-  assert.equal(reviewGroups[0].part.label, '2')
+  assert.equal(reviewGroups[0].part.label, '1')
   assert.deepEqual(reviewGroups[0].part.annotations.map((annotation) => annotation.key), ['a', 'b'])
-  assert.equal(reviewGroups[1].part.label, '1')
+  assert.equal(reviewGroups[1].part.label, '2')
   assert.deepEqual(reviewGroups[1].part.annotations.map((annotation) => annotation.key), ['c'])
 
   assert.equal(grouped.some(({ part }) => part.role === 'substitution-replacement'), true)

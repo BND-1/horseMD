@@ -16,6 +16,7 @@
 //   isMobile / setSidebarOpen / setHome — drawer affordances for jumpToHeading
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseSourceHeadings, scrollSourceToHeading } from '../scrollAnchor.js'
+import { textareaOffsetAtScrollTop } from '../textarea-metrics.js'
 
 // Shared heading selector — used by jumpToHeading, the scrollspy, and the list
 // reader. Keeping it in one place ensures they all agree on what counts as a
@@ -105,8 +106,8 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
       const ta = sourceRef.current
       if (ta) {
         const hs = parseSourceHeadings(ta.value || '')
-        const text = hs[index]?.text
-        if (text) scrollSourceToHeading(ta, ta.value || '', text)
+        const heading = hs[index]
+        if (heading) scrollSourceToHeading(ta, ta.value || '', heading)
       }
       setActiveHeading(index)
       return
@@ -153,15 +154,20 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     if (sourceMode) {
       const ta = sourceRef.current
       if (!ta) return
-      let raf = 0
+      let timer = 0
       let lastIdx = -1
       const compute = () => {
-        raf = 0
+        timer = 0
         const md = ta.value || ''
         const hs = parseSourceHeadings(md)
         if (!hs.length) { if (lastIdx !== -1) { lastIdx = -1; setActiveHeading(-1) } return }
-        const denom = ta.scrollHeight - ta.clientHeight
-        const approxChar = denom > 0 ? Math.round((ta.scrollTop / denom) * md.length) : 0
+        let approxChar = 0
+        try {
+          approxChar = textareaOffsetAtScrollTop(ta)
+        } catch {
+          const denom = ta.scrollHeight - ta.clientHeight
+          approxChar = denom > 0 ? Math.round((ta.scrollTop / denom) * md.length) : 0
+        }
         let idx = 0
         for (let i = 0; i < hs.length; i++) {
           if (hs[i].charOffset <= approxChar) idx = i
@@ -169,11 +175,14 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
         }
         if (idx !== lastIdx) { lastIdx = idx; setActiveHeading(idx) }
       }
-      const schedule = () => { if (!raf) raf = requestAnimationFrame(compute) }
+      const schedule = () => {
+        clearTimeout(timer)
+        timer = setTimeout(compute, 80)
+      }
       compute()
       ta.addEventListener('scroll', schedule, { passive: true })
       return () => {
-        if (raf) cancelAnimationFrame(raf)
+        clearTimeout(timer)
         ta.removeEventListener('scroll', schedule)
       }
     }

@@ -186,7 +186,11 @@ export default function Editor({
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
         if (ready && !appending && hasRecentUserEdit()) {
-          onChange?.(normalizeReviewMarkupMarkdown(md), false)
+          const normalized = normalizeReviewMarkupMarkdown(md)
+          // Source mapping must use the same markdown snapshot that App stores
+          // and shows in the source textarea after this user edit.
+          lastMarkdownRef.current = normalized
+          onChange?.(normalized, false)
           userEditUntil = Date.now() + 1000
         }
       })
@@ -312,7 +316,8 @@ export default function Editor({
           applyReviewMarkup,
           replaceMarkdown,
           restoreMarkdownOffset,
-          markdownOffsetFromSelection
+          markdownOffsetFromSelection,
+          markdownOffsetFromViewportTop
         } = api
         apiRef.current = api
         // DEV-only CDP test hook (scripts/test-substitution.mjs). Exposes the
@@ -382,7 +387,8 @@ export default function Editor({
           applyReviewMarkup,
           replaceMarkdown,
           restoreMarkdownOffset,
-          markdownOffsetFromSelection
+          markdownOffsetFromSelection,
+          markdownOffsetFromViewportTop
         })
 
         // Append the remaining chunks of a huge doc in the background so the open
@@ -401,7 +407,14 @@ export default function Editor({
           // doc is itself expensive, and the original markdown is already the
           // content/savedContent baseline (clean), so no rebase is needed.
           if (rebase) {
-            try { onChange?.(normalizeReviewMarkupMarkdown(crepe.getMarkdown()), true) } catch { /* */ }
+            try {
+              const normalized = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+              // Crepe may normalize the initial source (tables, lists, HTML,
+              // whitespace). Keep source-map offsets in that rebased coordinate
+              // system instead of the file's pre-parse text.
+              lastMarkdownRef.current = normalized
+              onChange?.(normalized, true)
+            } catch { /* */ }
           }
           ready = true
           reportActiveBlock()

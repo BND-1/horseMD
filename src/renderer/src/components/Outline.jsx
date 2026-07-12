@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n.jsx'
 import { Icon } from './icons.jsx'
+import { defaultCollapsedHeadings, headingHasChildren } from './outline-model.js'
 
 // Outline panel. The heading list comes from the parent (App), which reads the
 // editor's RENDERED h1…h6 elements — so every heading the document shows is
@@ -24,13 +25,7 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   // A heading `i` is a parent (has foldable children) if a later heading has a
   // deeper level before an equal-or-shallower level re-appears.
   const hasChildren = (i) => {
-    if (i < 0 || i >= headings.length) return false
-    const lvl = headings[i].level
-    for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= lvl) break
-      return true
-    }
-    return false
+    return headingHasChildren(headings, i)
   }
 
   // A heading is visible if none of its ancestors are collapsed.
@@ -78,26 +73,18 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   }
 
   const expandAll = () => setCollapsed(new Set())
-  const collapseAll = () => {
-    // Collapse every heading that has children. If this hides the active
-    // heading, the visible parent row will show the active-contained state.
-    const next = new Set()
-    for (let i = 0; i < headings.length; i++) {
-      if (hasChildren(i)) next.add(i)
-    }
-    setCollapsed(next)
-  }
+  const collapseAll = () => setCollapsed(defaultCollapsedHeadings(headings))
 
   // Reset the collapsed set whenever the headings *content* changes (edit,
   // reload). Index-based state is only stable while the heading list itself
   // is unchanged; if a heading at the same index now has different text/level
   // the old collapsed state would apply to the wrong branch. A signature of
   // level+text detects this without false-positive resets on plain re-renders.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sig = headings.map((h) => h.level + ':' + h.text).join('\n')
     if (sig !== prevSigRef.current) {
       prevSigRef.current = sig
-      setCollapsed(new Set())
+      setCollapsed(defaultCollapsedHeadings(headings))
     }
   }, [headings])
 
@@ -149,8 +136,10 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   }, [headings.length])
 
   const foldable = headings.map((_, i) => i).filter(hasChildren)
-  const allCollapsed = foldable.length > 0 && foldable.every((i) => collapsed.has(i))
-  const toggleAll = allCollapsed ? expandAll : collapseAll
+  const compact = defaultCollapsedHeadings(headings)
+  const hasCompactState = compact.size > 0
+  const isCollapsed = hasCompactState && [...compact].every((i) => collapsed.has(i))
+  const toggleAll = isCollapsed ? expandAll : collapseAll
 
   return (
     <div className="outline">
@@ -161,11 +150,11 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
             <button
               className="outline-head-btn"
               onClick={toggleAll}
-              title={allCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
-              disabled={foldable.length === 0}
-              aria-label={allCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
+              title={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
+              disabled={foldable.length === 0 || !hasCompactState}
+              aria-label={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
             >
-              <Icon name={allCollapsed ? 'expand' : 'collapse'} size={15} />
+              <Icon name={isCollapsed ? 'expand' : 'collapse'} size={15} />
             </button>
           </span>
         )}

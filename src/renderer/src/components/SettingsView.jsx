@@ -163,6 +163,9 @@ function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
     if (fontsLoadedRef.current || typeof window.queryLocalFonts !== 'function') return
     fontsLoadedRef.current = true
     try {
+      if (window.api.allowLocalFonts && !await window.api.allowLocalFonts()) {
+        throw new Error('Local font access was not authorized')
+      }
       const all = await window.queryLocalFonts()
       setFontFamilies([...new Set(all.map((f) => f.family))].sort((a, b) => a.localeCompare(b)))
     } catch {

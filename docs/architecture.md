@@ -40,7 +40,12 @@
 
 ```
 src/
-  main/index.js            主进程：窗口、IPC、文件监听、菜单
+  main/index.js            主进程：窗口生命周期、IPC 装配、菜单
+  main/documents.js        打开/保存对话框与 PDF 导出 IPC
+  main/filesystem.js       文件读写、目录树与复制 IPC
+  main/watchers.js         工作区与单文件监听 IPC
+  main/pdf-document.js     PDF 文档外壳与打印样式（纯函数）
+  main/security.js         权限与外部 URL 安全策略（纯函数）
   preload/index.js         contextBridge：window.api 桥接
   renderer/
     index.html             渲染入口（CSP、标题）
@@ -51,7 +56,12 @@ src/
       find.js              文档内查找的高亮/匹配纯函数
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
       settings.js          用户偏好（排版/图床/拼写/隐藏文件）持久化 + CSS var 应用
-      scrollAnchor.js      模式切换滚动位置保持（标题锚点，#28）
+      scrollAnchor.js      模式切换稳定 façade（仅 re-export 公共 API）
+      mode-visible-map.js  源码/富文本可见字符 fallback 映射
+      mode-caret-anchor.js 双向光标 capture/restore
+      mode-viewport-anchor.js 阅读视口 capture/restore
+      mode-source-headings.js 源码标题解析与跳转
+      textarea-metrics.js textarea mirror 与字符/像素换算
       customThemes.js      注入用户 CSS 主题（迁移自 Typora 的 .css）
       blocks.js            块类型定义（正文/H1–H6）共享数据
       themes.js            主题注册表（6 套配色）
@@ -59,7 +69,10 @@ src/
       onboarding.js        首次启动的欢迎/介绍文档（中英）
       assets/logo.png      首页 logo（应用图标副本）
       hooks/
-        useFileOps.js      文件操作（打开/关闭/保存/reorderTabs/openSettingsTab）
+        useFileOps.js      文件与标签操作、单文件 watcher
+        useWorkspace.js    多根工作区状态、目录 watcher 与命令面板文件列表
+        useSidebarTree.js  文件树加载、展开与当前文件跟随
+        useSourceModeSwitch.js per-tab 源码模式、内容同步与锚点恢复
         useOutline.js      大纲（标题列表 + scrollspy + jumpAndStabilize 跳转）
         useFindReplace.js  查找替换（CSS Highlight API）
         useAppLifecycle.js 会话持久化 + 恢复 + 更新检查
@@ -72,13 +85,16 @@ src/
         editor-copy.js     富文本复制的内联样式（纯函数）
         editor-mermaid.js  Mermaid widget 装饰插件（懒加载 mermaid）
         editor-highlight.js ==text== 高亮 mark + 工具栏颜色选择
-        editor-review.js   审阅批注/修订（CriticMarkup 装饰插件）
+        editor-review.js   审阅插件状态机与命令入口
+        editor-review-card.js 审阅卡片 DOM、编辑和导航交互
+        editor-review-decorations.js CriticMarkup 扫描与 Decoration 构建
         editor-md-paste.js 智能粘贴（Markdown → 富文本）
         editor-tablebreak.js 表格单元格内换行（<br> 往返）
         editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
         LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
         ImageHostButton.jsx 顶栏图床配置按钮
-        Sidebar.jsx        文件树侧边栏（支持显示隐藏文件 #29）
+        Sidebar.jsx        文件树侧边栏编排（支持多根与显示隐藏文件）
+        SidebarContextMenu.jsx 文件树右键菜单视图
         Tabs.jsx           顶部标签条（拖拽排序 #31）+ 右键菜单
         Welcome.jsx        首页/欢迎页（logo、版本、最近文件）
         SaveFab.jsx        浮动保存按钮（dirty 时显示）
@@ -109,11 +125,12 @@ build/
 
 ## App.jsx：外壳的核心职责
 
-`App.jsx` 是整个外壳的状态中枢，负责：
+`App.jsx` 是外壳组合器。具体业务优先委托给 hook，当前主要负责：
 
 - **标签页**：`tabs[]`（每个 `{id, path, title, content, savedContent, mtimeMs, reloadNonce}`）、`activeId`
-- **打开文件**：`openPaths()` —— 去重（用 `tabsRef` 同步快照避免 setState 竞态）、读盘、建标签
-- **保存**：`saveTab/writeTab`，脏判断 = `content !== savedContent`
+- **文件与标签组合**：通过 `useFileOps` 接入打开、保存、关闭和单文件 watcher
+- **工作区组合**：通过 `useWorkspace` 接入多根目录、目录 watcher 和会话恢复
+- **模式切换组合**：通过 `useSourceModeSwitch` 接入 per-tab 模式、source/rich 同步和锚点恢复
 - **会话持久化**：把 `workspace/theme/lang/recents/openPaths/...` 存进 `localStorage`（键 `minimd.session.v1`），启动时恢复
 - **主题/语言**：`theme`（主题 id）、`lang`（en/zh），分别 `applyTheme()` 与 `I18nProvider`
 - **最近文件**：`recents[]`，每次打开文件时记录，持久化，首页展示
@@ -133,7 +150,7 @@ build/
 
 > ⚠️ 这条链路曾经断过：监听器注册晚了导致 `markdownUpdated` 从不触发，详见 [implementation-notes.md](./implementation-notes.md)。
 
-> **编辑器路由**：`App.jsx` 按扩展名决定每个标签用哪种编辑器 —— `.md/.markdown/.mdx`（及无路径的新建文档）走 Crepe 富文本，**首次激活才挂载、之后常驻**（懒加载，加快启动/会话恢复）；`.txt` 等纯文本走 `textarea`，只在激活时渲染。纯文本过 Markdown 引擎会丢换行、且大文件卡死，故单独走快路径（`MD_DOC_RE` / `isPlainTextDoc`）。
+> **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
 
 ## 获取 ProseMirror view 的正确姿势
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Outline from './components/Outline.jsx'
 import StatusBar from './components/StatusBar.jsx'
@@ -32,15 +32,11 @@ import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
-import {
-  captureRichCaret, captureSourceCaret, restoreRichCaret, restoreSourceCaret,
-  captureRichViewport, captureSourceViewport, restoreRichViewport, restoreSourceViewport,
-  isRichCaretVisible, isSourceCaretVisible
-} from './scrollAnchor.js'
 import { useFileOps } from './hooks/useFileOps.js'
+import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import {
-  baseName, isAbsolutePath, isHeavyDoc, loadSession
+  baseName, isAbsolutePath, isHeavyDoc, loadSession, loadFolderRootsFromSession
 } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
 
@@ -60,6 +56,9 @@ const attachmentLinkMarkdown = (name, path) =>
 
 export default function App() {
   const session = useRef(loadSession()).current
+  // Migrate + sanitize the session's workspace folder roots once (stable session).
+  // Legacy single-folder and short-lived multi-workspace sessions are flattened.
+  const initialFolderRoots = useRef(loadFolderRootsFromSession(session)).current
   // Mobile (Capacitor) builds run the same renderer; a few affordances differ
   // (drawer sidebar, no split/image-host buttons). Desktop is unaffected.
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
@@ -81,18 +80,6 @@ export default function App() {
   const [customThemes, setCustomThemes] = useState([])
   const [lang, setLang] = useState(session.lang || DEFAULT_LANG)
   const [recents, setRecents] = useState(session.recents || [])
-  // Source/rich mode is a per-tab view state (#42). A tab keeps its current
-  // mode while you switch to another tab, but the state is intentionally not
-  // persisted into the document or session.
-  const [sourceModeIds, setSourceModeIds] = useState(() => new Set())
-  const sourceMode = !!activeId && sourceModeIds.has(activeId)
-  // Source textareas are uncontrolled and can unmount on tab switches. Track
-  // which source buffers were edited so a later source→rich toggle still syncs
-  // the edited Markdown into the still-mounted rich editor.
-  const sourceEditedIds = useRef(new Set())
-  // Live mirror of sourceMode for ref-based reads inside stable callbacks.
-  const sourceModeRef = useRef(sourceMode)
-  sourceModeRef.current = sourceMode
   const [paletteOpen, setPaletteOpen] = useState(false)
   // "Home" shows the welcome/landing page while keeping open tabs mounted (so
   // returning to a document doesn't re-create its editor). Cleared whenever a
@@ -122,16 +109,8 @@ export default function App() {
 
   const editorHostRef = useRef(null) // active rich editor's scroll container
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
-  const sourceRef = useRef(null) // active source-mode <textarea>
-  const sourceTextareas = useRef({}) // textarea-backed editors by tab id
-  const caretAnchorRef = useRef(null) // caret anchor (snippet/heading/ratio) to restore across a mode switch
-  const viewportAnchorRef = useRef(null) // viewport-top text anchor (the reading position, separate from the caret)
-  const richCaretAnchorRef = useRef(null) // rich-side caret anchor retained while source is open, so unchanged source returns through the more precise rich mapping
-  const richViewportAnchorRef = useRef(null) // rich viewport anchor stashed across source mode, so the return-to-rich restore reuses the precise (content-stable) rich anchor instead of the lossy source one
-  const caretFollowRef = useRef(false) // was the caret visible at toggle time? visible = editing (follow caret), off-screen = reading (keep viewport)
-  const preserveRichCaretFollowRef = useRef(false) // source was not edited/moved, so keep the still-mounted rich selection exactly
-  const sourceEnteredWithCaretFollowRef = useRef(false) // rich→source editing/reading intent; reused when source was not touched
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
+  const findStateRef = useRef({ open: false, query: '' }) // find owns navigation while an active query survives a mode switch
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -201,17 +180,30 @@ export default function App() {
     for (const id of [...liveContentRef.current.keys()]) commitLive(id)
   }, [commitLive])
 
+  const {
+    sourceMode,
+    sourceRef,
+    sourceTextareas,
+    sourceEditedIds,
+    toggleSource
+  } = useSourceModeSwitch({
+    tabs,
+    activeId,
+    setTabs,
+    tabsRef,
+    activeIdRef,
+    editorApis,
+    editorHostRef,
+    commitAllLive,
+    findStateRef,
+    richLoadingRef
+  })
+
   // Drop editor APIs for tabs that have closed.
   useEffect(() => {
     const live = new Set(tabs.map((t) => t.id))
     for (const id of Object.keys(editorApis.current)) {
       if (!live.has(id)) delete editorApis.current[id]
-    }
-    for (const id of Object.keys(sourceTextareas.current)) {
-      if (!live.has(id)) delete sourceTextareas.current[id]
-    }
-    for (const id of [...sourceEditedIds.current]) {
-      if (!live.has(id)) sourceEditedIds.current.delete(id)
     }
     // Forget mount records for closed tabs (so the Set doesn't grow unbounded).
     setMountedIds((prev) => {
@@ -224,16 +216,6 @@ export default function App() {
       return changed ? next : prev
     })
     setRichForced((prev) => {
-      if (!prev.size) return prev
-      let changed = false
-      const next = new Set()
-      for (const id of prev) {
-        if (live.has(id)) next.add(id)
-        else changed = true
-      }
-      return changed ? next : prev
-    })
-    setSourceModeIds((prev) => {
       if (!prev.size) return prev
       let changed = false
       const next = new Set()
@@ -344,196 +326,7 @@ export default function App() {
     setCustomTheme(null)
   }, [])
 
-  const syncSourceToRich = useCallback((id) => {
-    const sourceEl = sourceTextareas.current[id]
-    if (!sourceEl) return false
-    const next = sourceEl.value || ''
-    const baseline = sourceEl.__horsemdSourceBaseline ?? ''
-    const sourceEdited = sourceEditedIds.current.has(id)
-    if (next === baseline && !sourceEdited) return false
-
-    const api = editorApis.current[id]
-    if (api?.replaceMarkdown?.(next)) {
-      sourceEl.__horsemdSourceBaseline = next
-      sourceEditedIds.current.delete(id)
-      return true
-    }
-
-    // If the rich editor has not finished creating yet, force the next rich
-    // mount to consume the already-committed source text instead of keeping the
-    // stale initialContent captured before source editing.
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, reloadNonce: t.reloadNonce + 1, heavy: isHeavyDoc(next) }
-          : t
-      )
-    )
-    sourceEl.__horsemdSourceBaseline = next
-    sourceEditedIds.current.delete(id)
-    return true
-  }, [setTabs])
-
-  // Toggle source/rich mode. Two strategies, picked by whether the caret was
-  // VISIBLE at toggle time (caretFollowRef):
-  //   - caret VISIBLE   (user was editing): the caret stays where it was AND the
-  //     viewport follows it (scrollIntoView / focus). The caret is in-viewport
-  //     here, so following it can't drift.
-  //   - caret OFF-SCREEN (user was reading): the caret selection is still set, but
-  //     the VIEWPORT is restored to its own anchor and the caret is NOT followed
-  //     (no focus) — so reading doesn't jump. (Following an off-screen caret is
-  //     exactly the v0.5.25 "content drift" bug.)
-  const toggleSource = useCallback(() => {
-    commitAllLive() // flush textarea edits so the rich editor picks them up on switch
-    const id = activeIdRef.current
-    const tab = tabsRef.current.find((t) => t.id === id)
-    if (!id || tab?.kind === 'settings') return
-    const view = editorApis.current[id]?.getView?.()
-    if (sourceModeRef.current) {
-      // Leaving SOURCE → RICH.
-      const sourceEl = sourceRef.current
-      const sourceTextChanged = !!sourceEl && (sourceEl.value || '') !== (sourceEl.__horsemdSourceBaseline ?? '')
-      const sourceSelection = sourceEl ? `${sourceEl.selectionStart}:${sourceEl.selectionEnd}` : ''
-      const sourceSelectionChanged = !!sourceEl && !!sourceEl.__horsemdSourceSelectionBaseline && sourceSelection !== sourceEl.__horsemdSourceSelectionBaseline
-      const sourceSelectionUser = !!sourceEl && sourceEl.__horsemdSourceSelectionUser === true
-      const sourceViewportMoved = !!sourceEl && sourceEl.__horsemdSourceViewportMoved === true
-      const preserveRichCaret = !sourceTextChanged && !sourceSelectionChanged && !sourceSelectionUser && !sourceViewportMoved
-      const hasSourceCaretIntent = sourceTextChanged || sourceSelectionChanged || sourceSelectionUser
-      const followSourceCaret = hasSourceCaretIntent && (sourceSelectionUser && !sourceViewportMoved ? true : isSourceCaretVisible(sourceEl))
-      caretFollowRef.current = preserveRichCaret ? sourceEnteredWithCaretFollowRef.current : followSourceCaret
-      preserveRichCaretFollowRef.current = preserveRichCaret
-      if (preserveRichCaret) {
-        // Source was only viewed. The rich editor stayed mounted the whole time,
-        // so its PM selection and scrollTop are already the exact source of
-        // truth. Restoring a text anchor here can only introduce drift at table
-        // or heading boundaries.
-        caretAnchorRef.current = null
-        viewportAnchorRef.current = null
-      } else if (!hasSourceCaretIntent && sourceViewportMoved) {
-        caretAnchorRef.current = null
-        viewportAnchorRef.current = captureSourceViewport(sourceEl)
-      } else {
-        caretAnchorRef.current = captureSourceCaret(sourceEl)
-        viewportAnchorRef.current = followSourceCaret ? null : captureSourceViewport(sourceEl)
-      }
-      syncSourceToRich(id)
-    } else {
-      // Leaving RICH → SOURCE.
-      preserveRichCaretFollowRef.current = false
-      caretFollowRef.current = isRichCaretVisible(view, editorHostRef.current)
-      sourceEnteredWithCaretFollowRef.current = caretFollowRef.current
-      const richCaret = captureRichCaret(view)
-      const rawOffset = editorApis.current[id]?.markdownOffsetFromSelection?.()
-      if (richCaret && Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
-      caretAnchorRef.current = richCaret
-      richCaretAnchorRef.current = richCaret
-      const rv = captureRichViewport(editorHostRef.current, view)
-      viewportAnchorRef.current = rv
-      richViewportAnchorRef.current = rv
-    }
-    setSourceModeIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [commitAllLive, syncSourceToRich, tabsRef])
-
-  useLayoutEffect(() => {
-    const caret = caretAnchorRef.current
-    const viewport = viewportAnchorRef.current
-    const follow = caretFollowRef.current
-    const preserveRichCaretFollow = preserveRichCaretFollowRef.current
-    if (caret == null && viewport == null && !preserveRichCaretFollow) return
-    caretAnchorRef.current = null
-    viewportAnchorRef.current = null
-    caretFollowRef.current = false
-    preserveRichCaretFollowRef.current = false
-    // follow = caret was visible (user editing): restore the caret AND follow it
-    //   (scrollIntoView/focus) — the viewport goes to the caret; no separate
-    //   viewport restore (the caret is the target, and it's in-viewport so
-    //   following can't drift).
-    // !follow = caret was off-screen (user reading): set the caret selection
-    //   WITHOUT following, then restore the viewport anchor — the reading
-    //   position holds; no focus (a focus would async-scroll to the off-screen
-    //   caret and drift).
-    const apply = () => {
-      const view = editorApis.current[activeIdRef.current]?.getView?.()
-      if (sourceMode) {
-        if (caret) {
-          restoreSourceCaret(sourceRef.current, caret, follow)
-          const sourceEl = sourceRef.current
-          if (sourceEl) {
-            sourceEl.__horsemdSourceSelectionBaseline = `${sourceEl.selectionStart}:${sourceEl.selectionEnd}`
-            sourceEl.__horsemdSourceSelectionUser = false
-            sourceEl.__horsemdSourceViewportMoved = false
-          }
-        }
-        if (!follow && viewport) {
-          restoreSourceViewport(sourceRef.current, viewport)
-          if (sourceRef.current) sourceRef.current.__horsemdSourceViewportMoved = false
-        }
-      } else {
-        if (caret) {
-          const api = editorApis.current[activeIdRef.current]
-          const restored = restoreRichCaret(view, caret, follow)
-          if (!restored && Number.isFinite(caret.rawOffset)) api?.restoreMarkdownOffset?.(caret.rawOffset, follow)
-        }
-        else if (preserveRichCaretFollow && follow) view?.focus()
-        if (!follow && viewport) restoreRichViewport(editorHostRef.current, view, viewport)
-      }
-    }
-    // Apply immediately, then again as async layout settles — the rich editor
-    // (Crepe) fills its content over a few frames after it remounts, growing
-    // scrollHeight, so a single pass would land short. The 4th pass (450ms)
-    // covers ordinary docs where Crepe takes longer to fill.
-    const raf = requestAnimationFrame(apply)
-    const t1 = setTimeout(apply, 90)
-    const t2 = setTimeout(apply, 220)
-    const t3 = setTimeout(apply, 450)
-    // Large docs keep changing layout PAST 450ms in two ways the fixed passes
-    // miss: (1) chunked text parse (richLoading), and (2) the hundreds of remote
-    // <img> re-fetching + re-laying-out when the rich editor re-renders after a
-    // source→rich toggle. Either shifts scrollHeight, so an apply that lands
-    // mid-settle ends up off. So the tail re-applies while richLoading OR while
-    // scrollHeight is still changing, AND does one final pass once the height
-    // stabilizes (so the last apply is on the settled layout = the same layout
-    // the user captured on → the snippet returns to its original spot). `cancelled`
-    // lets cleanup short-circuit an in-flight tick. Only the rich branch needs
-    // this — source mode is plain text (no async fill).
-    let cancelled = false
-    const tailCleans = []
-    let lastSh = -1
-    let stableTicks = 0
-    const tail = (delay) => {
-      if (cancelled) return
-      const h = setTimeout(() => {
-        if (cancelled) return
-        apply()
-        const sc = editorHostRef.current
-        const curSh = sc ? sc.scrollHeight : 0
-        const heightChanged = curSh > 0 && curSh !== lastSh
-        if (heightChanged) stableTicks = 0; else stableTicks++
-        lastSh = curSh
-        const stillSettling = !sourceMode && (richLoadingRef.current || heightChanged || stableTicks < 1)
-        if (stillSettling && delay < 3000) tail(delay + 300)
-      }, delay)
-      tailCleans.push(h)
-    }
-    tail(700)
-    return () => {
-      cancelled = true
-      cancelAnimationFrame(raf)
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-      tailCleans.forEach(clearTimeout)
-    }
-  }, [sourceMode])
-
-  // Source mode uses the browser-native textarea caret. A previous custom thick
-  // caret used mirror-div pixel math, but on large wrapped documents it could
-  // lag behind programmatic scroll restoration and draw over unrelated text.
+  // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
   // File operations (open/new/update/close/save/rename/dup/delete/export) +
   // workspace + watcher live in hooks/useFileOps.js (phase-2 US-5). Split ops
@@ -556,8 +349,9 @@ export default function App() {
     commitMobileSave,
     exportPathToPdf,
     openFolder,
-    workspace,
-    setWorkspace,
+    folderRoots,
+    addFolder,
+    removeFolder,
     files,
     refreshNonce,
     bumpRefresh,
@@ -580,15 +374,15 @@ export default function App() {
     setRenameState,
     setSaveNameState,
     setSidebarOpen,
-    sessionWorkspace: session.workspace
+    initialFolderRoots: initialFolderRoots
   })
 
   // Sync the show-hidden-files setting to main (readTree filter) + refresh the
   // file tree when it changes (#29).
   useEffect(() => {
     window.api.setShowHidden?.(settings.showHiddenFiles)
-    if (workspace) bumpRefresh()
-  }, [settings.showHiddenFiles, bumpRefresh, workspace])
+    if (folderRoots.length) bumpRefresh()
+  }, [settings.showHiddenFiles, bumpRefresh, folderRoots])
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move
   // the left pane to a different tab so the two panes differ.
@@ -666,7 +460,16 @@ export default function App() {
   // (US-6) can close over setFind/findInputRef/replaceInputRef. Returns the same
   // names the findbar JSX uses.
   const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind } =
-    useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, commitLive, liveContentRef })
+    useFindReplace({
+      editorHostRef,
+      sourceRef,
+      editorApis,
+      activeId,
+      viewModeKey: sourceMode,
+      commitLive,
+      liveContentRef
+    })
+  findStateRef.current = { open: find.open, query: find.query }
 
   // In split view, target the pane you're actually editing (last focused), as
   // long as it's one of the two visible panes; otherwise the active (left) tab.
@@ -796,7 +599,7 @@ export default function App() {
     session,
     tabs,
     activePath,
-    workspace,
+    folderRoots,
     theme,
     customTheme,
     lang,
@@ -822,7 +625,7 @@ export default function App() {
     openPaths,
     openFolder,
     isAbsolutePath,
-    setWorkspace,
+    addFolderByPath: addFolder,
     setSidebarMode,
     setSidebarOpen,
     commitAllLive,
@@ -934,7 +737,9 @@ export default function App() {
           {sidebarOpen && (
             sidebarMode === 'files' ? (
               <Sidebar
-                workspace={workspace}
+                folderRoots={folderRoots}
+                onAddFolder={openFolder}
+                onRemoveFolder={removeFolder}
                 activePath={activePath}
                 onOpenFile={(p) => { openPaths([p]); if (isMobile) setSidebarOpen(false) }}
                 onOpenRight={openFileRight}

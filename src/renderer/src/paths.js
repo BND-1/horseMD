@@ -22,7 +22,63 @@ export function isNewerVersion(a, b) {
 // place (and recursively watching "/" crashes the app).
 export const isAbsolutePath = (p) =>
   typeof p === 'string' && (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p))
-export const sanitizeWorkspace = (ws) => (ws && isAbsolutePath(ws.rootPath) ? ws : null)
+
+export function normalizePathKey(p) {
+  let s = String(p || '').replace(/\\/g, '/')
+  while (s.length > 1 && !/^[a-zA-Z]:\/$/.test(s) && s.endsWith('/')) s = s.slice(0, -1)
+  return s
+}
+
+// Renderer-side mirror of main's isRestrictedRoot: paths we must never treat as
+// a workspace folder root. Watching or listing one (/, /dev, /System/Volumes…)
+// floods the tree with permission-protected files and crashes the recursive
+// chokidar watcher. Kept in sync with src/main/index.js isRestrictedRoot.
+export const isRestrictedPath = (p) => {
+  const norm = (p || '').replace(/[\\/]+$/, '')
+  if (norm === '' || norm === '/' || norm === '.' || norm === '..') return true
+  if (!isAbsolutePath(norm)) return true
+  return /^\/(dev|proc|System\/Volumes|private\/var\/(db|folders)|\.vol)(\/|$)/.test(norm)
+}
+
+// ---- Single-workspace data model ----
+// The workspace is the single, unnamed container for the sidebar file tree. It
+// holds N folder roots (multi-root tree) — that's it. No name, no multiple
+// workspaces, no switching (HorseMD is a writing app, one workspace is enough;
+// users add/remove folders within it). Session persists `folderRoots: [abs,…]`.
+
+// Filter to absolute, non-restricted, de-duplicated roots (mirrors main's
+// isRestrictedRoot; a relative/restricted root would crash the chokidar watcher).
+export function sanitizeFolderRoots(list) {
+  if (!Array.isArray(list)) return []
+  const seen = new Set()
+  const out = []
+  for (const p of list) {
+    if (typeof p !== 'string' || !isAbsolutePath(p) || isRestrictedPath(p)) continue
+    const k = normalizePathKey(p)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(k)
+  }
+  return out
+}
+
+// Migrate the session into a flat folderRoots array. Accepts the current shape
+// { folderRoots } plus two legacy shapes (no data loss across upgrades):
+//   - { workspaces: [{ folderRoots }] }   (the multi-workspace build) → merge all roots
+//   - { workspace: { rootPath } }          (the original single-folder build) → [rootPath]
+export function loadFolderRootsFromSession(session) {
+  if (!session) return []
+  if (Array.isArray(session.folderRoots)) return sanitizeFolderRoots(session.folderRoots)
+  if (Array.isArray(session.workspaces)) {
+    const all = session.workspaces.flatMap((w) => (w && Array.isArray(w.folderRoots) ? w.folderRoots : []))
+    return sanitizeFolderRoots(all)
+  }
+  const legacy = session.workspace
+  if (legacy && isAbsolutePath(legacy.rootPath) && !isRestrictedPath(legacy.rootPath)) {
+    return sanitizeFolderRoots([legacy.rootPath])
+  }
+  return []
+}
 
 export const baseName = (p) => (p ? p.split(/[\\/]/).pop() : 'Untitled')
 export const dirName = (p) => (p ? p.replace(/[\\/][^\\/]*$/, '') : '')

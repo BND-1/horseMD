@@ -18,6 +18,7 @@ import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
+import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
@@ -61,36 +62,6 @@ export function applyImageText(ctx, tt) {
   }
 }
 
-function slashCommandConfig(tt) {
-  return {
-    textGroup: {
-      label: tt('slash.text'),
-      text: { label: tt('slash.text') },
-      h1: { label: tt('block.h1') },
-      h2: { label: tt('block.h2') },
-      h3: { label: tt('block.h3') },
-      h4: { label: tt('block.h4') },
-      h5: { label: tt('block.h5') },
-      h6: { label: tt('block.h6') },
-      quote: { label: tt('slash.quote') },
-      divider: { label: tt('slash.divider') }
-    },
-    listGroup: {
-      label: tt('slash.list'),
-      bulletList: { label: tt('slash.bullet') },
-      orderedList: { label: tt('slash.ordered') },
-      taskList: { label: tt('slash.task') }
-    },
-    advancedGroup: {
-      label: tt('slash.advanced'),
-      image: { label: tt('slash.image') },
-      codeBlock: { label: tt('slash.code') },
-      table: { label: tt('slash.table') },
-      math: { label: tt('slash.math') }
-    }
-  }
-}
-
 export function createConfiguredCrepe({
   host,
   defaultValue,
@@ -100,11 +71,16 @@ export function createConfiguredCrepe({
   copyText
 }) {
   const t = getT
+  const platform = window.api?.platform
+  const isMobile = platform === 'ios' || platform === 'android'
   const crepe = new Crepe({
     root: host,
     defaultValue,
     features: {
-      [Feature.SelectionTooltip]: true,
+      // Mobile already presents the native text-selection menu. Showing Crepe's
+      // toolbar at the same time creates two overlapping action surfaces and can
+      // cover the selected text, so mobile keeps the native menu only.
+      [Feature.SelectionTooltip]: !isMobile,
       [Feature.SlashCommand]: true,
       [Feature.BlockEdit]: true,
       [Feature.CodeMirror]: true,
@@ -123,12 +99,16 @@ export function createConfiguredCrepe({
         previewToggleText: (previewOnly) =>
           previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode'),
         extensions: [tabAtCursorKeymap]
-      },
-      [Feature.BlockEdit]: slashCommandConfig(t)
+      }
     }
   })
 
   crepe.editor.config((ctx) => {
+    // Neutralize Crepe's built-in slash menu (its label-only filter can't match
+    // keywords, so typing past "/" made the menu vanish). Our Feishu-style menu
+    // in editor-slash-menu.js replaces it. Feature.BlockEdit stays enabled so
+    // the block drag/add handle (.milkdown-block-handle) is preserved.
+    disableCrepeSlash(ctx)
     ctx.update(nodeViewCtx, (views) => [
       ...views,
       ['html', (node) => renderHtmlNodeView(node)],
@@ -162,6 +142,7 @@ export function createConfiguredCrepe({
       ...plugins,
       tableBreakKeymap(),
       mathPreviewPlugin(),
+      createSlashPlugin(ctx, getT),
       toolbarAutohidePlugin(),
       createReviewDecorationPlugin({
         getT: (key, fallback) => {

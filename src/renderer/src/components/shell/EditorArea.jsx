@@ -11,6 +11,7 @@
 import Editor from '../Editor.jsx'
 import { Icon } from '../icons.jsx'
 import { isPlainTextDoc } from '../../paths.js'
+import { attachSourceCaret } from '../editor-source-caret.js'
 
 export default function EditorArea({
   tabs,
@@ -100,6 +101,9 @@ export default function EditorArea({
             if (el) {
               sourceTextareas.current[tab.id] = el
               if (isLeft) sourceRef.current = el
+              if (!el.__horsemdSourceCaretCleanup) {
+                el.__horsemdSourceCaretCleanup = attachSourceCaret(el)
+              }
               if (el.__horsemdSourceBaseline == null) el.__horsemdSourceBaseline = el.value || ''
               if (el.__horsemdSourceSelectionBaseline == null) {
                 el.__horsemdSourceSelectionBaseline = `${el.selectionStart || 0}:${el.selectionEnd || 0}`
@@ -108,6 +112,8 @@ export default function EditorArea({
               return
             }
             const existing = sourceTextareas.current[tab.id]
+            existing?.__horsemdSourceCaretCleanup?.()
+            if (existing) delete existing.__horsemdSourceCaretCleanup
             delete sourceTextareas.current[tab.id]
             if (isLeft && (!existing || sourceRef.current === existing)) sourceRef.current = null
           }

@@ -24,5 +24,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Core regression tests
+        run: npm run test:core
+
       - name: Build (main + preload + renderer)
         run: npm run build

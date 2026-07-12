@@ -6,6 +6,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-12
+
+### Added
+- **Feishu-style slash command search** — the `/` menu now filters by Chinese,
+  English, aliases, full pinyin, and pinyin initials. Language queries such as
+  `/java`, `/python`, or `/mermaid` create a code block with that language
+  selected, while short prefixes rank matching languages without flooding the
+  menu with unrelated results.
+- **Multi-root workspace** — the single unnamed workspace can contain multiple
+  folder roots. Opening a folder adds it instead of replacing the current root;
+  each root can be removed independently and is protected from accidental
+  rename, delete, or drag operations.
+
+### Changed
+- **Native mobile text selection** — iOS and Android now use only the system
+  selection menu for copy, paste, select-all, lookup, and accessibility actions;
+  HorseMD's desktop formatting toolbar no longer overlaps it after a double-tap
+  or long-press.
+- **Outline starts at a useful depth** — the first two actual hierarchy tiers
+  remain visible by default. Documents made entirely of top-level headings stay
+  fully expanded, while deeper branches start compact.
+- **Workspace controls and empty state** — Add Folder is visually distinct from
+  New Folder, the empty state is reduced to one clear action, and the blank tree
+  area exposes workspace actions through right-click or double-click.
+- **Editor architecture** — source switching, workspace state, Sidebar tree
+  state, Review decorations/cards, and main-process IPC domains now live in
+  focused modules with their existing public contracts preserved.
+
+### Fixed
+- **Source-mode find navigation** — `Ctrl/Cmd+F` now centers the active textarea
+  match, keeps a high-contrast highlight visible, and repaints reliably when
+  Electron throttles animation frames. Keeping Find open across rich/source
+  switches now rebuilds the correct Range/offset backend without losing the
+  active result.
+- **Rich/source caret and viewport drift** — block-aware raw Markdown offsets,
+  dedicated table/CodeMirror selection handling, and keep-mounted rich editors
+  preserve both editing carets and reading positions across repeated two-way
+  switches, including large image-heavy documents.
+- **Source caret visibility** — the source-mode caret is taller, thicker, theme
+  aware, and measured against the textarea's final client width so it no longer
+  covers text or appears in unrelated blank space.
+- **Workspace path safety** — only valid absolute, unrestricted roots are
+  restored or watched; root mount points cannot be moved as ordinary folders.
+- **Desktop security boundaries** — external navigation accepts only approved
+  URL protocols, and local-font permission is restricted to the intended font
+  enumeration flow.
+
+### Internal
+- Split main-process document, filesystem, watcher, PDF, and security concerns
+  into focused modules without changing the preload contract.
+- Added source-map, source-find, mode-switch, Review UI, filesystem, watcher,
+  PDF, and security regression scripts; CI now runs the core suite before build.
+
 ## [0.5.5] - 2026-07-10
 
 ### Added
