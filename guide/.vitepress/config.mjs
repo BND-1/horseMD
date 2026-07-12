@@ -38,6 +38,7 @@ export default defineConfig({
           { text: '下载正确的版本', link: '/getting-started/download' },
           { text: 'Windows 安装', link: '/getting-started/install-windows' },
           { text: 'macOS 安装', link: '/getting-started/install-macos' },
+          { text: 'Linux 安装', link: '/getting-started/install-linux' },
           { text: 'Android 安装', link: '/getting-started/install-android' },
           { text: '第一次启动', link: '/getting-started/first-launch' }
         ]
