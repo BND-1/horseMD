@@ -468,9 +468,10 @@ button:focus-visible,
   min-width: 0;
   overflow: hidden;
 }
-/* Windows: the renderer draws its own caption buttons (see .win-controls),
+/* Windows & Linux: the renderer draws its own caption buttons (see .win-controls / .gtk-controls),
    so the top bar no longer reserves space for a native overlay. */
-.app.is-win .topbar { padding-right: 0; }
+.app.is-win .topbar,
+.app.is-linux .topbar { padding-right: 0; }
 /* macOS: give the traffic lights their own full-width title bar so they no
    longer straddle the activity-bar / top-bar seam. The top bar spans BOTH
    columns and the activity bar drops to start *below* it — so the lights rest on
@@ -4006,6 +4007,9 @@ body.dark .milkdown {
    --font-mono, so this one rule covers every code surface; no selector sprawl. */
 .app.is-win {
   --font-mono: Consolas, 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+}
+.app.is-linux {
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
 }
 .milkdown .ProseMirror pre code::selection {
   background: var(--accent-soft);
