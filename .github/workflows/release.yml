@@ -70,3 +70,14 @@ jobs:
           echo "Size: $(stat -c%s "$DEB_FILE") bytes"
           dpkg-deb --info "$DEB_FILE"
           echo "✅ .deb artifact is valid"
+
+      # Linux: electron-builder's default draft-publish SKIPS when the release
+      # is already published (existingType=release vs publishingType=draft), so
+      # upload the .deb explicitly with --clobber to the tag's release.
+      - name: Upload Linux .deb to release
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          gh release upload "$TAG" dist/*.deb --clobber
