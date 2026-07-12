@@ -22,6 +22,8 @@ jobs:
             platform: win
           - os: macos-latest
             platform: mac
+          - os: ubuntu-latest
+            platform: linux
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -34,6 +36,14 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Linux: electron-builder needs libgtk-3-dev and libnotify for desktop
+      # integration metadata; dpkg-deb is used to verify the .deb artifact.
+      - name: Install Linux desktop dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libnotify-dev dpkg
+
       - name: Install dependencies
         run: npm ci
 
@@ -44,3 +54,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --${{ matrix.platform }} --publish always
+
+      # Linux: verify the .deb is a valid package (not a zero-byte stub from
+      # cross-build). Cross-building .deb on macOS produces an invalid ~96-byte
+      # file, so this check must run on a real Ubuntu runner.
+      - name: Verify Linux .deb artifact
+        if: matrix.platform == 'linux'
+        run: |
+          DEB_FILE=$(ls dist/*.deb 2>/dev/null | head -1)
+          if [ -z "$DEB_FILE" ]; then
+            echo "::error::No .deb file found in dist/"
+            exit 1
+          fi
+          echo "Found: $DEB_FILE"
+          echo "Size: $(stat -c%s "$DEB_FILE") bytes"
+          dpkg-deb --info "$DEB_FILE"
+          echo "✅ .deb artifact is valid"

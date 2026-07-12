@@ -12,13 +12,13 @@
   "bugs": {
     "url": "https://github.com/BND-1/horseMD/issues"
   },
-  "main": "out/main/index.js",
+  "main": "out/main/index.cjs",
   "type": "module",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "cross-env ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "start": "electron-vite preview",
+    "preview": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
+    "start": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
     "dist": "electron-vite build && electron-builder",
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
@@ -63,6 +63,7 @@
     "@capacitor/cli": "^8.4.0",
     "@capacitor/ios": "^8.4.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^10.1.0",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
@@ -134,6 +135,34 @@
           "name": "Markdown Document",
           "role": "Editor",
           "icon": "build/icon.ico"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icons",
+      "category": "Development",
+      "maintainer": "mini_md",
+      "vendor": "HorseMD",
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown Document",
+          "role": "Editor",
+          "mimeType": "text/markdown"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown Document",
+          "role": "Editor",
+          "mimeType": "text/markdown"
         }
       ]
     },

@@ -641,7 +641,7 @@ export default function App() {
   const commands = useCommands({ t, handlers })
 
   const platformClass =
-    ({ win32: ' is-win', darwin: ' is-mac', ios: ' is-ios is-mobile', android: ' is-android is-mobile' }[
+    ({ win32: ' is-win', linux: ' is-linux', darwin: ' is-mac', ios: ' is-ios is-mobile', android: ' is-android is-mobile' }[
       window.api.platform
     ] || '')
   // Save targets the focused pane (pickEditableId), so the FAB must reflect

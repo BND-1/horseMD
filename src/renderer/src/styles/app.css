@@ -468,9 +468,10 @@ button:focus-visible,
   min-width: 0;
   overflow: hidden;
 }
-/* Windows: the renderer draws its own caption buttons (see .win-controls),
+/* Windows & Linux: the renderer draws its own caption buttons (see .win-controls / .gtk-controls),
    so the top bar no longer reserves space for a native overlay. */
-.app.is-win .topbar { padding-right: 0; }
+.app.is-win .topbar,
+.app.is-linux .topbar { padding-right: 0; }
 /* macOS: give the traffic lights their own full-width title bar so they no
    longer straddle the activity-bar / top-bar seam. The top bar spans BOTH
    columns and the activity bar drops to start *below* it — so the lights rest on
@@ -1176,6 +1177,55 @@ button:focus-visible,
 .win-ctrl:active { background: var(--active); }
 .win-ctrl.close:hover { background: #e81123; color: #fff; opacity: 1; }
 .win-ctrl.close:active { background: #c50f1f; color: #fff; }
+
+/* Linux: GNOME/GTK-style window controls (matching VSCode on Linux).
+   Square buttons with rounded-rect hover backgrounds, spaced apart.
+   Minimize = horizontal bar, Maximize = square, Close = ×.
+   Close hover shows red background with white icon. */
+.gtk-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--topbar-h);
+  padding: 0 10px;
+  -webkit-app-region: no-drag;
+}
+.gtk-ctrl {
+  width: 32px;
+  height: calc(var(--topbar-h) - 6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: background-color 0.1s ease, opacity 0.1s ease;
+}
+.gtk-ctrl:hover { background: var(--hover); opacity: 1; }
+.gtk-ctrl:active { background: var(--active); }
+.gtk-ctrl.close:hover { background: rgba(232, 17, 35, 0.9); color: #fff; opacity: 1; }
+.gtk-ctrl.close:active { background: rgba(197, 15, 31, 0.9); color: #fff; }
+
+/* 基础样式：统一缩小尺寸并加粗线条 */
+.gtk-ctrl svg {
+  width: 14px;   /* 原来是 16px，稍微缩小让它不那么突兀 */
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2.0; /* 原来是 1.2，加粗线条让它更丰满 */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  flex-shrink: 0;
+}
+
+/* 针对最大化按钮的微调（缩小后太细） */
+.gtk-ctrl.close svg {
+  width: 16px;
+  height: 16px;
+}
 
 .icon-btn {
   display: grid;
@@ -3957,6 +4007,9 @@ body.dark .milkdown {
    --font-mono, so this one rule covers every code surface; no selector sprawl. */
 .app.is-win {
   --font-mono: Consolas, 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+}
+.app.is-linux {
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
 }
 .milkdown .ProseMirror pre code::selection {
   background: var(--accent-soft);

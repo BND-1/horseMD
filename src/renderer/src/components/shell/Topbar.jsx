@@ -80,7 +80,7 @@ export default function Topbar({
       <button className="icon-btn drag-no" title="Command palette (Ctrl+P)" onClick={onOpenPalette}>
         <Icon name="command" size={16} />
       </button>
-      {window.api.platform === 'win32' && <WindowControls t={t} />}
+      {(window.api.platform === 'win32' || window.api.platform === 'linux') && <WindowControls t={t} />}
     </div>
   )
 }
