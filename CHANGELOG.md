@@ -6,9 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Configurable PDF export** (#60) — desktop export now offers A4, A3, Letter,
+  and validated custom page dimensions, portrait/landscape orientation, plus
+  optional page breaks before heading levels 1–3 or after horizontal rules.
+
+### Changed
+- **Natural inline-code editing** (#58) — typing an empty backtick pair enters
+  inline code immediately, and clicking the rendered trailing edge allows text
+  to be appended without making the mark inherit into following prose.
+
+### Fixed
+- **Stable app viewport and readable wide tables** — the application shell no
+  longer rubber-bands into a blank gap, while wide Markdown and raw-HTML tables
+  scroll horizontally inside the editor instead of crushing text into narrow
+  columns.
+- **Block LaTeX focus** (#57) — `$$` and `/math` blocks no longer leave edit mode
+  after the first renderable character. `/math` converts the current paragraph
+  so the caret starts inside the formula instead of on the following line.
+- **File-tree context menu bounds** (#59) — menus near the bottom edge are
+  positioned from their measured layout size, keeping Export and Delete visible
+  even during the scale-in animation or in a short window.
+
 ## [0.6.0] - 2026-07-12
 
 ### Added
+- **Linux desktop package** — Ubuntu, Debian, and compatible x64 distributions
+  can install the official `amd64.deb`. Linux gets its own `.is-linux` styling,
+  GTK-style minimize/maximize/close controls, Markdown file association, and
+  PNG application icons. The tag workflow builds on Ubuntu, validates the
+  package with `dpkg-deb --info`, and uploads the verified artifact to GitHub
+  Releases.
 - **Feishu-style slash command search** — the `/` menu now filters by Chinese,
   English, aliases, full pinyin, and pinyin initials. Language queries such as
   `/java`, `/python`, or `/mermaid` create a code block with that language

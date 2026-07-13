@@ -118,7 +118,7 @@ const RUN = {
   codeLang: (lang) => (ctx, view) =>
     clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: lang } }),
   math: (ctx, view) =>
-    clearThen(ctx, addBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: 'LaTeX' } }),
+    clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: 'LaTeX' } }),
   table: (ctx, view) => {
     const commands = ctx.get(commandsCtx)
     commands.call(clearTextInCurrentBlockCommand.key)

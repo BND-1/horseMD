@@ -25,13 +25,16 @@ npm run guide:check    # tutorial content checks + static build
 ```
 
 `npm run dist` packages for whatever OS you run it on — **Windows NSIS** on
-Windows, **macOS dmg + zip** on macOS (a dmg must be built on macOS). If the
+Windows, **macOS dmg + zip** on macOS, and **Linux amd64 deb** on Linux. Installers
+must be built and validated on their target OS; a dmg must be built on macOS and
+a deb must pass `dpkg-deb --info` on Linux. If the
 electron-builder binaries download slowly:
 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`.
 
 Builds are **unsigned**: Windows shows SmartScreen ("更多信息 → 仍要运行");
 macOS Gatekeeper blocks first launch (right-click → Open, or
-`xattr -dr com.apple.quarantine /Applications/HorseMD.app`).
+`xattr -dr com.apple.quarantine /Applications/HorseMD.app`). Linux users should
+install only the `.deb` from the official GitHub Release.
 
 ## Layout
 
@@ -75,7 +78,7 @@ src/renderer/src/
   {paths,find,ui,settings,customThemes}.js  pure helpers: session · find · toast · prefs (page width / font / line height / paragraph spacing / image host) · custom-theme injection
   {blocks,themes,i18n,onboarding}.{js,jsx}
   styles/app.css       all styles + theme variables
-build/                 icon.ico (Windows) + icon.icns (macOS) + installer.nsh (NSIS uninstall: keep user files)
+build/                 icon.ico (Windows) + icon.icns (macOS) + icons/ PNG set (Linux) + installer.nsh
 scripts/               CDP-based e2e helpers (etv.mjs, inspect.mjs)
 docs/                  architecture / features / implementation-notes / development
 guide/                 VitePress user tutorial + versioned current-app screenshots
@@ -83,18 +86,19 @@ guide/                 VitePress user tutorial + versioned current-app screensho
 
 ## Conventions & rules
 
-- **Cross-platform — do not break the other OS.** This app ships on Windows and
-  macOS from one codebase. Platform-specific code is gated:
-  - main process: `process.platform === 'darwin' | 'win32'`
-  - renderer: `window.api.platform` → an `.app.is-win` / `.app.is-mac` class on
+- **Cross-platform — do not break the other OS.** This app ships on Windows,
+  macOS, and Linux from one codebase. Platform-specific code is gated:
+  - main process: `process.platform === 'darwin' | 'win32' | 'linux'`
+  - renderer: `window.api.platform` → an `.app.is-win` / `.app.is-mac` /
+    `.app.is-linux` class on
     the root; write platform CSS under those selectors only.
   - title bar: `hiddenInset` + `trafficLightPosition` on macOS (top bar spans
     full width, activity bar drops below the traffic lights). On Windows the
-    native `titleBarOverlay` is **disabled** — the renderer draws its own
-    minimize/maximize/close buttons (`WindowControls` in `App.jsx`, gated to
-    `platform === 'win32'`), driven by `window:*` IPC; main pushes
+    native `titleBarOverlay` is **disabled** — the renderer draws Windows or GTK
+    minimize/maximize/close buttons (`WindowControls` in `Topbar.jsx`, gated to
+    `platform === 'win32' || platform === 'linux'`), driven by `window:*` IPC; main pushes
     `window:maximized` on `maximize`/`unmaximize` so the restore icon stays in
-    sync. Keep both paths working when touching the top bar, and always leave a
+    sync. Keep all three desktop paths working when touching the top bar, and always leave a
     draggable area even when tabs fill the strip.
   - shortcuts accept both `Ctrl` and `Cmd` (`metaKey`).
   - launch args: `extractArgs()` in `main/index.js` splits argv into markdown
@@ -160,7 +164,10 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   been distributed for testing: do not publish a lower "clean" version after
   internal builds such as `0.5.29`, because auto-update compares semver and will
   treat `0.5.5` as older than `0.5.29`.
-  Build full set: mac dmg+zip (arm64+x64) + win nsis --x64 (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
+  Build full set: mac dmg+zip (arm64+x64) + win nsis x64 + Linux amd64 deb
+  (`CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned Apple builds). Linux must be
+  built on Ubuntu, pass `dpkg-deb --info`, and be uploaded with
+  `gh release upload "$TAG" dist/*.deb --clobber` after validation.
   `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,

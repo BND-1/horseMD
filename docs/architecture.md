@@ -7,18 +7,18 @@
 - **React 18** —— 渲染层 UI
 - **Milkdown Crepe 7**（基于 ProseMirror）—— 所见即所得 Markdown 编辑器引擎
 - **chokidar** —— 文件/文件夹监听
-- **electron-builder** —— 打包（Windows NSIS 安装包 + macOS dmg/zip）
+- **electron-builder** —— 打包（Windows NSIS + macOS dmg/zip + Linux deb）
 
 ## 进程模型
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 主进程 (src/main/index.js)                                │
-│  · BrowserWindow（无边框标题栏；mac 红绿灯 / win 自绘按钮）   │
+│  · BrowserWindow（无边框标题栏；mac 红绿灯 / win、Linux 自绘）│
 │  · 单实例锁：第二次启动把文件/文件夹转发给已有窗口            │
 │  · 文件系统 IPC：读写/重命名/删除/新建/复制/列目录          │
 │  · 文件夹监听（刷新文件树） + 单文件监听（自动重载内容）       │
-│  · 窗口控制 IPC（win 自绘按钮）+ 导出 PDF + 更新检查         │
+│  · 窗口控制 IPC（win/Linux 自绘按钮）+ 导出 PDF + 更新检查   │
 │  · 关闭拦截：未保存时先问渲染层（app-close-request）         │
 │  · 应用菜单（主要用于快捷键加速器）                          │
 └───────────────▲───────────────────────────┬──────────────┘
@@ -98,7 +98,7 @@ src/
         Tabs.jsx           顶部标签条（拖拽排序 #31）+ 右键菜单
         Welcome.jsx        首页/欢迎页（logo、版本、最近文件）
         SaveFab.jsx        浮动保存按钮（dirty 时显示）
-        WindowControls.jsx Windows 自绘窗口按钮
+        WindowControls.jsx Windows / Linux 自绘窗口按钮
         UpdateToast.jsx    更新提示浮层
         RenameModal.jsx    标签重命名弹窗
         Outline.jsx        大纲面板（标题列表 + scrollspy + 软居中）
@@ -119,9 +119,13 @@ scripts/
 build/
   icon.ico                 Windows 图标（多分辨率、圆角）
   icon.icns                macOS 图标（由 icon.png 生成）
+  icons/                   Linux PNG 图标（16px–512px）
 ```
 
-> 跨平台：渲染层根节点按 `window.api.platform` 挂 `.app.is-win` / `.app.is-mac` 类，平台相关样式（标题栏让位红绿灯等）只写在这两个选择器下；主进程用 `process.platform` 分支。改顶栏/平台代码时两个系统都要顾到。
+> 跨平台：渲染层根节点按 `window.api.platform` 挂 `.app.is-win` / `.app.is-mac` /
+> `.app.is-linux` 类；主进程用 `process.platform` 分支。macOS 使用原生红绿灯，Windows
+> 和 Linux 共用窗口 IPC，但分别渲染 Windows 与 GTK 风格按钮。改顶栏或平台代码时三个
+> 桌面系统都要顾到。electron-vite 将主进程构建为 `out/main/index.cjs`，preload 仍为 ESM。
 
 ## App.jsx：外壳的核心职责
 

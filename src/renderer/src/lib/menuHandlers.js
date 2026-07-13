@@ -34,7 +34,8 @@ export function createMenuHandlers({
   findInputRef,
   openFind,
   replaceInputRef,
-  review
+  review,
+  requestPdfExport
 }) {
   return {
     home: () => {
@@ -62,7 +63,7 @@ export function createMenuHandlers({
       }
       const tab = tabs.find((x) => x.id === id)
       const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      await window.api.exportPDF(html, base + '.pdf')
+      requestPdfExport(html, base + '.pdf')
     },
     closeTab: () => activeId && closeTab(activeId),
     palette: () => setPaletteOpen((v) => !v),

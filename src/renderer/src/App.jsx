@@ -15,6 +15,7 @@ import FindBar from './components/shell/FindBar.jsx'
 import EditorArea from './components/shell/EditorArea.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import RenameModal from './components/RenameModal.jsx'
+import PdfExportDialog from './components/PdfExportDialog.jsx'
 import {
   loadSettings,
   saveSettings,
@@ -103,6 +104,8 @@ export default function App() {
   // Mobile "save as": prompt for a filename before writing an untitled doc into
   // the local library (desktop uses the native save dialog instead).
   const [saveNameState, setSaveNameState] = useState(null)
+  // Pending rich-document HTML awaiting PDF page and pagination options.
+  const [pdfExportState, setPdfExportState] = useState(null)
   // User preferences (page width, image-host command). Persisted separately from
   // the session; see settings.js.
   const [settings, setSettings] = useState(loadSettings)
@@ -326,6 +329,10 @@ export default function App() {
     setCustomTheme(null)
   }, [])
 
+  const requestPdfExport = useCallback((html, defaultName) => {
+    setPdfExportState({ html, defaultName })
+  }, [])
+
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
   // File operations (open/new/update/close/save/rename/dup/delete/export) +
@@ -373,6 +380,7 @@ export default function App() {
     tRef,
     setRenameState,
     setSaveNameState,
+    requestPdfExport,
     setSidebarOpen,
     initialFolderRoots: initialFolderRoots
   })
@@ -587,7 +595,8 @@ export default function App() {
     findInputRef,
     replaceInputRef,
     openFind,
-    review
+    review,
+    requestPdfExport
   })
 
   // App lifecycle (session restore/persist/flush + update check + toast +
@@ -932,6 +941,18 @@ export default function App() {
           initial={saveNameState.value}
           onConfirm={(name) => commitMobileSave(saveNameState.id, name)}
           onCancel={() => setSaveNameState(null)}
+        />
+      )}
+
+      {pdfExportState && (
+        <PdfExportDialog
+          t={t}
+          onCancel={() => setPdfExportState(null)}
+          onConfirm={(options) => {
+            const request = pdfExportState
+            setPdfExportState(null)
+            window.api.exportPDF(request.html, request.defaultName, options)
+          }}
         />
       )}
 

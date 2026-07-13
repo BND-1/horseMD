@@ -21,6 +21,7 @@ import { mathPreviewPlugin } from './editor-math-preview.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
+import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
@@ -141,6 +142,7 @@ export function createConfiguredCrepe({
       createStrikeGuardPlugin(),
       ...plugins,
       tableBreakKeymap(),
+      createInlineCodeEditingPlugin(),
       mathPreviewPlugin(),
       createSlashPlugin(ctx, getT),
       toolbarAutohidePlugin(),

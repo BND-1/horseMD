@@ -34,7 +34,7 @@ author: Evan Yang (杨庭毅, @BND-1)
 ## 链接
 
 - 官网：https://horsemd.yangsir.net/
-- 使用教程：https://guide-zeta-rouge.vercel.app/
+- 使用教程：https://guide.horsemd.yangsir.net/
 - GitHub：https://github.com/BND-1/horseMD
 - Releases：https://github.com/BND-1/horseMD/releases
 - 完整事实（LLM 友好）：https://horsemd.yangsir.net/llms-full.txt

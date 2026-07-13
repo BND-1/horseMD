@@ -7,7 +7,7 @@ description: 下载、安装并第一次打开 HorseMD。
 
 <span class="version-badge">适用于 HorseMD v0.6.0</span>
 
-从下载到创建第一篇文档，通常只需要几分钟。由于当前桌面安装包尚未购买代码签名，Windows 和 macOS 第一次打开时会显示系统安全提示；请按照对应教程操作。
+从下载到创建第一篇文档，通常只需要几分钟。由于当前桌面安装包尚未购买代码签名，Windows 和 macOS 第一次打开时会显示系统安全提示；Linux 用户应确认 `.deb` 来自 HorseMD 官方 GitHub Release。请按照对应教程操作。
 
 ## 选择你的平台
 

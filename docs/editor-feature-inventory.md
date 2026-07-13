@@ -77,7 +77,7 @@
 - 状态栏通过 `setBlock` 改块类型。
 - level badge 跟随当前块。
 - slash menu 本地化。
-- inline code `inclusive:false`，关闭反引号后继续输入应退出 code。
+- inline code 保持 `inclusive:false`，关闭反引号后继续输入应退出 code；`editor-inline-code.js` 只为成对反引号进入和点击 code 末端追加维护短暂 stored-mark，不改变 schema/序列化。
 
 验证：
 

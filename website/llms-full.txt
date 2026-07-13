@@ -3,7 +3,7 @@
 > 免费开源的 Typora 平替 Markdown 编辑器：所见即所得 + 标签页 + 文件树工作区，支持 Windows、macOS、Linux 与 Android，中英双语界面，MIT 协议。本文件包含产品全部关键事实：功能详解、快捷键、主题、与 Typora 对比、安装与构建、FAQ。
 
 - **官网**：https://horsemd.yangsir.net/
-- **完整中文使用教程**：https://guide-zeta-rouge.vercel.app/
+- **完整中文使用教程**：https://guide.horsemd.yangsir.net/
 - **GitHub**：https://github.com/BND-1/horseMD
 - **下载**：https://github.com/BND-1/horseMD/releases/latest
 - **版本**：v0.6.0（2026-07）· **协议**：MIT · **价格**：免费

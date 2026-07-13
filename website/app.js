@@ -77,10 +77,27 @@ const io = new IntersectionObserver(entries => {
     if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) }
   })
 }, { threshold: 0.1, rootMargin: '0px 0px -6% 0px' })
-document.querySelectorAll('.reveal').forEach((el, i) => {
+const revealElements = [...document.querySelectorAll('.reveal')]
+revealElements.forEach((el, i) => {
   el.style.transitionDelay = `${(i % 3) * 80}ms`
   io.observe(el)
 })
+
+// IntersectionObserver can be delayed in background tabs and while lazy images
+// change the mobile layout. Never leave content hidden after the user passes it.
+function revealInOrAboveViewport() {
+  for (const el of revealElements) {
+    if (el.classList.contains('in')) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.top <= window.innerHeight * 0.94) {
+      el.classList.add('in')
+      io.unobserve(el)
+    }
+  }
+}
+window.addEventListener('scroll', revealInOrAboveViewport, { passive: true })
+window.addEventListener('resize', revealInOrAboveViewport)
+requestAnimationFrame(revealInOrAboveViewport)
 
 requestAnimationFrame(() => {
   document.querySelectorAll('.split-line').forEach((el, i) => {

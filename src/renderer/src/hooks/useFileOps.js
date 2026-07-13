@@ -42,6 +42,7 @@ export function useFileOps({
   tRef,
   setRenameState,
   setSaveNameState,
+  requestPdfExport,
   setSidebarOpen,
   initialFolderRoots
 }) {
@@ -416,9 +417,9 @@ export function useFileOps({
         return
       }
       const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      await window.api.exportPDF(html, base + '.pdf')
+      requestPdfExport(html, base + '.pdf')
     },
-    [openPaths, tabsRef, editorApis, tRef]
+    [openPaths, tabsRef, editorApis, tRef, requestPdfExport]
   )
 
   // --------- auto-reload open files edited by external programs ----------

@@ -2,24 +2,24 @@
 
 HorseMD 是一款免费、开源、不需要账号的 Markdown 编辑器。本教程适用于 HorseMD v0.6.0，覆盖安装、文件管理、富文本与源码编辑、工作区、效率工具、输出、外观、移动端和故障排查。
 
-- 教程首页：https://guide-zeta-rouge.vercel.app/
-- 快速开始：https://guide-zeta-rouge.vercel.app/getting-started/
-- 下载正确版本：https://guide-zeta-rouge.vercel.app/getting-started/download
-- 认识界面：https://guide-zeta-rouge.vercel.app/basics/interface
-- 工作区：https://guide-zeta-rouge.vercel.app/basics/workspace
-- 富文本与源码：https://guide-zeta-rouge.vercel.app/basics/rich-and-source
-- 斜杠菜单：https://guide-zeta-rouge.vercel.app/editing/slash-command
-- 图片、链接和附件：https://guide-zeta-rouge.vercel.app/editing/images
-- 查找与替换：https://guide-zeta-rouge.vercel.app/productivity/find-and-replace
-- 大纲：https://guide-zeta-rouge.vercel.app/productivity/outline
-- 审阅：https://guide-zeta-rouge.vercel.app/productivity/review
-- 快捷键：https://guide-zeta-rouge.vercel.app/productivity/shortcuts
-- 设置：https://guide-zeta-rouge.vercel.app/customization/settings
-- iOS：https://guide-zeta-rouge.vercel.app/mobile/ios
-- Android：https://guide-zeta-rouge.vercel.app/mobile/android
-- 安装排查：https://guide-zeta-rouge.vercel.app/troubleshooting/installation
-- 大文档与性能：https://guide-zeta-rouge.vercel.app/troubleshooting/performance
-- 常见问题：https://guide-zeta-rouge.vercel.app/troubleshooting/faq
+- 教程首页：https://guide.horsemd.yangsir.net/
+- 快速开始：https://guide.horsemd.yangsir.net/getting-started/
+- 下载正确版本：https://guide.horsemd.yangsir.net/getting-started/download
+- 认识界面：https://guide.horsemd.yangsir.net/basics/interface
+- 工作区：https://guide.horsemd.yangsir.net/basics/workspace
+- 富文本与源码：https://guide.horsemd.yangsir.net/basics/rich-and-source
+- 斜杠菜单：https://guide.horsemd.yangsir.net/editing/slash-command
+- 图片、链接和附件：https://guide.horsemd.yangsir.net/editing/images
+- 查找与替换：https://guide.horsemd.yangsir.net/productivity/find-and-replace
+- 大纲：https://guide.horsemd.yangsir.net/productivity/outline
+- 审阅：https://guide.horsemd.yangsir.net/productivity/review
+- 快捷键：https://guide.horsemd.yangsir.net/productivity/shortcuts
+- 设置：https://guide.horsemd.yangsir.net/customization/settings
+- iOS：https://guide.horsemd.yangsir.net/mobile/ios
+- Android：https://guide.horsemd.yangsir.net/mobile/android
+- 安装排查：https://guide.horsemd.yangsir.net/troubleshooting/installation
+- 大文档与性能：https://guide.horsemd.yangsir.net/troubleshooting/performance
+- 常见问题：https://guide.horsemd.yangsir.net/troubleshooting/faq
 
 产品官网：https://horsemd.yangsir.net/
 GitHub：https://github.com/BND-1/horseMD

@@ -5,7 +5,7 @@
 HorseMD 是一款桌面 Markdown 编辑器（Electron + Milkdown/ProseMirror）。它的出发点是 Typora 的一个长期痛点：每打开一个 .md 文件就多开一个 Typora 实例。HorseMD 把所有文件装进同一个窗口 —— 左侧文件树浏览整个文件夹，顶部标签页切换文件，中间是 Typora 式的打字即渲染画布。适合需要同时编辑多个 Markdown 文件的写作者、开发者和笔记用户。
 
 - **官网（下载）**：https://horsemd.yangsir.net/
-- **完整中文使用教程**：https://guide-zeta-rouge.vercel.app/
+- **完整中文使用教程**：https://guide.horsemd.yangsir.net/
 - **GitHub 仓库**：https://github.com/BND-1/horseMD
 - **最新版下载**：https://github.com/BND-1/horseMD/releases/latest （Windows .exe / macOS .dmg / Linux .deb / Android .apk）
 - **Sitemap**：https://horsemd.yangsir.net/sitemap.xml

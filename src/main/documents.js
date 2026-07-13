@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
 import fs from 'node:fs/promises'
-import { buildPdfDocument } from './pdf-document.js'
+import { buildPdfDocument, resolvePdfPage } from './pdf-document.js'
 
 export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions }) {
   ipcMain.handle('dialog:openFiles', async () => {
@@ -36,7 +36,8 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions
     return res.canceled ? null : res.filePath
   })
 
-  ipcMain.handle('export:pdf', async (_event, { html, defaultName }) => {
+  ipcMain.handle('export:pdf', async (_event, { html, defaultName, options }) => {
+    const page = resolvePdfPage(options)
     const res = await dialog.showSaveDialog(getMainWindow(), {
       defaultPath: defaultName || 'Untitled.pdf',
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
@@ -44,7 +45,7 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions
     if (res.canceled || !res.filePath) return { canceled: true }
 
     const tmp = join(app.getPath('temp'), `horsemd-export-${Date.now()}.html`)
-    await fs.writeFile(tmp, buildPdfDocument(html), 'utf8')
+    await fs.writeFile(tmp, buildPdfDocument(html, page), 'utf8')
     const win = new BrowserWindow({
       show: false,
       webPreferences: {
@@ -58,7 +59,10 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     try {
       await win.loadFile(tmp)
-      const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      const pdf = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: page.printPageSize
+      })
       await fs.writeFile(res.filePath, pdf)
     } finally {
       if (!win.isDestroyed()) win.destroy()

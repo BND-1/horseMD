@@ -1,4 +1,6 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { isMarkdownName } from '../paths.js'
+import { clampFloatingRect } from '../lib/menuPosition.js'
 
 export default function SidebarContextMenu({
   menu,
@@ -15,6 +17,30 @@ export default function SidebarContextMenu({
   onExportPdf,
   onDelete
 }) {
+  const menuRef = useRef(null)
+  const [position, setPosition] = useState(() => ({ left: menu?.x || 0, top: menu?.y || 0 }))
+
+  useLayoutEffect(() => {
+    if (!menu) return undefined
+    const place = () => {
+      const element = menuRef.current
+      if (!element) return
+      setPosition(clampFloatingRect({
+        x: menu.x,
+        y: menu.y,
+        // Layout dimensions are stable during the scale-in animation;
+        // getBoundingClientRect() would briefly under-report the menu size.
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      }))
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [menu])
+
   if (!menu) return null
   const { node, isRoot } = menu
   const run = (action) => () => {
@@ -24,11 +50,9 @@ export default function SidebarContextMenu({
 
   return (
     <div
+      ref={menuRef}
       className="context-menu"
-      style={{
-        left: Math.min(menu.x, window.innerWidth - 210),
-        top: Math.min(menu.y, window.innerHeight - 340)
-      }}
+      style={position}
       onClick={(event) => event.stopPropagation()}
     >
       <button onClick={run(() => onNewFile(node?.type === 'dir' ? node : null))}>{t('side.ctxNewFile')}</button>

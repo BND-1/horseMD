@@ -22,7 +22,9 @@ npm run dist        # 构建 + electron-builder 打**当前系统**的安装包 
 npm run dist:dir    # 构建 + 打免安装目录版（dist/<platform>-unpacked/）
 ```
 
-> `npm run dist` 按运行它的系统出包：Windows 上出 NSIS 安装包，macOS 上出 `.dmg` + `.zip`（dmg 必须在 macOS 上打）。
+> `npm run dist` 按运行它的系统出包：Windows 上出 NSIS 安装包，macOS 上出
+> `.dmg` + `.zip`，Linux 上出 `.deb`。安装包必须在对应平台构建和验证；尤其不要
+> 把 macOS 交叉构建得到的 `.deb` 当作有效产物。
 
 打包时若 electron-builder 的二进制下载慢，加镜像环境变量：
 ```
@@ -41,6 +43,7 @@ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-
   "icon": "build/icon.ico",
   "mac": { "target": ["dmg", "zip"], "icon": "build/icon.icns", "category": "public.app-category.productivity", "fileAssociations": [/* .md/.markdown */] },
   "win": { "target": ["nsis"], "icon": "build/icon.ico", "fileAssociations": [/* .md/.markdown */] },
+  "linux": { "target": [{ "target": "deb", "arch": ["x64"] }], "icon": "build/icons", "fileAssociations": [/* .md/.markdown */] },
   "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "allowElevation": true, "installerIcon": "build/icon.ico", "uninstallerIcon": "build/icon.ico" }
 }
 ```
@@ -52,9 +55,36 @@ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-
 Windows 与 macOS 共用一份配置，在 macOS 上 `npm run dist` 即出 `.dmg` + `.zip`（默认 arm64；要 Intel 用 `"arch": ["x64", "arm64"]`）。
 
 - 图标 `build/icon.icns` 由 `icon.png` 生成（mac 上 `iconutil`，或跨平台 `png2icns` / `electron-icon-builder`）。
-- 跨平台已处理：快捷键同时认 `Ctrl`/`Cmd`（`metaKey`），`open-file`（Finder 打开）事件，标题栏 `hiddenInset` + 固定 `trafficLightPosition`，渲染层用 `.app.is-mac` / `.app.is-win` 区分平台样式。**改顶栏/平台相关代码时务必两个系统都别弄坏。**
+- 跨平台已处理：快捷键同时认 `Ctrl`/`Cmd`（`metaKey`），`open-file`（Finder 打开）事件，标题栏 `hiddenInset` + 固定 `trafficLightPosition`，渲染层用 `.app.is-mac` / `.app.is-win` / `.app.is-linux` 区分平台样式。**改顶栏/平台相关代码时务必三个桌面系统都别弄坏。**
 
 > dev 模式在 macOS 上用 `osascript tell application "Electron"` 驱动时，可能误启动 `node_modules` 里的通用 Electron 壳（同名冲突，显示默认页）。验证请用打好的 **HorseMD.app**（名字与 bundle id 唯一）。
+
+### Linux 打包与发布
+
+Linux 目前发布 `amd64.deb`，应在 Ubuntu x64 环境执行：
+
+```bash
+npm ci
+npm run test:core
+npm run build
+npx electron-builder --linux deb --x64 --publish never
+
+DEB_FILE=$(ls dist/*.deb | head -1)
+dpkg-deb --info "$DEB_FILE"
+dpkg-deb --contents "$DEB_FILE" >/dev/null
+```
+
+验证不只看打包命令退出码：历史上 macOS 交叉构建曾返回 0，却只生成约 96 字节的
+无效 `.deb`。正式包必须在 Linux 上通过 `dpkg-deb --info`，并至少验证安装、卸载、
+应用菜单启动、Markdown 文件关联、窗口拖动和最小化/最大化/关闭。
+
+`.github/workflows/release.yml` 在 `v*` tag 上运行 Windows、macOS、Ubuntu matrix。
+Linux job 安装桌面构建依赖，打包后执行 `dpkg-deb --info`；由于 electron-builder 对已经
+发布的 Release 可能跳过 draft publish，工作流最后使用
+`gh release upload "$TAG" dist/*.deb --clobber` 明确上传经校验的 `.deb`。
+
+主进程输出是 `out/main/index.cjs`。`dev`、`preview` 和 `start` 用 `cross-env` 把可能从
+外部工具继承的 `ELECTRON_RUN_AS_NODE` 清空，避免 Electron 被当作普通 Node 进程启动。
 
 ## 自动化测试：CDP 端到端验证
 
@@ -71,6 +101,8 @@ node scripts/test-strike-guard.mjs
 ### 工具
 
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
+- `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 配置弹窗；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
+- `scripts/test-editor-inline-code.mjs`、`scripts/test-menu-position.mjs` —— 不启动 Electron 的输入边界与浮层几何回归
 - `scripts/inspect.mjs` —— 简易状态检查器
 - `scripts/test-mode-switch-chains.mjs` —— 双向连续切换、表格和 CodeMirror 光标语义匹配
   - 普通富文本点击会确认可见选区；首次点击仅恢复编辑器焦点时自动重试一次

@@ -10,7 +10,7 @@ export default defineConfig({
   srcExclude: ['README.md', 'public/**/*.md'],
   lastUpdated: true,
   sitemap: {
-    hostname: 'https://guide-zeta-rouge.vercel.app'
+    hostname: 'https://guide.horsemd.yangsir.net'
   },
   head: [
     ['link', { rel: 'icon', type: 'image/png', href: '/icon.png' }],

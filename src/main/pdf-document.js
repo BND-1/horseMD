@@ -1,6 +1,68 @@
+const PAGE_DIMENSIONS_MM = Object.freeze({
+  A4: [210, 297],
+  A3: [297, 420],
+  Letter: [215.9, 279.4]
+})
+
+const PAGINATION_VALUES = new Set(['none', 'h1', 'h2', 'h3', 'hr'])
+
+export const DEFAULT_PDF_OPTIONS = Object.freeze({
+  pageSize: 'A4',
+  orientation: 'portrait',
+  pagination: 'none',
+  customWidth: 210,
+  customHeight: 297
+})
+
+function clampDimension(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) ? Math.min(1000, Math.max(50, number)) : fallback
+}
+
+export function normalizePdfOptions(options = {}) {
+  const pageSize = Object.hasOwn(PAGE_DIMENSIONS_MM, options.pageSize) || options.pageSize === 'Custom'
+    ? options.pageSize
+    : DEFAULT_PDF_OPTIONS.pageSize
+  return {
+    pageSize,
+    orientation: options.orientation === 'landscape' ? 'landscape' : 'portrait',
+    pagination: PAGINATION_VALUES.has(options.pagination) ? options.pagination : 'none',
+    customWidth: clampDimension(options.customWidth, DEFAULT_PDF_OPTIONS.customWidth),
+    customHeight: clampDimension(options.customHeight, DEFAULT_PDF_OPTIONS.customHeight)
+  }
+}
+
+export function resolvePdfPage(options = {}) {
+  const normalized = normalizePdfOptions(options)
+  let [width, height] = normalized.pageSize === 'Custom'
+    ? [normalized.customWidth, normalized.customHeight]
+    : PAGE_DIMENSIONS_MM[normalized.pageSize]
+  if (normalized.orientation === 'landscape') [width, height] = [height, width]
+  return {
+    ...normalized,
+    width,
+    height,
+    printPageSize: {
+      // Electron printToPDF custom Size values are inches (unlike the native
+      // print API, whose similarly named structure uses microns).
+      width: Number((width / 25.4).toFixed(4)),
+      height: Number((height / 25.4).toFixed(4))
+    }
+  }
+}
+
+function paginationCss(pagination) {
+  if (/^h[1-3]$/.test(pagination)) {
+    return `.doc ${pagination}:not(:first-child) { break-before: page; page-break-before: always; }`
+  }
+  if (pagination === 'hr') {
+    return '.doc hr { border: 0; margin: 0; height: 0; break-after: page; page-break-after: always; }'
+  }
+  return ''
+}
+
 // Print stylesheet for PDF export: a clean, warm reading layout.
-export const PDF_CSS = `
-  @page { size: A4; margin: 20mm 18mm; }
+const BASE_PDF_CSS = `
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; }
   .doc {
@@ -55,6 +117,14 @@ export const PDF_CSS = `
   .doc input[type="checkbox"] { margin-right: 0.4em; }
 `
 
-export function buildPdfDocument(html) {
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${PDF_CSS}</style></head><body><div class="doc">${html}</div></body></html>`
+export function buildPdfCss(options = {}) {
+  const page = resolvePdfPage(options)
+  return `@page { size: ${page.width}mm ${page.height}mm; margin: 20mm 18mm; }\n${BASE_PDF_CSS}\n${paginationCss(page.pagination)}`
+}
+
+export const PDF_CSS = buildPdfCss(DEFAULT_PDF_OPTIONS)
+
+export function buildPdfDocument(html, options = {}) {
+  const css = buildPdfCss(options)
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body><div class="doc">${html}</div></body></html>`
 }

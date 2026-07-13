@@ -63,4 +63,4 @@ CDP_PORT=9223 npm run guide:capture
 ## 部署
 
 教程作为独立 Vercel 项目部署，Project Root 设置为 `guide`，域名绑定
-当前生产入口是 `guide-zeta-rouge.vercel.app`。`guide/vercel.json` 使用 `npm run check` 作为构建命令，输出目录为 `.vitepress/dist`。正式域名 `guide.horsemd.yangsir.net` 已绑定到 Vercel 项目，待阿里云 DNS 增加 CNAME（主机记录 `guide.horsemd`，记录值 `b00990d19c6f8080.vercel-dns-017.com`）并通过验证后，再统一替换生产入口和站点元数据。
+正式生产入口是 `https://guide.horsemd.yangsir.net/`。域名通过阿里云 DNS 的 CNAME 指向 Vercel，HTTPS 证书由 Vercel 自动签发和续期；HTTP 必须 308 跳转到 HTTPS。`guide/vercel.json` 使用 `npm run check` 作为构建命令，输出目录为 `.vitepress/dist`。部署后应同时验证首页、至少一个无扩展名内页、`robots.txt` 和 `sitemap.xml`。

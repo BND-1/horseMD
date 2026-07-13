@@ -1,7 +1,7 @@
 # HorseMD 使用教程站
 
 面向普通用户的中文图文教程，线上地址计划为
-[guide-zeta-rouge.vercel.app](https://guide-zeta-rouge.vercel.app/)。开发者实现说明仍放在仓库根目录的
+[guide.horsemd.yangsir.net](https://guide.horsemd.yangsir.net/)。开发者实现说明仍放在仓库根目录的
 `docs/`，不要把内部架构和故障复盘直接混入用户教程。
 
 ## 本地运行

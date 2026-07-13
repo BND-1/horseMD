@@ -6,7 +6,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap');
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 /* App-like behavior on touch devices: kill double-tap-to-zoom (which otherwise
    magnifies a blank tap and overflows the layout) and iOS text auto-inflation.
    No effect on desktop (mouse input ignores touch-action). */
@@ -815,6 +821,126 @@ button:focus-visible,
 }
 .hm-rename-actions button.primary:hover {
   background: var(--accent-strong);
+}
+
+/* ---- PDF export options ---- */
+.hm-pdf-modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 230;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-pdf-title {
+  margin-bottom: 18px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+}
+.hm-pdf-field,
+.hm-pdf-orientation {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.hm-pdf-field > span,
+.hm-pdf-orientation legend,
+.hm-pdf-custom label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hm-pdf-field select,
+.hm-pdf-custom input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--input-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.hm-pdf-field select:focus,
+.hm-pdf-custom input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.hm-pdf-custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: -4px 0 16px;
+}
+.hm-pdf-custom label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 6px;
+  align-items: center;
+}
+.hm-pdf-custom label > span { grid-column: 1 / -1; }
+.hm-pdf-custom small { color: var(--muted); font-size: 11px; }
+.hm-pdf-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  background: var(--hover);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+.hm-pdf-segmented label {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  color: var(--muted);
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hm-pdf-segmented label.active {
+  color: var(--text);
+  background: var(--popover-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.hm-pdf-segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.hm-pdf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.hm-pdf-actions button {
+  min-height: 32px;
+  padding: 0 14px;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.hm-pdf-actions button:hover { background: var(--active); }
+.hm-pdf-actions button.primary { color: #fff; background: var(--accent); }
+.hm-pdf-actions button.primary:hover { background: var(--accent-strong); }
+.hm-pdf-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Crepe's preview-only mode adds .hidden as soon as the first LaTeX character
+   renders. Keep a focused CodeMirror visible until editing actually ends. */
+.milkdown .milkdown-code-block .codemirror-host.hidden:focus-within {
+  display: block !important;
 }
 
 /* ============================================================
@@ -1669,6 +1795,8 @@ body.resizing-pane .pane-left-resizer::before {
   box-shadow: var(--surface-shadow);
   padding: 5px;
   min-width: 180px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   animation: menuFadeIn 0.12s var(--ease-out);
 }
 @keyframes menuFadeIn {
@@ -1920,7 +2048,9 @@ body.hm-col-resizing * {
 .editor-scroll {
   flex: 1;
   min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   /* No smooth scroll on the edit surface: it turns every implicit
      scroll-into-view (on click/select) into a visible upward slide.
      Outline/find jumps pass `behavior: 'smooth'` explicitly when wanted. */
@@ -2038,7 +2168,12 @@ body.hm-full-width .editor-skeleton {
    <table> looks like a table instead of escaped source. */
 .hm-html-block {
   margin: 0.6em 0;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  contain: inline-size layout paint;
+  -webkit-overflow-scrolling: touch;
 }
 /* YAML front matter card (--- block at the top of a doc). */
 .hm-frontmatter-wrap { margin: 0 0 1.4em; }
@@ -2088,16 +2223,23 @@ body.hm-full-width .editor-skeleton {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.hm-html-block table {
+.milkdown .ProseMirror .hm-html-block table {
   border-collapse: collapse;
-  width: 100%;
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
 }
-.hm-html-block th,
-.hm-html-block td {
+.milkdown .ProseMirror .hm-html-block th,
+.milkdown .ProseMirror .hm-html-block td {
+  min-width: 9rem;
+  max-width: 24rem;
   border: 1px solid var(--border);
   padding: 6px 12px;
   text-align: left;
   vertical-align: top;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .hm-html-block th {
   background: var(--hover-elevated, var(--border-soft));
@@ -4135,6 +4277,33 @@ body.dark .milkdown {
   word-break: break-word;
 }
 
+/* Wide tables keep readable columns and scroll inside their own wrapper instead
+   of squeezing cells or widening the editor/page. Crepe already provides the
+   wrapper around the editable table, so this does not alter its node view. */
+.milkdown .milkdown-table-block {
+  max-width: 100%;
+  contain: inline-size;
+}
+/* Crepe normally hides these with opacity only. Their stale absolute position
+   can still widen ProseMirror by a few pixels after a viewport change. Remove
+   only the hidden handles from layout; data-show=true restores them normally. */
+.milkdown .milkdown-table-block > div > .cell-handle[data-show='false'] {
+  display: none;
+}
+.milkdown .milkdown-table-block .table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  contain: inline-size layout paint;
+  -webkit-overflow-scrolling: touch;
+}
+.milkdown .ProseMirror .milkdown-table-block table.children {
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+}
+
 /* Tables — elegant borders */
 .milkdown .ProseMirror table {
   border-collapse: collapse;
@@ -4161,6 +4330,11 @@ body.dark .milkdown {
   vertical-align: top;
   overflow-wrap: break-word;
   word-break: break-word;
+}
+.milkdown .ProseMirror .milkdown-table-block th,
+.milkdown .ProseMirror .milkdown-table-block td {
+  min-width: 9rem;
+  max-width: 24rem;
 }
 /* Cell content is a paragraph; drop its block margins so each row stays one line
    tall (this was the main reason rows looked so airy). */

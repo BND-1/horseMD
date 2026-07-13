@@ -125,7 +125,7 @@ try {
     if (!response?.ok()) errors.push(`website: HTTP ${response?.status() || 'no response'}`)
     await websitePage.locator('.hero-title').waitFor()
     await assertLayout(websitePage, 'website desktop')
-    const guideLink = websitePage.locator('.nav-links a[href="https://guide-zeta-rouge.vercel.app/"]')
+    const guideLink = websitePage.locator('.nav-links a[href="https://guide.horsemd.yangsir.net/"]')
     if ((await guideLink.count()) !== 1) errors.push('website: guide navigation link missing')
     if ((await guideLink.textContent())?.trim() !== '教程') errors.push('website: Chinese guide label is incorrect')
     await websitePage.locator('#langToggle').click()
