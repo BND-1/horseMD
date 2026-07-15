@@ -197,6 +197,29 @@ export function mountEditorDomBindings({
 
   const scrollEl = host.closest('.editor-scroll')
   mountSlashMenuBounds({ host, scrollEl, cleanups })
+  const onBlankAreaMouseDown = (event) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+    // Floating Crepe controls are also mounted under host. Requiring the host
+    // itself prevents a menu/toolbar click from being mistaken for blank space.
+    if (event.target !== host) return
+    const contentRect = view.dom.getBoundingClientRect()
+    if (event.clientY <= contentRect.bottom + 1) return
+
+    // The editor host deliberately has bottom padding for "scroll past end".
+    // Treat only that area as an extension of the document and place the caret
+    // at its final editable position. Side gutters keep their normal behavior.
+    event.preventDefault()
+    view.dom.__horsemdLastPointerDown = {
+      left: event.clientX,
+      top: event.clientY,
+      at: Date.now()
+    }
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView())
+    view.focus()
+    reportActiveBlock()
+  }
+  host.addEventListener('mousedown', onBlankAreaMouseDown)
+  cleanups.push(() => host.removeEventListener('mousedown', onBlankAreaMouseDown))
   if (scrollEl) {
     let scrollLevelTimer = 0
     const onScroll = () => {
@@ -344,10 +367,16 @@ export function mountEditorDomBindings({
     const svg = e.target.closest?.('.milkdown-code-block .preview svg')
     if (!svg || !view.dom.contains(svg)) return
     const clone = svg.cloneNode(true)
+    const viewBox = svg.viewBox?.baseVal
+    const rendered = svg.getBoundingClientRect()
+    const width = viewBox?.width || svg.width?.baseVal?.value || rendered.width
+    const height = viewBox?.height || svg.height?.baseVal?.value || rendered.height
     clone.removeAttribute('width')
     clone.removeAttribute('height')
     clone.style.cssText = ''
-    setZoom({ type: 'svg', html: clone.outerHTML })
+    if (width > 0) clone.setAttribute('width', String(width))
+    if (height > 0) clone.setAttribute('height', String(height))
+    setZoom({ type: 'svg', html: clone.outerHTML, width, height })
   }
 
   view.dom.addEventListener('click', onLinkClick, true)

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Precise image and Mermaid lightbox controls** — previews now include
+  standard zoom-out/zoom-in buttons, a live scale readout, fit-to-window, and
+  1:1 actual-size viewing.
 - **Configurable PDF export** (#60) — desktop export now offers A4, A3, Letter,
   and validated custom page dimensions, portrait/landscape orientation, plus
   optional page breaks before heading levels 1–3 or after horizontal rules.
@@ -17,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   to be appended without making the mark inherit into following prose.
 
 ### Fixed
+- **Aspect-correct diagram previews** — long or tall Mermaid diagrams and
+  images keep their intrinsic proportions in the lightbox instead of being
+  placed in a fixed near-square canvas with large empty areas.
+- **Natural end-of-document input and web paste paragraphs** — clicking the
+  blank writing area below rich content now places the caret at the document
+  end. Content copied from WeChat-style web editors keeps separate visual
+  paragraphs instead of collapsing nested `section`/`div` blocks into one.
+- **Focused split-pane outline** (#66) — the outline now switches to whichever
+  left or right document pane has focus, and outline jumps scroll that pane in
+  both rich and source editing paths.
+- **Standard bold shortcut** (#67) — `Ctrl/Cmd+B` once again toggles bold in the
+  editor. The sidebar shortcut moves to `Ctrl/Cmd+Shift+B` to avoid intercepting
+  ProseMirror's standard binding.
 - **Stable app viewport and readable wide tables** — the application shell no
   longer rubber-bands into a blank gap, while wide Markdown and raw-HTML tables
   scroll horizontally inside the editor instead of crushing text into narrow

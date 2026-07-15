@@ -6,7 +6,7 @@
 //     a ref and invoked by the menu IPC, the keyboard shortcuts, and the palette.
 //     pickEditableId lives here (only save/saveAs/exportPdf use it).
 //   useGlobalKeys({...}) — registers onMenu/onOpenPaths/onOpenFolderPath/
-//     onAppCloseRequest + the Ctrl+Tab, Ctrl+B, Ctrl+F keydowns.
+//     onAppCloseRequest + the Ctrl+Tab, Ctrl+Shift+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
@@ -172,12 +172,12 @@ export function useGlobalKeys({
     return () => window.removeEventListener('keydown', onKey)
   }, [activeId, setTabs, setActiveId, setHome])
 
-  // Ctrl/Cmd+B toggles the sidebar. CAPTURE phase so it fires before the
-  // editor's "bold" keybinding (which would otherwise eat it and made the
-  // shortcut feel unreliable). No menu accelerator, so it can't double-fire.
+  // Ctrl/Cmd+Shift+B toggles the sidebar. Plain Mod+B is deliberately left to
+  // ProseMirror's standard bold binding (#67). No menu accelerator, so this
+  // renderer shortcut cannot double-fire with an Electron menu command.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyB') {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyB') {
         e.preventDefault()
         e.stopPropagation()
         handlers.current.toggleSidebar()
@@ -188,7 +188,7 @@ export function useGlobalKeys({
   }, [handlers])
 
   // Mod+F = find, Mod+Alt+F = replace (opens the bar and focuses the replace
-  // field). Capture phase so it beats any editor binding, like Mod+B above.
+  // field). Capture phase so it beats any editor binding.
   useEffect(() => {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyF') {

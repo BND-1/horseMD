@@ -139,7 +139,7 @@ build/
 - **主题/语言**：`theme`（主题 id）、`lang`（en/zh），分别 `applyTheme()` 与 `I18nProvider`
 - **最近文件**：`recents[]`，每次打开文件时记录，持久化，首页展示
 - **首次引导**：首启动（无 `horsemd.onboarded.v1` 标记且无恢复标签）打开欢迎文档
-- **快捷键**：菜单加速器（主进程）+ 渲染层监听（Ctrl+Tab 切标签、Ctrl+B 切侧边栏）
+- **快捷键**：菜单加速器（主进程）+ 渲染层监听（Ctrl+Tab 切标签、Ctrl+Shift+B 切侧边栏）；Ctrl+B 保留给编辑器加粗
 
 ## 编辑器内容数据流（重要）
 

@@ -11,7 +11,7 @@
 // drives the outline skeleton. Both setters are returned for the Editor JSX.
 //
 // Options:
-//   editorHostRef — ref to the active rich editor's scroll container
+//   getEditorHost / getSourceTextarea — resolve the focused split pane by tab id
 //   home / sidebarOpen / sidebarMode / sourceMode / activeId / activeTab — view state
 //   isMobile / setSidebarOpen / setHome — drawer affordances for jumpToHeading
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,7 +24,7 @@ import { textareaOffsetAtScrollTop } from '../textarea-metrics.js'
 const HEADING_SEL = '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
 const getHeadings = (host) => (host ? [...host.querySelectorAll(HEADING_SEL)] : [])
 
-export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, isMobile, setSidebarOpen, setHome }) {
+export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, isMobile, setSidebarOpen, setHome }) {
   const [activeHeading, setActiveHeading] = useState(-1)
   // Bumped when a chunked-loaded rich doc finishes streaming in (Editor's
   // onStructureChange) so the outline list + scrollspy refresh against the now-
@@ -37,6 +37,10 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
   // user types a new heading (rich mode re-reads the DOM on structure change;
   // source mode has no such hook, so we listen to the textarea ourselves).
   const [sourceOutlineVersion, setSourceOutlineVersion] = useState(0)
+  // Focus/mode changes must replace the visible outline immediately. Content
+  // edits in the same document remain debounced to avoid scanning a large DOM
+  // on every keystroke.
+  const outlineTargetRef = useRef(null)
   // A jump requested while the editor was still loading (chunked parse). Held
   // here and executed once loading finishes — heading offsets aren't stable
   // mid-load, so jumping immediately would land wrong + fight the content stream.
@@ -103,7 +107,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     // Source mode: scroll the textarea to the heading by text (#40). No chunked
     // load / async settle here, so no queue — just scroll + set active at once.
     if (sourceMode) {
-      const ta = sourceRef.current
+      const ta = getSourceTextarea()
       if (ta) {
         const hs = parseSourceHeadings(ta.value || '')
         const heading = hs[index]
@@ -117,7 +121,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
       return
     }
     const doJump = () => {
-      const host = editorHostRef.current
+      const host = getEditorHost()
       if (!host) return false
       const el = getHeadings(host)[index]
       if (!el) return false
@@ -127,7 +131,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     requestAnimationFrame(() => {
       if (!doJump()) requestAnimationFrame(doJump)
     })
-  }, [setHome, isMobile, setSidebarOpen, richLoading, sourceMode, sourceRef])
+  }, [setHome, isMobile, setSidebarOpen, richLoading, sourceMode, getEditorHost, getSourceTextarea])
 
   // Drain a queued jump once the editor finishes loading. Uses the same
   // poll-and-stabilize logic as jumpToHeading (async content may still settle
@@ -136,7 +140,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     if (richLoading || pendingJumpRef.current == null) return
     const index = pendingJumpRef.current
     pendingJumpRef.current = null
-    const host = editorHostRef.current
+    const host = getEditorHost()
     if (host) jumpAndStabilize(host, getHeadings(host)[index])
   }, [richLoading, richDocVersion])
 
@@ -152,7 +156,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     }
     // ----- source-mode spy -----
     if (sourceMode) {
-      const ta = sourceRef.current
+      const ta = getSourceTextarea()
       if (!ta) return
       let timer = 0
       let lastIdx = -1
@@ -187,7 +191,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
       }
     }
     // ----- rich-mode spy -----
-    const scroller = editorHostRef.current
+    const scroller = getEditorHost()
     if (!scroller) return
 
     // Reflow-free scrollspy. The previous version re-queried and called
@@ -269,7 +273,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
       scroller.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', invalidate)
     }
-  }, [home, sidebarOpen, sidebarMode, sourceMode, activeId, richDocVersion, editorHostRef])
+  }, [home, sidebarOpen, sidebarMode, sourceMode, activeId, richDocVersion, getEditorHost, getSourceTextarea])
 
   // Outline heading list. Rich mode: taken from the RENDERED document (the
   // editor's actual h1…h6) — matches how jumpToHeading finds them, recognizes
@@ -286,9 +290,8 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     // the COMPLETE list (the loading skeleton covers the wait via richLoading).
     // Source mode is a plain textarea (no chunking) — skip this gate there.
     if (!sourceMode && richLoading) return
-    // Debounce: the effect re-runs on every content change (every keystroke).
-    // On large docs the querySelectorAll scan is expensive. Wait 500ms after the
-    // last edit before scanning — headings don't change mid-word.
+    // Debounce only repeated structure/content changes within the same target.
+    // A split-pane focus or source/rich change must replace stale headings now.
     let timer = 0
     const read = () => {
       timer = 0
@@ -296,11 +299,11 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
       // a newly-typed heading refreshes the list (rich mode gets this free via
       // richDocVersion; source mode has no structure-change hook).
       if (sourceMode) {
-        const hs = parseSourceHeadings(sourceRef.current?.value || '')
+        const hs = parseSourceHeadings(getSourceTextarea()?.value || '')
         setOutlineHeadings(hs.map((h) => ({ level: h.level, text: h.text })))
         return
       }
-      const els = getHeadings(editorHostRef.current)
+      const els = getHeadings(getEditorHost())
       // No editor mounted (e.g. just closed the file) → clear instead of
       // leaving the previous document's outline hanging (issue #20).
       if (!els.length) {
@@ -311,18 +314,22 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
         els.map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
       )
     }
-    timer = setTimeout(read, 500)
+    const targetKey = `${activeId}:${sourceMode ? 'source' : 'rich'}`
+    const targetChanged = outlineTargetRef.current !== targetKey
+    outlineTargetRef.current = targetKey
+    if (targetChanged) read()
+    else timer = setTimeout(read, 500)
     return () => {
       if (timer) clearTimeout(timer)
     }
-  }, [home, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, editorHostRef, sourceRef])
+  }, [home, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, getEditorHost, getSourceTextarea])
 
   // Source-mode live refresh (#40): bump sourceOutlineVersion on textarea input
   // (debounced) so the list re-parses when the user adds/edits a heading. Rich
   // mode needs no listener (richDocVersion covers it).
   useEffect(() => {
     if (!sourceMode) return
-    const ta = sourceRef.current
+    const ta = getSourceTextarea()
     if (!ta) return
     let t = 0
     const onInput = () => {
@@ -331,7 +338,7 @@ export function useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sideba
     }
     ta.addEventListener('input', onInput)
     return () => { ta.removeEventListener('input', onInput); clearTimeout(t) }
-  }, [sourceMode, sourceRef, activeId])
+  }, [sourceMode, getSourceTextarea, activeId])
 
   return {
     activeHeading,

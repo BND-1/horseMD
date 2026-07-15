@@ -90,7 +90,8 @@ switchable with `Ctrl+Shift+T` or the status-bar picker.
 | Close tab          | `Ctrl/Cmd+W`                  |
 | Command palette    | `Ctrl/Cmd+P`                  |
 | Find in file       | `Ctrl/Cmd+F`                  |
-| Toggle sidebar     | `Ctrl/Cmd+B`                  |
+| Bold               | `Ctrl/Cmd+B`                  |
+| Toggle sidebar     | `Ctrl/Cmd+Shift+B`            |
 | Toggle outline     | `Ctrl+Shift+L`                |
 | Toggle source mode | `Ctrl/Cmd+/`                  |
 | Toggle theme       | `Ctrl+Shift+T`                |

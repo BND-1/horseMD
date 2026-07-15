@@ -23,6 +23,7 @@ export function useSourceModeSwitch({
   activeIdRef,
   editorApis,
   editorHostRef,
+  focusedTabRef,
   commitAllLive,
   findStateRef,
   richLoadingRef
@@ -165,15 +166,26 @@ export function useSourceModeSwitch({
     const follow = caretFollowRef.current
     const preserveRichCaretFollow = preserveRichCaretFollowRef.current
     if (caret == null && viewport == null && !preserveRichCaretFollow) return
+    const restoreId = activeIdRef.current
 
     caretAnchorRef.current = null
     viewportAnchorRef.current = null
     caretFollowRef.current = false
     preserveRichCaretFollowRef.current = false
 
+    let supersededByUserFocus = false
     const apply = () => {
+      // Mode switching retries caret/viewport restoration while rich content
+      // settles. Once the user focuses the other split pane, those retries must
+      // never steal focus back to the pane that initiated the switch (#66).
+      if (supersededByUserFocus) return false
+      const focusedId = focusedTabRef.current
+      if (activeIdRef.current !== restoreId || (focusedId && focusedId !== restoreId)) {
+        supersededByUserFocus = true
+        return false
+      }
       if (findStateRef.current.open && findStateRef.current.query) return
-      const view = editorApis.current[activeIdRef.current]?.getView?.()
+      const view = editorApis.current[restoreId]?.getView?.()
       if (sourceMode) {
         if (caret) {
           restoreSourceCaret(sourceRef.current, caret, follow)
@@ -190,14 +202,14 @@ export function useSourceModeSwitch({
         }
       } else {
         if (caret) {
-          const api = editorApis.current[activeIdRef.current]
+          const api = editorApis.current[restoreId]
           const rawRestored = caret.origin === 'source' && Number.isFinite(caret.rawOffset)
             ? api?.restoreMarkdownOffset?.(caret.rawOffset, follow)
             : false
           const restored = rawRestored || restoreRichCaret(view, caret, follow)
           if (restored && caret.origin === 'source' && Number.isFinite(caret.rawOffset)) {
             sourceCaretRoundTripRef.current = {
-              id: activeIdRef.current,
+              id: restoreId,
               rawOffset: caret.rawOffset,
               pmPos: view.state.selection.head,
               doc: view.state.doc
@@ -210,6 +222,7 @@ export function useSourceModeSwitch({
         }
         if (!follow && viewport) restoreRichViewport(editorHostRef.current, view, viewport)
       }
+      return true
     }
 
     const raf = requestAnimationFrame(apply)
@@ -224,7 +237,7 @@ export function useSourceModeSwitch({
       if (cancelled) return
       const handle = setTimeout(() => {
         if (cancelled) return
-        apply()
+        if (!apply()) return
         const scroller = editorHostRef.current
         const currentHeight = scroller ? scroller.scrollHeight : 0
         const heightChanged = currentHeight > 0 && currentHeight !== lastScrollHeight
@@ -247,7 +260,7 @@ export function useSourceModeSwitch({
       clearTimeout(t3)
       tailCleans.forEach(clearTimeout)
     }
-  }, [activeIdRef, editorApis, editorHostRef, findStateRef, richLoadingRef, sourceMode])
+  }, [activeIdRef, editorApis, editorHostRef, findStateRef, focusedTabRef, richLoadingRef, sourceMode])
 
   return {
     sourceMode,

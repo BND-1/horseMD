@@ -29,6 +29,7 @@ export default function EditorArea({
   spellcheck,
   editorAreaRef,
   editorHostRef,
+  editorHosts,
   sourceRef,
   sourceTextareas,
   sourceEditedIds,
@@ -186,6 +187,16 @@ export default function EditorArea({
         // opened yet (keeps session-restore of many tabs fast). Panes in
         // view always mount; visited tabs stay mounted.
         if (richEligible && (inView || mountedIds.has(tab.id))) {
+          const setEditorHost = (el) => {
+            if (el) {
+              editorHosts.current[tab.id] = el
+              if (isLeft) editorHostRef.current = el
+              return
+            }
+            const existing = editorHosts.current[tab.id]
+            delete editorHosts.current[tab.id]
+            if (isLeft && (!existing || editorHostRef.current === existing)) editorHostRef.current = null
+          }
           nodes.push(
             <div
               // Include reloadNonce so an external-edit reload remounts the
@@ -193,7 +204,7 @@ export default function EditorArea({
               // runs on mount). tab switches keep the same key → stay mounted.
               key={`rich:${tab.id}:${tab.reloadNonce}`}
               className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}`}
-              ref={isLeft ? editorHostRef : undefined}
+              ref={setEditorHost}
               style={{ display: inView && !sourceForActiveRich ? undefined : 'none', order, flex: paneFlex }}
               onFocusCapture={onPaneFocus}
               onMouseDownCapture={onPaneFocus}

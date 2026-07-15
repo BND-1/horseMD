@@ -767,8 +767,8 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Command Palette', accelerator: 'CmdOrCtrl+P', click: menuCmd('palette') },
-        // Sidebar toggle is handled in the renderer (capture phase) so it wins
-        // over the editor's Ctrl/Cmd+B "bold" binding instead of conflicting.
+        // Sidebar toggle is handled in the renderer as Ctrl/Cmd+Shift+B. Plain
+        // Ctrl/Cmd+B remains the editor's standard bold shortcut (#67).
         { label: 'Toggle Sidebar', click: menuCmd('toggleSidebar') },
         { label: 'Toggle Outline', accelerator: 'CmdOrCtrl+Shift+L', click: menuCmd('toggleOutline') },
         { label: 'Toggle Source Mode', accelerator: 'CmdOrCtrl+/', click: menuCmd('toggleSource') },

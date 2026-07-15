@@ -253,6 +253,7 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 - `splitRatio` + `.hm-split-divider`（`startSplitDrag` 按鼠标 x 算比例，给左栏设 `flex-basis`）。
 - `editorHostRef` 始终指向左/活动栏（查找、大纲、滚动比例都作用于它）；`focusedTabRef` 记录最后获得焦点的栏，让保存/导出作用于你正在编辑的那一栏。右栏不显示全局源码模式。
 - 聚焦提示走标签下划线（`.tab.active` 强调色 vs `.tab.active.split-peer` 淡色），编辑区不画任何额外色条，保持简约。
+- 大纲以最后聚焦的窗格为目标：点击左右编辑区会切换标题列表、滚动高亮和跳转目标；富文本容器按 tab id 注册，左栏源码与右栏富文本并存时也不会串文档（#66）。
 
 ## 22. 统一的右键菜单（标签 / 文件树）
 
@@ -331,10 +332,12 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 ## 32. Mermaid 全屏灯箱
 
 - 点击渲染好的 Mermaid 流程图 → 全屏灯箱弹出
+- 按 SVG `viewBox` / 图片原始尺寸保持精确宽高比，不再强制固定方形画布
+- 顶部提供缩小 / 倍率 / 放大 / 适应窗口 / `1:1` 原始尺寸控制
 - **Ctrl+滚轮**缩放（0.2×–10×）+ **按住拖拽**平移
 - Esc / 点背景关闭；拖拽后的 click 不会误关
 
-**实现**：`Editor.jsx` onMermaidClick（clone SVG + 去硬编码 width/height）+ lightbox useEffect（capture-phase wheel + drag）。zoom state 从 `null|string` 扩展为 `null|{type:'img',src}|{type:'svg',html}`。来自社区贡献 @digyear PR #27（只取了跨平台灯箱部分）。
+**实现**：`editor-dom-bindings.js` 的 `onMermaidClick` 克隆 SVG，并从 `viewBox` 记录原始宽高；`editor-lightbox.js` 统一管理按钮、滚轮缩放、1:1 比例和拖拽。CSS 只做视口上限约束，不设置会改变长宽图展示画布的固定最小尺寸。初始社区实现来自 @digyear PR #27。
 
 ## 33. 标签页拖拽排序
 
@@ -400,11 +403,11 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 | 导出为 PDF | `Ctrl+Shift+E` |
 | 关闭标签 / 循环标签 | `Ctrl+W` / `Ctrl+Tab` |
 | 命令面板 / 查找 | `Ctrl+P` / `Ctrl+F` |
-| 侧边栏 / 大纲 | `Ctrl+B` / `Ctrl+Shift+L` |
+| 侧边栏 / 大纲 | `Ctrl+Shift+B` / `Ctrl+Shift+L` |
 | 源码模式 / 主题 | `Ctrl+/` / `Ctrl+Shift+T` |
 | 标题层级 / 正文 | `Ctrl+1`…`6` / `Ctrl+0` |
 
-> 注：`Ctrl+B` 现在固定用于切换侧边栏（不再触发加粗）；加粗请用选中工具条的 **B** 按钮或 `**文字**` 语法。
+> 注：`Ctrl+B` 使用编辑器的标准加粗行为；侧边栏使用 `Ctrl+Shift+B`。
 
 ---
 

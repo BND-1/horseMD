@@ -37,7 +37,7 @@ import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import {
-  baseName, isAbsolutePath, isHeavyDoc, loadSession, loadFolderRootsFromSession
+  baseName, isAbsolutePath, isHeavyDoc, isPlainTextDoc, loadSession, loadFolderRootsFromSession
 } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
 
@@ -111,6 +111,10 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings)
 
   const editorHostRef = useRef(null) // active rich editor's scroll container
+  // Every mounted rich editor's scroll container, keyed by tab id. Split-view
+  // outline navigation uses this without repointing editorHostRef, which remains
+  // the source/find/mode-switch contract for the active left tab.
+  const editorHosts = useRef({})
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
   const findStateRef = useRef({ open: false, query: '' }) // find owns navigation while an active query survives a mode switch
@@ -197,6 +201,7 @@ export default function App() {
     activeIdRef,
     editorApis,
     editorHostRef,
+    focusedTabRef,
     commitAllLive,
     findStateRef,
     richLoadingRef
@@ -453,6 +458,21 @@ export default function App() {
   // the reflow-free scrollspy live in hooks/useOutline.js (phase-2 US-3).
   // Returns the names the JSX already uses (Outline props + the Editor's
   // onStructureChange/onLoadingChange).
+  const outlineId = split && focusedPane === 'right' ? splitId : activeId
+  const outlineTab = tabs.find((tab) => tab.id === outlineId) || null
+  const outlineSourceMode = !!outlineTab && (
+    isPlainTextDoc(outlineTab) ||
+    (outlineTab.heavy && !richForced.has(outlineId)) ||
+    (sourceMode && outlineId === activeId)
+  )
+  const getOutlineEditorHost = useCallback(
+    () => editorHosts.current[outlineId] || null,
+    [outlineId]
+  )
+  const getOutlineSourceTextarea = useCallback(
+    () => sourceTextareas.current[outlineId] || null,
+    [outlineId, sourceTextareas]
+  )
   const {
     activeHeading,
     outlineHeadings,
@@ -460,7 +480,19 @@ export default function App() {
     setRichDocVersion,
     setRichLoading,
     jumpToHeading
-  } = useOutline({ editorHostRef, sourceRef, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, isMobile, setSidebarOpen, setHome })
+  } = useOutline({
+    getEditorHost: getOutlineEditorHost,
+    getSourceTextarea: getOutlineSourceTextarea,
+    home,
+    sidebarOpen,
+    sidebarMode,
+    sourceMode: outlineSourceMode,
+    activeId: outlineId,
+    activeTab: outlineTab,
+    isMobile,
+    setSidebarOpen,
+    setHome
+  })
   richLoadingRef.current = richLoading // mirror so the mode-switch effect can read it without a dep that re-runs it
 
   // ------------------------- menu / shortcuts ----------------------
@@ -806,6 +838,7 @@ export default function App() {
             spellcheck={settings.spellcheck}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}
+            editorHosts={editorHosts}
             sourceRef={sourceRef}
             sourceTextareas={sourceTextareas}
             sourceEditedIds={sourceEditedIds}

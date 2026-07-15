@@ -88,12 +88,12 @@ HorseMD 是一款桌面 Markdown 编辑器，定位是「一个免费的 Typora 
 | 保存 / 另存为 | Ctrl+S / Ctrl+Shift+S | Cmd+S / Cmd+Shift+S |
 | 关闭标签 / 循环标签 | Ctrl+W / Ctrl+Tab | Cmd+W / Ctrl+Tab |
 | 命令面板 / 查找 | Ctrl+P / Ctrl+F | Cmd+P / Cmd+F |
-| 侧边栏 / 大纲 | Ctrl+B / Ctrl+Shift+L | Cmd+B / Cmd+Shift+L |
+| 侧边栏 / 大纲 | Ctrl+Shift+B / Ctrl+Shift+L | Cmd+Shift+B / Cmd+Shift+L |
 | 源码模式 / 主题循环 | Ctrl+/ / Ctrl+Shift+T | Cmd+/ / Cmd+Shift+T |
 | 替换 / 导出 PDF | Ctrl+Alt+F / Ctrl+Shift+E | Cmd+Alt+F / Cmd+Shift+E |
 | 标题 H1–H6 / 转正文 | Ctrl+1…6 / Ctrl+0 | Cmd+1…6 / Cmd+0 |
 
-注：Ctrl/Cmd+B 固定用于切换侧边栏（不触发加粗）；加粗用选中工具条 B 按钮或 `**文字**` 语法。
+注：Ctrl/Cmd+B 用于加粗；Ctrl/Cmd+Shift+B 用于切换侧边栏。
 
 ---
 

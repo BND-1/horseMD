@@ -28,7 +28,8 @@ description: HorseMD 桌面端常用快捷键完整速查。
 | --- | --- |
 | 命令面板 | `Ctrl/Cmd+P` |
 | 查找 | `Ctrl/Cmd+F` |
-| 切换侧边栏 | `Ctrl/Cmd+B` |
+| 加粗 | `Ctrl/Cmd+B` |
+| 切换侧边栏 | `Ctrl/Cmd+Shift+B` |
 | 切换大纲 | `Ctrl+Shift+L` |
 | 切换源码模式 | `Ctrl/Cmd+/` |
 | 切换主题 | `Ctrl+Shift+T` |
@@ -43,4 +44,4 @@ description: HorseMD 桌面端常用快捷键完整速查。
 | 导出 PDF | `Ctrl/Cmd+Shift+E` |
 | 复制 | `Ctrl/Cmd+C` |
 
-`Ctrl/Cmd+B` 在 HorseMD 中用于侧边栏，不用于粗体。粗体可以通过选区工具栏或 `**文字**` 语法设置。
+`Ctrl/Cmd+B` 用于加粗；`Ctrl/Cmd+Shift+B` 用于切换侧边栏。

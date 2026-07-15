@@ -15,6 +15,7 @@ import '@milkdown/crepe/theme/common/latex.css'
 import { BLOCK_TYPES } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
+import { Icon } from './icons.jsx'
 import { createImagePersister } from './editor-image-persistence.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
@@ -87,12 +88,14 @@ export default function Editor({
   const lightboxScaleRef = useRef(1)
   const lightboxContentRef = useRef(null)
   const lightboxTranslateRef = useRef({ x: 0, y: 0 })
-  useEditorLightboxControls({
+  const [lightboxScale, setLightboxScale] = useState(1)
+  const { fitToWindow, showActualSize, zoomIn, zoomOut } = useEditorLightboxControls({
     zoom,
     setZoom,
     scaleRef: lightboxScaleRef,
     translateRef: lightboxTranslateRef,
-    contentRef: lightboxContentRef
+    contentRef: lightboxContentRef,
+    setScaleLabel: setLightboxScale
   })
   // False until Crepe has parsed and rendered the document — drives the loading
   // skeleton. Only large documents (which actually take a moment to render) show
@@ -576,6 +579,27 @@ export default function Editor({
             ? <div ref={lightboxContentRef} className="hm-lightbox-svg" dangerouslySetInnerHTML={{ __html: zoom.html }} onClick={(e) => e.stopPropagation()} />
             : <img ref={lightboxContentRef} src={zoom.src} alt="" onClick={(e) => e.stopPropagation()} />
           }
+          <div className="hm-lightbox-controls" onClick={(e) => e.stopPropagation()}>
+            <button title={t('lightbox.zoomOut')} aria-label={t('lightbox.zoomOut')} onClick={zoomOut}>
+              <Icon name="search-minus" size={18} />
+            </button>
+            <span className="hm-lightbox-scale" aria-live="polite">{Math.round(lightboxScale * 100)}%</span>
+            <button title={t('lightbox.zoomIn')} aria-label={t('lightbox.zoomIn')} onClick={zoomIn}>
+              <Icon name="search-plus" size={18} />
+            </button>
+            <span className="hm-lightbox-control-divider" />
+            <button title={t('lightbox.fit')} aria-label={t('lightbox.fit')} onClick={fitToWindow}>
+              <Icon name="expand" size={17} />
+            </button>
+            <button
+              className="hm-lightbox-actual"
+              title={t('lightbox.actual')}
+              aria-label={t('lightbox.actual')}
+              onClick={showActualSize}
+            >
+              1:1
+            </button>
+          </div>
           <button
             className="hm-lightbox-close"
             title={t('lightbox.close')}

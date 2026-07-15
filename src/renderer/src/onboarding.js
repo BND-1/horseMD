@@ -22,7 +22,7 @@ document's structure appears as a tree you can click.
 ### How to open it
 
 - Click the **outline icon** in the left activity bar, or
-- Press \`Ctrl+B\` to toggle the sidebar, then switch to the outline tab, or
+- Press \`Ctrl+Shift+B\` to toggle the sidebar, then switch to the outline tab, or
 - Press \`Ctrl+Shift+L\` to jump straight to the outline.
 
 ### What it does
@@ -92,7 +92,7 @@ Review marks annotate a draft while keeping the source readable:
 | New / Open / Save | \`Ctrl+N\` / \`Ctrl+O\` / \`Ctrl+S\` |
 | Command palette | \`Ctrl+P\` |
 | Find | \`Ctrl+F\` |
-| Sidebar / Outline | \`Ctrl+B\` / \`Ctrl+Shift+L\` |
+| Sidebar / Outline | \`Ctrl+Shift+B\` / \`Ctrl+Shift+L\` |
 | Source mode | \`Ctrl+/\` |
 | Headings | \`Ctrl+1\`…\`Ctrl+6\` (\`Ctrl+0\` → text) |
 | Cycle theme | \`Ctrl+Shift+T\` |
@@ -116,7 +116,7 @@ const ZH = `# 欢迎使用 HorseMD 🐎
 ### 如何打开大纲
 
 - 点左侧活动栏的 **大纲图标**，或
-- 按 \`Ctrl+B\` 打开侧边栏，再切到「大纲」标签，或
+- 按 \`Ctrl+Shift+B\` 打开侧边栏，再切到「大纲」标签，或
 - 直接按 \`Ctrl+Shift+L\` 跳到大纲。
 
 ### 大纲能做什么
@@ -183,7 +183,7 @@ $$\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
 | 新建 / 打开 / 保存 | \`Ctrl+N\` / \`Ctrl+O\` / \`Ctrl+S\` |
 | 命令面板 | \`Ctrl+P\` |
 | 查找 | \`Ctrl+F\` |
-| 侧边栏 / 大纲 | \`Ctrl+B\` / \`Ctrl+Shift+L\` |
+| 侧边栏 / 大纲 | \`Ctrl+Shift+B\` / \`Ctrl+Shift+L\` |
 | 源码模式 | \`Ctrl+/\` |
 | 标题层级 | \`Ctrl+1\`…\`Ctrl+6\`（\`Ctrl+0\` 转正文） |
 | 切换主题 | \`Ctrl+Shift+T\` |

@@ -2256,22 +2256,24 @@ body.hm-full-width .editor-skeleton {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5vh 5vw;
+  padding: 64px 5vw 5vh;
   background: rgba(0, 0, 0, 0.72);
-  cursor: zoom-out;
+  overflow: hidden;
+  cursor: default;
   animation: hmLightboxFade 0.15s var(--ease-out);
 }
 .hm-image-lightbox img {
   max-width: 90vw;
-  max-height: 90vh;
-  min-width: min(600px, 90vw);
+  max-height: calc(95vh - 64px);
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
 }
 .hm-lightbox-close {
   position: fixed;
-  top: 18px;
+  top: calc(18px + env(safe-area-inset-top));
   right: 22px;
   width: 38px;
   height: 38px;
@@ -2286,14 +2288,67 @@ body.hm-full-width .editor-skeleton {
 .hm-lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
 @keyframes hmLightboxFade { from { opacity: 0; } to { opacity: 1; } }
 
+.hm-lightbox-controls {
+  position: fixed;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 38px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(24, 24, 27, 0.88);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  color: #fff;
+  backdrop-filter: blur(12px);
+}
+.hm-lightbox-controls button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  border-radius: 6px;
+  color: inherit;
+  transition: background 0.12s var(--ease-out);
+}
+.hm-lightbox-controls button:hover { background: rgba(255, 255, 255, 0.14); }
+.hm-lightbox-controls button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.hm-lightbox-scale {
+  width: 48px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.82);
+}
+.hm-lightbox-control-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.hm-lightbox-controls .hm-lightbox-actual {
+  width: 38px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 /* Mermaid-diagram lightbox: click a rendered flowchart → fullscreen, then
    Ctrl+wheel zoom + drag-pan (see Editor.jsx onMermaidClick). */
 .hm-lightbox-svg {
+  display: grid;
+  place-items: center;
+  width: max-content;
+  height: max-content;
   max-width: 90vw;
-  max-height: 90vh;
-  min-width: min(760px, 90vw);
-  min-height: min(500px, 80vh);
-  overflow: auto;
+  max-height: calc(95vh - 64px);
+  overflow: hidden;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
@@ -2306,9 +2361,28 @@ body.hm-full-width .editor-skeleton {
 }
 .hm-lightbox-svg svg {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
-  max-width: 100%;
+  max-width: calc(90vw - 48px);
+  max-height: calc(95vh - 112px);
+}
+
+@media (max-width: 520px) {
+  .hm-image-lightbox {
+    padding-top: calc(64px + env(safe-area-inset-top));
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+  .hm-lightbox-controls {
+    top: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .hm-image-lightbox img,
+  .hm-lightbox-svg {
+    max-height: calc(100vh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .hm-lightbox-svg svg {
+    max-height: calc(100vh - 176px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
 }
 
 /* Block-level hint: a small, quiet tag beside the caret's line naming the

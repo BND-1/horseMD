@@ -91,6 +91,7 @@
 - 富文本复制写入带 inline style 的 HTML clipboard。
 - CodeMirror 代码块复制按钮有反馈和 toast。
 - Markdown 源码粘贴走 Milkdown parser，而不是普通纯文本。
+- 网页富文本粘贴会规范化叶子 `section`/`div`，避免微信公众号视觉段落被合并。
 - 粘贴/拖入图片不劫持代码块、input、textarea、caption input。
 
 验证：
@@ -163,12 +164,14 @@
 - Mermaid SVG lightbox。
 - Esc 关闭。
 - Ctrl+滚轮缩放。
+- 标准缩小/放大、倍率、适应窗口和 1:1 原始尺寸控制。
+- SVG `viewBox` 与图片原始宽高比精确保留，不使用固定最小画布。
 - 鼠标拖拽平移，并抑制拖拽后的 click 误关闭。
 
 验证：
 
 - 图片和 Mermaid 点击可打开。
-- 缩放、拖拽、Esc、关闭按钮正常。
+- 长条 Mermaid / 图片无方形空白，缩放、1:1、适应窗口、拖拽、Esc、关闭按钮正常。
 
 ## 10. Settings / i18n / Spellcheck
 

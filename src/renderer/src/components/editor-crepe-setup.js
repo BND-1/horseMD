@@ -1,5 +1,6 @@
 import { Crepe, CrepeFeature as Feature } from '@milkdown/crepe'
 import {
+  editorViewOptionsCtx,
   nodeViewCtx,
   prosePluginsCtx,
   remarkPluginsCtx,
@@ -25,6 +26,7 @@ import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
+import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import {
   createStrikeGuardPlugin,
   createSubstitutionLiveReconstructPlugin,
@@ -110,6 +112,15 @@ export function createConfiguredCrepe({
     // in editor-slash-menu.js replaces it. Feature.BlockEdit stays enabled so
     // the block drag/add handle (.milkdown-block-handle) is preserved.
     disableCrepeSlash(ctx)
+    ctx.update(editorViewOptionsCtx, (options) => ({
+      ...options,
+      transformPastedHTML: (html, view) => {
+        const transformed = options.transformPastedHTML
+          ? options.transformPastedHTML(html, view)
+          : html
+        return normalizeWebPasteHtml(transformed)
+      }
+    }))
     ctx.update(nodeViewCtx, (views) => [
       ...views,
       ['html', (node) => renderHtmlNodeView(node)],
