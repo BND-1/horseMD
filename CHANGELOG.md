@@ -23,9 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Aspect-correct diagram previews** — long or tall Mermaid diagrams and
   images keep their intrinsic proportions in the lightbox instead of being
   placed in a fixed near-square canvas with large empty areas.
-- **Natural end-of-document input and web paste paragraphs** — clicking the
-  blank writing area below rich content now places the caret at the document
-  end. Content copied from WeChat-style web editors keeps separate visual
+- **Natural end-of-document input and web paste paragraphs** — clicking anywhere
+  in the visible writing area below rich content, including below the centered
+  page container, now places the caret at the document end. Content copied from
+  WeChat-style web editors keeps separate visual
   paragraphs instead of collapsing nested `section`/`div` blocks into one.
 - **Focused split-pane outline** (#66) — the outline now switches to whichever
   left or right document pane has focus, and outline jumps scroll that pane in

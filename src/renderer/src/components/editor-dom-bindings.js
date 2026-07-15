@@ -199,15 +199,21 @@ export function mountEditorDomBindings({
   mountSlashMenuBounds({ host, scrollEl, cleanups })
   const onBlankAreaMouseDown = (event) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
-    // Floating Crepe controls are also mounted under host. Requiring the host
-    // itself prevents a menu/toolbar click from being mistaken for blank space.
-    if (event.target !== host) return
+    // The empty writing area extends beyond editor-host's 20vh bottom padding:
+    // in a short document most of the visible pane belongs to editor-scroll.
+    // Ignore real controls, but accept either host padding or that outer space.
+    if (event.target.closest?.('button, input, textarea, select, a, [contenteditable="true"]')) return
     const contentRect = view.dom.getBoundingClientRect()
     if (event.clientY <= contentRect.bottom + 1) return
+    // On Windows the classic scrollbar occupies layout width. A click on its
+    // track must keep scrolling instead of being interpreted as editor space.
+    if (scrollEl) {
+      const scrollRect = scrollEl.getBoundingClientRect()
+      const scrollbarWidth = scrollEl.offsetWidth - scrollEl.clientWidth
+      if (scrollbarWidth > 0 && event.clientX >= scrollRect.right - scrollbarWidth) return
+    }
 
-    // The editor host deliberately has bottom padding for "scroll past end".
-    // Treat only that area as an extension of the document and place the caret
-    // at its final editable position. Side gutters keep their normal behavior.
+    // Treat all blank space below the rendered document as its continuation.
     event.preventDefault()
     view.dom.__horsemdLastPointerDown = {
       left: event.clientX,
@@ -218,8 +224,9 @@ export function mountEditorDomBindings({
     view.focus()
     reportActiveBlock()
   }
-  host.addEventListener('mousedown', onBlankAreaMouseDown)
-  cleanups.push(() => host.removeEventListener('mousedown', onBlankAreaMouseDown))
+  const blankAreaTarget = scrollEl || host
+  blankAreaTarget.addEventListener('mousedown', onBlankAreaMouseDown)
+  cleanups.push(() => blankAreaTarget.removeEventListener('mousedown', onBlankAreaMouseDown))
   if (scrollEl) {
     let scrollLevelTimer = 0
     const onScroll = () => {

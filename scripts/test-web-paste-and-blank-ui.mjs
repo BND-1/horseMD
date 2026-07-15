@@ -95,11 +95,19 @@ async function main() {
   const blankPoint = await evaluate(`(() => {
     const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
     const host = editor?.closest('.editor-host')
-    if (!editor || !host) return null
+    const scroll = host?.closest('.editor-scroll')
+    if (!editor || !host || !scroll) return null
     const content = editor.getBoundingClientRect()
-    const outer = host.getBoundingClientRect()
-    const y = Math.min(outer.bottom - 8, content.bottom + 28)
-    return y > content.bottom + 1 ? { x: content.left + Math.min(120, content.width / 2), y } : null
+    const hostRect = host.getBoundingClientRect()
+    const scrollRect = scroll.getBoundingClientRect()
+    // Exercise the real regression: click below editor-host, where the old
+    // listener never received the event, rather than inside its 20vh padding.
+    const y = Math.min(scrollRect.bottom - 20, Math.max(hostRect.bottom + 40, content.bottom + 28))
+    const x = content.left + Math.min(120, content.width / 2)
+    const target = document.elementFromPoint(x, y)
+    return y > hostRect.bottom + 1 && target?.closest('.editor-scroll') === scroll
+      ? { x, y, target: target.className }
+      : null
   })()`)
   if (!blankPoint) throw new Error('No clickable blank area below the document')
   await send('Input.dispatchMouseEvent', {
