@@ -110,6 +110,13 @@ async function main() {
       : null
   })()`)
   if (!blankPoint) throw new Error('No clickable blank area below the document')
+  const blankBefore = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    return {
+      childCount: editor?.children.length || 0,
+      lastText: editor?.lastElementChild?.textContent || ''
+    }
+  })()`)
   await send('Input.dispatchMouseEvent', {
     type: 'mousePressed', x: blankPoint.x, y: blankPoint.y,
     button: 'left', clickCount: 1
@@ -118,17 +125,22 @@ async function main() {
     type: 'mouseReleased', x: blankPoint.x, y: blankPoint.y,
     button: 'left', clickCount: 1
   })
-  await send('Input.insertText', { text: ' BLANK-END' })
+  await send('Input.insertText', { text: 'BLANK-END' })
   await sleep(250)
   const blankResult = await evaluate(`(() => {
     const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
     return {
       focused: document.activeElement === editor,
+      childCount: editor?.children.length || 0,
+      previousText: editor?.lastElementChild?.previousElementSibling?.textContent || '',
       lastText: editor?.lastElementChild?.textContent || ''
     }
   })()`)
-  if (!blankResult.focused || !blankResult.lastText.endsWith('BLANK-END')) {
-    throw new Error(`blank-area click did not place the caret at the end: ${JSON.stringify(blankResult)}`)
+  if (!blankResult.focused ||
+      blankResult.childCount !== blankBefore.childCount + 1 ||
+      blankResult.previousText !== blankBefore.lastText ||
+      blankResult.lastText !== 'BLANK-END') {
+    throw new Error(`blank-area click did not create the next paragraph: ${JSON.stringify({ blankBefore, blankResult })}`)
   }
 
   // Some built-in/custom themes stretch ProseMirror to the viewport height.
@@ -146,6 +158,10 @@ async function main() {
     return document.elementFromPoint(x, y) === editor ? { x, y } : null
   })()`)
   if (!stretchedPoint) throw new Error('No ProseMirror-owned blank area for stretched-theme regression')
+  const stretchedBefore = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    return { childCount: editor?.children.length || 0, lastText: editor?.lastElementChild?.textContent || '' }
+  })()`)
   await send('Input.dispatchMouseEvent', {
     type: 'mousePressed', x: stretchedPoint.x, y: stretchedPoint.y,
     button: 'left', clickCount: 1
@@ -154,23 +170,55 @@ async function main() {
     type: 'mouseReleased', x: stretchedPoint.x, y: stretchedPoint.y,
     button: 'left', clickCount: 1
   })
-  await send('Input.insertText', { text: ' STRETCHED-END' })
+  await send('Input.insertText', { text: 'STRETCHED-END' })
   await sleep(250)
   const stretchedResult = await evaluate(`(() => {
     const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
-    const pointer = editor.__horsemdBlankAreaPointerDown
     editor.style.minHeight = ''
     return {
       focused: document.activeElement === editor,
-      lastText: editor?.lastElementChild?.textContent || '',
-      handled: !!pointer &&
-        Math.abs(pointer.left - ${stretchedPoint.x}) < 1 &&
-        Math.abs(pointer.top - ${stretchedPoint.y}) < 1 &&
-        Date.now() - pointer.at < 1000
+      childCount: editor?.children.length || 0,
+      previousText: editor?.lastElementChild?.previousElementSibling?.textContent || '',
+      lastText: editor?.lastElementChild?.textContent || ''
     }
   })()`)
-  if (!stretchedResult.focused || !stretchedResult.handled || !stretchedResult.lastText.endsWith('STRETCHED-END')) {
-    throw new Error(`stretched blank-area click missed document end: ${JSON.stringify(stretchedResult)}`)
+  if (!stretchedResult.focused ||
+      stretchedResult.childCount !== stretchedBefore.childCount + 1 ||
+      stretchedResult.previousText !== stretchedBefore.lastText ||
+      stretchedResult.lastText !== 'STRETCHED-END') {
+    throw new Error(`stretched blank-area click did not create the next paragraph: ${JSON.stringify({ stretchedBefore, stretchedResult })}`)
+  }
+
+  // A document that already ends in an empty paragraph must reuse it instead
+  // of accumulating another empty paragraph for every blank-area click.
+  await resetEditor(send, evaluate)
+  const emptyBefore = await evaluate(`document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')?.children.length || 0`)
+  const emptyPoint = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    const scroll = editor?.closest('.editor-scroll')
+    const last = editor?.lastElementChild?.getBoundingClientRect()
+    const outer = scroll?.getBoundingClientRect()
+    if (!editor || !scroll || !last || !outer) return null
+    const x = editor.getBoundingClientRect().left + Math.min(120, editor.clientWidth / 2)
+    const y = Math.min(outer.bottom - 20, last.bottom + 40)
+    return { x, y }
+  })()`)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: emptyPoint.x, y: emptyPoint.y,
+    button: 'left', clickCount: 1
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: emptyPoint.x, y: emptyPoint.y,
+    button: 'left', clickCount: 1
+  })
+  await send('Input.insertText', { text: 'EMPTY-REUSED' })
+  await sleep(250)
+  const emptyResult = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    return { childCount: editor?.children.length || 0, lastText: editor?.lastElementChild?.textContent || '' }
+  })()`)
+  if (emptyResult.childCount !== emptyBefore || emptyResult.lastText !== 'EMPTY-REUSED') {
+    throw new Error(`existing trailing paragraph was not reused: ${JSON.stringify({ emptyBefore, emptyResult })}`)
   }
 
   await resetEditor(send, evaluate)
@@ -239,6 +287,7 @@ async function main() {
   console.log(JSON.stringify({
     blankResult,
     stretchedResult,
+    emptyResult,
     wechatResult,
     ordinaryList,
     ordinaryTable,

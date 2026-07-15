@@ -217,15 +217,24 @@ export function mountEditorDomBindings({
       if (scrollbarWidth > 0 && event.clientX >= scrollRect.right - scrollbarWidth) return
     }
 
-    // Treat all blank space below the rendered document as its continuation.
+    // Treat all blank space below the rendered document as the next writing
+    // line. Reuse an existing trailing empty paragraph; otherwise append one.
     event.preventDefault()
     view.dom.__horsemdLastPointerDown = {
       left: event.clientX,
       top: event.clientY,
       at: Date.now()
     }
-    view.dom.__horsemdBlankAreaPointerDown = view.dom.__horsemdLastPointerDown
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView())
+    const { state } = view
+    const paragraphType = state.schema.nodes.paragraph
+    const trailingNode = state.doc.lastChild
+    const hasTrailingEmptyParagraph = trailingNode?.type === paragraphType && trailingNode.content.size === 0
+    let tr = state.tr
+    if (paragraphType && !hasTrailingEmptyParagraph) {
+      markUserEdit()
+      tr = tr.insert(state.doc.content.size, paragraphType.create())
+    }
+    view.dispatch(tr.setSelection(TextSelection.atEnd(tr.doc)).scrollIntoView())
     view.focus()
     reportActiveBlock()
   }

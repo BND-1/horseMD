@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   placed in a fixed near-square canvas with large empty areas.
 - **Natural end-of-document input and web paste paragraphs** — clicking anywhere
   in the visible writing area below rich content, including below the centered
-  page container, now places the caret at the document end. Content copied from
+  page container, now opens a new trailing paragraph (or reuses an existing
+  empty one) so writing can continue without pressing Enter. Content copied from
   WeChat-style web editors keeps separate visual
   paragraphs instead of collapsing nested `section`/`div` blocks into one.
 - **Focused split-pane outline** (#66) — the outline now switches to whichever
