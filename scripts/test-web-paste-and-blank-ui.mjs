@@ -131,6 +131,48 @@ async function main() {
     throw new Error(`blank-area click did not place the caret at the end: ${JSON.stringify(blankResult)}`)
   }
 
+  // Some built-in/custom themes stretch ProseMirror to the viewport height.
+  // In that layout the blank click target is the root contenteditable itself,
+  // not editor-host/editor-scroll. It must still resolve to the document end.
+  const stretchedPoint = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    const scroll = editor?.closest('.editor-scroll')
+    if (!editor || !scroll) return null
+    editor.style.minHeight = scroll.clientHeight + 'px'
+    const last = editor.lastElementChild?.getBoundingClientRect()
+    const outer = scroll.getBoundingClientRect()
+    const x = editor.getBoundingClientRect().left + Math.min(120, editor.clientWidth / 2)
+    const y = Math.min(outer.bottom - 24, last.bottom + 80)
+    return document.elementFromPoint(x, y) === editor ? { x, y } : null
+  })()`)
+  if (!stretchedPoint) throw new Error('No ProseMirror-owned blank area for stretched-theme regression')
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: stretchedPoint.x, y: stretchedPoint.y,
+    button: 'left', clickCount: 1
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: stretchedPoint.x, y: stretchedPoint.y,
+    button: 'left', clickCount: 1
+  })
+  await send('Input.insertText', { text: ' STRETCHED-END' })
+  await sleep(250)
+  const stretchedResult = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    const pointer = editor.__horsemdBlankAreaPointerDown
+    editor.style.minHeight = ''
+    return {
+      focused: document.activeElement === editor,
+      lastText: editor?.lastElementChild?.textContent || '',
+      handled: !!pointer &&
+        Math.abs(pointer.left - ${stretchedPoint.x}) < 1 &&
+        Math.abs(pointer.top - ${stretchedPoint.y}) < 1 &&
+        Date.now() - pointer.at < 1000
+    }
+  })()`)
+  if (!stretchedResult.focused || !stretchedResult.handled || !stretchedResult.lastText.endsWith('STRETCHED-END')) {
+    throw new Error(`stretched blank-area click missed document end: ${JSON.stringify(stretchedResult)}`)
+  }
+
   await resetEditor(send, evaluate)
   await paste(
     evaluate,
@@ -196,6 +238,7 @@ async function main() {
 
   console.log(JSON.stringify({
     blankResult,
+    stretchedResult,
     wechatResult,
     ordinaryList,
     ordinaryTable,

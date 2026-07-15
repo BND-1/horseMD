@@ -199,12 +199,16 @@ export function mountEditorDomBindings({
   mountSlashMenuBounds({ host, scrollEl, cleanups })
   const onBlankAreaMouseDown = (event) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
-    // The empty writing area extends beyond editor-host's 20vh bottom padding:
-    // in a short document most of the visible pane belongs to editor-scroll.
-    // Ignore real controls, but accept either host padding or that outer space.
-    if (event.target.closest?.('button, input, textarea, select, a, [contenteditable="true"]')) return
-    const contentRect = view.dom.getBoundingClientRect()
-    if (event.clientY <= contentRect.bottom + 1) return
+    // The empty writing area can belong to editor-scroll, editor-host, or the
+    // ProseMirror element itself when a theme stretches it to fill the pane.
+    // Ignore nested controls/editors, but do not reject ProseMirror merely
+    // because it is the root contenteditable we are trying to focus.
+    if (event.target.closest?.('button, input, textarea, select, a')) return
+    const nestedEditable = event.target.closest?.('[contenteditable="true"]')
+    if (nestedEditable && nestedEditable !== view.dom) return
+    const lastBlock = view.dom.lastElementChild
+    const contentBottom = lastBlock?.getBoundingClientRect().bottom ?? view.dom.getBoundingClientRect().top
+    if (event.clientY <= contentBottom + 1) return
     // On Windows the classic scrollbar occupies layout width. A click on its
     // track must keep scrolling instead of being interpreted as editor space.
     if (scrollEl) {
@@ -220,6 +224,7 @@ export function mountEditorDomBindings({
       top: event.clientY,
       at: Date.now()
     }
+    view.dom.__horsemdBlankAreaPointerDown = view.dom.__horsemdLastPointerDown
     view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView())
     view.focus()
     reportActiveBlock()
