@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Custom keyboard shortcuts** — Settings now includes a Keyboard section with
+  shortcut recording, clearing, restore-default actions, conflict warnings, and
+  persisted `horsemd.keybindings.v1` overrides. Application shortcuts sync to
+  the Electron menu through a restricted IPC path, while renderer shortcuts such
+  as tab switching, sidebar toggling, find/replace, and heading level changes
+  read the same effective keybinding map.
+
+### Changed
+- **Modular Settings center** — the previous monolithic Settings page is split
+  into focused General, Editor, Appearance, Files & Images, Keyboard, and About
+  modules, keeping existing preferences and defaults intact.
+
 ## [0.6.5] - 2026-07-16
 
 ### Added

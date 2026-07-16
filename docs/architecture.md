@@ -88,12 +88,14 @@ src/
         editor-dom-layout.js 斜杠菜单边界、空白续写与滚动层级
         editor-dom-content.js 链接、复制、图片、粘贴与 Mermaid
         pdf-export/        PDF 设置、PDF.js 单页渲染、书签解析与独立样式
+        commands/          命令注册表、快捷键规范化、冲突检测、菜单 accelerator 转换
         useFindReplace.js  查找替换（CSS Highlight API）
         useAppLifecycle.js 会话持久化 + 恢复 + 更新检查
         usePopover.js      共享 popover hook（outside-click + Esc 关闭）
       components/
         Editor.jsx         Crepe 编辑器封装 + 块控件 + 灯箱 + 拼写检查
-        SettingsView.jsx   设置页（排版/外观/校对/语言/图床/关于）
+        SettingsView.jsx   设置页壳层（模块导航 + 当前设置模块）
+        settings/          常规/编辑器/外观/文件图片/快捷键/关于设置模块
         editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换
         editor-images.js   相对图片路径解析为 file:// （纯函数）
         editor-copy.js     富文本复制的内联样式（纯函数）
@@ -129,6 +131,7 @@ src/
       styles/app.css       应用主体样式 + 主题变量 + content-visibility
 scripts/
   etv.mjs                  端到端测试工具（CDP 驱动，见 development.md）
+  test-keybindings*.mjs    自定义快捷键纯函数、设置 UI、持久化、菜单同步和运行时回归
   inspect.mjs              简易 CDP 状态检查器
 build/
   icon.ico                 Windows 图标（多分辨率、圆角）
@@ -153,7 +156,7 @@ build/
 - **主题/语言**：`theme`（主题 id）、`lang`（en/zh），分别 `applyTheme()` 与 `I18nProvider`
 - **最近文件**：`recents[]`，每次打开文件时记录，持久化，首页展示
 - **首次引导**：首启动（无 `horsemd.onboarded.v1` 标记且无恢复标签）打开欢迎文档
-- **快捷键**：菜单加速器（主进程）+ 渲染层监听（Ctrl+Tab 切标签、Ctrl+Shift+B 切侧边栏）；Ctrl+B 保留给编辑器加粗
+- **快捷键**：`useKeybindings` 读取 `horsemd.keybindings.v1`，`useGlobalKeys` 消费有效键位；主进程菜单 accelerator 通过白名单 IPC 同步；命令面板、工具提示和设置页读取同一命令注册表。编辑器原生粗体/斜体/高亮暂不开放改绑，Ctrl/Cmd+B 保留给编辑器加粗
 
 ## 编辑器内容数据流（重要）
 

@@ -17,6 +17,8 @@ npm run dev
 ```bash
 npm run build       # 构建到 out/（main + preload + renderer）
 npm run test:core   # 运行可在 CI 中执行的确定性核心回归
+npm run test:shortcuts      # 设置中心/自定义快捷键专项回归
+npm run test:ui-regression  # 串行运行真实 Electron UI 回归 session
 npm start           # 运行构建产物（electron-vite preview）
 npm run dist        # 构建 + electron-builder 打**当前系统**的安装包 → dist/
 npm run dist:dir    # 构建 + 打免安装目录版（dist/<platform>-unpacked/）
@@ -96,10 +98,17 @@ npm run test:source-map
 
 # CriticMarkup 输入守卫
 node scripts/test-strike-guard.mjs
+
+# 自定义快捷键专项回归
+npm run test:shortcuts
+
+# 真实 Electron UI 回归编排，串行启动隔离 profile，避免多个 CDP 脚本抢窗口
+npm run test:ui-regression
 ```
 
 ### 工具
 
+- `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
 - `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、快速设置、源码同步和快捷入口
