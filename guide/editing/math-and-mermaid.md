@@ -5,7 +5,7 @@ description: 使用 LaTeX 数学公式和 Mermaid 图表，并查看全屏预览
 
 # 公式与 Mermaid
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 ## 数学公式
 

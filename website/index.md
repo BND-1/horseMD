@@ -2,7 +2,7 @@
 title: HorseMD — 一个窗口，装下所有 .md 文件
 description: 免费开源的 Typora 平替 Markdown 编辑器：所见即所得 + 标签页 + 文件树工作区，Windows / macOS / Linux / Android，MIT 协议
 url: https://horsemd.yangsir.net/
-version: v0.6.0
+version: v0.6.5
 license: MIT
 author: Evan Yang (杨庭毅, @BND-1)
 ---

@@ -199,6 +199,32 @@ async function main() {
   }
 
   await resetEditor(send, evaluate)
+  await paste(
+    evaluate,
+    '<h2>微信二级标题</h2><p><strong>保留加粗正文</strong></p>' +
+      '<img alt="微信懒加载图片" data-src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">',
+    '文章开头\n1. 这不是 Markdown 列表\n文章结尾'
+  )
+  const structuredWechat = await evaluate(`(() => {
+    const editor = document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')
+    const image = editor?.querySelector('img[alt="微信懒加载图片"]')
+    return {
+      heading: editor?.querySelector('h2')?.textContent || '',
+      bold: editor?.querySelector('strong')?.textContent || '',
+      imageSrc: image?.getAttribute('src') || '',
+      orderedLists: editor?.querySelectorAll('ol').length || 0
+    }
+  })()`)
+  if (
+    structuredWechat.heading !== '微信二级标题' ||
+    structuredWechat.bold !== '保留加粗正文' ||
+    !structuredWechat.imageSrc.startsWith('data:image/gif;base64,') ||
+    structuredWechat.orderedLists !== 0
+  ) {
+    throw new Error(`structured WeChat paste was flattened: ${JSON.stringify(structuredWechat)}`)
+  }
+
+  await resetEditor(send, evaluate)
   await paste(evaluate, '<ul><li><p>普通列表</p></li></ul>', '普通列表')
   const ordinaryList = await evaluate(`document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror li')?.textContent.trim()`)
   if (ordinaryList !== '普通列表') throw new Error(`ordinary HTML list regressed: ${JSON.stringify(ordinaryList)}`)
@@ -243,6 +269,7 @@ async function main() {
     stretchedResult,
     emptyResult,
     wechatResult,
+    structuredWechat,
     ordinaryList,
     ordinaryTable,
     ordinaryImage,

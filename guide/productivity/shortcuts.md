@@ -5,7 +5,7 @@ description: HorseMD 桌面端常用快捷键完整速查。
 
 # 快捷键
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 表格中的 `Ctrl/Cmd` 表示 Windows 使用 Ctrl、macOS 使用 Command。标题层级快捷键固定使用 Ctrl。
 

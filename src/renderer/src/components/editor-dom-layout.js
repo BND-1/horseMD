@@ -267,7 +267,7 @@ const mountTableHandleBounds = ({ host, scrollEl, cleanups }) => {
   })
 }
 
-export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, reportActiveBlock, refreshLevel }) {
+export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, reportActiveBlock }) {
   const scrollEl = host.closest('.editor-scroll')
   mountSlashMenuBounds({ host, scrollEl, cleanups })
   mountTableHandleBounds({ host, scrollEl, cleanups })
@@ -305,19 +305,4 @@ export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, 
   blankAreaTarget.addEventListener('mousedown', onBlankAreaMouseDown)
   cleanups.push(() => blankAreaTarget.removeEventListener('mousedown', onBlankAreaMouseDown))
 
-  if (scrollEl) {
-    let scrollLevelTimer = 0
-    const onScroll = () => {
-      if (scrollLevelTimer) clearTimeout(scrollLevelTimer)
-      scrollLevelTimer = setTimeout(() => {
-        scrollLevelTimer = 0
-        refreshLevel()
-      }, 150)
-    }
-    scrollEl.addEventListener('scroll', onScroll, { passive: true })
-    cleanups.push(() => {
-      scrollEl.removeEventListener('scroll', onScroll)
-      if (scrollLevelTimer) clearTimeout(scrollLevelTimer)
-    })
-  }
 }

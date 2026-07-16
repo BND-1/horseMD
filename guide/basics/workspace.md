@@ -5,11 +5,11 @@ description: 在 HorseMD 工作区添加多个文件夹，并管理文件树。
 
 # 工作区与文件夹
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 工作区是左侧文件树的容器，可以同时挂载多个磁盘文件夹。添加新文件夹不会替换已有文件夹，也不会把它们复制到 HorseMD 内部。
 
-![包含多个目录的 HorseMD 工作区](/images/v0.6.0/workspace.png)
+![包含多个目录的 HorseMD 工作区](/images/v0.6.5/workspace.png)
 <span class="image-caption">根目录是工作区挂载点；其下文件和子目录可以展开、创建、重命名和删除。</span>
 
 ## 添加文件夹

@@ -5,11 +5,11 @@ description: 使用中文、英文、拼音和语言名称快速插入 Markdown 
 
 # 斜杠命令
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 在富文本正文中输入 `/`，会打开快捷菜单。继续输入内容即可筛选，按上下方向键选择，按 Enter 执行，按 Escape 关闭。
 
-![使用拼音首字母匹配标题命令](/images/v0.6.0/slash-command.png)
+![使用拼音首字母匹配标题命令](/images/v0.6.5/slash-command.png)
 <span class="image-caption">输入 `/bt` 后匹配“标题”，菜单始终保持在窗口可视区域内。</span>
 
 ## 可以怎样搜索

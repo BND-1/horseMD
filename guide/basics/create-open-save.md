@@ -5,7 +5,7 @@ description: 在 HorseMD 中创建文档、打开文件并理解保存状态。
 
 # 新建、打开与保存
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 ## 新建文档
 

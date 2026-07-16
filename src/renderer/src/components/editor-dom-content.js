@@ -4,6 +4,7 @@ import { fireToast } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
+import { hasStructuredWebHtml } from './editor-web-paste.js'
 
 export function mountEditorContentBindings({
   view,
@@ -63,6 +64,9 @@ export function mountEditorContentBindings({
     !event.target.closest?.('.cm-editor, input, textarea, .caption-input')
   const onPasteImage = (event) => {
     if (!imageHandlingActive(event)) return
+    // A rich web selection may expose an image file in addition to HTML. Do not
+    // let the single-image path consume the entire article.
+    if (hasStructuredWebHtml(event.clipboardData?.getData('text/html') || '')) return
     const items = event.clipboardData?.items
     if (!items) return
     const imageItem = [...items].find((item) => item.kind === 'file' && item.type.startsWith('image/'))

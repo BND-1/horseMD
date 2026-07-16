@@ -5,13 +5,13 @@ description: 在 Windows 10 或 Windows 11 中安装 HorseMD，并处理 SmartSc
 
 # Windows 安装
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 HorseMD 当前提供 x64 NSIS 安装包，适用于常见的 Windows 10 和 Windows 11 电脑。
 
 ## 安装步骤
 
-1. 下载 `HorseMD-Setup-0.6.0.exe`。
+1. 下载 `HorseMD-Setup-0.6.5.exe`。
 2. 双击安装文件。
 3. 如果 Windows SmartScreen 显示“Windows 已保护你的电脑”，点击“更多信息”。
 4. 确认应用名称是 HorseMD，然后点击“仍要运行”。

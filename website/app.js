@@ -178,7 +178,7 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
 // this one constant. (Gitee mirror isn't synced past v0.3.1, so CN goes via
 // ghfast + GitHub like the desktop buttons.) index.html's hrefs are
 // version-agnostic (releases/latest) as the no-JS fallback.
-const APK_VER = '0.6.0'
+const APK_VER = '0.6.5'
 const APK_URL = `https://github.com/BND-1/horseMD/releases/download/v${APK_VER}/HorseMD-${APK_VER}.apk`
 document.getElementById('dlAndroid').href = APK_URL
 document.getElementById('dlAndroidGitee').href = CN + APK_URL

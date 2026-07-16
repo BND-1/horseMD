@@ -15,11 +15,8 @@ export function mountEditorDomBindings({
   markUserEdit,
   insertUploadedImage,
   reportActiveBlock,
-  refreshLevel,
-  scheduleLevel,
   setBlock,
   setCtxMenu,
-  setLevel,
   setZoom,
   getT,
   isDestroyed
@@ -32,11 +29,8 @@ export function mountEditorDomBindings({
     cleanups,
     markUserEdit,
     reportActiveBlock,
-    refreshLevel,
-    scheduleLevel,
     setBlock,
-    setCtxMenu,
-    setLevel
+    setCtxMenu
   })
 
   mountEditorLayoutBindings({
@@ -44,8 +38,7 @@ export function mountEditorDomBindings({
     host,
     cleanups,
     markUserEdit,
-    reportActiveBlock,
-    refreshLevel
+    reportActiveBlock
   })
 
   mountEditorContentBindings({

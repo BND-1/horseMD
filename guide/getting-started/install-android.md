@@ -5,13 +5,13 @@ description: 在 Android 手机或平板上安装 HorseMD APK。
 
 # Android 安装
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 Android 版与桌面版共享编辑器，但文件选择、保存和分享遵循 Android 系统规则。
 
 ## 安装 APK
 
-1. 下载 `HorseMD-0.6.0.apk`。
+1. 下载 `HorseMD-0.6.5.apk`。
 2. 在浏览器下载列表或系统文件管理器中点击 APK。
 3. 首次侧载时，Android 会要求允许当前浏览器或文件管理器“安装未知应用”。
 4. 临时开启该权限，返回并继续安装。

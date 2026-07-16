@@ -5,7 +5,7 @@ description: 将当前 HorseMD 文档导出为干净的 PDF 文件。
 
 # 导出 PDF
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 ## 打开导出中心
 
@@ -18,7 +18,7 @@ description: 将当前 HorseMD 文档导出为干净的 PDF 文件。
 
 HorseMD 会打开独立的 PDF 导出中心：左侧调整设置，右侧显示真实 PDF 分页预览。确认后点击“导出 PDF”，选择保存位置；生成完成后会使用系统默认 PDF 阅读器打开。
 
-![PDF 导出中心，左侧为页面与结构设置，右侧为真实分页和书签预览](/images/v0.6.0/pdf-export.png)
+![PDF 导出中心，左侧为页面与结构设置，右侧为真实分页和书签预览](/images/v0.6.5/pdf-export.png)
 
 设置改变后，预览会自动更新；最终保存的就是当前预览所使用的同一份 PDF。生成和保存期间会锁定重复操作。若远程图片未能加载或生成失败，导出中心会保留设置并显示提示，可以直接重试；在系统保存窗口中取消会返回导出中心。
 

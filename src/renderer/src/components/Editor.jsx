@@ -79,8 +79,6 @@ export default function Editor({
     if (v?.dom) v.dom.setAttribute('spellcheck', spellcheck ? 'true' : 'false')
   }, [spellcheck])
   const [ctxMenu, setCtxMenu] = useState(null) // { x, y } viewport coords, or null
-  // Floating "block level" indicator that tracks the caret (H1…H6 / Text).
-  const [level, setLevel] = useState(null) // { label, kind, top, left } or null
   // Lightbox: the image src currently shown enlarged, or null.
   const [zoom, setZoom] = useState(null)
   // Mermaid-lightbox pan/zoom state (refs so dragging doesn't re-render per frame).
@@ -163,17 +161,13 @@ export default function Editor({
     })
     crepeRef.current = crepe
 
-    // Block controls (setBlock / reportActiveBlock / refreshLevel / scheduleLevel)
-    // live in editor-block-controls.js; mount them here and reuse the handles.
-    const { setBlock, reportActiveBlock, refreshLevel, scheduleLevel } = createBlockControls({
+    // Block controls live in editor-block-controls.js; mount them here and
+    // reuse the same conversion path across shortcuts, menus and toolbars.
+    const { setBlock, reportActiveBlock } = createBlockControls({
       viewRef,
-      host,
-      t: (k) => tRef.current(k),
-      setLevel,
       setCtxMenu,
       onActiveBlock,
-      lastBlockRef,
-      cleanups
+      lastBlockRef
     })
 
     // IMPORTANT: register listeners BEFORE create(). Crepe wires them during
@@ -264,11 +258,8 @@ export default function Editor({
           markUserEdit,
           insertUploadedImage,
           reportActiveBlock,
-          refreshLevel,
-          scheduleLevel,
           setBlock,
           setCtxMenu,
-          setLevel,
           setZoom,
           getT: (key) => tRef.current(key),
           isDestroyed: () => destroyed
@@ -536,16 +527,6 @@ export default function Editor({
           <div className="skel-line skel-gap" style={{ width: '50%' }} />
           <div className="skel-line" style={{ width: '93%' }} />
           <div className="skel-line" style={{ width: '80%' }} />
-        </div>
-      )}
-
-      {level && (
-        <div
-          className={`hm-level-badge hm-level-${level.kind} align-${level.align}`}
-          style={{ top: level.top, left: level.x }}
-          aria-hidden="true"
-        >
-          {level.label}
         </div>
       )}
 

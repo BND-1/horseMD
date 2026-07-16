@@ -2385,41 +2385,6 @@ body.hm-full-width .editor-skeleton {
   }
 }
 
-/* Block-level hint: a small, quiet tag beside the caret's line naming the
-   current block (H1…H6 / 正文). Non-interactive — purely an at-a-glance cue.
-   Deliberately minimal: no border or shadow, muted by default. */
-.hm-level-badge {
-  position: fixed;
-  transform: translateY(-50%);
-  z-index: 60;
-  pointer-events: none;
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  color: var(--muted, #8a8a8a);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  opacity: 0.85;
-  transition: top 0.1s ease;
-  animation: hm-level-fade 0.14s ease;
-}
-.hm-level-badge.align-right {
-  transform: translate(-100%, -50%);
-}
-.hm-level-badge.hm-level-heading {
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-}
-@keyframes hm-level-fade {
-  from { opacity: 0; }
-  to { opacity: 0.85; }
-}
-
 /* =====================================================
    Block-type controls (selection bar / context menu / status switcher)
    ===================================================== */
@@ -5048,8 +5013,6 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
    is always full width here) and the desktop keyboard-shortcut hints. */
 .app.is-mobile .hm-pagewidth { display: none; }
 .app.is-mobile .welcome-hints { display: none; }
-/* The floating "Text / H1" caret badge is desktop affordance; drop it on phones. */
-.app.is-mobile .hm-level-badge { display: none !important; }
 /* iOS/Android own text selection, copy/paste and accessibility actions. Crepe's
    selection tooltip is disabled in editor-crepe-setup; keep this as a defensive
    fallback so an upstream toolbar cannot overlap the native system menu. */

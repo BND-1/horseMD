@@ -12,7 +12,7 @@ head:
 
 # HorseMD 使用教程
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 这套教程面向第一次使用 HorseMD 的用户，也可以在需要时作为功能手册查询。你不需要预先了解 Markdown，可以从安装开始，按照左侧目录逐步完成。
 

@@ -5,7 +5,7 @@ description: 在 Android 版 HorseMD 中打开、编辑、保存和导出 Markdo
 
 # Android
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 先按照 [Android 安装](/getting-started/install-android)完成 APK 安装。
 

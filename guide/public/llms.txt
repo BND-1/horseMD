@@ -1,6 +1,6 @@
 # HorseMD 使用教程
 
-HorseMD 是一款免费、开源、不需要账号的 Markdown 编辑器。本教程适用于 HorseMD v0.6.0，覆盖安装、文件管理、富文本与源码编辑、工作区、效率工具、输出、外观、移动端和故障排查。
+HorseMD 是一款免费、开源、不需要账号的 Markdown 编辑器。本教程适用于 HorseMD v0.6.5，覆盖安装、文件管理、富文本与源码编辑、工作区、效率工具、输出、外观、移动端和故障排查。
 
 - 教程首页：https://guide.horsemd.yangsir.net/
 - 快速开始：https://guide.horsemd.yangsir.net/getting-started/

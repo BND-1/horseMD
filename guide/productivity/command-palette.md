@@ -5,11 +5,11 @@ description: 使用 Ctrl/Cmd+P 搜索文件和执行 HorseMD 命令。
 
 # 命令面板
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.6.5</span>
 
 按 `Ctrl/Cmd+P`，或点击顶栏右侧的命令图标。
 
-![HorseMD 命令面板](/images/v0.6.0/command-palette.png)
+![HorseMD 命令面板](/images/v0.6.5/command-palette.png)
 <span class="image-caption">命令面板集中提供文件、编辑、视图和导出操作。</span>
 
 输入文字筛选命令或工作区文件，使用上下方向键选择，按 Enter 执行，按 Escape 关闭。常用命令包括：

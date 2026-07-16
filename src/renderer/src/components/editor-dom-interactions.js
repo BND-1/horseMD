@@ -6,11 +6,8 @@ export function mountEditorInteractionBindings({
   cleanups,
   markUserEdit,
   reportActiveBlock,
-  refreshLevel,
-  scheduleLevel,
   setBlock,
-  setCtxMenu,
-  setLevel
+  setCtxMenu
 }) {
   const updateHighlightActive = () => {
     const currentView = viewRef.current
@@ -57,7 +54,6 @@ export function mountEditorInteractionBindings({
     const currentView = viewRef.current
     if (!currentView || !currentView.hasFocus()) return
     reportActiveBlock()
-    scheduleLevel()
     updateHighlightActive()
   }
   const onUserEditIntent = () => markUserEdit()
@@ -85,16 +81,7 @@ export function mountEditorInteractionBindings({
   cleanups.push(() => view.dom.removeEventListener('mousedown', onPointerDown, true))
   cleanups.push(() => view.dom.removeEventListener('contextmenu', onContextMenu))
 
-  const onBlur = () => setLevel(null)
-  const onFocus = () => refreshLevel()
-  const onMove = () => scheduleLevel()
-  view.dom.addEventListener('blur', onBlur)
-  view.dom.addEventListener('focus', onFocus)
-  view.dom.addEventListener('mousemove', onMove, { passive: true })
   document.addEventListener('selectionchange', onSelectionChange)
-  cleanups.push(() => view.dom.removeEventListener('blur', onBlur))
-  cleanups.push(() => view.dom.removeEventListener('focus', onFocus))
-  cleanups.push(() => view.dom.removeEventListener('mousemove', onMove))
   cleanups.push(() => document.removeEventListener('selectionchange', onSelectionChange))
 
   return { updateHighlightActive }

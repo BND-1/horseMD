@@ -75,7 +75,6 @@
 - 右键块菜单。
 - selection toolbar 注入标题、高亮、review 按钮。
 - 状态栏通过 `setBlock` 改块类型。
-- level badge 跟随当前块。
 - slash menu 本地化。
 - inline code 保持 `inclusive:false`，关闭反引号后继续输入应退出 code；`editor-inline-code.js` 只为成对反引号进入和点击 code 末端追加维护短暂 stored-mark，不改变 schema/序列化。
 
@@ -91,7 +90,7 @@
 - 富文本复制写入带 inline style 的 HTML clipboard。
 - CodeMirror 代码块复制按钮有反馈和 toast。
 - Markdown 源码粘贴走 Milkdown parser，而不是普通纯文本。
-- 网页富文本粘贴会规范化叶子 `section`/`div`，避免微信公众号视觉段落被合并。
+- 网页富文本粘贴会优先保留结构化 HTML，并规范化叶子 `section`/`div` 与微信懒加载图片，避免编号标题触发 Markdown 误判或视觉段落被合并。
 - 粘贴/拖入图片不劫持代码块、input、textarea、caption input。
 
 验证：

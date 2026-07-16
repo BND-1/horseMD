@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-07-16
+
 ### Added
 - **Precise image and Mermaid lightbox controls** — previews now include
   standard zoom-out/zoom-in buttons, a live scale readout, fit-to-window, and
@@ -22,8 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Natural inline-code editing** (#58) — typing an empty backtick pair enters
   inline code immediately, and clicking the rendered trailing edge allows text
   to be appended without making the mark inherit into following prose.
+- **Quieter writing surface** — removed the floating paragraph/heading-level
+  badge beside the caret while preserving every block conversion path. Its
+  selection, mousemove, scroll and layout-measurement listeners were removed too.
 
 ### Fixed
+- Fixed rich WeChat article paste being flattened when numbered headings were mistaken for Markdown lists; heading levels, inline formatting, paragraphs, and lazy-loaded images are now preserved.
 - **Reliable long-running editor actions** — PDF export now prevents duplicate
   submissions, reports failures in-place, and preserves options for retry;
   rich-document loading state is isolated per tab, and Lightbox drag listeners

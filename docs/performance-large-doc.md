@@ -161,11 +161,9 @@ if (isLargeDoc) {
 - **二次优化**：把每个标题的「内容偏移量」`Y = rect.top − scroller.top + scrollTop` **只测一次**（单次布局 pass，每 2s / resize 重建），滚动时只比 `scrollTop`（**零布局读取**）。于是可以**每帧更新**、永远落在当前标题——既不卡，高亮/大纲面板自动滚动也都精准。`Outline.jsx` 的 `scrollIntoView` 依赖 `activeIndex` 变化，所以这一处同时修了「高亮停错」和「大纲不跟滚」。
 - **根因关联**：原 leading-only 节流 + 每帧全文档 reflow = issue #17 滚动追赶 + 大纲停错，是同一根因。
 
-**P0-3b. `refreshLevel`（滚动路径改 trailing）** ✅ 已实施（二次优化）
+**P0-3b. 移除浮动块类型徽标** ✅ 0.6.5 已实施
 
-`Editor.jsx` 浮动块类型徽标（level badge，跟随光标）。
-- 初版：从每帧 rAF 改为每 **200ms** 节流。typing/selection 仍走这个 leading 节流。
-- **二次优化**：滚动时光标本身不动（只是屏幕位置变），徽标无需每 200ms 重算——把**滚动 handler** 改成「停止 150ms 后算一次」(trailing)，干掉滚动时每 200ms 的全文档 reflow（`coordsAtPos` + `getBoundingClientRect`）。typing / selectionchange / mousemove 仍用原 200ms leading 节流，行为不变。
+早期版本为跟随光标的 level badge 做过节流优化。0.6.5 按产品取舍移除了该纯提示控件，同时删除 selection、mousemove、scroll 路径中的 `coordsAtPos` / `getBoundingClientRect`、定时器和 React 状态；标题快捷键、右键菜单、selection toolbar、状态栏切换和大纲功能不受影响。
 
 **P0-3c. 大纲标题列表 debounce** ✅ 已实施
 

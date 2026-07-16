@@ -13,6 +13,7 @@
 import { Slice, Fragment } from '@milkdown/prose/model'
 import { startsAsMermaid } from './editor-mermaid.js'
 import { normalizeDisplayMath } from './editor-math.js'
+import { hasStructuredWebHtml } from './editor-web-paste.js'
 
 function looksLikeMarkdown(text) {
   if (/^#{1,6}\s/m.test(text)) return true
@@ -30,6 +31,10 @@ export function attachMdPasteHandler(view, parse) {
   const onPaste = (event) => {
     // Pasting INTO a code block should append code, not restructure.
     if (view.state.selection.$from.parent.type.name === 'code_block') return
+    // Browsers provide text/plain alongside text/html. Numbered headings and
+    // divider-like prose in that fallback can resemble Markdown; keep the
+    // structured HTML instead of flattening headings, marks and images.
+    if (hasStructuredWebHtml(event.clipboardData?.getData('text/html') || '')) return
     const text = event.clipboardData?.getData('text/plain') || ''
     if (!text) return
     const schema = view.state.schema

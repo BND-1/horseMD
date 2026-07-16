@@ -6,7 +6,7 @@
 - **完整中文使用教程**：https://guide.horsemd.yangsir.net/
 - **GitHub**：https://github.com/BND-1/horseMD
 - **下载**：https://github.com/BND-1/horseMD/releases/latest
-- **版本**：v0.6.0（2026-07）· **协议**：MIT · **价格**：免费
+- **版本**：v0.6.5（2026-07）· **协议**：MIT · **价格**：免费
 - **作者**：Evan Yang（杨庭毅 / 杨sir，GitHub @BND-1，https://yangsir.net）
 
 ---
