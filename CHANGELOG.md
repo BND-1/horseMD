@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Precise image and Mermaid lightbox controls** — previews now include
   standard zoom-out/zoom-in buttons, a live scale readout, fit-to-window, and
   1:1 actual-size viewing.
-- **Configurable PDF export** (#60) — desktop export now offers A4, A3, Letter,
+- **Configurable PDF export** (#60, #64) — desktop export now offers A4, A3, Letter,
   and validated custom page dimensions, portrait/landscape orientation, margin
   presets, content scaling, preserved print backgrounds, heading pagination, a printable table
   of contents, PDF bookmarks, headers/footers, dates, page numbers, and ranges.
