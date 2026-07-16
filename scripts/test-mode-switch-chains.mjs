@@ -14,7 +14,7 @@ const inSource = (ev) => ev(`[...document.querySelectorAll('textarea.source-edit
 
 const toggle = async (send, ev) => {
   const point = await ev(`(() => {
-    const button = [...document.querySelectorAll('.status-btn')].find((node) => node.title?.includes('Ctrl+/'))
+    const button = [...document.querySelectorAll('.status-btn')].find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
     if (!button) return null
     const rect = button.getBoundingClientRect()
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }

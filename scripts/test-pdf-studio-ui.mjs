@@ -140,7 +140,7 @@ const main = async () => {
   }
 
   await evaluate(`document.querySelector('.hm-pdf-close')?.click()`)
-  await evaluate(`([...document.querySelectorAll('.status-btn')].find((node) => node.title?.includes('Ctrl+/'))?.click(), true)`)
+  await evaluate(`([...document.querySelectorAll('.status-btn')].find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))?.click(), true)`)
   await waitFor(evaluate, `!![...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)`, 'Source mode did not open')
   await evaluate(`(() => {
     const textarea = [...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)

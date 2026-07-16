@@ -51,7 +51,7 @@ const srcCtx = async () => ev(`(() => {
   return { before: ta.value.slice(Math.max(0, s - 12), s), after: ta.value.slice(s, s + 12) };
 })()`)
 
-const toggle = async () => { await ev(`(() => { const b = [...document.querySelectorAll('.status-btn')].find(x => x.title && x.title.includes('Ctrl+/')); if (b) b.click(); return true })()`); await sleep(900) }
+const toggle = async () => { await ev(`(() => { const b = [...document.querySelectorAll('.status-btn')].find(x => /源码|Source|Ctrl\\+\\/|⌘\\//.test(x.title || x.textContent || '')); if (b) b.click(); return true })()`); await sleep(900) }
 
 const ANCHORS = [
   '包含一个链接',      // prose w/ a markdown link nearby

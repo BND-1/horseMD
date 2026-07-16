@@ -25,10 +25,9 @@ async function main() {
 
   // RICH outline baseline.
   out.richOutline = await ev(`(() => [...document.querySelectorAll('.outline-item')].map(e=>e.textContent.trim()))()`)
-  // Toggle to source mode via the StatusBar button (its title always has
-  // "Ctrl+/" — stable across locales; the Mod-/ menu accelerator can't be
-  // triggered by CDP key events, which don't reach Electron's native menu).
-  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>x.title && x.title.includes('Ctrl+/')); if(b)b.click(); return !!b })()`)
+  // Toggle to source mode via the StatusBar button. The shortcut label is
+  // platform-aware, so match the command title instead of a fixed accelerator.
+  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>/源码|Source|Ctrl\\+\\/|⌘\\//.test(x.title || x.textContent || '')); if(b)b.click(); return !!b })()`)
   await sleep(600)
   const modeCheck = await ev(`(() => ({ sourceEditor: !!document.querySelector('.source-editor') }))()`)
   out.afterToggle = modeCheck

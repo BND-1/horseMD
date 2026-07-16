@@ -14,7 +14,7 @@ const evals = (evaluate) => async (expression) => {
 }
 
 async function toggleSource(ev) {
-  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>x.title && x.title.includes('Ctrl+/')); if(b)b.click(); return !!b })()`)
+  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>/源码|Source|Ctrl\\+\\/|⌘\\//.test(x.title || x.textContent || '')); if(b)b.click(); return !!b })()`)
 }
 
 // Read the current state: mode, caret context (visible text around caret), and

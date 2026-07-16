@@ -15,7 +15,7 @@ async function main() {
     const textarea = document.querySelector('textarea.source-editor')
     if (textarea) return true
     const toggle = [...document.querySelectorAll('.status-btn')]
-      .find((button) => button.title?.includes('Ctrl+/'))
+      .find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))
     if (!toggle) throw new Error('Source-mode toggle not found')
     toggle.click()
     return true
@@ -31,7 +31,7 @@ async function main() {
   })()`)
   await evaluate(`(() => {
     const toggle = [...document.querySelectorAll('.status-btn')]
-      .find((button) => button.title?.includes('Ctrl+/'))
+      .find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))
     toggle.click()
     return true
   })()`)

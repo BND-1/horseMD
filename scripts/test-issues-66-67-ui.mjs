@@ -84,7 +84,7 @@ async function main() {
   // ownership must still follow focus across the two different editor types.
   await evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
-      .find((node) => (node.title || '').includes('Ctrl+/'))
+      .find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
     button?.click()
     return !!button
   })()`)
@@ -103,7 +103,7 @@ async function main() {
   }
   await evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
-      .find((node) => (node.title || '').includes('Ctrl+/'))
+      .find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
     button?.click()
   })()`)
   await sleep(800)

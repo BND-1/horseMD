@@ -8,20 +8,21 @@ const testModeSwitch = process.argv.includes('--mode-switch')
 async function main() {
   const { ws, send, evaluate } = await connectCdp()
   await sleep(800)
+  const commandModifier = await evaluate(`navigator.platform?.toLowerCase().includes('mac') ? 4 : 2`)
   await evaluate(`(() => {
     document.querySelector('.tab[title="欢迎使用 HorseMD.md"] .tab-close')?.click()
     if (!document.querySelector('textarea.source-editor')) {
-      [...document.querySelectorAll('.status-btn')].find((button) => button.title?.includes('Ctrl+/'))?.click()
+      [...document.querySelectorAll('.status-btn')].find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))?.click()
     }
     return true
   })()`)
   await sleep(700)
   await send('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown', key: 'f', code: 'KeyF', modifiers: 2,
+    type: 'rawKeyDown', key: 'f', code: 'KeyF', modifiers: commandModifier,
     windowsVirtualKeyCode: 70, nativeVirtualKeyCode: 3
   })
   await send('Input.dispatchKeyEvent', {
-    type: 'keyUp', key: 'f', code: 'KeyF', modifiers: 2,
+    type: 'keyUp', key: 'f', code: 'KeyF', modifiers: commandModifier,
     windowsVirtualKeyCode: 70, nativeVirtualKeyCode: 3
   })
   await sleep(150)
@@ -94,7 +95,7 @@ async function main() {
   if (testModeSwitch) {
     const countBefore = steps.at(-1)?.count || initial.count
     const toggleMode = async () => {
-      await evaluate(`([...document.querySelectorAll('.status-btn')].find((button) => button.title?.includes('Ctrl+/'))?.click(), true)`)
+      await evaluate(`([...document.querySelectorAll('.status-btn')].find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))?.click(), true)`)
       await sleep(850)
     }
     const modeSnapshot = () => evaluate(`(() => {

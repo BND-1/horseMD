@@ -13,7 +13,7 @@ function parseHeads(md) {
 }
 
 async function toggleSource(send, ev) {
-  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>x.title && x.title.includes('Ctrl+/')); if(b)b.click(); return !!b })()`)
+  await ev(`(() => { const b=[...document.querySelectorAll('.status-btn')].find(x=>/源码|Source|Ctrl\\+\\/|⌘\\//.test(x.title || x.textContent || '')); if(b)b.click(); return !!b })()`)
 }
 
 async function main() {
