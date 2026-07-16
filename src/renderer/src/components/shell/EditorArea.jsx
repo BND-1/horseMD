@@ -27,6 +27,7 @@ export default function EditorArea({
   activeTab,
   imageUploadCommand,
   spellcheck,
+  effectiveKeybindings,
   editorAreaRef,
   editorHostRef,
   editorHosts,
@@ -216,6 +217,7 @@ export default function EditorArea({
                 docPath={tab.path}
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
+                effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)

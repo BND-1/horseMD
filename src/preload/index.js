@@ -78,6 +78,9 @@ const api = {
 
   // update check (notify-only)
   checkUpdate: () => ipcRenderer.invoke('update:check'),
+  setMenuKeybindings: (accelerators) => ipcRenderer.invoke('menu:setKeybindings', accelerators),
+  getMenuKeybindings: () => ipcRenderer.invoke('menu:getKeybindings'),
+  getMenuSnapshot: () => ipcRenderer.invoke('menu:getSnapshot'),
 
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.

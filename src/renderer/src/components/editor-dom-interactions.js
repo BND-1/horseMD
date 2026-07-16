@@ -1,4 +1,6 @@
 import { TextSelection } from '@milkdown/prose/state'
+import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
+import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
 
 export function mountEditorInteractionBindings({
   view,
@@ -7,7 +9,8 @@ export function mountEditorInteractionBindings({
   markUserEdit,
   reportActiveBlock,
   setBlock,
-  setCtxMenu
+  setCtxMenu,
+  getKeybindings
 }) {
   const updateHighlightActive = () => {
     const currentView = viewRef.current
@@ -27,13 +30,19 @@ export function mountEditorInteractionBindings({
 
   const onKeydown = (event) => {
     markUserEdit()
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) return
-    if (event.key >= '1' && event.key <= '6') {
-      event.preventDefault()
-      setBlock('h' + event.key)
-    } else if (event.key === '0') {
+    const keybindings = getKeybindings?.() || getEffectiveKeybindingMap()
+    const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
+    if (keybindingMatchesEvent(keybindings['editor.block.paragraph']?.[0], event, platform)) {
       event.preventDefault()
       setBlock('paragraph')
+      return
+    }
+    for (let level = 1; level <= 6; level += 1) {
+      if (keybindingMatchesEvent(keybindings[`editor.block.h${level}`]?.[0], event, platform)) {
+        event.preventDefault()
+        setBlock('h' + level)
+        return
+      }
     }
   }
   const onContextMenu = (event) => {

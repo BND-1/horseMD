@@ -360,6 +360,9 @@ export function makeCapacitorApi() {
 
     // update check — wired up later (CSP/network)
     checkUpdate: async () => null,
+    setMenuKeybindings: async () => ({ ok: false, unsupported: true }),
+    getMenuKeybindings: async () => ({}),
+    getMenuSnapshot: async () => [],
 
     // app close (no "close window" on mobile)
     confirmAppClose: () => {},

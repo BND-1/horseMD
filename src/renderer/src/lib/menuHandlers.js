@@ -10,6 +10,58 @@
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
+import { COMMAND_DEFINITIONS, getCommandHandler, getCommandTitle, isCommandAvailable } from './commands/command-definitions.js'
+import { keybindingMatchesEvent } from './commands/keybinding-normalize.js'
+import { getEffectiveKeybindingMap } from './commands/keybinding-store.js'
+import { getCommandShortcut } from './commands/shortcut-labels.js'
+
+const COMMAND_PALETTE_ICONS = {
+  'file.new': 'file-plus',
+  'file.open': 'file',
+  'workspace.openFolder': 'folder',
+  'file.save': 'save',
+  'file.saveAs': 'save',
+  'file.attach': 'paperclip',
+  'file.exportPdf': 'file',
+  'view.toggleSidebar': 'sidebar',
+  'view.showFiles': 'folder',
+  'view.showOutline': 'outline',
+  'view.toggleSource': 'code',
+  'view.cycleTheme': 'moon',
+  'editor.find': 'search',
+  'editor.replace': 'replace',
+  'review.add': 'review',
+  'review.delete': 'review',
+  'review.substitute': 'review',
+  'review.highlight': 'review',
+  'review.copyPrompt': 'review',
+  'review.acceptAll': 'review',
+  'review.rejectAll': 'review'
+}
+
+export const SETTINGS_BACKGROUND_HANDLERS = new Set([
+  'save',
+  'saveAs',
+  'attachFile',
+  'exportPdf',
+  'toggleSidebar',
+  'toggleOutline',
+  'toggleFiles',
+  'toggleSource',
+  'find',
+  'replace',
+  'reviewAdd',
+  'reviewDelete',
+  'reviewSubstitute',
+  'reviewHighlight',
+  'reviewCopyPrompt',
+  'reviewAcceptAll',
+  'reviewRejectAll'
+])
+
+export function shouldBlockForSettings(handler, activeTabKind) {
+  return activeTabKind === 'settings' && SETTINGS_BACKGROUND_HANDLERS.has(handler)
+}
 
 export function createMenuHandlers({
   pickEditableId,
@@ -115,11 +167,20 @@ export function useGlobalKeys({
   tRef,
   setTabs,
   activeId,
+  activeTabKind,
   setActiveId,
-  setHome
+  setHome,
+  effectiveKeybindings
 }) {
+  const keybindings = effectiveKeybindings || getEffectiveKeybindingMap()
+  const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
+
   useEffect(() => {
-    const offMenu = window.api.onMenu((cmd) => handlers.current[cmd]?.())
+    const offMenu = window.api.onMenu((cmd) => {
+      const handler = getCommandHandler(cmd) || cmd
+      if (shouldBlockForSettings(handler, activeTabKind)) return
+      handlers.current[handler]?.()
+    })
     const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
     // A folder arriving from Explorer's "Open with HorseMD" folder menu: add it
     // to the active workspace (multi-root). Never open a relative path.
@@ -151,17 +212,20 @@ export function useGlobalKeys({
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openPaths, openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers])
+  }, [openPaths, openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers, activeTabKind])
 
-  // Ctrl+Tab cycling
+  // Tab cycling uses the user keybinding map. The defaults intentionally remain
+  // Ctrl+Tab / Ctrl+Shift+Tab on macOS to preserve the historical behavior.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.ctrlKey && e.key === 'Tab') {
+      const previous = keybindingMatchesEvent(keybindings['tab.previous']?.[0], e, platform)
+      const next = keybindingMatchesEvent(keybindings['tab.next']?.[0], e, platform)
+      if (previous || next) {
         e.preventDefault()
         setTabs((prev) => {
           if (prev.length < 2) return prev
           const i = prev.findIndex((t) => t.id === activeId)
-          const ni = (i + (e.shiftKey ? -1 : 1) + prev.length) % prev.length
+          const ni = (i + (previous ? -1 : 1) + prev.length) % prev.length
           setActiveId(prev[ni].id)
           setHome(false)
           return prev
@@ -170,14 +234,15 @@ export function useGlobalKeys({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeId, setTabs, setActiveId, setHome])
+  }, [activeId, keybindings, platform, setTabs, setActiveId, setHome])
 
   // Ctrl/Cmd+Shift+B toggles the sidebar. Plain Mod+B is deliberately left to
   // ProseMirror's standard bold binding (#67). No menu accelerator, so this
   // renderer shortcut cannot double-fire with an Electron menu command.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyB') {
+      if (shouldBlockForSettings('toggleSidebar', activeTabKind)) return
+      if (keybindingMatchesEvent(keybindings['view.toggleSidebar']?.[0], e, platform)) {
         e.preventDefault()
         e.stopPropagation()
         handlers.current.toggleSidebar()
@@ -185,59 +250,42 @@ export function useGlobalKeys({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [handlers])
+  }, [handlers, keybindings, platform, activeTabKind])
 
   // Mod+F = find, Mod+Alt+F = replace (opens the bar and focuses the replace
   // field). Capture phase so it beats any editor binding.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyF') {
+      if (activeTabKind === 'settings') return
+      const replace = keybindingMatchesEvent(keybindings['editor.replace']?.[0], e, platform)
+      const find = keybindingMatchesEvent(keybindings['editor.find']?.[0], e, platform)
+      if (replace || find) {
         e.preventDefault()
         e.stopPropagation()
-        if (e.altKey) handlers.current.replace()
+        if (replace) handlers.current.replace()
         else handlers.current.find()
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [handlers])
+  }, [handlers, keybindings, platform, activeTabKind])
 }
 
 // Command-palette list (titles localized via t; run dispatches via handlers).
-export function useCommands({ t, handlers }) {
+export function useCommands({ t, handlers, effectiveKeybindings }) {
   return useMemo(
     () => {
       const caps = window.api.capabilities || {}
-      return [
-        { id: 'cmd.new', title: t('cmd.new'), icon: 'file-plus', run: () => handlers.current.new() },
-        { id: 'cmd.open', title: t('cmd.open'), icon: 'file', run: () => handlers.current.open() },
-        { id: 'cmd.openFolder', title: t('cmd.openFolder'), icon: 'folder', run: () => handlers.current.openFolder() },
-        { id: 'cmd.save', title: t('cmd.save'), icon: 'save', run: () => handlers.current.save() },
-        { id: 'cmd.saveAs', title: t('cmd.saveAs'), icon: 'save', run: () => handlers.current.saveAs() },
-        caps.fileAttachments && { id: 'cmd.attachFile', title: t('cmd.attachFile'), icon: 'paperclip', run: () => handlers.current.attachFile() },
-        // Export-to-PDF needs a save dialog / print pipeline that doesn't exist on mobile.
-        caps.pdfExport && { id: 'cmd.exportPdf', title: t('cmd.exportPdf'), icon: 'file', run: () => handlers.current.exportPdf() },
-        { id: 'cmd.sidebar', title: t('cmd.sidebar'), icon: 'sidebar', run: () => handlers.current.toggleSidebar() },
-        { id: 'cmd.files', title: t('cmd.files'), icon: 'folder', run: () => handlers.current.toggleFiles() },
-        { id: 'cmd.outline', title: t('cmd.outline'), icon: 'outline', run: () => handlers.current.toggleOutline() },
-        { id: 'cmd.source', title: t('cmd.source'), icon: 'code', run: () => handlers.current.toggleSource() },
-        { id: 'cmd.theme', title: t('cmd.theme'), icon: 'moon', run: () => handlers.current.toggleTheme() },
-        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() },
-        { id: 'cmd.replace', title: t('cmd.replace'), icon: 'replace', run: () => handlers.current.replace() },
-        { id: 'cmd.reviewAdd', title: t('cmd.reviewAdd'), icon: 'review', run: () => handlers.current.reviewAdd() },
-        { id: 'cmd.reviewDelete', title: t('cmd.reviewDelete'), icon: 'review', run: () => handlers.current.reviewDelete() },
-        {
-          id: 'cmd.reviewSubstitute',
-          title: t('cmd.reviewSubstitute'),
-          icon: 'review',
-          run: () => handlers.current.reviewSubstitute()
-        },
-        { id: 'cmd.reviewHighlight', title: t('cmd.reviewHighlight'), icon: 'review', run: () => handlers.current.reviewHighlight() },
-        { id: 'cmd.reviewCopyPrompt', title: t('cmd.reviewCopyPrompt'), icon: 'review', run: () => handlers.current.reviewCopyPrompt() },
-        { id: 'cmd.reviewAcceptAll', title: t('cmd.reviewAcceptAll'), icon: 'review', run: () => handlers.current.reviewAcceptAll() },
-        { id: 'cmd.reviewRejectAll', title: t('cmd.reviewRejectAll'), icon: 'review', run: () => handlers.current.reviewRejectAll() }
-      ].filter(Boolean)
+      return COMMAND_DEFINITIONS
+        .filter((command) => command.palette && command.handler && isCommandAvailable(command, caps))
+        .map((command) => ({
+          id: command.titleKey || command.id,
+          title: getCommandTitle(command, t),
+          hint: getCommandShortcut(command.id, effectiveKeybindings),
+          icon: COMMAND_PALETTE_ICONS[command.id] || 'command',
+          run: () => handlers.current[command.handler]?.()
+        }))
     },
-    [t, handlers]
+    [t, handlers, effectiveKeybindings]
   )
 }

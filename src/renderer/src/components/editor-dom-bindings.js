@@ -19,6 +19,7 @@ export function mountEditorDomBindings({
   setCtxMenu,
   setZoom,
   getT,
+  getKeybindings,
   isDestroyed
 }) {
   if (!view) return
@@ -30,7 +31,8 @@ export function mountEditorDomBindings({
     markUserEdit,
     reportActiveBlock,
     setBlock,
-    setCtxMenu
+    setCtxMenu,
+    getKeybindings
   })
 
   mountEditorLayoutBindings({
@@ -59,6 +61,7 @@ export function mountEditorDomBindings({
       liveEditors,
       self,
       t: getT,
+      getKeybindings,
       updateHighlightActive
     })
     scanToolbars()

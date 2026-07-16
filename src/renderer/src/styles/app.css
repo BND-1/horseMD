@@ -3187,12 +3187,50 @@ body.hm-full-width .source-editor {
    section jump-bar at the top (click→jump, scroll→scrollspy), like the Outline. */
 .settings-page {
   flex: 1;
-  overflow-y: auto;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
   background: var(--bg);
   animation: menuFadeIn 0.18s var(--ease-out);
 }
+.settings-nav {
+  flex: 0 0 184px;
+  padding: 28px 16px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.settings-nav-item:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.settings-nav-item.active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: var(--border-soft);
+}
 /* All sections in one scroll, centered. */
 .settings-sections {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
   max-width: 820px;
   margin: 0 auto;
   padding: 40px 48px 96px;
@@ -3212,6 +3250,17 @@ body.hm-full-width .source-editor {
   font-size: 12.5px;
   color: var(--muted);
   line-height: 1.6;
+}
+.settings-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.settings-heading-row .settings-block-title,
+.settings-heading-row .settings-block-desc {
+  margin-bottom: 0;
 }
 /* Typography: sliders left, live preview right. The preview is absolutely
    positioned to fill the container's height (= the in-flow controls column's
@@ -3498,6 +3547,150 @@ body.hm-full-width .source-editor {
   outline: none;
   border-color: var(--accent);
 }
+.settings-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.settings-shortcut-search {
+  margin-bottom: 16px;
+  font-family: var(--font-write);
+}
+.settings-shortcut-no-results {
+  padding: 28px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.settings-shortcut-group {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.settings-shortcut-group-title {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-shortcut-list {
+  display: flex;
+  flex-direction: column;
+}
+.settings-shortcut-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.settings-shortcut-row:last-child {
+  border-bottom: 0;
+}
+.settings-shortcut-title {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-shortcut-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-shortcut-recorder {
+  min-width: 132px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.settings-shortcut-recorder:hover {
+  border-color: var(--accent);
+}
+.settings-shortcut-recorder:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+.settings-shortcut-recorder:disabled:hover {
+  border-color: var(--border);
+}
+.settings-shortcut-recorder.recording {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-shortcut-recorder kbd {
+  min-width: 28px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-bottom-color: var(--muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: inset 0 -1px 0 var(--border-soft);
+}
+.settings-shortcut-action {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 2px;
+}
+.settings-shortcut-action:hover {
+  color: var(--accent-strong);
+}
+.settings-shortcut-action:disabled {
+  display: none;
+}
+.settings-shortcut-fixed {
+  color: var(--faint);
+  font-size: 12px;
+}
+.settings-shortcut-conflict {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.settings-shortcut-empty,
+.settings-shortcut-note {
+  color: var(--faint);
+  font-size: 12px;
+}
+.settings-shortcut-note {
+  margin: 14px 0 0;
+  line-height: 1.6;
+}
 /* Document + code font pickers (issue #38) — above the typography sliders. */
 .settings-font-pickers {
   display: flex;
@@ -3738,6 +3931,24 @@ body.hm-full-width .source-editor {
   font-variant-numeric: tabular-nums;
 }
 /* Mobile — typography two-column collapses to one; tighter paddings. */
+.app.is-mobile .settings-page {
+  flex-direction: column;
+}
+.app.is-mobile .settings-nav {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 10px 10px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border-soft);
+  overflow-x: auto;
+}
+.app.is-mobile .settings-nav-item {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 32px;
+  padding: 7px 10px;
+}
 .app.is-mobile .settings-sections {
   padding: 24px 14px 64px;
 }
@@ -3755,6 +3966,16 @@ body.hm-full-width .source-editor {
 }
 .app.is-mobile .settings-swatches {
   grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+}
+.app.is-mobile .settings-shortcut-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+.app.is-mobile .settings-shortcut-controls {
+  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 .welcome-card {
   text-align: center;

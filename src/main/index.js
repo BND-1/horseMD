@@ -9,6 +9,7 @@ import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from 
 import { registerDocumentIpc } from './documents.js'
 import { registerFileSystemIpc } from './filesystem.js'
 import { registerWatcherIpc } from './watchers.js'
+import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -722,9 +723,42 @@ ipcMain.handle('update:check', async () => {
   }
 })
 
+ipcMain.handle('menu:setKeybindings', async (_event, accelerators) => {
+  const normalized = normalizeMenuKeybindingPayload(accelerators)
+  if (!normalized.ok) return normalized
+  menuKeybindings = normalized.keybindings
+  buildMenu()
+  return { ok: true, ignoredCommandIds: normalized.ignoredCommandIds }
+})
+
+ipcMain.handle('menu:getKeybindings', async () => ({ ...menuKeybindings }))
+
+ipcMain.handle('menu:getSnapshot', async () => getMenuSnapshot())
+
 // Menu actions are forwarded to renderer as commands.
 function menuCmd(cmd) {
   return () => sendToRenderer('menu', cmd)
+}
+
+let menuKeybindings = {}
+
+function menuAccelerator(commandId) {
+  return menuAcceleratorFor(menuKeybindings, commandId, defaultMenuAcceleratorFor(commandId))
+}
+
+function serializeMenuItem(item) {
+  return {
+    label: item.label || '',
+    role: item.role || '',
+    type: item.type || '',
+    accelerator: item.accelerator || '',
+    submenu: item.submenu ? item.submenu.items.map(serializeMenuItem) : []
+  }
+}
+
+function getMenuSnapshot() {
+  const menu = Menu.getApplicationMenu()
+  return menu ? menu.items.map(serializeMenuItem) : []
 }
 
 function buildMenu() {
@@ -734,16 +768,16 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'New File', accelerator: 'CmdOrCtrl+N', click: menuCmd('new') },
-        { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open') },
-        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: menuCmd('openFolder') },
+        { label: 'New File', accelerator: menuAccelerator('file.new'), click: menuCmd('new') },
+        { label: 'Open File…', accelerator: menuAccelerator('file.open'), click: menuCmd('open') },
+        { label: 'Open Folder…', accelerator: menuAccelerator('workspace.openFolder'), click: menuCmd('openFolder') },
         { label: 'Attach File…', click: menuCmd('attachFile') },
         { type: 'separator' },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
-        { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: menuCmd('saveAs') },
-        { label: 'Export as PDF…', accelerator: 'CmdOrCtrl+Shift+E', click: menuCmd('exportPdf') },
+        { label: 'Save', accelerator: menuAccelerator('file.save'), click: menuCmd('save') },
+        { label: 'Save As…', accelerator: menuAccelerator('file.saveAs'), click: menuCmd('saveAs') },
+        { label: 'Export as PDF…', accelerator: menuAccelerator('file.exportPdf'), click: menuCmd('exportPdf') },
         { type: 'separator' },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: menuCmd('closeTab') },
+        { label: 'Close Tab', accelerator: menuAccelerator('tab.close'), click: menuCmd('closeTab') },
         // macOS: give "Close Window" Shift+Cmd+W so it doesn't fight Close Tab
         // for Cmd+W (role 'close' otherwise defaults to Cmd+W). Windows: Quit.
         isMac ? { role: 'close', accelerator: 'Shift+CmdOrCtrl+W' } : { role: 'quit' }
@@ -760,20 +794,20 @@ function buildMenu() {
         { role: 'paste' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find', accelerator: 'CmdOrCtrl+F', click: menuCmd('find') }
+        { label: 'Find', accelerator: menuAccelerator('editor.find'), click: menuCmd('find') }
       ]
     },
     {
       label: 'View',
       submenu: [
-        { label: 'Command Palette', accelerator: 'CmdOrCtrl+P', click: menuCmd('palette') },
+        { label: 'Command Palette', accelerator: menuAccelerator('view.commandPalette'), click: menuCmd('palette') },
         // Sidebar toggle is handled in the renderer as Ctrl/Cmd+Shift+B. Plain
         // Ctrl/Cmd+B remains the editor's standard bold shortcut (#67).
         { label: 'Toggle Sidebar', click: menuCmd('toggleSidebar') },
-        { label: 'Toggle Outline', accelerator: 'CmdOrCtrl+Shift+L', click: menuCmd('toggleOutline') },
-        { label: 'Toggle Source Mode', accelerator: 'CmdOrCtrl+/', click: menuCmd('toggleSource') },
+        { label: 'Toggle Outline', accelerator: menuAccelerator('view.showOutline'), click: menuCmd('toggleOutline') },
+        { label: 'Toggle Source Mode', accelerator: menuAccelerator('view.toggleSource'), click: menuCmd('toggleSource') },
         { type: 'separator' },
-        { label: 'Toggle Theme', accelerator: 'CmdOrCtrl+Shift+T', click: menuCmd('toggleTheme') },
+        { label: 'Toggle Theme', accelerator: menuAccelerator('view.cycleTheme'), click: menuCmd('toggleTheme') },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

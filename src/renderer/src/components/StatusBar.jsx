@@ -6,6 +6,7 @@ import { LANGS } from '../i18n.jsx'
 import { FONT_SIZE_MIN, FONT_SIZE_MAX } from '../settings.js'
 import LayoutControl from './LayoutControl.jsx'
 import { usePopover } from '../hooks/usePopover.js'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 
 function stats(md) {
   const text = (md || '')
@@ -331,6 +332,7 @@ export default function StatusBar({
   setTheme,
   lang,
   setLang,
+  effectiveKeybindings,
   sourceMode,
   onToggleSource,
   pageWidth,
@@ -428,7 +430,11 @@ export default function StatusBar({
         ) : (
           <>
             {tab && <StatsControl stats={s} />}
-            <button className="status-btn" onClick={onToggleSource} title={t('tip.toggleSource')}>
+            <button
+              className="status-btn"
+              onClick={onToggleSource}
+              title={labelWithShortcut(t('tip.toggleSource'), 'view.toggleSource', effectiveKeybindings)}
+            >
               <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
             </button>
             <LayoutControl

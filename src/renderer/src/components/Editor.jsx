@@ -25,6 +25,7 @@ import { createEditorApi } from './editor-api.js'
 import { useEditorLightboxControls } from './editor-lightbox.js'
 import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
+import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -50,6 +51,7 @@ export default function Editor({
   docPath,
   imageUploadCommand,
   spellcheck,
+  effectiveKeybindings,
   onChange,
   onReady,
   onActiveBlock,
@@ -67,6 +69,8 @@ export default function Editor({
   // re-applied by the effect when the pref changes.
   const spellcheckRef = useRef(spellcheck)
   spellcheckRef.current = spellcheck
+  const effectiveKeybindingsRef = useRef(effectiveKeybindings)
+  effectiveKeybindingsRef.current = effectiveKeybindings
   const hostRef = useRef(null)
   const viewRef = useRef(null)
   const apiRef = useRef(null)
@@ -262,6 +266,7 @@ export default function Editor({
           setCtxMenu,
           setZoom,
           getT: (key) => tRef.current(key),
+          getKeybindings: () => effectiveKeybindingsRef.current,
           isDestroyed: () => destroyed
         })
 
@@ -542,7 +547,7 @@ export default function Editor({
               <button key={b.id} className="block-menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickBlock(b.id)}>
                 <span className="block-menu-short">{b.short}</span>
                 <span className="block-menu-name">{t('block.' + b.id)}</span>
-                <span className="block-menu-sc">{b.shortcut}</span>
+                <span className="block-menu-sc">{getCommandShortcut(b.commandId, effectiveKeybindings)}</span>
               </button>
             ))}
           </div>

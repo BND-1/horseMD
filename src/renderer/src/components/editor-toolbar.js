@@ -14,6 +14,7 @@
 // editorForToolbar, so it doesn't matter which instance injected it.
 import { HIGHLIGHT_COLORS, applyHighlightInView } from './editor-highlight.js'
 import { REVIEW_KINDS } from './editor-review.js'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 
 //   liveEditors          — module-level Set of mounted editors (Editor.jsx owns it)
 //   self                 — this editor's { host, getView, getApi } (fallback owner)
@@ -21,7 +22,7 @@ import { REVIEW_KINDS } from './editor-review.js'
 //   updateHighlightActive — reflect highlight-active state onto the swatches
 // Returns { scanToolbars, cleanup }: call scanToolbars() once on mount, push
 // cleanup() to the editor's cleanups so the MutationObserver + rAF are torn down.
-export function createToolbarScanner({ liveEditors, self, t, updateHighlightActive }) {
+export function createToolbarScanner({ liveEditors, self, t, getKeybindings, updateHighlightActive }) {
   const editorForToolbar = (toolbar) =>
     [...liveEditors].find((ed) => ed.getView()?.hasFocus()) ||
     [...liveEditors].find((ed) => ed.host.contains(toolbar)) ||
@@ -46,13 +47,13 @@ export function createToolbarScanner({ liveEditors, self, t, updateHighlightActi
 
   // Heading picker: hover reveals H1…H6 / ¶.
   const HEAD_DEFS = [
-    ['h1', 'H1', 'Ctrl+1'],
-    ['h2', 'H2', 'Ctrl+2'],
-    ['h3', 'H3', 'Ctrl+3'],
-    ['h4', 'H4', 'Ctrl+4'],
-    ['h5', 'H5', 'Ctrl+5'],
-    ['h6', 'H6', 'Ctrl+6'],
-    ['paragraph', '¶', 'Ctrl+0']
+    ['h1', 'H1', 'editor.block.h1'],
+    ['h2', 'H2', 'editor.block.h2'],
+    ['h3', 'H3', 'editor.block.h3'],
+    ['h4', 'H4', 'editor.block.h4'],
+    ['h5', 'H5', 'editor.block.h5'],
+    ['h6', 'H6', 'editor.block.h6'],
+    ['paragraph', '¶', 'editor.block.paragraph']
   ]
   const injectHeadingButton = (toolbar) => {
     const item = appendToolbarItem(
@@ -66,11 +67,11 @@ export function createToolbarScanner({ liveEditors, self, t, updateHighlightActi
     pop.className = 'hm-heading-pop'
     const inner = document.createElement('div')
     inner.className = 'hm-heading-pop-inner'
-    for (const [id, label, tip] of HEAD_DEFS) {
+    for (const [id, label, commandId] of HEAD_DEFS) {
       const b = document.createElement('button')
       b.type = 'button'
       b.textContent = label
-      b.title = `${t('block.' + id)} (${tip})`
+      b.title = labelWithShortcut(t('block.' + id), commandId, getKeybindings?.())
       b.addEventListener('mousedown', (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -91,7 +92,7 @@ export function createToolbarScanner({ liveEditors, self, t, updateHighlightActi
     const item = appendToolbarItem(
       toolbar,
       'hm-highlight-item',
-      t('tb.highlight'),
+      labelWithShortcut(t('tb.highlight'), 'editor.highlight', getKeybindings?.()),
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l-1 4 4-1L19 8l-3-3z"/><path d="M14 5l3 3"/><rect x="3" y="20" width="18" height="2" rx="1" fill="currentColor" stroke="none"/></svg>'
     )
     if (!item) return
@@ -171,8 +172,8 @@ export function createToolbarScanner({ liveEditors, self, t, updateHighlightActi
   // link. Our injected items are excluded (titled above).
   const addToolbarTitles = (toolbar) => {
     const tips = [
-      t('tb.bold'),
-      t('tb.italic'),
+      labelWithShortcut(t('tb.bold'), 'editor.bold', getKeybindings?.()),
+      labelWithShortcut(t('tb.italic'), 'editor.italic', getKeybindings?.()),
       t('tb.strike'),
       t('tb.code'),
       t('tb.link')

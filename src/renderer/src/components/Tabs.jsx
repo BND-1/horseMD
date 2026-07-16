@@ -3,6 +3,7 @@ import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
 import { isMarkdownName } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 
 export default function Tabs({
   tabs,
@@ -18,7 +19,8 @@ export default function Tabs({
   onDuplicate,
   onDelete,
   onExportPdf,
-  onReorder
+  onReorder,
+  effectiveKeybindings
 }) {
   const { t } = useI18n()
   const activeRef = useRef(null)
@@ -118,7 +120,7 @@ export default function Tabs({
           )
         })}
       </div>
-      <button className="tab-new" title={t('tab.new')} onClick={onNew}>
+      <button className="tab-new" title={labelWithShortcut(t('tab.new'), 'file.new', effectiveKeybindings)} onClick={onNew}>
         <Icon name="plus" size={16} />
       </button>
 

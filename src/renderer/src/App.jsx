@@ -36,6 +36,8 @@ import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useAttachments } from './hooks/useAttachments.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
+import { useKeybindings } from './hooks/useKeybindings.js'
+import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
@@ -588,6 +590,16 @@ export default function App() {
   // createMenuHandlers in lib/menuHandlers.js (phase-2 US-6). Stored in a ref so
   // the menu/keyboard listeners (useGlobalKeys) always read the latest actions.
   const handlers = useRef({})
+  const {
+    keybindingState,
+    effectiveKeybindings,
+    setKeybindings,
+    resetCommand: resetCommandKeybindings,
+    resetAll: resetAllKeybindings
+  } = useKeybindings()
+  useEffect(() => {
+    window.api.setMenuKeybindings?.(buildElectronAcceleratorPayload(effectiveKeybindings))
+  }, [effectiveKeybindings])
   handlers.current = createMenuHandlers({
     pickEditableId,
     activeId,
@@ -659,11 +671,13 @@ export default function App() {
     tRef,
     setTabs,
     activeId,
+    activeTabKind: !home ? activeTab?.kind || null : null,
     setActiveId,
-    setHome
+    setHome,
+    effectiveKeybindings
   })
   // --------------------------- commands ----------------------------
-  const commands = useCommands({ t, handlers })
+  const commands = useCommands({ t, handlers, effectiveKeybindings })
 
   const platformClass =
     ({ win32: ' is-win', linux: ' is-linux', darwin: ' is-mac', ios: ' is-ios is-mobile', android: ' is-android is-mobile' }[
@@ -729,6 +743,7 @@ export default function App() {
         focusedPane={focusedPane}
         split={split}
         imageUploadCommand={settings.imageUploadCommand}
+        effectiveKeybindings={effectiveKeybindings}
         onActivate={(id) => {
           setHome(false)
           // Load into whichever pane is focused, so both panes are switchable.
@@ -820,6 +835,7 @@ export default function App() {
             activeTab={activeTab}
             imageUploadCommand={settings.imageUploadCommand}
             spellcheck={settings.spellcheck}
+            effectiveKeybindings={effectiveKeybindings}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}
             editorHosts={editorHosts}
@@ -861,6 +877,11 @@ export default function App() {
               onGetMoreThemes={() => window.api.openExternal('https://theme.typora.io/')}
               lang={lang}
               setLang={setLang}
+              effectiveKeybindings={effectiveKeybindings}
+              keybindingState={keybindingState}
+              onSetKeybindings={setKeybindings}
+              onResetCommandKeybindings={resetCommandKeybindings}
+              onResetAllKeybindings={resetAllKeybindings}
             />
           )}
 
@@ -876,6 +897,7 @@ export default function App() {
               onRemoveRecent={(p) =>
                 setRecents((prev) => prev.filter((r) => r.path !== p))
               }
+              effectiveKeybindings={effectiveKeybindings}
             />
           )}
         </main>
@@ -905,6 +927,7 @@ export default function App() {
         onGetMoreThemes={() => window.api.openExternal('https://theme.typora.io/')}
         lang={lang}
         setLang={setLang}
+        effectiveKeybindings={effectiveKeybindings}
         sourceMode={sourceMode}
         onToggleSource={toggleSource}
         activeBlock={activeBlock}
@@ -921,6 +944,7 @@ export default function App() {
 
       <SaveFab
         visible={!home && activeTab?.kind !== 'settings' && !!fabTab && fabTab.content !== fabTab.savedContent}
+        effectiveKeybindings={effectiveKeybindings}
         onSave={() => handlers.current.save()}
       />
 

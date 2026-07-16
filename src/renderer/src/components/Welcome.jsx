@@ -1,5 +1,6 @@
 import { Icon } from './icons.jsx'
 import logoUrl from '../assets/logo.png'
+import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 
 // App version, injected at build time from package.json (see electron.vite.config).
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
@@ -25,7 +26,13 @@ function relTime(ts, lang, t) {
 }
 
 // Welcome / empty-state screen: logo, version, quick actions, recent files.
-export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder, onOpenRecent, onRemoveRecent }) {
+function ShortcutHint({ commandId, label, effectiveKeybindings }) {
+  const shortcut = getCommandShortcut(commandId, effectiveKeybindings)
+  if (!shortcut) return null
+  return <span><kbd>{shortcut}</kbd> {label}</span>
+}
+
+export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder, onOpenRecent, onRemoveRecent, effectiveKeybindings }) {
   return (
     <div className="welcome">
       <div className="welcome-card">
@@ -78,10 +85,10 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
         )}
 
         <div className="welcome-hints">
-          <span><kbd>Ctrl</kbd><kbd>P</kbd> {t('hint.palette')}</span>
-          <span><kbd>Ctrl</kbd><kbd>B</kbd> {t('hint.sidebar')}</span>
-          <span><kbd>Ctrl</kbd><kbd>N</kbd> {t('hint.new')}</span>
-          <span><kbd>Ctrl</kbd><kbd>S</kbd> {t('hint.save')}</span>
+          <ShortcutHint commandId="view.commandPalette" label={t('hint.palette')} effectiveKeybindings={effectiveKeybindings} />
+          <ShortcutHint commandId="view.toggleSidebar" label={t('hint.sidebar')} effectiveKeybindings={effectiveKeybindings} />
+          <ShortcutHint commandId="file.new" label={t('hint.new')} effectiveKeybindings={effectiveKeybindings} />
+          <ShortcutHint commandId="file.save" label={t('hint.save')} effectiveKeybindings={effectiveKeybindings} />
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import Tabs from '../Tabs.jsx'
 import { Icon } from '../icons.jsx'
 import ImageHostButton from '../ImageHostButton.jsx'
 import WindowControls from '../WindowControls.jsx'
+import { labelWithShortcut } from '../../lib/commands/shortcut-labels.js'
 
 export default function Topbar({
   isMobile,
@@ -15,6 +16,7 @@ export default function Topbar({
   focusedPane,
   split,
   imageUploadCommand,
+  effectiveKeybindings,
   onActivate,
   onClose,
   onNew,
@@ -56,9 +58,14 @@ export default function Topbar({
         onDelete={onDelete}
         onExportPdf={onExportPdf}
         onReorder={onReorder}
+        effectiveKeybindings={effectiveKeybindings}
       />
       <div className="topbar-spacer" />
-      <button className="icon-btn drag-no" title={`${t('welcome.newFile')} (Ctrl+N)`} onClick={onNew}>
+      <button
+        className="icon-btn drag-no"
+        title={labelWithShortcut(t('welcome.newFile'), 'file.new', effectiveKeybindings)}
+        onClick={onNew}
+      >
         <Icon name="plus" size={18} />
       </button>
       {!isMobile && (
@@ -77,7 +84,11 @@ export default function Topbar({
           onChange={onImageHostChange}
         />
       )}
-      <button className="icon-btn drag-no" title="Command palette (Ctrl+P)" onClick={onOpenPalette}>
+      <button
+        className="icon-btn drag-no"
+        title={labelWithShortcut(t('cmd.palette'), 'view.commandPalette', effectiveKeybindings)}
+        onClick={onOpenPalette}
+      >
         <Icon name="command" size={16} />
       </button>
       {(window.api.platform === 'win32' || window.api.platform === 'linux') && <WindowControls t={t} />}
