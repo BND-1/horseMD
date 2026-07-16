@@ -4364,6 +4364,15 @@ body.dark .milkdown {
 .milkdown .milkdown-table-block > div > .cell-handle[data-show='false'] {
   display: none;
 }
+.milkdown .milkdown-table-block .cell-handle .button-group.hm-table-menu-below {
+  top: calc(100% + 8px);
+}
+/* Large-document virtualization paint-contains each top-level block. Relax it
+   only while this table's action menu is open so the menu can float above the
+   table without covering the header row. */
+.editor-scroll.hm-cv .milkdown .ProseMirror > .milkdown-table-block.hm-table-controls-open {
+  content-visibility: visible !important;
+}
 .milkdown .milkdown-table-block .table-wrapper {
   max-width: 100%;
   overflow-x: auto;

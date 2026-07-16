@@ -96,6 +96,14 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - CodeMirror code blocks are eager-mounted via `editor-codeblock-eager.js` to prevent height deltas and scroll jumps near code blocks.
 - Large image-dense documents are the real regression test for scroll/caret fixes; small docs are insufficient.
 
+### PDF Export Invariants
+
+- PDF export uses `getPdfSource()` structured HTML/headings, not a clone of the live editor DOM.
+- Sidebar export waits for the per-tab editor API readiness signal; do not restore fixed polling delays.
+- Main-process preview generation is latest-request-only per renderer. New settings cancel stale hidden-window work.
+- Keep PDF temporary documents script-free through CSP and retain Electron's default web security policy.
+- A printed contents page and the embedded PDF navigation outline are independent features.
+
 ### Feature-Specific Notes
 
 - Review parsing lives in `reviewMarkup.js`; plugin state, decoration scanning, and card DOM live in `editor-review.js`, `editor-review-decorations.js`, and `editor-review-card.js`. Protect all four with focused script and real UI tests when changed.

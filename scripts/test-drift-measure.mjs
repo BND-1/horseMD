@@ -3,27 +3,14 @@
 // text + scrollTop → toggle to source → wait for multi-pass restore → read again
 // → toggle back → read again. Prints a drift report so we can SEE what actually
 // drifts (caret? viewport? both?) before designing a fix.
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-async function connect() {
-  let targets
-  for (let i = 0; i < 40; i++) {
-    try { targets = await (await fetch(base + '/json/list')).json(); if (targets.some((t) => t.type === 'page')) break } catch {}
-    await sleep(500)
+import { connectCdp, sleep } from './lib/cdp.mjs'
+
+const evals = (evaluate) => async (expression) => {
+  try {
+    return await evaluate(expression)
+  } catch (error) {
+    return { __error: error.message }
   }
-  const page = targets.find((t) => t.type === 'page')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map(); let id = 0
-  ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) } })
-  await new Promise((r) => (ws.onopen = r))
-  const send = (method, params) => new Promise((res) => { const c = ++id; pending.set(c, res); ws.send(JSON.stringify({ id: c, method, params })) })
-  return { ws, send }
-}
-const evals = (send) => async (expr) => {
-  const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
-  const res = r.result
-  if (res?.exceptionDetails) return { __error: res.exceptionDetails.exception?.description }
-  return res?.result?.value
 }
 
 async function toggleSource(ev) {
@@ -187,9 +174,9 @@ async function viewingScenario(ev) {
 }
 
 async function main() {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate } = await connectCdp({ intervalMs: 500 })
   await send('Runtime.enable')
-  const ev = evals(send)
+  const ev = evals(evaluate)
 
   // Activate the test tab
   await ev(`(() => { const t=[...document.querySelectorAll('.tab')].find(x=>x.textContent.includes('hmcaret-doc2') || x.textContent.includes('漂移测试')); if(t)t.click(); return true })()`)

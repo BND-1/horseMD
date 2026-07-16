@@ -313,7 +313,7 @@ export default function Editor({
           notify: fireToast
         })
         const {
-          getDocHTML,
+          getPdfSource,
           getMarkdown,
           toggleHighlight,
           applyReviewMarkup,
@@ -384,7 +384,7 @@ export default function Editor({
         onReady?.({
           setBlock,
           getView: () => viewRef.current,
-          getDocHTML,
+          getPdfSource,
           getMarkdown,
           toggleHighlight,
           applyReviewMarkup,

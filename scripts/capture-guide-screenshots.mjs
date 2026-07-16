@@ -169,6 +169,32 @@ async function main() {
     await click("document.querySelector('.status-btn[title*=" + JSON.stringify('Ctrl+/') + "]')")
     await waitFor("[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)")
     await capture('source-mode')
+
+    const tabPoint = await evaluate(`(() => {
+      const tab = document.querySelector('.tab.active')
+      if (!tab) return null
+      const rect = tab.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    })()`)
+    if (!tabPoint) throw new Error('Could not locate active tab for PDF export')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
+    await waitFor("[...document.querySelectorAll('.tab-ctxmenu button')].some((button) => /PDF/i.test(button.textContent))")
+    const exportPoint = await evaluate(`(() => {
+      const button = [...document.querySelectorAll('.tab-ctxmenu button')].find((node) => /PDF/i.test(node.textContent))
+      if (!button) return null
+      const rect = button.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    })()`)
+    if (!exportPoint) throw new Error('Could not locate PDF export menu item')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: exportPoint.x, y: exportPoint.y, button: 'left', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: exportPoint.x, y: exportPoint.y, button: 'left', clickCount: 1 })
+    await waitFor("document.querySelector('.hm-pdf-studio')")
+    await waitFor("document.querySelector('.hm-pdf-preview')?.dataset.previewToken", 20000)
+    await waitFor("document.querySelector('.hm-pdf-page canvas')", 20000)
+    const outlineButton = "document.querySelector('.hm-pdf-preview-leading > button')"
+    if (await evaluate(`Boolean(${outlineButton})`)) await click(outlineButton)
+    await capture('pdf-export')
   } finally {
     socket.close()
   }

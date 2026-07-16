@@ -2,43 +2,7 @@
 // user with real mouse clicks:
 //   source -> rich -> source -> rich
 //   rich -> source -> rich -> source
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const connect = async () => {
-  let targets = []
-  for (let i = 0; i < 60; i++) {
-    try {
-      targets = await (await fetch(base + '/json/list')).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error('No Electron page found on CDP port 9222')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  return { ws, send }
-}
-
-const evaluator = (send) => async (expression) => {
-  const response = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-  if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text || 'Runtime.evaluate failed')
-  return response.result?.result?.value
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
 const click = async (send, point) => {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
@@ -290,9 +254,8 @@ const ratios = process.env.CHAIN_RATIOS
   : [0.12, 0.32, 0.52, 0.72, 0.9]
 
 const main = async () => {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate: ev } = await connectCdp({ attempts: 60 })
   await send('Runtime.enable')
-  const ev = evaluator(send)
   await sleep(1600)
   await enableHeavyRich(send, ev)
   const results = []

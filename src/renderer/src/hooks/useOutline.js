@@ -7,8 +7,8 @@
 // thread freeze / scroll "chase" (#17) on large docs. This MUST stay reflow-free.
 //
 // richDocVersion is bumped by the Editor's onStructureChange (chunked load
-// finish) so the list + scrollspy refresh against the complete DOM; richLoading
-// drives the outline skeleton. Both setters are returned for the Editor JSX.
+// finish) so the list + scrollspy refresh against the complete DOM. The caller
+// supplies the focused tab's loading state so hidden mounted tabs cannot leak in.
 //
 // Options:
 //   getEditorHost / getSourceTextarea — resolve the focused split pane by tab id
@@ -24,14 +24,13 @@ import { textareaOffsetAtScrollTop } from '../textarea-metrics.js'
 const HEADING_SEL = '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
 const getHeadings = (host) => (host ? [...host.querySelectorAll(HEADING_SEL)] : [])
 
-export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, isMobile, setSidebarOpen, setHome }) {
+export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, richLoading = false, isMobile, setSidebarOpen, setHome }) {
   const [activeHeading, setActiveHeading] = useState(-1)
   // Bumped when a chunked-loaded rich doc finishes streaming in (Editor's
   // onStructureChange) so the outline list + scrollspy refresh against the now-
   // complete DOM — during load onChange is suppressed, so they can't track the
   // growing doc via content alone. richLoading drives the outline skeleton.
   const [richDocVersion, setRichDocVersion] = useState(0)
-  const [richLoading, setRichLoading] = useState(false)
   const [outlineHeadings, setOutlineHeadings] = useState([])
   // Bumped on source-mode textarea input so the heading list refreshes as the
   // user types a new heading (rich mode re-reads the DOM on structure change;
@@ -344,9 +343,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
     activeHeading,
     outlineHeadings,
     richDocVersion,
-    richLoading,
     setRichDocVersion,
-    setRichLoading,
     jumpToHeading
   }
 }

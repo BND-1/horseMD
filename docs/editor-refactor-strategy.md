@@ -143,7 +143,7 @@ node scripts/review-markup.test.mjs
 搬出内容：
 
 - `setBlock`
-- `getDocHTML`
+- `getPdfSource`
 - `getMarkdown`
 - `toggleHighlight`
 - `applyReviewMarkup`

@@ -55,16 +55,23 @@ export function createEditorApi({
   getT,
   notify
 }) {
-  // Produce a clean, inline-styled HTML snapshot of the whole document for PDF
-  // export. CodeMirror blocks are flattened to plain <pre><code>.
-  const getDocHTML = () => {
+  const getPdfSource = () => {
     const v = viewRef.current
-    if (!v) return ''
+    if (!v) return null
     const clone = v.dom.cloneNode(true)
     stripEditorOnlyForExport(clone)
     flattenCodeMirrorBlocks(clone)
     stripEditorAttributes(clone)
-    return clone.innerHTML
+    const headings = [...clone.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading, index) => {
+      const id = `hm-pdf-heading-${index + 1}`
+      heading.id = id
+      return {
+        id,
+        level: Number(heading.tagName.slice(1)),
+        text: heading.textContent?.trim() || ''
+      }
+    })
+    return { html: clone.innerHTML, headings }
   }
 
   const getMarkdown = () => {
@@ -192,7 +199,7 @@ export function createEditorApi({
 
   return {
     setBlock,
-    getDocHTML,
+    getPdfSource,
     getMarkdown,
     toggleHighlight,
     applyReviewMarkup,

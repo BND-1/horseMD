@@ -8,49 +8,14 @@
 // Drives the REAL editor: CDP Input.insertText (triggers ProseMirror
 // handleTextInput → the guard), the real 替换 command (applyReviewMarkup), and a
 // parser-based paste (pasteMarkdown). Asserts via the rendered DOM + markdown.
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
-async function connect() {
-  let targets
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(base + '/json/list')).json()
-      if (targets.some((t) => t.type === 'page')) break
-    } catch {}
-    await sleep(500)
+const evals = (evaluate) => async (fn) => {
+  try {
+    return await evaluate(`(${fn})()`)
+  } catch (error) {
+    return { __error: error.message }
   }
-  const page = targets.find((t) => t.type === 'page')
-  if (!page) throw new Error('no page target on :9222 — launch with --remote-debugging-port=9222')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (e) => {
-    const m = JSON.parse(e.data)
-    if (m.id && pending.has(m.id)) {
-      pending.get(m.id)(m)
-      pending.delete(m.id)
-    }
-  })
-  await new Promise((r) => (ws.onopen = r))
-  const send = (method, params = {}) =>
-    new Promise((res) => {
-      const cur = ++id
-      pending.set(cur, res)
-      ws.send(JSON.stringify({ id: cur, method, params }))
-    })
-  return { ws, send }
-}
-
-const evals = (send) => async (fn) => {
-  const r = await send('Runtime.evaluate', {
-    expression: `(${fn})()`,
-    returnByValue: true,
-    awaitPromise: true
-  })
-  const res = r.result
-  if (res?.exceptionDetails) return { __error: res.exceptionDetails.exception?.description }
-  return res?.result?.value
 }
 
 async function type(send, text) {
@@ -93,9 +58,9 @@ async function waitForEditor(ev) {
 }
 
 async function main() {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate } = await connectCdp({ intervalMs: 500 })
   await send('Runtime.enable')
-  const ev = evals(send)
+  const ev = evals(evaluate)
 
   if (!(await waitForEditor(ev))) {
     console.error('FAIL: window.__horsemd never appeared (no editor mounted)')

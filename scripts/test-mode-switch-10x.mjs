@@ -2,43 +2,7 @@
 // Launch Electron with the target document and --remote-debugging-port=9222,
 // then run this script. It performs five caret-follow and five reading-position
 // round trips across the document and verifies outline stability on every pass.
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const connect = async () => {
-  let targets = []
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(base + '/json/list')).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error('No Electron page found on CDP port 9222')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  return { ws, send }
-}
-
-const evaluator = (send) => async (expression) => {
-  const response = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-  if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text || 'Runtime.evaluate failed')
-  return response.result?.result?.value
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
 const click = async (send, point) => {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
@@ -156,9 +120,8 @@ const dirtyState = (ev) => ev(`/已修改|Modified/.test(document.querySelector(
 const ratios = [0.16, 0.34, 0.52, 0.68, 0.9]
 
 const main = async () => {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate: ev } = await connectCdp()
   await send('Runtime.enable')
-  const ev = evaluator(send)
   await sleep(1800)
 
   // Heavy Markdown opens as source for responsiveness. Opt into rich mode so
@@ -188,11 +151,15 @@ const main = async () => {
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
     })()`)
     if (point) await click(send, point)
-    await sleep(700)
+    for (let i = 0; i < 40; i++) {
+      if (await ev(`document.querySelectorAll('.outline-item').length > 0`)) break
+      await sleep(250)
+    }
   }
 
   if (await visibleSource(ev)) await toggle(send, ev)
   const initialOutline = await outlineSnapshot(ev)
+  if (!initialOutline.length) throw new Error('Outline did not finish loading')
   const initialDirty = await dirtyState(ev)
   const results = []
 

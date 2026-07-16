@@ -101,7 +101,11 @@ node scripts/test-strike-guard.mjs
 ### 工具
 
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
-- `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 配置弹窗；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
+- `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
+- `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、快速设置、源码同步和快捷入口
+- `scripts/test-latest-task-runner.mjs` —— 验证同一渲染器仅运行一个 PDF 生成任务，旧任务取消且最新请求胜出
+- `scripts/test-editor-api-registry.mjs` —— 验证按 Tab 的编辑器 API ready、关闭释放与超时行为
+- `scripts/test-pdf-studio-ui.mjs` —— 真实验证 PDF 横纵向、目录页、书签、页码范围、PDF.js Canvas 与快速设置更新的最终一致性
 - `scripts/test-editor-inline-code.mjs`、`scripts/test-menu-position.mjs` —— 不启动 Electron 的输入边界与浮层几何回归
 - `scripts/inspect.mjs` —— 简易状态检查器
 - `scripts/test-mode-switch-chains.mjs` —— 双向连续切换、表格和 CodeMirror 光标语义匹配

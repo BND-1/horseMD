@@ -1,51 +1,6 @@
 // Real Electron regression for clicking below the rich document and for web
 // editors (notably WeChat) that copy visual paragraphs as <section>/<div>.
-const port = Number(process.env.CDP_PORT || 9222)
-const base = `http://127.0.0.1:${port}`
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function connect() {
-  let targets = []
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error(`No Electron page found on CDP port ${port}`)
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const callId = ++id
-    pending.set(callId, resolve)
-    ws.send(JSON.stringify({ id: callId, method, params }))
-  })
-  return { ws, send }
-}
-
-function evaluator(send) {
-  return async (expression) => {
-    const response = await send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: true
-    })
-    if (response.result?.exceptionDetails) {
-      throw new Error(response.result.exceptionDetails.exception?.description || 'CDP evaluation failed')
-    }
-    return response.result?.result?.value
-  }
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
 async function resetEditor(send, evaluate) {
   await evaluate(`document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')?.focus()`)
@@ -87,8 +42,7 @@ async function paste(evaluate, html, plain) {
 }
 
 async function main() {
-  const { ws, send } = await connect()
-  const evaluate = evaluator(send)
+  const { ws, send, evaluate } = await connectCdp()
   await send('Runtime.enable')
   await sleep(500)
 

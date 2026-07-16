@@ -14,6 +14,7 @@
 // prose like `$5` / `$HOME` doesn't trigger a preview), and on blur.
 import { Plugin } from '@milkdown/prose/state'
 import katex from 'katex'
+import { inlineMathAtCaret } from './editor-inline-math.js'
 
 // Chars that signal the content is actually math (not prose). Without one of
 // these, `$5`/`$cost` would pop a pointless preview.
@@ -32,12 +33,69 @@ function unclosedMathContent(textBeforeCaret) {
 // One shared tooltip for the whole app (one per editor would leave N hidden
 // divs for N tabs). Lazy-created on first use; lives until page unload.
 let tip = null
+let innerEditListenersMounted = false
+
+const renderKatex = (target, content) => {
+  if (!content) return false
+  try {
+    target.innerHTML = katex.renderToString(content, { throwOnError: false, displayMode: false })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const placeTip = (target, left, top) => {
+  target.style.left = `${Math.round(left)}px`
+  target.style.top = `${Math.round(top)}px`
+  target.style.display = ''
+  const rect = target.getBoundingClientRect()
+  const margin = 8
+  if (rect.right > window.innerWidth - margin) {
+    target.style.left = `${Math.max(margin, Math.round(window.innerWidth - rect.width - margin))}px`
+  }
+  if (rect.bottom > window.innerHeight - margin) {
+    target.style.top = `${Math.max(margin, Math.round(top - rect.height - 36))}px`
+  }
+}
+
+const previewInlineEditor = (editor) => {
+  const target = getTip()
+  if (!renderKatex(target, editor.textContent || '')) {
+    target.style.display = 'none'
+    return
+  }
+  const anchor = editor.closest('.milkdown-latex-inline-edit') || editor
+  const rect = anchor.getBoundingClientRect()
+  placeTip(target, rect.left, rect.bottom + 8)
+}
+
+const mountInlineEditListeners = () => {
+  if (innerEditListenersMounted) return
+  innerEditListenersMounted = true
+  const schedule = (event) => {
+    const editor = event.target?.closest?.('.milkdown-latex-inline-edit .ProseMirror')
+    if (!editor) return
+    requestAnimationFrame(() => previewInlineEditor(editor))
+  }
+  document.addEventListener('focusin', schedule, true)
+  document.addEventListener('input', schedule, true)
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!document.activeElement?.closest?.('.milkdown-latex-inline-edit')) {
+        if (tip) tip.style.display = 'none'
+      }
+    }, 0)
+  }, true)
+}
+
 function getTip() {
   if (tip) return tip
   tip = document.createElement('div')
   tip.className = 'hm-math-preview'
   tip.style.display = 'none'
   document.body.appendChild(tip)
+  mountInlineEditListeners()
   return tip
 }
 
@@ -54,23 +112,17 @@ export function mathPreviewPlugin() {
     const $head = selection.$head
     // Never inside a code block (typing ` there is literal).
     if ($head.parent.type.name === 'code_block') return hide()
-    // Text in the current textblock up to the caret (ProseMirror's Node has no
-    // lineAt; textBetween handles inline nodes by their text content).
+    const blockText = $head.parent.textBetween(0, $head.parent.content.size, '\n', '\uFFFC')
+    const complete = inlineMathAtCaret(blockText, $head.parentOffset)
+    // Keep the existing conservative unclosed-$ preview, but a complete pair
+    // around the caret is unambiguous and may contain plain digits (#68).
     const textBefore = state.doc.textBetween($head.start(), $head.pos, '\n')
-    const content = unclosedMathContent(textBefore)
+    const content = complete?.value || unclosedMathContent(textBefore)
     if (!content) return hide()
-    let html
-    try {
-      html = katex.renderToString(content, { throwOnError: false, displayMode: false })
-    } catch {
-      return hide()
-    }
-    t.innerHTML = html
+    if (!renderKatex(t, content)) return hide()
     // Position just below the caret (coordsAtPos = one layout read; only when showing).
     const coords = view.coordsAtPos(selection.head)
-    t.style.left = Math.round(coords.left) + 'px'
-    t.style.top = Math.round(coords.bottom + 6) + 'px'
-    t.style.display = ''
+    placeTip(t, coords.left, coords.bottom + 6)
   }
 
   const schedule = (view) => {

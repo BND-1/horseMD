@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   standard zoom-out/zoom-in buttons, a live scale readout, fit-to-window, and
   1:1 actual-size viewing.
 - **Configurable PDF export** (#60) — desktop export now offers A4, A3, Letter,
-  and validated custom page dimensions, portrait/landscape orientation, plus
-  optional page breaks before heading levels 1–3 or after horizontal rules.
+  and validated custom page dimensions, portrait/landscape orientation, margin
+  presets, content scaling, preserved print backgrounds, heading pagination, a printable table
+  of contents, PDF bookmarks, headers/footers, dates, page numbers, and ranges.
+- **Browser-style PDF preview** — a dedicated export studio renders the actual
+  generated PDF with lazy PDF.js pages, zoom controls, live option updates, and
+  saves the exact preview buffer instead of rendering a second copy.
 
 ### Changed
 - **Natural inline-code editing** (#58) — typing an empty backtick pair enters
@@ -20,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   to be appended without making the mark inherit into following prose.
 
 ### Fixed
+- **Reliable long-running editor actions** — PDF export now prevents duplicate
+  submissions, reports failures in-place, and preserves options for retry;
+  rich-document loading state is isolated per tab, and Lightbox drag listeners
+  are fully removed when the preview closes.
+- **Stable PDF preview scheduling** — rapid setting changes now cancel stale
+  hidden-window generation and keep only the latest request. File-tree export
+  waits for the target tab's explicit editor-ready signal instead of a fixed
+  polling window, and temporary preview windows retain Electron's default web
+  security policy.
 - **Aspect-correct diagram previews** — long or tall Mermaid diagrams and
   images keep their intrinsic proportions in the lightbox instead of being
   placed in a fixed near-square canvas with large empty areas.
@@ -38,7 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Stable app viewport and readable wide tables** — the application shell no
   longer rubber-bands into a blank gap, while wide Markdown and raw-HTML tables
   scroll horizontally inside the editor instead of crushing text into narrow
-  columns.
+  columns. Markdown table row/column handles and their action menus also remain
+  visible and clickable when a tall table is vertically or horizontally scrolled;
+  boundary add-row/add-column buttons are no longer clipped in half.
+- **Reliable inline LaTeX editing** (#68, #69) — content inserted between a
+  pre-typed `$…$` pair, including pure digits, previews live and becomes inline
+  math after editing. Reopening an existing inline formula now updates a KaTeX
+  preview continuously before confirmation.
 - **Block LaTeX focus** (#57) — `$$` and `/math` blocks no longer leave edit mode
   after the first renderable character. `/math` converts the current paragraph
   so the caret starts inside the formula instead of on the following line.

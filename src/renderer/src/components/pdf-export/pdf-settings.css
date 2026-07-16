@@ -1,0 +1,249 @@
+.hm-pdf-settings {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  overscroll-behavior: contain;
+}
+
+.hm-pdf-settings section {
+  padding: 18px 18px 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.hm-pdf-settings section:last-child {
+  border-bottom: 0;
+}
+
+.hm-pdf-settings h3 {
+  margin: 0 0 15px;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.hm-pdf-field {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hm-pdf-field > span,
+.hm-pdf-dimension-grid label > span,
+.hm-pdf-margin-grid label > span {
+  font-weight: 600;
+}
+
+.hm-pdf-field input[type='text'],
+.hm-pdf-field input[type='number'],
+.hm-pdf-field select,
+.hm-pdf-dimension-grid input,
+.hm-pdf-margin-grid input {
+  width: 100%;
+  height: 34px;
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  color: var(--text);
+  background: var(--bg-elevated);
+  font: inherit;
+}
+
+.hm-pdf-field input:focus,
+.hm-pdf-field select:focus,
+.hm-pdf-dimension-grid input:focus,
+.hm-pdf-margin-grid input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.hm-pdf-field.invalid input {
+  border-color: var(--danger);
+}
+
+.hm-pdf-field.invalid small {
+  color: var(--danger);
+}
+
+.hm-pdf-segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.hm-pdf-segmented button {
+  border: 0;
+  border-radius: 3px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hm-pdf-segmented button.active {
+  color: var(--text-strong);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(20, 18, 14, 0.16);
+}
+
+.hm-pdf-dimension-grid,
+.hm-pdf-margin-grid {
+  display: grid;
+  gap: 9px;
+  margin: -3px 0 14px;
+}
+
+.hm-pdf-dimension-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hm-pdf-margin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hm-pdf-dimension-grid label,
+.hm-pdf-margin-grid label {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hm-pdf-dimension-grid input,
+.hm-pdf-margin-grid input {
+  padding-right: 31px;
+}
+
+.hm-pdf-dimension-grid small,
+.hm-pdf-margin-grid small {
+  position: absolute;
+  right: 8px;
+  bottom: 9px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.hm-pdf-scale > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 10px;
+}
+
+.hm-pdf-scale input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.hm-pdf-scale output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.hm-pdf-switch {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  margin: 4px 0;
+  padding: 4px 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* The row is the only hit target. Decorative children must never create a
+   second, visually offset pointer target in Chromium. */
+.hm-pdf-switch > * {
+  pointer-events: none;
+}
+
+.hm-pdf-switch-track {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+
+.hm-pdf-switch-track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: '';
+  transition: transform var(--dur-fast), background var(--dur-fast);
+}
+
+.hm-pdf-switch[aria-checked='true'] .hm-pdf-switch-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.hm-pdf-switch[aria-checked='true'] .hm-pdf-switch-track::after {
+  background: white;
+  transform: translateX(13px);
+}
+
+.hm-pdf-switch:focus-visible .hm-pdf-switch-track {
+  box-shadow: var(--focus-ring);
+}
+
+.hm-pdf-switch-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hm-pdf-switch-copy b {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.hm-pdf-switch-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.hm-pdf-switch em {
+  color: var(--faint);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.hm-pdf-switch[aria-checked='true'] em {
+  color: var(--accent);
+}
+
+.hm-pdf-nested-settings {
+  margin: 8px 0 12px 14px;
+  padding: 4px 0 2px 14px;
+  border-left: 2px solid var(--border);
+}

@@ -41,11 +41,13 @@ install only the `.deb` from the official GitHub Release.
 ```
 src/main/index.js      main entry: window, menu, single-instance, launch args (extractArgs);
                        registers the IPC modules below + shell/themes/image/window/update/permissions IPC
-src/main/documents.js  document/dialog IPC (openFiles/openFolder/saveAs/openAttachments) + export:pdf
+src/main/documents.js  document/dialog IPC + PDF preview/save/dispose IPC registration
 src/main/filesystem.js fs IPC (read/write/rename/delete/create/readDir/listFiles/duplicate) + showHidden
 src/main/watchers.js   chokidar watchers (watch:start/stop/file/unfile) — crash-proof guards (isRestrictedRoot)
 src/main/security.js   external-URL protocol allowlist (https/http/mailto) + local-fonts permission gating
-src/main/pdf-document.js print-to-PDF pipeline + PDF stylesheet (PDF_CSS)
+src/main/pdf-export.js  cancellable preview sessions, resource wait, printToPDF, save
+src/main/pdf-document.js pure PDF document/TOC/header/footer construction
+src/main/pdf-print-styles.js isolated print stylesheet and pagination rules
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
@@ -138,7 +140,8 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   activation, then kept mounted (`mountedIds` in `App.jsx`). This keeps startup /
   session-restore fast (restoring N tabs spins up one editor, not N). Code that
   needs a tab's editor API (`editorApis[id]`) must activate the tab first — see
-  `exportPathToPdf`, which opens/activates then waits for `getDocHTML`.
+  `exportPathToPdf`, which opens/activates then waits for the per-tab editor API
+  readiness signal before reading `getPdfSource()`.
 - **Raw HTML rendering**: Milkdown's `html` node shows markup as escaped text;
   we add a ProseMirror node view (`renderHtmlNodeView` in `Editor.jsx`) that
   renders recognized block HTML (e.g. `<table>`) as real, sanitized DOM.

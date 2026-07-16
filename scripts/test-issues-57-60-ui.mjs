@@ -2,53 +2,9 @@
 // Launch a built app with --remote-debugging-port first. #59's geometry is
 // covered by test-menu-position.mjs because native pointer placement varies by
 // window manager while the clamping rule itself is pure.
-const port = Number(process.env.CDP_PORT || 9222)
-const base = `http://127.0.0.1:${port}`
+import { connectCdp, sleep } from './lib/cdp.mjs'
+
 const issue59Dir = process.env.ISSUE59_DIR || ''
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function connect() {
-  let targets = []
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error(`No Electron page found on CDP port ${port}`)
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const callId = ++id
-    pending.set(callId, resolve)
-    ws.send(JSON.stringify({ id: callId, method, params }))
-  })
-  return { ws, send }
-}
-
-function evaluator(send) {
-  return async (expression) => {
-    const response = await send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: true
-    })
-    if (response.result?.exceptionDetails) {
-      throw new Error(response.result.exceptionDetails.exception?.description || 'CDP evaluation failed')
-    }
-    return response.result?.result?.value
-  }
-}
 
 async function click(send, x, y, button = 'left') {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
@@ -63,8 +19,7 @@ async function key(send, value, code = value, virtualKeyCode = value.charCodeAt(
 }
 
 async function main() {
-  const { ws, send } = await connect()
-  const evaluate = evaluator(send)
+  const { ws, send, evaluate } = await connectCdp()
   await send('Runtime.enable')
   await sleep(900)
 
@@ -206,21 +161,22 @@ async function main() {
     return !!button
   })()`)
   if (!opened) throw new Error('PDF context-menu command not found')
-  await sleep(200)
+  await sleep(250)
   const dialog = await evaluate(`(() => {
-    const modal = document.querySelector('.hm-pdf-modal')
-    const selects = modal ? [...modal.querySelectorAll('select')] : []
+    const studio = document.querySelector('.hm-pdf-studio')
     return {
-      open: !!modal,
-      selectCount: selects.length,
-      orientationCount: modal?.querySelectorAll('input[type="radio"]').length || 0
+      open: !!studio,
+      sections: studio?.querySelectorAll('.hm-pdf-settings section').length || 0,
+      orientationCount: studio?.querySelectorAll('.hm-pdf-segmented button').length || 0,
+      switches: studio?.querySelectorAll('.hm-pdf-switch').length || 0,
+      hasPreview: !!studio?.querySelector('.hm-pdf-preview')
     }
   })()`)
-  if (!dialog.open || dialog.selectCount !== 2 || dialog.orientationCount !== 2) {
-    throw new Error(`PDF options dialog incomplete: ${JSON.stringify(dialog)}`)
+  if (!dialog.open || dialog.sections !== 4 || dialog.orientationCount !== 2 || dialog.switches < 5 || !dialog.hasPreview) {
+    throw new Error(`PDF export studio incomplete: ${JSON.stringify(dialog)}`)
   }
   const customFields = await evaluate(`(() => {
-    const select = document.querySelector('.hm-pdf-modal select')
+    const select = document.querySelector('.hm-pdf-settings select')
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
     setter.call(select, 'Custom')
     select.dispatchEvent(new Event('change', { bubbles: true }))
@@ -229,7 +185,7 @@ async function main() {
   if (!customFields) throw new Error('Could not switch PDF dialog to custom size')
   await sleep(100)
   const customDialog = await evaluate(`(() => {
-    const inputs = [...document.querySelectorAll('.hm-pdf-custom input')]
+    const inputs = [...document.querySelectorAll('.hm-pdf-dimension-grid input')]
     return {
       inputCount: inputs.length,
       values: inputs.map((input) => input.value),
@@ -239,9 +195,39 @@ async function main() {
   if (customDialog.inputCount !== 2 || customDialog.ranges.some(([min, max]) => min !== '50' || max !== '1000')) {
     throw new Error(`PDF custom-size controls incomplete: ${JSON.stringify(customDialog)}`)
   }
-  await evaluate(`document.querySelector('.hm-pdf-modal .hm-pdf-actions button')?.click()`)
+  for (let i = 0; i < 80; i++) {
+    const ready = await evaluate(`document.querySelectorAll('.hm-pdf-page').length > 0 && !!document.querySelector('.hm-pdf-page canvas')`)
+    if (ready) break
+    await sleep(250)
+  }
+  const preview = await evaluate(`(() => {
+    const page = document.querySelector('.hm-pdf-page')
+    const canvas = page?.querySelector('canvas')
+    const exportButton = document.querySelector('.hm-pdf-studio-footer .primary')
+    return {
+      pages: document.querySelectorAll('.hm-pdf-page').length,
+      canvas: [canvas?.width || 0, canvas?.height || 0],
+      exportEnabled: !!exportButton && !exportButton.disabled
+    }
+  })()`)
+  if (!preview.pages || preview.canvas.some((value) => value <= 0) || !preview.exportEnabled) {
+    throw new Error(`PDF preview did not render: ${JSON.stringify(preview)}`)
+  }
+  const rangeValidation = await evaluate(`(() => {
+    const input = [...document.querySelectorAll('.hm-pdf-settings input[type="text"]')].find((node) => /1-5/.test(node.placeholder))
+    if (!input) return false
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '3-1')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)
+  if (!rangeValidation) throw new Error('PDF page-range input not found')
+  await sleep(100)
+  const invalidRange = await evaluate(`!!document.querySelector('.hm-pdf-field.invalid [role="alert"]')`)
+  if (!invalidRange) throw new Error('Invalid PDF page range was not rejected')
+  await evaluate(`document.querySelector('.hm-pdf-close')?.click()`)
 
-  console.log(`PASS Electron UI #57–#60: ${JSON.stringify({ math, dollarMath, mathSettled, inlineText, contextMenu, dialog, customDialog })}`)
+  console.log(`PASS Electron UI #57–#60: ${JSON.stringify({ math, dollarMath, mathSettled, inlineText, contextMenu, dialog, customDialog, preview, invalidRange })}`)
   ws.close()
 }
 

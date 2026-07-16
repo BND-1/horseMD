@@ -19,6 +19,7 @@ import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
+import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
@@ -154,6 +155,7 @@ export function createConfiguredCrepe({
       ...plugins,
       tableBreakKeymap(),
       createInlineCodeEditingPlugin(),
+      createInlineMathEditingPlugin(),
       mathPreviewPlugin(),
       createSlashPlugin(ctx, getT),
       toolbarAutohidePlugin(),

@@ -37,6 +37,7 @@ export default function EditorArea({
   liveTimersRef,
   commitLive,
   editorApis,
+  registerEditorApi,
   activeIdRef,
   focusedTabRef,
   setRichForced,
@@ -44,7 +45,7 @@ export default function EditorArea({
   setFocusedPane,
   setActiveBlock,
   setRichDocVersion,
-  setRichLoading,
+  setTabRichLoading,
   startSplitDrag,
   updateContent,
   t
@@ -217,13 +218,13 @@ export default function EditorArea({
                 spellcheck={spellcheck}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
                 onReady={(api) => {
-                  editorApis.current[tab.id] = api
+                  registerEditorApi(tab.id, api)
                 }}
                 onActiveBlock={(id) => {
                   if (tab.id === activeIdRef.current) setActiveBlock(id)
                 }}
                 onStructureChange={() => setRichDocVersion((v) => v + 1)}
-                onLoadingChange={setRichLoading}
+                onLoadingChange={(loading) => setTabRichLoading(tab.id, loading)}
               />
             </div>
           )

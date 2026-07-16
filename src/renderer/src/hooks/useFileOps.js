@@ -10,7 +10,7 @@
 //   tabs/setTabs/tabsRef  — the tab store (open/close/save mutate it)
 //   setActiveId/setHome/setSplitId/setRecents — tab/split/recents setters
 //   commitAllLive/liveContentRef/liveTimersRef — uncontrolled-textarea contract
-//   editorApis — ref map of tab id → rich editor API (exportPathToPdf getDocHTML)
+//   getPdfSourceForTab/waitForPdfSourceForTab — resolves structured PDF source
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen/initialFolderRoots — forwarded to useWorkspace
@@ -36,7 +36,8 @@ export function useFileOps({
   commitAllLive,
   liveContentRef,
   liveTimersRef,
-  editorApis,
+  getPdfSourceForTab,
+  waitForPdfSourceForTab,
   isMobile,
   t,
   tRef,
@@ -398,8 +399,8 @@ export function useFileOps({
     [commitAllLive, writeTab, tabsRef, setSaveNameState, tRef]
   )
 
-  // Export a file (by path) to PDF: open/focus it, wait for its editor to mount,
-  // then reuse the same HTML→PDF pipeline as the menu command. Driven from the
+  // Export a file (by path) to PDF: open/focus it, wait for its editor to report ready,
+  // then reuse the same structured HTML/headings pipeline as the menu command. Driven from the
   // sidebar's right-click menu, where the file may not be open yet.
   const exportPathToPdf = useCallback(
     async (path) => {
@@ -407,19 +408,15 @@ export function useFileOps({
       const norm = (path || '').replace(/\\/g, '/')
       const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
       if (!tab) return
-      let html = null
-      for (let i = 0; i < 40 && !html; i++) {
-        html = editorApis.current[tab.id]?.getDocHTML?.()
-        if (!html) await new Promise((r) => setTimeout(r, 75))
-      }
-      if (!html) {
+      const source = getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
+      if (!source?.html) {
         window.alert(tRef.current('error.exportPdfUnavailable'))
         return
       }
       const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      requestPdfExport(html, base + '.pdf')
+      requestPdfExport({ ...source, title: base }, base + '.pdf')
     },
-    [openPaths, tabsRef, editorApis, tRef, requestPdfExport]
+    [openPaths, tabsRef, getPdfSourceForTab, waitForPdfSourceForTab, tRef, requestPdfExport]
   )
 
   // --------- auto-reload open files edited by external programs ----------

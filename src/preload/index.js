@@ -13,7 +13,11 @@ const api = {
   openAttachments: () => ipcRenderer.invoke('dialog:openAttachments'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   saveAs: (defaultName) => ipcRenderer.invoke('dialog:saveAs', defaultName),
-  exportPDF: (html, defaultName, options) => ipcRenderer.invoke('export:pdf', { html, defaultName, options }),
+  previewPDF: (source, defaultName, options) =>
+    ipcRenderer.invoke('pdf:preview', { source, defaultName, options }),
+  savePDFPreview: (token, defaultName) =>
+    ipcRenderer.invoke('pdf:savePreview', { token, defaultName }),
+  disposePDFPreview: (token) => ipcRenderer.invoke('pdf:disposePreview', token),
   allowLocalFonts: () => ipcRenderer.invoke('permissions:allowLocalFonts'),
 
   // fs

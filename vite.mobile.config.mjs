@@ -17,7 +17,8 @@ export default defineConfig({
   // Capacitor serves the bundle from a custom scheme; assets must load relative.
   base: './',
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version)
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __MOBILE_BUILD__: 'true'
   },
   build: {
     outDir: resolve(__dirname, 'dist-mobile'),

@@ -58,6 +58,8 @@ export function useEditorLightboxControls({
   // Ctrl+wheel zoom + drag-pan, scoped to the lightbox content.
   useEffect(() => {
     if (!zoom) return
+    let clearDragListeners = () => {}
+    let clearClickSuppressor = () => {}
     const onWheel = (event) => {
       if (!event.ctrlKey) return
       event.preventDefault()
@@ -73,6 +75,8 @@ export function useEditorLightboxControls({
     const onMouseDown = (event) => {
       const element = contentRef.current
       if (!element || !element.contains(event.target) || event.button !== 0) return
+      clearDragListeners()
+      clearClickSuppressor()
       event.preventDefault()
       element.style.cursor = 'grabbing'
       const startX = event.clientX - translateRef.current.x
@@ -85,24 +89,36 @@ export function useEditorLightboxControls({
       }
       const onUp = () => {
         element.style.cursor = 'grab'
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
+        clearDragListeners()
         if (dragged) {
           // Suppress the click that follows a drag so it doesn't close the lightbox.
-          window.addEventListener('click', (clickEvent) => clickEvent.stopPropagation(), {
-            capture: true,
-            once: true
-          })
+          const onClick = (clickEvent) => {
+            clickEvent.stopPropagation()
+            clearClickSuppressor()
+          }
+          window.addEventListener('click', onClick, true)
+          clearClickSuppressor = () => {
+            window.removeEventListener('click', onClick, true)
+            clearClickSuppressor = () => {}
+          }
         }
       }
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
+      clearDragListeners = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        element.style.cursor = 'grab'
+        clearDragListeners = () => {}
+      }
     }
     window.addEventListener('wheel', onWheel, { capture: true, passive: false })
     window.addEventListener('mousedown', onMouseDown)
     return () => {
       window.removeEventListener('wheel', onWheel, { capture: true, passive: false })
       window.removeEventListener('mousedown', onMouseDown)
+      clearDragListeners()
+      clearClickSuppressor()
     }
   }, [zoom, scaleRef, translateRef, contentRef, setScaleLabel])
 

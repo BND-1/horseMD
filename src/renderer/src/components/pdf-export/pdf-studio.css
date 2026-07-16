@@ -1,0 +1,75 @@
+.hm-pdf-studio {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 58px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  font-family: var(--font-ui);
+}
+
+.hm-pdf-studio-header,
+.hm-pdf-studio-footer {
+  display: flex;
+  align-items: center;
+  border-color: var(--border);
+  background: var(--bg-elevated);
+}
+
+.hm-pdf-studio-header {
+  justify-content: space-between;
+  padding: 0 14px 0 max(18px, env(titlebar-area-x, 18px));
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.app.is-mac .hm-pdf-studio-header {
+  padding-left: 80px;
+}
+
+.hm-pdf-studio-header > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.hm-pdf-studio-header h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hm-pdf-close,
+.hm-pdf-zoom-controls button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  color: var(--icon);
+  background: transparent;
+  cursor: pointer;
+}
+
+.hm-pdf-close {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  -webkit-app-region: no-drag;
+}
+
+.hm-pdf-close:hover,
+.hm-pdf-zoom-controls button:hover:not(:disabled) {
+  color: var(--text-strong);
+  background: var(--hover-elevated);
+}
+
+.hm-pdf-studio-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 332px) minmax(0, 1fr);
+  min-height: 0;
+}

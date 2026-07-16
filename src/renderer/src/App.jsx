@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Outline from './components/Outline.jsx'
 import StatusBar from './components/StatusBar.jsx'
@@ -15,7 +15,6 @@ import FindBar from './components/shell/FindBar.jsx'
 import EditorArea from './components/shell/EditorArea.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import RenameModal from './components/RenameModal.jsx'
-import PdfExportDialog from './components/PdfExportDialog.jsx'
 import {
   loadSettings,
   saveSettings,
@@ -35,11 +34,12 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
+import { useAttachments } from './hooks/useAttachments.js'
+import { usePdfExport } from './hooks/usePdfExport.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
-import {
-  baseName, isAbsolutePath, isHeavyDoc, isPlainTextDoc, loadSession, loadFolderRootsFromSession
-} from './paths.js'
+import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
+import { createEditorApiRegistry } from './lib/editor-api-registry.js'
 
 // Outline / file-tree pane drag bounds (px) — single source for the state init,
 // the drag clamp, and the double-click reset. CSS max-width on .pane-left must
@@ -48,12 +48,9 @@ const PANE_MIN = 160
 const PANE_MAX = 560
 const PANE_DEFAULT = 260
 
-const escapeLinkLabel = (text) =>
-  String(text || 'attachment').replace(/([\\[\]])/g, '\\$1')
-const markdownLinkTarget = (path) =>
-  `<${String(path || '').replace(/[<>]/g, (ch) => (ch === '<' ? '%3C' : '%3E'))}>`
-const attachmentLinkMarkdown = (name, path) =>
-  `[${escapeLinkLabel(name)}](${markdownLinkTarget(path)})`
+const PdfExportStudio = __MOBILE_BUILD__
+  ? null
+  : lazy(() => import('./components/pdf-export/PdfExportStudio.jsx'))
 
 export default function App() {
   const session = useRef(loadSession()).current
@@ -104,8 +101,6 @@ export default function App() {
   // Mobile "save as": prompt for a filename before writing an untitled doc into
   // the local library (desktop uses the native save dialog instead).
   const [saveNameState, setSaveNameState] = useState(null)
-  // Pending rich-document HTML awaiting PDF page and pagination options.
-  const [pdfExportState, setPdfExportState] = useState(null)
   // User preferences (page width, image-host command). Persisted separately from
   // the session; see settings.js.
   const [settings, setSettings] = useState(loadSettings)
@@ -122,7 +117,12 @@ export default function App() {
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
   // id lets commands act on the *currently active* document.
-  const editorApis = useRef({})
+  const editorApiRegistryRef = useRef(null)
+  if (!editorApiRegistryRef.current) editorApiRegistryRef.current = createEditorApiRegistry()
+  const editorApiRegistry = editorApiRegistryRef.current
+  const editorApis = editorApiRegistry.ref
+  const registerEditorApi = editorApiRegistry.register
+  const waitForEditorApi = editorApiRegistry.waitFor
   // The tab id of whichever editor pane last had focus — so Save / Export target
   // the pane you're actually editing in split view, not always the left one.
   const focusedTabRef = useRef(null)
@@ -132,6 +132,19 @@ export default function App() {
   // startup/session-restore fast — only the active tab spins up an editor
   // instead of every restored tab parsing its whole document at once.
   const [mountedIds, setMountedIds] = useState(() => new Set())
+  // Chunked rich-document loading is tracked per tab. Hidden editors stay
+  // mounted, so a single boolean lets one tab incorrectly mask another.
+  const [richLoadingIds, setRichLoadingIds] = useState(() => new Set())
+  const setTabRichLoading = useCallback((id, loading) => {
+    setRichLoadingIds((prev) => {
+      const has = prev.has(id)
+      if (has === loading) return prev
+      const next = new Set(prev)
+      if (loading) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
   // Tab ids the user explicitly chose to render richly despite being "heavy"
   // (would otherwise open in the fast plain-text editor to avoid a long freeze).
   const [richForced, setRichForced] = useState(() => new Set())
@@ -210,9 +223,7 @@ export default function App() {
   // Drop editor APIs for tabs that have closed.
   useEffect(() => {
     const live = new Set(tabs.map((t) => t.id))
-    for (const id of Object.keys(editorApis.current)) {
-      if (!live.has(id)) delete editorApis.current[id]
-    }
+    editorApiRegistry.prune(live)
     // Forget mount records for closed tabs (so the Set doesn't grow unbounded).
     setMountedIds((prev) => {
       let changed = false
@@ -233,7 +244,14 @@ export default function App() {
       }
       return changed ? next : prev
     })
-  }, [tabs])
+    setRichLoadingIds((prev) => {
+      if (!prev.size) return prev
+      const next = new Set([...prev].filter((id) => live.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [tabs, editorApiRegistry])
+
+  useEffect(() => () => editorApiRegistry.dispose(), [editorApiRegistry])
 
   // Mark the active tab as mounted (and keep it mounted thereafter).
   useEffect(() => {
@@ -334,9 +352,28 @@ export default function App() {
     setCustomTheme(null)
   }, [])
 
-  const requestPdfExport = useCallback((html, defaultName) => {
-    setPdfExportState({ html, defaultName })
-  }, [])
+  const {
+    pdfExportState,
+    requestPdfExport,
+    cancelPdfExport,
+    savePdfExport
+  } = usePdfExport({ tRef })
+
+  const getPdfSourceForTab = useCallback((id) => {
+    const api = editorApis.current[id]
+    if (!api) return null
+    const sourceElement = sourceTextareas.current[id]
+    if (sourceElement && api.getMarkdown?.() !== sourceElement.value) {
+      api.replaceMarkdown?.(sourceElement.value)
+    }
+    return api.getPdfSource?.() || null
+  }, [editorApis, sourceTextareas])
+
+  const waitForPdfSourceForTab = useCallback(async (id) => {
+    const api = await waitForEditorApi(id)
+    if (!api) return null
+    return getPdfSourceForTab(id)
+  }, [getPdfSourceForTab, waitForEditorApi])
 
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
@@ -379,7 +416,8 @@ export default function App() {
     commitAllLive,
     liveContentRef,
     liveTimersRef,
-    editorApis,
+    getPdfSourceForTab,
+    waitForPdfSourceForTab,
     isMobile,
     t,
     tRef,
@@ -465,6 +503,7 @@ export default function App() {
     (outlineTab.heavy && !richForced.has(outlineId)) ||
     (sourceMode && outlineId === activeId)
   )
+  const richLoading = !!outlineId && richLoadingIds.has(outlineId)
   const getOutlineEditorHost = useCallback(
     () => editorHosts.current[outlineId] || null,
     [outlineId]
@@ -476,9 +515,7 @@ export default function App() {
   const {
     activeHeading,
     outlineHeadings,
-    richLoading,
     setRichDocVersion,
-    setRichLoading,
     jumpToHeading
   } = useOutline({
     getEditorHost: getOutlineEditorHost,
@@ -489,11 +526,12 @@ export default function App() {
     sourceMode: outlineSourceMode,
     activeId: outlineId,
     activeTab: outlineTab,
+    richLoading,
     isMobile,
     setSidebarOpen,
     setHome
   })
-  richLoadingRef.current = richLoading // mirror so the mode-switch effect can read it without a dep that re-runs it
+  richLoadingRef.current = !!activeId && richLoadingIds.has(activeId)
 
   // ------------------------- menu / shortcuts ----------------------
   // Find & replace (issue #19) — hoisted above the handlers so createMenuHandlers
@@ -519,72 +557,18 @@ export default function App() {
     return activeId
   }
 
-  const replaceTabContent = useCallback((id, content) => {
-    tabsRef.current = tabsRef.current.map((t) => (t.id === id ? { ...t, content, heavy: isHeavyDoc(content) } : t))
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, content, heavy: isHeavyDoc(content) } : t)))
-  }, [setTabs, tabsRef])
-
-  const insertMarkdownIntoTab = useCallback((id, markdown) => {
-    if (!id || !markdown) return false
-    const sourceEl = sourceTextareas.current[id]
-    if (sourceEl) {
-      const start = sourceEl.selectionStart ?? sourceEl.value.length
-      const end = sourceEl.selectionEnd ?? start
-      sourceEl.setRangeText(markdown, start, end, 'end')
-      sourceEl.__horsemdSourceSelectionUser = true
-      sourceEl.__horsemdSourceViewportMoved = false
-      sourceEl.__horsemdSourceSelectionAt = performance.now()
-      sourceEditedIds.current.add(id)
-      liveContentRef.current.set(id, sourceEl.value)
-      commitLive(id)
-      sourceEl.focus()
-      return true
-    }
-
-    const tab = tabsRef.current.find((t) => t.id === id)
-    if (!tab || tab.kind === 'settings') return false
-    const api = editorApis.current[id]
-    const current = api?.getMarkdown?.() || tab.content || ''
-    const rawOffset = api?.markdownOffsetFromSelection?.()
-    const pos = Number.isFinite(rawOffset) ? Math.max(0, Math.min(rawOffset, current.length)) : current.length
-    const next = current.slice(0, pos) + markdown + current.slice(pos)
-    if (api?.replaceMarkdown?.(next)) {
-      replaceTabContent(id, next)
-      return true
-    }
-    replaceTabContent(id, next)
-    return true
-  }, [commitLive, editorApis, liveContentRef, replaceTabContent, sourceEditedIds, sourceTextareas, tabsRef])
-
-  const attachFiles = useCallback(async () => {
-    const id = pickEditableId()
-    const tab = tabsRef.current.find((t) => t.id === id)
-    if (!tab || tab.kind === 'settings') return
-    if (!window.api.capabilities?.fileAttachments || !window.api.openAttachments || !window.api.saveAttachment) {
-      fireToast(tRef.current('attach.unsupported'), { sticky: true })
-      return
-    }
-    if (!tab.path) {
-      fireToast(tRef.current('attach.needsSave'), { sticky: true })
-      return
-    }
-    commitAllLive()
-    fireToast(tRef.current('attach.picking'), { duration: 1200 })
-    const picked = await window.api.openAttachments()
-    if (!picked?.length) return
-    const links = []
-    for (const path of picked) {
-      const res = await window.api.saveAttachment(tab.path, path)
-      if (!res?.ok) {
-        fireToast(tRef.current('attach.failed', { msg: res?.error || baseName(path) }), { sticky: true })
-        return
-      }
-      links.push(attachmentLinkMarkdown(res.name || baseName(path), res.path))
-    }
-    if (!links.length) return
-    insertMarkdownIntoTab(id, links.join('\n'))
-    fireToast(tRef.current('attach.inserted', { n: links.length }), { duration: 1500 })
-  }, [commitAllLive, insertMarkdownIntoTab, tabsRef, tRef])
+  const { attachFiles } = useAttachments({
+    pickEditableId,
+    tabsRef,
+    setTabs,
+    sourceTextareas,
+    sourceEditedIds,
+    liveContentRef,
+    commitLive,
+    commitAllLive,
+    editorApis,
+    tRef
+  })
 
   // Review actions (CriticMarkup) on the active/focused tab. pickEditableId is
   // shared with the save/export handlers, so it stays here; the rest lives in
@@ -620,7 +604,7 @@ export default function App() {
     closeTab,
     toggleSource,
     cycleTheme,
-    editorApis,
+    getPdfSourceForTab,
     tabs,
     tRef,
     setFind,
@@ -846,6 +830,7 @@ export default function App() {
             liveTimersRef={liveTimersRef}
             commitLive={commitLive}
             editorApis={editorApis}
+            registerEditorApi={registerEditorApi}
             activeIdRef={activeIdRef}
             focusedTabRef={focusedTabRef}
             setRichForced={setRichForced}
@@ -853,7 +838,7 @@ export default function App() {
             setFocusedPane={setFocusedPane}
             setActiveBlock={setActiveBlock}
             setRichDocVersion={setRichDocVersion}
-            setRichLoading={setRichLoading}
+            setTabRichLoading={setTabRichLoading}
             startSplitDrag={startSplitDrag}
             updateContent={updateContent}
             t={t}
@@ -977,16 +962,17 @@ export default function App() {
         />
       )}
 
-      {pdfExportState && (
-        <PdfExportDialog
-          t={t}
-          onCancel={() => setPdfExportState(null)}
-          onConfirm={(options) => {
-            const request = pdfExportState
-            setPdfExportState(null)
-            window.api.exportPDF(request.html, request.defaultName, options)
-          }}
-        />
+      {pdfExportState && PdfExportStudio && (
+        <Suspense fallback={<div role="status" style={{ position: 'fixed', inset: 0, zIndex: 1500, display: 'grid', placeItems: 'center', color: 'var(--text)', background: 'var(--bg-elevated)' }}>{t('pdf.previewWaiting')}</div>}>
+          <PdfExportStudio
+            t={t}
+            request={pdfExportState}
+            saving={pdfExportState.status === 'saving'}
+            saveError={pdfExportState.error}
+            onCancel={cancelPdfExport}
+            onSave={savePdfExport}
+          />
+        </Suspense>
       )}
 
       {update && (

@@ -1,50 +1,7 @@
-const port = Number(process.env.CDP_PORT || 9222)
-const base = `http://127.0.0.1:${port}`
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function connect() {
-  let targets = []
-  for (let i = 0; i < 30; i += 1) {
-    try {
-      targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(500)
-  }
-
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error(`No page target on CDP port ${port}`)
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  return { ws, send }
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
 async function main() {
-  const { ws, send } = await connect()
-  const evaluate = async (expression) => {
-    const response = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    })
-    if (response.result?.exceptionDetails) {
-      throw new Error(response.result.exceptionDetails.exception?.description || 'CDP evaluation failed')
-    }
-    return response.result?.result?.value
-  }
+  const { ws, evaluate } = await connectCdp({ attempts: 30, intervalMs: 500 })
 
   const fixture = [
     '# Review UI regression',

@@ -1,36 +1,14 @@
 // CDP test for #40: outline panel works in source mode (and matches rich mode).
 // Launch app with a multi-heading doc on --remote-debugging-port=9222 first.
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-async function connect() {
-  let targets
-  for (let i = 0; i < 40; i++) {
-    try { targets = await (await fetch(base + '/json/list')).json(); if (targets.some((t) => t.type === 'page')) break } catch {}
-    await sleep(500)
-  }
-  const page = targets.find((t) => t.type === 'page')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map(); let id = 0
-  ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) } })
-  await new Promise((r) => (ws.onopen = r))
-  const send = (method, params) => new Promise((res) => { const c = ++id; pending.set(c, res); ws.send(JSON.stringify({ id: c, method, params })) })
-  return { ws, send }
-}
-const evals = (send) => async (expr) => {
-  const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
-  const res = r.result
-  if (res?.exceptionDetails) return { __error: res.exceptionDetails.exception?.description }
-  return res?.result?.value
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 async function modsKey(send, key, code, vk, modifiers) {
   await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers })
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers })
 }
 
 async function main() {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate: ev } = await connectCdp({ intervalMs: 500 })
   await send('Runtime.enable')
-  const ev = evals(send)
   const out = {}
 
   // Open the test doc tab.

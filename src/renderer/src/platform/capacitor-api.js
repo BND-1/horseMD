@@ -304,7 +304,9 @@ export function makeCapacitorApi() {
     openAttachments: async () => [],
     openFolder,
     saveAs,
-    exportPDF: async () => ({ ok: false, error: 'unsupported' }),
+    previewPDF: async () => ({ ok: false, error: 'unsupported' }),
+    savePDFPreview: async () => ({ ok: false, error: 'unsupported' }),
+    disposePDFPreview: async () => false,
     allowLocalFonts: async () => false,
 
     // fs

@@ -27,7 +27,7 @@ export function createMenuHandlers({
   closeTab,
   toggleSource,
   cycleTheme,
-  editorApis,
+  getPdfSourceForTab,
   tabs,
   tRef,
   setFind,
@@ -56,14 +56,14 @@ export function createMenuHandlers({
     attachFile: attachFiles,
     exportPdf: async () => {
       const id = pickEditableId()
-      const html = editorApis.current[id]?.getDocHTML?.()
-      if (!html) {
+      const source = getPdfSourceForTab(id)
+      if (!source?.html) {
         window.alert(tRef.current('error.exportPdfUnavailable'))
         return
       }
       const tab = tabs.find((x) => x.id === id)
       const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      requestPdfExport(html, base + '.pdf')
+      requestPdfExport({ ...source, title: base }, base + '.pdf')
     },
     closeTab: () => activeId && closeTab(activeId),
     palette: () => setPaletteOpen((v) => !v),

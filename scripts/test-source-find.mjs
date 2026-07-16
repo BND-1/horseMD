@@ -1,47 +1,12 @@
 // CDP regression for source-mode find. Launch HorseMD with a real document and
 // --remote-debugging-port first; this verifies selection, scrolling and overlay.
-const port = Number(process.env.CDP_PORT || 9222)
+import { connectCdp, sleep } from './lib/cdp.mjs'
+
 const commonQuery = process.env.FIND_QUERY || '企业'
 const testModeSwitch = process.argv.includes('--mode-switch')
-const base = `http://127.0.0.1:${port}`
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function connect() {
-  let targets = []
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error(`No Electron page found on port ${port}`)
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  const evaluate = async (expression) => {
-    const response = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text)
-    return response.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
 
 async function main() {
-  const { ws, send, evaluate } = await connect()
+  const { ws, send, evaluate } = await connectCdp()
   await sleep(800)
   await evaluate(`(() => {
     document.querySelector('.tab[title="欢迎使用 HorseMD.md"] .tab-close')?.click()

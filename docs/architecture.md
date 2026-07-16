@@ -44,7 +44,10 @@ src/
   main/documents.js        打开/保存对话框与 PDF 导出 IPC
   main/filesystem.js       文件读写、目录树与复制 IPC
   main/watchers.js         工作区与单文件监听 IPC
-  main/pdf-document.js     PDF 文档外壳与打印样式（纯函数）
+  main/pdf-document.js     PDF 页面、目录与页眉页脚文档构建（纯函数）
+  main/pdf-print-styles.js PDF 打印样式与分页规则
+  main/pdf-export.js       PDF 预览会话、资源等待、打印与保存
+  main/latest-task-runner.js 同一调用方最新任务优先与取消协调
   main/security.js         权限与外部 URL 安全策略（纯函数）
   preload/index.js         contextBridge：window.api 桥接
   renderer/
@@ -69,11 +72,22 @@ src/
       onboarding.js        首次启动的欢迎/介绍文档（中英）
       assets/logo.png      首页 logo（应用图标副本）
       hooks/
+        useAttachments.js 附件复制、链接生成与源码/富文本插入
         useFileOps.js      文件与标签操作、单文件 watcher
+        usePdfExport.js    PDF 导出请求、保存锁、取消与错误状态
+        usePdfPreview.js   防抖预览、过期请求隔离与临时会话清理
         useWorkspace.js    多根工作区状态、目录 watcher 与命令面板文件列表
         useSidebarTree.js  文件树加载、展开与当前文件跟随
         useSourceModeSwitch.js per-tab 源码模式、内容同步与锚点恢复
         useOutline.js      大纲（标题列表 + scrollspy + jumpAndStabilize 跳转）
+      lib/
+        editor-api-registry.js 按 Tab 注册 Editor API、ready 等待与关闭清理
+      components/
+        editor-dom-bindings.js 编辑器 DOM 绑定稳定入口
+        editor-dom-interactions.js 键盘、选择、右键与编辑意图
+        editor-dom-layout.js 斜杠菜单边界、空白续写与滚动层级
+        editor-dom-content.js 链接、复制、图片、粘贴与 Mermaid
+        pdf-export/        PDF 设置、PDF.js 单页渲染、书签解析与独立样式
         useFindReplace.js  查找替换（CSS Highlight API）
         useAppLifecycle.js 会话持久化 + 恢复 + 更新检查
         usePopover.js      共享 popover hook（outside-click + Esc 关闭）
@@ -112,7 +126,7 @@ src/
           ActivityBar.jsx  左侧活动栏（Home/Files/Outline/Settings/折叠）
           EditorArea.jsx   编辑区（lazy mount + 分屏 + heavy-doc 横幅 + .hm-cv）
           Topbar.jsx       顶栏（标签 + 新建 + 图床 + 命令面板入口）
-      styles/app.css       全部样式 + 主题变量 + content-visibility
+      styles/app.css       应用主体样式 + 主题变量 + content-visibility
 scripts/
   etv.mjs                  端到端测试工具（CDP 驱动，见 development.md）
   inspect.mjs              简易 CDP 状态检查器

@@ -2,15 +2,17 @@
 // For each anchor string: place rich caret right after it, capture context,
 // toggle source, read source context, toggle back, read rich context again.
 // Report where caret drifts (source/rich context != original).
-const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json()
-const ws = new WebSocket(targets.find(t => t.type === 'page').webSocketDebuggerUrl)
-const pending = new Map(); let id = 0
-ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) } })
-await new Promise(r => ws.onopen = r)
-const send = (m, p) => new Promise(res => { const c = ++id; pending.set(c, res); ws.send(JSON.stringify({ id: c, method: m, params: p })) })
+import { connectCdp, sleep } from './lib/cdp.mjs'
+
+const { ws, send, evaluate } = await connectCdp()
 await send('Runtime.enable')
-const ev = async (e) => { const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }); if (r.result?.exceptionDetails) return { __err: r.result.exceptionDetails.exception?.description?.slice(0, 300) }; return r.result?.result?.value }
-const sleep = ms => new Promise(r => setTimeout(r, ms))
+const ev = async (expression) => {
+  try {
+    return await evaluate(expression)
+  } catch (error) {
+    return { __err: error.message.slice(0, 300) }
+  }
+}
 
 await ev(`(() => { const t = [...document.querySelectorAll('.tab')].find(x => x.textContent.includes('hmcaret-doc')); if (t) t.click(); return true })()`)
 await sleep(800)
