@@ -44,7 +44,6 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
           <FontPicker
             label={t('settings.fontWrite')}
             value={settings.fontWrite || ''}
-            sample={t('settings.fontWriteSample')}
             placeholder={t('settings.fontWritePlaceholder')}
             fonts={fontFamilies}
             onLoadFonts={ensureFonts}
@@ -60,7 +59,6 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
           <FontPicker
             label={t('settings.fontMono')}
             value={settings.fontMono || ''}
-            sample={t('settings.fontMonoSample')}
             placeholder={t('settings.fontMonoPlaceholder')}
             fonts={fontFamilies}
             onLoadFonts={ensureFonts}

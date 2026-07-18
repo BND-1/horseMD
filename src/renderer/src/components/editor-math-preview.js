@@ -70,13 +70,51 @@ const previewInlineEditor = (editor) => {
   placeTip(target, rect.left, rect.bottom + 8)
 }
 
-const mountInlineEditListeners = () => {
+const clearInlineEditor = (editor) => {
+  if (!editor) return
+  editor.focus()
+  const range = document.createRange()
+  range.selectNodeContents(editor)
+  const selection = window.getSelection()
+  selection.removeAllRanges()
+  selection.addRange(range)
+  document.execCommand?.('delete')
+  editor.dispatchEvent(new InputEvent('input', {
+    bubbles: true,
+    inputType: 'deleteContentBackward',
+    data: null
+  }))
+}
+
+const enhanceInlineEditor = (popup, getT) => {
+  if (!popup || popup.querySelector('.hm-inline-math-clear')) return
+  const confirm = popup.querySelector('button')
+  if (!confirm) return
+
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'hm-inline-math-clear'
+  button.textContent = getT?.('math.clear') || 'Clear'
+  button.title = getT?.('math.clear') || 'Clear'
+  button.addEventListener('mousedown', (event) => event.preventDefault())
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    clearInlineEditor(popup.querySelector('.ProseMirror'))
+  })
+  confirm.insertAdjacentElement('afterend', button)
+}
+
+const mountInlineEditListeners = (getT) => {
   if (innerEditListenersMounted) return
   innerEditListenersMounted = true
   const schedule = (event) => {
     const editor = event.target?.closest?.('.milkdown-latex-inline-edit .ProseMirror')
     if (!editor) return
-    requestAnimationFrame(() => previewInlineEditor(editor))
+    requestAnimationFrame(() => {
+      enhanceInlineEditor(editor.closest('.milkdown-latex-inline-edit'), getT)
+      previewInlineEditor(editor)
+    })
   }
   document.addEventListener('focusin', schedule, true)
   document.addEventListener('input', schedule, true)
@@ -87,25 +125,29 @@ const mountInlineEditListeners = () => {
       }
     }, 0)
   }, true)
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll('.milkdown-latex-inline-edit').forEach((popup) => enhanceInlineEditor(popup, getT))
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
 }
 
-function getTip() {
+function getTip(getT) {
   if (tip) return tip
   tip = document.createElement('div')
   tip.className = 'hm-math-preview'
   tip.style.display = 'none'
   document.body.appendChild(tip)
-  mountInlineEditListeners()
+  mountInlineEditListeners(getT)
   return tip
 }
 
-export function mathPreviewPlugin() {
+export function mathPreviewPlugin(getT) {
   let raf = 0
-  const hide = () => { const t = getTip(); t.style.display = 'none' }
+  const hide = () => { const t = getTip(getT); t.style.display = 'none' }
 
   const render = (view) => {
     raf = 0
-    const t = getTip()
+    const t = getTip(getT)
     const { state } = view
     const { selection } = state
     if (!view.hasFocus() || !selection.empty) return hide()

@@ -27,6 +27,7 @@ export default function EditorArea({
   activeTab,
   imageUploadCommand,
   spellcheck,
+  inlineMathDeleteMode,
   effectiveKeybindings,
   editorAreaRef,
   editorHostRef,
@@ -217,6 +218,7 @@ export default function EditorArea({
                 docPath={tab.path}
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
+                inlineMathDeleteMode={inlineMathDeleteMode}
                 effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
                 onReady={(api) => {

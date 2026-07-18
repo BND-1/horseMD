@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export default function FontPicker({ label, value, sample, placeholder, fonts, onLoadFonts, onChange, onHover, footer, t }) {
+export default function FontPicker({ label, value, placeholder, fonts, onLoadFonts, onChange, onHover, footer, t }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const rootRef = useRef(null)
@@ -69,19 +69,18 @@ export default function FontPicker({ label, value, sample, placeholder, fonts, o
               onMouseEnter={() => onHover?.('')}
               onClick={() => pick('')}
             >
-              <span className="settings-font-sample">{sample}</span>
-              <span className="settings-font-name">{t('settings.fontDefault')}</span>
+              <span className="settings-font-name" title={t('settings.fontDefault')}>{t('settings.fontDefault')}</span>
             </button>
             {shown.map((f) => (
               <button
                 type="button"
                 key={f}
                 className={`settings-font-option${f === value ? ' active' : ''}`}
+                title={f}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => onHover?.(f)}
                 onClick={() => pick(f)}
               >
-                <span className="settings-font-sample" style={{ fontFamily: `'${f}'` }}>{sample}</span>
                 <span className="settings-font-name">{f}</span>
               </button>
             ))}

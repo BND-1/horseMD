@@ -13,11 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the Electron menu through a restricted IPC path, while renderer shortcuts such
   as tab switching, sidebar toggling, find/replace, and heading level changes
   read the same effective keybinding map.
+- **Safer inline LaTeX deletion** (#74) — inline formulas now default to a
+  protected delete mode: the first Backspace/Delete selects the formula, and
+  the second key press removes it. Settings keeps a fast-delete option for users
+  who prefer the previous behavior, and the inline formula editor now includes a
+  Clear action.
 
 ### Changed
 - **Modular Settings center** — the previous monolithic Settings page is split
   into focused General, Editor, Appearance, Files & Images, Keyboard, and About
   modules, keeping existing preferences and defaults intact.
+- **Readable font picker names** (#75) — font dropdown rows now prioritize the
+  complete family name instead of a decorative sample; very long names expose
+  the full text through the native tooltip while hover preview remains available
+  in the typography preview.
 
 ## [0.6.5] - 2026-07-16
 

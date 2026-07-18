@@ -26,6 +26,24 @@ export default function EditorSettings({ settings, onUpdateSettings, onHoverFont
             label={t('settings.spellcheck')}
           />
         </div>
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t('settings.inlineMathDelete')}</div>
+            <div className="settings-row-desc">{t('settings.inlineMathDeleteDesc')}</div>
+          </div>
+          <div className="settings-segmented">
+            {['protect', 'fast'].map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`settings-segmented-option${(settings.inlineMathDeleteMode || 'protect') === mode ? ' active' : ''}`}
+                onClick={() => onUpdateSettings({ inlineMathDeleteMode: mode })}
+              >
+                {t(`settings.inlineMathDelete.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
     </>
   )

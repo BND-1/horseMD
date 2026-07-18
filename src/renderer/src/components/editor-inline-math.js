@@ -1,4 +1,4 @@
-import { Plugin, PluginKey } from '@milkdown/prose/state'
+import { NodeSelection, Plugin, PluginKey } from '@milkdown/prose/state'
 
 const INLINE_MATH_KEY = new PluginKey('hm-inline-math-editing')
 
@@ -49,7 +49,19 @@ const pendingAtSelection = (state) => {
   return { from: start + span.from, to: start + span.to, value: span.value }
 }
 
-export function createInlineMathEditingPlugin() {
+const mathNodeAtDeleteBoundary = (state, key) => {
+  const { selection } = state
+  if (!selection.empty) return null
+  const { $from } = selection
+  const before = key === 'Backspace'
+  const node = before ? $from.nodeBefore : $from.nodeAfter
+  if (node?.type?.name !== 'math_inline') return null
+  const pos = before ? $from.pos - node.nodeSize : $from.pos
+  if (pos < 0) return null
+  return { node, pos }
+}
+
+export function createInlineMathEditingPlugin({ getDeleteMode = () => 'protect' } = {}) {
   return new Plugin({
     key: INLINE_MATH_KEY,
     state: {
@@ -71,6 +83,29 @@ export function createInlineMathEditingPlugin() {
         return newState.doc.textBetween(pending.from, pending.to) === `$${pending.value}$`
           ? pending
           : null
+      }
+    },
+    props: {
+      handleKeyDown(view, event) {
+        if (event.isComposing || (event.key !== 'Backspace' && event.key !== 'Delete')) return false
+        if (getDeleteMode?.() === 'fast') return false
+
+        const { state } = view
+        const { selection } = state
+        if (selection instanceof NodeSelection && selection.node?.type?.name === 'math_inline') {
+          return false
+        }
+
+        const target = mathNodeAtDeleteBoundary(state, event.key)
+        if (!target) return false
+
+        event.preventDefault()
+        view.dispatch(
+          state.tr
+            .setSelection(NodeSelection.create(state.doc, target.pos))
+            .scrollIntoView()
+        )
+        return true
       }
     },
     appendTransaction(transactions, _oldState, newState) {

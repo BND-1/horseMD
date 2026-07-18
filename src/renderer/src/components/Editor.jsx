@@ -51,6 +51,7 @@ export default function Editor({
   docPath,
   imageUploadCommand,
   spellcheck,
+  inlineMathDeleteMode,
   effectiveKeybindings,
   onChange,
   onReady,
@@ -69,6 +70,8 @@ export default function Editor({
   // re-applied by the effect when the pref changes.
   const spellcheckRef = useRef(spellcheck)
   spellcheckRef.current = spellcheck
+  const inlineMathDeleteModeRef = useRef(inlineMathDeleteMode || 'protect')
+  inlineMathDeleteModeRef.current = inlineMathDeleteMode || 'protect'
   const effectiveKeybindingsRef = useRef(effectiveKeybindings)
   effectiveKeybindingsRef.current = effectiveKeybindings
   const hostRef = useRef(null)
@@ -161,7 +164,8 @@ export default function Editor({
       getT: (key) => tRef.current(key),
       persistImage,
       notify: fireToast,
-      copyText: copyToClipboard
+      copyText: copyToClipboard,
+      getInlineMathDeleteMode: () => inlineMathDeleteModeRef.current
     })
     crepeRef.current = crepe
 

@@ -92,6 +92,10 @@ export const DEFAULT_SETTINGS = {
   // attribute on the Crepe `.ProseMirror` contenteditable; other surfaces (the
   // source textarea, inputs) always opt out via spellCheck={false}.
   spellcheck: false,
+  // Inline LaTeX deletion mode. "protect" prevents accidental whole-formula
+  // deletion by selecting the formula on the first Backspace/Delete and only
+  // deleting it on the second press. "fast" keeps the previous one-key delete.
+  inlineMathDeleteMode: 'protect',
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false
@@ -132,6 +136,7 @@ export function loadSettings() {
       imageUploadCommand:
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
       spellcheck: raw.spellcheck === true,
+      inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : ''

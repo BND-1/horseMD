@@ -835,6 +835,7 @@ export default function App() {
             activeTab={activeTab}
             imageUploadCommand={settings.imageUploadCommand}
             spellcheck={settings.spellcheck}
+            inlineMathDeleteMode={settings.inlineMathDeleteMode}
             effectiveKeybindings={effectiveKeybindings}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}

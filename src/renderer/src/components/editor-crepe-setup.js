@@ -73,7 +73,8 @@ export function createConfiguredCrepe({
   getT,
   persistImage,
   notify,
-  copyText
+  copyText,
+  getInlineMathDeleteMode
 }) {
   const t = getT
   const platform = window.api?.platform
@@ -157,8 +158,8 @@ export function createConfiguredCrepe({
       tableBreakKeymap(),
       createInlineCodeEditingPlugin(),
       createTaskListInputPlugin(),
-      createInlineMathEditingPlugin(),
-      mathPreviewPlugin(),
+      createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
+      mathPreviewPlugin(getT),
       createSlashPlugin(ctx, getT),
       toolbarAutohidePlugin(),
       createReviewDecorationPlugin({

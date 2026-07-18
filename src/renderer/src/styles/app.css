@@ -973,6 +973,22 @@ button:focus-visible,
   line-height: 1.4;
 }
 .hm-math-preview .katex { color: inherit; font-size: 1.05em; }
+.milkdown .milkdown-latex-inline-edit .hm-inline-math-clear {
+  margin-left: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+}
+.milkdown .milkdown-latex-inline-edit .hm-inline-math-clear:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
 .hm-pop-head {
   display: flex;
   align-items: baseline;
@@ -3304,6 +3320,33 @@ body.hm-full-width .source-editor {
   margin-top: 2px;
   line-height: 1.5;
 }
+.settings-segmented {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.settings-segmented-option {
+  min-width: 64px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings-segmented-option:hover {
+  color: var(--text);
+}
+.settings-segmented-option.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
 /* Toggle switch (role=switch). Track + spring-sliding thumb, theme-tokens only. */
 .hm-toggle {
   position: relative;
@@ -3808,8 +3851,7 @@ body.hm-full-width .source-editor {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 9px;
+  padding: 7px 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -3823,29 +3865,19 @@ body.hm-full-width .source-editor {
 .settings-font-option.active {
   background: var(--accent-soft);
 }
-/* The sample string rendered in the candidate font (the actual preview). */
-.settings-font-sample {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  color: var(--text-strong);
-}
-.settings-font-option.active .settings-font-sample {
-  color: var(--accent-strong);
-}
-/* The font name, small + muted, in the UI font (readable regardless of the
-   sample font). */
+/* Font options show the full family name. The live preview is the right-side
+   typography sample, so the dropdown can stay readable and name-focused. */
 .settings-font-name {
-  flex: 0 0 auto;
-  max-width: 42%;
-  font-size: 11.5px;
-  color: var(--muted);
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.settings-font-option.active .settings-font-name {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 .settings-font-more,
 .settings-font-empty {
@@ -4535,6 +4567,11 @@ body.dark .milkdown {
   overflow-x: auto;
   overflow-y: hidden;
   vertical-align: bottom;
+}
+.milkdown .ProseMirror span[data-type='math_inline'].ProseMirror-selectednode {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--muted) 36%, transparent);
 }
 /* A KaTeX parse error (e.g. \tag in inline math) should wrap, not run off-edge. */
 .milkdown .ProseMirror .katex-error {

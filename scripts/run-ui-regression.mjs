@@ -95,6 +95,17 @@ const sessions = [
   }
 ]
 
+const standalone = [
+  {
+    name: 'Issues 70-72: outline fold state and task list input',
+    script: 'scripts/test-issues-70-72-ui.mjs'
+  },
+  {
+    name: 'Issues 74-75: inline math deletion and font picker names',
+    script: 'scripts/test-issues-74-75-ui.mjs'
+  }
+]
+
 if (await exists(realLargeDoc)) {
   sessions.push(
     {
@@ -139,4 +150,9 @@ for (const session of sessions) {
   await runSession(session)
 }
 
-console.log(`\nPASS UI regression: ${sessions.length} sessions`)
+for (const item of standalone) {
+  console.log(`\n[ui-regression] ${item.name}`)
+  await runNode(item.script)
+}
+
+console.log(`\nPASS UI regression: ${sessions.length} sessions + ${standalone.length} standalone`)
