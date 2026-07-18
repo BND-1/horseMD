@@ -3280,10 +3280,9 @@ body.hm-full-width .source-editor {
 .settings-heading-row .settings-block-desc {
   margin-bottom: 0;
 }
-/* Typography: sliders left, live preview right. The preview is absolutely
-   positioned to fill the container's height (= the in-flow controls column's
-   height), so its base lines up with the last slider AND it can't push the
-   container taller when the font grows — overflow scrolls inside it instead. */
+/* Typography controls and their live document sample intentionally stack.
+   A side-by-side sample made the document look compressed and tied its height
+   to the controls, which changed as settings were adjusted. */
 .settings-typo {
   position: relative;
 }
@@ -3291,14 +3290,16 @@ body.hm-full-width .source-editor {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: calc(50% - 14px);
+  width: 100%;
+}
+.settings-typo-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 .settings-typo-preview {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: calc(50% - 14px);
+  width: 100%;
+  margin-top: 22px;
 }
 /* A label/description + control row inside a section. */
 .settings-row {
@@ -3389,32 +3390,30 @@ body.hm-full-width .source-editor {
 }
 /* Live typography preview — reads the SAME CSS vars as the editor
    (--editor-font-size / -line-height / -para-spacing), so dragging a slider in
-   the Settings page updates this sample in real time. Fills its grid column so
-   its base aligns with the last slider. */
+   the Settings page updates this sample in real time. */
 .settings-preview-shell {
   width: 100%;
-  height: 100%;
+  height: 350px;
   min-height: 0;
   box-sizing: border-box;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 82%, transparent), var(--bg-editor));
+  border-radius: var(--radius-md);
+  background: var(--bg-editor);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 .settings-preview-toolbar {
-  height: 34px;
+  height: 32px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 14px;
+  gap: 6px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-soft);
-  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg));
+  background: var(--bg-elevated);
 }
 .settings-preview-toolbar span {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--border);
 }
@@ -3431,11 +3430,11 @@ body.hm-full-width .source-editor {
   overflow-y: auto;
 }
 .settings-preview .ProseMirror {
-  width: min(100%, var(--editor-max-width, 800px));
+  width: min(100%, 680px, var(--editor-max-width, 800px));
   min-height: 100%;
   box-sizing: border-box;
   margin: 0 auto;
-  padding: 22px 26px 30px;
+  padding: 26px clamp(22px, 6vw, 56px) 36px;
   outline: none;
   font-family: var(--font-write);
 }
@@ -3827,13 +3826,9 @@ body.hm-full-width .source-editor {
   margin: 14px 0 0;
   line-height: 1.6;
 }
-/* Document + code font pickers (issue #38) — above the typography sliders. */
-.settings-font-pickers {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* Document + code font pickers (issue #38) share the first typography row. */
+.settings-typo-fonts {
   padding-bottom: 14px;
-  margin-bottom: 6px;
   border-bottom: 1px solid var(--border-soft);
 }
 .settings-font-row {
@@ -3974,7 +3969,7 @@ body.hm-full-width .source-editor {
   text-align: center;
 }
 .settings-font-hint {
-  margin: 0;
+  margin: -2px 0 2px;
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--faint);
@@ -4080,17 +4075,18 @@ body.hm-full-width .source-editor {
 .app.is-mobile .settings-typo-controls {
   width: 100%;
 }
+.app.is-mobile .settings-typo-row {
+  grid-template-columns: 1fr;
+}
 .app.is-mobile .settings-typo-preview {
-  position: static;
   width: 100%;
   margin-top: 18px;
 }
 .app.is-mobile .settings-preview-shell {
-  height: auto;
+  height: 300px;
 }
 .app.is-mobile .settings-preview {
-  height: auto;
-  max-height: 320px;
+  height: calc(100% - 32px);
 }
 .app.is-mobile .settings-section-heading {
   flex-direction: column;

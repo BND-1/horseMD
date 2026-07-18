@@ -44,6 +44,30 @@ async function main() {
       if (!cssEditor) throw new Error('missing custom CSS editor under Editor')
       const preview = document.querySelector('.settings-preview.milkdown .ProseMirror h1')
       if (!preview) throw new Error('missing HorseMD-style typography preview')
+      const rows = [...document.querySelectorAll('.settings-typo-row')].filter(visible)
+      if (rows.length !== 3) throw new Error('expected three paired typography rows')
+      const expectedChildren = [2, 2, 2]
+      for (const [index, row] of rows.entries()) {
+        const children = [...row.children].filter(visible)
+        if (children.length !== expectedChildren[index]) {
+          throw new Error('unexpected typography row item count: ' + index)
+        }
+        const [left, right] = children.map((child) => child.getBoundingClientRect())
+        if (Math.abs(left.top - right.top) > 1 || right.left <= left.right) {
+          throw new Error('typography controls are not arranged as a desktop pair: ' + index)
+        }
+      }
+      if (rows[0].querySelectorAll('.settings-font-row').length !== 2 ||
+        rows.slice(1).some((row) => row.querySelectorAll('.hm-adjust-group').length !== 2)) {
+        throw new Error('typography row grouping is incorrect')
+      }
+      const sourceTitle = [...document.querySelectorAll('.settings-block-title')]
+        .find((title) => ['源码模式', 'Source mode'].includes(textOf(title)))
+      const cssBlock = cssEditor.closest('.settings-block')
+      const sourceBlock = sourceTitle?.closest('.settings-block')
+      if (!cssBlock || !sourceBlock || !(cssBlock.compareDocumentPosition(sourceBlock) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+        throw new Error('custom CSS must appear before source-mode settings')
+      }
       cssEditor.focus()
       cssEditor.select()
       return true

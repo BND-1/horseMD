@@ -67,23 +67,6 @@ export default function EditorSettings({ settings, onUpdateSettings, onHoverFont
         />
       </section>
       <section className="settings-block">
-        <h2 className="settings-block-title">{t('settings.sourceMode')}</h2>
-        <p className="settings-block-desc">{t('settings.sourceFontDesc')}</p>
-        <AdjustGroup
-          title={t('settings.sourceFontOffset')}
-          valueLabel={`${offsetLabel} · ${sourcePx}px`}
-          presets={SOURCE_FONT_OFFSET_PRESETS.map((p) => ({ ...p, label: t('settings.sourceFontOffset.' + p.id) }))}
-          activeIndex={sourceOffsetIdx}
-          onPick={(p) => onUpdateSettings({ sourceFontOffset: p.value })}
-          value={sourceOffset}
-          min={SOURCE_FONT_OFFSET_MIN}
-          max={SOURCE_FONT_OFFSET_MAX}
-          round={Math.round}
-          onSet={(v) => onUpdateSettings({ sourceFontOffset: v })}
-          liveApply={applySourceFontOffset}
-        />
-      </section>
-      <section className="settings-block">
         <div className="settings-section-heading">
           <div>
             <h2 className="settings-block-title">{t('settings.customCss')}</h2>
@@ -107,6 +90,23 @@ export default function EditorSettings({ settings, onUpdateSettings, onHoverFont
             clearTimeout(timerRef.current)
             commitCss(e.target.value)
           }}
+        />
+      </section>
+      <section className="settings-block">
+        <h2 className="settings-block-title">{t('settings.sourceMode')}</h2>
+        <p className="settings-block-desc">{t('settings.sourceFontDesc')}</p>
+        <AdjustGroup
+          title={t('settings.sourceFontOffset')}
+          valueLabel={`${offsetLabel} · ${sourcePx}px`}
+          presets={SOURCE_FONT_OFFSET_PRESETS.map((p) => ({ ...p, label: t('settings.sourceFontOffset.' + p.id) }))}
+          activeIndex={sourceOffsetIdx}
+          onPick={(p) => onUpdateSettings({ sourceFontOffset: p.value })}
+          value={sourceOffset}
+          min={SOURCE_FONT_OFFSET_MIN}
+          max={SOURCE_FONT_OFFSET_MAX}
+          round={Math.round}
+          onSet={(v) => onUpdateSettings({ sourceFontOffset: v })}
+          liveApply={applySourceFontOffset}
         />
       </section>
       <section className="settings-block">
