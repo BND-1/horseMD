@@ -113,6 +113,7 @@ npm run test:ui-regression
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
 - `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、快速设置、源码同步和快捷入口
 - `scripts/test-pdf-latex-ui.mjs` —— 真实 Electron PDF 导出回归：段落 LaTeX 公式必须导出为渲染后的 MathML，不允许打印 `$$...$$` 源码或公式编辑控件
+- `scripts/test-editor-style-settings-ui.mjs` —— 真实 Electron 设置页回归：自定义 CSS 位于编辑器设置并作用到预览，源码字号设置作用到源码 textarea
 - `scripts/test-latest-task-runner.mjs` —— 验证同一渲染器仅运行一个 PDF 生成任务，旧任务取消且最新请求胜出
 - `scripts/test-editor-api-registry.mjs` —— 验证按 Tab 的编辑器 API ready、关闭释放与超时行为
 - `scripts/test-pdf-studio-ui.mjs` —— 真实验证 PDF 横纵向、目录页、书签、页码范围、PDF.js Canvas 与快速设置更新的最终一致性

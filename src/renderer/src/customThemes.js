@@ -23,3 +23,24 @@ export function applyCustomTheme(css) {
   styleEl.textContent = css
   document.body.classList.add('hm-has-custom-theme')
 }
+
+// User CSS snippet (issue #81): a free-form CSS override the user types in
+// Settings → Appearance. Injected into its OWN <style> tag, appended AFTER the
+// custom-theme tag, so it wins over both the bundled CSS and any Typora theme.
+// This is intentionally separate from applyCustomTheme so a user snippet can
+// layer on top of a full theme without one clobbering the other. Empty = removed.
+let userStyleEl = null
+
+export function applyUserCss(css) {
+  const value = typeof css === 'string' ? css.trim() : ''
+  if (!value) {
+    if (userStyleEl) userStyleEl.textContent = ''
+    return
+  }
+  if (!userStyleEl) {
+    userStyleEl = document.createElement('style')
+    userStyleEl.id = 'hm-user-css'
+    document.head.appendChild(userStyleEl)
+  }
+  userStyleEl.textContent = value
+}

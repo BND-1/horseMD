@@ -105,6 +105,10 @@ const standalone = [
     script: 'scripts/test-issues-74-75-ui.mjs'
   },
   {
+    name: 'Editor style settings: source font and custom CSS preview',
+    script: 'scripts/test-editor-style-settings-ui.mjs'
+  },
+  {
     name: 'PDF LaTeX: display math prints rendered output',
     script: 'scripts/test-pdf-latex-ui.mjs'
   }

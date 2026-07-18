@@ -11,10 +11,12 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
   const [currentPage, setCurrentPage] = useState(1)
   const [outline, setOutline] = useState([])
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [loadedToken, setLoadedToken] = useState('')
 
   useEffect(() => {
     if (!data?.length) {
       setDocument(null)
+      setLoadedToken('')
       return
     }
     let canceled = false
@@ -40,6 +42,7 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
       setOutline(outlineRows)
       if (!outlineRows.length) setOutlineOpen(false)
       setCurrentPage(1)
+      setLoadedToken(token || '')
       scrollRef.current?.scrollTo({ top: 0 })
     }).catch((loadError) => {
       if (!canceled) console.error('PDF preview load failed', loadError)
@@ -48,7 +51,7 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
       canceled = true
       task?.destroy?.()
     }
-  }, [data, t])
+  }, [data, token, t])
 
   useEffect(() => {
     const root = scrollRef.current
@@ -70,7 +73,7 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
   }
 
   return (
-    <section className="hm-pdf-preview" aria-label={t('pdf.preview')} data-preview-token={token || ''} data-outline-count={outline.length}>
+    <section className="hm-pdf-preview" aria-label={t('pdf.preview')} data-preview-token={token || ''} data-loaded-token={loadedToken} data-outline-count={outline.length}>
       <div className="hm-pdf-preview-toolbar">
         <div className="hm-pdf-preview-leading">
           {outline.length > 0 && (

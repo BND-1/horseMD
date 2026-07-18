@@ -40,6 +40,7 @@ const waitPreview = async (evaluate, previousToken = '') => {
     `(() => {
       const preview = document.querySelector('.hm-pdf-preview')
       return !!preview?.dataset.previewToken && preview.dataset.previewToken !== ${JSON.stringify(previousToken)} &&
+        preview.dataset.loadedToken === preview.dataset.previewToken &&
         !document.querySelector('.hm-pdf-preview-progress') && !document.querySelector('.hm-pdf-preview-error') &&
         !document.querySelector('.hm-pdf-studio-footer .primary')?.disabled
     })()`,

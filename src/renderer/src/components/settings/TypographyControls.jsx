@@ -103,14 +103,26 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
         />
       </div>
       <div className="settings-typo-preview">
-        <div className="settings-preview markdown-body">
-          <h2>HorseMD</h2>
-          <p>{t('settings.previewIntro')}</p>
-          <pre><code>{t('settings.previewCode')}</code></pre>
-          <ul>
-            <li>{t('settings.previewFeature1')}</li>
-            <li>{t('settings.previewFeature2')}</li>
-          </ul>
+        <div className="settings-preview-shell">
+          <div className="settings-preview-toolbar" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="settings-preview milkdown">
+            <article className="ProseMirror markdown-body" contentEditable={false}>
+              <h1>HorseMD</h1>
+              <p>{t('settings.previewIntro')}</p>
+              <h2>{t('settings.previewSection')}</h2>
+              <p>{t('settings.previewParagraph')}</p>
+              <blockquote>{t('settings.previewQuote')}</blockquote>
+              <ul>
+                <li>{t('settings.previewFeature1')}</li>
+                <li>{t('settings.previewFeature2')}</li>
+              </ul>
+              <pre><code>{t('settings.previewCode')}</code></pre>
+            </article>
+          </div>
         </div>
       </div>
     </div>

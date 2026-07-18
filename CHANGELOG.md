@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Editor style customization** (#78, #81) — source mode can now follow the document
+  font size with a separate readable offset, and Settings includes a Custom CSS
+  editor for small document-style tweaks layered on top of the active theme.
 - **Custom keyboard shortcuts** — Settings now includes a Keyboard section with
   shortcut recording, clearing, restore-default actions, conflict warnings, and
   persisted `horsemd.keybindings.v1` overrides. Application shortcuts sync to
@@ -23,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Modular Settings center** — the previous monolithic Settings page is split
   into focused General, Editor, Appearance, Files & Images, Keyboard, and About
   modules, keeping existing preferences and defaults intact.
+- **Unified editor styling controls** — typography, source font size, and Custom
+  CSS now live together under Editor settings, with a small HorseMD-style preview
+  that uses the same `.milkdown .ProseMirror` document selectors as the real
+  editor.
 - **Readable font picker names** (#75) — font dropdown rows now prioritize the
   complete family name instead of a decorative sample; very long names expose
   the full text through the native tooltip while hover preview remains available

@@ -20,13 +20,14 @@ import {
   saveSettings,
   applyPageWidth,
   applyFontSize,
+  applySourceFontOffset,
   applyLineHeight,
   applyParagraphSpacing,
   fontStack,
   DEFAULT_FONT_WRITE,
   DEFAULT_FONT_MONO
 } from './settings.js'
-import { applyCustomTheme } from './customThemes.js'
+import { applyCustomTheme, applyUserCss } from './customThemes.js'
 import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
 import { useOutline } from './hooks/useOutline.js'
@@ -294,11 +295,17 @@ export default function App() {
     applyFontSize(settings.fontSize)
   }, [settings.fontSize])
   useEffect(() => {
+    applySourceFontOffset(settings.sourceFontOffset)
+  }, [settings.sourceFontOffset])
+  useEffect(() => {
     applyLineHeight(settings.lineHeight)
   }, [settings.lineHeight])
   useEffect(() => {
     applyParagraphSpacing(settings.paragraphSpacing)
   }, [settings.paragraphSpacing])
+  useEffect(() => {
+    applyUserCss(settings.userCss)
+  }, [settings.userCss])
   useEffect(() => {
     saveSettings(settings)
   }, [settings])

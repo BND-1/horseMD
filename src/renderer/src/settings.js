@@ -33,6 +33,16 @@ export const FONT_SIZE_PRESETS = [
   { id: 'xlarge', size: 20 }
 ]
 
+// Source-mode font size OFFSET (px) relative to the editor body font size
+// (issue #78). Source mode shows raw Markdown in a monospace textarea; its size
+// tracks the rich editor font. Default 0 = the SAME size as the document body
+// (there's no reason source should differ). The offset is kept as an optional
+// knob: a low-vision reader can push source larger, or someone can shrink it to
+// fit more raw Markdown on screen.
+export const SOURCE_FONT_OFFSET_MIN = -4
+export const SOURCE_FONT_OFFSET_MAX = 8
+export const DEFAULT_SOURCE_FONT_OFFSET = 0
+
 // Editor body line-height (unitless). Default matches the built-in stylesheet.
 export const LINE_HEIGHT_MIN = 1.4
 export const LINE_HEIGHT_MAX = 2.4
@@ -76,6 +86,8 @@ export const fontStack = (name, base) => {
 export const DEFAULT_SETTINGS = {
   pageWidth: DEFAULT_PAGE_WIDTH,
   fontSize: DEFAULT_FONT_SIZE,
+  // Source-mode font size offset relative to fontSize (issue #78).
+  sourceFontOffset: DEFAULT_SOURCE_FONT_OFFSET,
   lineHeight: DEFAULT_LINE_HEIGHT,
   paragraphSpacing: DEFAULT_PARA_SPACING,
   // Document (writing) + code font overrides (issue #38). Empty = use the
@@ -98,7 +110,10 @@ export const DEFAULT_SETTINGS = {
   inlineMathDeleteMode: 'protect',
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
-  showHiddenFiles: false
+  showHiddenFiles: false,
+  // Free-form user CSS snippet (issue #81), injected into a dedicated <style>
+  // tag so users can tweak heading colors, inline-code size, etc. Empty = none.
+  userCss: ''
 }
 
 function normalizeWidth(w) {
@@ -114,6 +129,12 @@ function normalizeFontSize(s) {
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(n)))
 }
 
+function normalizeSourceFontOffset(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return DEFAULT_SOURCE_FONT_OFFSET
+  return Math.min(SOURCE_FONT_OFFSET_MAX, Math.max(SOURCE_FONT_OFFSET_MIN, Math.round(n)))
+}
+
 function normalizeInRange(v, min, max, def) {
   const n = Number(v)
   if (!Number.isFinite(n)) return def
@@ -126,6 +147,7 @@ export function loadSettings() {
     return {
       pageWidth: normalizeWidth(raw.pageWidth ?? DEFAULT_PAGE_WIDTH),
       fontSize: normalizeFontSize(raw.fontSize ?? DEFAULT_FONT_SIZE),
+      sourceFontOffset: normalizeSourceFontOffset(raw.sourceFontOffset),
       lineHeight: normalizeInRange(raw.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULT_LINE_HEIGHT),
       paragraphSpacing: normalizeInRange(
         raw.paragraphSpacing,
@@ -139,7 +161,8 @@ export function loadSettings() {
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
-      fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : ''
+      fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',
+      userCss: typeof raw.userCss === 'string' ? raw.userCss : ''
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -175,6 +198,16 @@ export function applyFontSize(size) {
   document.documentElement.style.setProperty(
     '--editor-font-size',
     normalizeFontSize(size) + 'px'
+  )
+}
+
+// Apply the source-mode font offset (issue #78). `.source-editor` computes its
+// font size as calc(--editor-font-size + --source-font-offset), so the source
+// font tracks the body font but can be independently nudged.
+export function applySourceFontOffset(offset) {
+  document.documentElement.style.setProperty(
+    '--source-font-offset',
+    normalizeSourceFontOffset(offset) + 'px'
   )
 }
 

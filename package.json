@@ -33,6 +33,7 @@
     "test:settings-layout-ui": "node scripts/test-settings-layout-ui.mjs",
     "test:settings-update": "node scripts/test-settings-update.mjs",
     "test:settings-actions": "node scripts/test-settings-actions.mjs",
+    "test:editor-style-settings-ui": "node scripts/test-editor-style-settings-ui.mjs",
     "test:command-palette-keybindings-ui": "node scripts/test-command-palette-keybindings-ui.mjs",
     "test:shortcuts": "npm run shortcuts:inventory && npm run test:keybindings && npm run test:keybindings-ui && npm run test:keybindings-persistence-ui && npm run test:keybindings-runtime-ui && npm run test:menu-keybindings-ui && npm run test:settings-ui && npm run test:settings-layout-ui && npm run test:settings-update && npm run test:settings-actions && npm run test:command-palette-keybindings-ui",
     "test:ui-regression": "node scripts/run-ui-regression.mjs",

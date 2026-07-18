@@ -58,10 +58,14 @@ async function main() {
     }
   })()`)
   const revealed = (state) => {
-    if (state.marks?.length !== 1) return false
-    const mark = state.marks[0]
-    const centered = Math.abs((mark.top + mark.bottom) / 2 - state.viewportCenter) < 36
-    const visible = mark.top >= state.viewportTop && mark.bottom <= state.viewportBottom
+    if (!state.marks?.length) return false
+    // A single current source match can paint as multiple overlay rects when the
+    // selected text wraps across visual lines. Treat those fragments as one
+    // revealed range instead of requiring exactly one rectangle.
+    const top = Math.min(...state.marks.map((mark) => mark.top))
+    const bottom = Math.max(...state.marks.map((mark) => mark.bottom))
+    const centered = Math.abs((top + bottom) / 2 - state.viewportCenter) < 36
+    const visible = top >= state.viewportTop && bottom <= state.viewportBottom
     const atBoundary = state.scrollTop <= 1 || state.scrollTop >= state.maxScroll - 1
     return centered || (atBoundary && visible)
   }
