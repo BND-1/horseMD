@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n.jsx'
 import { Icon } from './icons.jsx'
-import { defaultCollapsedHeadings, headingHasChildren } from './outline-model.js'
+import { defaultCollapsedHeadings, headingDepths, headingHasChildren } from './outline-model.js'
 
 // Outline panel. The heading list comes from the parent (App), which reads the
 // editor's RENDERED h1…h6 elements — so every heading the document shows is
@@ -18,9 +18,10 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   // Collapsed set: indices of headings whose children are hidden.
   const [collapsed, setCollapsed] = useState(new Set())
 
-  // Last-seen headings signature, used to detect content changes (not just
-  // array-identity re-renders) so the collapsed set can be reset safely.
-  const prevSigRef = useRef('')
+  // Last-seen outline structure. Collapse state is index-based in rendering,
+  // but user edits commonly change only heading text. Preserve collapse state
+  // across pure text edits and remap it by hierarchy path when headings move.
+  const prevStructureRef = useRef(null)
 
   // A heading `i` is a parent (has foldable children) if a later heading has a
   // deeper level before an equal-or-shallower level re-appears.
@@ -75,17 +76,58 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   const expandAll = () => setCollapsed(new Set())
   const collapseAll = () => setCollapsed(defaultCollapsedHeadings(headings))
 
-  // Reset the collapsed set whenever the headings *content* changes (edit,
-  // reload). Index-based state is only stable while the heading list itself
-  // is unchanged; if a heading at the same index now has different text/level
-  // the old collapsed state would apply to the wrong branch. A signature of
-  // level+text detects this without false-positive resets on plain re-renders.
+  const structureFor = (items) => {
+    const depths = headingDepths(items)
+    const counters = []
+    return items.map((heading, index) => {
+      const depth = depths[index]
+      counters.length = depth + 1
+      counters[depth] = (counters[depth] || 0) + 1
+      for (let i = depth + 1; i < counters.length; i++) counters[i] = 0
+      return {
+        level: heading.level,
+        depth,
+        path: counters.slice(0, depth + 1).join('.')
+      }
+    })
+  }
+
+  // Preserve collapsed state across heading text edits (#70). Resetting on a
+  // `level:text` signature made any title rename collapse the outline back to
+  // defaults. The structural path keeps the user's fold choices attached to
+  // the same hierarchy branch while still falling back to sensible defaults
+  // for newly-added branches.
   useLayoutEffect(() => {
-    const sig = headings.map((h) => h.level + ':' + h.text).join('\n')
-    if (sig !== prevSigRef.current) {
-      prevSigRef.current = sig
+    const nextStructure = structureFor(headings)
+    const prevStructure = prevStructureRef.current
+    if (!prevStructure) {
+      prevStructureRef.current = nextStructure
       setCollapsed(defaultCollapsedHeadings(headings))
+      return
     }
+
+    const prevSig = prevStructure.map((item) => `${item.level}:${item.path}`).join('\n')
+    const nextSig = nextStructure.map((item) => `${item.level}:${item.path}`).join('\n')
+    if (prevSig === nextSig) {
+      prevStructureRef.current = nextStructure
+      return
+    }
+
+    setCollapsed((current) => {
+      const previousCollapsedPaths = new Set(
+        [...current]
+          .map((index) => prevStructure[index]?.path)
+          .filter(Boolean)
+      )
+      const defaults = defaultCollapsedHeadings(headings)
+      const next = new Set()
+      nextStructure.forEach((item, index) => {
+        if (!headingHasChildren(headings, index)) return
+        if (previousCollapsedPaths.has(item.path) || defaults.has(index)) next.add(index)
+      })
+      return next
+    })
+    prevStructureRef.current = nextStructure
   }, [headings])
 
   const activeDisplayIndex =

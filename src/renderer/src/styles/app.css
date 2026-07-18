@@ -3608,27 +3608,31 @@ body.hm-full-width .source-editor {
 }
 .settings-shortcut-recorder {
   min-width: 132px;
-  min-height: 30px;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 3px 7px;
-  border: 1px solid var(--border);
+  padding: 4px 6px;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   cursor: pointer;
+  box-shadow: none;
+  transition: background 0.16s ease, color 0.16s ease;
 }
 .settings-shortcut-recorder:hover {
-  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
 }
 .settings-shortcut-recorder:disabled {
   cursor: default;
   opacity: 0.78;
 }
 .settings-shortcut-recorder:disabled:hover {
-  border-color: var(--border);
+  color: var(--text);
+  background: transparent;
 }
 .settings-shortcut-recorder.recording {
   border-color: var(--accent);
@@ -3638,21 +3642,23 @@ body.hm-full-width .source-editor {
   font-weight: 600;
 }
 .settings-shortcut-recorder kbd {
-  min-width: 28px;
-  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 7px;
-  border: 1px solid var(--border);
-  border-bottom-color: var(--muted);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text-strong);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1;
-  box-shadow: inset 0 -1px 0 var(--border-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+.settings-shortcut-recorder:hover kbd {
+  color: var(--accent-strong);
 }
 .settings-shortcut-action {
   border: 0;
