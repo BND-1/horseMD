@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the full text through the native tooltip while hover preview remains available
   in the typography preview.
 
+### Fixed
+- **Rendered display LaTeX in PDF export** — paragraph formulas written with
+  `$$...$$` are converted from the editor preview into printable MathML before
+  PDF generation, so exported PDFs show the formula instead of the LaTeX source
+  or editor code-block controls.
+
 ## [0.6.5] - 2026-07-16
 
 ### Added

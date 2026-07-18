@@ -8,6 +8,11 @@ const asUint8Array = (value) => {
   return null
 }
 
+const capturePdfPreviewForTest = (payload) => {
+  if (!window.__HORSEMD_TEST_CAPTURE_PDF__) return
+  window.__horsemdLastPdfPreview = payload
+}
+
 export function usePdfPreview({ request, options, delay = 160 }) {
   const [state, setState] = useState({ status: 'idle', token: null, data: null, error: null, warnings: null })
   const [retryVersion, setRetryVersion] = useState(0)
@@ -23,6 +28,7 @@ export function usePdfPreview({ request, options, delay = 160 }) {
     setState((previous) => ({ ...previous, status: 'previewing', error: null }))
     const timer = setTimeout(async () => {
       try {
+        capturePdfPreviewForTest({ source: request.source, options })
         const result = await window.api.previewPDF(request.source, request.defaultName, options)
         if (requestId !== requestIdRef.current) {
           if (result?.token) window.api.disposePDFPreview(result.token).catch(() => {})
@@ -40,8 +46,26 @@ export function usePdfPreview({ request, options, delay = 160 }) {
           error: null,
           warnings: result.warnings || null
         })
+        capturePdfPreviewForTest({
+          source: request.source,
+          options,
+          result: {
+            ok: true,
+            token: result.token,
+            bytes: data.length,
+            warnings: result.warnings || null
+          }
+        })
       } catch (error) {
         if (requestId !== requestIdRef.current) return
+        capturePdfPreviewForTest({
+          source: request.source,
+          options,
+          result: {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error || '')
+          }
+        })
         setState((previous) => ({
           ...previous,
           status: 'error',

@@ -103,6 +103,10 @@ const standalone = [
   {
     name: 'Issues 74-75: inline math deletion and font picker names',
     script: 'scripts/test-issues-74-75-ui.mjs'
+  },
+  {
+    name: 'PDF LaTeX: display math prints rendered output',
+    script: 'scripts/test-pdf-latex-ui.mjs'
   }
 ]
 

@@ -64,6 +64,14 @@ const BASE_PDF_CSS = `
   .doc tr:nth-child(even) td { background: #faf8f4; }
   .doc img, .doc svg { max-width: 100%; height: auto; display: block; margin: 1em auto; break-inside: avoid; }
   .doc img { border-radius: 6px; }
+  .doc figure {
+    margin: 1.1em 0; text-align: center; break-inside: avoid; page-break-inside: avoid;
+  }
+  .doc math { font-size: 1.05em; }
+  .doc math[display="block"] {
+    display: inline-block; max-width: 100%; overflow-x: auto;
+    font-size: 1.18em; break-inside: avoid; page-break-inside: avoid;
+  }
   .doc hr { border: none; border-top: 1px solid #e6e1d8; margin: 1.8em 0; }
   .doc input[type="checkbox"] { margin-right: 0.4em; }
   .pdf-toc { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif; color: #2a2620; }

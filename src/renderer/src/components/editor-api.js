@@ -21,6 +21,37 @@ const stripEditorOnlyForExport = (clone) => {
     .forEach((el) => el.remove())
 }
 
+const cleanMathForExport = (math, { display } = {}) => {
+  const copy = math.cloneNode(true)
+  ;[...copy.childNodes].forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) node.remove()
+  })
+  if (display) copy.setAttribute('display', 'block')
+  return copy
+}
+
+const replaceKatexWithMathml = (root) => {
+  root.querySelectorAll('.katex-display').forEach((display) => {
+    const math = display.querySelector('math')
+    if (math) display.replaceWith(cleanMathForExport(math, { display: true }))
+  })
+  root.querySelectorAll('.katex').forEach((katex) => {
+    const math = katex.querySelector('math')
+    if (math) katex.replaceWith(cleanMathForExport(math))
+  })
+}
+
+const materializeLatexPreviewsForExport = (clone) => {
+  const doc = clone.ownerDocument
+  clone.querySelectorAll('.milkdown-code-block').forEach((block) => {
+    const math = block.querySelector('.preview-panel math')
+    if (!math) return
+    const wrapper = doc.createElement('figure')
+    wrapper.appendChild(cleanMathForExport(math, { display: true }))
+    block.replaceWith(wrapper)
+  })
+}
+
 const flattenCodeMirrorBlocks = (clone) => {
   const doc = clone.ownerDocument
   clone.querySelectorAll('.cm-editor').forEach((cm) => {
@@ -59,8 +90,10 @@ export function createEditorApi({
     const v = viewRef.current
     if (!v) return null
     const clone = v.dom.cloneNode(true)
+    materializeLatexPreviewsForExport(clone)
     stripEditorOnlyForExport(clone)
     flattenCodeMirrorBlocks(clone)
+    replaceKatexWithMathml(clone)
     stripEditorAttributes(clone)
     const headings = [...clone.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading, index) => {
       const id = `hm-pdf-heading-${index + 1}`
