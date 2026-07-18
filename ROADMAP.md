@@ -30,6 +30,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 - 完善 Windows、macOS 与移动端安装、更新和发布流程。
 - 持续验证 Linux `.deb` 的安装、文件关联、窗口控制和发布流水线。
 - 继续补充自动化测试，优先覆盖保存/dirty、模式切换、查找、Review、工作区和大文档。
+- 新 AI / 新开发者接手时，先按 [docs/ai-handoff.md](./docs/ai-handoff.md) 建立项目上下文，再开始修改代码。
 
 ## 自定义快捷键（第一版已落地）
 

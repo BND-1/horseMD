@@ -8,6 +8,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [ai-handoff.md](./ai-handoff.md) | 新 AI / 新开发者接手手册：项目地图、用户习惯、风险区、测试矩阵、网站与发布规则 |
 | [architecture.md](./architecture.md) | 技术栈、进程模型、目录结构、关键模块与数据流 |
 | [features.md](./features.md) | 每个功能的用法 + 实现方式（对应到具体文件） |
 | [implementation-notes.md](./implementation-notes.md) | 开发过程中踩的坑、关键 bug 的根因与修法、设计决策 |
@@ -35,4 +36,4 @@ npm start          # 运行已构建的应用
 npm run dist       # 打当前系统安装包（Windows NSIS / macOS dmg+zip）
 ```
 
-> 仓库根目录的 [CLAUDE.md](../CLAUDE.md) 是给 AI / 新同学的速查（命令、约定、跨平台规则），细节看本目录各篇。
+> 新 AI 先读 [ai-handoff.md](./ai-handoff.md) 和仓库根目录的 [AGENTS.md](../AGENTS.md)，再按需进入 [CLAUDE.md](../CLAUDE.md) 与本目录各篇细节文档。

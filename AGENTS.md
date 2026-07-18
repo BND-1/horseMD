@@ -58,7 +58,7 @@ Keep Electron renderer access behind `window.api`; do not enable Node integratio
 
 ## Operational Notes From CLAUDE.md
 
-Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` and `docs/` contain deeper history and root-cause writeups.
+Use this section as the short, high-signal handoff for AI agents. Start with `docs/ai-handoff.md` for the current project state, user working style, risk map, website/guide ownership, and verification matrix. `CLAUDE.md` and the rest of `docs/` contain deeper history and root-cause writeups.
 
 ### Cross-Platform Contract
 
@@ -103,6 +103,7 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - Main-process preview generation is latest-request-only per renderer. New settings cancel stale hidden-window work.
 - Keep PDF temporary documents script-free through CSP and retain Electron's default web security policy.
 - A printed contents page and the embedded PDF navigation outline are independent features.
+- Display LaTeX blocks are preview-backed CodeMirror blocks in the editor, but PDF export must print rendered MathML, not the raw `$$...$$` source or editor controls. Keep `scripts/test-pdf-latex-ui.mjs` in the UI regression matrix.
 
 ### Feature-Specific Notes
 

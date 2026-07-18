@@ -3,6 +3,11 @@
 Guidance for Claude / AI agents (and new devs) working in this repo. Keep it
 short; deep detail lives in [`docs/`](./docs/).
 
+> New AI handoff: read [`docs/ai-handoff.md`](./docs/ai-handoff.md) first. It
+> captures the current project state, user working style, risk map, website/guide
+> ownership, verification matrix, and recent stable baseline. This file remains
+> the detailed historical convention book.
+
 ## What this is
 
 **HorseMD** — a warm, Typora-style Markdown editor. Electron shell + Vite +

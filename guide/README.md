@@ -30,3 +30,4 @@ npm run guide:check
 - `scripts/check-content.mjs`：内容和版本一致性检查。
 
 教程维护与截图流程见 [`docs/user-guide-maintenance.md`](../docs/user-guide-maintenance.md)。
+凡是用户可见功能变更，都要同步更新对应教程页；截图必须来自重新构建并安装后的当前版本应用，使用隔离 profile，不能出现私人路径或过期 UI。
