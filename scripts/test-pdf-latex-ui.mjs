@@ -80,5 +80,5 @@ try {
   }
   console.log(`PASS PDF LaTeX UI: ${JSON.stringify(snapshot)}`)
 } finally {
-  await stopBuiltElectron(app, { removeProfile: true })
+  await stopBuiltElectron(app)
 }

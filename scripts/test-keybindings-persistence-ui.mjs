@@ -1,13 +1,36 @@
-import { rm } from 'node:fs/promises'
-import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
+﻿import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 
-const PROFILE_DIR = '/tmp/horsemd-keybindings-persistence-ui'
 const CDP_PORT = 9333
 
-function uiScript({ mode }) {
+async function closeGracefully(app) {
+  try {
+    await app.evaluate(`(() => {
+      window.api.confirmAppClose?.()
+      window.api.windowClose?.()
+      return true
+    })()`)
+  } catch {
+    // Fall back to the shared terminator below.
+  }
+  if (app?.child && app.child.exitCode == null) {
+    await Promise.race([
+      new Promise((resolve) => app.child.once('exit', resolve)),
+      new Promise((resolve) => setTimeout(resolve, 3000))
+    ])
+  }
+  if (app?.child?.exitCode == null) await stopBuiltElectron(app)
+  else {
+    try {
+      app?.ws?.close()
+    } catch {}
+  }
+}
+
+function uiScript({ mode, primaryMod }) {
   return `(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const storageKey = 'horsemd.keybindings.v1'
+    const primaryMod = ${JSON.stringify(primaryMod)}
     const visible = (element) => {
       if (!element) return false
       const rect = element.getBoundingClientRect()
@@ -37,11 +60,12 @@ function uiScript({ mode }) {
       const title = textOf(row.querySelector('.settings-shortcut-title')).toLowerCase()
       return candidates.some((candidate) => title === candidate.toLowerCase())
     })
-    const dispatchKey = async ({ key, code, metaKey = false, altKey = false }) => {
+    const dispatchKey = async ({ key, code, metaKey = false, ctrlKey = false, altKey = false }) => {
       window.dispatchEvent(new KeyboardEvent('keydown', {
         key,
         code,
         metaKey,
+        ctrlKey,
         altKey,
         bubbles: true,
         cancelable: true
@@ -61,7 +85,7 @@ function uiScript({ mode }) {
       (button) => button.title === '设置' || button.title === 'Settings' || textOf(button) === '设置' || textOf(button) === 'Settings',
       'settings'
     )
-    await clickButton((button) => ['键盘快捷键', 'Keyboard'].includes(textOf(button)), 'keyboard section')
+    await clickButton((button) => /Keyboard|键盘快捷键/.test(textOf(button)), 'keyboard section')
     await setSearch('保存')
     if (!rowByTitle(['保存', 'Save'])) await setSearch('save')
     const saveRow = rowByTitle(['保存', 'Save'])
@@ -76,7 +100,7 @@ function uiScript({ mode }) {
       if (!recorder) throw new Error('Missing recorder')
       recorder.click()
       await sleep(160)
-      await dispatchKey({ key: 's', code: 'KeyS', metaKey: true, altKey: true })
+      await dispatchKey({ key: 's', code: 'KeyS', ...primaryMod, altKey: true })
     }
 
     const rawStorage = localStorage.getItem(storageKey)
@@ -85,7 +109,7 @@ function uiScript({ mode }) {
     if (binding !== 'Mod+Alt+S') {
       throw new Error('Expected persisted Mod+Alt+S, got ' + binding)
     }
-    if (!/⌥|Alt/.test(textOf(saveRow))) {
+    if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(saveRow))) {
       throw new Error('Save row does not display the customized shortcut: ' + textOf(saveRow))
     }
     const menu = await waitForMenu('CmdOrCtrl+Alt+S')
@@ -97,32 +121,33 @@ function uiScript({ mode }) {
 }
 
 async function main() {
-  await rm(PROFILE_DIR, { recursive: true, force: true })
+  const profileDir = `/tmp/horsemd-keybindings-persistence-ui-${process.pid}-${Date.now()}`
+  const primaryMod = process.platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
 
   let app = await launchBuiltElectron({
-    profileDir: PROFILE_DIR,
+    profileDir,
     port: CDP_PORT,
     cleanProfile: false
   })
   try {
-    const first = await app.evaluate(uiScript({ mode: 'write' }))
+    const first = await app.evaluate(uiScript({ mode: 'write', primaryMod }))
     if (!first?.ok) throw new Error('Initial persistence write failed')
+    await new Promise((resolve) => setTimeout(resolve, 1000))
   } finally {
-    await stopBuiltElectron(app)
+    await closeGracefully(app)
   }
 
   app = await launchBuiltElectron({
-    profileDir: PROFILE_DIR,
+    profileDir,
     port: CDP_PORT,
     cleanProfile: false
   })
   try {
-    const second = await app.evaluate(uiScript({ mode: 'read' }))
+    const second = await app.evaluate(uiScript({ mode: 'read', primaryMod }))
     if (!second?.ok) throw new Error('Persistence read after restart failed')
     console.log(`keybindings persisted after restart: ${second.binding}, menu ${second.menuSave}`)
   } finally {
-    await stopBuiltElectron(app, { removeProfile: true })
-    await rm(PROFILE_DIR, { recursive: true, force: true })
+    await stopBuiltElectron(app)
   }
 }
 

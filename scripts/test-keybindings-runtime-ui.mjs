@@ -1,13 +1,16 @@
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 
+const primaryMod = process.platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
+
 async function main() {
   const app = await launchBuiltElectron({
-    profileDir: '/tmp/horsemd-keybindings-runtime-ui',
+    profileDir: `/tmp/horsemd-keybindings-runtime-ui-${process.pid}-${Date.now()}`,
     port: 9445
   })
 
   try {
     const result = await app.evaluate(`(async () => {
+      const primaryMod = ${JSON.stringify(primaryMod)}
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
       const visible = (element) => {
         if (!element) return false
@@ -47,7 +50,7 @@ async function main() {
         window.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'B',
           code: 'KeyB',
-          metaKey: true,
+          ...primaryMod,
           shiftKey: true,
           bubbles: true,
           cancelable: true
@@ -58,7 +61,7 @@ async function main() {
         window.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'F',
           code: 'KeyF',
-          metaKey: true,
+          ...primaryMod,
           bubbles: true,
           cancelable: true
         }))
@@ -69,7 +72,7 @@ async function main() {
         (button) => button.title === '设置' || button.title === 'Settings' || textOf(button) === '设置' || textOf(button) === 'Settings',
         'settings'
       )
-      await clickButton((button) => ['键盘快捷键', 'Keyboard'].includes(textOf(button)), 'keyboard section')
+      await clickButton((button) => /键盘快捷键|Keyboard/.test(textOf(button)), 'keyboard section')
       await clickButton((button) => ['全部恢复默认', 'Reset all'].includes(textOf(button)), 'reset all')
       await setSearch('侧边栏')
       if (!rowByTitle(['切换侧边栏', 'Toggle Sidebar'])) await setSearch('sidebar')
@@ -132,7 +135,7 @@ async function main() {
     if (!result?.ok) throw new Error('Runtime keybinding UI test failed')
     console.log('keybindings runtime UI ok: clear disables, reset restores, shortcut toggles once')
   } finally {
-    await stopBuiltElectron(app, { removeProfile: true })
+    await stopBuiltElectron(app)
   }
 }
 

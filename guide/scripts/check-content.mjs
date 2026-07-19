@@ -74,7 +74,7 @@ const referencedImages = new Set()
 for (const file of markdownFiles) {
   const relative = path.relative(guideRoot, file)
   const source = await fs.readFile(file, 'utf8')
-  const frontmatter = source.match(/^---\n([\s\S]*?)\n---/)
+  const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (!frontmatter) {
     errors.push(`${relative}: missing frontmatter`)
     continue

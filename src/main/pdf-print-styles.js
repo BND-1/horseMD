@@ -56,10 +56,17 @@ const BASE_PDF_CSS = `
     background: none; padding: 0; color: #2a2620; font-size: 0.86em; line-height: 1.6;
     white-space: pre-wrap; word-break: break-word;
   }
-  .doc table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.95em; }
+  .doc table {
+    border-collapse: collapse; width: 100%; max-width: 100%; margin: 1em 0;
+    font-size: 0.9em; table-layout: fixed;
+    break-inside: auto; page-break-inside: auto;
+  }
   .doc thead { display: table-header-group; }
-  .doc tr { break-inside: avoid; page-break-inside: avoid; }
-  .doc th, .doc td { border: 1px solid #e6e1d8; padding: 8px 12px; text-align: left; vertical-align: top; }
+  .doc tr, .doc th, .doc td { break-inside: auto; page-break-inside: auto; }
+  .doc th, .doc td {
+    border: 1px solid #e6e1d8; padding: 6px 8px; text-align: left; vertical-align: top;
+    min-width: 0; max-width: 0; overflow-wrap: anywhere; word-break: break-word; white-space: normal;
+  }
   .doc th { background: #f4f1ea; font-weight: 700; color: #16130e; }
   .doc tr:nth-child(even) td { background: #faf8f4; }
   .doc img, .doc svg { max-width: 100%; height: auto; display: block; margin: 1em auto; break-inside: avoid; }

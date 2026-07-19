@@ -6,7 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-19
+
 ### Added
+- **Cloud sync folders** — desktop Settings now includes a Cloud Sync workflow
+  for explicit local-folder registration, WebDAV and S3-compatible connections,
+  hidden workspace identity markers, sync previews, directional upload/download,
+  bidirectional sync, and conflict-preserving behavior.
 - **Outline section reordering** (#82) — on desktop, drag a heading's grip in
   the outline to reorder it together with all of its descendant headings and
   body content. Reordering is limited to siblings, so a subsection cannot be
@@ -30,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Modular Settings center** — the previous monolithic Settings page is split
   into focused General, Editor, Appearance, Files & Images, Keyboard, and About
   modules, keeping existing preferences and defaults intact.
+- **Cloud sync local-folder tip** — the Sync folders section now explains that
+  cloud sync starts from an existing local folder before choosing or joining a
+  cloud workspace.
+- **Clearer shortcut conflict feedback** — when a recorded shortcut is already
+  used by another command, Settings now marks the edited row and says the
+  shortcut was not saved instead of relying only on a page-level warning.
 - **Unified editor styling controls** — typography, source font size, and Custom
   CSS now live together under Editor settings, with a small HorseMD-style preview
   that uses the same `.milkdown .ProseMirror` document selectors as the real
@@ -40,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   in the typography preview.
 
 ### Fixed
+- **Windows rich-editor scrolling regression** — medium CJK-heavy documents no
+  longer enable rich `content-visibility` only because of raw character count,
+  and Windows trims redundant KaTeX MathML DOM in the live editor. This fixes
+  scroll and browsing jank in files such as `WhatIf因果推断详细笔记.md` while
+  keeping truly huge rich documents on the fast path.
+- **Long table PDF printing** — PDF table styles now constrain wide tables to
+  the page, wrap long cell content, and allow rows/cells to paginate so long
+  tables are not clipped to only part of their content.
+- **Launch-file race** — the renderer registers the open-path listener before
+  signaling app readiness, so first-launch file arguments do not get lost behind
+  the restored welcome/session tabs.
 - **External-save conflict warning** — when an open file is saved by another
   application, a clean HorseMD tab still reloads automatically. A tab with
   unsaved local edits now keeps those edits and shows one clear native warning
@@ -601,7 +624,10 @@ page width, in-cell line breaks, an Intel macOS build, and a nicer update prompt
 - Dark/light themes, session restore, single-instance file association.
 - Windows NSIS installer and macOS dmg/zip packaging.
 
-[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/BND-1/horseMD/compare/v0.6.5...v0.7.2
+[0.6.5]: https://github.com/BND-1/horseMD/compare/v0.6.0...v0.6.5
+[0.6.0]: https://github.com/BND-1/horseMD/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/BND-1/horseMD/compare/v0.5.2...v0.5.5
 [0.2.0]: https://github.com/BND-1/horseMD/compare/v0.1.7...v0.2.0
 [0.1.7]: https://github.com/BND-1/horseMD/compare/v0.1.6...v0.1.7

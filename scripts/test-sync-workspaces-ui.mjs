@@ -11,6 +11,21 @@ const markerPath = join(notes, '.horsemd', 'workspace.json')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+async function removeWithRetry(path) {
+  let lastError = null
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(error?.code)) throw error
+      await sleep(250 * (attempt + 1))
+    }
+  }
+  throw lastError
+}
+
 async function openSyncSettings(app) {
   await app.evaluate(`(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -105,7 +120,7 @@ try {
     await stopBuiltElectron(app)
   }
 } finally {
-  await rm(root, { recursive: true, force: true })
+  await removeWithRetry(root)
 }
 
 console.log('PASS sync workspaces UI: local-only folder, opt-in registration and restart persistence')

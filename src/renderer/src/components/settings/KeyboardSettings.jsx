@@ -15,6 +15,23 @@ function commandCategoryLabel(category, t) {
   return t(`settings.keyboard.category.${category}`)
 }
 
+function shortcutIssueMessage(issue, platform, t) {
+  if (!issue) return ''
+  if (issue.type === 'conflict') {
+    return t('settings.keyboardConflict', {
+      keys: keybindingToDisplay(issue.binding, platform),
+      command: getCommandTitle(issue.conflicts[0].command || { id: issue.conflicts[0].commandId }, t)
+    })
+  }
+  if (issue.type === 'reserved') {
+    return t('settings.keyboardReserved', {
+      keys: keybindingToDisplay(issue.binding, platform),
+      reason: t(`settings.keyboardReserved.${issue.reason}`)
+    })
+  }
+  return ''
+}
+
 export default function KeyboardSettings({
   effectiveKeybindings,
   keybindingState,
@@ -57,13 +74,13 @@ export default function KeyboardSettings({
       if (!binding) return
       const reservedReason = getReservedKeybindingReason(binding, platform)
       if (reservedReason) {
-        setReserved({ commandId: recordingId, binding, reason: reservedReason })
+        setReserved({ type: 'reserved', commandId: recordingId, binding, reason: reservedReason })
         setConflict(null)
         return
       }
       const conflicts = getConflictsForCommand(recordingId, [binding], effectiveKeybindings, platform)
       if (conflicts.length) {
-        setConflict({ commandId: recordingId, binding, conflicts })
+        setConflict({ type: 'conflict', commandId: recordingId, binding, conflicts })
         setReserved(null)
         return
       }
@@ -88,19 +105,13 @@ export default function KeyboardSettings({
         </button>
       </div>
       {conflict && (
-        <div className="settings-shortcut-conflict">
-          {t('settings.keyboardConflict', {
-            keys: keybindingToDisplay(conflict.binding, platform),
-            command: getCommandTitle(conflict.conflicts[0].command || { id: conflict.conflicts[0].commandId }, t)
-          })}
+        <div className="settings-shortcut-conflict" role="alert">
+          {shortcutIssueMessage(conflict, platform, t)}
         </div>
       )}
       {reserved && (
-        <div className="settings-shortcut-conflict">
-          {t('settings.keyboardReserved', {
-            keys: keybindingToDisplay(reserved.binding, platform),
-            reason: t(`settings.keyboardReserved.${reserved.reason}`)
-          })}
+        <div className="settings-shortcut-conflict" role="alert">
+          {shortcutIssueMessage(reserved, platform, t)}
         </div>
       )}
       <input
@@ -136,47 +147,58 @@ export default function KeyboardSettings({
                   const shown = bindings.map((binding) => keybindingToDisplay(binding, platform)).filter(Boolean)
                   const customized = Object.prototype.hasOwnProperty.call(keybindingState?.overrides || {}, command.id)
                   const configurable = command.configurable !== false
+                  const rowIssue = conflict?.commandId === command.id ? conflict : reserved?.commandId === command.id ? reserved : null
+                  const rowIssueMessage = shortcutIssueMessage(rowIssue, platform, t)
                   return (
-                    <div className="settings-shortcut-row" key={command.id}>
+                    <div className={`settings-shortcut-row${rowIssue ? ' has-error' : ''}`} key={command.id}>
                       <div className="settings-shortcut-title">{getCommandTitle(command, t)}</div>
-                      <div className="settings-shortcut-controls">
-                        <button
-                          type="button"
-                          className={`settings-shortcut-recorder${recordingId === command.id ? ' recording' : ''}`}
-                          disabled={!configurable}
-                          onClick={() => {
-                            if (!configurable) return
-                            setRecordingId(command.id)
-                            setConflict(null)
-                            setReserved(null)
-                          }}
-                        >
-                          {recordingId === command.id
-                            ? t('settings.keyboardRecording')
-                            : shown.length
-                              ? shown.map((label) => <kbd key={label}>{label}</kbd>)
-                              : <span className="settings-shortcut-empty">{t('settings.keyboardUnassigned')}</span>}
-                        </button>
-                        <button
-                          type="button"
-                          className="settings-shortcut-action"
-                          disabled={!configurable}
-                          onClick={() => onSetKeybindings(command.id, [])}
-                          title={t('settings.keyboardClear')}
-                        >
-                          {t('settings.keyboardClear')}
-                        </button>
-                        {customized && configurable && (
+                      <div className="settings-shortcut-cell">
+                        <div className="settings-shortcut-controls">
+                          <button
+                            type="button"
+                            className={`settings-shortcut-recorder${recordingId === command.id ? ' recording' : ''}${rowIssue ? ' error' : ''}`}
+                            disabled={!configurable}
+                            aria-invalid={rowIssue ? 'true' : undefined}
+                            aria-describedby={rowIssue ? `shortcut-error-${command.id}` : undefined}
+                            onClick={() => {
+                              if (!configurable) return
+                              setRecordingId(command.id)
+                              setConflict(null)
+                              setReserved(null)
+                            }}
+                          >
+                            {recordingId === command.id
+                              ? t('settings.keyboardRecording')
+                              : shown.length
+                                ? shown.map((label) => <kbd key={label}>{label}</kbd>)
+                                : <span className="settings-shortcut-empty">{t('settings.keyboardUnassigned')}</span>}
+                          </button>
                           <button
                             type="button"
                             className="settings-shortcut-action"
-                            onClick={() => onResetCommand(command.id)}
-                            title={t('settings.keyboardReset')}
+                            disabled={!configurable}
+                            onClick={() => onSetKeybindings(command.id, [])}
+                            title={t('settings.keyboardClear')}
                           >
-                            {t('settings.keyboardReset')}
+                            {t('settings.keyboardClear')}
                           </button>
+                          {customized && configurable && (
+                            <button
+                              type="button"
+                              className="settings-shortcut-action"
+                              onClick={() => onResetCommand(command.id)}
+                              title={t('settings.keyboardReset')}
+                            >
+                              {t('settings.keyboardReset')}
+                            </button>
+                          )}
+                          {!configurable && <span className="settings-shortcut-fixed">{t('settings.keyboardFixed')}</span>}
+                        </div>
+                        {rowIssue && (
+                          <div className="settings-shortcut-inline-error" id={`shortcut-error-${command.id}`} role="alert">
+                            {rowIssueMessage}
+                          </div>
                         )}
-                        {!configurable && <span className="settings-shortcut-fixed">{t('settings.keyboardFixed')}</span>}
                       </div>
                     </div>
                   )

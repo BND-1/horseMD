@@ -23,6 +23,7 @@ import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
+import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
 import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
@@ -106,6 +107,11 @@ export function createConfiguredCrepe({
         previewToggleText: (previewOnly) =>
           previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode'),
         extensions: [tabAtCursorKeymap]
+      },
+      [Feature.Latex]: {
+        katexOptions: {
+          output: window.api?.platform === 'win32' ? 'html' : 'htmlAndMathml'
+        }
       }
     }
   })
@@ -160,6 +166,7 @@ export function createConfiguredCrepe({
       createInlineCodeEditingPlugin(),
       createTaskListInputPlugin(),
       createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
+      createKatexDomPrunePlugin(),
       mathPreviewPlugin(getT),
       createSlashPlugin(ctx, getT),
       toolbarAutohidePlugin(),

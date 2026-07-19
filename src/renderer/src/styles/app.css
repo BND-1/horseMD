@@ -2870,6 +2870,20 @@ body.hm-full-width .source-editor {
   padding-right: 60px;
 }
 
+/* Windows text layout is the bottleneck for CJK-heavy rich documents. The app
+   body uses optimizeLegibility for chrome polish, but inherited into thousands
+   of editor text runs it makes Chromium's Windows text shaping noticeably more
+   expensive than macOS. Keep the editor at normal text rendering and paint-
+   contain paragraphs so repaint does not spread across long CJK text runs while
+   scrolling. Do not use layout containment: ProseMirror's list and block margins
+   depend on normal block layout. */
+.app.is-win .milkdown .ProseMirror {
+  text-rendering: auto;
+}
+.app.is-win .milkdown .ProseMirror p:not(:has(.hm-review-widget)) {
+  contain: paint;
+}
+
 /* Find Bar */
 .findbar {
   position: absolute;
@@ -3750,6 +3764,24 @@ body.hm-full-width .source-editor {
 .sync-folder-list {
   border-top: 1px solid var(--border-soft);
 }
+.sync-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.sync-tip svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
 .sync-folder-row {
   display: flex;
   align-items: center;
@@ -4106,11 +4138,14 @@ body.hm-full-width .source-editor {
 .settings-shortcut-row {
   min-height: 42px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-soft);
+}
+.settings-shortcut-row.has-error {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 .settings-shortcut-row:last-child {
   border-bottom: 0;
@@ -4119,9 +4154,17 @@ body.hm-full-width .source-editor {
   min-width: 0;
   color: var(--text);
   font-size: 13px;
+  padding-top: 7px;
+}
+.settings-shortcut-cell {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
 }
 .settings-shortcut-controls {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -4161,6 +4204,13 @@ body.hm-full-width .source-editor {
   color: var(--accent-strong);
   font-size: 12px;
   font-weight: 600;
+}
+.settings-shortcut-recorder.error {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
+  background: color-mix(in srgb, var(--danger) 11%, var(--bg));
+}
+.settings-shortcut-recorder.error kbd {
+  color: var(--danger);
 }
 .settings-shortcut-recorder kbd {
   display: inline-flex;
@@ -4208,6 +4258,13 @@ body.hm-full-width .source-editor {
   color: var(--text);
   font-size: 12.5px;
   line-height: 1.5;
+}
+.settings-shortcut-inline-error {
+  max-width: 360px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: right;
 }
 .settings-shortcut-empty,
 .settings-shortcut-note {
@@ -4499,6 +4556,14 @@ body.hm-full-width .source-editor {
   width: 100%;
   justify-content: flex-start;
   flex-wrap: wrap;
+}
+.app.is-mobile .settings-shortcut-cell {
+  width: 100%;
+  align-items: flex-start;
+}
+.app.is-mobile .settings-shortcut-inline-error {
+  max-width: 100%;
+  text-align: left;
 }
 .welcome-card {
   text-align: center;

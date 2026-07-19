@@ -5,7 +5,7 @@
 //   createMenuHandlers({...actions}) — the command-name → action map stored in
 //     a ref and invoked by the menu IPC, the keyboard shortcuts, and the palette.
 //     pickEditableId lives here (only save/saveAs/exportPdf use it).
-//   useGlobalKeys({...}) — registers onMenu/onOpenPaths/onOpenFolderPath/
+//   useGlobalKeys({...}) — registers onMenu/onOpenFolderPath/
 //     onAppCloseRequest + the Ctrl+Tab, Ctrl+Shift+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
@@ -181,7 +181,6 @@ export function useGlobalKeys({
       if (shouldBlockForSettings(handler, activeTabKind)) return
       handlers.current[handler]?.()
     })
-    const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
     // A folder arriving from Explorer's "Open with HorseMD" folder menu: add it
     // to the active workspace (multi-root). Never open a relative path.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
@@ -207,12 +206,11 @@ export function useGlobalKeys({
     })
     return () => {
       offMenu()
-      offOpen()
       offFolder?.()
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openPaths, openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers, activeTabKind])
+  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers, activeTabKind])
 
   // Tab cycling uses the user keybinding map. The defaults intentionally remain
   // Ctrl+Tab / Ctrl+Shift+Tab on macOS to preserve the historical behavior.

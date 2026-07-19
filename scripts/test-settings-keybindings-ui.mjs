@@ -3,8 +3,10 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { COMMAND_DEFINITIONS, getCommandTitle, isCommandAvailable } from '../src/renderer/src/lib/commands/command-definitions.js'
 import { keybindingToDisplay } from '../src/renderer/src/lib/commands/keybinding-normalize.js'
 import { readFileSync } from 'node:fs'
+import { mkdtemp } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
-const PROFILE_DIR = '/tmp/horsemd-keybindings-ui'
 const PLATFORM = process.platform
 const i18nSource = readFileSync(new URL('../src/renderer/src/i18n.jsx', import.meta.url), 'utf8')
 const englishSource = i18nSource.slice(i18nSource.indexOf('  en: {'), i18nSource.indexOf('\n  zh: {'))
@@ -43,8 +45,9 @@ const EXPECTED_COMMANDS = COMMAND_DEFINITIONS
   }))
 
 async function main() {
+  const profileDir = await mkdtemp(join(tmpdir(), 'horsemd-keybindings-ui-'))
   const app = await launchBuiltElectron({
-    profileDir: PROFILE_DIR,
+    profileDir,
     port: Number(process.env.CDP_PORT || 9449),
     cleanProfile: true
   })
@@ -52,8 +55,10 @@ async function main() {
 
   try {
     const expectedCommands = JSON.stringify(EXPECTED_COMMANDS)
+    const primaryMod = PLATFORM === 'darwin' ? { metaKey: true } : { ctrlKey: true }
     const result = await evaluate(`(async () => {
       const expectedCommands = ${expectedCommands}
+      const primaryMod = ${JSON.stringify(primaryMod)}
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
       const storageKey = 'horsemd.keybindings.v1'
       const beforeStorage = localStorage.getItem(storageKey)
@@ -197,17 +202,26 @@ async function main() {
       }
 
       await clickRecorder(saveRow)
-      await dispatchKey({ key: 'o', code: 'KeyO', metaKey: true })
+      await dispatchKey({ key: 'o', code: 'KeyO', ...primaryMod })
       const conflictText = textOf(document.querySelector('.settings-shortcut-conflict'))
       if (!conflictText || !/打开|Open/.test(conflictText)) {
         throw new Error('Conflict warning did not mention open command: ' + conflictText)
+      }
+      await sleep(80)
+      const saveRowWithConflict = rowByTitle(['淇濆瓨', 'Save'])
+      const inlineConflictText = textOf(saveRowWithConflict?.querySelector('.settings-shortcut-inline-error'))
+      if (!inlineConflictText || !/鎵撳紑|Open/.test(inlineConflictText)) {
+        throw new Error('Inline conflict warning did not mention open command: ' + inlineConflictText)
+      }
+      if (!saveRowWithConflict?.classList.contains('has-error') || !saveRowWithConflict.querySelector('.settings-shortcut-recorder.error')) {
+        throw new Error('Conflicting shortcut did not mark the edited row')
       }
       if (Object.prototype.hasOwnProperty.call(storedOverrides(), 'file.save')) {
         throw new Error('Conflicting shortcut changed storage')
       }
 
       await clickRecorder(saveRow)
-      await dispatchKey({ key: 's', code: 'KeyS', metaKey: true, altKey: true })
+      await dispatchKey({ key: 's', code: 'KeyS', ...primaryMod, altKey: true })
       const saveBinding = storedOverrides()?.['file.save']?.[0]
       if (saveBinding !== 'Mod+Alt+S') {
         throw new Error('Custom save shortcut was not stored: ' + saveBinding)
@@ -226,7 +240,7 @@ async function main() {
 
       await clickRecorder(saveRow)
       await clickButton((button) => ['通用', '常规', 'General'].includes(textOf(button)), 'general section')
-      await dispatchKey({ key: 'n', code: 'KeyN', metaKey: true, altKey: true })
+      await dispatchKey({ key: 'n', code: 'KeyN', ...primaryMod, altKey: true })
       const afterLeavingKeyboard = localStorage.getItem(storageKey)
       if (afterLeavingKeyboard !== afterEscape) {
         throw new Error('Recorder listener stayed active after leaving keyboard page')
@@ -265,7 +279,7 @@ async function main() {
     if (!result?.ok) throw new Error('Settings keybindings UI test failed')
     console.log(`settings keybindings UI ok: ${result.commandCount} commands, ${result.filteredCount} filtered rows`)
   } finally {
-      await stopBuiltElectron(app, { removeProfile: true })
+    await stopBuiltElectron(app)
     await sleep(50)
   }
 }

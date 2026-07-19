@@ -72,6 +72,14 @@ export function useAppLifecycle({
     }
   }, [tabsRef])
 
+  // Register the launch-file listener before the restore effect below calls
+  // appReady(). Main delivers queued argv/open-file paths immediately on that
+  // signal, so registering this in the later global menu hook races on empty
+  // sessions and can leave a file launch stuck on the welcome document.
+  useEffect(() => {
+    return window.api.onOpenPaths((paths) => openPaths(paths))
+  }, [openPaths])
+
   // Restore session tabs on first mount
   useEffect(() => {
     const paths = (session.openPaths || []).filter(Boolean)

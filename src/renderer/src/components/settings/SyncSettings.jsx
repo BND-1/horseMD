@@ -386,6 +386,10 @@ export default function SyncSettings({
           {t('sync.addFolder')}
         </button>
       </div>
+      <div className="sync-tip">
+        <Icon name="info" size={15} />
+        <span>{t('sync.localFolderTip')}</span>
+      </div>
       {loading && <div className="sync-empty">{t('sync.loading')}</div>}
       {!loading && <div className="sync-folder-list">
         {registered.map((entry) => {

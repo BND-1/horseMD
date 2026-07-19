@@ -10,7 +10,7 @@
 //   - Split: panes are flex siblings; visibility is display/order, NO re-parenting.
 import Editor from '../Editor.jsx'
 import { Icon } from '../icons.jsx'
-import { isPlainTextDoc } from '../../paths.js'
+import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
 
 export default function EditorArea({
@@ -92,12 +92,12 @@ export default function EditorArea({
         const plainText = isPlainTextDoc(tab)
         const sourceForActiveRich = sourceMode && isLeft && !plainText && !heavyAsSource
         const usesTextarea = plainText || heavyAsSource || sourceForActiveRich
-        // content-visibility virtualization (see .hm-cv in app.css) kicks in
-        // only for genuinely large RICH documents — small docs and the
-        // textarea path are untouched. ~20k chars ≈ hundreds of blocks,
-        // the range where software-composited scrolling starts to struggle.
+        // content-visibility virtualization (see .hm-cv in app.css) is reserved
+        // for genuinely huge RICH documents. Medium CJK-heavy docs have enough
+        // text to be expensive on Windows, but too few blocks for CV to pay for
+        // its estimate-to-real height churn; they use layout containment instead.
         const richEligible = !plainText && !heavyAsSource
-        const largeRich = richEligible && (tab.content?.length || 0) >= 20000
+        const largeRich = richEligible && shouldUseRichContentVisibility(tab.content || '')
         const nodes = []
 
         if (usesTextarea && inView) {

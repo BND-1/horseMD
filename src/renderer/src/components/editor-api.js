@@ -1,6 +1,7 @@
 import { TextSelection, NodeSelection } from '@milkdown/prose/state'
 import { commandsCtx, remarkCtx } from '@milkdown/kit/core'
 import { replaceAll } from '@milkdown/utils'
+import katex from 'katex'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { normalizeDisplayMath } from './editor-math.js'
@@ -23,6 +24,7 @@ const stripEditorOnlyForExport = (clone) => {
 
 const cleanMathForExport = (math, { display } = {}) => {
   const copy = math.cloneNode(true)
+  copy.querySelectorAll('annotation').forEach((node) => node.remove())
   ;[...copy.childNodes].forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) node.remove()
   })
@@ -30,24 +32,54 @@ const cleanMathForExport = (math, { display } = {}) => {
   return copy
 }
 
+const mathmlFromLatex = (doc, latex, { display } = {}) => {
+  if (!latex) return null
+  try {
+    const tpl = doc.createElement('template')
+    tpl.innerHTML = katex.renderToString(latex, {
+      throwOnError: false,
+      displayMode: !!display,
+      output: 'mathml'
+    })
+    const math = tpl.content.querySelector('math')
+    return math ? cleanMathForExport(math, { display }) : null
+  } catch {
+    return null
+  }
+}
+
+const codeBlockText = (block) => {
+  const lines = [...block.querySelectorAll('.cm-line')].map((line) => line.textContent)
+  if (lines.length) return lines.join('\n').replace(/\n+$/, '')
+  return (block.textContent || '').replace(/^\s*LaTeX\s*/, '').replace(/\s*复制\s*/, '').trim()
+}
+
 const replaceKatexWithMathml = (root) => {
+  const doc = root.ownerDocument
   root.querySelectorAll('.katex-display').forEach((display) => {
     const math = display.querySelector('math')
     if (math) display.replaceWith(cleanMathForExport(math, { display: true }))
   })
   root.querySelectorAll('.katex').forEach((katex) => {
     const math = katex.querySelector('math')
-    if (math) katex.replaceWith(cleanMathForExport(math))
+    if (math) {
+      katex.replaceWith(cleanMathForExport(math))
+      return
+    }
+    const inline = katex.closest("span[data-type='math_inline']")
+    const fallback = mathmlFromLatex(doc, inline?.dataset?.value || '', { display: false })
+    if (fallback) katex.replaceWith(fallback)
   })
 }
 
 const materializeLatexPreviewsForExport = (clone) => {
   const doc = clone.ownerDocument
   clone.querySelectorAll('.milkdown-code-block').forEach((block) => {
-    const math = block.querySelector('.preview-panel math')
+    const math = block.querySelector('.preview-panel math') ||
+      mathmlFromLatex(doc, codeBlockText(block), { display: true })
     if (!math) return
     const wrapper = doc.createElement('figure')
-    wrapper.appendChild(cleanMathForExport(math, { display: true }))
+    wrapper.appendChild(math.tagName?.toLowerCase() === 'math' ? cleanMathForExport(math, { display: true }) : math)
     block.replaceWith(wrapper)
   })
 }

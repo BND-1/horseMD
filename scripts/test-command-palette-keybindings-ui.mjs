@@ -1,13 +1,14 @@
-import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
+﻿import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 
 async function main() {
   const app = await launchBuiltElectron({
-    profileDir: '/tmp/horsemd-command-palette-keybindings-ui',
+    profileDir: '/tmp/horsemd-command-palette-keybindings-ui-' + process.pid + '-' + Date.now(),
     port: 9449
   })
 
   try {
     const result = await app.evaluate(`(async () => {
+      const primaryMod = {"ctrlKey":true}
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
       const visible = (element) => {
         if (!element) return false
@@ -43,11 +44,12 @@ async function main() {
         const title = textOf(row.querySelector('.settings-shortcut-title')).toLowerCase()
         return candidates.some((candidate) => title === candidate.toLowerCase())
       })
-      const dispatchKey = async ({ key, code, metaKey = false, altKey = false, shiftKey = false }) => {
+      const dispatchKey = async ({ key, code, metaKey = false, ctrlKey = false, altKey = false, shiftKey = false }) => {
         window.dispatchEvent(new KeyboardEvent('keydown', {
           key,
           code,
           metaKey,
+          ctrlKey,
           altKey,
           shiftKey,
           bubbles: true,
@@ -73,7 +75,7 @@ async function main() {
         (button) => button.title === '设置' || button.title === 'Settings' || textOf(button) === '设置' || textOf(button) === 'Settings',
         'settings'
       )
-      await clickButton((button) => ['键盘快捷键', 'Keyboard'].includes(textOf(button)), 'keyboard section')
+      await clickButton((button) => /键盘快捷键|Keyboard/.test(textOf(button)), 'keyboard section')
       await clickButton((button) => ['全部恢复默认', 'Reset all'].includes(textOf(button)), 'reset all')
       await setShortcutSearch('保存')
       if (!rowByTitle(['保存', 'Save'])) await setShortcutSearch('save')
@@ -83,15 +85,15 @@ async function main() {
       if (!recorder) throw new Error('Missing save recorder')
       recorder.click()
       await sleep(140)
-      await dispatchKey({ key: 's', code: 'KeyS', metaKey: true, altKey: true })
-      if (!/⌥|Alt/.test(textOf(saveRow))) throw new Error('Save row did not show custom shortcut')
+      await dispatchKey({ key: 's', code: 'KeyS', ...primaryMod, altKey: true })
+      if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(saveRow))) throw new Error('Save row did not show custom shortcut')
 
       await clickButton((button) => button.title === '主页' || button.title === 'Home', 'home')
       await sleep(260)
       await openPalette()
       const savePaletteItem = paletteItems().find((item) => /保存|Save/i.test(textOf(item)))
       if (!savePaletteItem) throw new Error('Missing Save item in command palette')
-      if (!/⌥|Alt/.test(textOf(savePaletteItem))) {
+      if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(savePaletteItem))) {
         throw new Error('Palette Save hint did not reflect custom shortcut: ' + textOf(savePaletteItem))
       }
       document.querySelector('.palette-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
@@ -106,7 +108,7 @@ async function main() {
       await sleep(350)
       const after = sidebarState()
       if (after === before) throw new Error('Palette Toggle Sidebar did not execute')
-      await dispatchKey({ key: 'B', code: 'KeyB', metaKey: true, shiftKey: true })
+      await dispatchKey({ key: 'B', code: 'KeyB', ...primaryMod, shiftKey: true })
       const afterShortcut = sidebarState()
       if (afterShortcut !== before) {
         throw new Error('Palette execution appears to have double-fired or left sidebar in wrong state')
@@ -118,7 +120,7 @@ async function main() {
     if (!result?.ok) throw new Error('Command palette keybinding UI test failed')
     console.log(`command palette keybindings UI ok: ${result.saveHint}`)
   } finally {
-    await stopBuiltElectron(app, { removeProfile: true })
+    await stopBuiltElectron(app)
   }
 }
 

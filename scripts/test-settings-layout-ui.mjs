@@ -153,7 +153,7 @@ async function main() {
     }
     console.log(`settings layout UI ok: ${VIEWPORTS.length} viewports x ${THEMES.length} themes`)
   } finally {
-    await stopBuiltElectron(app, { removeProfile: true })
+    await stopBuiltElectron(app)
   }
 }
 
