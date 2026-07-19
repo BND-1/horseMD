@@ -21,6 +21,9 @@
 | [custom-shortcuts-implementation-checklist.md](./custom-shortcuts-implementation-checklist.md) | 分阶段实施步骤、测试矩阵、停止条件与交付清单 |
 | [custom-shortcuts-default-inventory.md](./custom-shortcuts-default-inventory.md) | 默认快捷键、菜单 accelerator、命令所有者和可配置状态清单 |
 | [custom-shortcuts-verification-report.md](./custom-shortcuts-verification-report.md) | 自定义快捷键自动化验证、真实安装证据、剩余人工验收边界 |
+| [cloud-sync-prd.md](./cloud-sync-prd.md) | 文件夹级 WebDAV / S3 云同步的产品边界、数据模型、阶段计划与验收矩阵 |
+| [cloud-sync-v2-prd.md](./cloud-sync-v2-prd.md) | Sync v2 的方向选择、远端清空保护和可恢复变更产品规则 |
+| [cloud-sync-v2-architecture.md](./cloud-sync-v2-architecture.md) | Sync v2 的策略 API、计划层、执行顺序和兼容性设计 |
 
 ## 一句话技术概览
 

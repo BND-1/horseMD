@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   in the typography preview.
 
 ### Fixed
+- **External-save conflict warning** — when an open file is saved by another
+  application, a clean HorseMD tab still reloads automatically. A tab with
+  unsaved local edits now keeps those edits and shows one clear native warning
+  instead of silently remaining out of sync.
+- **Image descriptions survive rich-text saves** (#84) — standard Markdown image
+  alt text such as `![测试图片](image/test.png)` is no longer overwritten with
+  the internal default resize ratio `1.00` after switching views or saving.
+  Existing resized images written by earlier HorseMD versions remain compatible.
 - **List typography follows editor settings** (#79) — line height and paragraph
   spacing now apply consistently to unordered, ordered, and nested lists in
   both the editor and the Settings preview.

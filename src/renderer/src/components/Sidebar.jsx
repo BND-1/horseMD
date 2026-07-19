@@ -21,7 +21,10 @@ export default function Sidebar({
   onOpenFile,
   onOpenRight,
   onExportPdf,
-  refreshNonce
+  refreshNonce,
+  syncSupported = false,
+  syncFolderPaths = [],
+  onEnableSyncFolder
 }) {
   const { t } = useI18n()
   const copyText = (text) => copyToClipboard(text, t('code.copied'))
@@ -41,7 +44,15 @@ export default function Sidebar({
   const folderRootsKey = folderRoots.join('\n')
   const defaultRoot = folderRoots[0] || null
   const rootSet = new Set(folderRoots.map(normalizePathKey))
+  const syncRootSet = new Set(syncFolderPaths.map(normalizePathKey))
   const isRootPath = (p) => rootSet.has(normalizePathKey(p))
+  const syncRootForPath = (path) => {
+    const key = normalizePathKey(path)
+    return folderRoots
+      .map(normalizePathKey)
+      .filter((root) => key === root || key.startsWith(root + '/'))
+      .sort((a, b) => b.length - a.length)[0] || null
+  }
 
   useEffect(() => {
     setCreating(null)
@@ -68,11 +79,10 @@ export default function Sidebar({
     const dir = dirNode ? dirNode.path : defaultRoot
     if (!dir) return
     setCreating({ dir, type: 'file', value: 'untitled.md' })
-    // Make sure the directory is expanded
-    if (dirNode) {
-      setExpanded((s) => new Set(s).add(dir))
-      if (!childrenMap[dir]) loadDir(dir)
-    }
+    // The root is rendered as a normal tree node in a multi-root workspace.
+    // Ensure it is visible before mounting its single inline creation field.
+    setExpanded((s) => new Set(s).add(dir))
+    if (!childrenMap[dir]) loadDir(dir)
   }
 
   // Start inline creation for a folder
@@ -80,10 +90,8 @@ export default function Sidebar({
     const dir = dirNode ? dirNode.path : defaultRoot
     if (!dir) return
     setCreating({ dir, type: 'folder', value: t('prompt.newFolderDefault') })
-    if (dirNode) {
-      setExpanded((s) => new Set(s).add(dir))
-      if (!childrenMap[dir]) loadDir(dir)
-    }
+    setExpanded((s) => new Set(s).add(dir))
+    if (!childrenMap[dir]) loadDir(dir)
   }
 
   // Commit the inline creation
@@ -341,7 +349,15 @@ export default function Sidebar({
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            setMenu({ x: e.clientX, y: e.clientY, node, isRoot })
+            const syncRootPath = syncSupported ? syncRootForPath(node.path) : null
+            setMenu({
+              x: e.clientX,
+              y: e.clientY,
+              node,
+              isRoot,
+              syncRootPath,
+              syncRootRegistered: syncRootPath ? syncRootSet.has(normalizePathKey(syncRootPath)) : false
+            })
           }}
           title={node.path}
         >
@@ -433,8 +449,6 @@ export default function Sidebar({
           if (e.target === e.currentTarget) setMenu({ x: e.clientX, y: e.clientY, node: null, isRoot: false })
         }}
       >
-        {/* Inline creation at the default-root level */}
-        {creating && defaultRoot && creating.dir === defaultRoot && renderCreatingInput(0)}
         {/* Multi-root: each folderRoot is a synthetic top-level folder node. */}
         {!folderRoots.length ? (
           <div className="tree-empty">{t('side.empty')}</div>
@@ -454,6 +468,7 @@ export default function Sidebar({
         onAddFolder={onAddFolder}
         onOpenRight={onOpenRight}
         onRemoveFolder={onRemoveFolder}
+        onEnableSyncFolder={onEnableSyncFolder}
         onCopyText={copyText}
         onRename={(node) => setRename({ path: node.path, value: node.name })}
         onDuplicate={doDuplicate}

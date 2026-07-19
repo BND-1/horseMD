@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-18。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-19。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前版本号：`package.json` 为 `0.6.5`
+- 当前版本号：`package.json` 为 `0.7.1`
 - 最近关键提交：
   - `ab8f699 fix(pdf): render display latex in exports`
   - `0c1b3f0 fix(editor): protect inline math deletion`
@@ -18,6 +18,7 @@
   - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
+  - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -27,6 +28,9 @@
 用户非常重视“真的改好”和“真实环境验证”。给他测试之前必须做到：
 
 - 不要让用户测旧版本。每次请用户手测前，先从当前源码重新构建、安装、启动，并确认运行路径。
+- 每开始一个独立新功能，先把测试包升级到下一个 minor 版本（例如 `0.7.1` 完成后，下一项新功能从 `0.8.0` 开始）。每次交付给用户测试的 bug 修复也必须升级 patch 版本（例如 `0.8.0` → `0.8.1`），不能让不同源码继续使用同一个版本号。
+- 教程站的 `guide/package.json` 表示已发布教程与截图基准，不随本地测试包自动升级；页面可单独标注较新的测试功能版本。`npm run guide:check` 只禁止应用版本低于教程基准，避免把尚未发布的下载文件和截图伪装成新版本。
+- 一个可手测的大功能完成并通过专项验证后，如用户没有要求暂停或改方向，默认立即构建、安装、启动当前源码版本交给用户验收；不要等待用户再次要求“打最新包”。
 - 不要只说“理论上可以”。涉及 UI、PDF、编辑器、模式切换、表格、图片、移动端时，要用自动化或真实 app 复现。
 - 不要把大文件、小文件、富文本、源码模式混为一谈。HorseMD 很多 bug 只在真实大文档、表格、代码块、LaTeX、远程图片、源码/富文本双向切换里出现。
 - 不要轻易重写敏感状态机。源码/富文本切换、dirty 状态、保存、PDF 预览、编辑器生命周期都已经踩过坑。
@@ -162,6 +166,7 @@ android/, ios/           Capacitor 原生壳
 - 工作区是单一、多根，不是多 workspace 切换系统。
 - `useWorkspace.js` 管 roots 和 watcher，`useSidebarTree.js` 管树加载和展开。
 - watcher 必须拒绝相对路径、系统根、受限目录。
+- 已打开文件被外部程序保存时：干净标签可自动刷新；脏标签必须保留本地内容并只提示一次外部冲突，不能静默覆盖或连续弹窗。保存会覆盖外部版本，用户可另存为保留两份。
 - 主进程网络调用用 Electron `net.fetch`，不要用 Node global `fetch`。
 - 外部链接协议必须通过 allowlist。
 
@@ -173,6 +178,17 @@ android/, ios/           Capacitor 原生壳
 - Ctrl/Cmd 一般都要支持。
 - 编辑器内的粗体、斜体、表格结构键、CodeMirror 结构键、输入法相关键不能随意开放改绑。
 - 移动端没有桌面文件系统/PDF 能力时必须 gate UI，不要让按钮假可用。
+
+### 5.6 云同步
+
+- 详细产品和数据模型见 [cloud-sync-prd.md](./cloud-sync-prd.md)。当前仅桌面端开放手动同步；Capacitor shim 必须保持 `cloudSync: false`，直到原生安全凭据与网络桥接完成。
+- 普通多根工作区和云同步工作区不是一件事。`useWorkspace` 继续管理可见文件树与 watcher；`useSyncWorkspaces` 只管理用户明确开启同步的根目录，不能扫描磁盘寻找 `.horsemd`。
+- 阅读 `docs/cloud-sync-v2-prd.md` 和 `docs/cloud-sync-v2-architecture.md` 后再改同步逻辑。`merge`、`push`、`pull` 是不同策略：远端 manifest 缺失或异常清空时，`merge` 必须返回 `remote-reset`，绝不能据此生成 `deleteLocal`。
+- `push`/`pull` 是用户明确发起的恢复操作。方向化覆盖或删除前需归档目标端旧文件；普通双向冲突保留双方。不要把对象存储的目录扫描结果当成可信删除日志。
+- 每个同步根目录只有 `.horsemd/workspace.json` 一个标记，应用数据目录另有私有 registry。标记和 registry 不得包含密码、Secret 或用户内容；`.horsemd` 永远不能作为普通内容上传或被 watcher 展示。
+- 渲染层只使用窄 `window.api.sync*` 接口，不能直接调用网络；主进程网络一律使用 Electron `net.fetch`，凭据使用 `safeStorage`。
+- `SyncEngine` 的 manifest 必须最后条件提交；上传、下载、删除必须校验预览时的 revision/hash。不要把冲突改成最后写入者胜出。
+- WebDAV PUT 可能不带 ETag，Provider 会 `PROPFIND` 补取；S3 要使用维护中的 SigV4 实现，且必须保持工作区 prefix 隔离。更改 provider 后同时跑 mock、真实服务和双 profile Electron 测试。
 
 ## 6. 近期功能与坑位
 
@@ -339,6 +355,7 @@ npm run guide:capture
 ## 10. 发布与包
 
 - 版本号必须单调递增。不要在发过内部 `0.5.29` 后发布 `0.5.5`，自动更新会认为旧。
+- 开始新功能前先升级测试包版本；不要等到功能完成才升级，确保用户每次手测的包都能从版本号辨识来源。
 - GitHub release tag 用 `vX.X.X`，标题用 `HorseMD vX.X.X`。
 - Release note 用中文，结构建议：
   - 新功能
@@ -365,7 +382,7 @@ npm run guide:capture
 
 - 自定义快捷键第一版已落地，后续谨慎开放编辑器内部命令。
 - AI 能力后期探索，倾向原生体验 + provider 可插拔 + Review-first 修改。
-- WebDAV/S3 同步、插件市场属于远期。
+- 云同步桌面端手动闭环正在实现和验收；自动同步、移动端同步、历史恢复、E2EE、插件市场属于后续阶段。
 
 ## 12. 新 AI 开始任务前的检查清单
 

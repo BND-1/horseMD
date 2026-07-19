@@ -292,7 +292,8 @@ const capabilities = {
   revealInFolder: false, // no Finder/Explorer on mobile
   splitView: false, // not enough width on a phone
   canShare: true, // system share sheet (export a file out)
-  fileAttachments: false
+  fileAttachments: false,
+  cloudSync: false
 }
 
 export function makeCapacitorApi() {
@@ -320,6 +321,20 @@ export function makeCapacitorApi() {
     readDir: readTree,
     listFiles,
     openFolderTree,
+    syncListWorkspaces: async () => [],
+    syncAdoptWorkspace: async () => { throw new Error('unsupported') },
+    syncRemoveWorkspace: async () => false,
+    syncListConnections: async () => [],
+    syncAddWebDavConnection: async () => { throw new Error('unsupported') },
+    syncAddS3Connection: async () => { throw new Error('unsupported') },
+    syncUpdateConnection: async () => { throw new Error('unsupported') },
+    syncRemoveConnection: async () => false,
+    syncTestConnection: async () => { throw new Error('unsupported') },
+    syncBindWorkspaceConnection: async () => { throw new Error('unsupported') },
+    syncPreview: async () => { throw new Error('unsupported') },
+    syncRun: async () => { throw new Error('unsupported') },
+    syncListRemoteWorkspaces: async () => [],
+    syncJoinWorkspace: async () => { throw new Error('unsupported') },
 
     // watch (no-op on mobile)
     watchStart: async () => true,

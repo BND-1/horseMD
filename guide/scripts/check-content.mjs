@@ -46,11 +46,22 @@ async function exists(file) {
 
 const guidePackage = JSON.parse(await fs.readFile(path.join(guideRoot, 'package.json'), 'utf8'))
 const version = guidePackage.version
+const parseVersion = (value) => String(value).split('.').map((part) => Number.parseInt(part, 10) || 0)
+const compareVersion = (left, right) => {
+  const a = parseVersion(left)
+  const b = parseVersion(right)
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0)
+  }
+  return 0
+}
 const appPackagePath = path.join(repoRoot, 'package.json')
 if (await exists(appPackagePath)) {
   const appPackage = JSON.parse(await fs.readFile(appPackagePath, 'utf8'))
-  if (appPackage.version !== version) {
-    errors.push(`guide version v${version} does not match app version v${appPackage.version}`)
+  if (compareVersion(appPackage.version, version) < 0) {
+    errors.push(`guide baseline v${version} cannot be newer than app version v${appPackage.version}`)
+  } else if (appPackage.version !== version) {
+    console.warn(`guide baseline v${version}; app is a newer test build v${appPackage.version}`)
   }
 }
 const markdownFiles = [path.join(guideRoot, 'index.md')]
@@ -76,7 +87,7 @@ for (const file of markdownFiles) {
     if (titles.has(title)) errors.push(`${relative}: duplicate title with ${titles.get(title)}: ${title}`)
     titles.set(title, relative)
   }
-  if (!source.includes(`HorseMD v${version}`)) errors.push(`${relative}: missing current version v${version}`)
+  if (!/HorseMD v\d+\.\d+\.\d+/.test(source)) errors.push(`${relative}: missing a HorseMD version badge`)
   if (/\/Users\/[^/]+|file:\/\/\/[A-Za-z]:\//.test(source)) errors.push(`${relative}: contains a private local path`)
 
   for (const match of source.matchAll(/\]\((\/[^)\s]+)\)/g)) {

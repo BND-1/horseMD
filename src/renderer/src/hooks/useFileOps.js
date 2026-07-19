@@ -421,12 +421,20 @@ export function useFileOps({
 
   // --------- auto-reload open files edited by external programs ----------
   const watchedRef = useRef(new Set())
+  // A watcher can report one external save more than once (notably on Windows
+  // atomic-save editors). Remember the disk version already disclosed so a
+  // dirty document gets one actionable warning instead of an alert loop.
+  const externalWarningRef = useRef(new Map())
 
   // Keep a per-file watcher in sync with the set of open file paths.
   useEffect(() => {
     const want = new Set(tabs.map((t) => t.path).filter(Boolean))
     for (const p of want) if (!watchedRef.current.has(p)) window.api.watchFile(p)
-    for (const p of watchedRef.current) if (!want.has(p)) window.api.unwatchFile(p)
+    for (const p of watchedRef.current) {
+      if (want.has(p)) continue
+      window.api.unwatchFile(p)
+      externalWarningRef.current.delete(p.replace(/\\/g, '/'))
+    }
     watchedRef.current = want
   }, [tabs])
 
@@ -461,17 +469,28 @@ export function useFileOps({
 
   useEffect(() => {
     const off = window.api.onFileChanged(({ path, mtimeMs }) => {
+      // A source textarea can still be inside its debounce window when an
+      // external editor saves. Commit it before deciding whether this tab is
+      // dirty; otherwise its local change could be mistaken for a clean tab.
+      commitAllLive()
       const norm = (path || '').replace(/\\/g, '/')
       const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
       if (!tab) return
       // Ignore the echo from our own save (same or older mtime).
       if (tab.mtimeMs && mtimeMs && mtimeMs <= tab.mtimeMs) return
-      // Don't overwrite unsaved local edits.
-      if (tab.content !== tab.savedContent) return
+      // Don't overwrite unsaved local edits. Make the conflict explicit rather
+      // than silently leaving the user with an out-of-date on-disk version.
+      if (tab.content !== tab.savedContent) {
+        const warnedVersion = externalWarningRef.current.get(norm)
+        if (warnedVersion === mtimeMs) return
+        externalWarningRef.current.set(norm, mtimeMs)
+        window.alert(tRef.current('warning.externalChangedUnsaved', { name: tab.title }))
+        return
+      }
       reloadTabFromDisk(tab.id, tab.path)
     })
     return off
-  }, [reloadTabFromDisk, tabsRef])
+  }, [commitAllLive, reloadTabFromDisk, tabsRef, tRef])
 
   return {
     openPaths,

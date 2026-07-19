@@ -29,6 +29,7 @@ import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
+import { imageBlockMarkdownSchema } from './editor-image-markdown.js'
 import {
   createStrikeGuardPlugin,
   createSubstitutionLiveReconstructPlugin,
@@ -200,6 +201,7 @@ export function createConfiguredCrepe({
   crepe.editor.use(
     inlineCodeSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), inclusive: false }))
   )
+  crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(highlightFeatures)
   crepe.editor.use(frontmatterSchema)
 

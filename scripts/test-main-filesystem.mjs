@@ -15,11 +15,13 @@ try {
   await fs.mkdir(join(root, 'notes'))
   await fs.mkdir(join(root, 'node_modules'))
   await fs.mkdir(join(root, '.git'))
+  await fs.mkdir(join(root, '.horsemd'))
   await fs.writeFile(join(root, 'z.md'), '# z')
   await fs.writeFile(join(root, 'a.txt'), 'a')
   await fs.writeFile(join(root, 'ignored.json'), '{}')
   await fs.writeFile(join(root, '.secret.md'), 'secret')
   await fs.writeFile(join(root, '.gitignore'), 'dist')
+  await fs.writeFile(join(root, '.horsemd', 'workspace.json'), '{}')
   await fs.writeFile(join(root, 'notes', 'nested.markdown'), '# nested')
   await fs.writeFile(join(root, 'node_modules', 'package.md'), '# ignored')
   await fs.writeFile(join(root, '.git', 'internal.md'), '# ignored')
@@ -34,6 +36,7 @@ try {
   const hiddenTree = await readDirectoryTree(root, { showHidden: true, markdownPattern })
   assert.equal(hiddenTree.some((entry) => entry.name === '.secret.md'), true)
   assert.equal(hiddenTree.some((entry) => entry.name === '.git'), false)
+  assert.equal(hiddenTree.some((entry) => entry.name === '.horsemd'), false)
 
   const visibleFiles = await listMarkdownFiles(root, { markdownPattern })
   assert.deepEqual(

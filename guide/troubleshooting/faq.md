@@ -23,9 +23,9 @@ v0.6.5 正式提供 Windows x64、macOS Apple Silicon、macOS Intel、Linux amd6
 
 HorseMD 支持所见即所得、表格、代码、公式、Mermaid、自定义主题和 PDF 导出，并增加标签页、多根工作区、分屏和审阅。但不同 Markdown 引擎对 HTML、主题 CSS 和扩展语法的处理可能不同，迁移重要文档前应保留备份。
 
-## 支持自动云同步吗
+## 支持云同步吗
 
-HorseMD 本身不提供账号云同步。可以把工作区放在 iCloud Drive、OneDrive、Dropbox、坚果云或 Git 仓库中，由对应工具同步。发生外部冲突时先保留两个版本再合并。
+桌面端可以为你明确选择的文件夹连接 WebDAV 或 S3 兼容存储，并在预览后手动执行同步。它不需要 HorseMD 账号，也不会扫描电脑上的其他目录。当前不提供自动同步、移动端同步或端到端加密；完整步骤见[云同步文件夹](/basics/cloud-sync)。
 
 ## 可以编辑普通文本吗
 

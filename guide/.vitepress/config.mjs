@@ -53,6 +53,7 @@ export default defineConfig({
           { text: '认识界面', link: '/basics/interface' },
           { text: '新建、打开与保存', link: '/basics/create-open-save' },
           { text: '工作区与文件夹', link: '/basics/workspace' },
+          { text: '云同步文件夹', link: '/basics/cloud-sync' },
           { text: '标签页与分屏', link: '/basics/tabs-and-split' },
           { text: '富文本与源码模式', link: '/basics/rich-and-source' }
         ]

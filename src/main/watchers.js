@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import chokidar from 'chokidar'
 
-const WATCH_IGNORE_RE = /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/
+const WATCH_IGNORE_RE = /(^|[\\/])(\.(git|obsidian|horsemd)|node_modules)([\\/]|$)/
 
 export function isAbsoluteWatchPath(path) {
   return /^\//.test(path) || /^[a-zA-Z]:[\\/]/.test(path) || /^\\\\/.test(path)

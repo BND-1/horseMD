@@ -36,6 +36,7 @@ import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useAttachments } from './hooks/useAttachments.js'
+import { useSyncWorkspaces } from './hooks/useSyncWorkspaces.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
 import { useKeybindings } from './hooks/useKeybindings.js'
 import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
@@ -438,6 +439,32 @@ export default function App() {
     initialFolderRoots: initialFolderRoots
   })
 
+  const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
+  const enableSyncFolder = useCallback(async (rootPath) => {
+    try {
+      const entry = await syncWorkspaces.enableFolder(rootPath)
+      fireToast(tRef.current('sync.enabled', { name: entry.name }))
+    } catch (error) {
+      fireToast(tRef.current('sync.enableFailed', { msg: error?.message || String(error) }), { sticky: true })
+    }
+  }, [syncWorkspaces.enableFolder, tRef])
+  const addSyncFolder = useCallback(async () => {
+    try {
+      const entry = await syncWorkspaces.addSyncFolder()
+      if (entry) fireToast(tRef.current('sync.enabled', { name: entry.name }))
+    } catch (error) {
+      fireToast(tRef.current('sync.enableFailed', { msg: error?.message || String(error) }), { sticky: true })
+    }
+  }, [syncWorkspaces.addSyncFolder, tRef])
+  const removeSyncFolder = useCallback(async (rootPath) => {
+    try {
+      await syncWorkspaces.removeFolder(rootPath)
+      fireToast(tRef.current('sync.stopped'))
+    } catch (error) {
+      fireToast(tRef.current('sync.stopFailed', { msg: error?.message || String(error) }), { sticky: true })
+    }
+  }, [syncWorkspaces.removeFolder, tRef])
+
   // Sync the show-hidden-files setting to main (readTree filter) + refresh the
   // file tree when it changes (#29).
   useEffect(() => {
@@ -826,6 +853,9 @@ export default function App() {
                 onOpenRight={openFileRight}
                 onExportPdf={exportPathToPdf}
                 refreshNonce={refreshNonce}
+                syncSupported={syncWorkspaces.supported}
+                syncFolderPaths={syncWorkspaces.registered.map((entry) => entry.rootPath)}
+                onEnableSyncFolder={enableSyncFolder}
               />
             ) : (
               <Outline
@@ -930,6 +960,12 @@ export default function App() {
               onSetKeybindings={setKeybindings}
               onResetCommandKeybindings={resetCommandKeybindings}
               onResetAllKeybindings={resetAllKeybindings}
+              cloudSync={syncWorkspaces.supported}
+              syncWorkspaces={syncWorkspaces}
+              folderRoots={folderRoots}
+              onEnableSyncFolder={enableSyncFolder}
+              onAddSyncFolder={addSyncFolder}
+              onRemoveSyncFolder={removeSyncFolder}
             />
           )}
 

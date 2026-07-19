@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, net, session, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os'
 import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from './security.js'
 import { registerDocumentIpc } from './documents.js'
 import { registerFileSystemIpc } from './filesystem.js'
+import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
+import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { registerWatcherIpc } from './watchers.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 
@@ -272,6 +274,19 @@ registerDocumentIpc(ipcMain, {
 })
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
+
+registerSyncWorkspaceIpc(ipcMain, {
+  getUserDataPath: () => app.getPath('userData'),
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+})
+registerSyncServiceIpc(ipcMain, {
+  syncService: new SyncService({
+    getUserDataPath: () => app.getPath('userData'),
+    safeStorage,
+    request: (url, init) => net.fetch(url, init)
+  }),
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+})
 
 registerWatcherIpc(ipcMain, { sendToRenderer })
 

@@ -437,3 +437,20 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 - **queryLocalFonts**（Local Font Access API）枚举系统字体，权限在 `main/index.js` 的 `session.setPermissionRequestHandler` 授权。
 - **CodeMirror 字体修复**：CM 默认主题把 `.cm-content` 钉死 `monospace`，app.css 用高特异性规则 `.milkdown .cm-editor .cm-content { font-family: var(--font-mono) }` 覆盖 —— 这是 #34 弯引号 + #38 代码字体能生效的前提。
 - **设置预览**：`.settings-preview` 必须显式设 `font-family: var(--font-write)`（否则继承 body 的 `--font-ui` 界面字体，不反映文档字体变化）。
+
+---
+
+## 39. 文件夹级云同步（WebDAV / S3）
+
+桌面端可以把用户明确选择的文件夹原地纳入云同步。文件不迁移、不转换格式；Markdown、图片和附件仍是普通磁盘文件。首次上传选择“上传本地到云端”，第二台设备选择“从云端下载到本地”；完成基线后才使用日常“双向同步”。远端 manifest 被清空或替换时会进入恢复选择，绝不自动删除本地文件。
+
+**实现**：
+
+- `src/main/sync-workspaces.js` 管根目录隐藏标记 `.horsemd/workspace.json` 与应用私有登记表；不会扫描其他文件夹，禁止把系统根目录登记为同步根。
+- `src/main/sync-service.js`、`sync/sync-engine.js`、`sync/sync-plan.js` 分别负责 IPC 服务、执行器与纯同步决策；`.horsemd`、`.git`、`node_modules` 和符号链接不会作为用户内容上传。
+- `sync/webdav-provider.js` 使用 Electron `net.fetch`，支持 PROPFIND、条件 PUT、GET、DELETE；PUT 缺少 ETag 的 Apache DAV 会补一次 PROPFIND 获取 revision。
+- `sync/s3-provider.js` 使用 SigV4，不手写签名；工作区远端前缀固定为 `HorseMD/<workspaceId>/`，文件保持原相对路径，`.horsemd/` 存放同步元数据。旧版 `HorseMD/v1/workspaces/<workspaceId>/` 会继续被识别。对部分 MinIO 的首次 `If-None-Match` 兼容差异，只有确认对象仍不存在时才进行一次无条件创建回退。
+- 连接密码和 S3 Secret 保存在 Electron `safeStorage` 加密的应用数据中，不写入工作区、manifest、localStorage 或设置 JSON。移动端 shim 明确关闭 `cloudSync` 能力，尚未提供假入口。
+- 冲突保留双方版本；同步删除进入本地或远端 `.horsemd/trash/`，不直接永久删除。
+
+**验证**：`test-sync-plan`、`test-sync-engine`、`test-sync-workspaces`、`test-sync-credentials`、`test-webdav-provider`、`test-webdav-apache`、`test-webdav-electron-sync`、`test-s3-provider`、`test-s3-electron-sync`。其中后两条真实服务测试分别使用本机 Apache DAV 与 MinIO，以及两个隔离 Electron profile。

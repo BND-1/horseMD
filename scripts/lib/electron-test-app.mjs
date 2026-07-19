@@ -14,10 +14,10 @@ export async function launchBuiltElectron({
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
   const child = spawn(executable, [
-    ...(entrypoint ? [entrypoint] : []),
-    ...appArgs,
     ...(profileDir ? [`--user-data-dir=${profileDir}`] : []),
-    `--remote-debugging-port=${port}`
+    `--remote-debugging-port=${port}`,
+    ...(entrypoint ? [entrypoint] : []),
+    ...appArgs
   ], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe']

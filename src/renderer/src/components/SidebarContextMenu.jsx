@@ -11,6 +11,7 @@ export default function SidebarContextMenu({
   onAddFolder,
   onOpenRight,
   onRemoveFolder,
+  onEnableSyncFolder,
   onCopyText,
   onRename,
   onDuplicate,
@@ -42,7 +43,7 @@ export default function SidebarContextMenu({
   }, [menu])
 
   if (!menu) return null
-  const { node, isRoot } = menu
+  const { node, isRoot, syncRootPath, syncRootRegistered } = menu
   const run = (action) => () => {
     action?.()
     onClose()
@@ -75,6 +76,16 @@ export default function SidebarContextMenu({
           <button className="danger" onClick={run(() => onRemoveFolder?.(node.path))}>
             {t('workspace.removeFolder')}
           </button>
+        </>
+      )}
+      {syncRootPath && (
+        <>
+          <div className="menu-sep" />
+          {syncRootRegistered ? (
+            <button type="button" disabled>{t('sync.addedFromSidebar')}</button>
+          ) : (
+            <button onClick={run(() => onEnableSyncFolder?.(syncRootPath))}>{t('sync.addFromSidebar')}</button>
+          )}
         </>
       )}
       {node && <div className="menu-sep" />}

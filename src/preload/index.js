@@ -33,6 +33,24 @@ const api = {
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
   setShowHidden: (val) => ipcRenderer.invoke('settings:setShowHidden', val),
 
+  // Sync workspaces: the renderer can register an explicitly selected root,
+  // but never receives registry paths or arbitrary network/credential access.
+  syncListWorkspaces: () => ipcRenderer.invoke('sync:workspaceList'),
+  syncAdoptWorkspace: (rootPath) => ipcRenderer.invoke('sync:workspaceAdopt', rootPath),
+  syncRemoveWorkspace: (rootPath) => ipcRenderer.invoke('sync:workspaceRemove', rootPath),
+  syncListConnections: () => ipcRenderer.invoke('sync:connectionList'),
+  syncAddWebDavConnection: (config) => ipcRenderer.invoke('sync:connectionAddWebDav', config),
+  syncAddS3Connection: (config) => ipcRenderer.invoke('sync:connectionAddS3', config),
+  syncUpdateConnection: (connectionId, config) => ipcRenderer.invoke('sync:connectionUpdate', connectionId, config),
+  syncRemoveConnection: (connectionId) => ipcRenderer.invoke('sync:connectionRemove', connectionId),
+  syncTestConnection: (connectionId) => ipcRenderer.invoke('sync:connectionTest', connectionId),
+  syncBindWorkspaceConnection: (rootPath, connectionId) =>
+    ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId),
+  syncPreview: (rootPath, strategy) => ipcRenderer.invoke('sync:preview', rootPath, strategy),
+  syncRun: (rootPath, strategy) => ipcRenderer.invoke('sync:run', rootPath, strategy),
+  syncListRemoteWorkspaces: (connectionId) => ipcRenderer.invoke('sync:remoteWorkspaceList', connectionId),
+  syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
+
   // watch
   watchStart: (dir) => ipcRenderer.invoke('watch:start', dir),
   watchStop: (dir) => ipcRenderer.invoke('watch:stop', dir),
@@ -116,7 +134,8 @@ const api = {
     externalShell: true,
     revealInFolder: true,
     splitView: true,
-    fileAttachments: true
+    fileAttachments: true,
+    cloudSync: true
   }
 }
 

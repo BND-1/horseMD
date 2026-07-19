@@ -7,6 +7,7 @@ import FilesSettings from './settings/FilesSettings.jsx'
 import GeneralSettings from './settings/GeneralSettings.jsx'
 import KeyboardSettings from './settings/KeyboardSettings.jsx'
 import SettingsNav from './settings/SettingsNav.jsx'
+import SyncSettings from './settings/SyncSettings.jsx'
 
 export default function SettingsView({
   settings, onUpdateSettings, onHoverFont,
@@ -17,14 +18,20 @@ export default function SettingsView({
   keybindingState,
   onSetKeybindings,
   onResetCommandKeybindings,
-  onResetAllKeybindings
+  onResetAllKeybindings,
+  cloudSync,
+  syncWorkspaces,
+  folderRoots,
+  onEnableSyncFolder,
+  onAddSyncFolder,
+  onRemoveSyncFolder
 }) {
   const { t } = useI18n()
   const [active, setActive] = useState('editor')
 
   return (
     <div className="settings-page">
-      <SettingsNav active={active} onChange={setActive} t={t} />
+      <SettingsNav active={active} onChange={setActive} t={t} cloudSync={cloudSync} />
       <div className="settings-sections">
         {active === 'general' && (
           <GeneralSettings lang={lang} setLang={setLang} t={t} />
@@ -52,6 +59,29 @@ export default function SettingsView({
         )}
         {active === 'files' && (
           <FilesSettings settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
+        )}
+        {active === 'sync' && cloudSync && (
+          <SyncSettings
+            folderRoots={folderRoots}
+            registered={syncWorkspaces?.registered}
+            connections={syncWorkspaces?.connections}
+            busyRoot={syncWorkspaces?.busyRoot}
+            loading={syncWorkspaces?.loading}
+            onEnableFolder={onEnableSyncFolder}
+            onAddSyncFolder={onAddSyncFolder}
+            onRemoveFolder={onRemoveSyncFolder}
+            onAddWebDavConnection={syncWorkspaces?.addWebDavConnection}
+            onAddS3Connection={syncWorkspaces?.addS3Connection}
+            onUpdateConnection={syncWorkspaces?.updateConnection}
+            onRemoveConnection={syncWorkspaces?.removeConnection}
+            onTestConnection={syncWorkspaces?.testConnection}
+            onBindConnection={syncWorkspaces?.bindConnection}
+            onPreview={syncWorkspaces?.preview}
+            onListRemoteWorkspaces={syncWorkspaces?.listRemoteWorkspaces}
+            onJoinWorkspace={syncWorkspaces?.joinWorkspace}
+            onRun={syncWorkspaces?.run}
+            t={t}
+          />
         )}
         {active === 'keyboard' && (
           <KeyboardSettings

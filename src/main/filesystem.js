@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import { constants as fsConstants, existsSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', '.horsemd', 'out', 'dist'])
 
 export async function readDirectoryTree(dir, { showHidden = false, markdownPattern } = {}) {
   let entries
