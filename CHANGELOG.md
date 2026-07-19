@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Outline section reordering** (#82) — on desktop, drag a heading's grip in
+  the outline to reorder it together with all of its descendant headings and
+  body content. Reordering is limited to siblings, so a subsection cannot be
+  silently moved under another parent; untouched Markdown source travels as-is.
 - **Editor style customization** (#78, #81) — source mode can now follow the document
   font size with a separate readable offset, and Settings includes a Custom CSS
   editor for small document-style tweaks layered on top of the active theme.
@@ -36,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   in the typography preview.
 
 ### Fixed
+- **List typography follows editor settings** (#79) — line height and paragraph
+  spacing now apply consistently to unordered, ordered, and nested lists in
+  both the editor and the Settings preview.
+- **Preserved untouched Markdown spelling** (#77) — switching to rich text and
+  making a local edit no longer rewrites unrelated source formatting such as
+  blank lines, tight-list `-` markers, or literal single tildes. Smart Markdown
+  paste in rich text now retains the clipboard's original source spelling too.
 - **Rendered display LaTeX in PDF export** — paragraph formulas written with
   `$$...$$` are converted from the editor preview into printable MathML before
   PDF generation, so exported PDFs show the formula instead of the LaTeX source

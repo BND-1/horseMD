@@ -8,11 +8,13 @@ export async function launchBuiltElectron({
   port,
   cleanProfile = true,
   cwd = process.cwd(),
-  appArgs = []
+  appArgs = [],
+  executable = electronPath,
+  entrypoint = 'out/main/index.cjs'
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
-  const child = spawn(electronPath, [
-    'out/main/index.cjs',
+  const child = spawn(executable, [
+    ...(entrypoint ? [entrypoint] : []),
     ...appArgs,
     ...(profileDir ? [`--user-data-dir=${profileDir}`] : []),
     `--remote-debugging-port=${port}`

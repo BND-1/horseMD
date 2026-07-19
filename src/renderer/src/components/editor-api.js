@@ -80,6 +80,7 @@ export function createEditorApi({
   crepe,
   crepeRef,
   lastMarkdownRef,
+  canonicalMarkdownRef,
   setBlock,
   onStructureChange,
   isDestroyed,
@@ -134,9 +135,11 @@ export function createEditorApi({
   const replaceMarkdown = (md) => {
     if (isDestroyed?.() || !crepeRef.current) return false
     try {
-      const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(md || ''))
-      lastMarkdownRef.current = next
+      const source = md || ''
+      const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
+      lastMarkdownRef.current = source
       crepe.editor.action(replaceAll(next))
+      canonicalMarkdownRef.current = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
       onStructureChange?.()
       return true
     } catch (err) {

@@ -14,6 +14,7 @@ export function mountEditorDomBindings({
   cleanups,
   markUserEdit,
   insertUploadedImage,
+  prepareRawMarkdownPaste,
   reportActiveBlock,
   setBlock,
   setCtxMenu,
@@ -49,6 +50,7 @@ export function mountEditorDomBindings({
     crepe,
     cleanups,
     insertUploadedImage,
+    prepareRawMarkdownPaste,
     setZoom,
     getT,
     isDestroyed

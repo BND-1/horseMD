@@ -12,6 +12,7 @@ export function mountEditorContentBindings({
   crepe,
   cleanups,
   insertUploadedImage,
+  prepareRawMarkdownPaste,
   setZoom,
   getT,
   isDestroyed
@@ -161,7 +162,7 @@ export function mountEditorContentBindings({
       } catch {
         return null
       }
-    })
+    }, prepareRawMarkdownPaste)
   )
   cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onImageClick, true))

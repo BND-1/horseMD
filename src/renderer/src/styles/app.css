@@ -1870,6 +1870,7 @@ body.resizing-pane .pane-left-resizer::before {
   flex: 1;
 }
 .outline-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1896,6 +1897,30 @@ body.resizing-pane .pane-left-resizer::before {
 }
 .outline-twisty:hover { background: var(--hover); }
 .outline-twisty-leaf { width: 14px; height: 14px; }
+.outline-drag-handle {
+  position: absolute;
+  left: calc(var(--outline-indent) - 12px);
+  width: 12px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.outline-item:hover .outline-drag-handle,
+.outline-item.dragging .outline-drag-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+.outline-drag-handle:hover { color: var(--muted); }
+.outline-drag-handle:active { cursor: grabbing; }
+.outline-item.dragging { opacity: 0.55; }
+.outline-item.drag-over-before { box-shadow: inset 0 2px 0 var(--accent); }
+.outline-item.drag-over-after { box-shadow: inset 0 -2px 0 var(--accent); }
 .outline-item-text {
   min-width: 0;
   overflow: hidden;
@@ -1944,6 +1969,7 @@ body.resizing-pane .pane-left-resizer::before {
   content: ' ...';
   color: var(--accent);
 }
+.app.is-mobile .outline-drag-handle { display: none; }
 /* Skeleton shown in the outline while a huge document is still streaming in
    (chunked parse). Mimics a heading list (with indented sub-items) so the user
    sees "loading" instead of an empty/stale list. Reuses the editor skeleton's
@@ -3457,13 +3483,14 @@ body.hm-full-width .source-editor {
   color: var(--muted);
   border-left: 3px solid var(--accent-soft);
 }
-.settings-preview ul {
-  margin: var(--editor-para-spacing, 0.8em) 0;
+.settings-preview ul,
+.settings-preview ol {
+  margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
   padding-left: 1.8em;
 }
 .settings-preview li {
-  margin: 0.5em 0;
-  line-height: 1.75;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
+  line-height: inherit;
 }
 .settings-preview li::marker {
   color: var(--accent);
@@ -4610,11 +4637,11 @@ body.dark .milkdown {
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
   padding-left: 1.8em;
-  margin: 1em 0;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
 }
 .milkdown .ProseMirror li {
-  margin: 0.5em 0;
-  line-height: 1.75;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
+  line-height: inherit;
 }
 .milkdown .ProseMirror li p {
   margin: 0;
@@ -4628,7 +4655,7 @@ body.dark .milkdown {
 .milkdown .ProseMirror ol ol,
 .milkdown .ProseMirror ul ol,
 .milkdown .ProseMirror ol ul {
-  margin: 0.4em 0;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.5) 0;
 }
 
 /* Math (KaTeX) — keep long formulas inside the column. A long display equation

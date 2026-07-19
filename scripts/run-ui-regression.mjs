@@ -111,6 +111,18 @@ const standalone = [
   {
     name: 'PDF LaTeX: display math prints rendered output',
     script: 'scripts/test-pdf-latex-ui.mjs'
+  },
+  {
+    name: 'Issue 77: localized rich edits preserve original Markdown spelling',
+    script: 'scripts/test-issue-77-source-preservation-ui.mjs'
+  },
+  {
+    name: 'Issue 79: list spacing follows typography settings',
+    script: 'scripts/test-issue-79-list-spacing-ui.mjs'
+  },
+  {
+    name: 'Issue 82: outline heading sections reorder together',
+    script: 'scripts/test-issue-82-outline-reorder-ui.mjs'
   }
 ]
 

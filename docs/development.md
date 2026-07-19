@@ -96,6 +96,24 @@ Linux job 安装桌面构建依赖，打包后执行 `dpkg-deb --info`；由于 
 # 无需启动 Electron：Markdown raw offset ↔ ProseMirror 映射
 npm run test:source-map
 
+# 无需启动 Electron：局部富文本编辑保留未修改 Markdown 源码写法
+npm run test:markdown-preservation
+
+# 真实 Electron：#77 原始空行、列表符和转义的保真回归
+npm run test:issue-77-ui
+
+# 真实 Electron：#79 无序/有序/嵌套列表跟随行距和段距设置
+npm run test:issue-79-ui
+
+# 无需启动 Electron：#82 同级大纲章节重排及原始 Markdown 区段保留
+npm run test:outline-reorder
+
+# 真实 Electron：#82 富文本/源码双向大纲拖拽，验证子级和源码均保留
+npm run test:issue-82-ui
+
+# 直接验证已安装的 macOS 应用包（不用 out/ 开发构建）
+HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
+
 # CriticMarkup 输入守卫
 node scripts/test-strike-guard.mjs
 
@@ -124,6 +142,9 @@ npm run test:ui-regression
 - `scripts/test-mode-switch-10x.mjs` —— 5 个编辑态光标 + 5 个阅读态视口，附带大纲/dirty 稳定性检查
 - `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
   - 对普通 Markdown 追加 `--mode-switch`，验证保持查找栏时源码→富文本→源码缓存重建
+- `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证局部富文本编辑仅改动原 Markdown 的目标文本区间，不重写无关空行、列表标记或转义
+- `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表、列表硬换行和无编辑往返；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴的逐字符保真，以及网页 HTML 的标题/加粗/图片语义不回归
+- `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化
 - `scripts/test-review-ui.mjs` —— 真实源码同步后的 Review 高亮、同段批注堆叠、卡片编辑/取消/完成和 substitution DOM
 
 ### 用法

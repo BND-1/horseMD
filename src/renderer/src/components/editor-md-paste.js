@@ -26,30 +26,69 @@ function looksLikeMarkdown(text) {
   return false
 }
 
+// A browser can expose a Markdown copy as both text/plain and rendered HTML.
+// Retaining the plain text is only safe when it accounts for the meaningful
+// structure in that HTML. For example, a WeChat fallback such as "1. ..."
+// must not replace a real heading, bold mark, or image from text/html.
+function rawMarkdownCoversStructuredHtml(text, html) {
+  const has = (pattern) => pattern.test(html)
+  if (has(/<h[1-6](?:\s|>)/i) && !/^#{1,6}\s/m.test(text)) return false
+  if (has(/<(?:ul|li)(?:\s|>)/i) && !/^[-*+]\s/m.test(text)) return false
+  if (has(/<(?:ol)(?:\s|>)/i) && !/^\d+\.\s/m.test(text)) return false
+  if (has(/<table(?:\s|>)/i) && !/^\|.*\|.*\n/m.test(text)) return false
+  if (has(/<(?:strong|b)(?:\s|>)/i) && !/(?:\*\*|__)/.test(text)) return false
+  if (has(/<(?:em|i)(?:\s|>)/i) && !/(?:\*[^*\n]+\*|_[^_\n]+_)/.test(text)) return false
+  if (has(/<a(?:\s|>)/i) && !/\[[^\]]+\]\([^\)]+\)/.test(text)) return false
+  if (has(/<img(?:\s|>)/i) && !/!\[[^\]]*\]\([^\)]+\)/.test(text)) return false
+  if (has(/<br(?:\s|\/?>)/i) && !/\\\r?\n/.test(text)) return false
+  return true
+}
+
 // Attach a capture-phase paste listener on the editor DOM. Returns a cleanup fn.
-export function attachMdPasteHandler(view, parse) {
+export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste) {
   const onPaste = (event) => {
     // Pasting INTO a code block should append code, not restructure.
     if (view.state.selection.$from.parent.type.name === 'code_block') return
     // Browsers provide text/plain alongside text/html. Numbered headings and
     // divider-like prose in that fallback can resemble Markdown; keep the
     // structured HTML instead of flattening headings, marks and images.
-    if (hasStructuredWebHtml(event.clipboardData?.getData('text/html') || '')) return
     const text = event.clipboardData?.getData('text/plain') || ''
+    const html = event.clipboardData?.getData('text/html') || ''
+    const structuredHtml = hasStructuredWebHtml(html)
+    const shouldHandleRawMarkdown = text && looksLikeMarkdown(text) &&
+      (!structuredHtml || rawMarkdownCoversStructuredHtml(text, html))
+
+    // A Markdown-aware app often puts both a rendered HTML fragment and its
+    // exact Markdown source on the clipboard. When the source covers all HTML
+    // structure, parse that source ourselves instead of letting ProseMirror
+    // consume HTML and serialize it again later. Web pages whose plain fallback
+    // omits real headings, marks, links, or images keep the HTML path.
+    if (structuredHtml && !shouldHandleRawMarkdown) return
     if (!text) return
     const schema = view.state.schema
 
     let handled = false
+    let cancelRawPaste = null
     if (startsAsMermaid(text)) {
       const body = text.replace(/\s+$/, '')
       const node = schema.nodes.code_block.create(
         { language: 'mermaid' },
         body ? schema.text(body) : null
       )
+      cancelRawPaste = prepareRawMarkdownPaste?.({
+        markdown: text,
+        from: view.state.selection.from,
+        to: view.state.selection.to
+      })
       handled = insert(view, Fragment.from(node))
-    } else if (looksLikeMarkdown(text)) {
+    } else if (shouldHandleRawMarkdown) {
       const doc = parse(normalizeDisplayMath(text))
       if (doc && doc.content && doc.content.size > 0) {
+        cancelRawPaste = prepareRawMarkdownPaste?.({
+          markdown: text,
+          from: view.state.selection.from,
+          to: view.state.selection.to
+        })
         handled = insert(view, doc.content)
       }
     }
@@ -57,6 +96,8 @@ export function attachMdPasteHandler(view, parse) {
     if (handled) {
       event.preventDefault()
       event.stopPropagation()
+    } else {
+      cancelRawPaste?.()
     }
   }
   // capture = true so we run BEFORE ProseMirror's own paste handler (which would

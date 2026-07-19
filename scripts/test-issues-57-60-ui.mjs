@@ -6,6 +6,29 @@ import { connectCdp, sleep } from './lib/cdp.mjs'
 
 const issue59Dir = process.env.ISSUE59_DIR || ''
 
+async function waitForPreview(evaluate, label) {
+  for (let i = 0; i < 100; i++) {
+    const state = await evaluate(`(() => {
+      const preview = document.querySelector('.hm-pdf-preview')
+      const exportButton = document.querySelector('.hm-pdf-studio-footer .primary')
+      return {
+        token: preview?.dataset.previewToken || '',
+        loadedToken: preview?.dataset.loadedToken || '',
+        pending: !!document.querySelector('.hm-pdf-preview-progress'),
+        error: document.querySelector('.hm-pdf-preview-error')?.textContent || '',
+        pageCount: document.querySelectorAll('.hm-pdf-page').length,
+        canvas: !!document.querySelector('.hm-pdf-page canvas'),
+        exportEnabled: !!exportButton && !exportButton.disabled
+      }
+    })()`)
+    if (state.error) throw new Error(`PDF ${label} preview failed: ${state.error}`)
+    if (state.token && state.loadedToken === state.token && !state.pending &&
+      state.pageCount > 0 && state.canvas && state.exportEnabled) return state
+    await sleep(200)
+  }
+  throw new Error(`PDF ${label} preview did not become ready`)
+}
+
 async function click(send, x, y, button = 'left') {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 })
@@ -175,6 +198,7 @@ async function main() {
   if (!dialog.open || dialog.sections !== 4 || dialog.orientationCount !== 2 || dialog.switches < 5 || !dialog.hasPreview) {
     throw new Error(`PDF export studio incomplete: ${JSON.stringify(dialog)}`)
   }
+  await waitForPreview(evaluate, 'initial')
   const customFields = await evaluate(`(() => {
     const select = document.querySelector('.hm-pdf-settings select')
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
@@ -195,11 +219,7 @@ async function main() {
   if (customDialog.inputCount !== 2 || customDialog.ranges.some(([min, max]) => min !== '50' || max !== '1000')) {
     throw new Error(`PDF custom-size controls incomplete: ${JSON.stringify(customDialog)}`)
   }
-  for (let i = 0; i < 80; i++) {
-    const ready = await evaluate(`document.querySelectorAll('.hm-pdf-page').length > 0 && !!document.querySelector('.hm-pdf-page canvas')`)
-    if (ready) break
-    await sleep(250)
-  }
+  await waitForPreview(evaluate, 'custom-size')
   const preview = await evaluate(`(() => {
     const page = document.querySelector('.hm-pdf-page')
     const canvas = page?.querySelector('canvas')

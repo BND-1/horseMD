@@ -43,6 +43,7 @@ import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandle
 import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
 import { createEditorApiRegistry } from './lib/editor-api-registry.js'
+import { moveHeadingSection } from './outline-reorder.js'
 
 // Outline / file-tree pane drag bounds (px) — single source for the state init,
 // the drag clamp, and the double-click reset. CSS max-width on .pane-left must
@@ -514,8 +515,14 @@ export default function App() {
   )
   const richLoading = !!outlineId && richLoadingIds.has(outlineId)
   const getOutlineEditorHost = useCallback(
-    () => editorHosts.current[outlineId] || null,
-    [outlineId]
+    () => {
+      const host = editorHosts.current[outlineId]
+      if (host?.offsetParent) return host
+      // Mounted background tabs keep their Crepe DOM alive. A stale ref must
+      // never make the outline read a hidden tab instead of the visible pane.
+      return [...document.querySelectorAll('.editor-scroll')].find((node) => node.offsetParent) || null
+    },
+    [outlineId, editorHosts]
   )
   const getOutlineSourceTextarea = useCallback(
     () => sourceTextareas.current[outlineId] || null,
@@ -525,6 +532,7 @@ export default function App() {
     activeHeading,
     outlineHeadings,
     setRichDocVersion,
+    refreshOutline,
     jumpToHeading
   } = useOutline({
     getEditorHost: getOutlineEditorHost,
@@ -541,6 +549,32 @@ export default function App() {
     setHome
   })
   richLoadingRef.current = !!activeId && richLoadingIds.has(activeId)
+
+  // Issue #82: move a sibling heading together with all of its descendants.
+  // The move operates on raw Markdown ranges, so unsupported node views and
+  // untouched source spelling travel intact instead of being serializer output.
+  const moveOutlineHeading = useCallback((fromIndex, targetIndex, placement) => {
+    if (!outlineId) return false
+    commitLive(outlineId)
+    const tab = tabsRef.current.find((item) => item.id === outlineId)
+    const next = moveHeadingSection(tab?.content, fromIndex, targetIndex, placement)
+    if (!next || !tab) return false
+
+    if (outlineSourceMode) {
+      const textarea = sourceTextareas.current[outlineId]
+      if (!textarea) return false
+      textarea.value = next
+      sourceEditedIds.current.add(outlineId)
+    } else if (!editorApis.current[outlineId]?.replaceMarkdown?.(next)) {
+      return false
+    }
+
+    const apply = (items) => items.map((item) => item.id === outlineId ? { ...item, content: next } : item)
+    tabsRef.current = apply(tabsRef.current)
+    setTabs((items) => apply(items))
+    refreshOutline()
+    return true
+  }, [outlineId, outlineSourceMode, commitLive, editorApis, refreshOutline, setTabs, sourceEditedIds, sourceTextareas, tabsRef])
 
   // ------------------------- menu / shortcuts ----------------------
   // Find & replace (issue #19) — hoisted above the handlers so createMenuHandlers
@@ -794,7 +828,13 @@ export default function App() {
                 refreshNonce={refreshNonce}
               />
             ) : (
-              <Outline headings={outlineHeadings} activeIndex={activeHeading} loading={richLoading} onJump={jumpToHeading} />
+              <Outline
+                headings={outlineHeadings}
+                activeIndex={activeHeading}
+                loading={richLoading}
+                onJump={jumpToHeading}
+                onMoveHeading={isMobile ? undefined : moveOutlineHeading}
+              />
             )
           )}
         </aside>

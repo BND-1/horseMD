@@ -91,6 +91,13 @@ const appendInlineVisible = (out, raw, base = 0) => {
     out.map.push(rawIndex)
   }
   while (i < raw.length) {
+    // Escaped Markdown punctuation is visible text; only its leading backslash
+    // is syntax. Keep `\\~` aligned with the literal `~` rendered by Crepe.
+    if (raw[i] === '\\' && i + 1 < raw.length && /[\\`*{}\[\]()#+\-.!_>~|]/.test(raw[i + 1])) {
+      push(raw[i + 1], base + i + 1)
+      i += 2
+      continue
+    }
     if (raw.startsWith('![', i)) {
       const close = raw.indexOf(']', i + 2)
       if (close >= 0 && raw[close + 1] === '(') {
@@ -130,7 +137,7 @@ const appendInlineVisible = (out, raw, base = 0) => {
       i += 2
       continue
     }
-    if (raw[i] === '*' || raw[i] === '_' || raw[i] === '~') {
+    if (raw[i] === '*' || raw[i] === '_') {
       i++
       continue
     }
@@ -335,6 +342,7 @@ export {
   richPosFromVisibleIndex,
   richVisiblePositionAtPos,
   sourceRawFromVisibleIndex,
+  sourceVisibleIndex,
   sourceVisiblePositionAtRaw,
   stripMdForSnippet,
   visibleSourcePosition

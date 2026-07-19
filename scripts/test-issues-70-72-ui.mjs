@@ -54,6 +54,24 @@ async function testOutlineFoldState() {
     const expanded = await app.evaluate(`(() => [...document.querySelectorAll('.outline-item .outline-item-text')].map((node) => node.textContent.trim()).join('|'))()`)
     if (!expanded.includes('Child should stay visible')) throw new Error(`Outline expand failed: ${expanded}`)
 
+    const globalControl = await app.evaluate(`(() => {
+      const button = document.querySelector('.outline-head-btn')
+      return { disabled: !!button?.disabled, title: button?.title || '' }
+    })()`)
+    if (globalControl.disabled || !/全部折叠|Collapse all/i.test(globalControl.title)) {
+      throw new Error(`Outline global collapse control is unavailable: ${JSON.stringify(globalControl)}`)
+    }
+    await app.evaluate(`document.querySelector('.outline-head-btn')?.click()`)
+    await sleep(250)
+    const globallyCollapsed = await app.evaluate(`(() => [...document.querySelectorAll('.outline-item .outline-item-text')].map((node) => node.textContent.trim()).join('|'))()`)
+    if (globallyCollapsed !== 'Top') throw new Error(`Outline global collapse failed: ${globallyCollapsed}`)
+    await app.evaluate(`document.querySelector('.outline-head-btn')?.click()`)
+    await sleep(250)
+    const globallyExpanded = await app.evaluate(`(() => [...document.querySelectorAll('.outline-item .outline-item-text')].map((node) => node.textContent.trim()).join('|'))()`)
+    if (!globallyExpanded.includes('Parent title') || !globallyExpanded.includes('Child should stay visible')) {
+      throw new Error(`Outline global expand failed: ${globallyExpanded}`)
+    }
+
     await app.evaluate(`(() => {
       const pm = ${visiblePm}
       const h2 = [...pm.querySelectorAll('h2')].find((node) => node.textContent.includes('Parent title'))

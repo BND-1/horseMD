@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   editorViewCtx,
-  parserCtx
+  parserCtx,
+  remarkCtx
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
 import { TextSelection } from '@milkdown/prose/state'
@@ -26,6 +27,8 @@ import { useEditorLightboxControls } from './editor-lightbox.js'
 import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
+import { preserveRichMarkdownSource } from '../markdown-source-preservation.js'
+import { pmPosToMarkdownOffset } from './editor-source-map.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -116,7 +119,11 @@ export default function Editor({
   // background after create(). `chunks` is null for normal-sized docs.
   const chunks = (initialContent?.length || 0) > CHUNK_THRESHOLD ? splitMarkdown(initialContent, CHUNK_SIZE) : null
   const firstContent = chunks ? chunks[0] : initialContent || ''
-  const lastMarkdownRef = useRef(normalizeReviewMarkupMarkdown(normalizeDisplayMath(initialContent || '')))
+  // Keep the source snapshot separate from Crepe's canonical serialization.
+  // The first is what the user wrote; the second lets us isolate a rich-text
+  // transaction instead of replacing untouched source with formatter output.
+  const lastMarkdownRef = useRef(initialContent || '')
+  const canonicalMarkdownRef = useRef('')
 
   useEffect(() => {
     const host = hostRef.current
@@ -144,6 +151,7 @@ export default function Editor({
       userEditUntil = Date.now() + ttl
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
+    const pendingRawMarkdownPasteRef = { current: null }
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
@@ -190,12 +198,22 @@ export default function Editor({
     let appending = false
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
-        if (ready && !appending && hasRecentUserEdit()) {
-          const normalized = normalizeReviewMarkupMarkdown(md)
+        const pendingPaste = pendingRawMarkdownPasteRef.current
+        if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
+          const canonical = normalizeReviewMarkupMarkdown(md)
+          const preserved = pendingPaste
+            ? { markdown: pendingPaste.markdown }
+            : preserveRichMarkdownSource(
+                lastMarkdownRef.current,
+                canonicalMarkdownRef.current,
+                canonical
+              )
           // Source mapping must use the same markdown snapshot that App stores
           // and shows in the source textarea after this user edit.
-          lastMarkdownRef.current = normalized
-          onChange?.(normalized, false)
+          lastMarkdownRef.current = preserved.markdown
+          canonicalMarkdownRef.current = canonical
+          pendingRawMarkdownPasteRef.current = null
+          onChange?.(preserved.markdown, false)
           userEditUntil = Date.now() + 1000
         }
       })
@@ -265,6 +283,31 @@ export default function Editor({
           cleanups,
           markUserEdit,
           insertUploadedImage,
+          prepareRawMarkdownPaste: ({ markdown, from, to }) => {
+            const source = lastMarkdownRef.current || ''
+            let next = markdown
+            const replacesWholeDocument = from <= 1 && to >= view.state.doc.content.size
+            if (source && !replacesWholeDocument) {
+              try {
+                const remark = crepe.editor.ctx.get(remarkCtx)
+                const rawFrom = pmPosToMarkdownOffset(source, from, view.state.doc, remark)
+                const rawTo = pmPosToMarkdownOffset(source, to, view.state.doc, remark)
+                if (!Number.isFinite(rawFrom) || !Number.isFinite(rawTo)) return null
+                const start = Math.min(rawFrom, rawTo)
+                const end = Math.max(rawFrom, rawTo)
+                next = source.slice(0, start) + markdown + source.slice(end)
+              } catch {
+                return null
+              }
+            }
+            const pending = { markdown: next }
+            pendingRawMarkdownPasteRef.current = pending
+            return () => {
+              if (pendingRawMarkdownPasteRef.current === pending) {
+                pendingRawMarkdownPasteRef.current = null
+              }
+            }
+          },
           reportActiveBlock,
           setBlock,
           setCtxMenu,
@@ -306,6 +349,7 @@ export default function Editor({
           crepe,
           crepeRef,
           lastMarkdownRef,
+          canonicalMarkdownRef,
           setBlock,
           onStructureChange,
           isDestroyed: () => destroyed,
@@ -399,24 +443,14 @@ export default function Editor({
         // avoid edit/append races; restored after. Yields via setTimeout (NOT
         // requestIdleCallback — that stops firing when the window is occluded,
         // which would leave the final yield pending and the editor read-only).
-        // Compute the initial markdown snapshot (content baseline for dirty
-        // tracking / outline / word count). On a big doc serializing the whole
-        // document is non-trivial, so for large docs defer it past a paint —
-        // setLoaded(true) above has already cleared the skeleton, so this runs
-        // after the rendered content is on screen instead of holding it back.
-        const finishInitial = (rebase) => {
+        // Record Crepe's canonical baseline without replacing the tab's original
+        // source. Opening a rich document must never add blank lines, escapes,
+        // or list-marker changes before the user edits anything.
+        const finishInitial = (recordCanonical) => {
           if (destroyed) return
-          // Huge (chunked) docs skip the rebase: serializing the whole rebuilt
-          // doc is itself expensive, and the original markdown is already the
-          // content/savedContent baseline (clean), so no rebase is needed.
-          if (rebase) {
+          if (recordCanonical) {
             try {
-              const normalized = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
-              // Crepe may normalize the initial source (tables, lists, HTML,
-              // whitespace). Keep source-map offsets in that rebased coordinate
-              // system instead of the file's pre-parse text.
-              lastMarkdownRef.current = normalized
-              onChange?.(normalized, true)
+              canonicalMarkdownRef.current = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
             } catch { /* */ }
           }
           ready = true

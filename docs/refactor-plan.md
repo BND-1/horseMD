@@ -5,7 +5,7 @@
 > 重构阶段用 OMC 的 **ralph loop**(持久化循环 + 每步验证)驱动,每拆一块就跑
 > 对应测试,绿灯才继续。
 
-## 当前结果（2026-07-12）
+## 2026-07-12 重构完成时快照（历史记录）
 
 | Phase | 目标 | 状态 |
 |---|---|---|
@@ -16,7 +16,7 @@
 | **5** | Workspace、Sidebar tree 与右键菜单拆分 | ✅ 完成（Sidebar 584 → **465**） |
 | **6** | 源码/富文本状态机提取为 `useSourceModeSwitch` | ✅ 完成（App 1200 → **954**） |
 
-## 一、代码体检(行数,降序)
+## 一、代码体检（2026-07-12 行数快照）
 
 | 文件 | 行数 | 角色 | 评级 |
 |---|---|---|---|
@@ -51,6 +51,8 @@
 > 主进程 `main/index.js` 当前 804 行。继续拆分前应先明确 IPC 领域边界并补主进程合同测试。
 >
 > **文件体量纪律**(用户指令):新功能一律放进小而专的模块/hook,目标 < 500 行/文件(硬上限 800),超了就拆。App.jsx/Editor.jsx 不再 append 新功能。
+
+> 当前文件规模会随功能变化，不使用本页历史数字作重构依据。开始新拆分前先运行 `wc -l`，并以 [architecture.md](./architecture.md)、[editor-feature-inventory.md](./editor-feature-inventory.md) 和 [markdown-source-preservation.md](./markdown-source-preservation.md) 的现行职责合同为准。
 
 ## 二、历史目标拆解
 

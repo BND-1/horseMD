@@ -292,6 +292,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
     // Debounce only repeated structure/content changes within the same target.
     // A split-pane focus or source/rich change must replace stale headings now.
     let timer = 0
+    let emptyReads = 0
     const read = () => {
       timer = 0
       // Source mode: parse the textarea. sourceOutlineVersion bumps on input so
@@ -304,8 +305,14 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
       }
       const els = getHeadings(getEditorHost())
       // No editor mounted (e.g. just closed the file) → clear instead of
-      // leaving the previous document's outline hanging (issue #20).
+      // leaving the previous document's outline hanging (issue #20). The
+      // active editor's ref can arrive one React commit after opening the
+      // Outline panel, so retry briefly before treating it as an empty file.
       if (!els.length) {
+        if (sidebarOpen && sidebarMode === 'outline' && emptyReads++ < 12) {
+          timer = setTimeout(read, 100)
+          return
+        }
         setOutlineHeadings([])
         return
       }
@@ -313,7 +320,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
         els.map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
       )
     }
-    const targetKey = `${activeId}:${sourceMode ? 'source' : 'rich'}`
+    const targetKey = `${activeId}:${sourceMode ? 'source' : 'rich'}:${sidebarOpen && sidebarMode === 'outline' ? 'outline' : 'background'}`
     const targetChanged = outlineTargetRef.current !== targetKey
     outlineTargetRef.current = targetKey
     if (targetChanged) read()
@@ -321,7 +328,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
     return () => {
       if (timer) clearTimeout(timer)
     }
-  }, [home, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, getEditorHost, getSourceTextarea])
+  }, [home, sidebarOpen, sidebarMode, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, getEditorHost, getSourceTextarea])
 
   // Source-mode live refresh (#40): bump sourceOutlineVersion on textarea input
   // (debounced) so the list re-parses when the user adds/edits a heading. Rich
@@ -344,6 +351,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
     outlineHeadings,
     richDocVersion,
     setRichDocVersion,
+    refreshOutline: () => setRichDocVersion((version) => version + 1),
     jumpToHeading
   }
 }

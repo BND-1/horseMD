@@ -12,7 +12,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 - 新功能继续使用聚焦模块，不把逻辑重新堆回 `App.jsx` 或 `Editor.jsx`。
 - 桌面与移动端共用 renderer；平台专属能力通过 `window.api.capabilities` 隔离。
 
-## 0.6.0 已完成
+## 0.6.x 已完成
 
 - **飞书式斜杠菜单**：支持中文、英文、别名、拼音和拼音首字母匹配；输入语言名可直接创建对应语言的代码块。
 - **单一多根工作区**：一个工作区可添加多个文件夹路径，可独立展开、移除和监听，不再用后加入的文件夹替换原目录。
@@ -22,7 +22,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 - **移动端文本选择**：双击或长按选中文本时只保留系统菜单，避免 HorseMD 工具栏与复制/粘贴菜单重叠。
 - **安全与质量基础**：限制外部协议和本地字体权限，主进程按领域拆分，并把核心回归脚本接入 CI。
 
-完整候选更新说明见 [docs/release-v0.6.0.md](./docs/release-v0.6.0.md)。
+已发布版本的说明见 [docs/release-v0.6.0.md](./docs/release-v0.6.0.md) 和 [docs/release-v0.6.5.md](./docs/release-v0.6.5.md)。
 
 ## 近期计划
 
@@ -54,7 +54,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 
 ## AI 能力（后期探索）
 
-AI 暂不进入 `0.6.0`，待核心版本发布稳定后再单独设计。当前倾向是：
+AI 暂不进入当前 `0.6.x` 稳定线，待核心版本发布稳定后再单独设计。当前倾向是：
 
 1. **原生 AI 写作体验**：选区润色、改写、翻译、总结、当前文档问答和工作区上下文由 HorseMD 提供统一 UI。
 2. **可插拔 Provider**：通过内部稳定合同适配 OpenAI、Anthropic、OpenAI-compatible 和本地模型，不让上层界面绑定单一厂商协议。
@@ -71,6 +71,7 @@ AI 暂不进入 `0.6.0`，待核心版本发布稳定后再单独设计。当前
 - 桌面与移动端文档同步、外部目录镜像/备份，以及 WebDAV 等可自托管存储方案。
 - 更完善的导出、发布和跨应用内容工作流。
 - 在安全模型与 API 稳定后评估通用插件机制。
+- **源码优先 Live Preview（独立架构项目）**：远期评估以 CodeMirror Markdown 文本为唯一数据模型、以编辑器 decorations 呈现格式化内容的方案。目标是从架构上消除富文本 serializer 改写未编辑源码的风险；它会牵动表格、代码块、Mermaid、图片、Review、PDF、移动端和全部编辑器插件，不能作为当前 Crepe 模式切换的临时重构。当前原文保真合同见 [docs/markdown-source-preservation.md](./docs/markdown-source-preservation.md)。
 
 ## 已完成的主要能力
 

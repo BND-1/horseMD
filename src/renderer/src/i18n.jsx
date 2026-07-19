@@ -155,6 +155,7 @@ export const STRINGS = {
     'outline.collapseAll': 'Collapse All',
     'outline.expand': 'Expand',
     'outline.collapse': 'Collapse',
+    'outline.dragReorder': 'Drag to reorder same-level sections',
 
     // find
     'find.placeholder': 'Find in document',
@@ -629,6 +630,7 @@ export const STRINGS = {
     'outline.collapseAll': '全部折叠',
     'outline.expand': '展开',
     'outline.collapse': '折叠',
+    'outline.dragReorder': '拖动以调整同级章节顺序',
 
     'find.placeholder': '在文档中查找',
     'find.next': '下一个',

@@ -58,8 +58,9 @@ src/
       paths.js             纯工具：路径/文件名/版本/重文档判定/genId/会话
       find.js              文档内查找的高亮/匹配纯函数
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
-      settings.js          用户偏好（排版/图床/拼写/隐藏文件）持久化 + CSS var 应用
+      settings.js          用户偏好（正文/列表排版、图床、拼写、隐藏文件）持久化 + CSS var 应用
       scrollAnchor.js      模式切换稳定 façade（仅 re-export 公共 API）
+      markdown-source-preservation.js 富文本局部编辑的原始 Markdown 保真映射
       mode-visible-map.js  源码/富文本可见字符 fallback 映射
       mode-caret-anchor.js 双向光标 capture/restore
       mode-viewport-anchor.js 阅读视口 capture/restore
@@ -163,8 +164,9 @@ build/
 ```
 用户敲键 → Crepe/ProseMirror 改文档
         → markdownUpdated 回调（必须在 create() 之前注册！）
-        → onChange(md, false)
-        → App.updateContent(tabId, md)
+        → canonical Markdown + 原始源码局部保真映射
+        → onChange(preservedMarkdown, false)
+        → App.updateContent(tabId, preservedMarkdown)
         → tab.content 更新
         → 派生：大纲、字数、脏标记、保存内容 全部跟着更新
 ```
@@ -172,6 +174,8 @@ build/
 > ⚠️ 这条链路曾经断过：监听器注册晚了导致 `markdownUpdated` 从不触发，详见 [implementation-notes.md](./implementation-notes.md)。
 
 > **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
+
+> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑由 `markdown-source-preservation.js` 回写到原始源码；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

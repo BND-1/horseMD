@@ -2,21 +2,25 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n.jsx'
 import { Icon } from './icons.jsx'
 import { defaultCollapsedHeadings, headingDepths, headingHasChildren } from './outline-model.js'
+import { haveSameHeadingParent } from '../outline-reorder.js'
 
 // Outline panel. The heading list comes from the parent (App), which reads the
 // editor's RENDERED h1…h6 elements — so every heading the document shows is
 // listed, no matter how its source wrote it (ATX `#`, Setext, or HTML <h1>),
 // and the list stays in lockstep with jumpToHeading (same DOM order).
 
-export default function Outline({ headings = [], activeIndex = -1, onJump, loading = false }) {
+export default function Outline({ headings = [], activeIndex = -1, onJump, onMoveHeading, loading = false }) {
   const { t } = useI18n()
   const activeRef = useRef(null) // the visible row that represents activeIndex
   const panelRef = useRef(null) // the scroll container (.outline-list)
   const endpadRef = useRef(null) // trailing spacer so the last row can center
   const lastScrolledRef = useRef(-1) // dedupe — only act on a real active change
+  const draggingIndexRef = useRef(-1)
 
   // Collapsed set: indices of headings whose children are hidden.
   const [collapsed, setCollapsed] = useState(new Set())
+  const [draggingIndex, setDraggingIndex] = useState(-1)
+  const [dropTarget, setDropTarget] = useState(null)
 
   // Last-seen outline structure. Collapse state is index-based in rendering,
   // but user edits commonly change only heading text. Preserve collapse state
@@ -74,7 +78,7 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   }
 
   const expandAll = () => setCollapsed(new Set())
-  const collapseAll = () => setCollapsed(defaultCollapsedHeadings(headings))
+  const collapseAll = () => setCollapsed(new Set(headings.map((_, index) => index).filter(hasChildren)))
 
   const structureFor = (items) => {
     const depths = headingDepths(items)
@@ -178,10 +182,18 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
   }, [headings.length])
 
   const foldable = headings.map((_, i) => i).filter(hasChildren)
-  const compact = defaultCollapsedHeadings(headings)
-  const hasCompactState = compact.size > 0
-  const isCollapsed = hasCompactState && [...compact].every((i) => collapsed.has(i))
+  const isCollapsed = foldable.length > 0 && foldable.every((index) => collapsed.has(index))
   const toggleAll = isCollapsed ? expandAll : collapseAll
+  const clearDragState = () => {
+    draggingIndexRef.current = -1
+    setDraggingIndex(-1)
+    setDropTarget(null)
+  }
+
+  const dropPlacement = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  }
 
   return (
     <div className="outline">
@@ -193,7 +205,7 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
               className="outline-head-btn"
               onClick={toggleAll}
               title={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
-              disabled={foldable.length === 0 || !hasCompactState}
+              disabled={foldable.length === 0}
               aria-label={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
             >
               <Icon name={isCollapsed ? 'expand' : 'collapse'} size={15} />
@@ -225,15 +237,50 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, loadi
               const isCollapsed = collapsed.has(i)
               const isActive = i === activeDisplayIndex
               const containsActive = isActive && i !== activeIndex
+              const canMove = draggingIndexRef.current >= 0 &&
+                draggingIndexRef.current !== i &&
+                haveSameHeadingParent(headings, draggingIndexRef.current, i)
+              const dropClass = dropTarget?.index === i ? ` drag-over-${dropTarget.placement}` : ''
+              const indent = 12 + (h.level - 1) * 12
               return (
                 <div
                   key={i}
                   ref={isActive ? activeRef : undefined}
-                  className={`outline-item lvl-${h.level}${isActive ? ' active' : ''}${containsActive ? ' contained-active' : ''}`}
-                  style={{ paddingLeft: 12 + (h.level - 1) * 12 }}
+                  className={`outline-item lvl-${h.level}${isActive ? ' active' : ''}${containsActive ? ' contained-active' : ''}${draggingIndex === i ? ' dragging' : ''}${dropClass}`}
+                  style={{ paddingLeft: indent, '--outline-indent': `${indent}px` }}
                   onClick={() => onJump(i)}
+                  onDragOver={(event) => {
+                    if (!canMove) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    setDropTarget({ index: i, placement: dropPlacement(event) })
+                  }}
+                  onDrop={(event) => {
+                    if (!canMove) return
+                    event.preventDefault()
+                    onMoveHeading?.(draggingIndexRef.current, i, dropPlacement(event))
+                    clearDragState()
+                  }}
                   title={h.text}
                 >
+                  {onMoveHeading && (
+                    <span
+                      className="outline-drag-handle"
+                      draggable
+                      title={t('outline.dragReorder')}
+                      onClick={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onDragStart={(event) => {
+                        draggingIndexRef.current = i
+                        setDraggingIndex(i)
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', String(i))
+                      }}
+                      onDragEnd={clearDragState}
+                    >
+                      <Icon name="grip-vertical" size={14} strokeWidth={2.4} />
+                    </span>
+                  )}
                   {isParent ? (
                     <span
                       className="outline-twisty"

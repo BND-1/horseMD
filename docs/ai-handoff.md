@@ -15,7 +15,9 @@
   - `npm run build`
   - `npm run build:mobile`
   - `npm run guide:check`
-  - `npm run test:ui-regression`，结果：`9 sessions + 3 standalone`
+  - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
+  - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
+  - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -78,9 +80,10 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 5. [manual-test-checklist.md](./manual-test-checklist.md)：人工验收基线。
 6. [development.md](./development.md)：构建、CDP、发布验证。
 7. [handoff-mode-switch.md](./handoff-mode-switch.md)：源码/富文本切换根因和修复历史。
-8. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
-9. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
-10. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
+8. [markdown-source-preservation.md](./markdown-source-preservation.md)：原始 Markdown 保真合同、粘贴边界与 Live Preview 远期决策。
+9. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
+10. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
+11. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
 
 历史文档说明：
 
@@ -136,6 +139,8 @@ android/, ios/           Capacitor 原生壳
 - Crepe 在源码模式中必须保持挂载，只隐藏，不卸载。
 - 源码 textarea 是非受控的，保留 `liveContentRef` / `commitLive` 流程。
 - 只有源码真的改过，切回富文本才同步到 Crepe。
+- Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。不要在初始化、切换或局部编辑时用 canonical 内容覆盖整篇源码。
+- 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
 - 回归必须覆盖：
@@ -226,6 +231,8 @@ android/, ios/           Capacitor 原生壳
 - 父标题折叠时即使当前激活的是子标题，也要有反馈。
 - 标题文字编辑后折叠状态不丢。
 - 源码/富文本切换后目录层级不能跳。
+- 桌面端拖动标题左侧抓手可重排**同一父级**下的章节，移动范围包含标题、后代标题和正文。必须调用 `outline-reorder.js` 的原始 Markdown 区段操作，不能取富文本 serializer 结果；不同父级或不同层级不允许落下，避免隐式重设层级。
+- “折叠正文”不是当前大纲折叠的延伸。源码 textarea 无法隐藏局部行；富文本折叠须作为独立的、每 Tab 非持久 UI 状态设计，并先覆盖选区、查找、审阅、图片/代码块、模式切换和滚动锚点。
 
 ### 任务列表输入
 
@@ -278,6 +285,11 @@ npm run test:table-ui
 npm run test:lightbox-ui
 npm run test:review-ui
 npm run test:source-map
+npm run test:markdown-preservation
+npm run test:issue-77-ui
+npm run test:issue-79-ui
+npm run test:outline-reorder
+npm run test:issue-82-ui
 ```
 
 `test:math-ui`、`test:pdf-ui` 等部分脚本连接已有 CDP session。单独跑时先按 fixture 启动，或参考 `scripts/run-ui-regression.mjs`。
@@ -347,6 +359,7 @@ npm run guide:capture
 3. 完善 Windows/Linux 实机包验证。
 4. AI 能力先做架构方案，不急着写大模块。
 5. 插件市场难度高，先不急；优先可控的自定义快捷键、同步、AI provider 合同。
+6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；先维护已落地的原文保真层。
 
 已在 Roadmap 中记录：
 
@@ -389,6 +402,11 @@ npm run guide:check
 npm run test:ui-regression
 node scripts/test-pdf-document.mjs
 npm run test:pdf-latex-ui
+npm run test:markdown-preservation
+npm run test:issue-77-ui
+npm run test:issue-79-ui
+npm run test:outline-reorder
+npm run test:issue-82-ui
 ```
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。
