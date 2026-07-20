@@ -5,13 +5,23 @@ export default function FontPicker({ label, value, placeholder, fonts, onLoadFon
   const [q, setQ] = useState('')
   const rootRef = useRef(null)
   const searchRef = useRef(null)
+  const onHoverRef = useRef(onHover)
+  const onLoadFontsRef = useRef(onLoadFonts)
+
+  useEffect(() => {
+    onHoverRef.current = onHover
+  }, [onHover])
+
+  useEffect(() => {
+    onLoadFontsRef.current = onLoadFonts
+  }, [onLoadFonts])
 
   useEffect(() => {
     if (!open) {
-      onHover?.(null)
+      onHoverRef.current?.(null)
       return
     }
-    onLoadFonts()
+    onLoadFontsRef.current?.()
     setQ('')
     requestAnimationFrame(() => searchRef.current?.focus())
     const onDown = (e) => {
@@ -26,7 +36,7 @@ export default function FontPicker({ label, value, placeholder, fonts, onLoadFon
       window.removeEventListener('pointerdown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, onHover, onLoadFonts])
+  }, [open])
 
   const query = q.trim().toLowerCase()
   const list = (fonts || []).filter((f) => !query || f.toLowerCase().includes(query))

@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前版本号：`package.json` 为 `0.7.1`
+- 当前版本号：`package.json` 为 `0.7.3`（`v0.7.2` 已正式发布；`0.7.3` 为 #85 字体搜索修复测试包）
 - 最近关键提交：
   - `ab8f699 fix(pdf): render display latex in exports`
   - `0c1b3f0 fix(editor): protect inline math deletion`

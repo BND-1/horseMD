@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-07-20
+
+### Fixed
+- **Font picker search accepts typing** (#85) — opening either the document-font
+  or code-font picker no longer clears a query as the local font list finishes
+  loading. The search field keeps focus and filters normally.
+
 ## [0.7.2] - 2026-07-19
 
 ### Added
