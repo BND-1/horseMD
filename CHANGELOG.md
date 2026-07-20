@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-07-20
+
+### Fixed
+- **Compact rich-text code blocks** (#80) — fenced code blocks now use the
+  document paragraph spacing instead of the larger callout spacing. Syntax
+  highlighting, language selection, and copy controls are unchanged.
+
 ## [0.7.3] - 2026-07-20
 
 ### Fixed
