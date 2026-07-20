@@ -21,6 +21,7 @@ export default function Topbar({
   onClose,
   onNew,
   onCloseOthers,
+  onCloseRight,
   onOpenRight,
   onRename,
   onDuplicate,
@@ -52,6 +53,7 @@ export default function Topbar({
         onClose={onClose}
         onNew={onNew}
         onCloseOthers={onCloseOthers}
+        onCloseRight={onCloseRight}
         onOpenRight={onOpenRight}
         onRename={onRename}
         onDuplicate={onDuplicate}

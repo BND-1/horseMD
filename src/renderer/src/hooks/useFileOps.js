@@ -304,6 +304,31 @@ export function useFileOps({
     })
   }, [commitAllLive, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef, tRef])
 
+  // Close all tabs to the right of `keepId` (from the tab right-click menu).
+  const closeRight = useCallback((keepId) => {
+    commitAllLive()
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === keepId)
+      if (idx === -1) return prev
+      const right = prev.slice(idx + 1)
+      if (right.length === 0) return prev
+      const firstDirty = right.find((t) => t.content !== t.savedContent)
+      if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
+        return prev
+      }
+      for (const t of right) {
+        const timer = liveTimersRef.current.get(t.id)
+        if (timer) clearTimeout(timer)
+        liveTimersRef.current.delete(t.id)
+        liveContentRef.current.delete(t.id)
+      }
+      const rightIds = new Set(right.map((t) => t.id))
+      setActiveId((cur) => (rightIds.has(cur) ? keepId : cur))
+      setSplitId(null)
+      return prev.slice(0, idx + 1)
+    })
+  }, [commitAllLive, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef, tRef])
+
   const writeTab = useCallback(async (tab, targetPath) => {
     try {
       // Move pasted images (base64 blobs / global paste-folder files) into the
@@ -500,6 +525,7 @@ export function useFileOps({
     updateContent,
     closeTab,
     closeOthers,
+    closeRight,
     renameTabFile,
     commitTabRename,
     duplicateTabFile,
