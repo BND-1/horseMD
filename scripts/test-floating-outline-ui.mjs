@@ -154,9 +154,22 @@ async function main() {
       if (!editor || !heading) return false
       return Math.abs(heading.getBoundingClientRect().top - editor.getBoundingClientRect().top) < 56
     })()`), 'Clicking a floating outline item did not jump to its heading')
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 })
+    await waitFor(() => app.evaluate(`(
+      document.querySelector('.floating-outline-panel')?.getBoundingClientRect().width || 0
+    ) < 2`), 'Floating outline stayed expanded after clicking an item and moving the pointer away')
 
     await sourceToggle(app)
     await waitFor(() => app.evaluate(`Boolean([...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent))`), 'Source mode did not open')
+    const sourceHover = await app.evaluate(`(() => {
+      const rect = document.querySelector('.floating-outline')?.getBoundingClientRect()
+      return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+    })()`)
+    assert.ok(sourceHover, 'Floating outline source-mode hover target missing')
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...sourceHover })
+    await waitFor(() => app.evaluate(`(
+      document.querySelector('.floating-outline-panel')?.getBoundingClientRect().width || 0
+    ) > 200`), 'Floating outline did not reopen in source mode on hover')
     const sourcePoint = await app.evaluate(`(() => {
       const item = [...document.querySelectorAll('.floating-outline-item')].find((node) => node.title === 'Section 12')
       const rect = item?.getBoundingClientRect()

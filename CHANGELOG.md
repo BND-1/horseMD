@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connection settings, never with the encrypted password or S3 secret.
 
 ### Fixed
+- **Floating outline dismissal** — clicking a right-side chapter item no longer
+  leaves its panel pinned open; moving the pointer away collapses it immediately,
+  while keyboard focus navigation remains available.
 - **PDF resource warning** — a document without images no longer reports that
   resources may be incomplete merely because font readiness took longer than the
   preview wait.
