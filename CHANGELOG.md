@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connection settings, never with the encrypted password or S3 secret.
 
 ### Fixed
+- **Windows Command Palette compositing** (#62) — the full-window blur layer is
+  now disabled only on Windows, avoiding a GPU/driver-sensitive re-composite
+  while hovering or scrolling command results. The dimmed backdrop, keyboard
+  navigation, search, and command execution are unchanged; Windows real-device
+  confirmation remains tracked in the Issue.
 - **Heading letter case** (#63) — H5/H6 no longer force English text to uppercase;
   authored casing is preserved in rich text.
 - **Floating outline dismissal** — clicking a right-side chapter item no longer

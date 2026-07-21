@@ -3318,6 +3318,14 @@ body.hm-full-width .source-editor {
   padding-top: 10vh;
   animation: fadeIn 0.12s var(--ease-out);
 }
+/* Chromium's full-window backdrop surface is re-composited whenever a palette
+   row changes selection. On some Windows GPU/driver combinations that showed
+   up as a visible flash while hovering or wheel-scrolling. The dimmed overlay
+   still separates the palette from the document without that unstable layer. */
+.app.is-win .palette-overlay {
+  backdrop-filter: none;
+  background: rgba(0, 0, 0, 0.38);
+}
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

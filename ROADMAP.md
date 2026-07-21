@@ -50,7 +50,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 
 ### 近期需要先复现或确定方案
 
-1. **#62 Command Palette 悬停闪屏**：报告来自 Windows。先在 Windows 实机以独立 profile 复现，记录显卡、缩放、主题、是否仅发生在动画/滚动条附近；macOS/Linux 的通过不能替代此验收。
+1. **#62 Command Palette 悬停闪屏**：报告来自 Windows `0.6.0`。已根据录屏移除 Windows 专属的全屏 `backdrop-filter` 合成层，并以命令面板 UI 回归保护悬停、键盘选择与命令执行；仍须在 Windows 实机以独立 profile 确认，记录显卡、缩放、主题及滚轮路径后再关闭 Issue。macOS/Linux 的通过不能替代此验收。
 2. **#65 注释大纲**：先决定它是普通大纲中的 Review 筛选、独立的“批注”侧栏，还是文档内跳转列表。需要同时覆盖 CriticMarkup 卡片、折叠标题、搜索、源码模式和移动端，不先在现有大纲中临时插入一组条目。
 
 ### 原生平台项目

@@ -1,5 +1,7 @@
 ﻿import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 
+const PRIMARY_MOD = process.platform === 'darwin' ? { metaKey: true } : { ctrlKey: true }
+
 async function main() {
   const app = await launchBuiltElectron({
     profileDir: '/tmp/horsemd-command-palette-keybindings-ui-' + process.pid + '-' + Date.now(),
@@ -8,7 +10,7 @@ async function main() {
 
   try {
     const result = await app.evaluate(`(async () => {
-      const primaryMod = {"ctrlKey":true}
+      const primaryMod = ${JSON.stringify(PRIMARY_MOD)}
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
       const visible = (element) => {
         if (!element) return false
@@ -86,14 +88,41 @@ async function main() {
       recorder.click()
       await sleep(140)
       await dispatchKey({ key: 's', code: 'KeyS', ...primaryMod, altKey: true })
-      if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(saveRow))) throw new Error('Save row did not show custom shortcut')
+      if (JSON.parse(localStorage.getItem('horsemd.keybindings.v1') || '{"overrides":{}}')?.overrides?.['file.save']?.[0] !== 'Mod+Alt+S') {
+        throw new Error('Save shortcut was not persisted as Mod+Alt+S')
+      }
+      const updatedSaveRow = rowByTitle(['保存', 'Save'])
+      if (!updatedSaveRow?.querySelector('kbd')) throw new Error('Save row did not show custom shortcut')
 
       await clickButton((button) => button.title === '主页' || button.title === 'Home', 'home')
       await sleep(260)
       await openPalette()
+      const palette = document.querySelector('.palette')
+      const overlay = document.querySelector('.palette-overlay')
+      if (!palette || !overlay) throw new Error('Command palette surface did not open')
+      const stablePaletteWidth = palette.getBoundingClientRect().width
+      const itemsBeforeHover = paletteItems()
+      if (itemsBeforeHover.length < 3) throw new Error('Command palette has too few items for hover regression')
+      for (const item of itemsBeforeHover.slice(0, 3)) {
+        item.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+        await sleep(40)
+      }
+      if (palette.getBoundingClientRect().width !== stablePaletteWidth) {
+        throw new Error('Command palette resized while changing hovered items')
+      }
+      const appRoot = document.querySelector('.app')
+      if (!appRoot) throw new Error('Missing app root')
+      const originalClass = appRoot.className
+      appRoot.classList.add('is-win')
+      const windowsBackdropFilter = getComputedStyle(overlay).backdropFilter
+      appRoot.className = originalClass
+      if (windowsBackdropFilter !== 'none') {
+        throw new Error('Windows command palette still uses a backdrop filter')
+      }
       const savePaletteItem = paletteItems().find((item) => /保存|Save/i.test(textOf(item)))
       if (!savePaletteItem) throw new Error('Missing Save item in command palette')
-      if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(savePaletteItem))) {
+      const saveShortcutLabel = textOf(updatedSaveRow.querySelector('kbd'))
+      if (!textOf(savePaletteItem).includes(saveShortcutLabel)) {
         throw new Error('Palette Save hint did not reflect custom shortcut: ' + textOf(savePaletteItem))
       }
       document.querySelector('.palette-overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
