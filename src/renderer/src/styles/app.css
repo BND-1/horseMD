@@ -5205,7 +5205,6 @@ body.dark .milkdown {
   font-size: 1em;
   font-weight: 600;
   color: var(--text);
-  text-transform: uppercase;
   letter-spacing: 0;
 }
 /* First block sits flush with the top — no leading whitespace */

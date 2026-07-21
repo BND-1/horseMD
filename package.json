@@ -31,6 +31,7 @@
     "test:issue-84-ui": "node scripts/test-issue-84-image-alt-ui.mjs",
     "test:font-picker-ui": "node scripts/test-font-picker-ui.mjs",
     "test:issue-80-ui": "node scripts/test-issue-80-codeblock-spacing-ui.mjs",
+    "test:heading-case-ui": "node scripts/test-heading-case-ui.mjs",
     "test:issue-86-ui": "node scripts/test-issue-86-table-save-ui.mjs",
     "test:floating-outline-ui": "node scripts/test-floating-outline-ui.mjs",
     "test:external-change-warning-ui": "node scripts/test-external-change-warning-ui.mjs",
