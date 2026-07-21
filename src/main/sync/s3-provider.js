@@ -31,7 +31,7 @@ async function failureCode(response) {
 }
 
 export class S3Provider {
-  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, request, prefix = '', allowInsecure = false }) {
+  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, request, prefix = '', allowInsecure = false, userAgent = '' }) {
     const url = new URL(endpoint)
     if (!['https:', 'http:'].includes(url.protocol)) throw new Error('S3 Endpoint 无效。')
     if (url.protocol !== 'https:' && !allowInsecure) throw new Error('S3 连接必须使用 HTTPS。')
@@ -40,6 +40,7 @@ export class S3Provider {
     this.bucket = bucket
     this.prefix = clean(prefix)
     this.request = request
+    this.userAgent = String(userAgent || '').trim()
     // object keys are encoded segment-by-segment before both signing and
     // net.fetch. Escaping again here turns a Chinese filename's `%E4...` into
     // `%25E4...` in the canonical request and MinIO rejects the signature.
@@ -60,7 +61,7 @@ export class S3Provider {
       method,
       path: base.pathname,
       query: Object.fromEntries(base.searchParams),
-      headers: { host: base.host, ...headers },
+      headers: { host: base.host, ...(this.userAgent ? { 'user-agent': this.userAgent } : {}), ...headers },
       body
     }))
     // SigV4 must include Host in the canonical request. Electron net.fetch,

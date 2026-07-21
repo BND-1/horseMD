@@ -39,6 +39,8 @@ const paths = {
   command: 'M18 3a3 3 0 0 0-3 3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3',
   heading: 'M6 4v16 M18 4v16 M6 12h12',
   menu: 'M3 6h18 M3 12h18 M3 18h18',
+  lock: 'M7 10V7a5 5 0 0 1 10 0v3 M5 10h14v11H5z M12 14v3',
+  unlock: 'M8 10V7a4 4 0 0 1 7.7-1.5 M5 10h14v11H5z M12 14v3',
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
   share: 'M12 3v13 M8 7l4-4 4 4 M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4',
   settings: 'M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6',

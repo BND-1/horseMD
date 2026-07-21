@@ -234,7 +234,7 @@ if (isLargeDoc) {
 
 **第一/三/四步已完成**（大文件秒开 + 滚动追赶修复 + 富文本 `content-visibility`）。**P2（让富文本流畅承载极大文档）不是可选项**——按文首产品原则,用户打开大文档后必须在富文本里查看/编辑,textarea 只是过渡。
 
-**#25「跳页」修复(重要,易踩):** `content-visibility:auto` 用 `contain-intrinsic-size` 估算屏外块高度,滚入视口时从估算变为真实高度 → 块"长高"。若此时 `.editor-scroll { overflow-anchor: none }`,浏览器不补偿 → 视口内容上蹿(停在代码块上尤其明显,因为 CodeMirror 还会延迟测量行换行,代码块真实高度 20em+ vs 估算 5em)。修法两条都已落地:① 估算 `3.5em → 5em`(实测段落均值,降低单块误差);② `.editor-scroll.hm-cv { overflow-anchor: auto }`(让 Chromium 自动补偿高度变化,把 delta 吸收掉)——**只对 CV 文档开,小文档保持 `none` 不变**。**教训:用了 content-visibility,几乎总要配 `overflow-anchor: auto`,否则估算↔真实的差就是可见的跳。**
+**#25「跳页」修复(重要,易踩):** `content-visibility:auto` 用 `contain-intrinsic-size` 估算屏外块高度,滚入视口时从估算变为真实高度。`.editor-scroll { overflow-anchor:auto }` 会吸收普通段落的高度变化，但选区存在时 Chromium 不保证锚定。CodeMirror 即使 eager-mount，代码块仍远高于 5em 估值，因此 `.editor-scroll.hm-cv` 必须把 `.milkdown-code-block` 排除在 `content-visibility` 外，让其真实高度常驻；表格仍保留 CV，并在操作控件打开时自行退出。`scripts/test-codeblock-scroll-stability-ui.mjs` 用 1300 段的大文档模拟连续滚动，在四处代码块点击并静置，断言视口位移为 0px。**教训:有选择态的复杂块不能只依赖 scroll anchoring，必须消除估高→真实高度的切换。**
 
 ---
 

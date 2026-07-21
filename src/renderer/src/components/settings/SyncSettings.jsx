@@ -5,7 +5,7 @@ import { Icon } from '../icons.jsx'
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
 
 const emptyConnection = {
-  name: '', endpoint: '', username: '', password: '', bucket: '', region: '', accessKeyId: '', secretAccessKey: ''
+  name: '', endpoint: '', username: '', password: '', bucket: '', region: '', accessKeyId: '', secretAccessKey: '', userAgent: ''
 }
 
 function ConnectionField({ id, label, ...inputProps }) {
@@ -53,6 +53,14 @@ function ConnectionForm({ connection = null, type: requestedType = 'webdav', onS
       value={form.endpoint}
       onChange={update('endpoint')}
     />
+    <ConnectionField
+      id={fieldId('user-agent')}
+      label={t('sync.userAgent')}
+      placeholder={t('sync.userAgentExample')}
+      value={form.userAgent}
+      onChange={update('userAgent')}
+    />
+    <p className="sync-field-help">{t('sync.userAgentHelp')}</p>
     {type === 'webdav' ? <>
       <ConnectionField
         id={fieldId('username')}

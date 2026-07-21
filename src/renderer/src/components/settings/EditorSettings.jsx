@@ -1,8 +1,7 @@
-import { useEffect, useRef } from 'react'
 import Toggle from '../ui/Toggle.jsx'
 import TypographyControls from './TypographyControls.jsx'
 import AdjustGroup from '../ui/AdjustGroup.jsx'
-import { USER_CSS_TEMPLATE } from './user-css-template.js'
+import UserCssSnippets from './UserCssSnippets.jsx'
 import {
   SOURCE_FONT_OFFSET_MIN,
   SOURCE_FONT_OFFSET_MAX,
@@ -19,42 +18,11 @@ const SOURCE_FONT_OFFSET_PRESETS = [
 ]
 
 export default function EditorSettings({ settings, onUpdateSettings, onHoverFont, t }) {
-  const cssRef = useRef(null)
-  const timerRef = useRef(null)
   const sourceOffset = Number.isFinite(settings.sourceFontOffset) ? settings.sourceFontOffset : 0
   const sourceOffsetIdx = SOURCE_FONT_OFFSET_PRESETS.findIndex((p) => p.value === sourceOffset)
   // Resulting source font size = body font size + offset (clamped ≥ 8px for sanity).
   const sourcePx = Math.max(8, (settings.fontSize || 16) + sourceOffset)
   const offsetLabel = (sourceOffset > 0 ? '+' : '') + sourceOffset + ' px'
-  const userCss = settings?.userCss || ''
-
-  useEffect(() => {
-    const el = cssRef.current
-    if (el && el.value !== userCss) el.value = userCss
-  }, [userCss])
-
-  useEffect(() => () => clearTimeout(timerRef.current), [])
-
-  const commitCss = (value) => onUpdateSettings({ userCss: value })
-  const onCssInput = (e) => {
-    const value = e.target.value
-    clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => commitCss(value), 300)
-  }
-  const insertTemplate = () => {
-    const el = cssRef.current
-    const base = (el?.value || '').trim()
-    const next = base ? base + '\n\n' + USER_CSS_TEMPLATE : USER_CSS_TEMPLATE
-    if (el) el.value = next
-    clearTimeout(timerRef.current)
-    commitCss(next)
-  }
-  const clearCss = () => {
-    if (cssRef.current) cssRef.current.value = ''
-    clearTimeout(timerRef.current)
-    commitCss('')
-  }
-
   return (
     <>
       <section className="settings-block">
@@ -66,32 +34,7 @@ export default function EditorSettings({ settings, onUpdateSettings, onHoverFont
           t={t}
         />
       </section>
-      <section className="settings-block">
-        <div className="settings-section-heading">
-          <div>
-            <h2 className="settings-block-title">{t('settings.customCss')}</h2>
-            <p className="settings-block-desc">{t('settings.customCssDesc')}</p>
-          </div>
-          <div className="settings-css-actions">
-            <button className="settings-link-btn" onClick={insertTemplate}>{t('settings.customCssTemplate')}</button>
-            <button className="settings-link-btn" onClick={clearCss} disabled={!userCss}>{t('settings.customCssClear')}</button>
-          </div>
-        </div>
-        <textarea
-          ref={cssRef}
-          className="settings-css-editor"
-          defaultValue={userCss}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          placeholder={t('settings.customCssPlaceholder')}
-          onChange={onCssInput}
-          onBlur={(e) => {
-            clearTimeout(timerRef.current)
-            commitCss(e.target.value)
-          }}
-        />
-      </section>
+      <UserCssSnippets settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
       <section className="settings-block">
         <h2 className="settings-block-title">{t('settings.sourceMode')}</h2>
         <p className="settings-block-desc">{t('settings.sourceFontDesc')}</p>

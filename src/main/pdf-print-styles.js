@@ -76,8 +76,15 @@ const BASE_PDF_CSS = `
   }
   .doc math { font-size: 1.05em; }
   .doc math[display="block"] {
-    display: inline-block; max-width: 100%; overflow-x: auto;
+    display: inline-block; max-width: none; overflow: visible;
     font-size: 1.18em; break-inside: avoid; page-break-inside: avoid;
+  }
+  .doc .hm-pdf-math-wrap {
+    max-width: 100%; margin: 1.1em 0;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .doc .hm-pdf-math-wrap math[display="block"] {
+    display: block; margin: 0.18em auto; max-width: 100%;
   }
   .doc hr { border: none; border-top: 1px solid #e6e1d8; margin: 1.8em 0; }
   .doc input[type="checkbox"] { margin-right: 0.4em; }

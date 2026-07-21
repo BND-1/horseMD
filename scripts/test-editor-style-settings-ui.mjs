@@ -26,9 +26,12 @@ async function main() {
       )
       if (!settingsButton) throw new Error('missing settings button')
       settingsButton.click()
-      await sleep(300)
-
-      const appearance = byText(['外观', 'Appearance'])
+      let appearance = null
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        appearance = byText(['外观', 'Appearance'])
+        if (appearance) break
+        await sleep(100)
+      }
       if (!appearance) throw new Error('missing appearance nav')
       appearance.click()
       await sleep(150)
@@ -93,6 +96,93 @@ async function main() {
       throw new Error('typography preview did not receive user CSS: ' + JSON.stringify(cssResult))
     }
 
+    const added = await app.evaluate(`(() => {
+      const editor = document.querySelector('.settings-css-editor')
+      const block = editor?.closest('.settings-block')
+      const add = [...(block?.querySelectorAll('button') || [])]
+        .find((button) => /新增 CSS 片段|Add CSS snippet/.test(button.getAttribute('aria-label') || ''))
+      add?.click()
+      return Boolean(add)
+    })()`)
+    if (!added) throw new Error('custom CSS add-snippet action is missing')
+    await sleep(180)
+    const snippetEditor = await app.evaluate(`(() => {
+      const active = document.querySelector('.settings-css-snippet.active')
+      const editor = active?.closest('.settings-css-workspace')?.querySelector('.settings-css-editor')
+      const name = active?.closest('.settings-css-workspace')?.querySelector('.settings-css-name-input')
+      if (!editor || !name) return null
+      name.value = 'Accent heading'
+      name.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+      editor.focus()
+      return {
+        snippetCount: document.querySelectorAll('.settings-css-snippet').length,
+        activeToggle: active.querySelector('.hm-toggle')?.getAttribute('aria-checked')
+      }
+    })()`)
+    if (!snippetEditor || snippetEditor.snippetCount !== 2 || snippetEditor.activeToggle !== 'true') {
+      throw new Error('custom CSS snippet was not created: ' + JSON.stringify(snippetEditor))
+    }
+    await app.send('Input.insertText', {
+      text: '.milkdown .ProseMirror h1 { color: rgb(70, 80, 90); }'
+    })
+    // A toggle immediately after typing must flush the pending CSS debounce;
+    // otherwise a stale timer can restore the old enabled state afterwards.
+    await app.evaluate(`document.querySelector('.settings-css-snippet.active .hm-toggle')?.click()`)
+    await sleep(450)
+    const flushedBeforeToggle = await app.evaluate(`(() => ({
+      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color,
+      snippets: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').userCssSnippets || []
+    }))()`)
+    if (flushedBeforeToggle.color !== 'rgb(12, 34, 56)' ||
+      flushedBeforeToggle.snippets[1]?.enabled !== false ||
+      !flushedBeforeToggle.snippets[1]?.css.includes('rgb(70, 80, 90)')) {
+      throw new Error('typing then immediately toggling a snippet lost pending CSS: ' + JSON.stringify(flushedBeforeToggle))
+    }
+
+    await app.evaluate(`document.querySelector('.settings-css-snippet.active .hm-toggle')?.click()`)
+    await sleep(180)
+    const composed = await app.evaluate(`(() => ({
+      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color,
+      styleText: document.querySelector('#hm-user-css')?.textContent || '',
+      snippets: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').userCssSnippets || []
+    }))()`)
+    if (composed.color !== 'rgb(70, 80, 90)' || composed.snippets.length !== 2 || !composed.styleText.includes('rgb(12, 34, 56)') || !composed.styleText.includes('rgb(70, 80, 90)')) {
+      throw new Error('enabled snippets did not compose in order: ' + JSON.stringify(composed))
+    }
+
+    const disabled = await app.evaluate(`(() => {
+      const active = document.querySelector('.settings-css-snippet.active')
+      active?.querySelector('.hm-toggle')?.click()
+      return Boolean(active)
+    })()`)
+    if (!disabled) throw new Error('active custom CSS snippet disappeared before toggle')
+    await sleep(180)
+    const toggled = await app.evaluate(`(() => ({
+      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color,
+      styleText: document.querySelector('#hm-user-css')?.textContent || ''
+    }))()`)
+    if (toggled.color !== 'rgb(12, 34, 56)' || toggled.styleText.includes('rgb(70, 80, 90)')) {
+      throw new Error('disabled snippet still affected the editor: ' + JSON.stringify(toggled))
+    }
+
+    await app.evaluate(`document.querySelector('.settings-css-snippet.active .hm-toggle')?.click()`)
+    await sleep(120)
+    const moved = await app.evaluate(`(() => {
+      const button = [...document.querySelectorAll('.settings-css-snippet-editor button')]
+        .find((node) => /上移片段|Move snippet up/.test(node.getAttribute('aria-label') || ''))
+      button?.click()
+      return Boolean(button)
+    })()`)
+    if (!moved) throw new Error('custom CSS snippet move action is missing')
+    await sleep(180)
+    const reordered = await app.evaluate(`(() => ({
+      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color,
+      snippets: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').userCssSnippets || []
+    }))()`)
+    if (reordered.color !== 'rgb(12, 34, 56)' || reordered.snippets[0]?.name !== 'Accent heading') {
+      throw new Error('snippet order did not determine CSS precedence: ' + JSON.stringify(reordered))
+    }
+
     const fontResult = await app.evaluate(`(async () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
       const textOf = (element) => element?.textContent?.replace(/\\s+/g, ' ').trim() || ''
@@ -119,15 +209,18 @@ async function main() {
       docTab.click()
       await sleep(300)
 
-      const sourceButton = buttons().find((button) => {
+      const sourceButton = [...document.querySelectorAll('.status-btn')].find((button) => visible(button) && (() => {
         const label = button.title || textOf(button)
         return /Ctrl\\+\\/?|Cmd\\+\\/?|源码|Source|富文本|Rich/.test(label)
-      })
+      })())
       if (!sourceButton) throw new Error('missing source-mode status button')
       sourceButton.click()
-      await sleep(500)
-
-      const textarea = [...document.querySelectorAll('textarea.source-editor')].find(visible)
+      let textarea = null
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        textarea = [...document.querySelectorAll('textarea.source-editor')].find(visible)
+        if (textarea) break
+        await sleep(100)
+      }
       if (!textarea) throw new Error('missing visible source editor')
       return {
         offset: getComputedStyle(document.documentElement).getPropertyValue('--source-font-offset').trim(),

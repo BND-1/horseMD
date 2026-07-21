@@ -10,6 +10,7 @@ import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
+import { columnResizingPlugin } from '@milkdown/kit/preset/gfm'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
@@ -17,7 +18,11 @@ import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
 import { remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
-import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
+import {
+  tableBreakKeymap,
+  tableCellBreakHandler,
+  brToBreakRemarkPlugin
+} from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
@@ -208,6 +213,10 @@ export function createConfiguredCrepe({
   crepe.editor.use(
     inlineCodeSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), inclusive: false }))
   )
+  // GFM ships the column-resizing plugin as an opt-in plugin. Crepe's table
+  // controls cover row/column operations, but do not register this resize
+  // behavior on their own.
+  crepe.editor.use(columnResizingPlugin)
   crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(highlightFeatures)
   crepe.editor.use(frontmatterSchema)

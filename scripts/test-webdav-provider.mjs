@@ -23,6 +23,7 @@ const provider = new WebDavProvider({
   endpoint: 'https://dav.example.test/root',
   username: 'alice',
   password: 'secret',
+  userAgent: 'HorseMD-test/1.0',
   request: async (url, init) => {
     requests.push({ url, init })
     if (init.method === 'PROPFIND') return response(207, xml)
@@ -46,8 +47,12 @@ assert.equal(fetched.revision, 'read')
 await provider.delete('folder/note one.md', { revision: 'read' })
 
 assert.equal(requests[0].init.headers.authorization.startsWith('Basic '), true)
+assert.equal(requests.every((item) => item.init.headers['user-agent'] === 'HorseMD-test/1.0'), true)
 assert.equal(requests.some((item) => item.init.method === 'MKCOL' && /folder$/.test(item.url)), true)
-assert.equal(requests.find((item) => item.init.method === 'PUT').init.headers['if-match'], '"old"')
+assert.equal(
+  requests.find((item) => item.init.method === 'PUT' && /folder\/note%20one\.md$/.test(item.url)).init.headers['if-match'],
+  '"old"'
+)
 assert.throws(() => new WebDavProvider({ endpoint: 'http://dav.example.test', request: async () => response(200) }), /HTTPS/)
 
 console.log('PASS WebDAV provider: XML, auth, paths, transfer, conditional writes and HTTPS guard')

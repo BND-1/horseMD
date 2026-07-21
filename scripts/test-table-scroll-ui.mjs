@@ -13,6 +13,12 @@ function verifyLayout(result, label) {
   if (result.markdownTables < 2 || !result.wideMarkdownScrollable) {
     throw new Error(`${label}: wide Markdown table is not independently scrollable: ${JSON.stringify(result)}`)
   }
+  if (!result.compactContentSized) {
+    throw new Error(`${label}: compact Markdown table is still stretched to the editor width: ${JSON.stringify(result)}`)
+  }
+  if (!result.tableSurfaceVisible) {
+    throw new Error(`${label}: table surface is transparent or indistinguishable from its header: ${JSON.stringify(result)}`)
+  }
   if (!result.rawHtmlScrollable) {
     throw new Error(`${label}: raw HTML table is not independently scrollable: ${JSON.stringify(result)}`)
   }
@@ -31,6 +37,8 @@ async function inspect(evaluate, mobile = false) {
     const markdownTables = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
     const compactWrapper = markdownTables[0]?.querySelector('.table-wrapper')
     const wideWrapper = markdownTables[1]?.querySelector('.table-wrapper')
+    const compactTable = compactWrapper?.querySelector('table.children')
+    const compactHeader = compactTable?.querySelector('th')
     const rawBlock = rich?.querySelector('.hm-html-block')
     const appRect = app?.getBoundingClientRect()
     const editorHost = rich?.closest('.editor-host')
@@ -47,6 +55,12 @@ async function inspect(evaluate, mobile = false) {
       scroll: node.scrollWidth
     }))
     const compactMarkdownScrollable = !!compactWrapper && compactWrapper.scrollWidth > compactWrapper.clientWidth + 1
+    const compactContentSized = !!compactWrapper && !!compactTable &&
+      compactTable.getBoundingClientRect().width < compactWrapper.clientWidth - 1
+    const tableBackground = compactTable ? getComputedStyle(compactTable).backgroundColor : ''
+    const headerBackground = compactHeader ? getComputedStyle(compactHeader).backgroundColor : ''
+    const tableSurfaceVisible = (tableBackground.startsWith('rgb(') || tableBackground.startsWith('rgba(') || tableBackground.startsWith('color(')) &&
+      tableBackground !== 'rgba(0, 0, 0, 0)' && tableBackground !== headerBackground
     const wideMarkdownScrollable = !!wideWrapper && wideWrapper.scrollWidth > wideWrapper.clientWidth + 1
     const rawHtmlScrollable = !!rawBlock && rawBlock.scrollWidth > rawBlock.clientWidth + 1
     document.scrollingElement.scrollTop = 100
@@ -63,6 +77,10 @@ async function inspect(evaluate, mobile = false) {
       viewportHeight: innerHeight,
       markdownTables: markdownTables.length,
       compactMarkdownScrollable,
+      compactContentSized,
+      tableSurfaceVisible,
+      tableBackground,
+      headerBackground,
       wideMarkdownScrollable: wideMarkdownScrollable && wideWrapper.scrollLeft > 0,
       rawHtmlScrollable: rawHtmlScrollable && rawBlock.scrollLeft > 0,
       parentWidths,
@@ -72,6 +90,33 @@ async function inspect(evaluate, mobile = false) {
       rawScrollWidth: rawBlock?.scrollWidth || 0
     }
   })()`)
+}
+
+async function verifyThemeTableSurface(evaluate, theme) {
+  const result = await evaluate(`(() => {
+    const body = document.body
+    const hadLight = body.classList.contains('light')
+    const hadDark = body.classList.contains('dark')
+    body.classList.remove('light', 'dark')
+    body.classList.add(${JSON.stringify(theme)})
+
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const table = rich?.querySelector('.milkdown-table-block table.children')
+    const header = table?.querySelector('th')
+    const tableBackground = table ? getComputedStyle(table).backgroundColor : ''
+    const headerBackground = header ? getComputedStyle(header).backgroundColor : ''
+
+    body.classList.remove('light', 'dark')
+    if (hadLight) body.classList.add('light')
+    if (hadDark) body.classList.add('dark')
+    return { tableBackground, headerBackground }
+  })()`)
+
+  const visible = (color) => color.startsWith('rgb(') || color.startsWith('rgba(') || color.startsWith('color(')
+  if (!visible(result.tableBackground) || result.tableBackground === 'rgba(0, 0, 0, 0)' ||
+    result.tableBackground === result.headerBackground) {
+    throw new Error(`${theme}: table surface is missing or indistinguishable from the header: ${JSON.stringify(result)}`)
+  }
 }
 
 async function verifyHorizontalGesture(send, evaluate, label, touch = false) {
@@ -117,6 +162,225 @@ async function verifyHorizontalGesture(send, evaluate, label, touch = false) {
   if (scrollLeft <= 0) throw new Error(`${label}: horizontal gesture did not move the table`)
 }
 
+async function verifyColumnResize(send, evaluate) {
+  const hover = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    block?.scrollIntoView({ block: 'center' })
+    const cell = block?.querySelector('td')
+    const rect = cell?.getBoundingClientRect()
+    return rect ? { x: rect.left + 4, y: rect.top + rect.height / 2 } : null
+  })()`)
+  if (!hover) throw new Error('desktop: add-column hover target not found')
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...hover })
+  await sleep(180)
+  const hoverState = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    const addLine = block?.querySelector('[data-role="y-line-drag-handle"]')
+    const visibleResizeGuides = [...(block?.querySelectorAll('.column-resize-handle') || [])]
+      .filter((node) => getComputedStyle(node).display !== 'none').length
+    return {
+      addVisible: addLine?.dataset.show === 'true',
+      visibleResizeGuides,
+      resizing: document.body.classList.contains('hm-table-resizing')
+    }
+  })()`)
+  if (!hoverState.addVisible || hoverState.visibleResizeGuides || hoverState.resizing) {
+    throw new Error(`desktop: column hover did not stay in add-column mode: ${JSON.stringify(hoverState)}`)
+  }
+
+  const before = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    block.scrollIntoView({ block: 'center' })
+    const cell = block?.querySelector('th')
+    const rect = cell?.getBoundingClientRect()
+    if (!rect) return null
+    return {
+      x: rect.right - 2,
+      y: rect.top + rect.height / 2,
+      width: rect.width,
+      colwidth: cell.getAttribute('data-colwidth') || ''
+    }
+  })()`)
+  if (!before) throw new Error('desktop: column resize target not found')
+
+  // A normal click on the same edge must remain harmless. Only a deliberate
+  // hold enters resize mode, otherwise hovering/table navigation would create
+  // unexpected document changes.
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1
+  })
+  await sleep(60)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: before.x, y: before.y, button: 'left', buttons: 0, clickCount: 1
+  })
+  await sleep(80)
+  const quickPress = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const header = rich?.querySelector('.milkdown-table-block th')
+    return {
+      colwidth: header?.getAttribute('data-colwidth') || '',
+      resizing: document.body.classList.contains('hm-table-resizing')
+    }
+  })()`)
+  if (quickPress.colwidth !== before.colwidth || quickPress.resizing) {
+    throw new Error(`desktop: a short boundary press changed the table: ${JSON.stringify(quickPress)}`)
+  }
+
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x, y: before.y })
+  await sleep(180)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1
+  })
+  await sleep(60)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x: before.x + 10, y: before.y, button: 'left', buttons: 1
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: before.x + 10, y: before.y, button: 'left', buttons: 0, clickCount: 1
+  })
+  await sleep(80)
+  const cancelledPress = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const header = rich?.querySelector('.milkdown-table-block th')
+    return {
+      colwidth: header?.getAttribute('data-colwidth') || '',
+      resizing: document.body.classList.contains('hm-table-resizing')
+    }
+  })()`)
+  if (cancelledPress.colwidth !== before.colwidth || cancelledPress.resizing) {
+    throw new Error(`desktop: moving before the hold threshold changed the table: ${JSON.stringify(cancelledPress)}`)
+  }
+
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x, y: before.y })
+  await sleep(180)
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1
+  })
+  await sleep(280)
+  const resizingState = await evaluate(`(() => ({
+    resizing: document.body.classList.contains('hm-table-resizing'),
+    guides: [...document.querySelectorAll('.column-resize-handle')]
+      .filter((node) => getComputedStyle(node).display !== 'none').length
+  }))()`)
+  if (!resizingState.resizing || !resizingState.guides) {
+    throw new Error(`desktop: holding a column boundary did not enter resize mode: ${JSON.stringify(resizingState)}`)
+  }
+  const guide = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    const tableRect = block?.querySelector('table.children')?.getBoundingClientRect()
+    const handles = [...(block?.querySelectorAll('.column-resize-handle') || [])]
+      .filter((handle) => getComputedStyle(handle).display !== 'none')
+      .map((handle) => handle.getBoundingClientRect())
+      .sort((a, b) => a.top - b.top)
+    if (!tableRect || !handles.length) return null
+    return {
+      topDelta: handles[0].top - tableRect.top,
+      bottomDelta: handles.at(-1).bottom - tableRect.bottom,
+      segments: handles.length
+    }
+  })()`)
+  if (!guide || guide.topDelta < 0 || guide.topDelta > 3 || Math.abs(guide.bottomDelta) > 2) {
+    throw new Error(`desktop: active column resize guide does not align to the table edge: ${JSON.stringify(guide)}`)
+  }
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x: before.x + 72, y: before.y, button: 'left', buttons: 1
+  })
+  await sleep(100)
+  const live = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const cell = rich?.querySelector('.milkdown-table-block th')
+    return { width: cell?.getBoundingClientRect().width || 0 }
+  })()`)
+  if (live.width < before.width + 40) {
+    throw new Error(`desktop: column width did not update while dragging: ${JSON.stringify({ before, live })}`)
+  }
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: before.x + 72, y: before.y, button: 'left', buttons: 0, clickCount: 1
+  })
+  await sleep(180)
+
+  const after = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    block?.scrollIntoView({ block: 'center' })
+    const cell = block?.querySelector('th')
+    return {
+      width: cell?.getBoundingClientRect().width || 0,
+      colwidth: cell?.getAttribute('data-colwidth') || ''
+    }
+  })()`)
+  if (!after.colwidth || after.width < before.width + 40) {
+    throw new Error(`desktop: column drag did not persist a wider column: ${JSON.stringify({ before, after })}`)
+  }
+}
+
+async function verifyContextMenuKeepsTableScroll(send, evaluate) {
+  const target = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+    const wrapper = block?.querySelector('.table-wrapper')
+    if (!block || !wrapper) return null
+    block.scrollIntoView({ block: 'center' })
+    wrapper.scrollLeft = wrapper.scrollWidth - wrapper.clientWidth
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const headers = [...block.querySelectorAll('th')]
+    const header = [...headers].reverse().find((cell) => {
+      const rect = cell.getBoundingClientRect()
+      return rect.right > wrapperRect.left + 8 && rect.left < wrapperRect.right - 8
+    })
+    const rect = header?.getBoundingClientRect()
+    return rect ? {
+      x: Math.max(wrapperRect.left + 8, Math.min(wrapperRect.right - 8, rect.left + rect.width / 2)),
+      y: rect.top + rect.height / 2,
+      left: wrapper.scrollLeft
+    } : null
+  })()`)
+  if (!target) throw new Error('desktop: far-right table context-menu target not found')
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
+  await sleep(180)
+  const result = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+    const wrapper = block?.querySelector('.table-wrapper')
+    const handle = block?.querySelector('[data-role="col-drag-handle"][data-show="true"]')
+    const rect = handle?.getBoundingClientRect()
+    if (!wrapper || !rect) return null
+    const before = wrapper.scrollLeft
+    handle.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      button: 2
+    }))
+    return { before }
+  })()`)
+  if (!result) throw new Error('desktop: column selection handle did not appear at table end')
+  await sleep(80)
+  const after = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    return rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')?.scrollLeft ?? -1
+  })()`)
+  if (Math.abs(after - result.before) > 2) {
+    throw new Error(`desktop: right-clicking a far-right column reset table scroll: ${JSON.stringify({ before: result.before, after })}`)
+  }
+  // Editor block menus close on an outside click. Use that real interaction
+  // rather than leaving its fullscreen backdrop in front of subsequent table
+  // controls.
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 4, y: 4, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 4, y: 4, button: 'left', clickCount: 1 })
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const closed = await evaluate(`!document.querySelector('.menu-backdrop')`)
+    if (closed) return
+    await sleep(40)
+  }
+  throw new Error('desktop: table context menu backdrop did not close after an outside click')
+}
+
 async function verifyTableHandles(send, evaluate) {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
   await sleep(100)
@@ -132,20 +396,22 @@ async function verifyTableHandles(send, evaluate) {
     throw new Error(`desktop: hidden table handles can widen the editor: ${JSON.stringify(hidden)}`)
   }
 
-  const point = await evaluate(`(() => {
-    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = rich?.querySelectorAll('.milkdown-table-block')[1]
-    block?.scrollIntoView({ block: 'center' })
-    const wrapper = block?.querySelector('.table-wrapper')
-    if (wrapper) wrapper.scrollLeft = 0
-    const cell = block?.querySelector('td, th')
-    const rect = cell?.getBoundingClientRect()
-    return rect ? { x: rect.left + Math.min(rect.width / 2, 40), y: rect.top + rect.height / 2 } : null
-  })()`)
-  if (!point) throw new Error('desktop: table handle target not found')
-  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
-  await sleep(150)
-  const visible = await evaluate(`(() => {
+  let visible = null
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const point = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+      block?.scrollIntoView({ block: 'center' })
+      const wrapper = block?.querySelector('.table-wrapper')
+      if (wrapper) wrapper.scrollLeft = 0
+      const cell = block?.querySelector('td, th')
+      const rect = cell?.getBoundingClientRect()
+      return rect ? { x: rect.left + Math.min(rect.width / 2, 40), y: rect.top + rect.height / 2 } : null
+    })()`)
+    if (!point) throw new Error('desktop: table handle target not found')
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
+    await sleep(150)
+    visible = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = rich?.querySelectorAll('.milkdown-table-block')[1]
     const handles = [...(block?.querySelectorAll(':scope > div > .cell-handle[data-show="true"]') || [])]
@@ -160,6 +426,8 @@ async function verifyTableHandles(send, evaluate) {
       }))
     }
   })()`)
+    if (visible.count && visible.anyVisible) return
+  }
   if (!visible.count || !visible.anyVisible) {
     throw new Error(`desktop: table handles do not reappear on hover: ${JSON.stringify(visible)}`)
   }
@@ -171,8 +439,7 @@ async function verifyTableControlBounds(send, evaluate) {
   const point = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const editor = rich?.closest('.editor-scroll')
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     if (!editor || !block) return null
     block.scrollIntoView({ block: 'start' })
     editor.scrollTop += ${verticalOffset}
@@ -194,8 +461,7 @@ async function verifyTableControlBounds(send, evaluate) {
 
   const handlePoint = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     const handle = block?.querySelector('[data-role="col-drag-handle"]')
     const rect = handle?.getBoundingClientRect()
     const x = rect?.left + rect?.width / 2
@@ -212,8 +478,7 @@ async function verifyTableControlBounds(send, evaluate) {
   const column = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const editor = rich?.closest('.editor-scroll')
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     const handle = block?.querySelector('[data-role="col-drag-handle"]')
     const group = handle?.querySelector('.button-group[data-show="true"]')
     const bounds = editor?.getBoundingClientRect()
@@ -248,8 +513,7 @@ async function verifyTableControlBounds(send, evaluate) {
   await sleep(200)
   const rowHandlePoint = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     const handle = block?.querySelector('[data-role="row-drag-handle"]')
     const rect = handle?.getBoundingClientRect()
     const x = rect?.left + rect?.width / 2
@@ -265,8 +529,7 @@ async function verifyTableControlBounds(send, evaluate) {
   const row = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const editor = rich?.closest('.editor-scroll')
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     const group = block?.querySelector('[data-role="row-drag-handle"] .button-group[data-show="true"]')
     const bounds = editor?.getBoundingClientRect()
     const blockBounds = block?.getBoundingClientRect()
@@ -290,13 +553,17 @@ async function verifyTableControlBounds(send, evaluate) {
 async function verifyTableAddButtons(send, evaluate) {
   const target = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     if (!block) return null
     block.scrollIntoView({ block: 'center' })
     const wrapper = block.querySelector('.table-wrapper')
     wrapper.scrollLeft = 0
-    const cell = block.querySelector('td')
+    const editor = rich.closest('.editor-scroll')
+    const editorRect = editor?.getBoundingClientRect()
+    const cell = [...block.querySelectorAll('td')].find((node) => {
+      const rect = node.getBoundingClientRect()
+      return rect.top > editorRect.top + 48 && rect.bottom < editorRect.bottom - 20
+    })
     const rect = cell?.getBoundingClientRect()
     return rect ? {
       col: { x: rect.left + 2, y: rect.top + rect.height / 2 },
@@ -327,31 +594,31 @@ async function verifyTableAddButtons(send, evaluate) {
 
   const before = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...rich.querySelectorAll('.milkdown-table-block')]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
     return { rows: block.querySelectorAll('tr').length, cols: block.querySelector('tr').children.length }
   })()`)
   await activateAndClick('y-line-drag-handle', target.col)
   const afterCol = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...rich.querySelectorAll('.milkdown-table-block')]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
     return block.querySelector('tr').children.length
   })()`)
   if (afterCol !== before.cols + 1) throw new Error(`desktop: add column failed: ${before.cols} -> ${afterCol}`)
 
   const rowPoint = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...rich.querySelectorAll('.milkdown-table-block')]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
-    const rect = block.querySelector('td')?.getBoundingClientRect()
+    const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
+    const editorRect = rich.closest('.editor-scroll')?.getBoundingClientRect()
+    const rect = [...block.querySelectorAll('td')].find((node) => {
+      const cell = node.getBoundingClientRect()
+      return cell.top > editorRect.top + 48 && cell.bottom < editorRect.bottom - 20
+    })?.getBoundingClientRect()
     return rect ? { x: rect.left + rect.width / 2, y: rect.bottom - 2 } : null
   })()`)
   await activateAndClick('x-line-drag-handle', rowPoint)
   const afterRow = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    const block = [...rich.querySelectorAll('.milkdown-table-block')]
-      .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+    const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
     return block.querySelectorAll('tr').length
   })()`)
   if (afterRow !== before.rows + 1) throw new Error(`desktop: add row failed: ${before.rows} -> ${afterRow}`)
@@ -379,7 +646,11 @@ async function main() {
 
   const desktop = await inspect(evaluate)
   verifyLayout(desktop, 'desktop')
+  await verifyThemeTableSurface(evaluate, 'light')
+  await verifyThemeTableSurface(evaluate, 'dark')
+  await verifyColumnResize(send, evaluate)
   await verifyTableHandles(send, evaluate)
+  await verifyContextMenuKeepsTableScroll(send, evaluate)
   await verifyTableAddButtons(send, evaluate)
   await verifyTableControlBounds(send, evaluate)
   await verifyHorizontalGesture(send, evaluate, 'desktop')

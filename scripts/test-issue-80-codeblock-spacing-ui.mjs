@@ -63,7 +63,7 @@ async function main() {
       }
     })()`), 'Code-block fixture did not render in rich mode')
 
-    const expectedMargin = result.fontSize * 0.8
+    const expectedMargin = result.fontSize * 0.8 * 0.6
     assert.ok(Math.abs(result.marginTop - expectedMargin) < 0.2,
       `Expected compact code-block top margin ${expectedMargin}, got ${result.marginTop}`)
     assert.ok(Math.abs(result.marginBottom - expectedMargin) < 0.2,

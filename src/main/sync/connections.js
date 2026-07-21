@@ -5,6 +5,13 @@ import { randomUUID } from 'node:crypto'
 const VERSION = 1
 const filePath = (userDataPath) => join(userDataPath, 'sync', 'connections.json')
 
+function normalizeUserAgent(value) {
+  const userAgent = String(value || '').trim()
+  if (/[\r\n]/.test(userAgent)) throw new Error('User-Agent 不能包含换行。')
+  if (userAgent.length > 256) throw new Error('User-Agent 不能超过 256 个字符。')
+  return userAgent
+}
+
 function publicConnection(entry) {
   const { credentialId, ...publicEntry } = entry
   return publicEntry
@@ -44,12 +51,13 @@ export class ConnectionRegistry {
     return (await readConnections(this.userDataPath)).map(publicConnection)
   }
 
-  async addWebDav({ name, endpoint, username, password, allowInsecure = false }) {
+  async addWebDav({ name, endpoint, username, password, allowInsecure = false, userAgent = '' }) {
     const trimmedName = String(name || '').trim()
     if (!trimmedName) throw new Error('请填写连接名称。')
     if (!String(endpoint || '').trim()) throw new Error('请填写 WebDAV 地址。')
     if (!String(password || '')) throw new Error('请填写 WebDAV 密码或应用专用密码。')
-    const provider = this.createWebDavProvider({ endpoint, username, password, allowInsecure })
+    const normalizedUserAgent = normalizeUserAgent(userAgent)
+    const provider = this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent: normalizedUserAgent })
     await provider.testConnection()
     const id = randomUUID()
     const credentialId = `webdav:${id}`
@@ -61,6 +69,7 @@ export class ConnectionRegistry {
       name: trimmedName,
       endpoint: String(endpoint).trim(),
       username: String(username || ''),
+      userAgent: normalizedUserAgent,
       allowInsecure: Boolean(allowInsecure),
       credentialId,
       createdAt: new Date().toISOString()
@@ -70,7 +79,7 @@ export class ConnectionRegistry {
     return publicConnection(connection)
   }
 
-  async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false }) {
+  async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false, userAgent = '' }) {
     const trimmedName = String(name || '').trim()
     if (!trimmedName) throw new Error('请填写连接名称。')
     if (!String(endpoint || '').trim()) throw new Error('请填写 S3 Endpoint。')
@@ -79,7 +88,8 @@ export class ConnectionRegistry {
     if (!String(accessKeyId || '').trim() || !String(secretAccessKey || '')) {
       throw new Error('请填写 S3 Access Key 和 Secret Key。')
     }
-    const provider = this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure })
+    const normalizedUserAgent = normalizeUserAgent(userAgent)
+    const provider = this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent: normalizedUserAgent })
     await provider.testConnection()
     const id = randomUUID()
     const credentialId = `s3:${id}`
@@ -93,6 +103,7 @@ export class ConnectionRegistry {
       bucket: String(bucket).trim(),
       region: String(region).trim(),
       accessKeyId: String(accessKeyId).trim(),
+      userAgent: normalizedUserAgent,
       allowInsecure: Boolean(allowInsecure),
       credentialId,
       createdAt: new Date().toISOString()
@@ -118,8 +129,9 @@ export class ConnectionRegistry {
       if (!endpoint) throw new Error('请填写 WebDAV 地址。')
       if (!password) throw new Error('请填写 WebDAV 密码或应用专用密码。')
       const allowInsecure = Boolean(config.allowInsecure)
-      await this.createWebDavProvider({ endpoint, username, password, allowInsecure }).testConnection()
-      const next = { ...current, name, endpoint, username, allowInsecure, updatedAt: new Date().toISOString() }
+      const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
+      await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
+      const next = { ...current, name, endpoint, username, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (password !== credential?.password) await this.credentialStore.set(current.credentialId, { password })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)
@@ -139,8 +151,9 @@ export class ConnectionRegistry {
       if (!region) throw new Error('请填写 Region。')
       if (!accessKeyId || !secretAccessKey) throw new Error('请填写 S3 Access Key 和 Secret Key。')
       const allowInsecure = Boolean(config.allowInsecure)
-      await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure }).testConnection()
-      const next = { ...current, name, endpoint, bucket, region, accessKeyId, allowInsecure, updatedAt: new Date().toISOString() }
+      const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
+      await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent }).testConnection()
+      const next = { ...current, name, endpoint, bucket, region, accessKeyId, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (secretAccessKey !== credential?.secretAccessKey) await this.credentialStore.set(current.credentialId, { secretAccessKey })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)

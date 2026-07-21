@@ -1,6 +1,7 @@
 import { TextSelection } from '@milkdown/prose/state'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
+import { isReadOnlyMutationKey } from './editor-read-only.js'
 
 export function mountEditorInteractionBindings({
   view,
@@ -10,7 +11,8 @@ export function mountEditorInteractionBindings({
   reportActiveBlock,
   setBlock,
   setCtxMenu,
-  getKeybindings
+  getKeybindings,
+  isReadOnly
 }) {
   const updateHighlightActive = () => {
     const currentView = viewRef.current
@@ -29,6 +31,16 @@ export function mountEditorInteractionBindings({
   }
 
   const onKeydown = (event) => {
+    if (isReadOnly?.()) {
+      // Keep navigation, selection and copy available. Everything else that can
+      // write (including CodeMirror's independent key handler) is stopped at
+      // the ProseMirror root during capture.
+      if (isReadOnlyMutationKey(event)) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+      return
+    }
     markUserEdit()
     const keybindings = getKeybindings?.() || getEffectiveKeybindingMap()
     const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
@@ -47,6 +59,27 @@ export function mountEditorInteractionBindings({
   }
   const onContextMenu = (event) => {
     if (window.api?.platform === 'ios' || window.api?.platform === 'android') return
+    // A selection update can make Crepe refresh a table node view. Its internal
+    // horizontal scroller is not part of ProseMirror state, so preserve it
+    // explicitly before opening the context menu on a far-right column handle.
+    const tableBlock = event.target.closest?.('.milkdown-table-block')
+    const tableWrapper = tableBlock?.querySelector('.table-wrapper')
+    const scrollLeft = tableWrapper?.scrollLeft
+    // Selecting a column can replace the whole Crepe table node view. Keep its
+    // stable ordinal under this editor root, rather than restoring a detached
+    // wrapper from the old node view.
+    const tableIndex = tableBlock
+      ? [...view.dom.querySelectorAll('.milkdown-table-block')].indexOf(tableBlock)
+      : -1
+    const restoreTableScroll = () => {
+      if (!Number.isFinite(scrollLeft)) return
+      const currentDom = viewRef.current?.dom || view.dom
+      const nextBlock = tableIndex >= 0
+        ? currentDom.querySelectorAll('.milkdown-table-block')[tableIndex]
+        : tableBlock
+      const nextWrapper = nextBlock?.querySelector('.table-wrapper')
+      if (nextWrapper) nextWrapper.scrollLeft = scrollLeft
+    }
     event.preventDefault()
     const currentView = viewRef.current
     if (currentView) {
@@ -58,6 +91,16 @@ export function mountEditorInteractionBindings({
       }
     }
     setCtxMenu({ x: event.clientX, y: event.clientY })
+    // The view update and its node-view DOM work can span two animation frames.
+    // Restore twice rather than using a fixed timeout, and only for the table
+    // that received this context menu.
+    requestAnimationFrame(() => {
+      restoreTableScroll()
+      requestAnimationFrame(() => {
+        restoreTableScroll()
+        requestAnimationFrame(restoreTableScroll)
+      })
+    })
   }
   const onSelectionChange = () => {
     const currentView = viewRef.current
@@ -66,12 +109,21 @@ export function mountEditorInteractionBindings({
     updateHighlightActive()
   }
   const onUserEditIntent = () => markUserEdit()
+  const onReadOnlyInput = (event) => {
+    if (!isReadOnly?.()) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
   const onPointerDown = (event) => {
     view.dom.__horsemdLastPointerDown = { left: event.clientX, top: event.clientY, at: Date.now() }
     markUserEdit()
   }
 
-  view.dom.addEventListener('keydown', onKeydown)
+  view.dom.addEventListener('keydown', onKeydown, true)
+  view.dom.addEventListener('beforeinput', onReadOnlyInput, true)
+  view.dom.addEventListener('paste', onReadOnlyInput, true)
+  view.dom.addEventListener('drop', onReadOnlyInput, true)
+  view.dom.addEventListener('cut', onReadOnlyInput, true)
   view.dom.addEventListener('beforeinput', onUserEditIntent, true)
   view.dom.addEventListener('input', onUserEditIntent, true)
   view.dom.addEventListener('paste', onUserEditIntent, true)
@@ -80,7 +132,11 @@ export function mountEditorInteractionBindings({
   view.dom.addEventListener('compositionend', onUserEditIntent, true)
   view.dom.addEventListener('mousedown', onPointerDown, true)
   view.dom.addEventListener('contextmenu', onContextMenu)
-  cleanups.push(() => view.dom.removeEventListener('keydown', onKeydown))
+  cleanups.push(() => view.dom.removeEventListener('keydown', onKeydown, true))
+  cleanups.push(() => view.dom.removeEventListener('beforeinput', onReadOnlyInput, true))
+  cleanups.push(() => view.dom.removeEventListener('paste', onReadOnlyInput, true))
+  cleanups.push(() => view.dom.removeEventListener('drop', onReadOnlyInput, true))
+  cleanups.push(() => view.dom.removeEventListener('cut', onReadOnlyInput, true))
   cleanups.push(() => view.dom.removeEventListener('beforeinput', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('input', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('paste', onUserEditIntent, true))

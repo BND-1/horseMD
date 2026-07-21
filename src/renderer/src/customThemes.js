@@ -24,15 +24,18 @@ export function applyCustomTheme(css) {
   document.body.classList.add('hm-has-custom-theme')
 }
 
-// User CSS snippet (issue #81): a free-form CSS override the user types in
-// Settings → Appearance. Injected into its OWN <style> tag, appended AFTER the
-// custom-theme tag, so it wins over both the bundled CSS and any Typora theme.
-// This is intentionally separate from applyCustomTheme so a user snippet can
-// layer on top of a full theme without one clobbering the other. Empty = removed.
+// User CSS snippets (issue #81) are injected into their own <style> tag after
+// a custom theme. Enabled snippets compose in list order, so users can keep a
+// reusable typography tweak separate from a theme-specific color adjustment.
 let userStyleEl = null
 
-export function applyUserCss(css) {
-  const value = typeof css === 'string' ? css.trim() : ''
+export function applyUserCss(snippets) {
+  const value = Array.isArray(snippets)
+    ? snippets
+      .filter((snippet) => snippet?.enabled !== false && typeof snippet?.css === 'string' && snippet.css.trim())
+      .map((snippet) => snippet.css.trim())
+      .join('\n\n')
+    : typeof snippets === 'string' ? snippets.trim() : ''
   if (!value) {
     if (userStyleEl) userStyleEl.textContent = ''
     return

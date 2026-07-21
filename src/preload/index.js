@@ -93,6 +93,7 @@ const api = {
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  windowToggleDevTools: () => ipcRenderer.invoke('window:toggleDevTools'),
 
   // update check (notify-only)
   checkUpdate: () => ipcRenderer.invoke('update:check'),
@@ -128,6 +129,7 @@ const api = {
     folderWorkspace: true,
     watch: true,
     windowControls: true,
+    devtools: true,
     pdfExport: true,
     imageHostExec: true,
     nativeMenus: true,

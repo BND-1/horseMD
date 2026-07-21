@@ -63,7 +63,6 @@ html {
     0 1px 0 rgba(255, 255, 255, 0.55) inset;
   --editor-block-radius: var(--radius-md);
   --editor-block-space: 1.35em;
-  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Animation timing */
   --dur-fast: 0.12s;
@@ -114,6 +113,7 @@ body.light {
   --code-border: #ddd9d2;
   --code-block-bg: #2a2730;
   --code-block-border: rgba(0, 0, 0, 0.25);
+  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Semantic */
   --danger: #c93b3b;
@@ -171,6 +171,7 @@ body.dark {
   /* CodeMirror block sits a shade deeper than the page so it reads as a block. */
   --code-block-bg: #100e0b;
   --code-block-border: rgba(255, 255, 255, 0.06);
+  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Semantic */
   --danger: #ff7070;
@@ -2111,6 +2112,167 @@ body.hm-col-resizing * {
   position: relative; /* containing block for the loading skeleton */
 }
 
+/* Compact reading navigation. It is deliberately outside the editor scroller:
+   it never participates in document layout or competes with ProseMirror's
+   selection/scroll anchoring. The component only consumes useOutline's cached
+   scrollspy state, so expanding it adds zero per-scroll layout work. */
+.floating-outline {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 28px;
+  max-height: min(66%, 480px);
+  transform: translateY(-50%);
+  transition: width 0.18s var(--ease-out);
+}
+.floating-outline:hover,
+.floating-outline:focus-within {
+  width: 278px;
+}
+.floating-outline-dots {
+  display: flex;
+  flex: 0 0 28px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 48px;
+  padding: 8px 0;
+}
+.floating-outline-dot {
+  display: grid;
+  width: 24px;
+  height: 14px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.floating-outline-dot > span {
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: .7;
+  transition: width 0.18s var(--ease-out), height 0.18s var(--ease-out), background 0.18s var(--ease-out), opacity 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+.floating-outline-dot:hover,
+.floating-outline-dot:focus-visible {
+  color: var(--accent-strong);
+}
+.floating-outline-dot:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.floating-outline-dot.active {
+  color: var(--accent-strong);
+}
+.floating-outline-dot.active > span {
+  width: 8px;
+  height: 8px;
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.08);
+}
+.floating-outline-panel {
+  width: 0;
+  min-width: 0;
+  max-height: min(66vh, 480px);
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(8px);
+  transition: width 0.18s var(--ease-out), opacity 0.14s var(--ease-out), transform 0.18s var(--ease-out), visibility 0s linear 0.18s;
+}
+.floating-outline:hover .floating-outline-panel,
+.floating-outline:focus-within .floating-outline-panel {
+  width: 250px;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+.floating-outline-list {
+  box-sizing: border-box;
+  display: grid;
+  width: 250px;
+  max-height: min(66vh, 480px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.floating-outline-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 8px 5px calc(8px + var(--floating-outline-depth) * 10px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.floating-outline-item:hover,
+.floating-outline-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
+.floating-outline-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.floating-outline-item-dot {
+  width: 4px;
+  height: 4px;
+  justify-self: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: .7;
+}
+.floating-outline-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.floating-outline-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.floating-outline-item.active .floating-outline-item-dot {
+  width: 6px;
+  height: 6px;
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+}
+.floating-outline-item.active .floating-outline-item-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
 /* ── Large-document scroll/open virtualization (Windows perf) ───────────
    content-visibility:auto lets the browser skip layout, style AND paint for
    blocks far off-screen, shrinking the live composited layer from "the whole
@@ -2143,13 +2305,17 @@ body.hm-col-resizing * {
    applies to ALL docs, not just .hm-cv, because CodeMirror code blocks measure
    line-wrapping lazily on scroll-into-view regardless of content-visibility —
    so even small docs jump without anchoring). No separate .hm-cv anchoring rule
-   is needed. Code blocks / tables stay under CV (anchoring handles their delta,
-   so we keep CV's perf win).
+   is needed. Code blocks are intentionally excluded from CV: even with eager
+   CodeMirror mounting, the 5em intrinsic estimate becomes a real code-block
+   height on first entry and Chromium cannot reliably anchor while a selection
+   is active. Keeping the comparatively rare code blocks laid out prevents that
+   visible 49px jump; tables retain CV because their controls already opt out
+   while open.
    :has(.hm-review-widget) excludes paragraphs holding a review margin-note:
    contain:paint (implied by content-visibility) would clip its absolute
    position:right:-2.7rem button. :has is style-recalc only (no layout), and
    content-visibility already skips style recalc off-screen, so no perf hit. */
-.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(:has(.hm-review-widget)) {
+.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.milkdown-code-block):not(:has(.hm-review-widget)) {
   content-visibility: auto;
   contain-intrinsic-size: auto 5em;
 }
@@ -3514,7 +3680,7 @@ body.hm-full-width .source-editor {
   color: #e8e6e1;
   border-radius: var(--radius-sm);
   padding: 0.7em 0.9em;
-  margin: var(--editor-para-spacing, 0.8em) 0;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.6) 0;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 0.85em;
@@ -3630,22 +3796,141 @@ body.hm-full-width .source-editor {
   gap: 18px;
   margin-bottom: 10px;
 }
-/* User CSS snippet editor (issue #81). */
+/* Custom CSS snippets (issue #81). The compact split layout makes several
+   small overrides easier to scan than one long, opaque stylesheet. */
 .settings-css-actions {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 4px;
   flex: 0 0 auto;
-  padding-top: 2px;
 }
+.settings-icon-action {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.settings-icon-action:hover:not(:disabled) {
+  border-color: var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--accent-strong);
+}
+.settings-icon-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.settings-icon-action:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.settings-icon-action.danger:hover:not(:disabled) { color: var(--danger); }
+.settings-css-workspace {
+  display: grid;
+  grid-template-columns: minmax(156px, 0.32fr) minmax(0, 1fr);
+  min-height: 224px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--bg-editor);
+}
+.settings-css-snippet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  overflow-y: auto;
+}
+.settings-css-snippet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 5px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.settings-css-snippet.active {
+  border-color: var(--border-soft);
+  background: var(--bg-editor);
+  box-shadow: var(--shadow-sm);
+}
+.settings-css-snippet-select {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-css-snippet-select > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-css-snippet-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.settings-css-snippet-dot.muted { background: var(--faint); }
+.settings-css-snippet .hm-toggle {
+  transform: scale(0.76);
+  transform-origin: right center;
+}
+.settings-css-snippet-editor {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 10px;
+}
+.settings-css-editor-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.settings-css-name-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 5px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-css-name-input:focus { border-bottom-color: var(--accent); }
 .settings-css-editor {
   width: 100%;
-  min-height: 180px;
+  min-height: 166px;
+  flex: 1 1 auto;
   resize: vertical;
   box-sizing: border-box;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-editor);
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-elevated) 45%, var(--bg-editor));
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 13px;
@@ -3654,11 +3939,24 @@ body.hm-full-width .source-editor {
   outline: none;
   transition: border-color 0.15s;
 }
-.settings-css-editor:focus {
-  border-color: var(--accent);
+.settings-css-editor:focus { border-color: var(--accent); }
+.settings-css-editor::placeholder { color: var(--faint); }
+.settings-css-foot {
+  display: flex;
+  min-height: 27px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
 }
-.settings-css-editor::placeholder {
-  color: var(--faint);
+.settings-css-foot code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Inline link inside the update-status line (前往下载 →). */
 .settings-inline-link {
@@ -4544,6 +4842,14 @@ body.hm-full-width .source-editor {
 .app.is-mobile .settings-css-actions {
   padding-top: 0;
 }
+.app.is-mobile .settings-css-workspace {
+  grid-template-columns: 1fr;
+}
+.app.is-mobile .settings-css-snippet-list {
+  max-height: 168px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border-soft);
+}
 .app.is-mobile .settings-swatches {
   grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
 }
@@ -5036,10 +5342,10 @@ body.dark .milkdown {
   background: var(--code-block-bg) !important;
   border: 1px solid var(--code-block-border);
   border-radius: var(--editor-block-radius);
-  /* Code blocks are part of the writing flow, not a callout. Keep their outer
-     gap aligned with paragraphs while preserving the CodeMirror toolbar and
-     internal padding. */
-  margin: var(--editor-para-spacing, 0.8em) 0;
+  /* Code blocks are part of the writing flow, not a callout. A compact outer
+     gap keeps prose/code transitions tight while preserving internal padding
+     and room for the CodeMirror controls. */
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.6) 0;
   font-size: 0.92em;
 }
 .milkdown .cm-editor .cm-scroller {
@@ -5138,6 +5444,7 @@ body.dark .milkdown {
    wrapper around the editable table, so this does not alter its node view. */
 .milkdown .milkdown-table-block {
   max-width: 100%;
+  margin: var(--editor-block-space) 0;
   contain: inline-size;
 }
 /* Crepe normally hides these with opacity only. Their stale absolute position
@@ -5164,9 +5471,14 @@ body.dark .milkdown {
   -webkit-overflow-scrolling: touch;
 }
 .milkdown .ProseMirror .milkdown-table-block table.children {
-  table-layout: auto;
+  /* Keep compact tables at their natural content width. The wrapper stays as
+     the full-width scroll viewport, but the table itself only grows beyond it
+     when its actual columns need the space. Fixed layout is required here:
+     ProseMirror stores a user-resized column in colgroup/data-colwidth, and an
+     auto layout can discard that explicit width in favor of cell contents. */
+  table-layout: fixed;
   width: max-content;
-  min-width: 100%;
+  min-width: 0;
 }
 
 /* Tables — elegant borders */
@@ -5178,8 +5490,15 @@ body.dark .milkdown {
   border-radius: var(--editor-block-radius);
   border: 1px solid var(--border-soft);
   font-size: 0.95em;
-  /* Theme-aware backdrop so the table reads as a unified surface. */
-  background: var(--editor-subtle-surface);
+  /* Give tables a quiet surface of their own. It is intentionally lighter
+     than a code block, while remaining visible in both light and dark themes. */
+  background: color-mix(in srgb, var(--editor-subtle-surface) 88%, var(--accent) 4%);
+}
+.milkdown .ProseMirror .milkdown-table-block table {
+  /* The scrollbar belongs immediately below the grid. Keep document spacing on
+     the block wrapper instead of leaving the table's bottom margin between the
+     last row and its horizontal scrollbar. */
+  margin: 0;
 }
 .milkdown .ProseMirror th,
 .milkdown .ProseMirror td {
@@ -5187,7 +5506,7 @@ body.dark .milkdown {
   border-bottom: 1px solid var(--border-soft);
   /* Compact rows: tight padding + line-height so a Markdown table reads densely
      instead of wasting vertical space. */
-  padding: 6px 12px;
+  padding: 7px 10px;
   line-height: 1.5;
   text-align: left;
   /* Wrap long content (incl. unbroken CJK / URLs) instead of letting it overflow
@@ -5198,8 +5517,9 @@ body.dark .milkdown {
 }
 .milkdown .ProseMirror .milkdown-table-block th,
 .milkdown .ProseMirror .milkdown-table-block td {
-  min-width: 9rem;
-  max-width: 24rem;
+  min-width: 6rem;
+  max-width: 20rem;
+  box-sizing: border-box;
 }
 /* Cell content is a paragraph; drop its block margins so each row stays one line
    tall (this was the main reason rows looked so airy). */
@@ -5251,9 +5571,49 @@ body.dark .milkdown {
 .milkdown .milkdown-image-block.selected > .image-wrapper::before {
   display: none !important;
 }
-/* Theme the column-resize handle (default is a hard blue #adf bar). */
+/* Hovering a table edge is reserved for Crepe's add-row/add-column control.
+   The native resize guide only appears after the deliberate press-and-hold. */
 .milkdown .ProseMirror .column-resize-handle {
+  display: none;
+}
+body.hm-table-resizing .milkdown .ProseMirror .column-resize-handle {
+  display: block;
   background-color: var(--accent);
+  pointer-events: none;
+  top: 1px;
+  bottom: -1px;
+  width: 1px;
+  border-radius: 1px;
+}
+/* Crepe's own boundary affordance remains a fine line with a compact, quiet
+   circular plus. It is visually distinct from the resize guide above. */
+.milkdown .milkdown-table-block .line-handle {
+  background: color-mix(in srgb, var(--accent) 84%, transparent);
+}
+.milkdown .milkdown-table-block .line-handle .add-button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 16%, transparent);
+  transition: transform 0.14s var(--ease-out), background 0.14s var(--ease-out), color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.milkdown .milkdown-table-block .line-handle .add-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  transform: translateY(-50%) translateX(-50%) scale(1.08);
+}
+.milkdown .milkdown-table-block .line-handle[data-role='x-line-drag-handle'] .add-button:hover {
+  transform: translateX(-50%) translateY(-50%) scale(1.08);
+}
+.milkdown .milkdown-table-block .line-handle .add-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Horizontal rule — elegant divider */
@@ -5734,6 +6094,10 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .app.is-mobile .activity-item { width: 48px; height: 48px; }
 .app.is-mobile .icon-btn { width: 40px; height: 40px; }
 .app.is-mobile .hm-menu-btn { margin-right: 2px; }
+.app.is-mobile .hm-readonly-btn.active {
+  color: var(--accent);
+  background: var(--active);
+}
 
 /* Editor fills the screen — ignore the desktop 800px page-width preset and the
    wide horizontal gutters. !important overrides the inline --editor-max-width

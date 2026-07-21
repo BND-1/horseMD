@@ -51,11 +51,12 @@ function encodePath(path) {
 }
 
 export class WebDavProvider {
-  constructor({ endpoint, username, password, request, allowInsecure = false, prefix = '' }) {
+  constructor({ endpoint, username, password, request, allowInsecure = false, prefix = '', userAgent = '' }) {
     if (typeof request !== 'function') throw new Error('WebDAV requires a network request function.')
     this.baseUrl = normalizeEndpoint(endpoint, { allowInsecure })
     this.request = request
     this.prefix = String(prefix || '').replace(/^\/+|\/+$/g, '')
+    this.userAgent = String(userAgent || '').trim()
     this.authorization = username || password
       ? `Basic ${Buffer.from(`${username || ''}:${password || ''}`).toString('base64')}`
       : null
@@ -68,6 +69,7 @@ export class WebDavProvider {
   headers(extra = {}) {
     return {
       ...(this.authorization ? { authorization: this.authorization } : {}),
+      ...(this.userAgent ? { 'user-agent': this.userAgent } : {}),
       ...extra
     }
   }

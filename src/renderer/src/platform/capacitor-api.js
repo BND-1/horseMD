@@ -285,6 +285,7 @@ const capabilities = {
   folderWorkspace: false, // iOS sandbox; Android SAF comes later
   watch: false,
   windowControls: false,
+  devtools: false,
   pdfExport: false, // no print-to-PDF save dialog on mobile
   imageHostExec: false,
   nativeMenus: false,
@@ -372,6 +373,7 @@ export function makeCapacitorApi() {
     windowToggleMaximize: async () => {},
     windowClose: async () => {},
     windowIsMaximized: async () => false,
+    windowToggleDevTools: async () => false,
 
     // update check — wired up later (CSP/network)
     checkUpdate: async () => null,

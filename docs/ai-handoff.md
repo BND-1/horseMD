@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-19。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-20。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前版本号：`package.json` 为 `0.7.4`（`v0.7.2` 已正式发布；`0.7.3` 修复 #85 字体搜索，`0.7.4` 继续修复 #80 代码块间距）
+- 当前测试版本号：`package.json` 为 `0.10.0`（尚未提交；包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段）
 - 最近关键提交：
   - `ab8f699 fix(pdf): render display latex in exports`
   - `0c1b3f0 fix(editor): protect inline math deletion`
@@ -146,6 +146,8 @@ android/, ios/           Capacitor 原生壳
 - Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。不要在初始化、切换或局部编辑时用 canonical 内容覆盖整篇源码。
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
+- `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
+- `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格变更必须使用完整 canonical Markdown；不要重新引入局部 raw-source 拼接或序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
 - 回归必须覆盖：
   - 富文本 → 源码 → 富文本 → 源码
@@ -157,6 +159,7 @@ android/, ios/           Capacitor 原生壳
 - PDF 导出读取 `getPdfSource()` 生成的结构化 `{ html, headings, title }`，不是直接打印 live editor DOM。
 - 普通 CodeMirror 代码块导出为 `<pre><code>`。
 - LaTeX 段落公式不能导出源码；要先把预览块物化为可打印 MathML。
+- 超宽行外 MathML 不得用比例缩小处理；PDF 临时文档中按顶层运算符拆成多行，编辑器内公式不变。
 - PDF 预览是 latest-request-only；设置快速变化时旧任务必须取消。
 - 打印目录页和 PDF 书签大纲是两个独立功能。
 - 隐藏窗口临时 HTML 禁止脚本执行，保留 Electron 默认 web security。
@@ -181,7 +184,7 @@ android/, ios/           Capacitor 原生壳
 
 ### 5.6 云同步
 
-- 详细产品和数据模型见 [cloud-sync-prd.md](./cloud-sync-prd.md)。当前仅桌面端开放手动同步；Capacitor shim 必须保持 `cloudSync: false`，直到原生安全凭据与网络桥接完成。
+- 详细产品和数据模型见 [cloud-sync-prd.md](./cloud-sync-prd.md)。当前仅桌面端开放手动同步；Capacitor shim 必须保持 `cloudSync: false`，直到 [移动端同步架构](./mobile-cloud-sync-architecture.md) 所需的原生安全凭据、文件 adapter 与网络桥接都完成真机验证。
 - 普通多根工作区和云同步工作区不是一件事。`useWorkspace` 继续管理可见文件树与 watcher；`useSyncWorkspaces` 只管理用户明确开启同步的根目录，不能扫描磁盘寻找 `.horsemd`。
 - 阅读 `docs/cloud-sync-v2-prd.md` 和 `docs/cloud-sync-v2-architecture.md` 后再改同步逻辑。`merge`、`push`、`pull` 是不同策略：远端 manifest 缺失或异常清空时，`merge` 必须返回 `remote-reset`，绝不能据此生成 `deleteLocal`。
 - `push`/`pull` 是用户明确发起的恢复操作。方向化覆盖或删除前需归档目标端旧文件；普通双向冲突保留双方。不要把对象存储的目录扫描结果当成可信删除日志。
@@ -248,6 +251,7 @@ android/, ios/           Capacitor 原生壳
 - 标题文字编辑后折叠状态不丢。
 - 源码/富文本切换后目录层级不能跳。
 - 桌面端拖动标题左侧抓手可重排**同一父级**下的章节，移动范围包含标题、后代标题和正文。必须调用 `outline-reorder.js` 的原始 Markdown 区段操作，不能取富文本 serializer 结果；不同父级或不同层级不允许落下，避免隐式重设层级。
+- `FloatingOutline.jsx` 是纯渲染组件：默认只显示少量圆点，hover/focus 扩展标题列表，长标题以省略和原生 tooltip 处理。它必须复用 `useOutline.js` 的缓存 scrollspy，不能为了悬浮导航再注册 scroll listener 或逐帧读取全篇布局；移动端、无标题文档与侧栏“大纲”状态不显示。分屏时只跟随最后聚焦窗格。
 - “折叠正文”不是当前大纲折叠的延伸。源码 textarea 无法隐藏局部行；富文本折叠须作为独立的、每 Tab 非持久 UI 状态设计，并先覆盖选区、查找、审阅、图片/代码块、模式切换和滚动锚点。
 
 ### 任务列表输入
@@ -306,6 +310,7 @@ npm run test:issue-77-ui
 npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui
+npm run test:floating-outline-ui
 ```
 
 `test:math-ui`、`test:pdf-ui` 等部分脚本连接已有 CDP session。单独跑时先按 fixture 启动，或参考 `scripts/run-ui-regression.mjs`。
@@ -424,6 +429,7 @@ npm run test:issue-77-ui
 npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui
+npm run test:floating-outline-ui
 ```
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。

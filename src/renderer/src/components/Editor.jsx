@@ -55,6 +55,7 @@ export default function Editor({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  readOnly = false,
   effectiveKeybindings,
   onChange,
   onReady,
@@ -75,6 +76,8 @@ export default function Editor({
   spellcheckRef.current = spellcheck
   const inlineMathDeleteModeRef = useRef(inlineMathDeleteMode || 'protect')
   inlineMathDeleteModeRef.current = inlineMathDeleteMode || 'protect'
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   const effectiveKeybindingsRef = useRef(effectiveKeybindings)
   effectiveKeybindingsRef.current = effectiveKeybindings
   const hostRef = useRef(null)
@@ -88,6 +91,16 @@ export default function Editor({
     const v = viewRef.current
     if (v?.dom) v.dom.setAttribute('spellcheck', spellcheck ? 'true' : 'false')
   }, [spellcheck])
+  // Keep native selection and scrolling available while making the underlying
+  // ProseMirror view genuinely non-editable. A CSS-only lock still accepts
+  // paste/drop and lets input rules mutate the document.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view?.dom) return
+    try { view.setProps({ editable: () => !readOnly }) } catch { /* view is tearing down */ }
+    view.dom.contentEditable = readOnly ? 'false' : 'true'
+    view.dom.setAttribute('aria-readonly', readOnly ? 'true' : 'false')
+  }, [readOnly])
   const [ctxMenu, setCtxMenu] = useState(null) // { x, y } viewport coords, or null
   // Lightbox: the image src currently shown enlarged, or null.
   const [zoom, setZoom] = useState(null)
@@ -156,6 +169,7 @@ export default function Editor({
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
     const insertUploadedImage = async (file, fromClipboard = false) => {
+      if (readOnlyRef.current) return
       const url = await persistImage(file, fromClipboard)
       const v = viewRef.current
       if (!v || !url) return
@@ -179,12 +193,16 @@ export default function Editor({
 
     // Block controls live in editor-block-controls.js; mount them here and
     // reuse the same conversion path across shortcuts, menus and toolbars.
-    const { setBlock, reportActiveBlock } = createBlockControls({
+    const { setBlock: setEditableBlock, reportActiveBlock } = createBlockControls({
       viewRef,
       setCtxMenu,
       onActiveBlock,
       lastBlockRef
     })
+    const setBlock = (id) => {
+      if (readOnlyRef.current) return
+      setEditableBlock(id)
+    }
 
     // IMPORTANT: register listeners BEFORE create(). Crepe wires them during
     // create(), so registering afterwards means `markdownUpdated` never fires —
@@ -263,6 +281,9 @@ export default function Editor({
           // Default off (settings.spellcheck). Other surfaces (source textarea,
           // inputs) opt out individually via spellCheck={false}.
           view.dom.setAttribute('spellcheck', spellcheckRef.current ? 'true' : 'false')
+          view.dom.setAttribute('aria-readonly', readOnlyRef.current ? 'true' : 'false')
+          try { view.setProps({ editable: () => !readOnlyRef.current }) } catch { /* */ }
+          view.dom.contentEditable = readOnlyRef.current ? 'false' : 'true'
         }
 
         // Content is in the DOM now — remove the loading skeleton SYNCHRONOUSLY
@@ -314,6 +335,7 @@ export default function Editor({
           setZoom,
           getT: (key) => tRef.current(key),
           getKeybindings: () => effectiveKeybindingsRef.current,
+          isReadOnly: () => readOnlyRef.current,
           isDestroyed: () => destroyed
         })
 
@@ -322,7 +344,7 @@ export default function Editor({
         // but the body block lets you skip the title and start writing straight
         // away (click it or press ↓). Done before the baseline below so the new
         // tab isn't marked dirty.
-        if (view) {
+        if (view && !readOnlyRef.current) {
           const { state } = view
           const doc = state.doc
           const first = doc.firstChild
@@ -468,6 +490,7 @@ export default function Editor({
             view,
             getParser: () => { try { return crepe.editor.ctx.get(parserCtx) } catch { return null } },
             isDestroyed: () => destroyed,
+            getEditable: () => !readOnlyRef.current,
             onLoadingChange,
             onStructureChange
           }).then(() => {

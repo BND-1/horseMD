@@ -6,6 +6,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Composable Custom CSS snippets** (#81) — Custom CSS is now a named snippet
+  list. Snippets can be enabled independently, reordered, renamed, and removed;
+  enabled entries layer in list order. Existing single-snippet settings migrate
+  automatically. Desktop also exposes a scoped Inspect editor action for finding
+  real document selectors without widening renderer privileges.
+- **Floating chapter navigator** — desktop documents with headings now show a
+  quiet right-edge chapter indicator. Hovering or keyboard-focusing it expands
+  to a scrollable heading list; the active chapter follows reading position and
+  each item jumps smoothly in both rich and source modes. Long headings truncate
+  without widening the writing surface.
+- **Mobile read-only mode** — iOS and Android now have a top-bar lock. When
+  enabled, rich text, source text, paste, drop, CodeMirror input, block changes,
+  and undo/redo cannot change the document; scrolling, selection, copying and
+  opening links remain available. Desktop behavior is unchanged.
+- **Optional sync User-Agent** — WebDAV and S3 connection forms can now send a
+  provider-required client identifier. It is validated and stored with public
+  connection settings, never with the encrypted password or S3 secret.
+
+### Fixed
+- **PDF resource warning** — a document without images no longer reports that
+  resources may be incomplete merely because font readiness took longer than the
+  preview wait.
+- **Very long display formulas in PDF** — exported block MathML is fitted to the
+  printable width by splitting at top-level operators during PDF generation,
+  instead of being clipped or proportionally shrunk to an unreadable size.
+- **Large-document code-block scroll jump** — code blocks are excluded from
+  `content-visibility` height estimation, so scrolling to and selecting a code
+  block no longer exposes an estimate-to-real layout jump.
+- **Source/rich caret regression coverage** — exact Markdown raw-offset UI
+  tests now protect table cells, paragraphs, lists, and code blocks across both
+  continuous switch chains.
+- **Table row/column editing and save** (#86) — repeated row and column inserts
+  no longer splice text into adjacent cells, add phantom rows/columns, or leave
+  `<br />` in untouched cells after source switching, saving, or reopening the
+  file. Deliberate in-cell line breaks still round-trip as `<br>`.
+- **Wide table interaction** (#86) — compact tables retain their natural content
+  width and a subtle theme-aware surface, wide tables only scroll when needed,
+  and right-clicking a far-right column control no longer snaps the table back
+  to its left edge. Hovering an edge keeps the add-row/add-column action clear;
+  holding a column boundary enters a thin, real-time resize preview, and release
+  persists the final width without affecting ordinary clicks.
+- **Tighter code-block spacing** (#80) — rich-text code blocks now use a more
+  compact 60% paragraph gap above and below while retaining their controls and
+  internal reading space.
+
 ## [0.7.4] - 2026-07-20
 
 ### Fixed

@@ -34,6 +34,10 @@ $$
 E = mc^2
 $$
 
+$$
+${Array.from({ length: 120 }, (_, index) => `x_{${index}}`).join(' + ')}
+$$
+
 After formula.
 `, 'utf8')
 
@@ -77,6 +81,9 @@ try {
 
   if (!snapshot.hasMath || !snapshot.hasFigure || snapshot.hasSourcePre || snapshot.hasRawFormula || snapshot.hasEditorControls || snapshot.bytes <= 0) {
     throw new Error(`Display LaTeX PDF export is wrong: ${JSON.stringify(snapshot)}`)
+  }
+  if (snapshot.warnings?.resourceTimeout || snapshot.warnings?.failedImages || !(snapshot.warnings?.wrappedMath > 0)) {
+    throw new Error(`PDF resource or long-formula handling is wrong: ${JSON.stringify(snapshot)}`)
   }
   console.log(`PASS PDF LaTeX UI: ${JSON.stringify(snapshot)}`)
 } finally {

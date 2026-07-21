@@ -164,6 +164,8 @@ const sourceVisibleIndex = (md) => {
   const lines = md.split(/(\n)/)
   let rawPos = 0
   let inFence = false
+  let inTable = false
+  const isTableSeparator = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line || '')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (line === '\n') {
@@ -185,9 +187,15 @@ const sourceVisibleIndex = (md) => {
       appendRawVisible(out, line, lineStart)
       continue
     }
-    if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) continue
-    const tableLike = /^\s*\|.*\|\s*$/.test(line)
+    const hasPipe = line.includes('|')
+    const tableLike = /^\s*\|.*\|\s*$/.test(line) ||
+      (hasPipe && (inTable || isTableSeparator(line) || isTableSeparator(lines[i - 2]) || isTableSeparator(lines[i + 2])))
+    if (isTableSeparator(line)) {
+      inTable = true
+      continue
+    }
     if (tableLike) {
+      inTable = true
       let cursor = 0
       const cells = line.split('|')
       for (const cell of cells) {
@@ -200,6 +208,7 @@ const sourceVisibleIndex = (md) => {
       }
       continue
     }
+    inTable = false
     const marker = line.match(/^(\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+))/)
     const offset = marker ? marker[0].length : 0
     appendInlineVisible(out, line.slice(offset), lineStart + offset)

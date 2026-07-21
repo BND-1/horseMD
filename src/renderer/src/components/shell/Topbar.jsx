@@ -9,6 +9,7 @@ import { labelWithShortcut } from '../../lib/commands/shortcut-labels.js'
 
 export default function Topbar({
   isMobile,
+  readOnly,
   t,
   tabs,
   activeId,
@@ -28,6 +29,7 @@ export default function Topbar({
   onExportPdf,
   onReorder,
   onToggleSidebar,
+  onToggleReadOnly,
   onToggleSplit,
   onImageHostChange,
   onOpenPalette
@@ -61,6 +63,16 @@ export default function Topbar({
         effectiveKeybindings={effectiveKeybindings}
       />
       <div className="topbar-spacer" />
+      {isMobile && (
+        <button
+          className={`icon-btn drag-no hm-readonly-btn${readOnly ? ' active' : ''}`}
+          title={readOnly ? t('mobile.readOnlyOff') : t('mobile.readOnlyOn')}
+          aria-pressed={readOnly}
+          onClick={onToggleReadOnly}
+        >
+          <Icon name={readOnly ? 'lock' : 'unlock'} size={18} />
+        </button>
+      )}
       <button
         className="icon-btn drag-no"
         title={labelWithShortcut(t('welcome.newFile'), 'file.new', effectiveKeybindings)}

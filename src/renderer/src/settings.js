@@ -75,6 +75,38 @@ export const DEFAULT_FONT_WRITE =
 export const DEFAULT_FONT_MONO =
   "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace"
 
+// CSS snippets follow Obsidian's useful model: several small, named overrides
+// can be enabled independently and compose in list order. Keep the old string
+// key below for backwards compatibility with versions that predate snippets.
+export const DEFAULT_USER_CSS_SNIPPETS = [
+  { id: 'default', name: '', enabled: true, css: '' }
+]
+
+export function normalizeUserCssSnippets(raw, legacyCss = '') {
+  const usedIds = new Set()
+  const snippets = Array.isArray(raw)
+    ? raw.slice(0, 40).reduce((items, value, index) => {
+      if (!value || typeof value !== 'object' || typeof value.css !== 'string') return items
+      let id = typeof value.id === 'string' ? value.id.trim().slice(0, 80) : ''
+      if (!id || usedIds.has(id)) id = `snippet-${index + 1}`
+      usedIds.add(id)
+      items.push({
+        id,
+        name: typeof value.name === 'string' ? value.name.trim().slice(0, 80) : '',
+        enabled: value.enabled !== false,
+        css: value.css
+      })
+      return items
+    }, [])
+    : []
+
+  if (snippets.length) return snippets
+  if (typeof legacyCss === 'string' && legacyCss) {
+    return [{ id: 'legacy', name: '', enabled: true, css: legacyCss }]
+  }
+  return DEFAULT_USER_CSS_SNIPPETS.map((snippet) => ({ ...snippet }))
+}
+
 // Build a font-family stack with the user's font first (quoted — names can have
 // spaces, e.g. "Fira Code Nerd Font"). Empty name → null (don't override the
 // default stack, and on Windows let the .app.is-win Consolas rule still apply).
@@ -111,9 +143,12 @@ export const DEFAULT_SETTINGS = {
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false,
-  // Free-form user CSS snippet (issue #81), injected into a dedicated <style>
-  // tag so users can tweak heading colors, inline-code size, etc. Empty = none.
-  userCss: ''
+  // Legacy single CSS snippet. Retained so users can safely move between
+  // versions; new UI writes userCssSnippets instead.
+  userCss: '',
+  userCssSnippets: DEFAULT_USER_CSS_SNIPPETS,
+  // Mobile-only reading lock. Desktop intentionally never consumes this value.
+  mobileReadOnly: false
 }
 
 function normalizeWidth(w) {
@@ -162,7 +197,9 @@ export function loadSettings() {
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',
-      userCss: typeof raw.userCss === 'string' ? raw.userCss : ''
+      userCss: typeof raw.userCss === 'string' ? raw.userCss : '',
+      userCssSnippets: normalizeUserCssSnippets(raw.userCssSnippets, raw.userCss),
+      mobileReadOnly: raw.mobileReadOnly === true
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

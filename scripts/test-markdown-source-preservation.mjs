@@ -46,4 +46,28 @@ assert.equal(mismatch.preserved, false)
 assert.equal(mismatch.markdown, '原文 C')
 assert.equal(mismatch.reason, 'visible-stream-mismatch')
 
-console.log('PASS markdown source preservation: original formatting survives localized rich-text edits')
+const tableSource = [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0~9。',
+  '',
+  'A | B',
+  '--- | ---',
+  'old-a | old-b',
+  '',
+  '这段不要改。'
+].join('\n')
+const tableCanonical = tableSource
+  .replace('0~9', '0\\~9')
+  .replace('A | B\n--- | ---\nold-a | old-b', [
+    '| A     | B     |',
+    '| ----- | ----- |',
+    '| old-a | old-b |'
+  ].join('\n'))
+const tableNext = tableCanonical.replace('| old-a | old-b |', '| old-a | old-b |\n| new-a | new-b |')
+const tableChanged = preserveRichMarkdownSource(tableSource, tableCanonical, tableNext)
+assert.equal(tableChanged.preserved, false)
+assert.equal(tableChanged.reason, 'table-canonical-change')
+assert.equal(tableChanged.markdown, tableNext)
+
+console.log('PASS markdown source preservation: localized edits retain original spelling; table edits use safe canonical Markdown')

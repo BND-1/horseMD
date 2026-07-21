@@ -21,6 +21,7 @@ export function mountEditorDomBindings({
   setZoom,
   getT,
   getKeybindings,
+  isReadOnly,
   isDestroyed
 }) {
   if (!view) return
@@ -33,7 +34,8 @@ export function mountEditorDomBindings({
     reportActiveBlock,
     setBlock,
     setCtxMenu,
-    getKeybindings
+    getKeybindings,
+    isReadOnly
   })
 
   mountEditorLayoutBindings({

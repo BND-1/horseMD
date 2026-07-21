@@ -251,6 +251,12 @@ node scripts/test-strike-guard.mjs
 结论:模式切换采用结构化映射和边界处理，不以全文关键词作为主路径；状态机现已提取到 `useSourceModeSwitch.js`。任何后续修改都必须保留 keep-mounted、uncontrolled textarea、只同步真实源码编辑和 caret/viewport 双意图四项合同，并执行双向链路、表格、代码块及真实大文档回归。
 - 模式切换回归最好固定使用真实大文档,小文档无法暴露图片、atom、chunk parse、远程资源加载带来的问题。
 
+### 2026-07-20 回归补强
+
+- 增加 `scripts/test-mode-switch-raw-offset-ui.mjs`（`npm run test:mode-switch-raw-offset-ui`）。测试不再只比对附近文本，而是从源码端设置精确 raw offset，依次覆盖正文、表格单元格、列表和 CodeMirror 代码块；每个位置执行 `source → rich → source → rich` 与 `rich → source → rich → source`。
+- 使用 `/Users/yangtingyi/vibe_everything/电脑档案.md` 的表格单元格手动确认：源码 offset 可恢复到对应的 `<td>` 文本。当前工作树没有历史 12 万字 MinerU 文件，发布前仍必须在该真实图片密集文档执行同样的双向回归。
+- 本轮未复现新的映射错误，因此没有叠加新的关键词/上下文兜底或改变敏感状态机；保持 raw-offset 主路径和既有 keep-mounted 合同。
+
 ## 2026-07-18：原始 Markdown 写法保真（Issue #77）
 
 模式切换位置稳定不代表源码写法稳定。Crepe/remark 会在富文本编辑后生成 canonical Markdown；若把它整篇回写，未编辑区域也会出现 `\~`、新增空行或列表标记变化。当前 `Editor.jsx` 保留用户原始源码快照和 Crepe canonical 快照，局部文字变更只映射回原始源码的对应范围；无编辑切换不会回写。

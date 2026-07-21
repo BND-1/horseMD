@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Outline from './components/Outline.jsx'
+import FloatingOutline from './components/FloatingOutline.jsx'
 import StatusBar from './components/StatusBar.jsx'
 import SaveFab from './components/SaveFab.jsx'
 import CommandPalette from './components/CommandPalette.jsx'
@@ -109,6 +110,9 @@ export default function App() {
   // User preferences (page width, image-host command). Persisted separately from
   // the session; see settings.js.
   const [settings, setSettings] = useState(loadSettings)
+  // This preference is deliberately consumed only by Capacitor builds. Desktop
+  // keeps its normal editable surface even when it shares the same preferences.
+  const mobileReadOnly = isMobile && settings.mobileReadOnly
 
   const editorHostRef = useRef(null) // active rich editor's scroll container
   // Every mounted rich editor's scroll container, keyed by tab id. Split-view
@@ -306,8 +310,8 @@ export default function App() {
     applyParagraphSpacing(settings.paragraphSpacing)
   }, [settings.paragraphSpacing])
   useEffect(() => {
-    applyUserCss(settings.userCss)
-  }, [settings.userCss])
+    applyUserCss(settings.userCssSnippets)
+  }, [settings.userCssSnippets])
   useEffect(() => {
     saveSettings(settings)
   }, [settings])
@@ -541,6 +545,10 @@ export default function App() {
     (sourceMode && outlineId === activeId)
   )
   const richLoading = !!outlineId && richLoadingIds.has(outlineId)
+  // The compact navigator is a separate reading affordance on the opposite
+  // side of the editor. Keep it available when the full sidebar outline is
+  // open as well; hiding it made the right-side navigation appear to vanish.
+  const floatingOutlineEnabled = !isMobile && !home && outlineTab?.kind !== 'settings'
   const getOutlineEditorHost = useCallback(
     () => {
       const host = editorHosts.current[outlineId]
@@ -571,6 +579,7 @@ export default function App() {
     activeId: outlineId,
     activeTab: outlineTab,
     richLoading,
+    floating: floatingOutlineEnabled,
     isMobile,
     setSidebarOpen,
     setHome
@@ -804,6 +813,7 @@ export default function App() {
 
       <Topbar
         isMobile={isMobile}
+        readOnly={mobileReadOnly}
         t={t}
         tabs={tabs}
         activeId={home ? null : activeId}
@@ -828,6 +838,7 @@ export default function App() {
         onExportPdf={exportPathToPdf}
         onReorder={reorderTabs}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onToggleReadOnly={() => updateSettings({ mobileReadOnly: !settings.mobileReadOnly })}
         onToggleSplit={toggleSplit}
         onImageHostChange={(cmd) => updateSettings({ imageUploadCommand: cmd })}
         onOpenPalette={() => setPaletteOpen(true)}
@@ -913,6 +924,7 @@ export default function App() {
             imageUploadCommand={settings.imageUploadCommand}
             spellcheck={settings.spellcheck}
             inlineMathDeleteMode={settings.inlineMathDeleteMode}
+            readOnly={mobileReadOnly}
             effectiveKeybindings={effectiveKeybindings}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}
@@ -937,6 +949,17 @@ export default function App() {
             updateContent={updateContent}
             t={t}
           />
+
+          {floatingOutlineEnabled && outlineHeadings.length > 0 && !richLoading && (
+            <FloatingOutline
+              headings={outlineHeadings}
+              activeIndex={activeHeading}
+              onJump={jumpToHeading}
+              style={split && focusedPane === 'left'
+                ? { right: `calc(${Math.round((1 - splitRatio) * 10000) / 100}% + 12px)` }
+                : undefined}
+            />
+          )}
 
           {/* Settings page — a full-tab view for kind:'settings' tabs (the
               ActivityBar gear button opens one). EditorArea skips settings
@@ -1015,7 +1038,7 @@ export default function App() {
         sourceMode={sourceMode}
         onToggleSource={toggleSource}
         activeBlock={activeBlock}
-        onPickBlock={(id) => editorApis.current[activeId]?.setBlock(id)}
+        onPickBlock={mobileReadOnly ? undefined : (id) => editorApis.current[activeId]?.setBlock(id)}
         pageWidth={settings.pageWidth}
         onSetPageWidth={(w) => updateSettings({ pageWidth: w })}
         fontSize={settings.fontSize}

@@ -28,6 +28,7 @@ export default function EditorArea({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  readOnly,
   effectiveKeybindings,
   editorAreaRef,
   editorHostRef,
@@ -105,7 +106,7 @@ export default function EditorArea({
             if (el) {
               sourceTextareas.current[tab.id] = el
               if (isLeft) sourceRef.current = el
-              if (!el.__horsemdSourceCaretCleanup) {
+              if (!readOnly && !el.__horsemdSourceCaretCleanup) {
                 el.__horsemdSourceCaretCleanup = attachSourceCaret(el)
               }
               if (el.__horsemdSourceBaseline == null) el.__horsemdSourceBaseline = el.value || ''
@@ -127,6 +128,7 @@ export default function EditorArea({
               ref={setSourceTextareaRef}
               className={`source-editor${paneClass}`}
               defaultValue={liveContentRef.current.get(tab.id) ?? tab.content}
+              readOnly={readOnly}
               spellCheck={false}
               style={{ order, flex: paneFlex }}
               onFocus={onPaneFocus}
@@ -219,6 +221,7 @@ export default function EditorArea({
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
                 inlineMathDeleteMode={inlineMathDeleteMode}
+                readOnly={readOnly}
                 effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
                 onReady={(api) => {

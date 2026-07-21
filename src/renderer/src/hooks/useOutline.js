@@ -24,7 +24,7 @@ import { textareaOffsetAtScrollTop } from '../textarea-metrics.js'
 const HEADING_SEL = '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6'
 const getHeadings = (host) => (host ? [...host.querySelectorAll(HEADING_SEL)] : [])
 
-export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, richLoading = false, isMobile, setSidebarOpen, setHome }) {
+export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen, sidebarMode, sourceMode, activeId, activeTab, richLoading = false, isMobile, setSidebarOpen, setHome, floating = false }) {
   const [activeHeading, setActiveHeading] = useState(-1)
   // Bumped when a chunked-loaded rich doc finishes streaming in (Editor's
   // onStructureChange) so the outline list + scrollspy refresh against the now-
@@ -149,7 +149,8 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
   // (#40): no DOM headings, so map scrollTop→char and find the nearest heading
   // via parseSourceHeadings (scrollTop→char ratio, nearest-heading match).
   useEffect(() => {
-    if (home || !sidebarOpen || sidebarMode !== 'outline') {
+    const isTracking = (sidebarOpen && sidebarMode === 'outline') || floating
+    if (home || !isTracking) {
       setActiveHeading(-1)
       return
     }
@@ -272,7 +273,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
       scroller.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', invalidate)
     }
-  }, [home, sidebarOpen, sidebarMode, sourceMode, activeId, richDocVersion, getEditorHost, getSourceTextarea])
+  }, [home, sidebarOpen, sidebarMode, floating, sourceMode, activeId, richDocVersion, getEditorHost, getSourceTextarea])
 
   // Outline heading list. Rich mode: taken from the RENDERED document (the
   // editor's actual h1…h6) — matches how jumpToHeading finds them, recognizes
@@ -309,7 +310,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
       // active editor's ref can arrive one React commit after opening the
       // Outline panel, so retry briefly before treating it as an empty file.
       if (!els.length) {
-        if (sidebarOpen && sidebarMode === 'outline' && emptyReads++ < 12) {
+        if (((sidebarOpen && sidebarMode === 'outline') || floating) && emptyReads++ < 12) {
           timer = setTimeout(read, 100)
           return
         }
@@ -320,7 +321,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
         els.map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent || '').trim() }))
       )
     }
-    const targetKey = `${activeId}:${sourceMode ? 'source' : 'rich'}:${sidebarOpen && sidebarMode === 'outline' ? 'outline' : 'background'}`
+    const targetKey = `${activeId}:${sourceMode ? 'source' : 'rich'}:${sidebarOpen && sidebarMode === 'outline' ? 'outline' : floating ? 'floating' : 'background'}`
     const targetChanged = outlineTargetRef.current !== targetKey
     outlineTargetRef.current = targetKey
     if (targetChanged) read()
@@ -328,7 +329,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
     return () => {
       if (timer) clearTimeout(timer)
     }
-  }, [home, sidebarOpen, sidebarMode, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, getEditorHost, getSourceTextarea])
+  }, [home, sidebarOpen, sidebarMode, floating, activeId, activeTab, sourceMode, richDocVersion, richLoading, sourceOutlineVersion, getEditorHost, getSourceTextarea])
 
   // Source-mode live refresh (#40): bump sourceOutlineVersion on textarea input
   // (debounced) so the list re-parses when the user adds/edits a heading. Rich

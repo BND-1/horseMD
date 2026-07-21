@@ -691,6 +691,13 @@ ipcMain.handle('window:toggleMaximize', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
+// This is intentionally a narrow bridge to Electron's existing View menu role.
+// DevTools remains desktop-only and renderer code never receives Node access.
+ipcMain.handle('window:toggleDevTools', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  mainWindow.webContents.toggleDevTools()
+  return true
+})
 
 // The renderer confirmed it's safe to close (no unsaved changes, or the user
 // chose to discard). If a quit is underway (Cmd/Ctrl+Q), quit the whole app;
