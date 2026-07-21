@@ -1,12 +1,15 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-20。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-21。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.10.0`（尚未提交；包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段）
+- 当前测试版本号：`package.json` 为 `0.10.0`。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
 - 最近关键提交：
+  - `2b31d93 fix(editor): preserve authored H5 and H6 case`
+  - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
+  - `97b6c40 feat: improve editor and sync workflows`
   - `ab8f699 fix(pdf): render display latex in exports`
   - `0c1b3f0 fix(editor): protect inline math deletion`
   - `bdb73a5 fix(editor): refine outline and task list interactions`
@@ -19,6 +22,7 @@
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
   - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
+  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:table-ui`、`npm run test:issue-86-ui`
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -387,7 +391,8 @@ npm run guide:capture
 
 - 自定义快捷键第一版已落地，后续谨慎开放编辑器内部命令。
 - AI 能力后期探索，倾向原生体验 + provider 可插拔 + Review-first 修改。
-- 云同步桌面端手动闭环正在实现和验收；自动同步、移动端同步、历史恢复、E2EE、插件市场属于后续阶段。
+- 云同步桌面端手动闭环已完成当前阶段；自动同步、移动端同步、历史恢复、E2EE、插件市场属于后续阶段。
+- 当前公开 Issue 的分流、前置条件和验收边界见 [ROADMAP.md](../ROADMAP.md#当前-issue-分流2026-07-21)。其中 #62 必须 Windows 实机复现，#65 必须先定信息架构，#76/#23 都是原生平台项目；不要把它们当成可直接在 renderer 内完成的小修。
 
 ## 12. 新 AI 开始任务前的检查清单
 
