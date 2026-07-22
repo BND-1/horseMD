@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -61,6 +61,7 @@
     "test:table-ui": "node scripts/test-table-scroll-ui.mjs",
     "test:pdf-table-ui": "node scripts/test-pdf-wide-table-ui.mjs",
     "test:math-ui": "node scripts/test-inline-math-ui.mjs",
+    "test:display-math-scroll-ui": "node scripts/test-display-math-scroll-ui.mjs",
     "test:tagged-display-math-ui": "node scripts/test-tagged-display-math-ui.mjs",
     "test:issues-66-67-ui": "node scripts/test-issues-66-67-ui.mjs",
     "test:issues-70-72-ui": "node scripts/test-issues-70-72-ui.mjs",

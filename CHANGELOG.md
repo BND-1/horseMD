@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connection settings, never with the encrypted password or S3 secret.
 
 ### Fixed
+- **Display-formula scroll controls** — fitting LaTeX blocks no longer expose
+  Windows scrollbar arrows. Only formulas whose rendered width actually exceeds
+  the preview enable a single horizontal scroll surface; PDF output remains
+  editor-control-free.
 - **Tagged display formulas** — a block formula containing KaTeX `\tag{...}`
   no longer lets its equation number overlap the formula in rich-text preview.
   The formula now occupies the full LaTeX preview width with a reserved number

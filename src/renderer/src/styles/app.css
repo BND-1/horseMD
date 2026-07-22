@@ -5410,11 +5410,18 @@ body.dark .milkdown {
 /* Keep a wide display equation inside the column: scroll horizontally instead of
    overflowing the page (issue #5). Short formulas still center as usual. The
    block-math preview panel scrolls too. */
-.milkdown .katex-display,
-.milkdown .milkdown-code-block .preview {
+.milkdown .katex-display {
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
+}
+.milkdown .katex-display[data-hm-math-overflow='true'] { overflow-x: auto; }
+/* Block formulas own their overflow. Keeping the surrounding Crepe preview
+   non-scrollable prevents Windows from rendering a second scrollbar/arrows for
+   formulas that fit normally. Mermaid previews retain their own scroll path. */
+.milkdown .milkdown-code-block .preview:has(> .katex-display) {
+  max-width: 100%;
+  overflow: hidden;
 }
 /* Mermaid diagram inside a code block's preview panel: center it. */
 .milkdown .milkdown-code-block .preview:has(svg),

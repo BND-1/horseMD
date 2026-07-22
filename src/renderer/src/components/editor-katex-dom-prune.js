@@ -7,11 +7,19 @@ function pruneKatexMathml(root) {
   root.querySelectorAll('.katex-mathml').forEach((node) => node.remove())
 }
 
+function syncDisplayMathOverflow(root) {
+  if (!root?.querySelectorAll) return
+  root.querySelectorAll('.milkdown-code-block .preview > .katex-display').forEach((display) => {
+    // Windows can show scrollbar buttons for an `overflow: auto` box even when
+    // the formula fits. Turn scrolling on only after measuring real overflow.
+    display.dataset.hmMathOverflow = display.scrollWidth > display.clientWidth + 1 ? 'true' : 'false'
+  })
+}
+
 export function createKatexDomPrunePlugin() {
   return new Plugin({
     key: KATEX_PRUNE_KEY,
     view(view) {
-      if (window.api?.platform !== 'win32') return {}
       const root = view.dom
       let scheduled = false
       const schedule = () => {
@@ -19,16 +27,21 @@ export function createKatexDomPrunePlugin() {
         scheduled = true
         requestAnimationFrame(() => {
           scheduled = false
-          pruneKatexMathml(root)
+          if (window.api?.platform === 'win32') pruneKatexMathml(root)
+          syncDisplayMathOverflow(root)
         })
       }
       const observer = new MutationObserver(schedule)
-      pruneKatexMathml(root)
+      if (window.api?.platform === 'win32') pruneKatexMathml(root)
+      syncDisplayMathOverflow(root)
       observer.observe(root, { childList: true, subtree: true })
+      const resizeObserver = new ResizeObserver(schedule)
+      resizeObserver.observe(root)
       return {
         update: schedule,
         destroy() {
           observer.disconnect()
+          resizeObserver.disconnect()
         }
       }
     }
