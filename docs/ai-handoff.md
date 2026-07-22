@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.10.0`。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
+- 当前测试版本号：`package.json` 为 `0.10.2`。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -22,7 +22,7 @@
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
   - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
-  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:table-ui`、`npm run test:issue-86-ui`
+  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -225,6 +225,7 @@ android/, ios/           Capacitor 原生壳
 - 行内公式编辑框支持“清空”。
 - 行内公式默认保护删除：第一次删除先选中，第二次删除才移除。
 - PDF 导出中段落公式打印为渲染公式，不再打印源码。
+- Crepe 的块公式位于 `.milkdown-code-block .preview` flex 容器。带 `\tag{...}` 的 KaTeX 公式必须保持 `flex-basis: 100%`，并给 `.katex-html` 的编号预留右侧空间；否则短公式会 shrink-to-fit，绝对定位编号会压到公式本体。用 `npm run test:tagged-display-math-ui` 保护这条布局合同。
 
 相关文件：
 

@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connection settings, never with the encrypted password or S3 secret.
 
 ### Fixed
+- **Tagged display formulas** — a block formula containing KaTeX `\tag{...}`
+  no longer lets its equation number overlap the formula in rich-text preview.
+  The formula now occupies the full LaTeX preview width with a reserved number
+  column; PDF export remains unchanged.
 - **Windows Command Palette compositing** (#62) — the full-window blur layer is
   now disabled only on Windows, avoiding a GPU/driver-sensitive re-composite
   while hovering or scrolling command results. The dimmed backdrop, keyboard

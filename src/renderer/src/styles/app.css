@@ -5428,6 +5428,19 @@ body.dark .milkdown {
 .milkdown .katex-display {
   padding: 4px 2px;
 }
+/* Crepe renders block LaTeX inside a flex preview panel. Without an explicit
+   flex basis, a short equation shrinks to its intrinsic width, so KaTeX's
+   absolutely positioned \tag number is placed on top of the equation. Keep the
+   display as wide as its preview panel and reserve a small number column. */
+.milkdown .milkdown-code-block .preview > .katex-display {
+  flex: 0 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+.milkdown .milkdown-code-block .preview > .katex-display > .katex > .katex-html:has(> .tag) {
+  box-sizing: border-box;
+  padding-right: 4em;
+}
 .milkdown .ProseMirror span[data-type='math_inline'] {
   max-width: 100%;
   overflow-x: auto;
