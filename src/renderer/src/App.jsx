@@ -110,6 +110,13 @@ export default function App() {
   // User preferences (page width, image-host command). Persisted separately from
   // the session; see settings.js.
   const [settings, setSettings] = useState(loadSettings)
+  // Settings tabs are intentionally transient, but the user's current place in
+  // the settings workspace should survive switching to a document and back.
+  // This is UI-only state, so it must not be written into preferences/session.
+  const [settingsViewState, setSettingsViewState] = useState({
+    activeSection: 'editor',
+    activeCssSnippetId: null
+  })
   // This preference is deliberately consumed only by Capacitor builds. Desktop
   // keeps its normal editable surface even when it shares the same preferences.
   const mobileReadOnly = isMobile && settings.mobileReadOnly
@@ -969,6 +976,16 @@ export default function App() {
               settings={settings}
               onUpdateSettings={updateSettings}
               onHoverFont={setHoverFont}
+              activeSection={settingsViewState.activeSection}
+              onActiveSectionChange={(activeSection) => setSettingsViewState((current) => ({
+                ...current,
+                activeSection
+              }))}
+              activeCssSnippetId={settingsViewState.activeCssSnippetId}
+              onActiveCssSnippetIdChange={(activeCssSnippetId) => setSettingsViewState((current) => ({
+                ...current,
+                activeCssSnippetId
+              }))}
               theme={theme}
               setTheme={pickBuiltinTheme}
               customThemes={customThemes}

@@ -5599,16 +5599,13 @@ body.dark .milkdown {
   display: none !important;
 }
 /* Hovering a table edge is reserved for Crepe's add-row/add-column control.
-   The native resize guide only appears after the deliberate press-and-hold. */
-.milkdown .ProseMirror .column-resize-handle {
-  display: none;
-}
-body.hm-table-resizing .milkdown .ProseMirror .column-resize-handle {
-  display: block;
+   The resize guide belongs to HorseMD instead of prosemirror-tables: Crepe's
+   table node view is not compatible with the plugin's hover transactions. */
+.hm-column-resize-guide {
+  position: fixed;
+  z-index: 8;
   background-color: var(--accent);
   pointer-events: none;
-  top: 1px;
-  bottom: -1px;
   width: 1px;
   border-radius: 1px;
 }

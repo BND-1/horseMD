@@ -117,13 +117,35 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             <article className="ProseMirror markdown-body" contentEditable={false}>
               <h1>HorseMD</h1>
               <p>{t('settings.previewIntro')}</p>
+              <hr />
               <h2>{t('settings.previewSection')}</h2>
               <p>{t('settings.previewParagraph')}</p>
+              <p className="settings-preview-inline-sample">
+                <strong>{t('settings.previewStrong')}</strong>{' · '}
+                <em>{t('settings.previewEmphasis')}</em>{' · '}
+                <del>{t('settings.previewDeleted')}</del>{' · '}
+                <a href="#settings-preview-link" onClick={(event) => event.preventDefault()}>{t('settings.previewLink')}</a>{' · '}
+                <code>{t('settings.previewInlineCode')}</code>{' · '}
+                <kbd>Ctrl</kbd>{'+'}<kbd>Shift</kbd>{'+'}<kbd>P</kbd>
+              </p>
               <blockquote>{t('settings.previewQuote')}</blockquote>
               <ul>
                 <li>{t('settings.previewFeature1')}</li>
                 <li>{t('settings.previewFeature2')}</li>
               </ul>
+              <ol>
+                <li>{t('settings.previewOrdered1')}</li>
+                <li>{t('settings.previewOrdered2')}</li>
+              </ol>
+              <ul className="contains-task-list">
+                <li className="task-list-item"><input type="checkbox" checked readOnly tabIndex={-1} /><label>{t('settings.previewTaskDone')}</label></li>
+                <li className="task-list-item"><input type="checkbox" readOnly tabIndex={-1} /><label>{t('settings.previewTaskTodo')}</label></li>
+              </ul>
+              <h3>{t('settings.previewTableTitle')}</h3>
+              <table>
+                <thead><tr><th>{t('settings.previewTableStyle')}</th><th>{t('settings.previewTableValue')}</th></tr></thead>
+                <tbody><tr><td>{t('settings.previewTableBody')}</td><td><code>16 px</code></td></tr></tbody>
+              </table>
               <pre><code>{t('settings.previewCode')}</code></pre>
             </article>
           </div>

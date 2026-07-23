@@ -1,5 +1,5 @@
 import { TextSelection } from '@milkdown/prose/state'
-import { TableMap, cellAround, columnResizingPluginKey } from '@milkdown/prose/tables'
+import { TableMap, cellAround } from '@milkdown/prose/tables'
 
 const clamp = (value, min, max) => {
   if (max < min) return min
@@ -43,6 +43,8 @@ const readRenderedColumnWidths = (table) => {
 }
 
 const applyColumnGroupWidths = (table, widths) => {
+  const wrapper = table.closest('.table-wrapper')
+  const scrollLeft = wrapper?.scrollLeft ?? 0
   let colgroup = table.querySelector('colgroup.hm-column-widths')
   if (!colgroup) {
     colgroup = document.createElement('colgroup')
@@ -64,6 +66,16 @@ const applyColumnGroupWidths = (table, widths) => {
   const tableWidth = `${Math.ceil(widths.reduce((total, width) => total + width, 0))}px`
   if (table.style.width !== tableWidth) table.style.width = tableWidth
   if (table.style.minWidth !== tableWidth) table.style.minWidth = tableWidth
+
+  // Crepe owns this table node view. Updating its colgroup must not make a wide
+  // table jump back to the first column while the user is working at the end.
+  if (wrapper) {
+    const restoreScroll = () => {
+      wrapper.scrollLeft = Math.min(scrollLeft, Math.max(0, wrapper.scrollWidth - wrapper.clientWidth))
+    }
+    restoreScroll()
+    requestAnimationFrame(restoreScroll)
+  }
 }
 
 const getColumnResizeInfo = (view, cellPos) => {
@@ -161,6 +173,21 @@ const syncRenderedTableColumnWidths = (host) => {
   })
 }
 
+const getColumnBoundary = (table, column) => {
+  for (const row of table.rows) {
+    let currentColumn = 0
+    for (const cell of row.cells) {
+      const span = Math.max(1, Number.parseInt(cell.getAttribute('colspan') || '1', 10) || 1)
+      if (column >= currentColumn && column < currentColumn + span) {
+        const rect = cell.getBoundingClientRect()
+        return rect.right
+      }
+      currentColumn += span
+    }
+  }
+  return null
+}
+
 const mountSlashMenuBounds = ({ host, scrollEl, cleanups }) => {
   const margin = 8
   let raf = 0
@@ -234,9 +261,10 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
   if (!scrollEl) return
   const margin = 8
   const resizeHoldMs = 220
-  const resizeMoveTolerance = 4
+  const resizeMoveTolerance = 8
   let raf = 0
   let resizeIntent = null
+  let needsColumnWidthSync = true
 
   const setTranslate = (element, x, y) => {
     const next = x || y ? `${Math.round(x)}px ${Math.round(y)}px` : ''
@@ -252,12 +280,28 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     clamp(0, safeStart - start, safeEnd - end)
   )
 
+  const updateResizeGuide = (intent) => {
+    const guide = intent.guide
+    if (!guide || !intent.table.isConnected) return
+    const tableRect = intent.table.getBoundingClientRect()
+    const boundary = getColumnBoundary(intent.table, intent.resize.column)
+    if (!tableRect.height || boundary == null) return
+    guide.style.left = `${Math.round(boundary)}px`
+    guide.style.top = `${Math.round(tableRect.top)}px`
+    guide.style.height = `${Math.round(tableRect.height)}px`
+  }
+
+  const removeResizeGuide = (intent) => intent?.guide?.remove()
+
   const fix = () => {
     raf = 0
-    // Crepe owns the table node view instead of ProseMirror's default TableView.
-    // The native resize plugin still persists data-colwidth, so reflect those
-    // stored widths onto Crepe's rendered cells after each table transaction.
-    syncRenderedTableColumnWidths(host)
+    if (needsColumnWidthSync) {
+      // Crepe owns the table node view instead of ProseMirror's default
+      // TableView, so it needs a colgroup only after a table transaction. Do
+      // not rewrite it for ordinary hover and scroll events.
+      syncRenderedTableColumnWidths(host)
+      needsColumnWidthSync = false
+    }
     const scrollRect = scrollEl.getBoundingClientRect()
     const safe = {
       left: Math.max(0, scrollRect.left) + margin,
@@ -421,9 +465,12 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
       const shiftY = targetTop - rawTop
       setTranslate(group, shiftX, shiftY)
     })
+
+    if (resizeIntent?.active) updateResizeGuide(resizeIntent)
   }
 
-  const schedule = () => {
+  const schedule = ({ syncColumnWidths = false } = {}) => {
+    if (syncColumnWidths) needsColumnWidthSync = true
     if (raf) return
     raf = requestAnimationFrame(fix)
   }
@@ -457,10 +504,6 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     const resize = getColumnResizeAtPointer(view, event, side)
     if (!table || !resize) return
 
-    const block = table.closest('.milkdown-table-block')
-    const tableIndex = [...host.querySelectorAll('.milkdown-table-block')].indexOf(block)
-    if (tableIndex < 0) return
-
     const activeCell = view.nodeDOM(resize.cellPos)
     const measuredWidths = readRenderedColumnWidths(table)
     const startWidth = Math.max(
@@ -474,7 +517,6 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     const intent = {
       cell,
       table,
-      tableIndex,
       startX: event.clientX,
       startY: event.clientY,
       resize,
@@ -483,6 +525,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
       currentWidth: Math.round(startWidth),
       active: false,
       timer: 0,
+      guide: null,
       onMove: null,
       onMouseUp: null
     }
@@ -495,14 +538,12 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
         const width = Math.max(25, Math.round(intent.startWidth + moveEvent.clientX - intent.startX))
         if (width === intent.currentWidth) return
         intent.currentWidth = width
-        const currentTable = host.querySelectorAll('.milkdown-table-block')[intent.tableIndex]
-          ?.querySelector('table.children')
-        if (!currentTable) return
-        intent.table = currentTable
+        if (!intent.table.isConnected) return
         const widths = intent.widths.slice()
         widths[intent.resize.column] = width
-        currentTable.dataset.hmColumnPreview = 'true'
-        applyColumnGroupWidths(currentTable, widths)
+        intent.table.dataset.hmColumnPreview = 'true'
+        applyColumnGroupWidths(intent.table, widths)
+        updateResizeGuide(intent)
         return
       }
       if (Math.abs(moveEvent.clientX - intent.startX) > resizeMoveTolerance ||
@@ -518,14 +559,14 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
         document.body.classList.remove('hm-table-resizing')
         finished.table.closest('.milkdown-table-block')?.classList.remove('hm-table-resizing')
         finished.table.dataset.hmColumnPreview = ''
+        removeResizeGuide(finished)
         // The layout binding intercepts this boundary press before the editor's
         // normal pointer-intent listener sees it, so mark it explicitly before
         // dispatching the document transaction.
-        markUserEdit()
-        persistColumnWidth(view, finished.resize, finished.currentWidth)
+        const changed = persistColumnWidth(view, finished.resize, finished.currentWidth)
+        if (changed) markUserEdit()
         requestAnimationFrame(() => requestAnimationFrame(() => {
-          syncRenderedTableColumnWidths(host)
-          schedule()
+          schedule({ syncColumnWidths: true })
         }))
         return
       }
@@ -534,29 +575,34 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     resizeIntent = intent
     intent.timer = window.setTimeout(() => {
       if (resizeIntent !== intent) return
-      // The native plugin remains responsible for the visual edge decoration,
-      // but it updates lazily on hover. Restoring its handle can make Crepe
-      // replace the table node view, so reacquire the table by stable ordinal
-      // afterwards instead of writing a preview to detached DOM.
-      if (columnResizingPluginKey.getState(view.state)?.activeHandle !== resize.cellPos) {
-        view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setHandle: resize.cellPos }))
-      }
-      const currentTable = host.querySelectorAll('.milkdown-table-block')[intent.tableIndex]
-        ?.querySelector('table.children')
-      if (!currentTable) return
-      intent.table = currentTable
-      currentTable.dataset.hmColumnPreview = 'true'
-      applyColumnGroupWidths(currentTable, intent.widths)
+      intent.table.dataset.hmColumnPreview = 'true'
+      applyColumnGroupWidths(intent.table, intent.widths)
+      const guide = document.createElement('div')
+      guide.className = 'hm-column-resize-guide'
+      guide.setAttribute('aria-hidden', 'true')
+      // `.table-wrapper` uses containment for wide-table scrolling, which also
+      // becomes a containing block for fixed descendants. Keep the guide at the
+      // document level so its viewport coordinates remain exact.
+      document.body.appendChild(guide)
+      intent.guide = guide
       intent.active = true
       document.body.classList.add('hm-table-resizing')
-      currentTable.closest('.milkdown-table-block')?.classList.add('hm-table-resizing')
+      intent.table.closest('.milkdown-table-block')?.classList.add('hm-table-resizing')
+      updateResizeGuide(intent)
     }, resizeHoldMs)
     window.addEventListener('mousemove', intent.onMove, true)
     window.addEventListener('mouseup', intent.onMouseUp, true)
     event.preventDefault()
     event.stopPropagation()
   }
-  const observer = new MutationObserver(schedule)
+  const observer = new MutationObserver((mutations) => {
+    const syncColumnWidths = mutations.some((mutation) => (
+      mutation.type === 'childList' ||
+      mutation.attributeName === 'data-colwidth' ||
+      mutation.attributeName === 'colspan'
+    ))
+    schedule({ syncColumnWidths })
+  })
   observer.observe(host, {
     subtree: true,
     childList: true,
@@ -576,6 +622,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     if (intent?.active) {
       document.body.classList.remove('hm-table-resizing')
       intent.table.closest('.milkdown-table-block')?.classList.remove('hm-table-resizing')
+      removeResizeGuide(intent)
     }
     observer.disconnect()
     host.querySelectorAll('.hm-table-controls-open').forEach((block) => {

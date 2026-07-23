@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Icon } from '../icons.jsx'
 import Toggle from '../ui/Toggle.jsx'
 import { USER_CSS_TEMPLATE } from './user-css-template.js'
@@ -11,20 +11,24 @@ const createSnippet = () => ({
   css: ''
 })
 
-export default function UserCssSnippets({ settings, onUpdateSettings, t }) {
+export default function UserCssSnippets({
+  settings, onUpdateSettings,
+  activeSnippetId, onActiveSnippetIdChange,
+  t
+}) {
   const snippets = useMemo(
     () => normalizeUserCssSnippets(settings.userCssSnippets, settings.userCss),
     [settings.userCssSnippets, settings.userCss]
   )
-  const [activeId, setActiveId] = useState(snippets[0]?.id)
   const cssRef = useRef(null)
   const timerRef = useRef(null)
-  const active = snippets.find((snippet) => snippet.id === activeId) || snippets[0]
+  const active = snippets.find((snippet) => snippet.id === activeSnippetId) || snippets[0]
+  const activeId = active?.id
   const activeIndex = snippets.findIndex((snippet) => snippet.id === active?.id)
 
   useEffect(() => {
-    if (!snippets.some((snippet) => snippet.id === activeId)) setActiveId(snippets[0]?.id)
-  }, [activeId, snippets])
+    if (activeId && activeId !== activeSnippetId) onActiveSnippetIdChange(activeId)
+  }, [activeId, activeSnippetId, onActiveSnippetIdChange])
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
   const update = (next) => onUpdateSettings({ userCssSnippets: next })
@@ -46,19 +50,19 @@ export default function UserCssSnippets({ settings, onUpdateSettings, t }) {
   }
   const selectSnippet = (id) => {
     flushCss()
-    setActiveId(id)
+    onActiveSnippetIdChange(id)
   }
   const addSnippet = () => {
     const current = flushCss()
     const snippet = createSnippet()
     update([...current, snippet])
-    setActiveId(snippet.id)
+    onActiveSnippetIdChange(snippet.id)
   }
   const removeSnippet = () => {
     if (!active || snippets.length === 1) return
     const next = flushCss().filter((snippet) => snippet.id !== active.id)
     update(next)
-    setActiveId(next[Math.max(0, activeIndex - 1)]?.id)
+    onActiveSnippetIdChange(next[Math.max(0, activeIndex - 1)]?.id || null)
   }
   const moveActive = (direction) => {
     const target = activeIndex + direction

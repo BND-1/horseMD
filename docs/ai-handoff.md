@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-21。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-23。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.10.3`。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
+- 当前测试版本号：`package.json` 为 `0.10.4`。当前工作区待提交改动包括：宽表最右端长按调列宽时保持横向位置、稳定的实时列宽预览、设置页更完整的自定义 CSS 选择器预览与片段停留，以及正文悬浮不再误唤起块拖拽柄。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -22,7 +22,7 @@
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
   - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
-  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:display-math-scroll-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`
+  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:display-math-scroll-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`、`npm run test:issue-79-ui`、`npm run test:editor-style-settings-ui`、`npm run test:inline-html-block-handle-ui`
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -152,6 +152,8 @@ android/, ios/           Capacitor 原生壳
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
 - `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格变更必须使用完整 canonical Markdown；不要重新引入局部 raw-source 拼接或序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
+- `npm run test:table-ui` 保护另一条独立的表格 UI 合同：短表自然宽度、宽表内部横向滚动和不撑开页面；列边缘的短暂悬停仍用于加行/加列，只有按住约 220ms 才实时调整列宽；宽表最右端连续 10 次悬浮/调整均不得把 `scrollLeft` 重置为 0。不要重新注册 `columnResizingPlugin`，它会与 Crepe 自定义 `TableNodeView` 竞争 hover transaction，重新引入跳回和非确定性预览。
+- `editor-block-handle-guard.js` 只允许编辑器左侧 36px 块操作热区唤起 Milkdown block handle；修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:inline-html-block-handle-ui`，确认正文行内 HTML 和普通文字不会出现拖拽柄。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
 - 回归必须覆盖：
   - 富文本 → 源码 → 富文本 → 源码

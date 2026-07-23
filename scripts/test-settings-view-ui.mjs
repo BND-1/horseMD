@@ -93,7 +93,8 @@ async function main() {
       if (session.lang !== 'en') throw new Error('Language did not persist to session: ' + rawSession)
 
       await clickNav(['编辑器', 'Editor'])
-      const spellToggle = [...document.querySelectorAll('button[role="switch"]')].find(visible)
+      const spellToggle = [...document.querySelectorAll('button[role="switch"]')]
+        .find((button) => visible(button) && /英文拼写检查|English spell-check/.test(button.getAttribute('aria-label') || ''))
       if (!spellToggle) throw new Error('Missing spellcheck toggle')
       spellToggle.click()
       await sleep(240)

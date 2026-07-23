@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useI18n } from '../i18n.jsx'
 import AboutSettings from './settings/AboutSettings.jsx'
 import AppearanceSettings from './settings/AppearanceSettings.jsx'
@@ -11,6 +10,8 @@ import SyncSettings from './settings/SyncSettings.jsx'
 
 export default function SettingsView({
   settings, onUpdateSettings, onHoverFont,
+  activeSection, onActiveSectionChange,
+  activeCssSnippetId, onActiveCssSnippetIdChange,
   theme, setTheme, customThemes = [], customTheme, onPickCustom,
   onOpenThemesFolder, onGetMoreThemes,
   lang, setLang,
@@ -27,11 +28,11 @@ export default function SettingsView({
   onRemoveSyncFolder
 }) {
   const { t } = useI18n()
-  const [active, setActive] = useState('editor')
+  const active = activeSection || 'editor'
 
   return (
     <div className="settings-page">
-      <SettingsNav active={active} onChange={setActive} t={t} cloudSync={cloudSync} />
+      <SettingsNav active={active} onChange={onActiveSectionChange} t={t} cloudSync={cloudSync} />
       <div className="settings-sections">
         {active === 'general' && (
           <GeneralSettings lang={lang} setLang={setLang} t={t} />
@@ -41,6 +42,8 @@ export default function SettingsView({
             settings={settings}
             onUpdateSettings={onUpdateSettings}
             onHoverFont={onHoverFont}
+            activeCssSnippetId={activeCssSnippetId}
+            onActiveCssSnippetIdChange={onActiveCssSnippetIdChange}
             t={t}
           />
         )}

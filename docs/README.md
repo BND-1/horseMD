@@ -17,10 +17,14 @@
 | [mobile.md](./mobile.md) | 移动端（iOS / Android · Capacitor）方案、接口适配、打包发布 |
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
+| [user-guide-feature-coverage.md](./user-guide-feature-coverage.md) | 用户可见功能、代码所有者、教程页面与发布前核对状态矩阵 |
+| [release-v0.10.4.md](./release-v0.10.4.md) | v0.10.4 发布说明、安装产物、验证记录与关联 Issue |
 | [custom-shortcuts-architecture.md](./custom-shortcuts-architecture.md) | 设置中心重构、统一命令模型与自定义快捷键目标架构 |
 | [custom-shortcuts-implementation-checklist.md](./custom-shortcuts-implementation-checklist.md) | 分阶段实施步骤、测试矩阵、停止条件与交付清单 |
 | [custom-shortcuts-default-inventory.md](./custom-shortcuts-default-inventory.md) | 默认快捷键、菜单 accelerator、命令所有者和可配置状态清单 |
 | [custom-shortcuts-verification-report.md](./custom-shortcuts-verification-report.md) | 自定义快捷键自动化验证、真实安装证据、剩余人工验收边界 |
+| [ai-product-architecture.md](./ai-product-architecture.md) | AI 文档助手、工作区上下文、Provider、Review-first 改写、桌面 Agent 与插件生态的产品边界和分期架构 |
+| [ai-readiness-audit.md](./ai-readiness-audit.md) | AI 开发前的技术债、阻塞项、非阻塞风险、实施门槛与验收重点 |
 | [cloud-sync-prd.md](./cloud-sync-prd.md) | 文件夹级 WebDAV / S3 云同步的产品边界、数据模型、阶段计划与验收矩阵 |
 | [cloud-sync-v2-prd.md](./cloud-sync-v2-prd.md) | Sync v2 的方向选择、远端清空保护和可恢复变更产品规则 |
 | [cloud-sync-v2-architecture.md](./cloud-sync-v2-architecture.md) | Sync v2 的策略 API、计划层、执行顺序和兼容性设计 |

@@ -47,6 +47,15 @@ async function main() {
       if (!cssEditor) throw new Error('missing custom CSS editor under Editor')
       const preview = document.querySelector('.settings-preview.milkdown .ProseMirror h1')
       if (!preview) throw new Error('missing HorseMD-style typography preview')
+      const previewRoot = document.querySelector('.settings-preview.milkdown .ProseMirror')
+      const requiredPreviewElements = [
+        'h1', 'h2', 'h3', 'strong', 'em', 'del', 'a', 'code:not(pre code)',
+        'kbd', 'blockquote', 'ul', 'ol', 'input[type="checkbox"]', 'table', 'hr', 'pre code'
+      ]
+      const missingPreviewElements = requiredPreviewElements.filter((selector) => !previewRoot?.querySelector(selector))
+      if (missingPreviewElements.length) {
+        throw new Error('settings preview is missing common Markdown elements: ' + missingPreviewElements.join(', '))
+      }
       const rows = [...document.querySelectorAll('.settings-typo-row')].filter(visible)
       if (rows.length !== 3) throw new Error('expected three paired typography rows')
       const expectedChildren = [2, 2, 2]
@@ -77,14 +86,15 @@ async function main() {
     })()`)
 
     await app.send('Input.insertText', {
-      text: '.milkdown .ProseMirror h1 { color: rgb(12, 34, 56); }'
+      text: '.milkdown .ProseMirror h1 { color: rgb(12, 34, 56); }\n.milkdown .ProseMirror kbd { color: rgb(23, 45, 67); }'
     })
     await sleep(600)
 
     const cssResult = await app.evaluate(`(() => ({
       value: document.querySelector('.settings-css-editor')?.value || '',
       styleText: document.querySelector('#hm-user-css')?.textContent || '',
-      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color
+      color: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror h1')).color,
+      kbdColor: getComputedStyle(document.querySelector('.settings-preview.milkdown .ProseMirror kbd')).color
     }))()`)
     if (!cssResult.value.includes('rgb(12, 34, 56)')) {
       throw new Error('custom CSS was not typed into settings: ' + JSON.stringify(cssResult))
@@ -94,6 +104,9 @@ async function main() {
     }
     if (cssResult.color !== 'rgb(12, 34, 56)') {
       throw new Error('typography preview did not receive user CSS: ' + JSON.stringify(cssResult))
+    }
+    if (cssResult.kbdColor !== 'rgb(23, 45, 67)') {
+      throw new Error('rich settings preview did not expose a CSS-targetable keyboard element: ' + JSON.stringify(cssResult))
     }
 
     const added = await app.evaluate(`(() => {
@@ -148,6 +161,39 @@ async function main() {
     }))()`)
     if (composed.color !== 'rgb(70, 80, 90)' || composed.snippets.length !== 2 || !composed.styleText.includes('rgb(12, 34, 56)') || !composed.styleText.includes('rgb(70, 80, 90)')) {
       throw new Error('enabled snippets did not compose in order: ' + JSON.stringify(composed))
+    }
+
+    const retainedSnippet = await app.evaluate(`(async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+      const textOf = (element) => element?.textContent?.replace(/\\s+/g, ' ').trim() || ''
+      const visible = (element) => {
+        if (!element) return false
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
+      }
+      const docTab = [...document.querySelectorAll('.tab')]
+        .find((tab) => visible(tab) && !/设置|Settings/.test(textOf(tab)))
+      const settingsTab = [...document.querySelectorAll('.tab')]
+        .find((tab) => visible(tab) && /设置|Settings/.test(textOf(tab)))
+      if (!docTab || !settingsTab) return null
+      docTab.click()
+      await sleep(220)
+      settingsTab.click()
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const active = document.querySelector('.settings-css-snippet.active')
+        if (active && document.querySelector('.settings-css-editor')) {
+          return {
+            name: textOf(active.querySelector('.settings-css-snippet-select')),
+            css: document.querySelector('.settings-css-editor').value
+          }
+        }
+        await sleep(80)
+      }
+      return null
+    })()`)
+    if (!retainedSnippet || retainedSnippet.name !== 'Accent heading' || !retainedSnippet.css.includes('rgb(70, 80, 90)')) {
+      throw new Error('active CSS snippet was not retained after leaving Settings: ' + JSON.stringify(retainedSnippet))
     }
 
     const disabled = await app.evaluate(`(() => {

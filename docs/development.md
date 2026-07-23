@@ -132,6 +132,8 @@ npm run test:ui-regression
 - `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、快速设置、源码同步和快捷入口
 - `scripts/test-pdf-latex-ui.mjs` —— 真实 Electron PDF 导出回归：段落 LaTeX 公式必须导出为渲染后的 MathML，不允许打印 `$$...$$` 源码或公式编辑控件
 - `scripts/test-editor-style-settings-ui.mjs` —— 真实 Electron 设置页回归：自定义 CSS 位于编辑器设置并作用到预览，源码字号设置作用到源码 textarea
+- `scripts/test-inline-html-block-handle-ui.mjs` —— 真实 Electron 验证行内 `<font>` / `<span>` 不会在正文中唤起块拖拽柄，左侧块操作热区仍保留该功能
+- `scripts/test-table-scroll-ui.mjs` —— 真实 Electron 表格回归：短表自然宽度、宽表内部滚动、主题表面、行列控件、长按实时列宽，以及最右端连续 10 次调整不回跳
 - `scripts/test-latest-task-runner.mjs` —— 验证同一渲染器仅运行一个 PDF 生成任务，旧任务取消且最新请求胜出
 - `scripts/test-editor-api-registry.mjs` —— 验证按 Tab 的编辑器 API ready、关闭释放与超时行为
 - `scripts/test-pdf-studio-ui.mjs` —— 真实验证 PDF 横纵向、目录页、书签、页码范围、PDF.js Canvas 与快速设置更新的最终一致性

@@ -86,7 +86,7 @@ src/
       components/
         editor-dom-bindings.js 编辑器 DOM 绑定稳定入口
         editor-dom-interactions.js 键盘、选择、右键与编辑意图
-        editor-dom-layout.js 斜杠菜单边界、空白续写与滚动层级
+        editor-dom-layout.js 斜杠菜单边界、空白续写、表格控件定位与长按实时列宽
         editor-dom-content.js 链接、复制、图片、粘贴与 Mermaid
         pdf-export/        PDF 设置、PDF.js 单页渲染、书签解析与独立样式
         commands/          命令注册表、快捷键规范化、冲突检测、菜单 accelerator 转换
@@ -107,6 +107,7 @@ src/
         editor-review-decorations.js CriticMarkup 扫描与 Decoration 构建
         editor-md-paste.js 智能粘贴（Markdown → 富文本）
         editor-tablebreak.js 表格单元格内换行（<br> 往返）
+        editor-block-handle-guard.js 块拖拽柄左侧热区保护，避免正文悬浮误唤起
         editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
         LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
         ImageHostButton.jsx 顶栏图床配置按钮

@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -58,6 +58,7 @@
     "test:editor-input": "node scripts/test-editor-inline-code.mjs && node scripts/test-editor-inline-math.mjs",
     "test:mobile-read-only": "node scripts/test-mobile-read-only.mjs",
     "test:ui-layout": "node scripts/test-menu-position.mjs",
+    "test:inline-html-block-handle-ui": "node scripts/test-inline-html-block-handle-ui.mjs",
     "test:table-ui": "node scripts/test-table-scroll-ui.mjs",
     "test:pdf-table-ui": "node scripts/test-pdf-wide-table-ui.mjs",
     "test:math-ui": "node scripts/test-inline-math-ui.mjs",

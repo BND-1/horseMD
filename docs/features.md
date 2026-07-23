@@ -319,6 +319,10 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧内边距与行高(单行行高约从 84px 降到 45px),并对超列宽内容/行内代码自动换行(`word-break`),不再与相邻列重叠。
 
+短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
+
+**验证**：`npm run test:table-ui` 在真实 Electron 中覆盖浅/深主题、移动窄屏、宽表内部滚动、行列按钮、长按实时调宽，以及宽表最右侧连续 10 次悬浮/调整时横向位置不回退。
+
 ## 31. 设置页（一站式配置）
 
 - 左下角齿轮（ActivityBar）/ 移动端 ••• 打开设置标签页
@@ -422,7 +426,7 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 
 设置 → 编辑器 → 顶部两个选择器：**文档字体**（`--font-write`，影响正文 + 标题）和**代码字体**（`--font-mono`，影响代码块）。空 = 默认栈。相同页面还提供字号、行间距、段落间距、页面宽度、源码字号和自定义 CSS。
 
-自定义 CSS 采用可组合的命名片段：每个片段可独立启停、重命名、排序和删除；启用的片段按列表顺序层叠，后面的规则可覆盖前面的规则。旧版单个 CSS 文本会自动迁移为第一个片段。桌面端可从片段底部的“检查编辑器”打开现有 DevTools 来查看真实选择器；该入口不向 renderer 暴露 Node 权限。
+自定义 CSS 采用可组合的命名片段：每个片段可独立启停、重命名、排序和删除；启用的片段按列表顺序层叠，后面的规则可覆盖前面的规则。旧版单个 CSS 文本会自动迁移为第一个片段。设置预览使用真实编辑器的 `.milkdown .ProseMirror` 选择器，并覆盖标题、强调、删除线、链接、行内代码、`kbd`、引用、普通/有序/任务列表、表格和代码块；切换文档再回到设置时，当前 CSS 片段仍由 App 的临时 `settingsViewState.activeCssSnippetId` 选中，不写入偏好或会话。桌面端可从片段底部的“检查编辑器”打开现有 DevTools 来查看真实选择器；该入口不向 renderer 暴露 Node 权限。
 
 ### 交互
 
@@ -453,7 +457,7 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 - `src/main/sync-service.js`、`sync/sync-engine.js`、`sync/sync-plan.js` 分别负责 IPC 服务、执行器与纯同步决策；`.horsemd`、`.git`、`node_modules` 和符号链接不会作为用户内容上传。
 - `sync/webdav-provider.js` 使用 Electron `net.fetch`，支持 PROPFIND、条件 PUT、GET、DELETE；PUT 缺少 ETag 的 Apache DAV 会补一次 PROPFIND 获取 revision。
 - `sync/s3-provider.js` 使用 SigV4，不手写签名；工作区远端前缀固定为 `HorseMD/<workspaceId>/`，文件保持原相对路径，`.horsemd/` 存放同步元数据。旧版 `HorseMD/v1/workspaces/<workspaceId>/` 会继续被识别。对部分 MinIO 的首次 `If-None-Match` 兼容差异，只有确认对象仍不存在时才进行一次无条件创建回退。
-- 连接密码和 S3 Secret 保存在 Electron `safeStorage` 加密的应用数据中，不写入工作区、manifest、localStorage 或设置 JSON。移动端 shim 明确关闭 `cloudSync` 能力，尚未提供假入口。
+- 连接密码和 S3 Secret 保存在 Electron `safeStorage` 加密的应用数据中，不写入工作区、manifest、localStorage 或设置 JSON；可选 `userAgent` 是公开连接配置，限制为最多 256 字符且禁止换行，并同时传给 WebDAV/S3 请求。移动端 shim 明确关闭 `cloudSync` 能力，尚未提供假入口。
 - 冲突保留双方版本；同步删除进入本地或远端 `.horsemd/trash/`，不直接永久删除。
 
 **验证**：`test-sync-plan`、`test-sync-engine`、`test-sync-workspaces`、`test-sync-credentials`、`test-webdav-provider`、`test-webdav-apache`、`test-webdav-electron-sync`、`test-s3-provider`、`test-s3-electron-sync`。其中后两条真实服务测试分别使用本机 Apache DAV 与 MinIO，以及两个隔离 Electron profile。

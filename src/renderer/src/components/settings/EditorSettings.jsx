@@ -17,7 +17,11 @@ const SOURCE_FONT_OFFSET_PRESETS = [
   { id: 'xxlarge', value: 6 }
 ]
 
-export default function EditorSettings({ settings, onUpdateSettings, onHoverFont, t }) {
+export default function EditorSettings({
+  settings, onUpdateSettings, onHoverFont,
+  activeCssSnippetId, onActiveCssSnippetIdChange,
+  t
+}) {
   const sourceOffset = Number.isFinite(settings.sourceFontOffset) ? settings.sourceFontOffset : 0
   const sourceOffsetIdx = SOURCE_FONT_OFFSET_PRESETS.findIndex((p) => p.value === sourceOffset)
   // Resulting source font size = body font size + offset (clamped ≥ 8px for sanity).
@@ -34,7 +38,13 @@ export default function EditorSettings({ settings, onUpdateSettings, onHoverFont
           t={t}
         />
       </section>
-      <UserCssSnippets settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
+      <UserCssSnippets
+        settings={settings}
+        onUpdateSettings={onUpdateSettings}
+        activeSnippetId={activeCssSnippetId}
+        onActiveSnippetIdChange={onActiveCssSnippetIdChange}
+        t={t}
+      />
       <section className="settings-block">
         <h2 className="settings-block-title">{t('settings.sourceMode')}</h2>
         <p className="settings-block-desc">{t('settings.sourceFontDesc')}</p>

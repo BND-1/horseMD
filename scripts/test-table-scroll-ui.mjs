@@ -178,8 +178,7 @@ async function verifyColumnResize(send, evaluate) {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = rich?.querySelector('.milkdown-table-block')
     const addLine = block?.querySelector('[data-role="y-line-drag-handle"]')
-    const visibleResizeGuides = [...(block?.querySelectorAll('.column-resize-handle') || [])]
-      .filter((node) => getComputedStyle(node).display !== 'none').length
+    const visibleResizeGuides = document.querySelectorAll('.hm-column-resize-guide').length
     return {
       addVisible: addLine?.dataset.show === 'true',
       visibleResizeGuides,
@@ -262,8 +261,7 @@ async function verifyColumnResize(send, evaluate) {
   await sleep(280)
   const resizingState = await evaluate(`(() => ({
     resizing: document.body.classList.contains('hm-table-resizing'),
-    guides: [...document.querySelectorAll('.column-resize-handle')]
-      .filter((node) => getComputedStyle(node).display !== 'none').length
+    guides: document.querySelectorAll('.hm-column-resize-guide').length
   }))()`)
   if (!resizingState.resizing || !resizingState.guides) {
     throw new Error(`desktop: holding a column boundary did not enter resize mode: ${JSON.stringify(resizingState)}`)
@@ -272,18 +270,15 @@ async function verifyColumnResize(send, evaluate) {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = rich?.querySelector('.milkdown-table-block')
     const tableRect = block?.querySelector('table.children')?.getBoundingClientRect()
-    const handles = [...(block?.querySelectorAll('.column-resize-handle') || [])]
-      .filter((handle) => getComputedStyle(handle).display !== 'none')
-      .map((handle) => handle.getBoundingClientRect())
-      .sort((a, b) => a.top - b.top)
-    if (!tableRect || !handles.length) return null
+    const guide = document.querySelector('.hm-column-resize-guide')?.getBoundingClientRect()
+    if (!tableRect || !guide) return null
     return {
-      topDelta: handles[0].top - tableRect.top,
-      bottomDelta: handles.at(-1).bottom - tableRect.bottom,
-      segments: handles.length
+      topDelta: guide.top - tableRect.top,
+      bottomDelta: guide.bottom - tableRect.bottom,
+      segments: 1
     }
   })()`)
-  if (!guide || guide.topDelta < 0 || guide.topDelta > 3 || Math.abs(guide.bottomDelta) > 2) {
+  if (!guide || Math.abs(guide.topDelta) > 2 || Math.abs(guide.bottomDelta) > 2) {
     throw new Error(`desktop: active column resize guide does not align to the table edge: ${JSON.stringify(guide)}`)
   }
   await send('Input.dispatchMouseEvent', {
@@ -315,6 +310,96 @@ async function verifyColumnResize(send, evaluate) {
   })()`)
   if (!after.colwidth || after.width < before.width + 40) {
     throw new Error(`desktop: column drag did not persist a wider column: ${JSON.stringify({ before, after })}`)
+  }
+}
+
+// A wide table used to jump to scrollLeft=0 merely by hovering the right-most
+// boundary. Exercise that exact path repeatedly because a regular resize test
+// on the first, fitting table cannot detect it.
+async function verifyFarRightColumnResize(send, evaluate) {
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    const target = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+      const wrapper = block?.querySelector('.table-wrapper')
+      if (!block || !wrapper) return null
+      block.scrollIntoView({ block: 'center' })
+      wrapper.scrollLeft = wrapper.scrollWidth - wrapper.clientWidth
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const header = [...block.querySelectorAll('th')].reverse().find((node) => {
+        const rect = node.getBoundingClientRect()
+        return rect.right > wrapperRect.left + 8 && rect.right <= wrapperRect.right + 2
+      })
+      const rect = header?.getBoundingClientRect()
+      return rect ? {
+        x: Math.min(rect.right - 2, wrapperRect.right - 3),
+        y: rect.top + rect.height / 2,
+        scrollLeft: wrapper.scrollLeft,
+        width: rect.width
+      } : null
+    })()`)
+    if (!target) throw new Error(`desktop: far-right resize target not found on attempt ${attempt}`)
+
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
+    await sleep(100)
+    const afterHover = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      return rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')?.scrollLeft ?? -1
+    })()`)
+    if (Math.abs(afterHover - target.scrollLeft) > 2) {
+      throw new Error(`desktop: hovering a far-right column boundary reset table scroll on attempt ${attempt}: ${JSON.stringify({ before: target.scrollLeft, after: afterHover })}`)
+    }
+
+    await send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1
+    })
+    await sleep(280)
+    const held = await evaluate(`(() => ({
+      resizing: document.body.classList.contains('hm-table-resizing'),
+      guides: document.querySelectorAll('.hm-column-resize-guide').length
+    }))()`)
+    if (!held.resizing || held.guides !== 1) {
+      throw new Error(`desktop: far-right boundary did not enter resize mode on attempt ${attempt}: ${JSON.stringify(held)}`)
+    }
+
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: target.x + 18, y: target.y, button: 'left', buttons: 1
+    })
+    await sleep(70)
+    const live = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+      const wrapper = block?.querySelector('.table-wrapper')
+      const header = [...(block?.querySelectorAll('th') || [])].at(-1)
+      return {
+        scrollLeft: wrapper?.scrollLeft ?? -1,
+        width: header?.getBoundingClientRect().width ?? 0,
+        guide: document.querySelector('.hm-column-resize-guide')?.getBoundingClientRect().toJSON()
+      }
+    })()`)
+    if (live.width < target.width + 12 || live.scrollLeft < target.scrollLeft - 2 || !live.guide) {
+      throw new Error(`desktop: far-right resize was not live on attempt ${attempt}: ${JSON.stringify({ target, live })}`)
+    }
+
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x: target.x + 18, y: target.y, button: 'left', buttons: 0, clickCount: 1
+    })
+    await sleep(140)
+    const persisted = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+      const header = [...(block?.querySelectorAll('th') || [])].at(-1)
+      return {
+        width: header?.getBoundingClientRect().width ?? 0,
+        colwidth: header?.getAttribute('data-colwidth') || '',
+        scrollLeft: block?.querySelector('.table-wrapper')?.scrollLeft ?? -1,
+        guides: document.querySelectorAll('.hm-column-resize-guide').length
+      }
+    })()`)
+    if (persisted.width < target.width + 12 || !persisted.colwidth ||
+      persisted.scrollLeft < target.scrollLeft - 2 || persisted.guides) {
+      throw new Error(`desktop: far-right resize did not persist on attempt ${attempt}: ${JSON.stringify({ target, persisted })}`)
+    }
   }
 }
 
@@ -649,6 +734,7 @@ async function main() {
   await verifyThemeTableSurface(evaluate, 'light')
   await verifyThemeTableSurface(evaluate, 'dark')
   await verifyColumnResize(send, evaluate)
+  await verifyFarRightColumnResize(send, evaluate)
   await verifyTableHandles(send, evaluate)
   await verifyContextMenuKeepsTableScroll(send, evaluate)
   await verifyTableAddButtons(send, evaluate)

@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   provider-required client identifier. It is validated and stored with public
   connection settings, never with the encrypted password or S3 secret.
 
+### Changed
+- **Editor-style preview coverage** — the Settings preview now contains the
+  common inline and block selectors that custom CSS authors actually target:
+  headings, emphasis, deletion, links, inline code, keyboard keys, quotes,
+  ordered and task lists, tables, and code blocks. Returning from another tab
+  keeps the CSS snippet that was being edited selected.
+
 ### Fixed
 - **Display-formula scroll controls** — fitting LaTeX blocks no longer expose
   Windows scrollbar arrows. Only formulas whose rendered width actually exceeds
@@ -66,9 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   to its left edge. Hovering an edge keeps the add-row/add-column action clear;
   holding a column boundary enters a thin, real-time resize preview, and release
   persists the final width without affecting ordinary clicks.
-- **Tighter code-block spacing** (#80) — rich-text code blocks now use a more
-  compact 60% paragraph gap above and below while retaining their controls and
-  internal reading space.
+- **Inline HTML no longer triggers a block drag handle** — hovering authored
+  inline `<font>` or `<span>` formatting, or ordinary paragraph text, no longer
+  opens Milkdown's unrelated block handle. The left block-operation gutter
+  retains drag and block actions.
 
 ## [0.7.4] - 2026-07-20
 
