@@ -28,6 +28,7 @@ export default function EditorArea({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  selectionToolbar,
   readOnly,
   effectiveKeybindings,
   editorAreaRef,
@@ -221,6 +222,7 @@ export default function EditorArea({
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
                 inlineMathDeleteMode={inlineMathDeleteMode}
+                selectionToolbar={selectionToolbar}
                 readOnly={readOnly}
                 effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}

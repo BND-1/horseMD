@@ -22,7 +22,7 @@
 ## 修复方案
 
 - 只要检测到富文本事务改动了 Markdown 表格，放弃局部 raw-source 拼接，采用 Crepe 生成的完整规范 Markdown。这样表格的管道、行和列由同一份结构化输出一次性决定，不会跨单元格错位。
-- 完整 Markdown 输出后，`normalizeEmptyTableCells()` 仅扫描含 GFM 分隔行的真正表格块，将“单元格唯一内容是 `<br />`”规范为 `| |`。`text<br>text` 等真实单元格换行保持不变。
+- 完整 Markdown 输出后，`normalizeEmptyTableCells()` 仅扫描含 GFM 分隔行的真正表格块，将“单元格唯一内容是 `<br />`”规范为 `| |`。`text<br>text` 等真实单元格换行保持不变。该规则覆盖已有表格增删行列、首次插入新表格，以及所有无法安全进行原始文本局部拼接的结构回退路径。
 - 删除不可靠的提前 HTML 过滤器；表格内真正的 Enter / Shift+Enter 换行仍由 `tableCellBreakHandler` 输出 `<br>`，再由 remark 插件解析回 hardbreak。
 
 表格结构编辑会因此得到该次文档的规范 Markdown，而不是承诺逐字符保留旧格式。这是明确的安全取舍：宁可规范化，不能写坏用户文件。普通局部文字编辑仍走原文保真映射。

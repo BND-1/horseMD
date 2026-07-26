@@ -9,7 +9,7 @@ description: 使用文档标题大纲跳转、折叠章节、重排同级章节�
 
 点击活动栏的大纲图标，或按 `Ctrl+Shift+L` 打开当前文档目录。
 
-![HorseMD 文档大纲](/images/v0.6.5/outline.png)
+![HorseMD 文档大纲](/images/v0.12.10/outline.png)
 <span class="image-caption">大纲按照文档真实标题层级缩进，并高亮当前阅读位置。</span>
 
 ## 右侧悬浮章节导航（桌面）

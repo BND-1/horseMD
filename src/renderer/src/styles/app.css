@@ -2384,22 +2384,48 @@ body.hm-full-width .editor-skeleton {
   -webkit-overflow-scrolling: touch;
 }
 /* YAML front matter card (--- block at the top of a doc). */
-.hm-frontmatter-wrap { margin: 0 0 1.4em; }
+.hm-frontmatter-wrap { margin: 0 0 1.25em; }
 .hm-frontmatter {
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   background: var(--bg-elevated);
   overflow: hidden;
   font-size: 0.9em;
 }
 .hm-frontmatter-head {
-  padding: 5px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 10px 0 13px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent-strong);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+}
+.hm-frontmatter-title { line-height: 1; }
+.hm-frontmatter-action {
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  cursor: pointer;
+}
+.hm-frontmatter-action:hover,
+.hm-frontmatter-action:focus-visible {
+  color: var(--accent-strong);
+  background: var(--hover);
+  outline: none;
 }
 .hm-frontmatter-grid {
   display: grid;
@@ -2430,6 +2456,27 @@ body.hm-full-width .editor-skeleton {
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.hm-frontmatter-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  resize: vertical;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.hm-frontmatter-input:focus {
+  background: color-mix(in srgb, var(--accent-soft) 18%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .milkdown .ProseMirror .hm-html-block table {
   border-collapse: collapse;
@@ -2609,6 +2656,12 @@ body.hm-full-width .editor-skeleton {
 }
 .milkdown .milkdown-toolbar.hm-toolbar-fading {
   opacity: 0;
+}
+/* The preference changes live, so hide the existing Crepe toolbar in CSS
+   instead of re-creating mounted editors. The right-click menu exposes the
+   same common text-format actions while this is off. */
+.app.hm-selection-toolbar-disabled .milkdown .milkdown-toolbar {
+  display: none !important;
 }
 /* Crepe colors toolbar-item icons with --crepe-color-outline, which the app
    maps to --border — a low-contrast border tone that makes the selection
@@ -2895,6 +2948,7 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   position: fixed;
   z-index: 200;
   min-width: 184px;
+  overflow: visible;
   padding: 6px;
   background: var(--popover-bg);
   border: 1px solid var(--surface-border);
@@ -2909,6 +2963,11 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--muted) 72%, var(--text) 28%);
+}
+.block-menu-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--surface-border);
 }
 .block-menu-item {
   display: flex;
@@ -2955,6 +3014,39 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--faint);
+}
+.block-menu-submenu-parent {
+  position: relative;
+}
+.block-menu-submenu-trigger .block-menu-arrow {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 16px;
+  line-height: 1;
+}
+.block-menu-submenu {
+  position: absolute;
+  top: -6px;
+  left: 100%;
+  z-index: 201;
+  display: none;
+  min-width: 184px;
+  max-height: min(calc(100vh - 16px), 360px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--surface-shadow);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.block-menu-submenu-parent:hover > .block-menu-submenu,
+.block-menu-submenu-parent:focus-within > .block-menu-submenu {
+  display: block;
+}
+.block-ctxmenu-submenus-left .block-menu-submenu {
+  right: 100%;
+  left: auto;
 }
 
 /* Status-bar block switcher */
@@ -3537,6 +3629,85 @@ body.hm-full-width .source-editor {
   margin-top: 2px;
   line-height: 1.5;
 }
+/* The wide-table setting changes a document-level behavior. Show the actual
+   consequence in-place: the same cells either overflow a narrow viewport or
+   wrap into it, instead of making the user switch back to a document to guess. */
+.settings-table-preview {
+  width: min(100%, 390px);
+  margin: 10px 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  overflow: hidden;
+}
+.settings-table-preview-head {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.settings-table-preview-state {
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+.settings-table-preview-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.settings-table-preview table {
+  width: 490px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.settings-table-preview th,
+.settings-table-preview td {
+  padding: 7px 9px;
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+.settings-table-preview th {
+  background: color-mix(in srgb, var(--accent-soft) 38%, var(--bg-elevated));
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.settings-table-preview th:first-child,
+.settings-table-preview td:first-child {
+  width: 108px;
+}
+.settings-table-preview th:last-child,
+.settings-table-preview td:last-child {
+  border-right: 0;
+}
+.settings-table-preview tbody tr:last-child td {
+  border-bottom: 0;
+}
+.settings-table-preview[data-wrap='false'] td {
+  white-space: nowrap;
+}
+.settings-table-preview[data-wrap='true'] .settings-table-preview-viewport {
+  overflow-x: hidden;
+}
+.settings-table-preview[data-wrap='true'] table {
+  width: 100%;
+}
+.settings-table-preview[data-wrap='true'] td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .settings-segmented {
   flex: 0 0 auto;
   display: inline-flex;
@@ -3651,6 +3822,7 @@ body.hm-full-width .source-editor {
   padding: 26px clamp(22px, 6vw, 56px) 36px;
   outline: none;
   font-family: var(--font-write);
+  --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
 }
 .settings-preview h1 {
   font-size: 2.05em;
@@ -3674,14 +3846,15 @@ body.hm-full-width .source-editor {
 .settings-preview ul,
 .settings-preview ol {
   margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
-  padding-left: 1.8em;
+  padding-left: 1.2em;
 }
 .settings-preview li {
   margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
   line-height: inherit;
 }
 .settings-preview li::marker {
-  color: var(--accent);
+  color: var(--hm-list-marker-color);
+  font-weight: 500;
 }
 .settings-preview pre {
   background: var(--code-block-bg);
@@ -5157,6 +5330,10 @@ body.dark .milkdown {
   user-select: text;
   /* High-contrast caret so the cursor is easy to find while writing */
   caret-color: var(--accent);
+  /* Crepe list markers are node-view labels rather than native ::markers.
+     Keep their tone tied to the current document palette so the settings
+     preview and the actual editor never diverge. */
+  --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
 }
 .milkdown .ProseMirror:focus { outline: none; }
 
@@ -5379,11 +5556,41 @@ body.dark .milkdown {
   line-height: 1.4;
 }
 
-/* Lists — Typora-style spacing */
+/* Lists — compact, writing-first spacing.
+   Crepe renders each marker in `.label-wrapper`, not through `::marker`.
+   Its default 24px marker + 10px gap sits after our 1.8em list padding,
+   which made the text start about 63px from the paragraph edge and put the
+   marker above the first line. Keep the label in a 20px gutter and give it
+   the same first-line box as a Crepe paragraph (1lh + its 4px top/bottom
+   padding). This stays aligned when the user changes editor line height. */
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
-  padding-left: 1.8em;
+  padding-left: 0.25em;
   margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
+}
+.milkdown .ProseMirror .milkdown-list-item-block > .list-item {
+  gap: 8px;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper {
+  width: 20px;
+  flex: 0 0 20px;
+  height: calc(1lh + 8px);
+  color: var(--hm-list-marker-color);
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper svg {
+  fill: currentColor;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper .label {
+  width: 20px;
+  height: 100%;
+  padding: 0;
+  justify-content: flex-end;
+  color: inherit;
+  font-weight: 500;
+  line-height: inherit;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper .label.bullet {
+  justify-content: center;
 }
 .milkdown .ProseMirror li {
   margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
@@ -5393,7 +5600,7 @@ body.dark .milkdown {
   margin: 0;
 }
 .milkdown .ProseMirror li::marker {
-  color: var(--accent);
+  color: var(--hm-list-marker-color);
   font-weight: 500;
 }
 /* Nested lists */
@@ -5422,6 +5629,16 @@ body.dark .milkdown {
 .milkdown .milkdown-code-block .preview:has(> .katex-display) {
   max-width: 100%;
   overflow: hidden;
+}
+/* Block LaTeX is rendered inside Crepe's general code-block node view. Its
+   default 8px/20px padding is useful for an editable code block but makes a
+   rendered equation look detached from its surrounding prose. Compact only
+   the finished KaTeX preview; the source/editing state keeps Crepe's controls
+   and padding intact. */
+.milkdown .milkdown-code-block:has(.preview > .katex-display) {
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.45) 0;
+  padding: 0 2px;
+  background: transparent;
 }
 /* Mermaid diagram inside a code block's preview panel: center it. */
 .milkdown .milkdown-code-block .preview:has(svg),
@@ -5506,6 +5723,30 @@ body.dark .milkdown {
   table-layout: fixed;
   width: max-content;
   min-width: 0;
+}
+
+/* Readers can opt into a print-like wide-table layout in Settings. Keep the
+   table inside the writing column and wrap cells instead of exposing a local
+   horizontal scroll surface. Explicit resize widths are intentionally ignored
+   in this mode so a previously resized table cannot still overflow. */
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .table-wrapper {
+  overflow-x: hidden;
+}
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .line-handle[data-show='false'],
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .drag-preview[data-show='false'] {
+  display: none;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block table.children {
+  width: 100% !important;
+  min-width: 100% !important;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block colgroup.hm-column-widths col {
+  width: auto !important;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block th,
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
+  min-width: 0;
+  max-width: none;
 }
 
 /* Tables — elegant borders */

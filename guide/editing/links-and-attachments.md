@@ -5,7 +5,7 @@ description: 打开网络或本地文件链接，并把 PDF、DOCX、ZIP 等附�
 
 # 链接与附件
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## 打开链接
 

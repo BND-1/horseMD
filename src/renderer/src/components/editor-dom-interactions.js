@@ -10,8 +10,10 @@ export function mountEditorInteractionBindings({
   markUserEdit,
   reportActiveBlock,
   setBlock,
+  getListConversionContext,
   setCtxMenu,
   getKeybindings,
+  getSelectionToolbarEnabled,
   isReadOnly
 }) {
   const updateHighlightActive = () => {
@@ -82,15 +84,76 @@ export function mountEditorInteractionBindings({
     }
     event.preventDefault()
     const currentView = viewRef.current
+    let listConversion = null
     if (currentView) {
       const at = currentView.posAtCoords({ left: event.clientX, top: event.clientY })
       if (at) {
-        const $pos = currentView.state.doc.resolve(at.pos)
-        currentView.dispatch(currentView.state.tr.setSelection(TextSelection.near($pos)))
+        // ProseMirror can report the outer list boundary for a click on an
+        // indented item. Resolve the actual DOM list item as a fallback so the
+        // context menu can explain why a nested conversion is unavailable.
+        const positions = [at.pos]
+        try {
+          positions.push(currentView.posAtDOM(event.target, 0))
+        } catch {
+          /* the exact click target is not always a ProseMirror DOM node */
+        }
+        const listItem = event.target.closest?.('li')
+        if (listItem) {
+          try {
+            positions.push(currentView.posAtDOM(listItem, 0) + 1)
+          } catch {
+            /* the node may have been refreshed by a table/list node view */
+          }
+        }
+        for (const position of positions) {
+          listConversion = getListConversionContext?.(currentView.state, position) || null
+          if (listConversion) break
+        }
+        const domSelection = currentView.dom.ownerDocument.getSelection()
+        let preservedTextSelection = false
+        // ProseMirror normally syncs DOM selection changes immediately. A
+        // context-menu event can race that sync on macOS/Windows, though. Read
+        // the browser's selected range once here and commit it to editor state
+        // before opening actions that depend on it.
+        if (domSelection && !domSelection.isCollapsed &&
+          currentView.dom.contains(domSelection.anchorNode) &&
+          currentView.dom.contains(domSelection.focusNode)) {
+          try {
+            const anchor = currentView.posAtDOM(domSelection.anchorNode, domSelection.anchorOffset)
+            const head = currentView.posAtDOM(domSelection.focusNode, domSelection.focusOffset)
+            currentView.dispatch(currentView.state.tr.setSelection(
+              TextSelection.create(currentView.state.doc, anchor, head)
+            ))
+            preservedTextSelection = true
+          } catch {
+            // Fall back to the clicked caret position below for node-view DOM.
+          }
+        }
+        // Right-clicking selected text must keep that range selected. Besides
+        // matching native editor behavior, it makes the fallback formatting
+        // menu usable when the floating selection toolbar is disabled.
+        if (!preservedTextSelection) {
+          const $pos = currentView.state.doc.resolve(at.pos)
+          currentView.dispatch(currentView.state.tr.setSelection(TextSelection.near($pos)))
+        }
         reportActiveBlock()
+        const activeSelection = currentView.state.selection
+        const showTextFormatting = getSelectionToolbarEnabled?.() === false && !activeSelection.empty
+        setCtxMenu({
+          x: event.clientX,
+          y: event.clientY,
+          listConversion,
+          showTextFormatting,
+          selection: showTextFormatting
+            ? { anchor: activeSelection.anchor, head: activeSelection.head }
+            : null
+        })
+      } else {
+        setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, showTextFormatting: false, selection: null })
       }
+    } else {
+      setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, showTextFormatting: false, selection: null })
     }
-    setCtxMenu({ x: event.clientX, y: event.clientY })
     // The view update and its node-view DOM work can span two animation frames.
     // Restore twice rather than using a fixed timeout, and only for the table
     // that received this context menu.

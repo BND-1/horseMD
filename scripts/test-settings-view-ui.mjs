@@ -99,6 +99,28 @@ async function main() {
       spellToggle.click()
       await sleep(240)
       if (settings().spellcheck !== true) throw new Error('Spellcheck did not persist true')
+      const tableWrapToggle = [...document.querySelectorAll('button[role="switch"]')]
+        .find((button) => visible(button) && /宽表自动换行|wrap wide tables/i.test(button.getAttribute('aria-label') || ''))
+      if (!tableWrapToggle) throw new Error('Missing wide-table wrap toggle')
+      const tablePreview = document.querySelector('.settings-table-preview')
+      const tablePreviewViewport = tablePreview?.querySelector('.settings-table-preview-viewport')
+      const tablePreviewCell = tablePreview?.querySelector('tbody td:last-child')
+      if (!tablePreview || !tablePreviewViewport || !tablePreviewCell) throw new Error('Missing wide-table setting preview')
+      const unwrappedHeight = tablePreviewCell.getBoundingClientRect().height
+      if (tablePreview.dataset.wrap !== 'false' || tablePreviewViewport.scrollWidth <= tablePreviewViewport.clientWidth) {
+        throw new Error('Wide-table preview must demonstrate horizontal overflow before enabling wrap')
+      }
+      tableWrapToggle.click()
+      await sleep(240)
+      if (settings().tableAutoWrap !== true || !document.body.classList.contains('hm-table-auto-wrap')) {
+        throw new Error('Wide-table wrap setting did not persist or apply')
+      }
+      if (tablePreview.dataset.wrap !== 'true' || tablePreviewViewport.scrollWidth > tablePreviewViewport.clientWidth + 1) {
+        throw new Error('Wide-table preview did not switch to a fitted wrapped layout')
+      }
+      if (tablePreviewCell.getBoundingClientRect().height <= unwrappedHeight) {
+        throw new Error('Wide-table preview did not make the long cell taller after wrapping')
+      }
 
       const largePreset = buttons().find((button) => ['大', 'Large'].includes(textOf(button)))
       if (!largePreset) throw new Error('Missing Large font preset')

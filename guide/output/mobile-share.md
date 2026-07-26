@@ -5,7 +5,7 @@ description: 在 iOS 和 Android 中把 HorseMD 文档导出到文件、网盘�
 
 # 移动端分享
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 移动端底部的“导出”会调用系统分享面板。文档尚未保存时，HorseMD 会先要求保存并确定文件名。
 

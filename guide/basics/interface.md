@@ -5,11 +5,11 @@ description: 了解 HorseMD 的活动栏、侧边栏、标签页、编辑区和�
 
 # 认识界面
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 HorseMD 将文件管理、多个标签和编辑器放在同一个窗口中。熟悉五个固定区域后，大多数操作都不需要离开当前界面。
 
-![HorseMD 主界面总览](/images/v0.6.5/interface-overview.png)
+![HorseMD 主界面总览](/images/v0.12.10/interface-overview.png)
 <span class="image-caption">左侧依次是活动栏和侧边栏，上方是标签栏，中间是编辑区，底部是状态栏。</span>
 
 ## 活动栏

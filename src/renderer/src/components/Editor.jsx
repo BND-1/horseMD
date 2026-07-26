@@ -21,13 +21,19 @@ import { createImagePersister } from './editor-image-persistence.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
+import { convertListAtSelection, getListConversionContext } from './editor-list-conversion.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
+import { REVIEW_KINDS } from './editor-review.js'
 import { createEditorApi } from './editor-api.js'
 import { useEditorLightboxControls } from './editor-lightbox.js'
 import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
-import { preserveRichMarkdownSource } from '../markdown-source-preservation.js'
+import {
+  preserveRichMarkdownSource,
+  replaceMarkdownFrontmatterBlock,
+  replaceMarkdownListBlock
+} from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
@@ -55,6 +61,7 @@ export default function Editor({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  selectionToolbar,
   readOnly = false,
   effectiveKeybindings,
   onChange,
@@ -76,6 +83,11 @@ export default function Editor({
   spellcheckRef.current = spellcheck
   const inlineMathDeleteModeRef = useRef(inlineMathDeleteMode || 'protect')
   inlineMathDeleteModeRef.current = inlineMathDeleteMode || 'protect'
+  // The Crepe toolbar remains mounted so changing this setting is immediate and
+  // does not recreate a rich editor. The interaction binding reads this ref to
+  // decide when the right-click menu should expose text-format actions.
+  const selectionToolbarRef = useRef(selectionToolbar !== false)
+  selectionToolbarRef.current = selectionToolbar !== false
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
   const effectiveKeybindingsRef = useRef(effectiveKeybindings)
@@ -101,6 +113,17 @@ export default function Editor({
     view.dom.contentEditable = readOnly ? 'false' : 'true'
     view.dom.setAttribute('aria-readonly', readOnly ? 'true' : 'false')
   }, [readOnly])
+  // Crepe does not re-position its tooltip until the next selection update.
+  // Restore the current one here so enabling the preference is immediate and
+  // never requires an editor remount.
+  useEffect(() => {
+    if (selectionToolbar === false) return
+    const view = viewRef.current
+    if (!view || view.state.selection.empty) return
+    const host = view.dom.closest('.milkdown') || view.dom.parentElement
+    const toolbar = host?.querySelector('.milkdown-toolbar')
+    if (toolbar) toolbar.dataset.show = 'true'
+  }, [selectionToolbar])
   const [ctxMenu, setCtxMenu] = useState(null) // { x, y } viewport coords, or null
   // Lightbox: the image src currently shown enlarged, or null.
   const [zoom, setZoom] = useState(null)
@@ -165,6 +188,7 @@ export default function Editor({
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const pendingRawMarkdownPasteRef = { current: null }
+    let pendingListConversion = null
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
@@ -180,6 +204,53 @@ export default function Editor({
       v.dispatch(v.state.tr.replaceSelectionWith(node, false).scrollIntoView())
     }
 
+    const handleFrontmatterValueChange = ({ view, getPos }) => {
+      try {
+        const pos = getPos?.()
+        if (!Number.isFinite(pos)) return
+        const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+        // If a future Milkdown release emits markdownUpdated for atom attrs,
+        // that listener has already committed this transaction.
+        if (canonical === canonicalMarkdownRef.current) return
+        const remark = crepe.editor.ctx.get(remarkCtx)
+        const sourceOffset = pmPosToMarkdownOffset(lastMarkdownRef.current, pos, view.state.doc, remark)
+        const nextOffset = pmPosToMarkdownOffset(canonical, pos, view.state.doc, remark)
+        const markdown = Number.isFinite(sourceOffset) && Number.isFinite(nextOffset)
+          ? replaceMarkdownFrontmatterBlock({
+              source: lastMarkdownRef.current,
+              next: canonical,
+              sourceOffset,
+              nextOffset
+            })
+          : null
+        const committed = markdown || canonical
+        lastMarkdownRef.current = committed
+        canonicalMarkdownRef.current = canonical
+        onChange?.(committed, false)
+      } catch {
+        // The live editor remains correct; the normal markdownUpdated callback
+        // still owns fallback serialization if a mapper/plugin is unavailable.
+      }
+    }
+
+    const handleInlineCodeValueChange = () => {
+      try {
+        const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+        if (canonical === canonicalMarkdownRef.current) return
+        const preserved = preserveRichMarkdownSource(
+          lastMarkdownRef.current,
+          canonicalMarkdownRef.current,
+          canonical
+        )
+        lastMarkdownRef.current = preserved.markdown
+        canonicalMarkdownRef.current = canonical
+        onChange?.(preserved.markdown, false)
+      } catch {
+        // The editor remains usable if serialization is transiently unavailable;
+        // normal markdownUpdated remains the fallback for ordinary input.
+      }
+    }
+
     const crepe = createConfiguredCrepe({
       host,
       defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent)),
@@ -187,7 +258,11 @@ export default function Editor({
       persistImage,
       notify: fireToast,
       copyText: copyToClipboard,
-      getInlineMathDeleteMode: () => inlineMathDeleteModeRef.current
+      getInlineMathDeleteMode: () => inlineMathDeleteModeRef.current,
+      markUserEdit,
+      isReadOnly: () => readOnlyRef.current,
+      onFrontmatterValueChange: handleFrontmatterValueChange,
+      onInlineCodeValueChange: handleInlineCodeValueChange
     })
     crepeRef.current = crepe
 
@@ -203,6 +278,52 @@ export default function Editor({
       if (readOnlyRef.current) return
       setEditableBlock(id)
     }
+    const convertList = (targetType, listPos) => {
+      if (readOnlyRef.current) return false
+      const view = viewRef.current
+      if (!view) return false
+      // Record source offsets before changing the document. Crepe's
+      // markdownUpdated callback is the authoritative transaction boundary;
+      // deferring this into a later task can serialize a stale snapshot during
+      // two consecutive conversions and overwrite the second visible change.
+      if (Number.isFinite(listPos) && lastMarkdownRef.current) {
+        try {
+          const remark = crepe.editor.ctx.get(remarkCtx)
+          const sourceOffset = pmPosToMarkdownOffset(
+            lastMarkdownRef.current,
+            Math.min(listPos + 1, view.state.doc.content.size),
+            view.state.doc,
+            remark
+          )
+          const previousOffset = pmPosToMarkdownOffset(
+            canonicalMarkdownRef.current,
+            Math.min(listPos + 1, view.state.doc.content.size),
+            view.state.doc,
+            remark
+          )
+          if (Number.isFinite(sourceOffset) && Number.isFinite(previousOffset)) {
+            pendingListConversion = {
+              source: lastMarkdownRef.current,
+              sourceOffset,
+              listPos,
+              previous: canonicalMarkdownRef.current,
+              previousOffset
+            }
+          }
+        } catch {
+          pendingListConversion = null
+        }
+      }
+      markUserEdit()
+      const converted = convertListAtSelection(view, targetType, listPos)
+      if (!converted) {
+        pendingListConversion = null
+        return false
+      }
+      view.focus()
+      setCtxMenu(null)
+      return true
+    }
 
     // IMPORTANT: register listeners BEFORE create(). Crepe wires them during
     // create(), so registering afterwards means `markdownUpdated` never fires —
@@ -217,20 +338,50 @@ export default function Editor({
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
         const pendingPaste = pendingRawMarkdownPasteRef.current
+        const pendingList = pendingListConversion
         if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
           const canonical = normalizeReviewMarkupMarkdown(md)
-          const preserved = pendingPaste
-            ? { markdown: pendingPaste.markdown }
-            : preserveRichMarkdownSource(
-                lastMarkdownRef.current,
-                canonicalMarkdownRef.current,
-                canonical
+          let preserved
+          if (pendingPaste) {
+            preserved = { markdown: pendingPaste.markdown }
+          } else if (pendingList) {
+            try {
+              const remark = crepe.editor.ctx.get(remarkCtx)
+              const nextOffset = pmPosToMarkdownOffset(
+                canonical,
+                Math.min(pendingList.listPos + 1, viewRef.current?.state.doc.content.size || 1),
+                viewRef.current?.state.doc,
+                remark
               )
+              const markdown = Number.isFinite(nextOffset)
+                ? replaceMarkdownListBlock({
+                    source: pendingList.source,
+                    next: canonical,
+                    sourceOffset: pendingList.sourceOffset,
+                    nextOffset,
+                    previous: pendingList.previous,
+                    previousOffset: pendingList.previousOffset
+                  })
+                : null
+              preserved = markdown
+                ? { markdown }
+                : { markdown: canonical }
+            } catch {
+              preserved = { markdown: canonical }
+            }
+          } else {
+            preserved = preserveRichMarkdownSource(
+              lastMarkdownRef.current,
+              canonicalMarkdownRef.current,
+              canonical
+            )
+          }
           // Source mapping must use the same markdown snapshot that App stores
           // and shows in the source textarea after this user edit.
           lastMarkdownRef.current = preserved.markdown
           canonicalMarkdownRef.current = canonical
           pendingRawMarkdownPasteRef.current = null
+          pendingListConversion = null
           onChange?.(preserved.markdown, false)
           userEditUntil = Date.now() + 1000
         }
@@ -331,10 +482,12 @@ export default function Editor({
           },
           reportActiveBlock,
           setBlock,
+          getListConversionContext,
           setCtxMenu,
           setZoom,
           getT: (key) => tRef.current(key),
           getKeybindings: () => effectiveKeybindingsRef.current,
+          getSelectionToolbarEnabled: () => selectionToolbarRef.current,
           isReadOnly: () => readOnlyRef.current,
           isDestroyed: () => destroyed
         })
@@ -373,11 +526,13 @@ export default function Editor({
           lastMarkdownRef,
           canonicalMarkdownRef,
           setBlock,
+          markUserEdit,
           onStructureChange,
           isDestroyed: () => destroyed,
           getT: (key) => tRef.current(key),
           notify: fireToast
         })
+        api.convertList = convertList
         const {
           getPdfSource,
           getMarkdown,
@@ -564,6 +719,18 @@ export default function Editor({
   // The floating bar and context menu reuse the same conversion path as the
   // keyboard shortcuts (defined inside the effect, reached through apiRef).
   const pickBlock = (id) => apiRef.current?.setBlock(id)
+  const pickListConversion = (targetType, listPos) =>
+    apiRef.current?.convertList(targetType, listPos)
+  const pickTextFormat = (format, selection) => {
+    const applied = apiRef.current?.applyTextFormat(format, selection)
+    if (applied) setCtxMenu(null)
+    return applied
+  }
+  const pickReviewMarkup = (kind, selection) => {
+    const applied = apiRef.current?.applyReviewMarkup(kind, selection)
+    if (applied) setCtxMenu(null)
+    return applied
+  }
 
   return (
     <>
@@ -599,18 +766,113 @@ export default function Editor({
       {ctxMenu && (
         <>
           <div className="menu-backdrop" onMouseDown={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
-          <div className="block-ctxmenu" style={{
+          <div className={`block-ctxmenu${ctxMenu.x > window.innerWidth - 410 ? ' block-ctxmenu-submenus-left' : ''}`} style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 210),
-            top: Math.min(ctxMenu.y, window.innerHeight - 320)
+            top: Math.max(8, Math.min(ctxMenu.y, window.innerHeight - 360))
           }}>
-            <div className="block-menu-label">{t('block.turnInto')}</div>
-            {BLOCK_TYPES.map((b) => (
-              <button key={b.id} className="block-menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickBlock(b.id)}>
-                <span className="block-menu-short">{b.short}</span>
-                <span className="block-menu-name">{t('block.' + b.id)}</span>
-                <span className="block-menu-sc">{getCommandShortcut(b.commandId, effectiveKeybindings)}</span>
-              </button>
-            ))}
+            {ctxMenu.showTextFormatting && (
+              <>
+                <div className="block-menu-submenu-parent">
+                  <button className="block-menu-item block-menu-submenu-trigger" data-context-submenu-trigger="format" aria-haspopup="menu">
+                    <span className="block-menu-short">Aa</span>
+                    <span className="block-menu-name">{t('editor.textFormatting')}</span>
+                    <span className="block-menu-arrow" aria-hidden="true">›</span>
+                  </button>
+                  <div className="block-menu-submenu" data-context-submenu="format" role="menu">
+                    {[
+                      ['bold', 'tb.bold'],
+                      ['italic', 'tb.italic'],
+                      ['strike', 'tb.strike'],
+                      ['code', 'tb.code'],
+                      ['link', 'tb.link'],
+                      ['highlight', 'tb.highlight']
+                    ].map(([format, labelKey]) => (
+                      <button
+                        key={format}
+                        className="block-menu-item block-text-format"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickTextFormat(format, ctxMenu.selection)}
+                      >
+                        <span className="block-menu-short">{format === 'bold' ? 'B' : format === 'italic' ? 'I' : format === 'strike' ? 'S' : format === 'code' ? '</>' : format === 'link' ? '↗' : '▰'}</span>
+                        <span className="block-menu-name">{t(labelKey)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="block-menu-divider" />
+                <div className="block-menu-submenu-parent">
+                  <button className="block-menu-item block-menu-submenu-trigger" data-context-submenu-trigger="review" aria-haspopup="menu">
+                    <span className="block-menu-short">↹</span>
+                    <span className="block-menu-name">{t('review.toolbar')}</span>
+                    <span className="block-menu-arrow" aria-hidden="true">›</span>
+                  </button>
+                  <div className="block-menu-submenu" data-context-submenu="review" role="menu">
+                    {[
+                      [REVIEW_KINDS.addition, 'review.add', '+'],
+                      [REVIEW_KINDS.deletion, 'review.delete', '-'],
+                      [REVIEW_KINDS.substitution, 'review.substitute', '→'],
+                      [REVIEW_KINDS.highlight, 'review.highlight', '▣']
+                    ].map(([kind, labelKey, symbol]) => (
+                      <button
+                        key={kind}
+                        className="block-menu-item block-review-action"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickReviewMarkup(kind, ctxMenu.selection)}
+                      >
+                        <span className="block-menu-short">{symbol}</span>
+                        <span className="block-menu-name">{t(labelKey)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="block-menu-divider" />
+              </>
+            )}
+            {!ctxMenu.listConversion && (
+              <div className="block-menu-submenu-parent">
+                <button className="block-menu-item block-menu-submenu-trigger" data-context-submenu-trigger="block" aria-haspopup="menu">
+                  <span className="block-menu-short">H</span>
+                  <span className="block-menu-name">{t('block.turnInto')}</span>
+                  <span className="block-menu-arrow" aria-hidden="true">›</span>
+                </button>
+                <div className="block-menu-submenu" data-context-submenu="block" role="menu">
+                  {BLOCK_TYPES.map((b) => (
+                    <button key={b.id} className="block-menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickBlock(b.id)}>
+                      <span className="block-menu-short">{b.short}</span>
+                      <span className="block-menu-name">{t('block.' + b.id)}</span>
+                      <span className="block-menu-sc">{getCommandShortcut(b.commandId, effectiveKeybindings)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {ctxMenu.listConversion && (
+              <div className="block-menu-submenu-parent">
+                <button className="block-menu-item block-menu-submenu-trigger" data-context-submenu-trigger="list" aria-haspopup="menu">
+                  <span className="block-menu-short">☷</span>
+                  <span className="block-menu-name">{t('list.convert')}</span>
+                  <span className="block-menu-arrow" aria-hidden="true">›</span>
+                </button>
+                <div className="block-menu-submenu" data-context-submenu="list" role="menu">
+                  {ctxMenu.listConversion.actions.map((action) => (
+                    <button
+                      key={action.targetType}
+                      data-list-conversion={action.targetType}
+                      className="block-menu-item block-list-conversion"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickListConversion(action.targetType, ctxMenu.listConversion.listPos)}
+                    >
+                      <span className="block-menu-short">
+                        {action.targetType === 'ordered_list' ? '1.' : action.targetType === 'task_list' ? '☐' : '-'}
+                      </span>
+                      <span className="block-menu-name">
+                        {t('list.convertTo.' + action.targetType)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

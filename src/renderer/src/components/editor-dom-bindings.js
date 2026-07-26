@@ -17,10 +17,12 @@ export function mountEditorDomBindings({
   prepareRawMarkdownPaste,
   reportActiveBlock,
   setBlock,
+  getListConversionContext,
   setCtxMenu,
   setZoom,
   getT,
   getKeybindings,
+  getSelectionToolbarEnabled,
   isReadOnly,
   isDestroyed
 }) {
@@ -33,8 +35,10 @@ export function mountEditorDomBindings({
     markUserEdit,
     reportActiveBlock,
     setBlock,
+    getListConversionContext,
     setCtxMenu,
     getKeybindings,
+    getSelectionToolbarEnabled,
     isReadOnly
   })
 

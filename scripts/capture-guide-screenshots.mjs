@@ -107,7 +107,7 @@ async function main() {
     await click("[...document.querySelectorAll('.activity-item')].find((button) => button.title.includes('大纲'))")
     await capture('outline')
 
-    await click("document.querySelector('.topbar .icon-btn[title*=" + JSON.stringify('Command palette') + "]')")
+    await click("[...document.querySelectorAll('.topbar .icon-btn')].find((button) => /Command palette|命令面板/i.test(button.title || ''))")
     await capture('command-palette')
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
@@ -166,7 +166,7 @@ async function main() {
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
 
     await click("[...document.querySelectorAll('.activity-item')].find((button) => button.title.includes('大纲'))")
-    await click("document.querySelector('.status-btn[title*=" + JSON.stringify('Ctrl+/') + "]')")
+    await click("[...document.querySelectorAll('.status-btn')].find((button) => /Ctrl\\+\\/|Cmd\\+\\/|源码|Source/i.test(button.title || button.textContent || ''))")
     await waitFor("[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)")
     await capture('source-mode')
 

@@ -23,11 +23,20 @@ function marksWith(mark, marks = []) {
   return mark.addToSet(marks)
 }
 
+const dispatchInlineCodeEdit = (view, tr, active, onEdit, onValueChange) => {
+  onEdit?.()
+  view.dispatch(setActive(tr, active))
+  // Milkdown does not emit markdownUpdated for every plugin-owned transaction.
+  // Notify the Editor lifecycle explicitly so source mode and save state never
+  // lag behind a literal backtick or deferred inline-code conversion.
+  onValueChange?.()
+}
+
 // Adds the two boundary behaviours expected from a WYSIWYG inline-code mark:
-// typing an empty pair enters code immediately, and clicking the rendered
+// typing two backticks followed by text enters code, and clicking the rendered
 // code's trailing edge keeps subsequent text inside that mark. The underlying
 // Markdown input rule and non-inclusive schema remain unchanged.
-export function createInlineCodeEditingPlugin() {
+export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
   return new Plugin({
     key: inlineCodeEditingKey,
     state: {
@@ -49,7 +58,7 @@ export function createInlineCodeEditingPlugin() {
           if (text === '`') {
             const tr = setActive(state.tr.setSelection(TextSelection.create(state.doc, from)), false)
             tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
-            view.dispatch(tr)
+            dispatchInlineCodeEdit(view, tr, false, onEdit, onValueChange)
             return true
           }
 
@@ -57,21 +66,38 @@ export function createInlineCodeEditingPlugin() {
           const tr = state.tr.replaceWith(from, to, state.schema.text(text, marksWith(mark, baseMarks)))
           tr.setSelection(TextSelection.create(tr.doc, from + text.length))
           tr.setStoredMarks(marksWith(mark, baseMarks))
-          view.dispatch(setActive(tr, true))
+          dispatchInlineCodeEdit(view, tr, true, onEdit, onValueChange)
           return true
         }
 
-        if (text !== '`' || from < 1) return false
+        // Crepe's built-in inline-code input rule consumes delimiter keystrokes
+        // before a user can finish typing `` or ```. Own literal backtick input
+        // here so every typed delimiter is retained. The deferred pair branch
+        // below turns `` + ordinary text into inline code after intent is clear.
+        if (text === '`') {
+          const baseMarks = state.storedMarks || state.doc.resolve(from).marks()
+          const tr = state.tr.insertText(text, from, to)
+          tr.setSelection(TextSelection.create(tr.doc, from + 1))
+          tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
+          dispatchInlineCodeEdit(view, tr, false, onEdit, onValueChange)
+          return true
+        }
+        if (from < 2) return false
         const $from = state.doc.resolve(from)
-        if ($from.parentOffset < 1 || $from.parent.textBetween($from.parentOffset - 1, $from.parentOffset) !== '`') {
+        if (
+          $from.parentOffset < 2 ||
+          $from.parent.textBetween($from.parentOffset - 2, $from.parentOffset) !== '``' ||
+          type.isInSet($from.nodeBefore?.marks || [])
+        ) {
           return false
         }
-        if (type.isInSet($from.nodeBefore?.marks || [])) return false
 
-        const tr = state.tr.delete(from - 1, from)
-        tr.setSelection(TextSelection.create(tr.doc, from - 1))
-        tr.setStoredMarks(marksWith(type.create(), state.storedMarks || $from.marks()))
-        view.dispatch(setActive(tr, true))
+        const mark = type.create()
+        const tr = state.tr.delete(from - 2, from)
+        tr.insert(from - 2, state.schema.text(text, marksWith(mark, state.storedMarks || $from.marks())))
+        tr.setSelection(TextSelection.create(tr.doc, from - 2 + text.length))
+        tr.setStoredMarks(marksWith(mark, state.storedMarks || $from.marks()))
+        dispatchInlineCodeEdit(view, tr, true, onEdit, onValueChange)
         return true
       },
 

@@ -5,7 +5,7 @@ description: 了解 HorseMD 大文档快速打开策略，以及图片、代码�
 
 # 大文档与性能
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## 为什么默认显示源码
 

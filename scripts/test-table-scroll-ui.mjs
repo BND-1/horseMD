@@ -162,6 +162,33 @@ async function verifyHorizontalGesture(send, evaluate, label, touch = false) {
   if (scrollLeft <= 0) throw new Error(`${label}: horizontal gesture did not move the table`)
 }
 
+async function verifyWideTableAutoWrap(evaluate, label) {
+  const result = await evaluate(`(() => {
+    document.body.classList.add('hm-table-auto-wrap')
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const editor = rich?.closest('.editor-scroll')
+    const wrapper = rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')
+    const table = wrapper?.querySelector('table.children')
+    if (wrapper) wrapper.scrollLeft = 0
+    const wrapperRect = wrapper?.getBoundingClientRect()
+    const tableRect = table?.getBoundingClientRect()
+    const parentWidths = [editor, rich, document.documentElement]
+      .filter(Boolean)
+      .map((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }))
+    return {
+      enabled: document.body.classList.contains('hm-table-auto-wrap'),
+      wrapperScroll: wrapper ? wrapper.scrollWidth - wrapper.clientWidth : Infinity,
+      scrollLeft: wrapper?.scrollLeft ?? -1,
+      tableFits: !!wrapperRect && !!tableRect && tableRect.width <= wrapperRect.width + 1,
+      parentsFit: parentWidths.every((item) => item.scroll <= item.client + 1)
+    }
+  })()`)
+  if (!result.enabled || result.wrapperScroll > 1 || result.scrollLeft !== 0 || !result.tableFits || !result.parentsFit) {
+    throw new Error(`${label}: wide-table auto-wrap did not keep every column in the writing area: ${JSON.stringify(result)}`)
+  }
+  await evaluate(`document.body.classList.remove('hm-table-auto-wrap')`)
+}
+
 async function verifyColumnResize(send, evaluate) {
   const hover = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
@@ -518,6 +545,84 @@ async function verifyTableHandles(send, evaluate) {
   }
 }
 
+async function verifyTableActionMenuGrace(send, evaluate) {
+  const target = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = rich?.querySelector('.milkdown-table-block')
+    const handle = block?.querySelector('[data-role="col-drag-handle"]')
+    const group = handle?.querySelector('.button-group')
+    if (!handle || !group) return null
+    block.scrollIntoView({ block: 'center' })
+    handle.dataset.show = 'true'
+    group.dataset.show = 'true'
+    const rect = group.getBoundingClientRect()
+    return rect.width && rect.height ? {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2
+    } : null
+  })()`)
+  if (!target) throw new Error('desktop: table action menu target not found')
+
+  await sleep(80)
+  await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const handle = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"]')
+    const group = handle?.querySelector('.button-group')
+    if (handle) handle.dataset.show = 'false'
+    if (group) group.dataset.show = 'false'
+  })()`)
+  await sleep(350)
+  const retained = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const handle = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"]')
+    const group = handle?.querySelector('.button-group')
+    return { handle: handle?.dataset.show, group: group?.dataset.show }
+  })()`)
+  if (retained.handle !== 'true' || retained.group !== 'true') {
+    throw new Error(`desktop: selected table action menu vanished before the grace period: ${JSON.stringify(retained)}`)
+  }
+
+  const retainedPoint = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const group = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"] .button-group')
+    const rect = group?.getBoundingClientRect()
+    return rect?.width && rect?.height ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+  })()`)
+  if (!retainedPoint) throw new Error('desktop: retained table action menu has no hit-testable bounds')
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...retainedPoint })
+  await sleep(1600)
+  const hovered = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const group = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"] .button-group')
+    return group?.dataset.show
+  })()`)
+  if (hovered !== 'true') {
+    const debug = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const group = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"] .button-group')
+      return {
+        show: group?.dataset.show,
+        hovered: group?.matches(':hover'),
+        rect: group?.getBoundingClientRect().toJSON(),
+        hit: group ? document.elementFromPoint(${retainedPoint.x}, ${retainedPoint.y})?.className : null
+      }
+    })()`)
+    throw new Error(`desktop: table action menu closed while the pointer was on it: ${JSON.stringify(debug)}`)
+  }
+
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+  await sleep(1550)
+  const dismissed = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const handle = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"]')
+    const group = handle?.querySelector('.button-group')
+    return { handle: handle?.dataset.show, group: group?.dataset.show }
+  })()`)
+  if (dismissed.handle !== 'false' || dismissed.group !== 'false') {
+    throw new Error(`desktop: table action menu did not dismiss after leaving it: ${JSON.stringify(dismissed)}`)
+  }
+}
+
 async function verifyTableControlBounds(send, evaluate) {
   const verticalOffset = Number(process.env.TABLE_SCROLL_Y || 260)
   const horizontalRatio = Number(process.env.TABLE_SCROLL_X || 1)
@@ -729,6 +834,13 @@ async function main() {
     return
   }
 
+  if (process.env.TABLE_ACTION_MENU_ONLY === '1') {
+    await verifyTableActionMenuGrace(send, evaluate)
+    console.log('table action menu: retained while moving to actions and dismissed after leave')
+    ws.close()
+    return
+  }
+
   const desktop = await inspect(evaluate)
   verifyLayout(desktop, 'desktop')
   await verifyThemeTableSurface(evaluate, 'light')
@@ -736,10 +848,12 @@ async function main() {
   await verifyColumnResize(send, evaluate)
   await verifyFarRightColumnResize(send, evaluate)
   await verifyTableHandles(send, evaluate)
+  await verifyTableActionMenuGrace(send, evaluate)
   await verifyContextMenuKeepsTableScroll(send, evaluate)
   await verifyTableAddButtons(send, evaluate)
   await verifyTableControlBounds(send, evaluate)
   await verifyHorizontalGesture(send, evaluate, 'desktop')
+  await verifyWideTableAutoWrap(evaluate, 'desktop')
 
   await send('Emulation.setDeviceMetricsOverride', {
     width: 390,
@@ -751,6 +865,7 @@ async function main() {
   const mobile = await inspect(evaluate, true)
   verifyLayout(mobile, 'mobile width')
   await verifyHorizontalGesture(send, evaluate, 'mobile width', true)
+  await verifyWideTableAutoWrap(evaluate, 'mobile width')
 
   console.log(JSON.stringify({ desktop, mobile }, null, 2))
   await evaluate(`(() => {

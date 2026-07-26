@@ -24,6 +24,7 @@ import {
   applySourceFontOffset,
   applyLineHeight,
   applyParagraphSpacing,
+  applyTableAutoWrap,
   fontStack,
   DEFAULT_FONT_WRITE,
   DEFAULT_FONT_MONO
@@ -316,6 +317,9 @@ export default function App() {
   useEffect(() => {
     applyParagraphSpacing(settings.paragraphSpacing)
   }, [settings.paragraphSpacing])
+  useEffect(() => {
+    applyTableAutoWrap(settings.tableAutoWrap)
+  }, [settings.tableAutoWrap])
   useEffect(() => {
     applyUserCss(settings.userCssSnippets)
   }, [settings.userCssSnippets])
@@ -804,7 +808,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}`} style={appFontStyle}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}`} style={appFontStyle}>
       <ActivityBar
         home={home}
         sidebarMode={sidebarMode}
@@ -931,6 +935,7 @@ export default function App() {
             imageUploadCommand={settings.imageUploadCommand}
             spellcheck={settings.spellcheck}
             inlineMathDeleteMode={settings.inlineMathDeleteMode}
+            selectionToolbar={settings.selectionToolbar}
             readOnly={mobileReadOnly}
             effectiveKeybindings={effectiveKeybindings}
             editorAreaRef={editorAreaRef}

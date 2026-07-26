@@ -18,7 +18,7 @@
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
 | [user-guide-feature-coverage.md](./user-guide-feature-coverage.md) | 用户可见功能、代码所有者、教程页面与发布前核对状态矩阵 |
-| [release-v0.10.4.md](./release-v0.10.4.md) | v0.10.4 发布说明、安装产物、验证记录与关联 Issue |
+| [release-v0.12.10.md](./release-v0.12.10.md) | v0.12.10 发布说明、安装产物、验证记录与关联 Issue |
 | [custom-shortcuts-architecture.md](./custom-shortcuts-architecture.md) | 设置中心重构、统一命令模型与自定义快捷键目标架构 |
 | [custom-shortcuts-implementation-checklist.md](./custom-shortcuts-implementation-checklist.md) | 分阶段实施步骤、测试矩阵、停止条件与交付清单 |
 | [custom-shortcuts-default-inventory.md](./custom-shortcuts-default-inventory.md) | 默认快捷键、菜单 accelerator、命令所有者和可配置状态清单 |

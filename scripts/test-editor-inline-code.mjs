@@ -32,8 +32,9 @@ function mockView(state) {
   }
 }
 
-// A second consecutive backtick turns an empty pair into an active inline-code
-// insertion point. Text stays marked until a final backtick exits the mark.
+// Two consecutive backticks stay literal until the next ordinary character.
+// This preserves manual `` and ``` input, while text after an empty pair enters
+// inline code without the user needing to place the caret again.
 let state = EditorState.create({
   schema,
   doc: schema.node('doc', null, [paragraph(schema.text('`'))]),
@@ -42,8 +43,18 @@ let state = EditorState.create({
 })
 let view = mockView(state)
 assert.equal(plugin.props.handleTextInput(view, 2, 2, '`'), true)
-assert.equal(view.state.doc.textContent, '')
-assert.equal(plugin.props.handleTextInput(view, 1, 1, 'ab'), true)
+assert.equal(view.state.doc.textContent, '``')
+assert.equal(plugin.props.handleTextInput(view, 3, 3, '`'), true)
+assert.equal(view.state.doc.textContent, '```')
+
+state = EditorState.create({
+  schema,
+  doc: schema.node('doc', null, [paragraph(schema.text('``'))]),
+  selection: TextSelection.create(schema.node('doc', null, [paragraph(schema.text('``'))]), 3),
+  plugins: [plugin]
+})
+view = mockView(state)
+assert.equal(plugin.props.handleTextInput(view, 3, 3, 'ab'), true)
 assert.equal(view.state.doc.textContent, 'ab')
 assert.ok(code.type.isInSet(view.state.doc.firstChild.firstChild.marks))
 assert.equal(plugin.props.handleTextInput(view, 3, 3, '`'), true)
@@ -74,11 +85,12 @@ assert.equal(view.state.doc.textContent, 'abc tail')
 assert.equal(view.state.doc.firstChild.firstChild.text, 'abc')
 assert.ok(code.type.isInSet(view.state.doc.firstChild.firstChild.marks))
 
-// A lone opening backtick still belongs to Milkdown's existing Markdown input
-// rule; this plugin only intercepts the empty-pair and marked-boundary cases.
+// A lone opening backtick is inserted literally by this plugin, preventing the
+// competing Milkdown input rule from deleting manual delimiters.
 const plainDoc = schema.node('doc', null, [paragraph(schema.text('text'))])
 state = EditorState.create({ schema, doc: plainDoc, plugins: [plugin] })
 view = mockView(state)
-assert.equal(plugin.props.handleTextInput(view, 5, 5, '`'), false)
+assert.equal(plugin.props.handleTextInput(view, 5, 5, '`'), true)
+assert.equal(view.state.doc.textContent, 'text`')
 
-console.log('PASS inline code: pair entry, boundary append, explicit exit')
+console.log('PASS inline code: literal backticks, deferred pair entry, boundary append, explicit exit')

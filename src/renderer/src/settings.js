@@ -140,6 +140,10 @@ export const DEFAULT_SETTINGS = {
   // deletion by selecting the formula on the first Backspace/Delete and only
   // deleting it on the second press. "fast" keeps the previous one-key delete.
   inlineMathDeleteMode: 'protect',
+  // Desktop rich editor: leave the compact selection toolbar on by default.
+  // Users who prefer an uninterrupted writing surface can use the expanded
+  // right-click formatting menu instead.
+  selectionToolbar: true,
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false,
@@ -148,7 +152,10 @@ export const DEFAULT_SETTINGS = {
   userCss: '',
   userCssSnippets: DEFAULT_USER_CSS_SNIPPETS,
   // Mobile-only reading lock. Desktop intentionally never consumes this value.
-  mobileReadOnly: false
+  mobileReadOnly: false,
+  // Wide tables scroll by default. Readers who prefer a print-like layout can
+  // opt into wrapping every column into the current writing width instead.
+  tableAutoWrap: false
 }
 
 function normalizeWidth(w) {
@@ -194,12 +201,14 @@ export function loadSettings() {
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
       spellcheck: raw.spellcheck === true,
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
+      selectionToolbar: raw.selectionToolbar !== false,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',
       userCss: typeof raw.userCss === 'string' ? raw.userCss : '',
       userCssSnippets: normalizeUserCssSnippets(raw.userCssSnippets, raw.userCss),
-      mobileReadOnly: raw.mobileReadOnly === true
+      mobileReadOnly: raw.mobileReadOnly === true,
+      tableAutoWrap: raw.tableAutoWrap === true
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -262,4 +271,11 @@ export function applyParagraphSpacing(value) {
     '--editor-para-spacing',
     normalizeInRange(value, PARA_SPACING_MIN, PARA_SPACING_MAX, DEFAULT_PARA_SPACING) + 'em'
   )
+}
+
+// Keep the alternate wide-table layout scoped to a body class. This preserves
+// the normal per-table scrolling and column-resize behavior until a user opts
+// into fitting every column into the writing area.
+export function applyTableAutoWrap(enabled) {
+  document.body.classList.toggle('hm-table-auto-wrap', enabled === true)
 }

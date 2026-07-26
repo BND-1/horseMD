@@ -5,7 +5,7 @@ description: 在富文本和源码模式中查找、跳转和替换当前文档�
 
 # 查找与替换
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 按 `Ctrl/Cmd+F` 打开查找栏。若编辑器中已经选中一小段文字，HorseMD 会自动把它作为查询内容；否则保留上一次查询。
 

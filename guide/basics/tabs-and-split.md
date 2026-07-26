@@ -5,7 +5,7 @@ description: 使用 HorseMD 标签页管理多个文件，并左右分屏编辑�
 
 # 标签页与分屏
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## 使用标签页
 

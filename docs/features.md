@@ -38,11 +38,11 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 | --- | --- |
 | 键盘 | `Ctrl+1`…`Ctrl+6` 设标题、`Ctrl+0` 转正文 |
 | 选中工具条 | 选中文字 → Crepe 工具条里注入的 **H** 按钮，悬浮展开 H1/H2/H3/¶ |
-| 右键菜单 | 编辑区右键 → "转换为" 列出全部类型 |
+| 右键菜单 | 编辑区右键 → 紧凑的“转换为”子菜单；关闭选中工具条后，选中文字右键还会提供“文字格式”和“审阅标记”子菜单 |
 | 状态栏切换器 | 右下角常驻显示当前块类型，点开可切换 |
 | Crepe 原生 | 行首 `/` 斜杠菜单、行首 `# `、左侧块手柄 |
 
-选中工具条的按钮（加粗/斜体/删除线/行内代码/链接）都带了 **tooltip**。正文前不再显示“正文 / H1 / H2”等浮动块级胶囊；块类型仍可通过状态栏、选中工具条、右键菜单、快捷键和 Crepe 原生入口切换。
+选中工具条的按钮（加粗/斜体/删除线/行内代码/链接）都带了 **tooltip**。设置 → 编辑器 → 编辑可关闭该工具条；关闭后，文本选区的右键菜单保留紧凑的“文字格式”“审阅标记”“转换为”一级入口，悬停或键盘聚焦后展开对应子菜单。它包含原有块级/列表转换、粗体、斜体、删除线、行内代码、链接、高亮及审阅标记（新增、删除、替换、高亮 + 评论），但不会把全部动作平铺成超长菜单。菜单在打开时保存精确 ProseMirror 选区，避免焦点切换到菜单后误作用于别处。正文前不再显示“正文 / H1 / H2”等浮动块级胶囊；块类型仍可通过状态栏、选中工具条、右键菜单、快捷键和 Crepe 原生入口切换。
 
 **实现**（`Editor.jsx`）：
 - `convertBlock(view, type, attrs)` → `view.dispatch(state.tr.setNodeMarkup(pos, targetType, attrs))`，作用于光标所在的 textblock
@@ -104,7 +104,7 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 
 做审阅时，标记**仍留在 Markdown 源码里可见**，而不是藏在编辑器私有状态里；源码模式、磁盘文件、交给 AI 的文本都读同一套标注。支持新增 `{++new++}`、删除 `{--old--}`、替换 `{~~old~>new~~}`、高亮评论 `{==text==}{>>note<<}`。
 
-- 选中工具条和命令面板都能插入这些审阅标记。
+- 选中工具条、命令面板，以及关闭选中工具条后的右键“审阅标记”子菜单都能插入这些审阅标记。
 - **审阅：复制 AI 提示词**（AI handoff）会复制一段 prompt + 带审阅标注的全文，方便交给外部 AI 继续处理。
 - PR1 先做 **inline-first / single-paragraph-first**；复杂线程、跨段元数据和多轮状态留作后续范围。
 - **Accept All / Reject All** 可一键接受或拒绝全部标记，把文档清回普通 Markdown。
@@ -311,7 +311,7 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 ## 29. 表格单元格内换行
 
-表格单元格内按 **Enter / Shift+Enter** 换行,保存为 `<br>`(GFM 表格仍是单行,**不损坏**),重开能正确解析回换行。通过表格手柄重复新增行或列后，空单元格保持为正常的 `| |`；连续填写多个新单元格后切换源码或保存，内容仍留在各自单元格，不会合并到相邻列，也不会额外长出空行或空列。
+表格单元格内按 **Enter / Shift+Enter** 换行,保存为 `<br>`(GFM 表格仍是单行,**不损坏**),重开能正确解析回换行。新插入表格或通过表格手柄重复新增行列后，空单元格保持为正常的 `| |`；连续填写多个新单元格后切换源码或保存，内容仍留在各自单元格，不会合并到相邻列，也不会额外长出空行或空列。
 
 **实现**(`editor-tablebreak.js`,接入 `editor-crepe-setup.js`):keymap 在单元格内插入 hardbreak(渲染为 `<br>`);自定义 remark stringify `break` 处理器**仅在 `tableCell` 上下文**输出 `<br>`(其它走默认,段落换行不变);remark 解析插件把内联 `<br>` 转回 break(顺带修了"单元格 `<br>` 被丢")。Milkdown 需要用生成的 `<br />` 维持空单元格的列数，`markdown-source-preservation.js` 在完整表格规范化后才把“单元格唯一内容”的该标记转为 `| |`；真实 `text<br>text` 不会被改写。任何表格变更都采用本次完整规范 Markdown，不能再把表格结构当普通字符差分局部拼接。
 
@@ -319,7 +319,7 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧内边距与行高(单行行高约从 84px 降到 45px),并对超列宽内容/行内代码自动换行(`word-break`),不再与相邻列重叠。
 
-短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
+短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。**设置 → 编辑器 → 宽表自动换行** 可改为把 Markdown 表格的所有列收进正文宽度并自动换行；该模式会暂时忽略手动列宽，避免历史列宽留下隐藏的横向滚动面。列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
 
 **验证**：`npm run test:table-ui` 在真实 Electron 中覆盖浅/深主题、移动窄屏、宽表内部滚动、行列按钮、长按实时调宽，以及宽表最右侧连续 10 次悬浮/调整时横向位置不回退。
 
@@ -327,14 +327,14 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 
 - 左下角齿轮（ActivityBar）/ 移动端 ••• 打开设置标签页
 - **常规**：中文 / English
-- **编辑器**：文档字体、代码字体、字号 / 行距 / 段距 / 页宽、英文拼写检查，带实时预览
+- **编辑器**：文档字体、代码字体、字号 / 行距 / 段距 / 页宽、宽表自动换行、桌面端选中文字浮动工具栏、英文拼写检查，带实时预览
 - **外观**：6 套内置主题 + 自定义 Typora 主题；可打开主题目录或跳转 theme.typora.io
 - **文件与图片**：显示隐藏文件、Typora 式自定义图床上传命令
 - **键盘快捷键**：展示全部首批命令，支持搜索、录制、清空、单项恢复默认、全部恢复默认、冲突提示和系统保留键提示
 - **关于**：版本号、手动检查更新、官网与仓库链接
 - 打开设置时侧栏自动收起；设置标签页不持久化（纯 transient）
 
-**实现**：`SettingsView.jsx` 只做设置壳层和模块导航，具体页面在 `components/settings/`（`GeneralSettings`、`EditorSettings`、`AppearanceSettings`、`FilesSettings`、`KeyboardSettings`、`AboutSettings`）。`ui/Toggle.jsx` 提供 DNA 开关，`ui/AdjustGroup.jsx` 是排版共享控件，`settings.js` 保存 spellcheck / showHiddenFiles 等 pref。快捷键配置独立存储在 `localStorage["horsemd.keybindings.v1"]`，不污染文档 session；设置页激活时会阻断保存、查找、侧边栏等后台文档快捷键。
+**实现**：`SettingsView.jsx` 只做设置壳层和模块导航，具体页面在 `components/settings/`（`GeneralSettings`、`EditorSettings`、`AppearanceSettings`、`FilesSettings`、`KeyboardSettings`、`AboutSettings`）。`ui/Toggle.jsx` 提供 DNA 开关，`ui/AdjustGroup.jsx` 是排版共享控件，`settings.js` 保存 spellcheck / showHiddenFiles / selectionToolbar 等 pref。快捷键配置独立存储在 `localStorage["horsemd.keybindings.v1"]`，不污染文档 session；设置页激活时会阻断保存、查找、侧边栏等后台文档快捷键。
 
 ## 32. Mermaid 全屏灯箱
 
@@ -435,6 +435,7 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 - 点击 → 设为该字体并关闭；空 = "默认"。
 - 列表底部有外部链接：文档字体 → [方正字库](https://www.foundertype.com/)（国内官方），代码字体 → [Nerd Fonts](https://www.nerdfonts.com/)。
 - 行距和段距同时作用于普通段落、无序列表、有序列表和嵌套列表；仅改变显示，不改写 Markdown 源码。
+- **列表类型转换（桌面富文本）**：右键普通列表的任意层级，悬停“列表”子菜单后可在有序/无序之间转换，或转为待办清单；待办清单也可显式转为有序或无序列表，并移除勾选状态。操作仅改变当前列表容器及其直接项目，父层和嵌套子层保持原样；列表菜单不显示无法作用的正文/标题项。转换后的源码仅替换定位到的列表块；无法安全定位时宁可回退为合法序列化，也不做猜测式拼接。
 
 ### 怎么实现
 

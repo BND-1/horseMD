@@ -26,12 +26,12 @@ HorseMD 两个都给你：一个**单窗口**装下整个文件夹的文件树�
 
 ## 功能
 
-> 当前正式版本：**v0.10.4**。完整更新说明见 [Release Notes](./docs/release-v0.10.4.md)。
+> 当前发布版本与安装包请以 [GitHub Releases](https://github.com/BND-1/horseMD/releases) 为准；仓库中的开发测试版本可能高于最新正式 Release。
 
 **编辑 —— Typora 有的都有**
 
 - 流畅的**所见即所得实时预览** —— 输入 Markdown，原地渲染
-- 行首 `/` 斜杠菜单插入块；智能列表、选中工具条、链接悬浮提示
+- 行首 `/` 斜杠菜单插入块；智能列表、选中工具条、链接悬浮提示；工具条可在设置中关闭，右键以紧凑子菜单保留格式、审阅和转换操作
 - 表格（**单元格内可换行**、自然宽度、超宽时按需横向滚动、按住列边界可实时调宽）、**带语法高亮的代码块**、**LaTeX 数学公式**、**Mermaid 图表**、图片、任务列表、引用块
 - **可配置图床** —— 粘贴 / 拖入 / 上传图片走你的上传命令（类 Typora），自动插入返回链接；**支持 PicGo 客户端**（填 `picgo` 即走其本地服务，和 Typora 一样）
 - **源码模式**切换（`Ctrl/Cmd+/`）查看原始 Markdown —— 阅读时保留视口，编辑时保留可见光标；表格、列表、代码块和大文档均有回归保护
@@ -192,7 +192,7 @@ Electron + Vite + React 外壳，编辑器引擎用 **Milkdown Crepe**（基于 
 - [docs/development.md](./docs/development.md) —— 开发、构建、Windows/macOS/Linux 打包、CDP 自动化测试
 - [docs/user-guide-maintenance.md](./docs/user-guide-maintenance.md) —— 教程站内容、截图和版本维护规范
 - [docs/user-guide-feature-coverage.md](./docs/user-guide-feature-coverage.md) —— 用户可见功能、代码所有者、教程页面与发布前核对矩阵
-- [docs/release-v0.10.4.md](./docs/release-v0.10.4.md) —— v0.10.4 更新说明、安装产物、验证与关联 Issue
+- [docs/release-v0.12.10.md](./docs/release-v0.12.10.md) —— v0.12.10 更新说明、安装产物、验证与关联 Issue
 
 ## 贡献
 

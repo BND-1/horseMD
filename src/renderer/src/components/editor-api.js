@@ -1,13 +1,21 @@
 import { TextSelection, NodeSelection } from '@milkdown/prose/state'
 import { commandsCtx, remarkCtx } from '@milkdown/kit/core'
+import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import katex from 'katex'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
-import { toggleHighlightCommand } from './editor-highlight.js'
+import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
+import {
+  emphasisSchema,
+  inlineCodeSchema,
+  strongSchema
+} from '@milkdown/kit/preset/commonmark'
+import { strikethroughSchema } from '@milkdown/kit/preset/gfm'
+import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
 
 const stripEditorOnlyForExport = (clone) => {
   clone
@@ -54,6 +62,14 @@ const codeBlockText = (block) => {
   return (block.textContent || '').replace(/^\s*LaTeX\s*/, '').replace(/\s*复制\s*/, '').trim()
 }
 
+const isLatexCodeBlock = (block) => {
+  const codeMirrorLanguage = block.querySelector('.cm-content')?.dataset?.language?.trim().toLowerCase() || ''
+  const pickerLanguage = block.querySelector('.language-button')?.textContent?.trim().toLowerCase() || ''
+  // Crepe labels this language "LaTeX" in its picker but CodeMirror exposes
+  // the underlying `stex` mode. Accept both representations.
+  return ['latex', 'tex', 'stex'].includes(codeMirrorLanguage) || pickerLanguage.startsWith('latex')
+}
+
 const replaceKatexWithMathml = (root) => {
   const doc = root.ownerDocument
   root.querySelectorAll('.katex-display').forEach((display) => {
@@ -75,6 +91,10 @@ const replaceKatexWithMathml = (root) => {
 const materializeLatexPreviewsForExport = (clone) => {
   const doc = clone.ownerDocument
   clone.querySelectorAll('.milkdown-code-block').forEach((block) => {
+    // CodeMirror backs every fenced block. Only blocks explicitly marked as
+    // LaTeX can become MathML; trying KaTeX as a fallback for C++/JS/etc. turns
+    // ordinary code that happens to resemble math into a formula (#91).
+    if (!isLatexCodeBlock(block)) return
     const math = block.querySelector('.preview-panel math') ||
       mathmlFromLatex(doc, codeBlockText(block), { display: true })
     if (!math) return
@@ -114,6 +134,7 @@ export function createEditorApi({
   lastMarkdownRef,
   canonicalMarkdownRef,
   setBlock,
+  markUserEdit,
   onStructureChange,
   isDestroyed,
   getT,
@@ -156,11 +177,68 @@ export function createEditorApi({
     }
   }
 
-  const applyReviewMarkup = (kind) => {
-    const result = applyReviewMarkupInView(viewRef.current, kind)
+  const restoreTextSelection = (selectionRange = null) => {
+    const view = viewRef.current
+    if (!view) return false
+    try {
+      if (Number.isFinite(selectionRange?.anchor) && Number.isFinite(selectionRange?.head)) {
+        const { content } = view.state.doc
+        const anchor = Math.max(0, Math.min(selectionRange.anchor, content.size))
+        const head = Math.max(0, Math.min(selectionRange.head, content.size))
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, head)))
+      }
+      return !view.state.selection.empty
+    } catch {
+      return false
+    }
+  }
+
+  // This is the shared command path for the selection toolbar and the
+  // right-click fallback. The latter is enabled only when the user hides the
+  // floating toolbar, so no parallel formatting implementation can drift.
+  const applyTextFormat = (format, selectionRange = null) => {
+    const view = viewRef.current
+    if (!view || !restoreTextSelection(selectionRange)) return false
+    try {
+      // The fallback is opened from a native-like contextmenu event, which does
+      // not reliably retain ProseMirror focus on every platform. Restore it
+      // before dispatching a Milkdown command so the command sees the selected
+      // range instead of a stale DOM selection.
+      view.focus()
+      markUserEdit?.()
+      if (format === 'highlight') {
+        applyHighlightInView(view, 'yellow')
+        return true
+      }
+      const mark = {
+        bold: strongSchema,
+        italic: emphasisSchema,
+        strike: strikethroughSchema,
+        code: inlineCodeSchema
+      }[format]
+      if (mark) {
+        // Execute mark changes against the active ProseMirror view directly.
+        // The same commands back Crepe's toolbar, but its command registry can
+        // see a stale focus owner immediately after a context-menu event.
+        return toggleMark(mark.type(crepe.editor.ctx))(view.state, (tr) => view.dispatch(tr), view)
+      }
+      if (format !== 'link') return false
+      crepe.editor.ctx.get(commandsCtx).call(toggleLinkCommand.key)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const applyReviewMarkup = (kind, selectionRange = null) => {
+    const view = viewRef.current
+    if (!view || !restoreTextSelection(selectionRange)) return false
+    view.focus()
+    const result = applyReviewMarkupInView(view, kind)
     if (!result.ok && result.reason === 'multiline') {
       notify?.(getT('review.inlineOnly'))
     }
+    if (result.ok) markUserEdit?.()
     return result.ok
   }
 
@@ -270,6 +348,7 @@ export function createEditorApi({
     getPdfSource,
     getMarkdown,
     toggleHighlight,
+    applyTextFormat,
     applyReviewMarkup,
     replaceMarkdown,
     restoreMarkdownOffset,

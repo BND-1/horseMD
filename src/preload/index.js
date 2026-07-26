@@ -61,6 +61,7 @@ const api = {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openFileUrl: (url) => ipcRenderer.invoke('shell:openFileUrl', url),
   showInFolder: (path) => ipcRenderer.invoke('shell:showInFolder', path),
+  copyText: (text) => ipcRenderer.invoke('clipboard:writeText', String(text ?? '')),
 
   // image host: write the bytes to a temp file, run the user's upload command on
   // it, and return the URL it prints. Returns { ok, url } or { ok:false, error }.

@@ -51,6 +51,40 @@ async function main() {
           orderedItem: metric(orderedItem)
         }
       }
+      const textRect = (element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const rect = range.getBoundingClientRect()
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      }
+      const visualListLayout = (root, editor) => {
+        const directItem = (list) => [...(list?.querySelectorAll('li') || [])]
+          .find((item) => item.closest('ul, ol') === list)
+        const item = directItem(root)
+        const label = item?.querySelector('.label-wrapper .label')
+        const paragraph = item?.querySelector('p')
+        if (!item || !label || !paragraph || !editor) return null
+        const marker = textRect(label)
+        const text = textRect(paragraph)
+        return {
+          textIndent: text.left - editor.getBoundingClientRect().left,
+          centerDelta: Math.abs((marker.top + marker.height / 2) - (text.top + text.height / 2)),
+          markerColor: getComputedStyle(item.querySelector('.label-wrapper')).color,
+          outlineColor: getComputedStyle(editor.closest('.milkdown')).getPropertyValue('--crepe-color-outline').trim()
+        }
+      }
+      const assertVisualListLayout = (layout, label) => {
+        if (!layout) throw new Error(label + ': missing Crepe list marker layout')
+        if (layout.textIndent < 30 || layout.textIndent > 34) {
+          throw new Error(label + ': expected compact 32px text indent, got ' + layout.textIndent)
+        }
+        if (layout.centerDelta > 1.25) {
+          throw new Error(label + ': marker is not aligned with the first text line (' + layout.centerDelta + 'px)')
+        }
+        if (!layout.markerColor || layout.markerColor === layout.outlineColor) {
+          throw new Error(label + ': marker still uses the low-contrast outline color')
+        }
+      }
       const nearly = (actual, expected, label) => {
         if (Math.abs(actual - expected) > 0.15) {
           throw new Error(label + ': expected ' + expected + ', got ' + actual)
@@ -86,6 +120,9 @@ async function main() {
       if (!before) {
         throw new Error('fixture lists were not parsed: ' + (currentEditor()?.innerHTML || '').slice(0, 500))
       }
+      const beforeEditor = currentEditor()
+      assertVisualListLayout(visualListLayout(beforeEditor.querySelector('ul'), beforeEditor), 'default unordered list')
+      assertVisualListLayout(visualListLayout(beforeEditor.querySelector('ol'), beforeEditor), 'default ordered list')
 
       const settingsButton = buttons().find((button) =>
         button.title === '设置' || button.title === 'Settings' || textOf(button) === '设置' || textOf(button) === 'Settings'
@@ -108,6 +145,7 @@ async function main() {
         .find((item) => item.closest('ul, ol') === previewList)
       if (!previewList || !previewItem) throw new Error('settings preview must include a list sample')
       const previewMetrics = { list: metric(previewList), item: metric(previewItem) }
+      const previewMarkerColor = getComputedStyle(previewItem, '::marker').color
 
       const documentTab = [...document.querySelectorAll('.tab')].find((tab) =>
         visible(tab) && /list-spacing\\.md/i.test(tab.title || textOf(tab))
@@ -118,6 +156,14 @@ async function main() {
 
       const after = listMetrics(currentEditor())
       if (!after) throw new Error('list fixture disappeared after returning from settings')
+      const afterEditor = currentEditor()
+      const afterUnorderedLayout = visualListLayout(afterEditor.querySelector('ul'), afterEditor)
+      const afterOrderedLayout = visualListLayout(afterEditor.querySelector('ol'), afterEditor)
+      assertVisualListLayout(afterUnorderedLayout, 'loose unordered list')
+      assertVisualListLayout(afterOrderedLayout, 'loose ordered list')
+      if (previewMarkerColor !== afterUnorderedLayout.markerColor) {
+        throw new Error('settings preview marker color must match the document list marker')
+      }
       const expectedLineHeight = after.unorderedItem.fontSize * 2.2
       const expectedOuterMargin = after.unordered.fontSize * 1.6 * 1.25
       const expectedItemMargin = after.unorderedItem.fontSize * 1.6 * 0.625

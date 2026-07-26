@@ -34,7 +34,7 @@
 ## 3. Markdown / Remark / ProseMirror 插件装配
 
 - HTML node view 和 inline HTML 合并。
-- frontmatter node view 和 mid-doc frontmatter 修复。
+- frontmatter node view；仅文档顶部标准 YAML front matter 渲染为卡片，富文本卡片可直接进入 YAML 编辑态并回写 atom 属性。正文分隔线和问答标题必须保持普通 Markdown。
 - GFM autolink 非 ASCII 修复。
 - table cell `<br>` 往返。
 - `==highlight==` 高亮 mark。
@@ -48,7 +48,7 @@
 
 验证：
 
-- Markdown 基础语法、表格、代码块、HTML、frontmatter 可正常渲染和保存。
+- Markdown 基础语法、表格、代码块、HTML、frontmatter 可正常渲染、富文本编辑和保存。
 - Mermaid 和 LaTeX 同时存在时都能渲染。
 - `==text==` 高亮、review 标记、substitution 不损坏。
 - 代码块内 Tab 插入 tab，不重排整行。
@@ -72,15 +72,15 @@
 ## 5. 富文本编辑交互
 
 - Ctrl/Cmd+1..6 / 0 切换块类型。
-- 右键块菜单。
-- selection toolbar 注入标题、高亮、review 按钮。
+- 右键块菜单：一级菜单使用悬停/焦点子菜单组织“转换为”；关闭 selection toolbar 后还组织“文字格式”和“审阅标记”，并在窗口右侧反向展开。
+- selection toolbar 注入标题、高亮、review 按钮；关闭时不卸载 Crepe，只由右键回退入口承接选区操作。
 - 状态栏通过 `setBlock` 改块类型。
 - slash menu 本地化。
 - inline code 保持 `inclusive:false`，关闭反引号后继续输入应退出 code；`editor-inline-code.js` 只为成对反引号进入和点击 code 末端追加维护短暂 stored-mark，不改变 schema/序列化。
 
 验证：
 
-- 快捷键、右键菜单、toolbar、StatusBar 四条路径改块类型一致。
+- 快捷键、右键菜单子菜单、toolbar、StatusBar 四条路径改块类型一致；右键菜单内的选区格式和审阅操作必须恢复打开菜单前的精确选区。
 - 多标签时 toolbar 按钮作用于当前有选区的可见 editor。
 - 行内代码闭合后继续输入是正文。
 

@@ -111,6 +111,7 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
+- YAML front matter follows the standard document-header boundary only. Do not infer YAML from body `---` separators plus colon-containing headings; Q&A headings such as `Q3:` must remain headings.
 - Image handling supports custom command/PicGo/local assets/base64 fallback. Empty image-host command must not intercept paste/drop into dead blob URLs.
 - Renderer CSP intentionally allows `img-src http:` for local image hosts and PicGo-style HTTP URLs.
 
@@ -130,7 +131,7 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - Linux releases are `amd64.deb` files built on an Ubuntu runner. Validate them with `dpkg-deb --info` and real install/launch/file-association/window-control checks; a successful macOS cross-build exit code does not prove the deb is valid.
 - The tag workflow explicitly uploads Linux packages with `gh release upload --clobber` after validation because electron-builder may skip draft publishing when the target Release already exists as published.
 - Release versions must be monotonically greater than every build that may have been distributed for testing. Do not publish a lower "clean" version after internal builds such as `0.5.29`; auto-update compares semver, so `0.5.5` is treated as older than `0.5.29` and will not be offered.
-- Before starting each distinct new feature, increment the test package to the next minor version. Keep follow-up fixes for that feature on the same version so users can identify the current test build reliably.
+- Every ordinary user-visible change handed to the user for testing (small feature, bug fix, interaction, or visual adjustment) must increment the patch version, for example `0.12.0` → `0.12.1`. Only a clearly independent, user-designated major feature/module may increment the minor version, for example `0.12.x` → `0.13.0`. Never classify an ordinary change as a minor release without the user's agreement.
 - When asking the user to manually test, always rebuild and install the current source first. Never ask the user to test an older installed app or a stale artifact; explicitly verify the installed app was produced after the latest relevant code change.
 - When handing a macOS build to the user for manual testing, do not only overwrite `/Applications/HorseMD.app`. First kill any running HorseMD/Electron processes, then copy the new app, clear quarantine, launch it, and verify the running process points at `/Applications/HorseMD.app` with the intended document. If a specific fix has a marker string, verify `/Applications/HorseMD.app/Contents/Resources/app.asar` contains it before telling the user to test. This avoids macOS reusing an old app process after a reinstall.
 - macOS unsigned app launch may need `xattr -dr com.apple.quarantine /Applications/HorseMD.app`.

@@ -5,14 +5,14 @@ description: 分别设置 HorseMD 正文字体和代码字体，并实时预览�
 
 # 文档与代码字体
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 打开“设置 → 编辑器”，顶部有两个独立选择器：
 
 - 文档字体：影响正文和标题。
 - 代码字体：影响围栏代码块、CodeMirror 和行内代码的等宽显示。
 
-![HorseMD 设置页中的字体和排版选项](/images/v0.6.5/settings.png)
+![HorseMD 设置页中的字体和排版选项](/images/v0.12.10/settings.png)
 <span class="image-caption">选择器、字号、行距、段距、页宽和自定义 CSS 会在右侧小型文档中实时预览。</span>
 
 ## 选择字体

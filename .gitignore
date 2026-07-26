@@ -33,6 +33,12 @@ test-articles/
 build/_*.png
 *参考*.html
 
+# local video production workspace (video-shotcraft): captures, audio,
+# Remotion dependencies, renders, and QA frames are intentionally local-only
+.horsemd-video/
+.agents/
+skills-lock.json
+
 # device build (xcodebuild -derivedDataPath)
 ios/App/build-device/
 .vercel

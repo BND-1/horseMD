@@ -5,7 +5,7 @@ description: 在 iOS 上使用 HorseMD 编辑、保存和分享 Markdown 文档�
 
 # iPhone 与 iPad
 
-<span class="version-badge">适用于 HorseMD v0.6.5 开发安装版</span>
+<span class="version-badge">适用于 HorseMD v0.12.10 开发安装版</span>
 
 iOS 版与桌面版共享富文本编辑器，但当前没有公开 App Store 或 TestFlight 安装包，需要使用 Xcode 和 Apple ID 安装到自己的设备。免费 Apple ID 安装的开发应用通常需要定期重新签名。
 

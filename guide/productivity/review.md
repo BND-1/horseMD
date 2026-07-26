@@ -5,13 +5,13 @@ description: 使用 CriticMarkup 标记新增、删除、替换和带评论的�
 
 # 审阅与 CriticMarkup
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 HorseMD 使用可读的 CriticMarkup 保存审阅痕迹。它仍然是普通 Markdown 文本，不依赖私有数据库。
 
 ## 添加审阅标记
 
-在富文本中选中文字，打开浮动工具栏的审阅菜单，可以选择：
+在富文本中选中文字，默认可从浮动工具栏的“审阅标记”菜单选择操作。若已在“设置 → 编辑器 → 编辑”关闭浮动工具栏，则右键选区，悬停“审阅标记”后从子菜单选择同一组操作；两种入口的结果完全一致。
 
 | 类型 | 源码形式 |
 | --- | --- |

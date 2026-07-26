@@ -5,7 +5,7 @@ description: 切换 HorseMD 内置主题，并导入兼容的 Typora CSS 主题�
 
 # 主题
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 点击状态栏的主题名称，或进入“设置 → 外观”。HorseMD 提供暖光、暖夜和四套莫兰迪主题。主题会改变应用外壳、编辑区、菜单、查找高亮、代码块和弹窗的颜色。
 

@@ -5,7 +5,7 @@ description: 在 HorseMD 中粘贴、拖入和上传图片，并配置自定义�
 
 # 图片与图床
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## 插入图片
 

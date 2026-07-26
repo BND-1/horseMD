@@ -308,6 +308,11 @@ ipcMain.handle('shell:openFileUrl', async (_e, url) => {
   }
 })
 ipcMain.handle('shell:showInFolder', async (_e, path) => shell.showItemInFolder(path))
+ipcMain.handle('clipboard:writeText', (event, text) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  clipboard.writeText(String(text ?? ''))
+  return true
+})
 
 // ----------------------------- custom themes -------------------------------
 // User-supplied CSS themes (e.g. migrated Typora themes) live in a `themes`

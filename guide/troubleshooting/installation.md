@@ -5,7 +5,7 @@ description: 处理 HorseMD 在 Windows、macOS 和 Android 上的常见安装�
 
 # 安装问题
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## Windows 显示未知发布者
 

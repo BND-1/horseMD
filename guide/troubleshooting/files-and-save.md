@@ -5,7 +5,7 @@ description: 排查 HorseMD 文档找不到、未保存、工作区刷新和移�
 
 # 文件与保存
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 ## 工作区会复制文件吗
 

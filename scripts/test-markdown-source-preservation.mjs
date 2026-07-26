@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { preserveRichMarkdownSource } from '../src/renderer/src/markdown-source-preservation.js'
+import {
+  preserveRichMarkdownSource,
+  replaceMarkdownFrontmatterBlock
+} from '../src/renderer/src/markdown-source-preservation.js'
 
 const source = [
   '# 一级标题',
@@ -46,6 +49,39 @@ assert.equal(mismatch.preserved, false)
 assert.equal(mismatch.markdown, '原文 C')
 assert.equal(mismatch.reason, 'visible-stream-mismatch')
 
+const frontmatterSource = [
+  '---',
+  'name: deploy',
+  'description: untouched source spelling',
+  '---',
+  '',
+  '# Keep this heading',
+  '',
+  'Here is 0~9, which must not be escaped.'
+].join('\n')
+const frontmatterNext = [
+  '---',
+  'name: publish',
+  'description: changed in rich mode',
+  '---',
+  '',
+  '# Keep this heading',
+  '',
+  'Here is 0\\~9, which must not be escaped.'
+].join('\n')
+assert.equal(
+  replaceMarkdownFrontmatterBlock({
+    source: frontmatterSource,
+    next: frontmatterNext,
+    sourceOffset: 8,
+    nextOffset: 8
+  }),
+  frontmatterSource.replace(
+    'name: deploy\ndescription: untouched source spelling',
+    'name: publish\ndescription: changed in rich mode'
+  )
+)
+
 const tableSource = [
   '# 保持标题格式',
   '',
@@ -70,4 +106,69 @@ assert.equal(tableChanged.preserved, false)
 assert.equal(tableChanged.reason, 'table-canonical-change')
 assert.equal(tableChanged.markdown, tableNext)
 
-console.log('PASS markdown source preservation: localized edits retain original spelling; table edits use safe canonical Markdown')
+const listSource = [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0~9。',
+  '',
+  '- Alpha',
+  '  - Child',
+  '- Beta',
+  '',
+  '两个列表之间的正文。',
+  '',
+  '- [ ] 不要转换的任务',
+  '',
+  '这段不要改。'
+].join('\n')
+const listCanonical = [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0\\~9。',
+  '',
+  '* Alpha',
+  '  * Child',
+  '',
+  '* Beta',
+  '',
+  '两个列表之间的正文。',
+  '',
+  '* [ ] 不要转换的任务',
+  '',
+  '这段不要改。'
+].join('\n')
+const listNext = [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0\\~9。',
+  '',
+  '1. Alpha',
+  '   1. Child',
+  '2. Beta',
+  '',
+  '两个列表之间的正文。',
+  '',
+  '* [ ] 不要转换的任务',
+  '',
+  '这段不要改。'
+].join('\n')
+const listChanged = preserveRichMarkdownSource(listSource, listCanonical, listNext)
+assert.equal(listChanged.preserved, true)
+assert.equal(listChanged.reason, 'list-type-change')
+assert.equal(listChanged.markdown, [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0~9。',
+  '',
+  '1. Alpha',
+  '   1. Child',
+  '2. Beta',
+  '',
+  '两个列表之间的正文。',
+  '',
+  '- [ ] 不要转换的任务',
+  '',
+  '这段不要改。'
+].join('\n'))
+
+console.log('PASS markdown source preservation: localized edits retain original spelling; table/list structural edits use bounded Markdown output')

@@ -1,5 +1,6 @@
 import { TextSelection } from '@milkdown/prose/state'
 import { TableMap, cellAround } from '@milkdown/prose/tables'
+import { mountTableActionMenuRetention } from './editor-table-action-menu.js'
 
 const clamp = (value, min, max) => {
   if (max < min) return min
@@ -641,6 +642,7 @@ export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, 
   const scrollEl = host.closest('.editor-scroll')
   mountSlashMenuBounds({ host, scrollEl, cleanups })
   mountTableHandleBounds({ view, host, scrollEl, cleanups, markUserEdit })
+  mountTableActionMenuRetention({ host, cleanups })
 
   const onBlankAreaMouseDown = (event) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return

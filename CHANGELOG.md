@@ -4,9 +4,23 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.12.10] - 2026-07-25
 
 ### Added
+- **Optional selection toolbar** — Settings → Editor → Editing now lets desktop
+  writers hide the floating text-selection toolbar. With it off, selecting text
+  and right-clicking exposes the same common actions as labelled menu entries:
+  bold, italic, strikethrough, inline code, link, highlight, and the complete
+  review-markup set (addition, deletion, substitution, highlight + comment).
+- **List type conversion** — In desktop rich mode, right-click an ordinary
+  bullet or ordered list to convert only its current level to the other list
+  type or to a task list. Task lists can also explicitly convert back to a
+  bullet or ordered list, removing their checkbox state. Parent and nested list
+  levels are left intact.
+- **Wide-table wrap preference** — Settings → Editor now provides “Wrap wide
+  tables”. It keeps Markdown table columns inside the writing area and wraps
+  cell text instead of showing a horizontal scrollbar; the existing readable,
+  independently scrollable layout remains the default.
 - **Composable Custom CSS snippets** (#81) — Custom CSS is now a named snippet
   list. Snippets can be enabled independently, reordered, renamed, and removed;
   enabled entries layer in list order. Existing single-snippet settings migrate
@@ -26,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connection settings, never with the encrypted password or S3 secret.
 
 ### Changed
+- **Compact right-click hierarchy** — When the optional selection toolbar is
+  hidden, the context menu now groups text formatting, review markup, and block
+  or list conversion behind hover/focus submenus. This keeps the root menu short
+  without removing any existing action; submenus reverse direction near the
+  right window edge.
 - **Editor-style preview coverage** — the Settings preview now contains the
   common inline and block selectors that custom CSS authors actually target:
   headings, emphasis, deletion, links, inline code, keyboard keys, quotes,
@@ -33,6 +52,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   keeps the CSS snippet that was being edited selected.
 
 ### Fixed
+- **YAML front matter boundary** — YAML metadata is now recognized only in the
+  standard document-header position. Body separators followed by headings such
+  as `Q3:` and `Q4:` remain normal Markdown instead of being misrendered as a
+  YAML card.
+- **Display-formula writing rhythm** — rendered `$$...$$` blocks no longer
+  inherit the generous padding of editable code blocks, so they sit closer to
+  the surrounding prose without changing code-block spacing, formula editing,
+  equation tags, overflow behavior, or PDF output.
+- **Repeated list conversion rendering** — converting the same list back from
+  ordered to bullet form now updates Crepe's cached list-item marker state as
+  well as its Markdown structure, so rich text and source mode stay in sync.
+- **Literal backticks and YAML front matter editing** — Multiple manually typed
+  backticks no longer delete earlier delimiters. YAML metadata cards now have an
+  explicit rich-mode editor whose changes stay synchronized with source mode
+  and saves.
+- **PDF code blocks** (#91) — PDF export now converts only blocks explicitly
+  marked as LaTeX to MathML. C++, JavaScript, and other fenced code remain
+  literal code even when their text resembles a formula.
 - **Display-formula scroll controls** — fitting LaTeX blocks no longer expose
   Windows scrollbar arrows. Only formulas whose rendered width actually exceeds
   the preview enable a single horizontal scroll surface; PDF output remains
@@ -335,8 +372,8 @@ matter, outline improvements, and a batch of community-reported bug fixes.
 - **Inline HTML rendering** — `<span style>`, `<sub>`, `<kbd>`, `<mark>`, etc.
   render as real DOM instead of escaped text. A remark plugin coalesces fragmented
   open/text/close html nodes into renderable fragments.
-- **YAML front matter** — the `---` block at the top (or anywhere) of a document
-  renders as a structured key/value card instead of a horizontal rule + headings.
+- **YAML front matter** — the `---` block at the top of a document renders as a
+  structured key/value card instead of a horizontal rule + headings.
   Round-trips cleanly (#8, #15).
 - **Smart Markdown paste** — pasting a Markdown document (headings, tables, math,
   code blocks, front matter, mermaid) into the editor now parses and renders it
@@ -710,7 +747,8 @@ page width, in-cell line breaks, an Intel macOS build, and a nicer update prompt
 - Dark/light themes, session restore, single-instance file association.
 - Windows NSIS installer and macOS dmg/zip packaging.
 
-[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.12.10...HEAD
+[0.12.10]: https://github.com/BND-1/horseMD/compare/v0.10.4...v0.12.10
 [0.7.2]: https://github.com/BND-1/horseMD/compare/v0.6.5...v0.7.2
 [0.6.5]: https://github.com/BND-1/horseMD/compare/v0.6.0...v0.6.5
 [0.6.0]: https://github.com/BND-1/horseMD/compare/v0.5.5...v0.6.0

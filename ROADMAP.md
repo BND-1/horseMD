@@ -103,6 +103,7 @@ AI 暂不进入当前 `0.6.x` 稳定线，待核心版本发布稳定后再单�
 - Android Storage Access Framework 外部目录工作区，让用户选择并原地管理设备上的 Markdown 文件（Issue #23）。
 - 桌面与移动端文档同步、外部目录镜像/备份，以及 WebDAV 等可自托管存储方案。
 - 更完善的导出、发布和跨应用内容工作流。
+- **Pandoc 导出**：后续作为导出扩展/插件能力评估，统一处理外部 Pandoc 运行时探测、模板、参数、错误提示和跨平台安装差异；当前不把外部进程依赖接入编辑器核心。
 - 在安全模型与 API 稳定后评估通用插件机制。
 - **源码优先 Live Preview（独立架构项目）**：远期评估以 CodeMirror Markdown 文本为唯一数据模型、以编辑器 decorations 呈现格式化内容的方案。目标是从架构上消除富文本 serializer 改写未编辑源码的风险；它会牵动表格、代码块、Mermaid、图片、Review、PDF、移动端和全部编辑器插件，不能作为当前 Crepe 模式切换的临时重构。当前原文保真合同见 [docs/markdown-source-preservation.md](./docs/markdown-source-preservation.md)。
 

@@ -347,6 +347,14 @@ export function makeCapacitorApi() {
     openExternal: (url) => Browser.open({ url }).catch(() => {}),
     openFileUrl: async () => ({ ok: false, error: 'unsupported' }),
     showInFolder: async () => false,
+    copyText: async (text) => {
+      try {
+        await navigator.clipboard?.writeText(String(text ?? ''))
+        return true
+      } catch {
+        return false
+      }
+    },
     // Export/share a saved file via the system share sheet ("Save to Files",
     // Drive, send, …) — the way to get a copy out where the user can find it.
     shareFile: async (path) => {

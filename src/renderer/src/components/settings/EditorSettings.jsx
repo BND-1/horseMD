@@ -2,6 +2,7 @@ import Toggle from '../ui/Toggle.jsx'
 import TypographyControls from './TypographyControls.jsx'
 import AdjustGroup from '../ui/AdjustGroup.jsx'
 import UserCssSnippets from './UserCssSnippets.jsx'
+import TableWrapPreview from './TableWrapPreview.jsx'
 import {
   SOURCE_FONT_OFFSET_MIN,
   SOURCE_FONT_OFFSET_MAX,
@@ -22,6 +23,7 @@ export default function EditorSettings({
   activeCssSnippetId, onActiveCssSnippetIdChange,
   t
 }) {
+  const isMobile = window.api?.platform === 'ios' || window.api?.platform === 'android'
   const sourceOffset = Number.isFinite(settings.sourceFontOffset) ? settings.sourceFontOffset : 0
   const sourceOffsetIdx = SOURCE_FONT_OFFSET_PRESETS.findIndex((p) => p.value === sourceOffset)
   // Resulting source font size = body font size + offset (clamped ≥ 8px for sanity).
@@ -37,6 +39,21 @@ export default function EditorSettings({
           onHoverFont={onHoverFont}
           t={t}
         />
+      </section>
+      <section className="settings-block">
+        <h2 className="settings-block-title">{t('settings.tables')}</h2>
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t('settings.tableAutoWrap')}</div>
+            <div className="settings-row-desc">{t('settings.tableAutoWrapDesc')}</div>
+          </div>
+          <Toggle
+            checked={settings.tableAutoWrap === true}
+            onChange={(tableAutoWrap) => onUpdateSettings({ tableAutoWrap })}
+            label={t('settings.tableAutoWrap')}
+          />
+        </div>
+        <TableWrapPreview wraps={settings.tableAutoWrap === true} t={t} />
       </section>
       <UserCssSnippets
         settings={settings}
@@ -75,6 +92,22 @@ export default function EditorSettings({
             label={t('settings.spellcheck')}
           />
         </div>
+      </section>
+      <section className="settings-block">
+        <h2 className="settings-block-title">{t('settings.editing')}</h2>
+        {!isMobile && (
+          <div className="settings-row">
+            <div className="settings-row-text">
+              <div className="settings-row-label">{t('settings.selectionToolbar')}</div>
+              <div className="settings-row-desc">{t('settings.selectionToolbarDesc')}</div>
+            </div>
+            <Toggle
+              checked={settings.selectionToolbar !== false}
+              onChange={(selectionToolbar) => onUpdateSettings({ selectionToolbar })}
+              label={t('settings.selectionToolbar')}
+            />
+          </div>
+        )}
         <div className="settings-row">
           <div className="settings-row-text">
             <div className="settings-row-label">{t('settings.inlineMathDelete')}</div>

@@ -31,7 +31,7 @@ import { createBlockHandleGutterPlugin } from './editor-block-handle-guard.js'
 import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
-import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
+import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
@@ -81,7 +81,11 @@ export function createConfiguredCrepe({
   persistImage,
   notify,
   copyText,
-  getInlineMathDeleteMode
+  getInlineMathDeleteMode,
+  markUserEdit,
+  isReadOnly,
+  onFrontmatterValueChange,
+  onInlineCodeValueChange
 }) {
   const t = getT
   const platform = window.api?.platform
@@ -139,7 +143,16 @@ export function createConfiguredCrepe({
     ctx.update(nodeViewCtx, (views) => [
       ...views,
       ['html', (node) => renderHtmlNodeView(node)],
-      ['frontmatter', (node) => renderFrontmatterNodeView(node)]
+      ['frontmatter', (node, view, getPos) => renderFrontmatterNodeView(node, view, getPos, {
+        labels: {
+          edit: t('frontmatter.edit'),
+          done: t('frontmatter.done'),
+          input: t('frontmatter.input')
+        },
+        onEdit: markUserEdit,
+        onValueChange: onFrontmatterValueChange,
+        canEdit: () => !isReadOnly?.()
+      })]
     ])
 
     applyImageText(ctx, getT)
@@ -169,7 +182,10 @@ export function createConfiguredCrepe({
       createBlockHandleGutterPlugin(),
       ...plugins,
       tableBreakKeymap(),
-      createInlineCodeEditingPlugin(),
+      createInlineCodeEditingPlugin({
+        onEdit: markUserEdit,
+        onValueChange: onInlineCodeValueChange
+      }),
       createTaskListInputPlugin(),
       createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
       createKatexDomPrunePlugin(),
@@ -204,7 +220,6 @@ export function createConfiguredCrepe({
       { plugin: remarkNormalizeCodeOnlyLinkLabels, options: undefined },
       { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
       { plugin: remarkFrontmatter, options: undefined },
-      { plugin: remarkFrontmatterAnywhere, options: undefined },
       { plugin: brToBreakRemarkPlugin, options: undefined },
       { plugin: remarkMergeInlineHtml, options: undefined },
       { plugin: remarkReconstructSubstitution, options: undefined }

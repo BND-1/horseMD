@@ -5,11 +5,11 @@ description: 认识 HorseMD 首次欢迎文档，并完成第一篇文档和工�
 
 # 第一次启动
 
-<span class="version-badge">适用于 HorseMD v0.6.5</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 第一次打开 HorseMD 时，会自动出现“欢迎使用 HorseMD”文档。这是一个可直接阅读和操作的本地引导页，只在全新会话中自动创建一次。
 
-![HorseMD 第一次启动时显示欢迎文档](/images/v0.6.5/first-launch.png)
+![HorseMD 第一次启动时显示欢迎文档](/images/v0.12.10/first-launch.png)
 <span class="image-caption">欢迎文档介绍大纲、文件树、快捷键和基础操作。点击图片可以放大。</span>
 
 ## 完成第一次操作
