@@ -71,17 +71,6 @@ xattr -dr com.apple.quarantine /Applications/HorseMD.app
 
 ## 关联 Issues
 
-- [#62 Windows 命令面板悬停闪屏](https://github.com/BND-1/horseMD/issues/62)
-- [#63 标题显示与交互建议](https://github.com/BND-1/horseMD/issues/63)
-- [#74 行内 LaTeX 删除逻辑](https://github.com/BND-1/horseMD/issues/74)
-- [#75 字体设置显示完整字体名](https://github.com/BND-1/horseMD/issues/75)
-- [#78 源码模式字体与排版](https://github.com/BND-1/horseMD/issues/78)
-- [#79 列表间距与排版](https://github.com/BND-1/horseMD/issues/79)
-- [#80 代码块上下留白](https://github.com/BND-1/horseMD/issues/80)
-- [#81 自定义 CSS](https://github.com/BND-1/horseMD/issues/81)
-- [#82 大纲章节拖动重排](https://github.com/BND-1/horseMD/issues/82)
-- [#84 保存时图片说明文本保留](https://github.com/BND-1/horseMD/issues/84)
-- [#86 表格编辑、保存与宽表格交互](https://github.com/BND-1/horseMD/issues/86)
 - [#91 PDF 导出中的普通代码块误渲染](https://github.com/BND-1/horseMD/issues/91)，本版本已覆盖该修复项，等待更多实际文档反馈。
 
 完整变更见 [CHANGELOG.md](../CHANGELOG.md)。
