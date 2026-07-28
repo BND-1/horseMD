@@ -63,9 +63,10 @@ export function createBlockHandleGutterPlugin() {
         handleAllowed = isHandleTrigger(view, event)
         if (handleAllowed) return
 
-        // Milkdown receives pointermove through ProseMirror's bubbling event
-        // handler. Stop it before a text hover can schedule another block.
-        event.stopImmediatePropagation()
+        // Do not stop this event: table handles and other node views also own
+        // pointermove interactions below ProseMirror. Milkdown may schedule its
+        // block handle later, so hide now and let the observer reject that
+        // delayed visibility write without consuming another feature's event.
         hideHandle(view)
       }
       const onPointerLeave = (event) => {

@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.12.20",
+  "version": "0.12.25",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -28,6 +28,7 @@
     "test:codeblock-scroll-stability-ui": "node scripts/test-codeblock-scroll-stability-ui.mjs",
     "test:markdown-preservation": "node scripts/test-markdown-source-preservation.mjs",
     "test:issue-77-ui": "node scripts/test-issue-77-source-preservation-ui.mjs",
+    "test:paragraph-source-ui": "node scripts/test-paragraph-source-preservation-ui.mjs",
     "test:issue-84-ui": "node scripts/test-issue-84-image-alt-ui.mjs",
     "test:font-picker-ui": "node scripts/test-font-picker-ui.mjs",
     "test:issue-80-ui": "node scripts/test-issue-80-codeblock-spacing-ui.mjs",

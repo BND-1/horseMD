@@ -99,8 +99,11 @@ npm run test:source-map
 # 无需启动 Electron：局部富文本编辑保留未修改 Markdown 源码写法
 npm run test:markdown-preservation
 
-# 真实 Electron：#77 原始空行、列表符和转义的保真回归
+# 真实 Electron：#77 原始空行、列表符和转义；含真实保存写盘
 npm run test:issue-77-ui
+
+# 真实 Electron：正文单换行保真；Enter 新段落保存并重开
+npm run test:paragraph-source-ui
 
 # 真实 Electron：#79 无序/有序/嵌套列表跟随行距和段距设置
 npm run test:issue-79-ui
@@ -146,8 +149,9 @@ npm run test:ui-regression
 - `scripts/test-mode-switch-10x.mjs` —— 5 个编辑态光标 + 5 个阅读态视口，附带大纲/dirty 稳定性检查
 - `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
   - 对普通 Markdown 追加 `--mode-switch`，验证保持查找栏时源码→富文本→源码缓存重建
-- `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证局部富文本编辑仅改动原 Markdown 的目标文本区间，不重写无关空行、列表标记或转义
-- `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表、列表硬换行和无编辑往返；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴的逐字符保真，以及网页 HTML 的标题/加粗/图片语义不回归
+- `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证普通文字只改目标字符；标题、分段、列表新增/转换和表格行列变化只改受影响行或块，不重写整篇原文
+- `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
+- `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、连续按 Enter 输入后零等待切源码；再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
 - `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化
 - `scripts/test-review-ui.mjs` —— 真实源码同步后的 Review 高亮、同段批注堆叠、卡片编辑/取消/完成和 substitution DOM
 

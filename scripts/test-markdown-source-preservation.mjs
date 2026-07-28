@@ -46,8 +46,21 @@ assert.equal(changedText.markdown, source.replace('这一段不要修改。', '�
 
 const mismatch = preserveRichMarkdownSource('原文 A', '原文 B', '原文 C')
 assert.equal(mismatch.preserved, false)
-assert.equal(mismatch.markdown, '原文 C')
+assert.equal(mismatch.markdown, '原文 A')
 assert.equal(mismatch.reason, 'visible-stream-mismatch')
+
+const listTextEdited = preserveRichMarkdownSource(
+  source,
+  canonical,
+  canonical.replace('第一项末尾', '第一项末尾（已修改）')
+)
+assert.equal(listTextEdited.preserved, true)
+assert.equal(listTextEdited.reason, 'localized-change')
+assert.equal(
+  listTextEdited.markdown,
+  source.replace('第一项末尾', '第一项末尾（已修改）'),
+  'editing list text must not change authored markers or insert loose-list blank lines'
+)
 
 const frontmatterSource = [
   '---',
@@ -102,9 +115,32 @@ const tableCanonical = tableSource
   ].join('\n'))
 const tableNext = tableCanonical.replace('| old-a | old-b |', '| old-a | old-b |\n| new-a | new-b |')
 const tableChanged = preserveRichMarkdownSource(tableSource, tableCanonical, tableNext)
-assert.equal(tableChanged.preserved, false)
-assert.equal(tableChanged.reason, 'table-canonical-change')
-assert.equal(tableChanged.markdown, tableNext)
+assert.equal(tableChanged.preserved, true)
+assert.equal(tableChanged.reason, 'table-block-change')
+assert.equal(tableChanged.markdown, [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0~9。',
+  '',
+  '| A     | B     |',
+  '| ----- | ----- |',
+  '| old-a | old-b |',
+  '| new-a | new-b |',
+  '',
+  '这段不要改。'
+].join('\n'))
+
+const tableCellEdited = preserveRichMarkdownSource(
+  tableSource,
+  tableCanonical,
+  tableCanonical.replace('old-a', 'edited-a')
+)
+assert.equal(tableCellEdited.preserved, true)
+assert.equal(
+  tableCellEdited.markdown,
+  tableSource.replace('old-a', 'edited-a'),
+  'editing table text must not normalize the table or unrelated prose'
+)
 
 const listSource = [
   '# 保持标题格式',
@@ -152,6 +188,30 @@ const listNext = [
   '',
   '这段不要改。'
 ].join('\n')
+
+const listItemInserted = preserveRichMarkdownSource(
+  listSource,
+  listCanonical,
+  listCanonical.replace('* Beta', '* Inserted\n\n* Beta')
+)
+assert.equal(listItemInserted.preserved, true)
+assert.equal(listItemInserted.markdown, [
+  '# 保持标题格式',
+  '',
+  '这里是区间：0~9。',
+  '',
+  '- Alpha',
+  '  - Child',
+  '- Inserted',
+  '- Beta',
+  '',
+  '两个列表之间的正文。',
+  '',
+  '- [ ] 不要转换的任务',
+  '',
+  '这段不要改。'
+].join('\n'), 'adding one item must keep the authored compact-list and bullet style')
+
 const listChanged = preserveRichMarkdownSource(listSource, listCanonical, listNext)
 assert.equal(listChanged.preserved, true)
 assert.equal(listChanged.reason, 'list-type-change')
@@ -171,4 +231,110 @@ assert.equal(listChanged.markdown, [
   '这段不要改。'
 ].join('\n'))
 
-console.log('PASS markdown source preservation: localized edits retain original spelling; table/list structural edits use bounded Markdown output')
+const headingLevelChanged = preserveRichMarkdownSource(
+  source,
+  canonical,
+  canonical.replace('## 二级标题', '### 二级标题')
+)
+assert.equal(headingLevelChanged.preserved, true)
+assert.equal(
+  headingLevelChanged.markdown,
+  source.replace('## 二级标题', '### 二级标题'),
+  'changing one heading level must not add blank lines elsewhere'
+)
+
+const splitParagraph = preserveRichMarkdownSource(
+  source,
+  canonical,
+  canonical.replace('这一段不要修改。', '这一段\n\n不要修改。')
+)
+assert.equal(splitParagraph.preserved, true)
+assert.equal(
+  splitParagraph.markdown,
+  source.replace('这一段不要修改。', '这一段\n\n不要修改。'),
+  'splitting one paragraph must not normalize headings or lists'
+)
+
+const appendedParagraphWithoutFinalNewline = preserveRichMarkdownSource(
+  '第一段内容',
+  '第一段内容\n',
+  '第一段内容\n\n第二段内容\n'
+)
+assert.equal(appendedParagraphWithoutFinalNewline.preserved, true)
+assert.equal(appendedParagraphWithoutFinalNewline.reason, 'appended-paragraph')
+assert.equal(
+  appendedParagraphWithoutFinalNewline.markdown,
+  '第一段内容\n\n第二段内容',
+  'adding a paragraph must keep two Markdown separator newlines without inventing a final newline'
+)
+
+const appendedParagraphWithFinalNewline = preserveRichMarkdownSource(
+  '第一段内容\n',
+  '第一段内容\n',
+  '第一段内容\n\n第二段内容\n'
+)
+assert.equal(
+  appendedParagraphWithFinalNewline.markdown,
+  '第一段内容\n\n第二段内容\n',
+  'adding a paragraph must retain the authored final-newline style'
+)
+
+const appendedParagraphAfterAuthoredBlankLines = preserveRichMarkdownSource(
+  '第一段内容\n\n\n',
+  '第一段内容\n',
+  '第一段内容\n\n第二段内容\n'
+)
+assert.equal(
+  appendedParagraphAfterAuthoredBlankLines.markdown,
+  '第一段内容\n\n\n第二段内容\n',
+  'adding a paragraph must reuse authored trailing blank lines instead of adding another'
+)
+
+const paragraphAfterSettledNewDocumentTitle = preserveRichMarkdownSource(
+  '# 看了苏规范\n\n',
+  '# 看了苏规范\n\n',
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n'
+)
+assert.equal(paragraphAfterSettledNewDocumentTitle.reason, 'appended-paragraph')
+assert.equal(
+  paragraphAfterSettledNewDocumentTitle.markdown,
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n',
+  'typing into the trailing paragraph after a settled title must not append text to the heading'
+)
+
+const secondParagraphAfterSettledTitle = preserveRichMarkdownSource(
+  paragraphAfterSettledNewDocumentTitle.markdown,
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n',
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n阿发了；发挥了；\n\n'
+)
+assert.equal(
+  secondParagraphAfterSettledTitle.markdown,
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n阿发了；发挥了；\n',
+  'human-paced consecutive paragraphs must remain separate after canonical snapshots settle'
+)
+
+const trailingEmptyParagraphCreated = preserveRichMarkdownSource(
+  '# 看了苏规范\n\n',
+  '# 看了苏规范\n\n',
+  '# 看了苏规范\n\n<br />\n\n'
+)
+assert.equal(trailingEmptyParagraphCreated.reason, 'trailing-empty-block-created')
+assert.equal(
+  trailingEmptyParagraphCreated.markdown,
+  '# 看了苏规范\n\n',
+  "pressing Enter must not persist Crepe's standalone empty-paragraph <br /> placeholder"
+)
+
+const trailingEmptyParagraphFilled = preserveRichMarkdownSource(
+  trailingEmptyParagraphCreated.markdown,
+  '# 看了苏规范\n\n<br />\n\n',
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n'
+)
+assert.equal(trailingEmptyParagraphFilled.reason, 'trailing-empty-block-filled')
+assert.equal(
+  trailingEmptyParagraphFilled.markdown,
+  '# 看了苏规范\n\n阿福两年啦额咖啡呢\n',
+  'typing after Enter must replace the transient empty block with a separate paragraph'
+)
+
+console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

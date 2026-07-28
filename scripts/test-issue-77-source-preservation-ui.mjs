@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
@@ -64,6 +64,32 @@ const placeCaretAfter = (evaluate, needle, inserted) => evaluate(`(() => {
   document.dispatchEvent(new Event('selectionchange'))
   return true
 })()`)
+
+const saveDocument = async (evaluate, send) => {
+  const point = await waitFor(() => evaluate(`(() => {
+    const button = document.querySelector('.hm-save-fab')
+    const rect = button?.getBoundingClientRect()
+    return rect ? {
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + rect.height / 2)
+    } : null
+  })()`), 'Save button did not appear after rich edits')
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1
+  })
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1
+  })
+  await waitFor(() => evaluate(`!document.querySelector('.hm-save-fab')`), 'Save did not complete')
+}
 
 async function waitFor(check, message, attempts = 40) {
   for (let index = 0; index < attempts; index += 1) {
@@ -143,6 +169,55 @@ async function main() {
       assert.equal(await toggleSource(evaluate), true, 'Could not return to rich mode after no-edit round trip')
     }
 
+    // The user's report concerns the actual source file, not only the source
+    // textarea. Save through HorseMD's visible control and compare disk bytes.
+    await saveDocument(evaluate, send)
+    assert.equal(
+      await readFile(file, 'utf8'),
+      expected,
+      'Saving a rich edit rewrote untouched Markdown on disk'
+    )
+
+    // A structural list edit previously took the canonical loose-list output
+    // and inserted blank lines between every existing item. Add a real item
+    // with Enter and verify the authored compact `-` style survives on disk.
+    assert.equal(
+      await placeCaretAfter(evaluate, '第二项F', ''),
+      true,
+      'Could not place caret at the end of the compact list'
+    )
+    await send('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13
+    })
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13
+    })
+    await send('Input.insertText', { text: '新增项' })
+    await sleep(450)
+    expected = expected.replace('- 第二项F', '- 第二项F\n- 新增项')
+    assert.equal(await toggleSource(evaluate), true, 'Could not inspect source after adding a compact-list item')
+    const listItemSource = await waitFor(() => visibleSource(evaluate), 'Source did not open after adding a list item')
+    assert.equal(
+      listItemSource,
+      expected,
+      'Adding one list item changed existing markers or inserted loose-list blank lines'
+    )
+    assert.equal(await toggleSource(evaluate), true, 'Could not return to rich mode after compact-list check')
+    await saveDocument(evaluate, send)
+    assert.equal(
+      await readFile(file, 'utf8'),
+      expected,
+      'Saving a new list item reformatted untouched source on disk'
+    )
+
     // Source -> rich -> source is a separate synchronization path. A source
     // edit must become the rich editor's new raw baseline without canonicalizing
     // the earlier formatting.
@@ -153,6 +228,11 @@ async function main() {
       textarea.focus()
       textarea.selectionStart = textarea.value.length
       textarea.selectionEnd = textarea.value.length
+      // CDP changes selectionStart directly, so it does not produce React's
+      // real mouseup/select signal. Mirror the user-intent marker set by
+      // EditorArea before typing, otherwise settle retries may move this
+      // synthetic caret while Input.insertText is in flight.
+      textarea.__horsemdSourceSelectionUser = true
       return true
     })()`)
     assert.equal(sourceEditorReady, true, 'Could not focus source editor for source/rich chain')

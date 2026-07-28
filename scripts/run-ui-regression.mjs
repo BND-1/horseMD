@@ -117,6 +117,10 @@ const standalone = [
     script: 'scripts/test-issue-77-source-preservation-ui.mjs'
   },
   {
+    name: 'Paragraph source preservation: compact lines and Enter survive reopen',
+    script: 'scripts/test-paragraph-source-preservation-ui.mjs'
+  },
+  {
     name: 'Issue 79: list spacing follows typography settings',
     script: 'scripts/test-issue-79-list-spacing-ui.mjs'
   },

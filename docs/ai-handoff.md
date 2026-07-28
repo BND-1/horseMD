@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-23。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-28。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.10.4`。当前工作区待提交改动包括：宽表最右端长按调列宽时保持横向位置、稳定的实时列宽预览、设置页更完整的自定义 CSS 选择器预览与片段停留，以及正文悬浮不再误唤起块拖拽柄。已提交的功能包含移动端只读、可选同步 User-Agent、PDF 长公式分行、大文档代码块滚动稳定性、表格行列重复编辑保存修复、桌面悬浮章节导航，以及可组合的自定义 CSS 片段。
+- 当前测试版本号：`package.json` 为 `0.12.25`。当前工作区重点修复 Markdown 原文保真：普通富文本编辑不再把紧凑列表、空行和转义按 Crepe serializer 的整篇结果重写；结构操作限制在受影响的列表、表格或行；正文 Enter 新段落保存为标准 Markdown 段落边界；输入后立即切源码会先同步 flush 当前 Crepe 文档；空文档的默认标题骨架和末尾空段落 `<br />` 占位不进入用户源码；源码同步事务与真实用户编辑严格隔离。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -147,11 +147,16 @@ android/, ios/           Capacitor 原生壳
 - Crepe 在源码模式中必须保持挂载，只隐藏，不卸载。
 - 源码 textarea 是非受控的，保留 `liveContentRef` / `commitLive` 流程。
 - 只有源码真的改过，切回富文本才同步到 Crepe。
-- Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。不要在初始化、切换或局部编辑时用 canonical 内容覆盖整篇源码。
+- Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。普通文字只允许字符级回写；结构操作最多替换受影响列表、表格或行；映射失败必须保留原文并报告失败。任何路径都不能用 canonical 内容覆盖整篇源码。
+- 源码调用 `replaceAll` 同步到 Crepe 时可能连续发出多个 `markdownUpdated`。`programmaticReplaceRef` 必须保持到下一次明确的 `markUserEdit`，不能只跳过第一条回调，否则前一次用户编辑的 TTL 会把后续同步事务误判为用户编辑。
+- Crepe canonical 始终带结尾换行，文档末尾新建的空 paragraph 又没有 visible index。不能把其后续输入映射到“最后一个可见字符”；`preserveAppendedParagraph` 必须按用户源码原有结尾换行数追加标准段落边界。修改后运行 `npm run test:paragraph-source-ui`，并确认测试包含保存、退出和全新进程重开。
+- 源码 textarea 是非受控组件，`defaultValue` 只在挂载时读取。富文本→源码切换前必须调用 `editorApis[id].flushMarkdown()`，同步更新 `tabsRef` 和 tab state 后再挂载 textarea；不能只依赖异步 `markdownUpdated`，否则立即切换会显示旧内容且后续 state 更新无法回填。专项测试必须在最后一次 `Input.insertText` 后零等待切换。
+- 空文档的默认“空 H1 + 空正文”只属于富文本起笔 UI，磁盘源码仍是空字符串。`canonicalForSource()` 必须在标题保持为空时剥离该骨架；用户在标题输入后才将其纳入 canonical。移除这层会使首次输入因 `#\n\n` 与空源码基线不一致而被原文保护器拒绝。`test:paragraph-source-ui` 必须同时覆盖从 H1 起笔和跳过 H1 从正文起笔。
+- Enter 创建的末尾空 paragraph 会被 Crepe canonical 暂时写成独立 `<br />` 块。`preserveTrailingEmptyBlock()` 必须在创建时只推进 canonical、不改 raw source，填入文字时再调用文档末尾块追加逻辑；否则真人慢速输入会把正文并入标题并残留 `<br />`。CDP 测试必须逐字输入且每行停顿到上一条 `markdownUpdated` 已提交，高速整句输入会掩盖该问题。
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
-- `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格变更必须使用完整 canonical Markdown；不要重新引入局部 raw-source 拼接或序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
+- `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格结构变化只替换对应 canonical 表格块，禁止扩大到整篇源码；不要在序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
 - `npm run test:table-ui` 保护另一条独立的表格 UI 合同：短表自然宽度、宽表内部横向滚动和不撑开页面；列边缘的短暂悬停仍用于加行/加列，只有按住约 220ms 才实时调整列宽；宽表最右端连续 10 次悬浮/调整均不得把 `scrollLeft` 重置为 0。不要重新注册 `columnResizingPlugin`，它会与 Crepe 自定义 `TableNodeView` 竞争 hover transaction，重新引入跳回和非确定性预览。
 - `editor-block-handle-guard.js` 只负责块操作条的触发过滤和滚动隐藏；横向位置由 `Feature.BlockEdit.blockHandle.getPosition` 交给 Milkdown BlockProvider 一次性计算，禁止再用 `translate`、MutationObserver 或 ResizeObserver 二次改坐标。标题、正文和各级列表必须共用正文左边界这一条轨道。修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:block-handle-gutter-ui` 与 `npm run test:inline-html-block-handle-ui`。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
@@ -322,6 +327,7 @@ npm run test:review-ui
 npm run test:source-map
 npm run test:markdown-preservation
 npm run test:issue-77-ui
+npm run test:paragraph-source-ui
 npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui
@@ -442,6 +448,7 @@ node scripts/test-pdf-document.mjs
 npm run test:pdf-latex-ui
 npm run test:markdown-preservation
 npm run test:issue-77-ui
+npm run test:paragraph-source-ui
 npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui

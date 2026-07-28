@@ -5,6 +5,7 @@ import { replaceAll } from '@milkdown/utils'
 import katex from 'katex'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
+import { preserveRichMarkdownSource } from '../markdown-source-preservation.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
@@ -133,6 +134,8 @@ export function createEditorApi({
   crepeRef,
   lastMarkdownRef,
   canonicalMarkdownRef,
+  programmaticReplaceRef,
+  canonicalForSource,
   setBlock,
   markUserEdit,
   onStructureChange,
@@ -244,17 +247,41 @@ export function createEditorApi({
 
   const replaceMarkdown = (md) => {
     if (isDestroyed?.() || !crepeRef.current) return false
+    const programmaticReplace = {}
     try {
       const source = md || ''
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
       lastMarkdownRef.current = source
+      if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
-      canonicalMarkdownRef.current = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+      const canonical = canonicalForSource(crepe.getMarkdown())
+      canonicalMarkdownRef.current = canonical
       onStructureChange?.()
       return true
     } catch (err) {
+      if (programmaticReplaceRef?.current === programmaticReplace) {
+        programmaticReplaceRef.current = null
+      }
       console.error('Replace markdown failed', err)
       return false
+    }
+  }
+
+  const flushMarkdown = () => {
+    if (isDestroyed?.() || !crepeRef.current) return null
+    try {
+      const canonical = canonicalForSource(crepe.getMarkdown())
+      if (canonical === canonicalMarkdownRef.current) return lastMarkdownRef.current
+      const preserved = preserveRichMarkdownSource(
+        lastMarkdownRef.current,
+        canonicalMarkdownRef.current,
+        canonical
+      )
+      lastMarkdownRef.current = preserved.markdown
+      canonicalMarkdownRef.current = canonical
+      return preserved.markdown
+    } catch {
+      return null
     }
   }
 
@@ -351,6 +378,7 @@ export function createEditorApi({
     applyTextFormat,
     applyReviewMarkup,
     replaceMarkdown,
+    flushMarkdown,
     restoreMarkdownOffset,
     markdownOffsetFromSelection,
     markdownOffsetFromViewportTop

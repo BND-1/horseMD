@@ -1,6 +1,6 @@
 # Markdown 原文保真与 Live Preview 架构决策
 
-> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-18。
+> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-28。
 
 ## 为什么需要这份文档
 
@@ -12,9 +12,10 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 1. 打开 Markdown、只在富文本和源码之间切换，源码逐字符不变。
 2. 在富文本中进行局部文字编辑时，未触及区域保留原有空行、列表标记和必要转义。
-3. 在富文本中粘贴原始 Markdown 时，即使剪贴板同时带有渲染 HTML，切到源码后仍保留该 Markdown 的原始写法。
-4. 来自网页的富文本粘贴优先保留 HTML 语义；不能因为其 `text/plain` 回退内容像 Markdown 就丢失标题、加粗、链接或图片。
-5. 只有真实用户编辑或粘贴才会标脏；纯模式切换不能标脏。
+3. 新增列表项、切换列表类型、调整标题等级或增删表格行列时，规范化范围只能是用户实际修改的列表块、表格块或行，不能扩大到整篇文档。
+4. 在富文本中粘贴原始 Markdown 时，即使剪贴板同时带有渲染 HTML，切到源码后仍保留该 Markdown 的原始写法。
+5. 来自网页的富文本粘贴优先保留 HTML 语义；不能因为其 `text/plain` 回退内容像 Markdown 就丢失标题、加粗、链接或图片。
+6. 只有真实用户编辑或粘贴才会标脏；纯模式切换和程序化源码同步不能标脏或再次改写源码。
 
 ## 当前实现
 
@@ -25,7 +26,22 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - `lastMarkdownRef`：用户当前的原始 Markdown，是 App、保存和源码 textarea 的来源。
 - `canonicalMarkdownRef`：Crepe 最近一次序列化的规范 Markdown，只用于识别富文本事务实际改变了什么。
 
-普通富文本编辑触发 `markdownUpdated` 后，`markdown-source-preservation.js` 会比较前后 canonical 快照，并把局部变更映射回原始源码。可见文本流不一致、无法映射或纯结构性编辑时，宁可退回该受影响结果的规范化输出，也不能在错误的 raw 位置补写语法。
+普通富文本编辑触发 `markdownUpdated` 后，`markdown-source-preservation.js` 会比较前后 canonical 快照，并把局部变更映射回原始源码：
+
+- 普通文字输入只替换对应的 raw 字符区间；
+- 文档末尾按 Enter 新建正文时，按源文件原有结尾换行风格写入标准段落边界；空段落没有 visible index，不能用最后一个可见字符位置代替；
+- 列表结构变化只替换映射到的列表树，并保留原有 `-` / `*` 风格及紧凑列表间距；
+- 表格行列变化只替换对应表格块，空单元格占位只在该表格内规范化；
+- 标题等级、分段等结构变化只替换受影响的原始行；
+- 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
+
+源码模式修改后，`replaceAll` 产生的全部程序化 `markdownUpdated` 事务会持续隔离，直到下一次明确的用户输入。这样即使前一次富文本编辑的短时活动标记仍存在，也不会把同步事务再次当成用户编辑。
+
+源码 textarea 为性能原因保持非受控。富文本输入后的 `markdownUpdated` 可能晚于用户点击模式切换；若先挂载 textarea，后到的 React 内容更新不会改变它的 `defaultValue`。因此富文本→源码必须先调用编辑器 API 的 `flushMarkdown()`，同步读取当前 Crepe 文档并执行同一套原文保真映射，再同步更新 `tabsRef` 和 tab state，最后才显示源码。禁止用固定延时或把大型 textarea 改成受控组件规避该竞态。
+
+空文档会在 ProseMirror 中建立一个仅供起笔使用的“空一级标题 + 空正文”骨架，但磁盘源码仍是空字符串。这个 UI 骨架必须在 `canonicalForSource()` 中从 canonical 差异基线排除：用户跳过标题从正文起笔时不能凭空写入 `#`，用户在标题中输入后则立即把标题视为真实 Markdown。否则第一次输入会因 `#\n\n` 与空源码的 visible stream 不一致而被原文保护器拒绝，表现为未保存切源码后内容为空或仍是旧快照。
+
+真实手打时，每一行通常会在 Enter 前完成一次独立的 `markdownUpdated`。Enter 创建的末尾空 paragraph 会被 Crepe 暂时序列化成独立的 `<br />` 块；它不是用户源码。原文保护层必须保留源码不变但推进 canonical 基线，等下一次输入把该占位块替换为文字时，再以标准空白行分隔追加正文。若直接把占位块当结构变化写回，下一次 visible-index 映射会把正文插入标题末尾，并最终把 `<br />` 留在文件中。UI 回归必须逐字输入并在每行停顿，不能只用会被 Crepe 合并成单次事务的高速 `Input.insertText`。
 
 ### 双 MIME Markdown 粘贴
 
@@ -38,7 +54,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 ## 明确边界
 
-- 富文本里修改标题等级、列表类型等没有可见文本跨度的结构操作，当前可能规范化结果。表格行列结构变更会明确采用本次完整规范 Markdown，避免把 `|` 和换行按普通字符拼错；空单元格的序列化占位 `<br />` 只会在完整表格输出后规范为 `| |`。需要逐字符控制复杂语法时使用源码模式。详见 [Issue #86 表格保存问题报告](./issue-86-table-save-report.md)。
+- 富文本结构操作仍可能规范化“被修改的语法块”本身，例如表格对齐分隔符或真正切换后的列表标记；未触及的标题、段落、相邻列表和空行必须逐字符保持。需要逐字符控制目标语法块时使用源码模式。详见 [Issue #86 表格保存问题报告](./issue-86-table-save-report.md)。
 - 已被旧版本保存为 `\~` 的文件不会自动还原为 `~`：反斜杠可能本来就是用户有意写入，程序不能猜测并改写历史文件。
 - 不要用全文关键词/片段匹配来定位光标或恢复原文；重复文本会造成错误命中。模式切换继续以块级 raw offset 映射为主。
 - 不能为了原文保真把所有网页 HTML 都强行按 `text/plain` 解析，否则会回归微信公众号标题、格式和图片粘贴。
@@ -60,8 +76,11 @@ npm run test:markdown-preservation
 # 映射：重复文本、表格、代码、图片、HTML
 npm run test:source-map
 
-# 真实 Electron：10 个局部编辑快照、双向切换、Markdown 双 MIME 粘贴、网页 HTML 语义
+# 真实 Electron：10 个快照、真实写盘、列表新增、双向切换和粘贴
 npm run test:issue-77-ui
+
+# 真实 Electron：空文档标题/正文起笔、单换行、Enter 新段落、保存重开
+npm run test:paragraph-source-ui
 
 # 真实 Electron：重复表格行列编辑、富文本保存、完全退出并重开文件
 npm run test:issue-86-ui
@@ -70,7 +89,7 @@ npm run test:issue-86-ui
 HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
 ```
 
-人工验证使用连续标题、单个 `~`、紧凑 `-` 列表和列表硬换行的 Markdown：无编辑往返、局部富文本编辑、富文本全选粘贴后切源码都应逐字符符合预期。网页粘贴另测微信公众号段落、标题、加粗、图片和表格。
+发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次。后者以逐字输入和每行停顿强制覆盖独立事务，验证空文档从默认标题起笔、跳过标题从正文起笔、末尾空 paragraph 的 `<br />` 不进入源码、已有单换行正文只改文字、输入后立即切源码、新段落标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
 
 ## 市场调研与长期决策
 

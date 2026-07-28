@@ -160,14 +160,26 @@ export default function Editor({
   // transaction instead of replacing untouched source with formatter output.
   const lastMarkdownRef = useRef(initialContent || '')
   const canonicalMarkdownRef = useRef('')
+  const programmaticReplaceRef = useRef(null)
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
     let ready = false
     let destroyed = false
+    let hasSyntheticEmptyTitle = false
     let createRaf = 0
     const cleanups = []
+    const canonicalForSource = (markdown) => {
+      const canonical = normalizeReviewMarkupMarkdown(markdown)
+      if (!hasSyntheticEmptyTitle) return canonical
+      const emptyTitle = canonical.match(/^#[ \t]*\n(?:\n)?/)
+      if (emptyTitle) return canonical.slice(emptyTitle[0].length)
+      // Once the user types in or transforms the optional title, it becomes
+      // authored Markdown and participates in every later source delta.
+      hasSyntheticEmptyTitle = false
+      return canonical
+    }
 
     // Register this editor so a globally-injected toolbar button can find the
     // editor that currently has the selection. Getters read the live refs.
@@ -184,6 +196,7 @@ export default function Editor({
 
     let userEditUntil = 0
     const markUserEdit = (ttl = 8000) => {
+      programmaticReplaceRef.current = null
       userEditUntil = Date.now() + ttl
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
@@ -208,7 +221,7 @@ export default function Editor({
       try {
         const pos = getPos?.()
         if (!Number.isFinite(pos)) return
-        const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+        const canonical = canonicalForSource(crepe.getMarkdown())
         // If a future Milkdown release emits markdownUpdated for atom attrs,
         // that listener has already committed this transaction.
         if (canonical === canonicalMarkdownRef.current) return
@@ -223,7 +236,11 @@ export default function Editor({
               nextOffset
             })
           : null
-        const committed = markdown || canonical
+        const committed = markdown || preserveRichMarkdownSource(
+          lastMarkdownRef.current,
+          canonicalMarkdownRef.current,
+          canonical
+        ).markdown
         lastMarkdownRef.current = committed
         canonicalMarkdownRef.current = canonical
         onChange?.(committed, false)
@@ -235,7 +252,7 @@ export default function Editor({
 
     const handleInlineCodeValueChange = () => {
       try {
-        const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+        const canonical = canonicalForSource(crepe.getMarkdown())
         if (canonical === canonicalMarkdownRef.current) return
         const preserved = preserveRichMarkdownSource(
           lastMarkdownRef.current,
@@ -288,7 +305,7 @@ export default function Editor({
         // snapshot now so an immediate source-mode switch or save cannot read
         // the paragraph from before it was wrapped as a list.
         try {
-          const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+          const canonical = canonicalForSource(crepe.getMarkdown())
           const preserved = preserveRichMarkdownSource(
             lastMarkdownRef.current,
             canonicalMarkdownRef.current,
@@ -364,10 +381,17 @@ export default function Editor({
     let appending = false
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
+        const canonical = canonicalForSource(md)
+        if (programmaticReplaceRef.current) {
+          // replaceAll can publish more than one Markdown transaction. Keep all
+          // of them outside the user-edit path until the next explicit input
+          // calls markUserEdit; consuming only the first callback is racy.
+          canonicalMarkdownRef.current = canonical
+          return
+        }
         const pendingPaste = pendingRawMarkdownPasteRef.current
         const pendingList = pendingListConversion
         if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
-          const canonical = normalizeReviewMarkupMarkdown(md)
           let preserved
           if (pendingPaste) {
             preserved = { markdown: pendingPaste.markdown }
@@ -392,9 +416,17 @@ export default function Editor({
                 : null
               preserved = markdown
                 ? { markdown }
-                : { markdown: canonical }
+                : preserveRichMarkdownSource(
+                    pendingList.source,
+                    pendingList.previous,
+                    canonical
+                  )
             } catch {
-              preserved = { markdown: canonical }
+              preserved = preserveRichMarkdownSource(
+                pendingList.source,
+                pendingList.previous,
+                canonical
+              )
             }
           } else {
             preserved = preserveRichMarkdownSource(
@@ -539,6 +571,7 @@ export default function Editor({
             first.type.name === 'paragraph' &&
             first.content.size === 0
           ) {
+            hasSyntheticEmptyTitle = true
             let tr = state.tr.setNodeMarkup(0, headingType, { level: 1 })
             tr = tr.insert(tr.doc.content.size, paragraphType.create())
             // Leave the cursor in the title; the body paragraph is one ↓ / click away.
@@ -553,6 +586,8 @@ export default function Editor({
           crepeRef,
           lastMarkdownRef,
           canonicalMarkdownRef,
+          programmaticReplaceRef,
+          canonicalForSource,
           setBlock,
           markUserEdit,
           onStructureChange,
@@ -568,6 +603,7 @@ export default function Editor({
           toggleHighlight,
           applyReviewMarkup,
           replaceMarkdown,
+          flushMarkdown,
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
           markdownOffsetFromViewportTop
@@ -639,6 +675,7 @@ export default function Editor({
           toggleHighlight,
           applyReviewMarkup,
           replaceMarkdown,
+          flushMarkdown,
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
           markdownOffsetFromViewportTop
@@ -656,7 +693,7 @@ export default function Editor({
           if (destroyed) return
           if (recordCanonical) {
             try {
-              canonicalMarkdownRef.current = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+              canonicalMarkdownRef.current = canonicalForSource(crepe.getMarkdown())
             } catch { /* */ }
           }
           ready = true

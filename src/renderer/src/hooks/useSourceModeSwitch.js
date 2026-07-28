@@ -90,11 +90,29 @@ export function useSourceModeSwitch({
     return true
   }, [editorApis, setTabs])
 
+  const flushRichSource = useCallback((id) => {
+    const markdown = editorApis.current[id]?.flushMarkdown?.()
+    if (typeof markdown !== 'string') return false
+    const current = tabsRef.current.find((tab) => tab.id === id)
+    if (!current || current.content === markdown) return true
+    // The source textarea is uncontrolled. Update the synchronous mirror before
+    // mounting it, then queue the matching React state update in the same event;
+    // waiting for markdownUpdated would leave defaultValue stuck on stale text.
+    tabsRef.current = tabsRef.current.map((tab) =>
+      tab.id === id ? { ...tab, content: markdown } : tab
+    )
+    setTabs((previous) => previous.map((tab) =>
+      tab.id === id && tab.content !== markdown ? { ...tab, content: markdown } : tab
+    ))
+    return true
+  }, [editorApis, setTabs, tabsRef])
+
   const toggleSource = useCallback(() => {
-    commitAllLive()
     const id = activeIdRef.current
     const tab = tabsRef.current.find((item) => item.id === id)
     if (!id || tab?.kind === 'settings') return
+    if (sourceModeRef.current) commitAllLive()
+    else flushRichSource(id)
     const view = editorApis.current[id]?.getView?.()
 
     if (sourceModeRef.current) {
@@ -158,7 +176,7 @@ export function useSourceModeSwitch({
       else next.add(id)
       return next
     })
-  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, syncSourceToRich, tabsRef])
+  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, flushRichSource, syncSourceToRich, tabsRef])
 
   useLayoutEffect(() => {
     const caret = caretAnchorRef.current
@@ -187,9 +205,16 @@ export function useSourceModeSwitch({
       if (findStateRef.current.open && findStateRef.current.query) return
       const view = editorApis.current[restoreId]?.getView?.()
       if (sourceMode) {
+        const sourceEl = sourceRef.current
+        // The scheduled settle retries must not overwrite a caret that the user
+        // has already moved in source mode. This also protects immediate typing
+        // after a mode switch from landing at the previous rich-text anchor.
+        if (sourceEl?.__horsemdSourceSelectionUser === true) {
+          supersededByUserFocus = true
+          return false
+        }
         if (caret) {
-          restoreSourceCaret(sourceRef.current, caret, follow)
-          const sourceEl = sourceRef.current
+          restoreSourceCaret(sourceEl, caret, follow)
           if (sourceEl) {
             sourceEl.__horsemdSourceSelectionBaseline = `${sourceEl.selectionStart}:${sourceEl.selectionEnd}`
             sourceEl.__horsemdSourceSelectionUser = false
@@ -197,8 +222,8 @@ export function useSourceModeSwitch({
           }
         }
         if (!follow && viewport) {
-          restoreSourceViewport(sourceRef.current, viewport)
-          if (sourceRef.current) sourceRef.current.__horsemdSourceViewportMoved = false
+          restoreSourceViewport(sourceEl, viewport)
+          if (sourceEl) sourceEl.__horsemdSourceViewportMoved = false
         }
       } else {
         if (caret) {

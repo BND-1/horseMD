@@ -10,7 +10,7 @@ const nextWithNewTable = [
 ].join('\n')
 
 const inserted = preserveRichMarkdownSource('# Demo\n', '# Demo\n', nextWithNewTable)
-assert.equal(inserted.reason, 'table-canonical-change')
+assert.equal(inserted.reason, 'table-line-change')
 assert.match(inserted.markdown, /\|\s*\|\s*\|/)
 assert.doesNotMatch(inserted.markdown, /\|\s*<br\s*\/?>/i)
 

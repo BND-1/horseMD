@@ -143,6 +143,77 @@ const listBlockAt = (markdown, offset) => {
   }
 }
 
+const listBlockNear = (markdown, ...offsets) => {
+  for (const offset of offsets) {
+    if (!Number.isFinite(offset)) continue
+    for (const candidate of [offset, offset - 1, offset - 2]) {
+      if (candidate < 0) continue
+      const block = listBlockAt(markdown, candidate)
+      if (block) return block
+    }
+  }
+  return null
+}
+
+const listMarkerMeta = (markdown) => {
+  const rows = String(markdown || '').split('\n').map((line) => {
+    const match = line.match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))(\s+)(?:\[([ xX])\]\s+)?/)
+    if (!match) return null
+    return {
+      indent: match[1].length,
+      token: match[2],
+      spacing: match[3],
+      kind: /^\d/.test(match[2]) ? 'ordered' : 'bullet'
+    }
+  })
+  const indents = [...new Set(rows.filter(Boolean).map((row) => row.indent))].sort((a, b) => a - b)
+  return rows.map((row) => row
+    ? { ...row, depth: indents.indexOf(row.indent) }
+    : null)
+}
+
+const formatCanonicalListLikeSource = (sourceList, previousList, nextList) => {
+  const sourceLines = String(sourceList || '').split('\n')
+  const previousMeta = listMarkerMeta(previousList)
+  const sourceMeta = listMarkerMeta(sourceList)
+  const sourceStyle = new Map()
+  const previousKind = new Map()
+  sourceMeta.forEach((item) => {
+    if (item && !sourceStyle.has(item.depth)) sourceStyle.set(item.depth, item)
+  })
+  previousMeta.forEach((item) => {
+    if (item && !previousKind.has(item.depth)) previousKind.set(item.depth, item.kind)
+  })
+
+  // A compact authored list has no blank separator immediately before another
+  // item marker. Crepe serializes the same list as loose Markdown; keep the
+  // author's compact/loose choice when a real list structure edit occurs.
+  const sourceIsCompact = sourceLines.every((line, index) => {
+    if (index === 0 || !listMarker(line)) return true
+    return sourceLines[index - 1].trim() !== ''
+  })
+
+  const nextLines = String(nextList || '').split('\n')
+  const nextMeta = listMarkerMeta(nextList)
+  const styled = nextLines.map((line, index) => {
+    const meta = nextMeta[index]
+    if (!meta) return line
+    const authored = sourceStyle.get(meta.depth)
+    if (!authored || previousKind.get(meta.depth) !== meta.kind || authored.kind !== meta.kind) return line
+    const token = meta.kind === 'ordered'
+      ? meta.token.replace(/[.)]$/, authored.token.slice(-1))
+      : authored.token
+    return line.replace(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))/, `$1${token}`)
+  })
+
+  if (!sourceIsCompact) return styled.join('\n')
+  return styled.filter((line, index, lines) => {
+    if (line.trim()) return true
+    const nextNonBlank = lines.slice(index + 1).find((candidate) => candidate.trim())
+    return !nextNonBlank || !listMarker(nextNonBlank)
+  }).join('\n')
+}
+
 // List conversion already knows the exact ProseMirror list position before and
 // after its transaction. Use those raw offsets to replace only that list tree;
 // unlike a whole-document diff this remains correct when nested list indentation
@@ -160,14 +231,22 @@ export function replaceMarkdownListBlock({
   const sourceList = listBlockAt(rawSource, sourceOffset)
   const nextList = listBlockAt(rawNext, nextOffset)
   if (!sourceList || !nextList) return null
+  let previousList = null
   if (previous && Number.isFinite(previousOffset)) {
-    const previousList = listBlockAt(String(previous), previousOffset)
+    previousList = listBlockAt(String(previous), previousOffset)
     if (!previousList) return null
     const sourceText = comparableListText(rawSource.slice(sourceList.start, sourceList.end))
     const previousText = comparableListText(String(previous).slice(previousList.start, previousList.end))
     if (!sourceText || sourceText !== previousText) return null
   }
-  return rawSource.slice(0, sourceList.start) + rawNext.slice(nextList.start, nextList.end) + rawSource.slice(sourceList.end)
+  const replacement = formatCanonicalListLikeSource(
+    rawSource.slice(sourceList.start, sourceList.end),
+    previousList
+      ? String(previous).slice(previousList.start, previousList.end)
+      : rawNext.slice(nextList.start, nextList.end),
+    rawNext.slice(nextList.start, nextList.end)
+  )
+  return rawSource.slice(0, sourceList.start) + replacement + rawSource.slice(sourceList.end)
 }
 
 const comparableListText = (markdown) => markdown
@@ -176,17 +255,20 @@ const comparableListText = (markdown) => markdown
   .filter(Boolean)
   .join('\n')
 
-const preserveListTypeChange = ({ source, previous, next, start, previousEnd, nextEnd }) => {
-  const previousList = listBlockAt(previous, start)
-  const nextList = listBlockAt(next, start)
+const preserveListBlockChange = ({ source, previous, next, start, previousEnd, nextEnd }) => {
+  const previousList = listBlockNear(previous, start, previousEnd)
+  const nextList = listBlockNear(next, start, nextEnd)
   if (!previousList || !nextList) return null
   // A nested list can be represented by different indentation widths before
   // and after serialization. Its raw position cannot be proven safely from a
   // visible offset, so use the canonical fallback rather than risk splicing
   // into the parent item. Top-level list blocks retain a stable raw boundary.
   if (previousList.indent > 0 || nextList.indent > 0) return null
-  if (start < previousList.start || previousEnd > previousList.end) return null
-  if (start < nextList.start || nextEnd > nextList.end) return null
+  // Inserting/removing a list item can make the canonical delta begin in the
+  // one blank separator immediately after the list. Accept that local boundary
+  // while still rejecting a change that belongs to a distant block.
+  if (start < previousList.start || start > previousList.end + 2 || previousEnd > previousList.end + 2) return null
+  if (start < nextList.start || start > nextList.end + 2 || nextEnd > nextList.end + 2) return null
 
   const listStart = sourceVisiblePositionAtRaw(previous, previousList.start)
   // A list marker itself has no visible character. Use forward affinity to
@@ -204,19 +286,16 @@ const preserveListTypeChange = ({ source, previous, next, start, previousEnd, ne
   const previousListText = comparableListText(previous.slice(previousList.start, previousList.end))
   if (!sourceListText || sourceListText !== previousListText) return null
 
+  const replacement = formatCanonicalListLikeSource(
+    source.slice(sourceList.start, sourceList.end),
+    previous.slice(previousList.start, previousList.end),
+    next.slice(nextList.start, nextList.end)
+  )
   return {
-    markdown: source.slice(0, sourceList.start) + next.slice(nextList.start, nextList.end) + source.slice(sourceList.end),
+    markdown: source.slice(0, sourceList.start) + replacement + source.slice(sourceList.end),
     preserved: true,
     reason: 'list-type-change'
   }
-}
-
-const hasListTypeChange = ({ previous, next, start, previousEnd, nextEnd }) => {
-  const previousList = listBlockAt(previous, start)
-  const nextList = listBlockAt(next, start)
-  if (!previousList || !nextList) return false
-  return start >= previousList.start && previousEnd <= previousList.end &&
-    start >= nextList.start && nextEnd <= nextList.end
 }
 
 // Rich-text table operations add/remove complete rows or columns. Treating
@@ -248,13 +327,58 @@ const tableBlockAt = (markdown, offset) => {
   return lines.some(isTableSeparatorLine) ? table : null
 }
 
-const hasChangedTable = ({ previous, next, start, nextEnd }) => {
-  const previousTable = tableBlockAt(previous, start)
+const tableShape = (markdown, table) => {
+  if (!table) return ''
+  return markdown
+    .slice(table.start, table.end)
+    .trimEnd()
+    .split('\n')
+    .map((line) => {
+      if (isTableSeparatorLine(line)) {
+        return line
+          .trim()
+          .replace(/^\||\|$/g, '')
+          .split('|')
+          .map((cell) => {
+            const value = cell.trim()
+            return `${value.startsWith(':') ? 'l' : ''}${value.endsWith(':') ? 'r' : ''}`
+          })
+          .join('|')
+      }
+      return line.split('|').length
+    })
+    .join('\n')
+}
+
+const hasTableStructureChange = ({ previous, next, start, previousEnd, nextEnd }) => {
+  const previousTable = tableBlockAt(previous, start) || tableBlockAt(previous, previousEnd)
   const nextTable = tableBlockAt(next, start) || tableBlockAt(next, nextEnd)
-  // A brand-new table only exists on the next side of the diff. It is still a
-  // structural change: treating it as ordinary visible text leaks Crepe's
-  // empty-cell placeholders into the raw Markdown.
-  return Boolean(previousTable || nextTable)
+  if (!previousTable && !nextTable) return false
+  if (!previousTable || !nextTable) return true
+  return tableShape(previous, previousTable) !== tableShape(next, nextTable)
+}
+
+const replaceChangedTableBlock = ({ source, previous, next, start, previousEnd, nextEnd }) => {
+  const previousTable = tableBlockAt(previous, start) || tableBlockAt(previous, previousEnd)
+  const nextTable = tableBlockAt(next, start) || tableBlockAt(next, nextEnd)
+  if (!previousTable || !nextTable) return null
+
+  const tableStart = sourceVisiblePositionAtRaw(previous, previousTable.start)
+  const rawInsideSource = sourceRawFromVisibleIndex(source, tableStart.visibleIndex, 'forward')
+  const sourceTable = tableBlockAt(source, rawInsideSource)
+  if (!sourceTable) return null
+
+  const sourceText = sourceVisibleIndex(source.slice(sourceTable.start, sourceTable.end)).text
+  const previousText = sourceVisibleIndex(previous.slice(previousTable.start, previousTable.end)).text
+  if (sourceText !== previousText) return null
+
+  return {
+    markdown: source.slice(0, sourceTable.start) +
+      normalizeEmptyTableCells(next.slice(nextTable.start, nextTable.end)) +
+      source.slice(sourceTable.end),
+    preserved: true,
+    reason: 'table-block-change'
+  }
 }
 
 // Milkdown keeps a generated `<br />` in empty table cells so its Markdown
@@ -280,47 +404,278 @@ const normalizeEmptyTableCells = (markdown) => {
   return lines.join('\n')
 }
 
-const canonicalResult = (markdown, reason) => ({
-  // A newly inserted table has no matching table block in the previous
-  // document, so it reaches one of the generic structural fallbacks below.
-  // Normalize there as well: otherwise Crepe's empty-cell `<br />` placeholders
-  // leak into the user's Markdown on the first save.
-  markdown: normalizeEmptyTableCells(markdown),
-  preserved: false,
-  reason
-})
+const listStructure = (markdown, block) => {
+  if (!block) return ''
+  return markdown
+    .slice(block.start, block.end)
+    .split('\n')
+    .map((line) => {
+      const match = line.match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))\s+(?:\[([ xX])\]\s+)?/)
+      if (!match) return ''
+      const marker = /^\d/.test(match[2]) ? 'ordered' : 'bullet'
+      const task = match[3] == null ? '' : `:${match[3].toLowerCase() === 'x' ? 'checked' : 'open'}`
+      return `${match[1].length}:${marker}${task}`
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+const hasListStructureChange = ({ previous, next, start, previousEnd, nextEnd }) => {
+  const previousList = listBlockNear(previous, start, previousEnd)
+  const nextList = listBlockNear(next, start, nextEnd)
+  if (!previousList && !nextList) return false
+  if (!previousList || !nextList) return true
+  return listStructure(previous, previousList) !== listStructure(next, nextList)
+}
+
+const hasEmptyListItem = (markdown, block) => {
+  if (!block) return false
+  return markdown
+    .slice(block.start, block.end)
+    .split('\n')
+    .some((line) => /^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s*)?$/.test(line))
+}
+
+const lineRegion = (markdown, start, end) => {
+  const first = lineAt(markdown, start)
+  // `end` is exclusive. When a structural insertion is exactly a newline,
+  // the unchanged suffix starts at `end` on a new line and must travel with
+  // the replacement; using `end - 1` would retain only the inserted blank line
+  // and accidentally drop that suffix.
+  const last = lineAt(markdown, Math.max(start, end))
+  return { start: first.start, end: last.end }
+}
+
+const isBlockPrefix = (value) =>
+  /^\s*(?:#{1,6}|>|[-+*]|\d{1,9}[.)])?\s*$/.test(value)
+
+const hasStructuralPrefixChange = ({ previous, next, start, previousEnd, nextEnd }) => {
+  const previousLine = lineAt(previous, start)
+  const nextLine = lineAt(next, start)
+  return isBlockPrefix(previous.slice(previousLine.start, previousEnd)) &&
+    isBlockPrefix(next.slice(nextLine.start, nextEnd))
+}
+
+const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
+  const sourceTrailingNewlines = source.match(/\n*$/)?.[0].length || 0
+  const block = canonicalBlock.replace(/^\n+/, '').replace(/\n+$/, '')
+  if (!block) return null
+  const separator = '\n'.repeat(Math.max(0, 2 - sourceTrailingNewlines))
+  const finalNewline = sourceTrailingNewlines > 0 ? '\n' : ''
+  return source + separator + block + finalNewline
+}
+
+const trailingEmptyBlock = (markdown) => {
+  const match = markdown.match(/(?:^|\n{2})<br\s*\/?>\n*$/i)
+  if (!match) return null
+  const prefixLength = match[0].startsWith('\n\n') ? 2 : 0
+  return {
+    start: match.index + prefixLength,
+    end: markdown.length
+  }
+}
+
+// An empty paragraph at the document end is a real ProseMirror node, but Crepe
+// serializes it as a standalone `<br />` block. That token is an editor
+// placeholder, not text the user authored. Keep the raw source unchanged when
+// Enter creates it, advance only the canonical baseline, then append the real
+// block when subsequent input replaces the placeholder.
+const preserveTrailingEmptyBlock = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const sourceEmpty = trailingEmptyBlock(source)
+  const previousEmpty = trailingEmptyBlock(previous)
+  const nextEmpty = trailingEmptyBlock(next)
+
+  if (!sourceEmpty && !previousEmpty && nextEmpty) {
+    return {
+      markdown: source,
+      preserved: true,
+      reason: 'trailing-empty-block-created'
+    }
+  }
+
+  if (
+    !sourceEmpty &&
+    previousEmpty &&
+    !nextEmpty &&
+    start <= previousEmpty.end &&
+    previousEnd >= previousEmpty.start
+  ) {
+    const markdown = appendBlockAtDocumentEnd(source, next.slice(start, nextEnd))
+    if (markdown !== null) {
+      return {
+        markdown,
+        preserved: true,
+        reason: 'trailing-empty-block-filled'
+      }
+    }
+  }
+
+  return null
+}
+
+const preserveAppendedParagraph = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd,
+  replacementVisible
+}) => {
+  const replacement = next.slice(start, nextEnd)
+  const previousTrailingNewlines = previous.match(/\n*$/)?.[0].length || 0
+  const replacementLeadingNewlines = replacement.match(/^\n*/)?.[0].length || 0
+  if (
+    start !== previous.length ||
+    previousEnd !== start ||
+    !replacementVisible ||
+    (
+      replacementLeadingNewlines === 0 &&
+      previousTrailingNewlines < 2
+    )
+  ) {
+    return null
+  }
+
+  // Crepe may represent an empty trailing paragraph with two canonical
+  // newlines. When text is entered into it, the common diff inserts the block
+  // after those newlines (`replacement === "text\n\n"`), not as a replacement
+  // beginning with `\n`. Build the authored paragraph separator explicitly;
+  // otherwise visible-index mapping inserts the text at the previous heading
+  // or paragraph's last character and every later block collapses into it.
+  const markdown = appendBlockAtDocumentEnd(source, replacement)
+  if (markdown === null) return null
+
+  return {
+    markdown,
+    preserved: true,
+    reason: 'appended-paragraph'
+  }
+}
+
+const visibleLineEntries = (markdown) => markdownLines(markdown)
+  .map((line) => ({
+    ...line,
+    visible: sourceVisibleIndex(line.text).text.trim()
+  }))
+  .filter((line) => line.visible)
+
+const sameVisibleLines = (left, right) =>
+  left.length === right.length &&
+  left.every((line, index) => line.visible === right[index].visible)
+
+const sourceLineRegionFromCanonical = (source, previous, previousRegion) => {
+  const sourceLines = visibleLineEntries(source)
+  const previousLines = visibleLineEntries(previous)
+  if (!sameVisibleLines(sourceLines, previousLines)) return null
+
+  const touched = []
+  previousLines.forEach((line, index) => {
+    if (line.end >= previousRegion.start && line.start <= previousRegion.end) touched.push(index)
+  })
+
+  if (touched.length) {
+    const first = sourceLines[touched[0]]
+    const last = sourceLines[touched[touched.length - 1]]
+    return {
+      start: lineAt(source, first.start).start,
+      end: lineAt(source, last.end).end
+    }
+  }
+
+  // A syntax-only insertion can fall entirely between two visible lines.
+  // Preserve that exact gap by mapping its previous/next visible-line ordinal.
+  const before = previousLines.reduce(
+    (found, line, index) => line.end < previousRegion.start ? index : found,
+    -1
+  )
+  const after = previousLines.findIndex((line) => line.start > previousRegion.end)
+  const start = before >= 0
+    ? lineAt(source, sourceLines[before].end).end
+    : 0
+  const end = after >= 0
+    ? lineAt(source, sourceLines[after].start).start
+    : source.length
+  return { start, end }
+}
+
+// Structural edits have no visible-character span, so the normal character
+// patch cannot locate them. Expand only to the touched canonical lines, map
+// those line boundaries through the global visible stream, and replace the
+// corresponding authored lines. This is deliberately a local fallback: it may
+// normalize the line the user structurally changed, but never the whole file.
+const preserveChangedLineRegion = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd,
+  reason,
+  transformReplacement = (value) => value
+}) => {
+  const previousRegion = lineRegion(previous, start, previousEnd)
+  const nextRegion = lineRegion(next, start, nextEnd)
+  const startVisible = sourceVisiblePositionAtRaw(previous, previousRegion.start)
+  const endVisible = sourceVisiblePositionAtRaw(previous, previousRegion.end)
+  const sourceStartRaw = sourceRawFromVisibleIndex(source, startVisible.visibleIndex, 'forward')
+  const sourceEndRaw = sourceRawFromVisibleIndex(source, endVisible.visibleIndex, 'backward')
+  let sourceRegion = Number.isFinite(sourceStartRaw) && Number.isFinite(sourceEndRaw)
+    ? {
+        start: lineAt(source, sourceStartRaw).start,
+        end: lineAt(source, sourceEndRaw).end
+      }
+    : null
+  const previousText = sourceVisibleIndex(previous.slice(previousRegion.start, previousRegion.end)).text
+  const sourceText = sourceRegion
+    ? sourceVisibleIndex(source.slice(sourceRegion.start, sourceRegion.end)).text
+    : null
+  if (!sourceRegion || sourceText !== previousText) {
+    sourceRegion = sourceLineRegionFromCanonical(source, previous, previousRegion)
+  }
+  if (!sourceRegion) return null
+
+  return {
+    markdown: source.slice(0, sourceRegion.start) +
+      transformReplacement(next.slice(nextRegion.start, nextRegion.end)) +
+      source.slice(sourceRegion.end),
+    preserved: true,
+    reason
+  }
+}
 
 // Milkdown serializes the complete document after every rich-text transaction.
-// Preserve the user's untouched source spelling by applying the serializer's
-// actual delta to the original Markdown, provided both snapshots still expose
-// the same visible text stream. Structural-only edits fall back to serialization
-// until they have dedicated block-level handling.
+// Preserve the user's untouched source spelling by applying only the serializer's
+// localized delta. Structural edits are bounded to a list, table, or touched
+// lines; an ambiguous mapping keeps the authored source instead of normalizing
+// the complete document.
 export function preserveRichMarkdownSource(source, previousCanonical, nextCanonical) {
   const sourceMarkdown = String(source || '')
   const previous = String(previousCanonical || '')
   const next = String(nextCanonical || '')
   if (previous === next) return { markdown: sourceMarkdown, preserved: true, reason: 'unchanged' }
-  if (!sourceMarkdown || !previous) return canonicalResult(next, 'missing-baseline')
+  if (!previous) {
+    if (!sourceMarkdown) {
+      return {
+        markdown: normalizeEmptyTableCells(next),
+        preserved: true,
+        reason: 'new-document'
+      }
+    }
+    return { markdown: sourceMarkdown, preserved: false, reason: 'missing-baseline' }
+  }
 
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
   const previousVisible = sourceVisibleIndex(previous)
-  if (sourceVisible.text !== previousVisible.text) {
-    return canonicalResult(next, 'visible-stream-mismatch')
-  }
-
   const { start, previousEnd, nextEnd } = commonChange(previous, next)
-  if (hasChangedTable({
-    previous,
-    next,
-    start,
-    nextEnd
-  })) {
-    // Tables are structural Markdown. A partial raw-source splice can move
-    // pipes/newlines into adjacent cells after repeated row/column edits, so
-    // prefer Crepe's complete canonical document for every table mutation.
-    return canonicalResult(next, 'table-canonical-change')
-  }
-  const listPreserved = preserveListTypeChange({
+  const trailingEmptyPreserved = preserveTrailingEmptyBlock({
     source: sourceMarkdown,
     previous,
     next,
@@ -328,26 +683,153 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     previousEnd,
     nextEnd
   })
-  if (listPreserved) return listPreserved
-  if (hasListTypeChange({ previous, next, start, previousEnd, nextEnd })) {
-    return canonicalResult(next, 'list-canonical-change')
+  if (trailingEmptyPreserved) return trailingEmptyPreserved
+  if (sourceVisible.text !== previousVisible.text) {
+    return preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'visible-mismatch-line-change'
+    }) || { markdown: sourceMarkdown, preserved: false, reason: 'visible-stream-mismatch' }
+  }
+  const tableStructureChanged = hasTableStructureChange({
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (tableStructureChanged) {
+    const tablePreserved = replaceChangedTableBlock({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (tablePreserved) return tablePreserved
+    const linesPreserved = preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'table-line-change',
+      transformReplacement: normalizeEmptyTableCells
+    })
+    if (linesPreserved) return linesPreserved
+    return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-table-change' }
+  }
+
+  const listStructureChanged = hasListStructureChange({
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (listStructureChanged) {
+    const listPreserved = preserveListBlockChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (listPreserved) return listPreserved
+    const linesPreserved = preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'list-line-change'
+    })
+    if (linesPreserved) return linesPreserved
+    return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-list-change' }
+  }
+
+  if (hasStructuralPrefixChange({ previous, next, start, previousEnd, nextEnd })) {
+    return preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'structural-line-change'
+    }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-structural-change' }
   }
   const startVisible = sourceVisiblePositionAtRaw(previous, start)
   const endVisible = sourceVisiblePositionAtRaw(previous, previousEnd)
   const replacement = next.slice(start, nextEnd)
   const replacementVisible = sourceVisibleIndex(replacement).text
+  const appendedParagraph = preserveAppendedParagraph({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd,
+    replacementVisible
+  })
+  if (appendedParagraph) return appendedParagraph
+
+  // Enter in a list is emitted as two transactions: first an empty list item,
+  // then text inserted into that item. The second transaction has no previous
+  // visible span, so a global forward-affinity mapping lands at the paragraph
+  // after the list. Reapply this bounded list through its item sequence instead
+  // and retain the authored marker/compactness style.
+  const previousListAtChange = listBlockAt(previous, start)
+  const nextListAtChange = listBlockAt(next, start)
+  if (startVisible.visibleIndex === endVisible.visibleIndex &&
+      hasEmptyListItem(previous, previousListAtChange) &&
+      nextListAtChange) {
+    const listPreserved = preserveListBlockChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (listPreserved) return { ...listPreserved, reason: 'list-empty-item-change' }
+  }
 
   // A heading level, a list marker, or blank structure has no visible-text
   // span. Patching it by character position risks inserting syntax inside the
-  // wrong raw construct, so retain the canonical result for now.
+  // wrong raw construct, so replace only the affected authored lines.
   if (startVisible.visibleIndex === endVisible.visibleIndex && !replacementVisible) {
-    return canonicalResult(next, 'structural-change')
+    return preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'structural-line-change'
+    }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-structural-change' }
   }
 
   const rawStart = rawOffsetAtVisible(sourceMarkdown, startVisible)
   const rawEnd = rawOffsetAtVisible(sourceMarkdown, endVisible)
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) {
-    return canonicalResult(next, 'unmapped-change')
+    return preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'mapped-line-change'
+    }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-change' }
   }
 
   return {
