@@ -362,6 +362,16 @@ CodeMirror 默认带 `highlightActiveLine`，进入代码块/打开时会给光�
 
 **回归**：`npm run test:inline-html-block-handle-ui` 用真实 Electron 加载包含 `<font color=#F36208>` 和带背景色 `<span>` 的列表，分别断言行内 HTML、普通正文不会显示拖拽柄，左侧热区仍会显示。
 
+### bug 18b：窄布局的块操作条存在多个位置并遮挡正文
+
+**现象**：无序列表圆点、嵌套列表、标题和正文唤起的加号/拖拽柄不在同一条横向轨道。窄布局下，原生 66px 双按钮还会越过正文边界或被滚动容器左侧裁切。
+
+**根因**：Milkdown BlockProvider 默认以每个 active block 自己的 `getBoundingClientRect()` 为 Floating UI 锚点，而列表、嵌套列表、标题和段落的左边界天然不同。此前 HorseMD 又在 Provider 异步写入 `left/top` 后，通过 MutationObserver、ResizeObserver 和 `translate` 做二次纠偏，形成两个坐标所有者；Milkdown 的 200ms 节流与位置动画会让两套写入顺序不确定，所以表现为偶发跳位和“两个悬浮位置”。
+
+**最终方案**：使用 Crepe 官方 `Feature.BlockEdit.blockHandle.getPosition/getOffset` 配置，在 Provider 计算阶段保留 active block 的纵向矩形，但把横向锚点统一替换为 ProseMirror 正文左边界。HorseMD 的插件只过滤正文误触发、处理离开与滚动隐藏，不再写任何位置样式。双按钮收敛为 58px，完整容纳在既有 60px 编辑器留白中，仍保持横向布局。
+
+**回归**：`npm run test:block-handle-gutter-ui` 使用真实 CDP 鼠标事件覆盖 4 种布局、标题/正文/三级列表/有序列表/待办列表、圆点到按钮的移动，以及视觉位置与点击命中层一致性。本次修复额外使用独立 Electron 进程连续执行 10 轮。
+
 ## bug 19：点击表格单元格出现刺眼的选中线框
 
 ProseMirror 默认 `.ProseMirror-selectednode { outline: 2px solid #8cf }`(生硬浅蓝方框),加上 Crepe 给选中单元格的强调色描边,点击表格时会出现一圈和主题违和的"线框"(Windows 上尤其明显)。

@@ -29,6 +29,7 @@ let allowClose = false
 // app running on window close, but Cmd+Q must fully quit).
 let isQuitting = false
 let localFontGrant = null
+let rendererReady = false
 
 // ---- Safety net: never let a stray async error abort the whole app ----
 // chokidar (and other fs/network async work) can reject with EACCES/EPERM when
@@ -51,6 +52,13 @@ if (!gotLock) {
   app.on('second-instance', (_e, argv) => {
     const { files, folders } = extractArgs(argv)
     focusMainWindow()
+    // macOS keeps the process alive after its final window closes. A new launch
+    // reaches this handler before a replacement renderer is ready, so queue its
+    // paths instead of sending them into a missing (or still loading) window.
+    if (!rendererReady) {
+      enqueueLaunch(files, folders)
+      return
+    }
     if (folders.length) sendToRenderer('open-folder', folders[0])
     if (files.length) sendToRenderer('open-paths', files)
   })
@@ -62,11 +70,21 @@ if (!gotLock) {
 // otherwise the launched file is lost and the restored session shows instead.
 let pendingLaunch = { files: [], folders: [] }
 ipcMain.on('app-ready', () => {
+  rendererReady = true
   const { files, folders } = pendingLaunch
   pendingLaunch = { files: [], folders: [] }
   if (folders.length) sendToRenderer('open-folder', folders[0])
   if (files.length) sendToRenderer('open-paths', files)
 })
+
+function enqueueLaunch(files = [], folders = []) {
+  for (const file of files) {
+    if (!pendingLaunch.files.includes(file)) pendingLaunch.files.push(file)
+  }
+  for (const folder of folders) {
+    if (!pendingLaunch.folders.includes(folder)) pendingLaunch.folders.push(folder)
+  }
+}
 
 // Split launch args into markdown files and folders. A folder argument (from
 // the Explorer "Open with HorseMD" folder menu) opens as a workspace; markdown
@@ -102,14 +120,18 @@ function extractArgs(argv) {
 }
 
 function focusMainWindow() {
-  if (!mainWindow) return
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return false
+  }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+  return true
 }
 
 function sendToRenderer(channel, payload) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (mainWindow && !mainWindow.isDestroyed() && rendererReady) {
     mainWindow.webContents.send(channel, payload)
   }
 }
@@ -122,6 +144,7 @@ async function openExternalUrl(url) {
 }
 
 function createWindow() {
+  rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -199,18 +222,19 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    rendererReady = false
   })
 }
 
 // macOS: opening a file from Finder
 app.on('open-file', (event, path) => {
   event.preventDefault()
-  if (mainWindow) {
-    focusMainWindow()
+  if (rendererReady && focusMainWindow()) {
     sendToRenderer('open-paths', [path])
   } else {
     // First launch: queue for the renderer's app-ready handshake (#36).
-    if (!pendingLaunch.files.includes(path)) pendingLaunch.files.push(path)
+    enqueueLaunch([path])
+    focusMainWindow()
   }
 })
 
@@ -219,8 +243,7 @@ app.whenReady().then(() => {
   // queue (macOS open-file events already pushed above). Delivered on the
   // renderer's app-ready signal (#36).
   const launched = extractArgs(process.argv)
-  for (const f of launched.files) if (!pendingLaunch.files.includes(f)) pendingLaunch.files.push(f)
-  for (const d of launched.folders) if (!pendingLaunch.folders.includes(d)) pendingLaunch.folders.push(d)
+  enqueueLaunch(launched.files, launched.folders)
   ensureThemesDir()
   buildMenu()
   const allowLocalFonts = (webContents, permission, requestingUrl, isMainFrame) =>
@@ -246,7 +269,7 @@ app.whenReady().then(() => {
   )
   createWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) focusMainWindow()
   })
 })
 

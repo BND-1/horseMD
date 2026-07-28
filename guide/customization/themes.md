@@ -5,11 +5,27 @@ description: 切换 HorseMD 内置主题，并导入兼容的 Typora CSS 主题�
 
 # 主题
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.12.19</span>
 
 点击状态栏的主题名称，或进入“设置 → 外观”。HorseMD 提供暖光、暖夜和四套莫兰迪主题。主题会改变应用外壳、编辑区、菜单、查找高亮、代码块和弹窗的颜色。
 
 按 `Ctrl+Shift+T` 可以循环切换内置主题。
+
+## 跟随系统日夜模式
+
+进入“设置 → 外观”，开启“跟随系统外观”。HorseMD 默认在系统浅色模式使用“暖光”、深色模式使用“暖夜”；也可以分别为日间和夜间选择其他合适的内置主题。系统主题改变后，HorseMD 会立即跟随，无需重启。
+
+手动点击任意主题色块会回到手动模式，便于临时固定一个配色。完整的第三方 CSS 主题同样属于手动模式，避免来源不明的浅色 CSS 在系统切到深色时出现低对比度。
+
+“设置 → 编辑器 → 自定义 CSS”的片段则会继续叠加在日间和夜间主题上。需要为夜间单独微调时，可以写：
+
+```css
+@media (prefers-color-scheme: dark) {
+  .milkdown .ProseMirror blockquote {
+    border-left-color: #8ba3b8;
+  }
+}
+```
 
 ## 导入自定义主题
 

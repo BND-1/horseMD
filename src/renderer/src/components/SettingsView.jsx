@@ -13,6 +13,7 @@ export default function SettingsView({
   activeSection, onActiveSectionChange,
   activeCssSnippetId, onActiveCssSnippetIdChange,
   theme, setTheme, customThemes = [], customTheme, onPickCustom,
+  followsSystemTheme,
   onOpenThemesFolder, onGetMoreThemes,
   lang, setLang,
   effectiveKeybindings,
@@ -56,6 +57,9 @@ export default function SettingsView({
             onPickCustom={onPickCustom}
             onOpenThemesFolder={onOpenThemesFolder}
             onGetMoreThemes={onGetMoreThemes}
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+            followsSystemTheme={followsSystemTheme}
             lang={lang}
             t={t}
           />

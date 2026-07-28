@@ -10,6 +10,7 @@ export function mountEditorInteractionBindings({
   markUserEdit,
   reportActiveBlock,
   setBlock,
+  canConvertBlockToList,
   getListConversionContext,
   setCtxMenu,
   getKeybindings,
@@ -85,9 +86,13 @@ export function mountEditorInteractionBindings({
     event.preventDefault()
     const currentView = viewRef.current
     let listConversion = null
+    let blockPos = null
+    let blockListConvertible = false
     if (currentView) {
       const at = currentView.posAtCoords({ left: event.clientX, top: event.clientY })
       if (at) {
+        blockPos = at.pos
+        blockListConvertible = canConvertBlockToList?.(blockPos) === true
         // ProseMirror can report the outer list boundary for a click on an
         // indented item. Resolve the actual DOM list item as a fallback so the
         // context menu can explain why a nested conversion is unavailable.
@@ -143,16 +148,18 @@ export function mountEditorInteractionBindings({
           x: event.clientX,
           y: event.clientY,
           listConversion,
+          blockPos,
+          blockListConvertible,
           showTextFormatting,
           selection: showTextFormatting
             ? { anchor: activeSelection.anchor, head: activeSelection.head }
             : null
         })
       } else {
-        setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, showTextFormatting: false, selection: null })
+        setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, showTextFormatting: false, selection: null })
       }
     } else {
-      setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, showTextFormatting: false, selection: null })
+      setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, showTextFormatting: false, selection: null })
     }
     // The view update and its node-view DOM work can span two animation frames.
     // Restore twice rather than using a fixed timeout, and only for the table

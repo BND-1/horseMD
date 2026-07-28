@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **正文块转列表** — 桌面富文本中，右键正文段落并悬停“转换为”即可直接转换为有序列表、无序列表或未勾选的待办清单；操作以右键所在段落为准。
+- **跟随系统主题（#95）** — 可在“设置 → 外观”开启跟随系统外观，并分别指定日间和夜间使用的内置主题；默认配对为暖光与暖夜，系统切换后即时生效。
+
+### Fixed
+- **块操作条统一轨道** — 通过 Milkdown BlockProvider 的原生定位入口，把标题、正文、一级与嵌套列表的“新增段落”加号和拖拽柄统一锚定到正文左边界；不再由 HorseMD 在异步定位后用 `translate` 二次纠偏。窄、宽、全宽布局均保持横向双按钮完整可点，不遮挡文字或被侧栏裁切；滚动时旧句柄会隐藏，列表圆点仍可自然唤醒当前块。
+- **块操作条误触发** — 普通文字和彩色/高亮行内 HTML 不再唤起块操作条；一级、二级、三级列表的圆点/序号只负责触发，显示位置始终是同一条编辑区轨道。
+- **macOS 无窗口启动** — 关闭最后一个窗口后再次从 Dock、Finder 或关联文件启动，会重新创建窗口，并在渲染器就绪后打开传入文件。
+
 ## [0.12.10] - 2026-07-25
 
 ### Added

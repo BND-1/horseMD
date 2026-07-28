@@ -107,7 +107,7 @@ src/
         editor-review-decorations.js CriticMarkup 扫描与 Decoration 构建
         editor-md-paste.js 智能粘贴（Markdown → 富文本）
         editor-tablebreak.js 表格单元格内换行（<br> 往返）
-        editor-block-handle-guard.js 块拖拽柄左侧热区保护，避免正文悬浮误唤起
+        editor-block-handle-guard.js 块操作条触发过滤与 BlockProvider 统一轨道锚点
         editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
         LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
         ImageHostButton.jsx 顶栏图床配置按钮

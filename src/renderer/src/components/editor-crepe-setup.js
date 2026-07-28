@@ -27,7 +27,10 @@ import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
-import { createBlockHandleGutterPlugin } from './editor-block-handle-guard.js'
+import {
+  createBlockHandleGutterPlugin,
+  getBlockHandlePosition
+} from './editor-block-handle-guard.js'
 import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
@@ -111,6 +114,12 @@ export function createConfiguredCrepe({
     },
     featureConfigs: {
       [Feature.Placeholder]: { text: t('editor.placeholder'), mode: 'block' },
+      [Feature.BlockEdit]: {
+        blockHandle: {
+          getPosition: getBlockHandlePosition,
+          getOffset: () => 0
+        }
+      },
       [Feature.CodeMirror]: {
         copyText: t('code.copy'),
         previewToggleText: (previewOnly) =>

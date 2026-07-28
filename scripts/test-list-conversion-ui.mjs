@@ -24,6 +24,7 @@ const rightClickText = (evaluate, text) => evaluate(`(() => {
   const target = [...(item?.querySelectorAll('p') || [])]
     .find((paragraph) => paragraph.closest('li') === item) || item
   if (!editor || !target) return false
+  target.scrollIntoView({ block: 'center', inline: 'nearest' })
   const rect = target.getBoundingClientRect()
   target.dispatchEvent(new MouseEvent('contextmenu', {
     bubbles: true,
@@ -41,6 +42,24 @@ const rightClickParagraph = (evaluate, text) => evaluate(`(() => {
   const target = [...(editor?.querySelectorAll('p') || [])]
     .find((node) => node.textContent.trim().startsWith(${JSON.stringify(text)}))
   if (!target) return false
+  target.scrollIntoView({ block: 'center', inline: 'nearest' })
+  const rect = target.getBoundingClientRect()
+  target.dispatchEvent(new MouseEvent('contextmenu', {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    clientX: rect.left + Math.min(40, rect.width / 2),
+    clientY: rect.top + rect.height / 2
+  }))
+  return true
+})()`)
+
+const rightClickHeading = (evaluate, text) => evaluate(`(() => {
+  const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+  const target = [...(editor?.querySelectorAll('h1, h2, h3, h4, h5, h6') || [])]
+    .find((node) => node.textContent.trim() === ${JSON.stringify(text)})
+  if (!target) return false
+  target.scrollIntoView({ block: 'center', inline: 'nearest' })
   const rect = target.getBoundingClientRect()
   target.dispatchEvent(new MouseEvent('contextmenu', {
     bubbles: true,
@@ -70,6 +89,20 @@ const clickMenuAction = (evaluate, targetType) => evaluate(`(() => {
   return true
 })()`)
 
+const blockMenuAction = (evaluate, targetType) => evaluate(`(() => {
+  const button = [...document.querySelectorAll('[data-block-list-conversion=${JSON.stringify(targetType)}]')]
+    .find((node) => node.offsetParent)
+  return button?.textContent.trim() || null
+})()`)
+
+const blockMenuActionPoint = (evaluate, targetType) => evaluate(`(() => {
+  const button = [...document.querySelectorAll('[data-block-list-conversion=${JSON.stringify(targetType)}]')]
+    .find((node) => node.offsetParent)
+  if (!button) return null
+  const rect = button.getBoundingClientRect()
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+})()`)
+
 const menuActionPoint = (evaluate, targetType) => evaluate(`(() => {
   const button = [...document.querySelectorAll('.block-list-conversion${targetType ? `[data-list-conversion="${targetType}"]` : ''}')]
     .find((node) => node.offsetParent)
@@ -93,21 +126,38 @@ async function clickMenuActionWithMouse({ evaluate, send }, targetType) {
   return true
 }
 
+async function clickBlockMenuActionWithMouse({ evaluate, send }, targetType) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const point = await blockMenuActionPoint(evaluate, targetType)
+    if (!point) return false
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' })
+    await sleep(80)
+    const hitTarget = await evaluate(`(() => document.elementFromPoint(${point.x}, ${point.y})?.closest?.('[data-block-list-conversion]')?.dataset.blockListConversion || null)()`)
+    if (hitTarget !== targetType) continue
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 })
+    return true
+  }
+  return false
+}
+
 async function hoverContextSubmenu({ evaluate, send }, name) {
-  const point = await evaluate(`(() => {
-    const trigger = document.querySelector('[data-context-submenu-trigger=${JSON.stringify(name)}]')
-    const rect = trigger?.getBoundingClientRect()
-    return rect && trigger.offsetParent ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
-  })()`)
-  if (!point) return false
-  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' })
-  return waitFor(
-    () => evaluate(`(() => {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const point = await evaluate(`(() => {
+      const trigger = document.querySelector('[data-context-submenu-trigger=${JSON.stringify(name)}]')
+      const rect = trigger?.getBoundingClientRect()
+      return rect && trigger.offsetParent ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+    })()`)
+    if (!point) return false
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' })
+    await sleep(100)
+    const open = await evaluate(`(() => {
       const submenu = document.querySelector('[data-context-submenu=${JSON.stringify(name)}]')
       return submenu?.offsetParent ? true : false
-    })()`),
-    `context submenu did not open: ${name}`
-  )
+    })()`)
+    if (open) return true
+  }
+  throw new Error(`context submenu did not open: ${name}`)
 }
 
 async function openListMenu(app, text) {
@@ -180,6 +230,11 @@ async function main() {
       parent: 'UL', child: 'UL', ordered: 'OL', orderedChild: 'OL', task: 'UL'
     }, 'fixture list structure did not render as expected')
 
+    assert.equal(await rightClickHeading(evaluate, 'List conversion'), true, 'could not open heading menu')
+    await hoverContextSubmenu(app, 'block')
+    assert.equal(await blockMenuAction(evaluate, 'bullet_list'), null, 'headings must not offer paragraph-only list conversion')
+    await closeMenu(evaluate)
+
     assert.equal(await openListMenu(app, 'Parent'), true, 'could not open ordinary bullet-list menu')
     const parentAction = await waitFor(() => menuAction(evaluate, 'ordered_list'), 'bullet list conversion action did not appear')
     assert.match(parentAction.text, /有序列表|Ordered List/)
@@ -246,15 +301,55 @@ async function main() {
     await closeMenu(evaluate)
 
     assert.equal(await rightClickParagraph(evaluate, 'This paragraph separates'), true, 'could not open paragraph menu')
-    await sleep(120)
-    assert.equal(await menuAction(evaluate), null, 'paragraph menu must not offer list conversion')
-    await closeMenu(evaluate)
+    await hoverContextSubmenu(app, 'block')
+    for (const targetType of ['bullet_list', 'ordered_list', 'task_list']) {
+      assert.match(
+        await waitFor(() => blockMenuAction(evaluate, targetType), `paragraph menu did not offer ${targetType}`),
+        /列表|List|待办|Task/
+      )
+    }
+    assert.equal(await clickBlockMenuActionWithMouse(app, 'bullet_list'), true, 'could not convert paragraph to a bullet list')
+    await sleep(280)
+    const paragraphConversion = await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const item = [...(editor?.querySelectorAll('li') || [])]
+        .find((node) => node.textContent.trim() === 'This paragraph separates ordinary and task lists.')
+      return { list: item?.closest('ul')?.tagName || null, html: editor?.innerHTML || '' }
+    })()`)
+    assert.equal(paragraphConversion.list, 'UL', 'paragraph conversion must create a bullet-list item: ' + paragraphConversion.html)
+
+    assert.equal(await rightClickParagraph(evaluate, 'Convert this paragraph to an ordered list.'), true, 'could not open second paragraph menu')
+    await hoverContextSubmenu(app, 'block')
+    assert.equal(await clickBlockMenuActionWithMouse(app, 'ordered_list'), true, 'could not convert paragraph to an ordered list')
+    await sleep(220)
+    const orderedParagraphConversion = await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraph = [...(editor?.querySelectorAll('li p') || [])]
+        .find((node) => node.textContent.trim() === 'Convert this paragraph to an ordered list.')
+      return paragraph?.closest('li')?.closest('ol')?.tagName || null
+    })()`)
+    assert.equal(orderedParagraphConversion, 'OL', 'paragraph conversion must create an ordered-list item')
+
+    assert.equal(await rightClickParagraph(evaluate, 'Convert this paragraph to a task list.'), true, 'could not open third paragraph menu')
+    await hoverContextSubmenu(app, 'block')
+    assert.equal(await clickBlockMenuActionWithMouse(app, 'task_list'), true, 'could not convert paragraph to a task list')
+    const taskParagraphConversion = await waitFor(() => evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraph = [...(editor?.querySelectorAll('li p') || [])]
+        .find((node) => node.textContent.trim() === 'Convert this paragraph to a task list.')
+      const item = paragraph?.closest('li')
+      return !!item?.querySelector('.label.unchecked')
+    })()`), 'paragraph conversion must create an unchecked task-list item')
+    assert.equal(taskParagraphConversion, true, 'paragraph conversion must create an unchecked task-list item')
 
     assert.equal(await toggleSource(evaluate), true, 'could not inspect converted Markdown in source mode')
     const afterBulletConversion = await waitFor(() => sourceValue(evaluate), 'source mode did not open after list conversion')
     assert.match(afterBulletConversion, /[-*] Parent\s+[-*] \[ \] Child A\s+[-*] \[ \] Child B\s+[-*] Sibling/)
     assert.match(afterBulletConversion, /[-*] First\s+[-*] First child\s+[-*] Second/)
     assert.ok(afterBulletConversion.includes('Keep this spelling: 0~9 and `inline code`.'), 'list conversion rewrote an untouched paragraph')
+    assert.match(afterBulletConversion, /[-*] This paragraph separates ordinary and task lists\./, 'paragraph conversion did not serialize as a bullet list')
+    assert.match(afterBulletConversion, /1\. Convert this paragraph to an ordered list\./, 'paragraph conversion did not serialize as an ordered list')
+    assert.match(afterBulletConversion, /[-*] \[ \] Convert this paragraph to a task list\./, 'paragraph conversion did not serialize as a task list')
     assert.ok(
       /[-*] \[ \] Task one\s+[-*] \[ \] Task two/.test(afterBulletConversion),
       'task list must convert back to an unchecked task list: ' + afterBulletConversion

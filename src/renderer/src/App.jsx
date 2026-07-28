@@ -41,6 +41,7 @@ import { useAttachments } from './hooks/useAttachments.js'
 import { useSyncWorkspaces } from './hooks/useSyncWorkspaces.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
 import { useKeybindings } from './hooks/useKeybindings.js'
+import { useSystemColorScheme } from './hooks/useSystemColorScheme.js'
 import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
@@ -118,6 +119,11 @@ export default function App() {
     activeSection: 'editor',
     activeCssSnippetId: null
   })
+  const systemIsDark = useSystemColorScheme()
+  const followsSystemTheme = settings.themeMode === 'system'
+  const effectiveTheme = followsSystemTheme
+    ? (systemIsDark ? settings.systemDarkTheme : settings.systemLightTheme)
+    : theme
   // This preference is deliberately consumed only by Capacitor builds. Desktop
   // keeps its normal editable surface even when it shares the same preferences.
   const mobileReadOnly = isMobile && settings.mobileReadOnly
@@ -297,8 +303,8 @@ export default function App() {
 
   // ----------------------------- theme / i18n -----------------------------
   useEffect(() => {
-    applyTheme(theme)
-  }, [theme])
+    applyTheme(effectiveTheme)
+  }, [effectiveTheme])
 
   // ----------------------------- settings ---------------------------------
   // Apply the editor page width live, and persist any settings change.
@@ -338,16 +344,18 @@ export default function App() {
   useEffect(() => {
     refreshThemes()
   }, [refreshThemes])
-  // Inject the selected custom theme's CSS (or clear it). If its file vanished,
-  // fall back to no custom theme.
+  // Imported third-party themes are a manual mode choice. System mode always
+  // applies its explicit built-in light/dark pair; user CSS snippets remain
+  // active in both modes and can use prefers-color-scheme when needed.
+  const effectiveCustomTheme = followsSystemTheme ? null : customTheme
   useEffect(() => {
-    if (!customTheme) {
+    if (!effectiveCustomTheme) {
       applyCustomTheme(null)
       return
     }
     let alive = true
     window.api
-      .themeRead(customTheme)
+      .themeRead(effectiveCustomTheme)
       .then((css) => alive && applyCustomTheme(css))
       .catch(() => {
         if (!alive) return
@@ -357,13 +365,19 @@ export default function App() {
     return () => {
       alive = false
     }
-  }, [customTheme])
+  }, [effectiveCustomTheme])
   // Picking a built-in theme clears any custom overlay; picking a custom one
   // keeps the built-in as the base (chrome + light/dark).
   const pickBuiltinTheme = useCallback((id) => {
     setTheme(id)
     setCustomTheme(null)
-  }, [])
+    updateSettings({ themeMode: 'manual' })
+  }, [updateSettings])
+
+  const pickCustomTheme = useCallback((file) => {
+    setCustomTheme(file)
+    updateSettings({ themeMode: 'manual' })
+  }, [updateSettings])
 
   const t = useCallback((key, vars) => translate(lang, key, vars), [lang])
   // Always-current translator for stable callbacks (e.g. openPaths) that must
@@ -376,7 +390,8 @@ export default function App() {
       return THEMES[(i + 1) % THEMES.length].id
     })
     setCustomTheme(null)
-  }, [])
+    updateSettings({ themeMode: 'manual' })
+  }, [updateSettings])
 
   const {
     pdfExportState,
@@ -991,13 +1006,14 @@ export default function App() {
                 ...current,
                 activeCssSnippetId
               }))}
-              theme={theme}
+              theme={effectiveTheme}
               setTheme={pickBuiltinTheme}
               customThemes={customThemes}
-              customTheme={customTheme}
-              onPickCustom={setCustomTheme}
+              customTheme={effectiveCustomTheme}
+              onPickCustom={pickCustomTheme}
               onOpenThemesFolder={() => window.api.themesReveal?.()}
               onGetMoreThemes={() => window.api.openExternal('https://theme.typora.io/')}
+              followsSystemTheme={followsSystemTheme}
               lang={lang}
               setLang={setLang}
               effectiveKeybindings={effectiveKeybindings}
@@ -1045,12 +1061,12 @@ export default function App() {
           window.api.shareFile?.(activeTab.path)
         }}
         onSettings={openSettingsTab}
-        theme={theme}
+        theme={effectiveTheme}
         setTheme={pickBuiltinTheme}
         cycleTheme={cycleTheme}
         customThemes={customThemes}
-        customTheme={customTheme}
-        onPickCustom={setCustomTheme}
+        customTheme={effectiveCustomTheme}
+        onPickCustom={pickCustomTheme}
         onRefreshThemes={refreshThemes}
         onOpenThemesFolder={() => window.api.themesReveal?.()}
         onGetMoreThemes={() => window.api.openExternal('https://theme.typora.io/')}

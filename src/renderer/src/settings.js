@@ -116,6 +116,11 @@ export const fontStack = (name, base) => {
 }
 
 export const DEFAULT_SETTINGS = {
+  // Manual keeps the selected built-in/imported theme unchanged. System chooses
+  // one of the saved built-in day/night themes when the OS appearance changes.
+  themeMode: 'manual',
+  systemLightTheme: 'light',
+  systemDarkTheme: 'dark',
   pageWidth: DEFAULT_PAGE_WIDTH,
   fontSize: DEFAULT_FONT_SIZE,
   // Source-mode font size offset relative to fontSize (issue #78).
@@ -165,6 +170,12 @@ function normalizeWidth(w) {
   return Math.min(PAGE_WIDTH_MAX, Math.max(PAGE_WIDTH_MIN, Math.round(n)))
 }
 
+function normalizeThemeId(value, fallback) {
+  return typeof value === 'string' && ['light', 'dark', 'morandi', 'morandi-rose', 'morandi-blue', 'morandi-dark'].includes(value)
+    ? value
+    : fallback
+}
+
 function normalizeFontSize(s) {
   const n = Number(s)
   if (!Number.isFinite(n)) return DEFAULT_FONT_SIZE
@@ -187,6 +198,9 @@ export function loadSettings() {
   try {
     const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
     return {
+      themeMode: raw.themeMode === 'system' ? 'system' : 'manual',
+      systemLightTheme: normalizeThemeId(raw.systemLightTheme, 'light'),
+      systemDarkTheme: normalizeThemeId(raw.systemDarkTheme, 'dark'),
       pageWidth: normalizeWidth(raw.pageWidth ?? DEFAULT_PAGE_WIDTH),
       fontSize: normalizeFontSize(raw.fontSize ?? DEFAULT_FONT_SIZE),
       sourceFontOffset: normalizeSourceFontOffset(raw.sourceFontOffset),

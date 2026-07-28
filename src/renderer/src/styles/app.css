@@ -2370,6 +2370,21 @@ body.hm-full-width .editor-skeleton {
 }
 .milkdown { background: transparent !important; }
 .milkdown .ProseMirror { padding: 0 !important; }
+/* The operation bar uses one fixed editor-edge rail (configured through
+   BlockProvider in editor-crepe-setup.js). Two compact 28px controls fit the
+   editor's 60px leading gutter in every desktop width preset. */
+.milkdown .milkdown-block-handle {
+  transition: opacity 0.15s var(--ease-out);
+}
+.milkdown .milkdown-block-handle .operation-item {
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.milkdown .milkdown-block-handle .operation-item svg {
+  width: 20px;
+  height: 20px;
+}
 
 /* Rendered raw-HTML blocks (e.g. an HTML <table> in the Markdown). The node is
    non-editable; we just give it sensible, theme-aware styling so a pasted
@@ -3628,6 +3643,53 @@ body.hm-full-width .source-editor {
   color: var(--muted);
   margin-top: 2px;
   line-height: 1.5;
+}
+/* System-theme mapping stays compact: the toggle establishes intent, then two
+   explicit selects show exactly which built-in palette will be used by day and
+   night. This avoids treating a transient OS preference as a loose swatch. */
+.settings-system-theme {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+.settings-system-theme-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.settings-system-theme-field select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.settings-system-theme-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.settings-system-theme-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+@media (max-width: 620px) {
+  .settings-system-theme { grid-template-columns: 1fr; }
 }
 /* The wide-table setting changes a document-level behavior. Show the actual
    consequence in-place: the same cells either overflow a narrow viewport or

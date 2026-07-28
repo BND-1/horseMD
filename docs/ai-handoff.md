@@ -153,7 +153,7 @@ android/, ios/           Capacitor 原生壳
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
 - `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格变更必须使用完整 canonical Markdown；不要重新引入局部 raw-source 拼接或序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
 - `npm run test:table-ui` 保护另一条独立的表格 UI 合同：短表自然宽度、宽表内部横向滚动和不撑开页面；列边缘的短暂悬停仍用于加行/加列，只有按住约 220ms 才实时调整列宽；宽表最右端连续 10 次悬浮/调整均不得把 `scrollLeft` 重置为 0。不要重新注册 `columnResizingPlugin`，它会与 Crepe 自定义 `TableNodeView` 竞争 hover transaction，重新引入跳回和非确定性预览。
-- `editor-block-handle-guard.js` 只允许编辑器左侧 36px 块操作热区唤起 Milkdown block handle；修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:inline-html-block-handle-ui`，确认正文行内 HTML 和普通文字不会出现拖拽柄。
+- `editor-block-handle-guard.js` 只负责块操作条的触发过滤和滚动隐藏；横向位置由 `Feature.BlockEdit.blockHandle.getPosition` 交给 Milkdown BlockProvider 一次性计算，禁止再用 `translate`、MutationObserver 或 ResizeObserver 二次改坐标。标题、正文和各级列表必须共用正文左边界这一条轨道。修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:block-handle-gutter-ui` 与 `npm run test:inline-html-block-handle-ui`。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
 - 回归必须覆盖：
   - 富文本 → 源码 → 富文本 → 源码

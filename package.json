@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.12.10",
+  "version": "0.12.20",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -39,6 +39,9 @@
     "test:external-change-warning-ui": "node scripts/test-external-change-warning-ui.mjs",
     "test:issue-79-ui": "node scripts/test-issue-79-list-spacing-ui.mjs",
     "test:list-conversion-ui": "node scripts/test-list-conversion-ui.mjs",
+    "test:block-handle-gutter-ui": "node scripts/test-block-handle-gutter-ui.mjs",
+    "test:system-theme-ui": "node scripts/test-system-theme-ui.mjs",
+    "test:macos-window-reopen": "node scripts/test-macos-window-reopen.mjs",
     "test:outline-reorder": "node scripts/test-outline-reorder.mjs",
     "test:issue-82-ui": "node scripts/test-issue-82-outline-reorder-ui.mjs",
     "test:keybindings": "node scripts/test-keybindings.mjs",

@@ -17,3 +17,7 @@ This paragraph separates ordinary and task lists.
 2. Second
 
 Tail text stays unchanged.
+
+Convert this paragraph to an ordered list.
+
+Convert this paragraph to a task list.

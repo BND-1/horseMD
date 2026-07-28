@@ -268,7 +268,7 @@ export default function Editor({
 
     // Block controls live in editor-block-controls.js; mount them here and
     // reuse the same conversion path across shortcuts, menus and toolbars.
-    const { setBlock: setEditableBlock, reportActiveBlock } = createBlockControls({
+    const { setBlock: setEditableBlock, canConvertCurrentBlockToList, convertCurrentBlockToList, reportActiveBlock } = createBlockControls({
       viewRef,
       setCtxMenu,
       onActiveBlock,
@@ -278,6 +278,33 @@ export default function Editor({
       if (readOnlyRef.current) return
       setEditableBlock(id)
     }
+    const convertBlockToList = (targetType, blockPos) => {
+      if (readOnlyRef.current) return false
+      const converted = convertCurrentBlockToList(targetType, blockPos)
+      if (converted) {
+        markUserEdit()
+        // ProseMirror has already committed the structural change, while
+        // Crepe's markdownUpdated event may arrive a frame later. Commit this
+        // snapshot now so an immediate source-mode switch or save cannot read
+        // the paragraph from before it was wrapped as a list.
+        try {
+          const canonical = normalizeReviewMarkupMarkdown(crepe.getMarkdown())
+          const preserved = preserveRichMarkdownSource(
+            lastMarkdownRef.current,
+            canonicalMarkdownRef.current,
+            canonical
+          )
+          lastMarkdownRef.current = preserved.markdown
+          canonicalMarkdownRef.current = canonical
+          onChange?.(preserved.markdown, false)
+        } catch {
+          // markdownUpdated remains the authoritative fallback if a serializer
+          // plugin is temporarily unavailable during editor teardown.
+        }
+      }
+      return converted
+    }
+    const canConvertBlockToList = (blockPos) => !readOnlyRef.current && canConvertCurrentBlockToList(blockPos)
     const convertList = (targetType, listPos) => {
       if (readOnlyRef.current) return false
       const view = viewRef.current
@@ -482,6 +509,7 @@ export default function Editor({
           },
           reportActiveBlock,
           setBlock,
+          canConvertBlockToList,
           getListConversionContext,
           setCtxMenu,
           setZoom,
@@ -533,6 +561,7 @@ export default function Editor({
           notify: fireToast
         })
         api.convertList = convertList
+        api.convertBlockToList = convertBlockToList
         const {
           getPdfSource,
           getMarkdown,
@@ -721,6 +750,7 @@ export default function Editor({
   const pickBlock = (id) => apiRef.current?.setBlock(id)
   const pickListConversion = (targetType, listPos) =>
     apiRef.current?.convertList(targetType, listPos)
+  const pickBlockListConversion = (targetType, blockPos) => apiRef.current?.convertBlockToList(targetType, blockPos)
   const pickTextFormat = (format, selection) => {
     const applied = apiRef.current?.applyTextFormat(format, selection)
     if (applied) setCtxMenu(null)
@@ -843,6 +873,25 @@ export default function Editor({
                       <span className="block-menu-sc">{getCommandShortcut(b.commandId, effectiveKeybindings)}</span>
                     </button>
                   ))}
+                  {ctxMenu.blockListConvertible && (
+                    <>
+                      <div className="block-menu-divider" />
+                      {['bullet_list', 'ordered_list', 'task_list'].map((targetType) => (
+                        <button
+                          key={targetType}
+                          data-block-list-conversion={targetType}
+                          className="block-menu-item block-list-conversion"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => pickBlockListConversion(targetType, ctxMenu.blockPos)}
+                        >
+                          <span className="block-menu-short">
+                            {targetType === 'ordered_list' ? '1.' : targetType === 'task_list' ? '☐' : '-'}
+                          </span>
+                          <span className="block-menu-name">{t('list.convertTo.' + targetType)}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             )}
