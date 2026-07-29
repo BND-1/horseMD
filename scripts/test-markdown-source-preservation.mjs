@@ -337,4 +337,53 @@ assert.equal(
   'typing after Enter must replace the transient empty block with a separate paragraph'
 )
 
+const middleSource = '# 标题\n\n前段内容\n\n## 后续标题\n\n后段内容\n'
+const middleCanonical = middleSource
+const middleEmptyParagraphCreated = preserveRichMarkdownSource(
+  middleSource,
+  middleCanonical,
+  '# 标题\n\n前段内容\n\n<br />\n\n## 后续标题\n\n后段内容\n'
+)
+assert.equal(middleEmptyParagraphCreated.reason, 'middle-empty-block-created')
+assert.equal(
+  middleEmptyParagraphCreated.markdown,
+  middleSource,
+  'pressing Enter between existing blocks must not leak an editor <br /> placeholder'
+)
+
+const middleEmptyParagraphFilled = preserveRichMarkdownSource(
+  middleEmptyParagraphCreated.markdown,
+  '# 标题\n\n前段内容\n\n<br />\n\n## 后续标题\n\n后段内容\n',
+  '# 标题\n\n前段内容\n\n新插入段落\n\n## 后续标题\n\n后段内容\n'
+)
+assert.equal(middleEmptyParagraphFilled.reason, 'middle-empty-block-filled')
+assert.equal(
+  middleEmptyParagraphFilled.markdown,
+  '# 标题\n\n前段内容\n\n新插入段落\n\n## 后续标题\n\n后段内容\n',
+  'filling an empty paragraph between blocks must not merge it into the preceding paragraph'
+)
+
+const directMiddleParagraphInserted = preserveRichMarkdownSource(
+  middleSource,
+  middleCanonical,
+  '# 标题\n\n前段内容\n\n立即输入段落\n\n## 后续标题\n\n后段内容\n'
+)
+assert.equal(directMiddleParagraphInserted.reason, 'middle-block-inserted')
+assert.equal(
+  directMiddleParagraphInserted.markdown,
+  '# 标题\n\n前段内容\n\n立即输入段落\n\n## 后续标题\n\n后段内容\n',
+  'typing immediately after Enter must preserve the inserted block boundary'
+)
+
+const middleSpacedParagraphFilled = preserveRichMarkdownSource(
+  middleEmptyParagraphFilled.markdown,
+  '# 标题\n\n前段内容\n\n新插入段落\n\n<br />\n\n<br />\n\n## 后续标题\n\n后段内容\n',
+  '# 标题\n\n前段内容\n\n新插入段落\n\n<br />\n\n间隔后段落\n\n## 后续标题\n\n后段内容\n'
+)
+assert.equal(
+  middleSpacedParagraphFilled.markdown,
+  '# 标题\n\n前段内容\n\n新插入段落\n\n\n\n间隔后段落\n\n## 后续标题\n\n后段内容\n',
+  'an intentional empty paragraph must become blank source lines without persisting <br />'
+)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

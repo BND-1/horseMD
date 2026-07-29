@@ -242,14 +242,49 @@ async function editAndSave() {
     )
 
     assert.equal(await toggleSource(evaluate), true)
+    assert.equal(await placeCaretAfter(evaluate, '标准段落 A'), true)
+    await pressEnter(send)
+    await sleep(1200)
+    await send('Input.insertText', { text: '中间新段落' })
+    await sleep(1200)
+    await pressEnter(send)
+    await sleep(1200)
+    await pressEnter(send)
+    await sleep(1200)
+    await send('Input.insertText', { text: '中间间隔段落' })
+
+    const expectedMiddle = original
+      .replace('紧凑第二行', '紧凑第二行X')
+      .replace('标准段落 A', '标准段落 A\n\n中间新段落\n\n\n\n中间间隔段落')
+    assert.equal(await toggleSource(evaluate), true)
+    assert.equal(
+      await waitFor(() => visibleSource(evaluate), 'source mode did not open after middle paragraph insert'),
+      expectedMiddle,
+      'paragraphs inserted before an existing block merged or leaked a <br /> placeholder'
+    )
+
+    assert.equal(await toggleSource(evaluate), true)
+    assert.equal(await placeCaretAfter(evaluate, '中间间隔段落'), true)
+    await pressEnter(send)
+    await send('Input.insertText', { text: '中间快速段落' })
+
+    const expectedMiddleFast = expectedMiddle
+      .replace('中间间隔段落', '中间间隔段落\n\n中间快速段落')
+    assert.equal(await toggleSource(evaluate), true)
+    assert.equal(
+      await waitFor(() => visibleSource(evaluate), 'source mode did not open after immediate middle paragraph insert'),
+      expectedMiddleFast,
+      'typing immediately after Enter before an existing block merged into the preceding paragraph'
+    )
+
+    assert.equal(await toggleSource(evaluate), true)
     assert.equal(await placeCaretAfter(evaluate, '标准段落 B'), true)
     await pressEnter(send)
     await send('Input.insertText', { text: '新建段落 C' })
     await pressEnter(send)
     await send('Input.insertText', { text: '连续段落 D' })
 
-    const expected = original
-      .replace('紧凑第二行', '紧凑第二行X')
+    const expected = expectedMiddleFast
       .replace('标准段落 B', '标准段落 B\n\n新建段落 C\n\n连续段落 D')
     assert.equal(await toggleSource(evaluate), true)
     assert.equal(
@@ -296,7 +331,16 @@ async function reopenAndVerify(expected) {
     })()`)
     assert.deepEqual(
       paragraphs,
-      ['紧凑第一行 紧凑第二行X', '标准段落 A', '标准段落 B', '新建段落 C', '连续段落 D'],
+      [
+        '紧凑第一行 紧凑第二行X',
+        '标准段落 A',
+        '中间新段落',
+        '中间间隔段落',
+        '中间快速段落',
+        '标准段落 B',
+        '新建段落 C',
+        '连续段落 D'
+      ],
       'saved paragraph structure changed after a clean reopen'
     )
     assert.equal(await toggleSource(evaluate), true)

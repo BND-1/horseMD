@@ -1,4 +1,5 @@
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { Decoration, DecorationSet } from '@milkdown/prose/view'
 
 const inlineCodeEditingKey = new PluginKey('horsemd-inline-code-editing')
 
@@ -21,6 +22,49 @@ function setActive(tr, active) {
 
 function marksWith(mark, marks = []) {
   return mark.addToSet(marks)
+}
+
+export function inlineCodeRangeAtSelection(state) {
+  const type = inlineCodeType(state)
+  const { selection } = state
+  if (!type || !selection.empty || !selection.$head.parent.isTextblock) return null
+
+  const parentStart = selection.$head.start()
+  const caret = selection.head
+  let match = null
+  selection.$head.parent.forEach((node, offset) => {
+    if (!node.isText || !type.isInSet(node.marks)) return
+    const from = parentStart + offset
+    const to = from + node.nodeSize
+    if (caret >= from && caret <= to) match = { from, to }
+  })
+  return match
+}
+
+const delimiterWidget = (side) =>
+  () => {
+    const delimiter = document.createElement('span')
+    delimiter.className = `hm-inline-code-delimiter ${side}`
+    delimiter.contentEditable = 'false'
+    delimiter.setAttribute('aria-hidden', 'true')
+    delimiter.textContent = '`'
+    return delimiter
+  }
+
+function inlineCodeEditingDecorations(state) {
+  if (!inlineCodeEditingKey.getState(state)) return null
+  const range = inlineCodeRangeAtSelection(state)
+  if (!range) return null
+  return DecorationSet.create(state.doc, [
+    Decoration.widget(range.from, delimiterWidget('open'), {
+      key: 'hm-inline-code-open',
+      side: -1
+    }),
+    Decoration.widget(range.to, delimiterWidget('close'), {
+      key: 'hm-inline-code-close',
+      side: 1
+    })
+  ])
 }
 
 const dispatchInlineCodeEdit = (view, tr, active, onEdit, onValueChange) => {
@@ -48,6 +92,8 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
       }
     },
     props: {
+      decorations: inlineCodeEditingDecorations,
+
       handleTextInput(view, from, to, text) {
         const { state } = view
         const type = inlineCodeType(state)
@@ -105,7 +151,9 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         const target = event.target
         const code = target?.closest?.('code')
         if (!code || !view.dom.contains(code)) return false
-        const mark = inlineCodeMarkBefore(view.state, pos)
+        const $pos = view.state.doc.resolve(pos)
+        const type = inlineCodeType(view.state)
+        const mark = type?.isInSet($pos.marks()) || inlineCodeMarkBefore(view.state, pos)
         if (!mark) return false
 
         const tr = view.state.tr.setSelection(TextSelection.create(view.state.doc, pos))
@@ -113,6 +161,15 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         view.dispatch(setActive(tr, true))
         view.focus()
         return true
+      },
+
+      handleDOMEvents: {
+        blur(view) {
+          if (inlineCodeEditingKey.getState(view.state)) {
+            view.dispatch(setActive(view.state.tr, false))
+          }
+          return false
+        }
       }
     }
   })

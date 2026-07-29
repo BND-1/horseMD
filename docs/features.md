@@ -68,7 +68,7 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 
 ## 6. 富文本复制（带 inline style）
 
-复制内容时，剪贴板 HTML 版本注入内联样式，粘到微信公众号/邮件/Notion 等不读外部 CSS 的地方也能保留格式（加粗、标题大小、行内代码、代码块灰底、引用、表格边框等）。
+复制内容时，剪贴板 HTML 版本注入内联样式，粘到微信公众号/邮件/Notion 等不读外部 CSS 的地方也能保留格式（加粗、标题大小、行内代码、代码块灰底、引用、表格边框等）。`text/plain` 同时使用 Milkdown Markdown serializer，选中的粗体、行内代码等语法不会丢失成对标记。
 
 **实现**：`Editor.jsx` 拦截 `copy` 事件，对选区 HTML 逐元素套用固定浅色配色的内联样式（`COPY_STYLES`），写入 `text/html`；CodeMirror 代码块内的复制交还给它自己处理。
 
@@ -269,13 +269,13 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 ## 23. 复制按钮反馈
 
-代码块右上角的 **「复制」** 按钮点击后会**闪一个绿色 ✓** 并弹出 **「已复制」** 轻提示（toast），不再点了没反应。
+代码块右上角的 **「复制」** 按钮通过 preload 的 `clipboard:writeText` 写入系统剪贴板，内容从当前 ProseMirror `code_block` 节点读取；只有写入成功后才会**闪一个绿色 ✓** 并弹出 **「已复制」** 轻提示。CodeMirror DOM 行仅作为节点定位失败时的保底。
 
-**实现**：`Editor.jsx` 委托监听 `.copy-button` 点击 → 给按钮加瞬时 `.hm-copied` 类（CSS 变绿加 ✓）+ 派发 `hm:toast` 事件；`App.jsx` 监听该事件显示底部居中 toast（`copyText` 文案也本地化）。
+**实现**：`editor-dom-content.js` 在捕获阶段接管 `.copy-button`，阻止 Crepe 再调用权限不稳定的浏览器 Clipboard API；`ui.js` 统一走 Electron IPC（移动/浏览器构建回退标准 Clipboard API）。
 
 ## 24. 未保存草稿跨重启恢复
 
-新建但没保存的临时文档（未命名标签），**关掉 HorseMD 再打开还在**（标签带"已修改"红点）。
+新建但没保存的临时文档（未命名标签），默认会在重启后恢复（标签带“已修改”红点）。用户可在“设置 → 通用 → 启动”关闭“恢复上次打开的文档”；关闭后历史文件和草稿均不自动恢复，但 OS/命令行显式打开路径仍由 `appReady` 队列正常交付。
 
 **实现**（`App.jsx`）：会话持久化里新增 `untitled: [{title, content}]`，只存**有内容且脏**的无路径标签（未动过的欢迎页/空白页不会反复回来）；启动时重建这些标签（`savedContent:''` 让它们保持"未保存"）。有路径的文件仍从磁盘重开。
 

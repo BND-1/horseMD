@@ -16,7 +16,8 @@ const MAX_SOURCE_HTML = 50 * 1024 * 1024
 const printableResourcesScript = `
   (() => {
     const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), ${RESOURCE_WAIT_MS}))
-    const images = [...document.images].map((image) => {
+    const documentImages = [...document.images]
+    const images = documentImages.map((image) => {
       if (image.complete) return Promise.resolve()
       return new Promise((resolve) => {
         image.addEventListener('load', resolve, { once: true })
@@ -108,7 +109,9 @@ const printableResourcesScript = `
       await fonts
       return {
         imageStatus,
-        failedImages: [...document.images].filter((image) => image.complete && !image.naturalWidth).length,
+        totalImages: documentImages.length,
+        failedImages: documentImages.filter((image) => image.complete && !image.naturalWidth).length,
+        pendingImages: documentImages.filter((image) => !image.complete).length,
         wrappedMath: wrapDisplayMath()
       }
     })
@@ -174,8 +177,10 @@ export function createPdfExportService({ getMainWindow }) {
       return {
         pdf,
         warnings: {
-          resourceTimeout: resources?.imageStatus === 'timeout',
+          resourceTimeout: resources?.imageStatus === 'timeout' && Number(resources?.pendingImages || 0) > 0,
+          pendingImages: Number(resources?.pendingImages || 0),
           failedImages: Number(resources?.failedImages || 0),
+          totalImages: Number(resources?.totalImages || 0),
           wrappedMath: Number(resources?.wrappedMath || 0)
         }
       }

@@ -65,6 +65,19 @@ export const PARA_SPACING_PRESETS = [
   { id: 'loose', value: 1.6 }
 ]
 
+// Space before headings (em). The stylesheet derives the smaller after-heading
+// gap from this value so one control changes density without flattening the
+// visual hierarchy.
+export const HEADING_SPACING_MIN = 0.6
+export const HEADING_SPACING_MAX = 2.4
+export const DEFAULT_HEADING_SPACING = 1.8
+export const HEADING_SPACING_PRESETS = [
+  { id: 'tight', value: 0.8 },
+  { id: 'compact', value: 1.2 },
+  { id: 'standard', value: 1.8 },
+  { id: 'loose', value: 2.2 }
+]
+
 const round1 = (n) => Math.round(n * 10) / 10
 
 // Default font stacks (app.css defines the same names on body.light/dark). A
@@ -127,6 +140,7 @@ export const DEFAULT_SETTINGS = {
   sourceFontOffset: DEFAULT_SOURCE_FONT_OFFSET,
   lineHeight: DEFAULT_LINE_HEIGHT,
   paragraphSpacing: DEFAULT_PARA_SPACING,
+  headingSpacing: DEFAULT_HEADING_SPACING,
   // Document (writing) + code font overrides (issue #38). Empty = use the
   // default stack; otherwise the name leads the stack (e.g. a Nerd Font).
   fontWrite: '',
@@ -149,6 +163,10 @@ export const DEFAULT_SETTINGS = {
   // Users who prefer an uninterrupted writing surface can use the expanded
   // right-click formatting menu instead.
   selectionToolbar: true,
+  // Reopen saved files and unsaved scratch tabs from the previous session.
+  // Disabling this affects startup only; files explicitly passed by the OS or
+  // command line still open normally.
+  restoreSession: true,
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false,
@@ -211,11 +229,18 @@ export function loadSettings() {
         PARA_SPACING_MAX,
         DEFAULT_PARA_SPACING
       ),
+      headingSpacing: normalizeInRange(
+        raw.headingSpacing,
+        HEADING_SPACING_MIN,
+        HEADING_SPACING_MAX,
+        DEFAULT_HEADING_SPACING
+      ),
       imageUploadCommand:
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
       spellcheck: raw.spellcheck === true,
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
       selectionToolbar: raw.selectionToolbar !== false,
+      restoreSession: raw.restoreSession !== false,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',
@@ -284,6 +309,18 @@ export function applyParagraphSpacing(value) {
   document.documentElement.style.setProperty(
     '--editor-para-spacing',
     normalizeInRange(value, PARA_SPACING_MIN, PARA_SPACING_MAX, DEFAULT_PARA_SPACING) + 'em'
+  )
+}
+
+export function applyHeadingSpacing(value) {
+  document.documentElement.style.setProperty(
+    '--editor-heading-spacing',
+    normalizeInRange(
+      value,
+      HEADING_SPACING_MIN,
+      HEADING_SPACING_MAX,
+      DEFAULT_HEADING_SPACING
+    ) + 'em'
   )
 }
 

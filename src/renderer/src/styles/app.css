@@ -3618,6 +3618,9 @@ body.hm-full-width .source-editor {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
+.settings-typo-row-single > * {
+  grid-column: 1 / -1;
+}
 .settings-typo-preview {
   width: 100%;
   margin-top: 22px;
@@ -5425,8 +5428,8 @@ body.dark .milkdown {
 .milkdown .ProseMirror h6 {
   font-weight: 700;
   line-height: 1.3;
-  margin-top: 1.75em;
-  margin-bottom: 0.55em;
+  margin-top: var(--editor-heading-spacing, 1.8em);
+  margin-bottom: calc(var(--editor-heading-spacing, 1.8em) * 0.306);
   color: var(--text-strong);
   letter-spacing: 0;
 }
@@ -5616,6 +5619,20 @@ body.dark .milkdown {
   color: var(--accent-strong);
   font-family: var(--font-mono);
   line-height: 1.4;
+}
+.milkdown .ProseMirror .hm-inline-code-delimiter {
+  color: color-mix(in srgb, var(--accent-strong) 72%, var(--text) 28%);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+.milkdown .ProseMirror .hm-inline-code-delimiter.open {
+  margin-right: 1px;
+}
+.milkdown .ProseMirror .hm-inline-code-delimiter.close {
+  margin-left: 1px;
 }
 
 /* Lists — compact, writing-first spacing.

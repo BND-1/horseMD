@@ -97,6 +97,18 @@ const sessions = [
 
 const standalone = [
   {
+    name: 'Issue 93: inline code editing boundaries and literal backticks',
+    script: 'scripts/test-inline-code-ui.mjs'
+  },
+  {
+    name: 'Issue 98: native code copy, Markdown copy, undo, and session restore preference',
+    script: 'scripts/test-issue-98-copy-undo-ui.mjs'
+  },
+  {
+    name: 'Issue 98: disabled session restore still accepts explicit startup files',
+    script: 'scripts/test-session-restore-setting-ui.mjs'
+  },
+  {
     name: 'Issues 70-72: outline fold state and task list input',
     script: 'scripts/test-issues-70-72-ui.mjs'
   },

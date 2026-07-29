@@ -3,7 +3,8 @@ import { Schema } from '@milkdown/kit/prose/model'
 import { EditorState, TextSelection } from '@milkdown/kit/prose/state'
 import {
   createInlineCodeEditingPlugin,
-  inlineCodeMarkBefore
+  inlineCodeMarkBefore,
+  inlineCodeRangeAtSelection
 } from '../src/renderer/src/components/editor-inline-code.js'
 
 const schema = new Schema({
@@ -57,7 +58,10 @@ view = mockView(state)
 assert.equal(plugin.props.handleTextInput(view, 3, 3, 'ab'), true)
 assert.equal(view.state.doc.textContent, 'ab')
 assert.ok(code.type.isInSet(view.state.doc.firstChild.firstChild.marks))
+assert.deepEqual(inlineCodeRangeAtSelection(view.state), { from: 1, to: 3 })
+assert.equal(plugin.props.decorations(view.state).find().length, 2)
 assert.equal(plugin.props.handleTextInput(view, 3, 3, '`'), true)
+assert.equal(plugin.props.decorations(view.state), null)
 assert.equal(plugin.props.handleTextInput(view, 3, 3, 'x'), false)
 view.dispatch(view.state.tr.insertText('x'))
 assert.equal(view.state.doc.textContent, 'abx')

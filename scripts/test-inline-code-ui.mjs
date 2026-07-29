@@ -50,10 +50,7 @@ async function main() {
     })
     await sleep(100)
 
-    // Use native key events rather than Input.insertText: the latter bypasses
-    // ProseMirror's handleTextInput hook and therefore cannot validate the
-    // keyboard path users actually take.
-    for (let index = 0; index < 3; index += 1) {
+    const typeBacktick = async () => {
       await send('Input.dispatchKeyEvent', {
         type: 'rawKeyDown',
         key: '`',
@@ -79,6 +76,41 @@ async function main() {
       })
       await sleep(80)
     }
+
+    // Use native key events rather than Input.insertText: the latter bypasses
+    // ProseMirror's handleTextInput hook and therefore cannot validate the
+    // keyboard path users actually take.
+    await typeBacktick()
+    await typeBacktick()
+    await send('Input.insertText', { text: 'inline93' })
+    await sleep(120)
+    const editing = await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'inline93')
+      return {
+        code: code?.textContent || '',
+        delimiters: [...(editor?.querySelectorAll('.hm-inline-code-delimiter') || [])].map((node) => node.textContent).join('')
+      }
+    })()`)
+    assert.deepEqual(editing, { code: 'inline93', delimiters: '``' })
+    await typeBacktick()
+    assert.equal(
+      await evaluate(`document.querySelectorAll('.hm-inline-code-delimiter').length`),
+      0,
+      'inline-code delimiters should hide after the caret exits'
+    )
+    await send('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
+    })
+    await send('Input.dispatchKeyEvent', {
+      type: 'char', key: 'Enter', code: 'Enter', text: '\\r', unmodifiedText: '\\r', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
+    })
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
+    })
+    for (let index = 0; index < 3; index += 1) {
+      await typeBacktick()
+    }
     const richTextBeforeSource = await evaluate(`[...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)?.textContent || ''`)
 
     assert.equal(await evaluate(`(() => {
@@ -91,12 +123,11 @@ async function main() {
       () => evaluate(`[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)?.value || null`),
       'source editor did not open'
     )
-    assert.match(
-      source,
-      /Type target(?:\\?`){3}/,
+    assert.ok(
+      source.includes('`inline93`') && source.replaceAll('\\', '').includes('```'),
       `three manually typed backticks must remain intact in Markdown; rich text was: ${richTextBeforeSource}`
     )
-    console.log('PASS inline code UI: manual triple-backtick input is not deleted')
+    console.log('PASS inline code UI: editing delimiters, explicit exit, and manual triple-backtick input')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }

@@ -21,7 +21,11 @@ import {
   PARA_SPACING_PRESETS,
   PARA_SPACING_MIN,
   PARA_SPACING_MAX,
+  HEADING_SPACING_PRESETS,
+  HEADING_SPACING_MIN,
+  HEADING_SPACING_MAX,
   applyFontSize,
+  applyHeadingSpacing,
   applyLineHeight,
   applyParagraphSpacing,
   applyPageWidth
@@ -37,6 +41,8 @@ export default function LayoutControl({
   onSetLineHeight,
   paragraphSpacing,
   onSetParagraphSpacing,
+  headingSpacing,
+  onSetHeadingSpacing,
   pageWidth,
   onSetPageWidth
 }) {
@@ -48,6 +54,7 @@ export default function LayoutControl({
   const fontIdx = FONT_SIZE_PRESETS.findIndex((p) => p.size === fontSize)
   const lhIdx = LINE_HEIGHT_PRESETS.findIndex((p) => p.value === lineHeight)
   const psIdx = PARA_SPACING_PRESETS.findIndex((p) => p.value === paragraphSpacing)
+  const hsIdx = HEADING_SPACING_PRESETS.findIndex((p) => p.value === headingSpacing)
 
   const isFull = pageWidth === 'full'
   const widthIdx = PAGE_WIDTH_PRESETS.findIndex((p) =>
@@ -103,6 +110,20 @@ export default function LayoutControl({
             round={round1}
             onSet={onSetParagraphSpacing}
             liveApply={applyParagraphSpacing}
+          />
+          <div className="hm-pop-sep" />
+          <AdjustGroup
+            title={t('settings.headingSpacing')}
+            valueLabel={round1(headingSpacing).toFixed(1) + ' em'}
+            presets={HEADING_SPACING_PRESETS.map((p) => ({ ...p, label: t('settings.headingSpacingPreset.' + p.id) }))}
+            activeIndex={hsIdx}
+            onPick={(p) => onSetHeadingSpacing(p.value)}
+            value={headingSpacing}
+            min={HEADING_SPACING_MIN}
+            max={HEADING_SPACING_MAX}
+            round={round1}
+            onSet={onSetHeadingSpacing}
+            liveApply={applyHeadingSpacing}
           />
           <div className="hm-pop-sep" />
           <AdjustGroup

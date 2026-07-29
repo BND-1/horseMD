@@ -34,6 +34,10 @@ export function usePdfPreview({ request, options, delay = 160 }) {
           if (result?.token) window.api.disposePDFPreview(result.token).catch(() => {})
           return
         }
+        // Main serializes preview work per renderer. A newer option change can
+        // intentionally supersede this request; that is normal control flow,
+        // not a PDF generation failure.
+        if (result?.stale) return
         const data = asUint8Array(result?.data)
         if (!result?.ok || !result.token || !data?.length) {
           throw new Error(result?.error || 'PDF preview returned no data')

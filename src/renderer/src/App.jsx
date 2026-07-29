@@ -24,6 +24,7 @@ import {
   applySourceFontOffset,
   applyLineHeight,
   applyParagraphSpacing,
+  applyHeadingSpacing,
   applyTableAutoWrap,
   fontStack,
   DEFAULT_FONT_WRITE,
@@ -323,6 +324,9 @@ export default function App() {
   useEffect(() => {
     applyParagraphSpacing(settings.paragraphSpacing)
   }, [settings.paragraphSpacing])
+  useEffect(() => {
+    applyHeadingSpacing(settings.headingSpacing)
+  }, [settings.headingSpacing])
   useEffect(() => {
     applyTableAutoWrap(settings.tableAutoWrap)
   }, [settings.tableAutoWrap])
@@ -747,6 +751,7 @@ export default function App() {
     sidebarOpen,
     sidebarMode,
     paneWidth,
+    restoreSession: settings.restoreSession,
     openPaths,
     isMobile,
     tabsRef,
@@ -1085,6 +1090,8 @@ export default function App() {
         onSetLineHeight={(v) => updateSettings({ lineHeight: v })}
         paragraphSpacing={settings.paragraphSpacing}
         onSetParagraphSpacing={(v) => updateSettings({ paragraphSpacing: v })}
+        headingSpacing={settings.headingSpacing}
+        onSetHeadingSpacing={(v) => updateSettings({ headingSpacing: v })}
       />
 
       <SaveFab

@@ -343,6 +343,8 @@ export default function StatusBar({
   onSetLineHeight,
   paragraphSpacing,
   onSetParagraphSpacing,
+  headingSpacing,
+  onSetHeadingSpacing,
   customThemes,
   customTheme,
   onPickCustom,
@@ -444,6 +446,8 @@ export default function StatusBar({
               onSetLineHeight={onSetLineHeight}
               paragraphSpacing={paragraphSpacing}
               onSetParagraphSpacing={onSetParagraphSpacing}
+              headingSpacing={headingSpacing}
+              onSetHeadingSpacing={onSetHeadingSpacing}
               pageWidth={pageWidth}
               onSetPageWidth={onSetPageWidth}
             />

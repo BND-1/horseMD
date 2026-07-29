@@ -475,6 +475,123 @@ const trailingEmptyBlock = (markdown) => {
   }
 }
 
+const standaloneEmptyBlockLines = (markdown) => markdownLines(markdown)
+  .filter((line) => /^\s*<br\s*\/?>\s*$/i.test(line.text))
+
+const withoutStandaloneEmptyBlockLines = (markdown) => String(markdown || '')
+  .replace(/(^|\n)[ \t]*<br\s*\/?>[ \t]*(?=\n|$)/gi, '$1')
+
+const rangeTouches = (range, start, end) =>
+  range.start <= Math.max(start, end) && range.end >= Math.min(start, end)
+
+const hasDedicatedBlockSyntax = (markdown) => markdownLines(markdown).some(({ text }) => {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return !!listMarker(text) ||
+    isTableLine(text) ||
+    /^(?:#{1,6}\s|>|```|~~~|(?:-{3,}|\*{3,}|_{3,})\s*$)/.test(trimmed)
+})
+
+// A paragraph inserted between two existing blocks is first serialized by
+// Crepe as a standalone `<br />` line. The raw Markdown deliberately does not
+// receive that editor placeholder. When the user types into the paragraph, map
+// the complete gap between its unchanged neighboring visible lines and replace
+// that bounded gap. Character-affinity mapping cannot handle this case because
+// the empty paragraph has no visible index and otherwise lands at the end of
+// the preceding paragraph.
+const preserveMiddleEmptyBlock = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousEmpty = standaloneEmptyBlockLines(previous)
+  const nextEmpty = standaloneEmptyBlockLines(next)
+  const previousChangedEmpty = previousEmpty.some((range) =>
+    rangeTouches(range, start, previousEnd)
+  )
+  const nextChangedEmpty = nextEmpty.some((range) =>
+    rangeTouches(range, start, nextEnd)
+  )
+  const previousChangedText = withoutStandaloneEmptyBlockLines(
+    previous.slice(start, previousEnd)
+  ).trim()
+  const nextChangedText = withoutStandaloneEmptyBlockLines(
+    next.slice(start, nextEnd)
+  ).trim()
+
+  // Creating one or more empty paragraphs is an intermediate editor state.
+  // Advance the canonical baseline but do not leak `<br />` into user source.
+  if (
+    nextEmpty.length > previousEmpty.length &&
+    nextChangedEmpty &&
+    !previousChangedText &&
+    !nextChangedText
+  ) {
+    return {
+      markdown: source,
+      preserved: true,
+      reason: 'middle-empty-block-created'
+    }
+  }
+
+  const directBlockInsertion =
+    previousEnd === start &&
+    !previousChangedText &&
+    !!nextChangedText
+  if ((!previousChangedEmpty && !directBlockInsertion) || !nextChangedText) return null
+  if (hasDedicatedBlockSyntax(next.slice(start, nextEnd))) return null
+
+  const previousLines = visibleLineEntries(previous)
+  const sourceLines = visibleLineEntries(source)
+  if (!sameVisibleLines(sourceLines, previousLines)) return null
+
+  let beforeIndex = -1
+  for (let index = 0; index < previousLines.length; index += 1) {
+    if (previousLines[index].end <= start) beforeIndex = index
+  }
+  const afterIndex = previousLines.findIndex((line) => line.start >= previousEnd)
+  if (beforeIndex < 0 || afterIndex < 0 || afterIndex <= beforeIndex) return null
+
+  const previousBefore = previousLines[beforeIndex]
+  const previousAfter = previousLines[afterIndex]
+  const sourceBefore = sourceLines[beforeIndex]
+  const sourceAfter = sourceLines[afterIndex]
+  if (
+    directBlockInsertion &&
+    previous.slice(previousBefore.end, previousAfter.start).trim()
+  ) {
+    return null
+  }
+  const delta = nextEnd - previousEnd
+  const nextBefore = lineAt(next, previousBefore.start)
+  const nextAfter = lineAt(next, previousAfter.start + delta)
+  if (
+    sourceVisibleIndex(next.slice(nextBefore.start, nextBefore.end)).text.trim() !== previousBefore.visible ||
+    sourceVisibleIndex(next.slice(nextAfter.start, nextAfter.end)).text.trim() !== previousAfter.visible
+  ) {
+    return null
+  }
+
+  const sourceGap = source.slice(sourceBefore.end, sourceAfter.start)
+  // A standalone `<br />` already present in raw source is user-authored, not
+  // our deferred empty paragraph. Leave that case to the generic mapper.
+  if (standaloneEmptyBlockLines(sourceGap).length) return null
+
+  const nextGap = next.slice(nextBefore.end, nextAfter.start)
+  return {
+    markdown: source.slice(0, sourceBefore.end) +
+      withoutStandaloneEmptyBlockLines(nextGap) +
+      source.slice(sourceAfter.start),
+    preserved: true,
+    reason: previousChangedEmpty
+      ? 'middle-empty-block-filled'
+      : 'middle-block-inserted'
+  }
+}
+
 // An empty paragraph at the document end is a real ProseMirror node, but Crepe
 // serializes it as a standalone `<br />` block. That token is an editor
 // placeholder, not text the user authored. Keep the raw source unchanged when
@@ -684,6 +801,15 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     nextEnd
   })
   if (trailingEmptyPreserved) return trailingEmptyPreserved
+  const middleEmptyPreserved = preserveMiddleEmptyBlock({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (middleEmptyPreserved) return middleEmptyPreserved
   if (sourceVisible.text !== previousVisible.text) {
     return preserveChangedLineRegion({
       source: sourceMarkdown,

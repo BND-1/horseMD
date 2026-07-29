@@ -36,7 +36,13 @@ export default function SettingsView({
       <SettingsNav active={active} onChange={onActiveSectionChange} t={t} cloudSync={cloudSync} />
       <div className="settings-sections">
         {active === 'general' && (
-          <GeneralSettings lang={lang} setLang={setLang} t={t} />
+          <GeneralSettings
+            lang={lang}
+            setLang={setLang}
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+            t={t}
+          />
         )}
         {active === 'editor' && (
           <EditorSettings

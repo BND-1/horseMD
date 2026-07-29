@@ -30,6 +30,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 - 普通文字输入只替换对应的 raw 字符区间；
 - 文档末尾按 Enter 新建正文时，按源文件原有结尾换行风格写入标准段落边界；空段落没有 visible index，不能用最后一个可见字符位置代替；
+- 在已有块之间按 Enter 新建正文时，以前后两个未变化的可见行作为边界，只替换它们之间的 raw 间隙；快速输入和停顿输入分别对应单事务块插入、`<br />` 占位后填充两条路径；
 - 列表结构变化只替换映射到的列表树，并保留原有 `-` / `*` 风格及紧凑列表间距；
 - 表格行列变化只替换对应表格块，空单元格占位只在该表格内规范化；
 - 标题等级、分段等结构变化只替换受影响的原始行；
@@ -41,7 +42,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 空文档会在 ProseMirror 中建立一个仅供起笔使用的“空一级标题 + 空正文”骨架，但磁盘源码仍是空字符串。这个 UI 骨架必须在 `canonicalForSource()` 中从 canonical 差异基线排除：用户跳过标题从正文起笔时不能凭空写入 `#`，用户在标题中输入后则立即把标题视为真实 Markdown。否则第一次输入会因 `#\n\n` 与空源码的 visible stream 不一致而被原文保护器拒绝，表现为未保存切源码后内容为空或仍是旧快照。
 
-真实手打时，每一行通常会在 Enter 前完成一次独立的 `markdownUpdated`。Enter 创建的末尾空 paragraph 会被 Crepe 暂时序列化成独立的 `<br />` 块；它不是用户源码。原文保护层必须保留源码不变但推进 canonical 基线，等下一次输入把该占位块替换为文字时，再以标准空白行分隔追加正文。若直接把占位块当结构变化写回，下一次 visible-index 映射会把正文插入标题末尾，并最终把 `<br />` 留在文件中。UI 回归必须逐字输入并在每行停顿，不能只用会被 Crepe 合并成单次事务的高速 `Input.insertText`。
+真实手打存在两种时序。停顿输入时，Enter 创建的空 paragraph 会先被 Crepe 序列化成独立 `<br />` 块；原文保护层必须只推进 canonical 基线，等文字填入后再写入真实段落。快速输入时，Enter 和文字可能被合并成一次块插入事务，完全不出现 `<br />` 中间态。文档末尾通过结尾边界追加，中间位置通过前后未变化可见行的序号映射定位 raw 间隙。不能把零可见字符位置当作前一段末尾，否则正文会拼接，且占位符会泄漏。列表、表格、标题、引用和代码围栏必须绕过这个普通段落分支，继续走各自的结构映射。
 
 ### 双 MIME Markdown 粘贴
 
@@ -79,7 +80,7 @@ npm run test:source-map
 # 真实 Electron：10 个快照、真实写盘、列表新增、双向切换和粘贴
 npm run test:issue-77-ui
 
-# 真实 Electron：空文档标题/正文起笔、单换行、Enter 新段落、保存重开
+# 真实 Electron：空文档起笔、文档末尾与中间 Enter 新段落、保存重开
 npm run test:paragraph-source-ui
 
 # 真实 Electron：重复表格行列编辑、富文本保存、完全退出并重开文件
@@ -89,7 +90,7 @@ npm run test:issue-86-ui
 HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
 ```
 
-发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次。后者以逐字输入和每行停顿强制覆盖独立事务，验证空文档从默认标题起笔、跳过标题从正文起笔、末尾空 paragraph 的 `<br />` 不进入源码、已有单换行正文只改文字、输入后立即切源码、新段落标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
+发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次。后者必须同时覆盖快速输入的单事务块插入、停顿输入的 `<br />` 两阶段事务、文档末尾和后续块之前的中间插入；并验证空文档从默认标题起笔、跳过标题从正文起笔、输入后立即切源码、标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
 
 ## 市场调研与长期决策
 

@@ -74,7 +74,15 @@ const main = async () => {
   await waitFor(evaluate, `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`, 'PDF export command not found')
   await evaluate(`([...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-studio')`, 'PDF studio did not open')
+  // Settings remain interactive while the initial export button is disabled.
+  // Rapid header/footer changes must cancel superseded previews silently.
+  if (!(await clickSwitch(send, evaluate, `/页眉|header/i`))) throw new Error('Header switch not found')
+  if (!(await clickSwitch(send, evaluate, `/页脚|footer/i`))) throw new Error('Footer switch not found')
+  if (!(await clickSwitch(send, evaluate, `/页眉|header/i`))) throw new Error('Header switch could not toggle again')
   await waitPreview(evaluate)
+  if (await evaluate(`!!document.querySelector('.hm-pdf-preview-warning')`)) {
+    throw new Error('Image-free PDF displayed a resource warning')
+  }
 
   const switchHitTest = await evaluate(`(() => {
     for (const button of document.querySelectorAll('.hm-pdf-switch')) {

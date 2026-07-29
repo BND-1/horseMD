@@ -39,6 +39,7 @@ export function useAppLifecycle({
   sidebarOpen,
   sidebarMode,
   paneWidth,
+  restoreSession,
   openPaths,
   isMobile,
   tabsRef,
@@ -82,8 +83,10 @@ export function useAppLifecycle({
 
   // Restore session tabs on first mount
   useEffect(() => {
-    const paths = (session.openPaths || []).filter(Boolean)
-    const untitled = (session.untitled || []).filter((u) => u && (u.content || '').trim())
+    const paths = restoreSession === false ? [] : (session.openPaths || []).filter(Boolean)
+    const untitled = restoreSession === false
+      ? []
+      : (session.untitled || []).filter((u) => u && (u.content || '').trim())
     // Recreate unsaved scratch tabs (no path) from the last session.
     const addUntitled = () => {
       if (!untitled.length) return null
@@ -220,7 +223,10 @@ export function useAppLifecycle({
     localStorage.setItem(ONBOARDED_KEY, '1')
     // Only greet on a genuinely fresh start (no restored session — neither saved
     // files nor unsaved scratch tabs).
-    if ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length) return
+    if (
+      restoreSession !== false &&
+      ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length)
+    ) return
     const doc = welcomeDoc(session.lang || DEFAULT_LANG)
     const id = genId()
     setTabs((prev) => [

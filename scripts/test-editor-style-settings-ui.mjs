@@ -57,21 +57,40 @@ async function main() {
         throw new Error('settings preview is missing common Markdown elements: ' + missingPreviewElements.join(', '))
       }
       const rows = [...document.querySelectorAll('.settings-typo-row')].filter(visible)
-      if (rows.length !== 3) throw new Error('expected three paired typography rows')
-      const expectedChildren = [2, 2, 2]
+      if (rows.length !== 4) throw new Error('expected three paired typography rows plus heading spacing')
+      const expectedChildren = [2, 2, 2, 1]
       for (const [index, row] of rows.entries()) {
         const children = [...row.children].filter(visible)
         if (children.length !== expectedChildren[index]) {
           throw new Error('unexpected typography row item count: ' + index)
         }
+        if (children.length === 1) continue
         const [left, right] = children.map((child) => child.getBoundingClientRect())
         if (Math.abs(left.top - right.top) > 1 || right.left <= left.right) {
           throw new Error('typography controls are not arranged as a desktop pair: ' + index)
         }
       }
       if (rows[0].querySelectorAll('.settings-font-row').length !== 2 ||
-        rows.slice(1).some((row) => row.querySelectorAll('.hm-adjust-group').length !== 2)) {
+        rows.slice(1, 3).some((row) => row.querySelectorAll('.hm-adjust-group').length !== 2) ||
+        rows[3].querySelectorAll('.hm-adjust-group').length !== 1) {
         throw new Error('typography row grouping is incorrect')
+      }
+      const headingGroup = [...document.querySelectorAll('.hm-adjust-group')]
+        .find((group) => /标题间距|Heading spacing/.test(textOf(group)))
+      const tightHeading = [...(headingGroup?.querySelectorAll('button') || [])]
+        .find((button) => /紧凑|Tight/.test(textOf(button)))
+      if (!headingGroup || !tightHeading) throw new Error('missing heading-spacing control')
+      tightHeading.click()
+      await sleep(180)
+      const previewHeading = document.querySelector('.settings-preview.milkdown .ProseMirror h2')
+      const headingState = {
+        variable: getComputedStyle(document.documentElement).getPropertyValue('--editor-heading-spacing').trim(),
+        previewMargin: getComputedStyle(previewHeading).marginTop,
+        persisted: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').headingSpacing
+      }
+      if (headingState.variable !== '0.8em' || Number.parseFloat(headingState.previewMargin) >= 30 ||
+        headingState.persisted !== 0.8) {
+        throw new Error('heading spacing did not apply live and persist: ' + JSON.stringify(headingState))
       }
       const sourceTitle = [...document.querySelectorAll('.settings-block-title')]
         .find((title) => ['源码模式', 'Source mode'].includes(textOf(title)))

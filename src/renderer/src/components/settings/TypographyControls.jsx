@@ -6,17 +6,19 @@ import {
   FONT_SIZE_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX,
   LINE_HEIGHT_PRESETS, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX,
   PARA_SPACING_PRESETS, PARA_SPACING_MIN, PARA_SPACING_MAX,
-  applyFontSize, applyLineHeight, applyParagraphSpacing, applyPageWidth
+  HEADING_SPACING_PRESETS, HEADING_SPACING_MIN, HEADING_SPACING_MAX,
+  applyFontSize, applyHeadingSpacing, applyLineHeight, applyParagraphSpacing, applyPageWidth
 } from '../../settings.js'
 
 const round1 = (n) => Math.round(n * 10) / 10
 const round10 = (n) => Math.round(n / 10) * 10
 
 export default function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
-  const { fontSize, lineHeight, paragraphSpacing, pageWidth } = settings
+  const { fontSize, lineHeight, paragraphSpacing, headingSpacing, pageWidth } = settings
   const fontIdx = FONT_SIZE_PRESETS.findIndex((p) => p.size === fontSize)
   const lhIdx = LINE_HEIGHT_PRESETS.findIndex((p) => p.value === lineHeight)
   const psIdx = PARA_SPACING_PRESETS.findIndex((p) => p.value === paragraphSpacing)
+  const hsIdx = HEADING_SPACING_PRESETS.findIndex((p) => p.value === headingSpacing)
   const isFull = pageWidth === 'full'
   const widthIdx = PAGE_WIDTH_PRESETS.findIndex((p) =>
     p.width === 'full' ? isFull : !isFull && pageWidth === p.width
@@ -103,6 +105,15 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             activeIndex={widthIdx} onPick={(p) => onUpdateSettings({ pageWidth: p.width })}
             value={isFull ? PAGE_WIDTH_MAX : pageWidth} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} round={round10}
             onSet={(w) => onUpdateSettings({ pageWidth: w })} liveApply={applyPageWidth}
+          />
+        </div>
+        <div className="settings-typo-row settings-typo-row-single">
+          <AdjustGroup
+            title={t('settings.headingSpacing')} valueLabel={round1(headingSpacing).toFixed(1) + ' em'}
+            presets={HEADING_SPACING_PRESETS.map((p) => ({ ...p, label: t('settings.headingSpacingPreset.' + p.id) }))}
+            activeIndex={hsIdx} onPick={(p) => onUpdateSettings({ headingSpacing: p.value })}
+            value={headingSpacing} min={HEADING_SPACING_MIN} max={HEADING_SPACING_MAX} round={round1}
+            onSet={(v) => onUpdateSettings({ headingSpacing: v })} liveApply={applyHeadingSpacing}
           />
         </div>
       </div>

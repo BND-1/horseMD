@@ -1,6 +1,6 @@
-import { parserCtx } from '@milkdown/kit/core'
+import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/prose/state'
-import { fireToast } from '../ui.js'
+import { copyToClipboard } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { inlineRichStyles } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
@@ -48,7 +48,17 @@ export function mountEditorContentBindings({
       const wrapper = document.createElement('div')
       wrapper.appendChild(fragment)
       inlineRichStyles(wrapper)
-      const plain = selection.toString()
+      let serialized = ''
+      if (!view.state.selection.empty) {
+        try {
+          const slice = view.state.selection.content()
+          const doc = view.state.schema.topNodeType.createAndFill(undefined, slice.content)
+          if (doc) serialized = crepe.editor.ctx.get(serializerCtx)(doc)
+        } catch {}
+      }
+      const plain = typeof serialized === 'string' && serialized
+        ? serialized
+        : selection.toString()
       if (!wrapper.innerHTML.trim() && !plain) return
       event.clipboardData.setData(
         'text/html',
@@ -123,12 +133,38 @@ export function mountEditorContentBindings({
     setTimeout(tryFocus, 0)
   }
 
-  const onCopyButton = (event) => {
+  const onCopyButton = async (event) => {
     const button = event.target.closest?.('.copy-button')
     if (!button || !view.dom.contains(button)) return
+    const block = button.closest('.milkdown-code-block')
+    if (!block) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+
+    let text = ''
+    try {
+      const pos = view.posAtDOM(block, 0)
+      const $pos = view.state.doc.resolve(pos)
+      const node = [
+        view.state.doc.nodeAt(pos),
+        $pos.nodeAfter,
+        $pos.nodeBefore
+      ].find((candidate) => candidate?.type?.name === 'code_block')
+      if (node) text = node.textContent
+      else {
+        text = [...block.querySelectorAll('.cm-line')]
+          .map((line) => line.textContent || '')
+          .join('\n')
+      }
+    } catch {
+      text = [...block.querySelectorAll('.cm-line')]
+        .map((line) => line.textContent || '')
+        .join('\n')
+    }
+
+    if (!await copyToClipboard(text, getT('code.copied'))) return
     button.classList.add('hm-copied')
     setTimeout(() => button.classList.remove('hm-copied'), 1100)
-    fireToast(getT('code.copied'))
   }
 
   const onMermaidClick = (event) => {
