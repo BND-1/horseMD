@@ -97,6 +97,10 @@ const sessions = [
 
 const standalone = [
   {
+    name: 'Source textarea fidelity: CRLF, BOM, mixed EOL and offset mapping',
+    script: 'scripts/test-source-text-fidelity.mjs'
+  },
+  {
     name: 'Issue 93: inline code editing boundaries and literal backticks',
     script: 'scripts/test-inline-code-ui.mjs'
   },
@@ -131,6 +135,18 @@ const standalone = [
   {
     name: 'Paragraph source preservation: compact lines and Enter survive reopen',
     script: 'scripts/test-paragraph-source-preservation-ui.mjs'
+  },
+  {
+    name: 'Source fidelity audit: heterogeneous Markdown stays byte-local',
+    script: 'scripts/test-source-fidelity-audit-ui.mjs'
+  },
+  {
+    name: 'Large source fidelity: chunked CRLF/BOM document keeps its first rich edit',
+    script: 'scripts/test-large-doc-source-preservation-ui.mjs'
+  },
+  {
+    name: 'Large-document classification and content-visibility gating',
+    script: 'scripts/test-rich-cv-gating.mjs'
   },
   {
     name: 'Issue 79: list spacing follows typography settings',

@@ -176,12 +176,10 @@ export function useFileOps({
       prev.map((t) => {
         if (t.id !== id) return t
         if (isInitial) {
-          // Rebaseline a clean doc against Crepe's normalized output; keep the
-          // existing baseline if the doc already had unsaved edits.
-          if (t.content === md && t.savedContent === md) return t
-          if (t.content === t.savedContent) return { ...t, content: md, savedContent: md }
-          if (t.content === md) return t
-          return { ...t, content: md }
+          // Parsing is a view concern. Never adopt Crepe's serializer output as
+          // the source baseline during initialization: that would silently add
+          // escapes/blank lines or normalize line endings before any user edit.
+          return t
         }
         if (t.content === md) return t
         return { ...t, content: md }

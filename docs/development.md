@@ -99,6 +99,15 @@ npm run test:source-map
 # 无需启动 Electron：局部富文本编辑保留未修改 Markdown 源码写法
 npm run test:markdown-preservation
 
+# 无需启动 Electron：textarea 的 CRLF、BOM、混合换行和 offset 保真
+npm run test:source-text-fidelity
+
+# 真实 Electron：异构 Markdown 多点编辑与真实写盘逐字节比较
+npm run test:source-fidelity-ui
+
+# 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本 + 源码编辑
+npm run test:large-source-fidelity-ui
+
 # 真实 Electron：#77 原始空行、列表符和转义；含真实保存写盘
 npm run test:issue-77-ui
 
@@ -130,7 +139,7 @@ npm run test:ui-regression
 ### 工具
 
 - `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、#93、#98、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路
-- `scripts/test-inline-code-ui.mjs` —— 原生键盘验证行内代码编辑态反引号、退出渲染及连续普通反引号保真
+- `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证只有 `awdawdwa` 保持代码标记、闭合后的正文已退出、源码边界正确，并回归连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
 - `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、Markdown 标记复制、真实撤销及关闭会话恢复后的显式文件打开
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录

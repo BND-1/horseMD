@@ -716,7 +716,12 @@ export default function Editor({
             onStructureChange
           }).then(() => {
             if (rest.length) appending = false
-            if (!destroyed) finishInitial(false)
+            // Source preservation needs the serializer snapshot of the complete
+            // document before the first user transaction. Recording it does not
+            // rebase or write the authored Markdown; without it, the first rich
+            // edit after chunked loading is conservatively discarded because the
+            // mapper has no previous canonical state to compare against.
+            if (!destroyed) finishInitial(true)
           })
         } else if (isLargeDoc) {
           requestAnimationFrame(() => requestAnimationFrame(() => finishInitial(true)))

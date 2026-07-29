@@ -115,7 +115,7 @@ export function isHeavyDoc(content) {
   let lines = 0
   for (const line of content.split('\n')) {
     if (++lines > HEAVY_MAX_LINES) return true // ← P0-1: line-count guard
-    if (/^[ \t]*$/.test(line)) {
+    if (/^[ \t\r]*$/.test(line)) {
       run = 0
     } else if (++run > HEAVY_MAX_BLOCK_LINES) {
       return true
@@ -137,7 +137,7 @@ export function shouldUseRichContentVisibility(content) {
   let inBlock = false
   for (const line of content.split('\n')) {
     lines += 1
-    if (/^[ \t]*$/.test(line)) {
+    if (/^[ \t\r]*$/.test(line)) {
       inBlock = false
     } else if (!inBlock) {
       blocks += 1

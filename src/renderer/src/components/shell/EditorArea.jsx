@@ -12,6 +12,7 @@ import Editor from '../Editor.jsx'
 import { Icon } from '../icons.jsx'
 import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
+import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
 
 export default function EditorArea({
   tabs,
@@ -103,6 +104,7 @@ export default function EditorArea({
         const nodes = []
 
         if (usesTextarea && inView) {
+          const initialSource = liveContentRef.current.get(tab.id) ?? tab.content
           const setSourceTextareaRef = (el) => {
             if (el) {
               sourceTextareas.current[tab.id] = el
@@ -110,6 +112,7 @@ export default function EditorArea({
               if (!readOnly && !el.__horsemdSourceCaretCleanup) {
                 el.__horsemdSourceCaretCleanup = attachSourceCaret(el)
               }
+              if (el.__horsemdSourceRawValue == null) el.__horsemdSourceRawValue = initialSource || ''
               if (el.__horsemdSourceBaseline == null) el.__horsemdSourceBaseline = el.value || ''
               if (el.__horsemdSourceSelectionBaseline == null) {
                 el.__horsemdSourceSelectionBaseline = `${el.selectionStart || 0}:${el.selectionEnd || 0}`
@@ -128,7 +131,7 @@ export default function EditorArea({
               key={`source:${tab.id}:${tab.reloadNonce}`}
               ref={setSourceTextareaRef}
               className={`source-editor${paneClass}`}
-              defaultValue={liveContentRef.current.get(tab.id) ?? tab.content}
+              defaultValue={initialSource}
               readOnly={readOnly}
               spellCheck={false}
               style={{ order, flex: paneFlex }}
@@ -180,7 +183,7 @@ export default function EditorArea({
                 e.target.__horsemdSourceViewportMoved = false
                 e.target.__horsemdSourceSelectionAt = performance.now()
                 sourceEditedIds.current.add(tab.id)
-                const v = e.target.value
+                const v = updateTextareaSourceFromDom(e.target)
                 liveContentRef.current.set(tab.id, v)
                 const prev = liveTimersRef.current.get(tab.id)
                 if (prev) clearTimeout(prev)

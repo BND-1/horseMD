@@ -11,6 +11,7 @@ import {
   restoreSourceCaret,
   restoreSourceViewport
 } from '../scrollAnchor.js'
+import { getTextareaSourceValue } from '../source-text-fidelity.js'
 
 // Owns rich/source view state and the caret-vs-reading-position transition.
 // Textarea editing remains uncontrolled in EditorArea; this hook only consumes
@@ -66,14 +67,14 @@ export function useSourceModeSwitch({
   const syncSourceToRich = useCallback((id) => {
     const sourceEl = sourceTextareas.current[id]
     if (!sourceEl) return false
-    const next = sourceEl.value || ''
+    const next = getTextareaSourceValue(sourceEl)
     const baseline = sourceEl.__horsemdSourceBaseline ?? ''
     const sourceEdited = sourceEditedIds.current.has(id)
-    if (next === baseline && !sourceEdited) return false
+    if ((sourceEl.value || '') === baseline && !sourceEdited) return false
 
     const api = editorApis.current[id]
     if (api?.replaceMarkdown?.(next)) {
-      sourceEl.__horsemdSourceBaseline = next
+      sourceEl.__horsemdSourceBaseline = sourceEl.value || ''
       sourceEditedIds.current.delete(id)
       return true
     }
@@ -85,7 +86,7 @@ export function useSourceModeSwitch({
           : tab
       )
     )
-    sourceEl.__horsemdSourceBaseline = next
+    sourceEl.__horsemdSourceBaseline = sourceEl.value || ''
     sourceEditedIds.current.delete(id)
     return true
   }, [editorApis, setTabs])

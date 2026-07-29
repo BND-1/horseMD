@@ -6,9 +6,11 @@
 
 ## #93 行内代码
 
-旧版已能阻止多个反引号被输入规则吞掉，但在空反引号对中输入第一个字符时会立刻转为 `inlineCode` mark，视觉边界随即消失，不符合“离开后再收起”的编辑预期。
+旧版已能阻止多个反引号被输入规则吞掉，但输入插件只识别“先输入两个反引号，再输入正文”的特殊路径。用户按标准 Markdown 顺序逐字手打 `` `awdawdwa` `` 时，首尾反引号和中间正文都会留在普通文本节点中，实际没有创建 `inlineCode` mark。此前 UI 自动化也错误地多输入了一个左反引号，并一次性注入正文，没有覆盖真实键盘路径。
 
-修复保留底层标准 `inlineCode` mark，仅在插件处于编辑态且光标位于该 mark 内时绘制两个 ProseMirror widget。widget 不进入文档、复制结果、Markdown serializer 或 source offset 映射；光标离开、编辑器失焦或输入闭合反引号后自动清除。
+修复把输入状态拆为“等待首个正文字符”和“正在编辑行内代码”：第一个左反引号先原样保留，紧接着逐字输入正文时再转换为标准 `inlineCode` mark，右反引号明确退出。仅在编辑态且光标位于该 mark 内时绘制两个 ProseMirror widget；widget 不进入文档、复制结果、Markdown serializer 或 source offset 映射。光标移动、编辑器失焦或输入闭合反引号后自动清除等待/编辑状态，连续普通反引号仍按字面保留。
+
+补充真实“闭合后继续输入”时发现，ProseMirror 已经退出 `inlineCode`，但原文保真映射在行末只能锚定最后一个可见字符，会把新增正文插到闭合反引号之前，源码因而变成未闭合代码。现在行末零宽插入会依据整篇可见字符映射跨过反引号、强调、删除线、链接和关闭 HTML 等不可见闭合语法，同时停在尾随硬换行空格之前。该规则同时覆盖代码、强调和链接，不依赖关键词或局部语法猜测。
 
 ## #96 标题间距
 
@@ -37,7 +39,7 @@ Crepe 当前构建已经加载官方 history 插件，Electron 菜单也保留�
 - `npm run test:ui-regression`：7 个共享 Electron 会话 + 11 个独立 UI 场景通过。
 - `npm run test:source-map`：6 组 Markdown raw offset 映射通过。
 - `npm run test:markdown-preservation`：局部文本和结构保真通过。
-- `npm run test:editor-input`：行内代码、行内公式、front matter 通过。
+- `npm run test:editor-input`：行内代码、行内公式、front matter 通过；行内代码覆盖单个左反引号、正文逐字键入、单个右反引号、闭合后的普通正文和连续三个反引号。
 - `npm run test:pdf-export`：保存状态和 latest-task runner 通过。
 - `npm run test:security`：主进程权限和 PDF CSP/文档构建通过。
 - `npm run test:settings-update`：设置状态合并通过。

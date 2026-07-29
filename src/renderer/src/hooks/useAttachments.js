@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { baseName, isHeavyDoc } from '../paths.js'
 import { fireToast } from '../ui.js'
+import { updateTextareaSourceFromDom } from '../source-text-fidelity.js'
 
 const escapeLinkLabel = (text) =>
   String(text || 'attachment').replace(/([\[\]])/g, '\\$1')
@@ -39,7 +40,7 @@ export function useAttachments({
       sourceElement.__horsemdSourceViewportMoved = false
       sourceElement.__horsemdSourceSelectionAt = performance.now()
       sourceEditedIds.current.add(id)
-      liveContentRef.current.set(id, sourceElement.value)
+      liveContentRef.current.set(id, updateTextareaSourceFromDom(sourceElement))
       commitLive(id)
       sourceElement.focus()
       return true
@@ -48,7 +49,11 @@ export function useAttachments({
     const tab = tabsRef.current.find((candidate) => candidate.id === id)
     if (!tab || tab.kind === 'settings') return false
     const api = editorApis.current[id]
-    const current = api?.getMarkdown?.() || tab.content || ''
+    // The Crepe serializer is canonical Markdown and may differ from the
+    // author's bytes throughout the document. Insert into App's preserved raw
+    // snapshot at the mapped selection offset instead of rebasing the complete
+    // file on getMarkdown().
+    const current = tab.content || ''
     const rawOffset = api?.markdownOffsetFromSelection?.()
     const position = Number.isFinite(rawOffset)
       ? Math.max(0, Math.min(rawOffset, current.length))

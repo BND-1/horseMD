@@ -1,6 +1,6 @@
 # Markdown 原文保真与 Live Preview 架构决策
 
-> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-28。
+> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-29。
 
 ## 为什么需要这份文档
 
@@ -16,6 +16,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 4. 在富文本中粘贴原始 Markdown 时，即使剪贴板同时带有渲染 HTML，切到源码后仍保留该 Markdown 的原始写法。
 5. 来自网页的富文本粘贴优先保留 HTML 语义；不能因为其 `text/plain` 回退内容像 Markdown 就丢失标题、加粗、链接或图片。
 6. 只有真实用户编辑或粘贴才会标脏；纯模式切换和程序化源码同步不能标脏或再次改写源码。
+7. UTF-8 BOM、CRLF 和混合换行属于原文的一部分。源码模式只改一个字符时，不得把整篇文件统一成 LF。
 
 ## 当前实现
 
@@ -33,12 +34,17 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 在已有块之间按 Enter 新建正文时，以前后两个未变化的可见行作为边界，只替换它们之间的 raw 间隙；快速输入和停顿输入分别对应单事务块插入、`<br />` 占位后填充两条路径；
 - 列表结构变化只替换映射到的列表树，并保留原有 `-` / `*` 风格及紧凑列表间距；
 - 表格行列变化只替换对应表格块，空单元格占位只在该表格内规范化；
+- 表格单元格的普通文字输入只映射真实 cell 文本 delta，不采用 serializer 重新对齐后的整张表；
 - 标题等级、分段等结构变化只替换受影响的原始行；
 - 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
 
 源码模式修改后，`replaceAll` 产生的全部程序化 `markdownUpdated` 事务会持续隔离，直到下一次明确的用户输入。这样即使前一次富文本编辑的短时活动标记仍存在，也不会把同步事务再次当成用户编辑。
 
 源码 textarea 为性能原因保持非受控。富文本输入后的 `markdownUpdated` 可能晚于用户点击模式切换；若先挂载 textarea，后到的 React 内容更新不会改变它的 `defaultValue`。因此富文本→源码必须先调用编辑器 API 的 `flushMarkdown()`，同步读取当前 Crepe 文档并执行同一套原文保真映射，再同步更新 `tabsRef` 和 tab state，最后才显示源码。禁止用固定延时或把大型 textarea 改成受控组件规避该竞态。
+
+浏览器会把 textarea 中的 CRLF 和单独 CR 统一呈现为 LF，因此 DOM `value` 不是可直接保存的原始源码。`source-text-fidelity.js` 在 DOM 之外维护 raw snapshot，把每次 normalized 输入的局部 delta 打回原文；查找替换、源码审阅、附件插入和大纲移动也必须使用该入口。光标与视口的 textarea offset 和 raw source offset 必须通过同一模块互转。
+
+超过 `CHUNK_THRESHOLD` 的文档在后台追加完所有块后，必须记录完整 canonical baseline，但不得用它重建 `lastMarkdownRef`。缺少这个基线会导致首次富文本输入被丢弃或扩大替换范围。
 
 空文档会在 ProseMirror 中建立一个仅供起笔使用的“空一级标题 + 空正文”骨架，但磁盘源码仍是空字符串。这个 UI 骨架必须在 `canonicalForSource()` 中从 canonical 差异基线排除：用户跳过标题从正文起笔时不能凭空写入 `#`，用户在标题中输入后则立即把标题视为真实 Markdown。否则第一次输入会因 `#\n\n` 与空源码的 visible stream 不一致而被原文保护器拒绝，表现为未保存切源码后内容为空或仍是旧快照。
 
@@ -64,6 +70,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 - `src/renderer/src/components/Editor.jsx`：原始/规范快照、真实用户编辑回写、成功 Markdown 粘贴事务。
 - `src/renderer/src/markdown-source-preservation.js`：局部 serializer delta 到原始源码的纯函数映射。
+- `src/renderer/src/source-text-fidelity.js`：非受控 textarea 的 raw snapshot、CRLF/BOM 保真和 offset 转换。
 - `src/renderer/src/components/editor-md-paste.js`：Markdown 与网页 HTML 的粘贴路由和语义覆盖判断。
 - `src/renderer/src/components/editor-source-map.js`：Markdown raw offset ↔ ProseMirror position 映射。
 - `src/renderer/src/hooks/useSourceModeSwitch.js`：源码/富文本状态机；源码真的改过才同步回 Crepe。
@@ -73,6 +80,9 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 ```bash
 # 纯函数：局部编辑不改写无关原文
 npm run test:markdown-preservation
+
+# 纯函数：源码 textarea 保留 CRLF、BOM、混合换行
+npm run test:source-text-fidelity
 
 # 映射：重复文本、表格、代码、图片、HTML
 npm run test:source-map
@@ -86,11 +96,17 @@ npm run test:paragraph-source-ui
 # 真实 Electron：重复表格行列编辑、富文本保存、完全退出并重开文件
 npm run test:issue-86-ui
 
+# 真实 Electron：异构 Markdown 多点编辑后全文与磁盘逐字节比较
+npm run test:source-fidelity-ui
+
+# 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本和源码编辑
+npm run test:large-source-fidelity-ui
+
 # 已安装 macOS 包也必须至少跑一次
 HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
 ```
 
-发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次。后者必须同时覆盖快速输入的单事务块插入、停顿输入的 `<br />` 两阶段事务、文档末尾和后续块之前的中间插入；并验证空文档从默认标题起笔、跳过标题从正文起笔、输入后立即切源码、标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
+发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次，并至少各运行一次 `test:source-fidelity-ui` 与 `test:large-source-fidelity-ui`。段落测试必须同时覆盖快速输入的单事务块插入、停顿输入的 `<br />` 两阶段事务、文档末尾和后续块之前的中间插入；并验证空文档从默认标题起笔、跳过标题从正文起笔、输入后立即切源码、标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
 
 ## 市场调研与长期决策
 

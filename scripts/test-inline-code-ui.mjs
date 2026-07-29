@@ -77,28 +77,77 @@ async function main() {
       await sleep(80)
     }
 
+    const typeCharacter = async (character) => {
+      const upper = character.toUpperCase()
+      const code = `Key${upper}`
+      const virtualKeyCode = upper.charCodeAt(0)
+      await send('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        key: character,
+        code,
+        windowsVirtualKeyCode: virtualKeyCode,
+        nativeVirtualKeyCode: virtualKeyCode
+      })
+      await send('Input.dispatchKeyEvent', {
+        type: 'char',
+        key: character,
+        code,
+        text: character,
+        unmodifiedText: character,
+        windowsVirtualKeyCode: virtualKeyCode,
+        nativeVirtualKeyCode: virtualKeyCode
+      })
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: character,
+        code,
+        windowsVirtualKeyCode: virtualKeyCode,
+        nativeVirtualKeyCode: virtualKeyCode
+      })
+      await sleep(35)
+    }
+
     // Use native key events rather than Input.insertText: the latter bypasses
     // ProseMirror's handleTextInput hook and therefore cannot validate the
     // keyboard path users actually take.
     await typeBacktick()
-    await typeBacktick()
-    await send('Input.insertText', { text: 'inline93' })
+    for (const character of 'awdawdwa') {
+      await typeCharacter(character)
+    }
     await sleep(120)
     const editing = await evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-      const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'inline93')
+      const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'awdawdwa')
       return {
         code: code?.textContent || '',
         delimiters: [...(editor?.querySelectorAll('.hm-inline-code-delimiter') || [])].map((node) => node.textContent).join('')
       }
     })()`)
-    assert.deepEqual(editing, { code: 'inline93', delimiters: '``' })
+    assert.deepEqual(editing, { code: 'awdawdwa', delimiters: '``' })
     await typeBacktick()
     assert.equal(
       await evaluate(`document.querySelectorAll('.hm-inline-code-delimiter').length`),
       0,
       'inline-code delimiters should hide after the caret exits'
     )
+    for (const character of 'outside') {
+      await typeCharacter(character)
+    }
+    const afterExit = await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraph = [...(editor?.querySelectorAll('p') || [])]
+        .find((node) => node.textContent.includes('Type target'))
+      const code = [...(paragraph?.querySelectorAll('code') || [])]
+        .find((node) => node.textContent.includes('awdawdwa'))
+      return {
+        code: code?.textContent || '',
+        paragraph: paragraph?.textContent || ''
+      }
+    })()`)
+    assert.deepEqual(afterExit, {
+      code: 'awdawdwa',
+      paragraph: 'Type targetawdawdwaoutside'
+    })
     await send('Input.dispatchKeyEvent', {
       type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
     })
@@ -124,10 +173,10 @@ async function main() {
       'source editor did not open'
     )
     assert.ok(
-      source.includes('`inline93`') && source.replaceAll('\\', '').includes('```'),
-      `three manually typed backticks must remain intact in Markdown; rich text was: ${richTextBeforeSource}`
+      source.includes('`awdawdwa`outside') && source.replaceAll('\\', '').includes('```'),
+      `inline-code exit or triple backticks changed in Markdown: ${JSON.stringify(source)}; rich text was: ${richTextBeforeSource}`
     )
-    console.log('PASS inline code UI: editing delimiters, explicit exit, and manual triple-backtick input')
+    console.log('PASS inline code UI: standard one-by-one input, explicit exit, and manual triple-backtick input')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }

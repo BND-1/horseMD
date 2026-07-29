@@ -21,6 +21,7 @@
 //   commitLive    — flush one tab's pending textarea edit (uncontrolled contract)
 //   liveContentRef— ref map of tab id → latest uncommitted textarea value
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { applyTextareaSourceEdit } from '../source-text-fidelity.js'
 import {
   clearFindHighlights,
   clearSourceFindHighlight,
@@ -179,8 +180,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
         // the debounced commit (and commitAllLive before save/close) persists
         // it. updateContent() alone wouldn't touch the DOM here, so the
         // replace would vanish and runFind would re-read the old value.
-        el.value = next
-        liveContentRef.current.set(activeId, next)
+        liveContentRef.current.set(activeId, applyTextareaSourceEdit(el, next))
         commitLive(activeId)
         runFind(q, all ? 0 : i)
         return

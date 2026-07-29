@@ -28,6 +28,59 @@ const lineAt = (markdown, offset) => {
   return { start, end: next < 0 ? markdown.length : next }
 }
 
+const rawInsertionAtCanonicalLineEnd = ({
+  source,
+  previous,
+  canonicalOffset,
+  mappedSourceOffset,
+  sourceVisibleMap
+}) => {
+  const previousLine = lineAt(previous, canonicalOffset)
+  if (canonicalOffset !== previousLine.end) return null
+
+  const sourceLine = lineAt(source, mappedSourceOffset)
+  const hiddenTail = source.slice(mappedSourceOffset, sourceLine.end)
+  let low = 0
+  let high = sourceVisibleMap.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (sourceVisibleMap[middle] < mappedSourceOffset) low = middle + 1
+    else high = middle
+  }
+  if (sourceVisibleMap[low] < sourceLine.end) return null
+
+  // Inline closers (``, **, ~~ and closing HTML) are not part of the visible
+  // stream. At a line end the generic backward mapping lands before them.
+  // Advance past syntax, but stay before authored hard-break whitespace.
+  const trailingWhitespace = hiddenTail.match(/[ \t]*$/)?.[0] || ''
+  return sourceLine.end - trailingWhitespace.length
+}
+
+const lineEndingNear = (markdown, offset = 0) => {
+  const next = markdown.indexOf('\n', Math.max(0, offset))
+  if (next >= 0) return markdown[next - 1] === '\r' ? '\r\n' : '\n'
+  const previous = markdown.lastIndexOf('\n', Math.max(0, offset - 1))
+  if (previous >= 0) return markdown[previous - 1] === '\r' ? '\r\n' : '\n'
+  return markdown.includes('\r\n') ? '\r\n' : '\n'
+}
+
+const adaptCanonicalRegionToSource = (replacement, source, region) => {
+  const eol = lineEndingNear(source, region.start)
+  let adapted = String(replacement || '').replace(/\r\n?|\n/g, eol)
+  const sourceRegion = source.slice(region.start, region.end)
+  if (region.start === 0 && source.startsWith('\uFEFF') && !adapted.startsWith('\uFEFF')) {
+    adapted = '\uFEFF' + adapted
+  }
+  if (
+    sourceRegion.endsWith('\r') &&
+    source[region.end] === '\n' &&
+    !adapted.endsWith('\r')
+  ) {
+    adapted += '\r'
+  }
+  return adapted
+}
+
 const isTableLine = (line) => line.includes('|')
 
 const isTableSeparatorLine = (line) => {
@@ -82,7 +135,12 @@ export function replaceMarkdownFrontmatterBlock({ source, next, sourceOffset, ne
   const sourceBlock = frontmatterBlockAt(rawSource, sourceOffset)
   const nextBlock = frontmatterBlockAt(rawNext, nextOffset)
   if (!sourceBlock || !nextBlock) return null
-  return rawSource.slice(0, sourceBlock.start) + rawNext.slice(nextBlock.start, nextBlock.end) + rawSource.slice(sourceBlock.end)
+  const replacement = adaptCanonicalRegionToSource(
+    rawNext.slice(nextBlock.start, nextBlock.end),
+    rawSource,
+    sourceBlock
+  )
+  return rawSource.slice(0, sourceBlock.start) + replacement + rawSource.slice(sourceBlock.end)
 }
 
 // Find the syntactic list tree around an offset without parsing the entire
@@ -246,7 +304,9 @@ export function replaceMarkdownListBlock({
       : rawNext.slice(nextList.start, nextList.end),
     rawNext.slice(nextList.start, nextList.end)
   )
-  return rawSource.slice(0, sourceList.start) + replacement + rawSource.slice(sourceList.end)
+  return rawSource.slice(0, sourceList.start) +
+    adaptCanonicalRegionToSource(replacement, rawSource, sourceList) +
+    rawSource.slice(sourceList.end)
 }
 
 const comparableListText = (markdown) => markdown
@@ -292,7 +352,9 @@ const preserveListBlockChange = ({ source, previous, next, start, previousEnd, n
     next.slice(nextList.start, nextList.end)
   )
   return {
-    markdown: source.slice(0, sourceList.start) + replacement + source.slice(sourceList.end),
+    markdown: source.slice(0, sourceList.start) +
+      adaptCanonicalRegionToSource(replacement, source, sourceList) +
+      source.slice(sourceList.end),
     preserved: true,
     reason: 'list-type-change'
   }
@@ -374,10 +436,64 @@ const replaceChangedTableBlock = ({ source, previous, next, start, previousEnd, 
 
   return {
     markdown: source.slice(0, sourceTable.start) +
-      normalizeEmptyTableCells(next.slice(nextTable.start, nextTable.end)) +
+      adaptCanonicalRegionToSource(
+        normalizeEmptyTableCells(next.slice(nextTable.start, nextTable.end)),
+        source,
+        sourceTable
+      ) +
       source.slice(sourceTable.end),
     preserved: true,
     reason: 'table-block-change'
+  }
+}
+
+const preserveTableTextChange = ({ source, previous, next, start, previousEnd, nextEnd }) => {
+  const previousTable = tableBlockAt(previous, start) || tableBlockAt(previous, previousEnd)
+  const nextTable = tableBlockAt(next, start) || tableBlockAt(next, nextEnd)
+  if (!previousTable || !nextTable) return null
+  if (tableShape(previous, previousTable) !== tableShape(next, nextTable)) return null
+
+  const tableStart = sourceVisiblePositionAtRaw(previous, previousTable.start)
+  const rawInsideSource = sourceRawFromVisibleIndex(source, tableStart.visibleIndex, 'forward')
+  const sourceTable = tableBlockAt(source, rawInsideSource)
+  if (!sourceTable) return null
+
+  const sourceTableText = source.slice(sourceTable.start, sourceTable.end)
+  const previousTableText = previous.slice(previousTable.start, previousTable.end)
+  const nextTableText = next.slice(nextTable.start, nextTable.end)
+  const sourceTableVisible = sourceVisibleIndex(sourceTableText).text
+  const previousTableVisible = sourceVisibleIndex(previousTableText).text
+  const nextTableVisible = sourceVisibleIndex(nextTableText).text
+  if (sourceTableVisible !== previousTableVisible || previousTableVisible === nextTableVisible) return null
+
+  const visibleChange = commonChange(previousTableVisible, nextTableVisible)
+  const sourceStart = sourceRawFromVisibleIndex(
+    sourceTableText,
+    visibleChange.start,
+    visibleChange.start === visibleChange.previousEnd ? 'backward' : 'forward'
+  )
+  const sourceEnd = sourceRawFromVisibleIndex(sourceTableText, visibleChange.previousEnd, 'backward')
+  const nextStart = sourceRawFromVisibleIndex(nextTableText, visibleChange.start, 'forward')
+  const nextRawEnd = sourceRawFromVisibleIndex(nextTableText, visibleChange.nextEnd, 'backward')
+  if (
+    ![sourceStart, sourceEnd, nextStart, nextRawEnd].every(Number.isFinite) ||
+    sourceStart > sourceEnd ||
+    nextStart > nextRawEnd
+  ) {
+    return null
+  }
+
+  const replacement = nextTableText.slice(nextStart, nextRawEnd)
+  const rawRegion = {
+    start: sourceTable.start + sourceStart,
+    end: sourceTable.start + sourceEnd
+  }
+  return {
+    markdown: source.slice(0, rawRegion.start) +
+      adaptCanonicalRegionToSource(replacement, source, rawRegion) +
+      source.slice(rawRegion.end),
+    preserved: true,
+    reason: 'table-text-change'
   }
 }
 
@@ -456,13 +572,70 @@ const hasStructuralPrefixChange = ({ previous, next, start, previousEnd, nextEnd
     isBlockPrefix(next.slice(nextLine.start, nextEnd))
 }
 
+// The full visible streams can differ when the parser gives an authored token a
+// different meaning, for example several single `~` characters inside one GFM
+// paragraph. A user edit before that mismatch is still safe to map by ordinal
+// when the bounded visible context around the changed span is identical. This is
+// not keyword matching: both sides must agree at the exact visible indices.
+const preserveLocallyAlignedTextChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousVisible = sourceVisibleIndex(previous)
+  const sourceVisible = sourceVisibleIndex(source)
+  const startVisible = sourceVisiblePositionAtRaw(previous, start)
+  const endVisible = sourceVisiblePositionAtRaw(previous, previousEnd)
+  const visibleStart = startVisible.visibleIndex
+  const visibleEnd = endVisible.visibleIndex
+  const replacement = next.slice(start, nextEnd)
+  const replacementVisible = sourceVisibleIndex(replacement).text
+  const previousChangedVisible = previousVisible.text.slice(visibleStart, visibleEnd)
+  if (!previousChangedVisible && !replacementVisible) return null
+
+  const changedLines = lineRegion(previous, start, previousEnd)
+  const lineVisibleStart = sourceVisiblePositionAtRaw(previous, changedLines.start).visibleIndex
+  const lineVisibleEnd = sourceVisiblePositionAtRaw(previous, changedLines.end).visibleIndex
+  const contextStart = Math.max(lineVisibleStart, visibleStart - 64)
+  const contextEnd = Math.min(lineVisibleEnd, visibleEnd + 64)
+  if (
+    sourceVisible.text.slice(contextStart, visibleStart) !==
+      previousVisible.text.slice(contextStart, visibleStart) ||
+    sourceVisible.text.slice(visibleStart, visibleEnd) !== previousChangedVisible ||
+    sourceVisible.text.slice(visibleEnd, contextEnd) !==
+      previousVisible.text.slice(visibleEnd, contextEnd)
+  ) {
+    return null
+  }
+
+  const rawStart = rawOffsetAtVisible(source, startVisible)
+  const rawEnd = rawOffsetAtVisible(source, endVisible)
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
+  return {
+    markdown: source.slice(0, rawStart) +
+      adaptCanonicalRegionToSource(replacement, source, { start: rawStart, end: rawEnd }) +
+      source.slice(rawEnd),
+    preserved: true,
+    reason: 'locally-aligned-change'
+  }
+}
+
 const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
-  const sourceTrailingNewlines = source.match(/\n*$/)?.[0].length || 0
-  const block = canonicalBlock.replace(/^\n+/, '').replace(/\n+$/, '')
+  const eol = lineEndingNear(source, source.length)
+  const sourceTrailingBreaks = source.match(/(?:(?:\r\n)|\n|\r)*$/)?.[0] || ''
+  const sourceTrailingNewlines = sourceTrailingBreaks.match(/\r\n|\n|\r/g)?.length || 0
+  const block = canonicalBlock
+    .replace(/^(?:(?:\r\n)|\n|\r)+/, '')
+    .replace(/(?:(?:\r\n)|\n|\r)+$/, '')
   if (!block) return null
-  const separator = '\n'.repeat(Math.max(0, 2 - sourceTrailingNewlines))
-  const finalNewline = sourceTrailingNewlines > 0 ? '\n' : ''
-  return source + separator + block + finalNewline
+  const separator = eol.repeat(Math.max(0, 2 - sourceTrailingNewlines))
+  const finalNewline = sourceTrailingNewlines > 0 ? eol : ''
+  return source + separator +
+    adaptCanonicalRegionToSource(block, source, { start: source.length, end: source.length }) +
+    finalNewline
 }
 
 const trailingEmptyBlock = (markdown) => {
@@ -581,9 +754,14 @@ const preserveMiddleEmptyBlock = ({
   if (standaloneEmptyBlockLines(sourceGap).length) return null
 
   const nextGap = next.slice(nextBefore.end, nextAfter.start)
+  const sourceGapRegion = { start: sourceBefore.end, end: sourceAfter.start }
   return {
     markdown: source.slice(0, sourceBefore.end) +
-      withoutStandaloneEmptyBlockLines(nextGap) +
+      adaptCanonicalRegionToSource(
+        withoutStandaloneEmptyBlockLines(nextGap),
+        source,
+        sourceGapRegion
+      ) +
       source.slice(sourceAfter.start),
     preserved: true,
     reason: previousChangedEmpty
@@ -761,7 +939,11 @@ const preserveChangedLineRegion = ({
 
   return {
     markdown: source.slice(0, sourceRegion.start) +
-      transformReplacement(next.slice(nextRegion.start, nextRegion.end)) +
+      adaptCanonicalRegionToSource(
+        transformReplacement(next.slice(nextRegion.start, nextRegion.end)),
+        source,
+        sourceRegion
+      ) +
       source.slice(sourceRegion.end),
     preserved: true,
     reason
@@ -810,7 +992,25 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     nextEnd
   })
   if (middleEmptyPreserved) return middleEmptyPreserved
+  const tableTextPreserved = preserveTableTextChange({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (tableTextPreserved) return tableTextPreserved
   if (sourceVisible.text !== previousVisible.text) {
+    const locallyAligned = preserveLocallyAlignedTextChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (locallyAligned) return locallyAligned
     return preserveChangedLineRegion({
       source: sourceMarkdown,
       previous,
@@ -944,8 +1144,25 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-structural-change' }
   }
 
-  const rawStart = rawOffsetAtVisible(sourceMarkdown, startVisible)
-  const rawEnd = rawOffsetAtVisible(sourceMarkdown, endVisible)
+  let rawStart = rawOffsetAtVisible(sourceMarkdown, startVisible)
+  let rawEnd = rawOffsetAtVisible(sourceMarkdown, endVisible)
+  if (
+    start === previousEnd &&
+    startVisible.visibleIndex === endVisible.visibleIndex &&
+    replacementVisible
+  ) {
+    const lineEndInsertion = rawInsertionAtCanonicalLineEnd({
+      source: sourceMarkdown,
+      previous,
+      canonicalOffset: start,
+      mappedSourceOffset: rawStart,
+      sourceVisibleMap: sourceVisible.map
+    })
+    if (Number.isFinite(lineEndInsertion)) {
+      rawStart = lineEndInsertion
+      rawEnd = lineEndInsertion
+    }
+  }
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) {
     return preserveChangedLineRegion({
       source: sourceMarkdown,
@@ -959,7 +1176,9 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   }
 
   return {
-    markdown: sourceMarkdown.slice(0, rawStart) + replacement + sourceMarkdown.slice(rawEnd),
+    markdown: sourceMarkdown.slice(0, rawStart) +
+      adaptCanonicalRegionToSource(replacement, sourceMarkdown, { start: rawStart, end: rawEnd }) +
+      sourceMarkdown.slice(rawEnd),
     preserved: true,
     reason: 'localized-change'
   }

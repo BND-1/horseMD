@@ -30,6 +30,10 @@ import {
   DEFAULT_FONT_WRITE,
   DEFAULT_FONT_MONO
 } from './settings.js'
+import {
+  getTextareaSourceValue,
+  setTextareaSourceValue
+} from './source-text-fidelity.js'
 import { applyCustomTheme, applyUserCss } from './customThemes.js'
 import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
@@ -408,8 +412,9 @@ export default function App() {
     const api = editorApis.current[id]
     if (!api) return null
     const sourceElement = sourceTextareas.current[id]
-    if (sourceElement && api.getMarkdown?.() !== sourceElement.value) {
-      api.replaceMarkdown?.(sourceElement.value)
+    const source = sourceElement ? getTextareaSourceValue(sourceElement) : null
+    if (sourceElement && api.getMarkdown?.() !== source) {
+      api.replaceMarkdown?.(source)
     }
     return api.getPdfSource?.() || null
   }, [editorApis, sourceTextareas])
@@ -629,7 +634,7 @@ export default function App() {
     if (outlineSourceMode) {
       const textarea = sourceTextareas.current[outlineId]
       if (!textarea) return false
-      textarea.value = next
+      setTextareaSourceValue(textarea, next)
       sourceEditedIds.current.add(outlineId)
     } else if (!editorApis.current[outlineId]?.replaceMarkdown?.(next)) {
       return false

@@ -2,6 +2,10 @@ import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/prose/view'
 
 const inlineCodeEditingKey = new PluginKey('horsemd-inline-code-editing')
+const inactiveEditingState = Object.freeze({
+  active: false,
+  pendingOpenAt: null
+})
 
 function inlineCodeType(state) {
   return state.schema.marks.inlineCode || state.schema.marks.code || null
@@ -16,8 +20,20 @@ export function inlineCodeMarkBefore(state, pos) {
   return before && !after ? before : null
 }
 
+function editingState(state) {
+  const value = inlineCodeEditingKey.getState(state)
+  if (value && typeof value === 'object') return value
+  return value
+    ? { active: true, pendingOpenAt: null }
+    : inactiveEditingState
+}
+
+function setEditingState(tr, active, pendingOpenAt = null) {
+  return tr.setMeta(inlineCodeEditingKey, { active, pendingOpenAt })
+}
+
 function setActive(tr, active) {
-  return tr.setMeta(inlineCodeEditingKey, active)
+  return setEditingState(tr, active)
 }
 
 function marksWith(mark, marks = []) {
@@ -52,7 +68,7 @@ const delimiterWidget = (side) =>
   }
 
 function inlineCodeEditingDecorations(state) {
-  if (!inlineCodeEditingKey.getState(state)) return null
+  if (!editingState(state).active) return null
   const range = inlineCodeRangeAtSelection(state)
   if (!range) return null
   return DecorationSet.create(state.doc, [
@@ -67,28 +83,37 @@ function inlineCodeEditingDecorations(state) {
   ])
 }
 
-const dispatchInlineCodeEdit = (view, tr, active, onEdit, onValueChange) => {
+const dispatchInlineCodeEdit = (view, tr, nextState, onEdit, onValueChange) => {
   onEdit?.()
-  view.dispatch(setActive(tr, active))
+  view.dispatch(setEditingState(tr, nextState.active, nextState.pendingOpenAt))
   // Milkdown does not emit markdownUpdated for every plugin-owned transaction.
   // Notify the Editor lifecycle explicitly so source mode and save state never
   // lag behind a literal backtick or deferred inline-code conversion.
   onValueChange?.()
 }
 
-// Adds the two boundary behaviours expected from a WYSIWYG inline-code mark:
-// typing two backticks followed by text enters code, and clicking the rendered
-// code's trailing edge keeps subsequent text inside that mark. The underlying
-// Markdown input rule and non-inclusive schema remain unchanged.
+// Adds the boundary behaviours expected from a WYSIWYG inline-code mark:
+// standard `text` typing enters code after the first text character, literal
+// repeated backticks remain available, and clicking a rendered code boundary
+// keeps subsequent text inside that mark.
 export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
   return new Plugin({
     key: inlineCodeEditingKey,
     state: {
-      init: () => false,
-      apply(tr, active) {
+      init: () => inactiveEditingState,
+      apply(tr, current) {
         const explicit = tr.getMeta(inlineCodeEditingKey)
-        if (typeof explicit === 'boolean') return explicit
-        return tr.selectionSet ? false : active
+        if (explicit && typeof explicit === 'object') return explicit
+        if (typeof explicit === 'boolean') {
+          return explicit ? { active: true, pendingOpenAt: null } : inactiveEditingState
+        }
+        if (tr.selectionSet) return inactiveEditingState
+        if (current.pendingOpenAt != null && tr.docChanged) {
+          const mapped = tr.mapping.mapResult(current.pendingOpenAt)
+          if (mapped.deleted) return inactiveEditingState
+          return { ...current, pendingOpenAt: mapped.pos }
+        }
+        return current
       }
     },
     props: {
@@ -99,12 +124,13 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         const type = inlineCodeType(state)
         if (!type || from !== to) return false
 
-        if (inlineCodeEditingKey.getState(state)) {
+        const current = editingState(state)
+        if (current.active) {
           const baseMarks = state.storedMarks || state.doc.resolve(from).marks()
           if (text === '`') {
             const tr = setActive(state.tr.setSelection(TextSelection.create(state.doc, from)), false)
             tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
-            dispatchInlineCodeEdit(view, tr, false, onEdit, onValueChange)
+            dispatchInlineCodeEdit(view, tr, inactiveEditingState, onEdit, onValueChange)
             return true
           }
 
@@ -112,7 +138,13 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
           const tr = state.tr.replaceWith(from, to, state.schema.text(text, marksWith(mark, baseMarks)))
           tr.setSelection(TextSelection.create(tr.doc, from + text.length))
           tr.setStoredMarks(marksWith(mark, baseMarks))
-          dispatchInlineCodeEdit(view, tr, true, onEdit, onValueChange)
+          dispatchInlineCodeEdit(
+            view,
+            tr,
+            { active: true, pendingOpenAt: null },
+            onEdit,
+            onValueChange
+          )
           return true
         }
 
@@ -122,12 +154,51 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         // below turns `` + ordinary text into inline code after intent is clear.
         if (text === '`') {
           const baseMarks = state.storedMarks || state.doc.resolve(from).marks()
+          const $from = state.doc.resolve(from)
+          const previousCharacter = $from.parentOffset > 0
+            ? $from.parent.textBetween($from.parentOffset - 1, $from.parentOffset)
+            : ''
           const tr = state.tr.insertText(text, from, to)
           tr.setSelection(TextSelection.create(tr.doc, from + 1))
           tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
-          dispatchInlineCodeEdit(view, tr, false, onEdit, onValueChange)
+          dispatchInlineCodeEdit(
+            view,
+            tr,
+            {
+              active: false,
+              pendingOpenAt: previousCharacter === '`' ? null : from
+            },
+            onEdit,
+            onValueChange
+          )
           return true
         }
+
+        if (
+          current.pendingOpenAt != null &&
+          from === current.pendingOpenAt + 1 &&
+          state.doc.textBetween(current.pendingOpenAt, from) === '`'
+        ) {
+          const $from = state.doc.resolve(from)
+          const mark = type.create()
+          const baseMarks = state.storedMarks || $from.marks()
+          const tr = state.tr.delete(current.pendingOpenAt, from)
+          tr.insert(
+            current.pendingOpenAt,
+            state.schema.text(text, marksWith(mark, baseMarks))
+          )
+          tr.setSelection(TextSelection.create(tr.doc, current.pendingOpenAt + text.length))
+          tr.setStoredMarks(marksWith(mark, baseMarks))
+          dispatchInlineCodeEdit(
+            view,
+            tr,
+            { active: true, pendingOpenAt: null },
+            onEdit,
+            onValueChange
+          )
+          return true
+        }
+
         if (from < 2) return false
         const $from = state.doc.resolve(from)
         if (
@@ -143,7 +214,13 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         tr.insert(from - 2, state.schema.text(text, marksWith(mark, state.storedMarks || $from.marks())))
         tr.setSelection(TextSelection.create(tr.doc, from - 2 + text.length))
         tr.setStoredMarks(marksWith(mark, state.storedMarks || $from.marks()))
-        dispatchInlineCodeEdit(view, tr, true, onEdit, onValueChange)
+        dispatchInlineCodeEdit(
+          view,
+          tr,
+          { active: true, pendingOpenAt: null },
+          onEdit,
+          onValueChange
+        )
         return true
       },
 
@@ -165,7 +242,8 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
 
       handleDOMEvents: {
         blur(view) {
-          if (inlineCodeEditingKey.getState(view.state)) {
+          const current = editingState(view.state)
+          if (current.active || current.pendingOpenAt != null) {
             view.dispatch(setActive(view.state.tr, false))
           }
           return false

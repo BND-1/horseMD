@@ -3,6 +3,7 @@ import {
   preserveRichMarkdownSource,
   replaceMarkdownFrontmatterBlock
 } from '../src/renderer/src/markdown-source-preservation.js'
+import { sourceVisibleIndex } from '../src/renderer/src/mode-visible-map.js'
 
 const source = [
   '# 一级标题',
@@ -15,6 +16,12 @@ const source = [
   '',
   '这一段不要修改。'
 ].join('\n')
+
+assert.equal(
+  sourceVisibleIndex('硬换行  \n下一行').text,
+  sourceVisibleIndex('硬换行\\\n下一行').text,
+  'equivalent Markdown hard-break spellings must share one visible stream'
+)
 
 // This is the equivalent Markdown emitted by Crepe before any user edit.
 const canonical = [
@@ -48,6 +55,67 @@ const mismatch = preserveRichMarkdownSource('原文 A', '原文 B', '原文 C')
 assert.equal(mismatch.preserved, false)
 assert.equal(mismatch.markdown, '原文 A')
 assert.equal(mismatch.reason, 'visible-stream-mismatch')
+
+const mismatchAfterEditedLineSource = [
+  '审计起点：0~9。',
+  '',
+  '后文保留单波浪号 A~B 和 C~D。'
+].join('\n')
+const mismatchAfterEditedLineCanonical = [
+  '审计起点：0\\~9。',
+  '',
+  '后文保留单波浪号 AB 和 CD。'
+].join('\n')
+const mismatchAfterEditedLine = preserveRichMarkdownSource(
+  mismatchAfterEditedLineSource,
+  mismatchAfterEditedLineCanonical,
+  mismatchAfterEditedLineCanonical.replace('审计起点', '审计起点X')
+)
+assert.equal(mismatchAfterEditedLine.preserved, true)
+assert.equal(mismatchAfterEditedLine.reason, 'locally-aligned-change')
+assert.equal(
+  mismatchAfterEditedLine.markdown,
+  mismatchAfterEditedLineSource.replace('审计起点', '审计起点X'),
+  'a later visible-stream mismatch must not normalize untouched syntax on the locally edited line'
+)
+
+const crlfSource = '\uFEFF# Windows 标题\r\n\r\n正文 0~9。\r\n\r\n- 紧凑一\r\n- 紧凑二\r\n'
+const crlfCanonical = '# Windows 标题\n\n正文 0\\~9。\n\n* 紧凑一\n\n* 紧凑二\n'
+const crlfTextEdited = preserveRichMarkdownSource(
+  crlfSource,
+  crlfCanonical,
+  crlfCanonical.replace('正文', '正文X')
+)
+assert.equal(crlfTextEdited.preserved, true)
+assert.equal(
+  crlfTextEdited.markdown,
+  crlfSource.replace('正文', '正文X'),
+  'ordinary rich edits must retain UTF-8 BOM, CRLF, list compactness, and untouched escapes'
+)
+
+const crlfHeadingChanged = preserveRichMarkdownSource(
+  crlfSource,
+  crlfCanonical,
+  crlfCanonical.replace('# Windows 标题', '## Windows 标题')
+)
+assert.equal(crlfHeadingChanged.preserved, true)
+assert.equal(
+  crlfHeadingChanged.markdown,
+  crlfSource.replace('# Windows 标题', '## Windows 标题'),
+  'a structural first-line edit must retain BOM and CRLF'
+)
+
+const crlfParagraphSplit = preserveRichMarkdownSource(
+  crlfSource,
+  crlfCanonical,
+  crlfCanonical.replace('正文 0\\~9。', '正文\n\n0\\~9。')
+)
+assert.equal(crlfParagraphSplit.preserved, true)
+assert.equal(
+  crlfParagraphSplit.markdown,
+  crlfSource.replace('正文 0~9。', '正文\r\n\r\n0~9。'),
+  'new rich-text block separators must follow the source CRLF convention'
+)
 
 const listTextEdited = preserveRichMarkdownSource(
   source,
@@ -140,6 +208,28 @@ assert.equal(
   tableCellEdited.markdown,
   tableSource.replace('old-a', 'edited-a'),
   'editing table text must not normalize the table or unrelated prose'
+)
+
+const tableCanonicalRealigned = [
+  '| A            |              B |',
+  '| :----------- | -------------: |',
+  '| TABLE\\_CELL | second<br>line |'
+].join('\n')
+const tableCanonicalRealignedNext = [
+  '| A             |              B |',
+  '| :------------ | -------------: |',
+  '| TABLE\\_CELLX | second<br>line |'
+].join('\n')
+const tableRealignedTextEdit = preserveRichMarkdownSource(
+  'A | B\n:--- | ---:\nTABLE_CELL | second<br>line',
+  tableCanonicalRealigned,
+  tableCanonicalRealignedNext
+)
+assert.equal(tableRealignedTextEdit.reason, 'table-text-change')
+assert.equal(
+  tableRealignedTextEdit.markdown,
+  'A | B\n:--- | ---:\nTABLE_CELLX | second<br>line',
+  'serializer column padding changes must not reformat an authored table during a cell text edit'
 )
 
 const listSource = [
@@ -373,6 +463,39 @@ assert.equal(
   directMiddleParagraphInserted.markdown,
   '# 标题\n\n前段内容\n\n立即输入段落\n\n## 后续标题\n\n后段内容\n',
   'typing immediately after Enter must preserve the inserted block boundary'
+)
+
+const inlineCodeExitedAtLineEnd = preserveRichMarkdownSource(
+  'Type target`awdawdwa`\n',
+  'Type target`awdawdwa`\n',
+  'Type target`awdawdwa`outside\n'
+)
+assert.equal(
+  inlineCodeExitedAtLineEnd.markdown,
+  'Type target`awdawdwa`outside\n',
+  'plain text typed after closing inline code must stay outside the backticks'
+)
+
+const emphasisExitedBeforeHardBreak = preserveRichMarkdownSource(
+  '__强调__  \n下一行\n',
+  '**强调**\n下一行\n',
+  '**强调**outside\n下一行\n'
+)
+assert.equal(
+  emphasisExitedBeforeHardBreak.markdown,
+  '__强调__outside  \n下一行\n',
+  'line-end inline syntax must close before new text without moving authored hard-break spaces'
+)
+
+const linkExitedAtLineEnd = preserveRichMarkdownSource(
+  '[HorseMD](https://horsemd.yangsir.net/)\n',
+  '[HorseMD](https://horsemd.yangsir.net/)\n',
+  '[HorseMD](https://horsemd.yangsir.net/)outside\n'
+)
+assert.equal(
+  linkExitedAtLineEnd.markdown,
+  '[HorseMD](https://horsemd.yangsir.net/)outside\n',
+  'plain text typed after a line-end link must stay outside the link destination'
 )
 
 const middleSpacedParagraphFilled = preserveRichMarkdownSource(

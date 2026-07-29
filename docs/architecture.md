@@ -176,7 +176,7 @@ build/
 
 > **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
 
-> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑由 `markdown-source-preservation.js` 回写到原始源码；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
+> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑由 `markdown-source-preservation.js` 回写到原始源码；非受控 textarea 通过 `source-text-fidelity.js` 保留 BOM、CRLF、混合换行和 raw offset；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md) 与 [2026-07 深度审计](./source-fidelity-audit-2026-07.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

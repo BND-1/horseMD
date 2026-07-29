@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { shouldUseRichContentVisibility } from '../src/renderer/src/paths.js'
+import { isHeavyDoc, shouldUseRichContentVisibility } from '../src/renderer/src/paths.js'
 
 const mediumCjk = [
   '# WhatIf 因果推断详细笔记',
@@ -15,5 +15,12 @@ assert.equal(shouldUseRichContentVisibility(manyBlocks), true, 'many-block rich 
 
 const manyLines = Array.from({ length: 8000 }, (_, i) => `line ${i}`).join('\n')
 assert.equal(shouldUseRichContentVisibility(manyLines), true, 'very long line-count docs still enable hm-cv')
+
+const normalCrlfBlocks = Array.from({ length: 1100 }, (_, i) => `CRLF paragraph ${i}`).join('\r\n\r\n')
+assert.equal(
+  isHeavyDoc(normalCrlfBlocks),
+  false,
+  'CRLF blank lines must reset the continuous-block counter'
+)
 
 console.log('PASS rich CV gating')

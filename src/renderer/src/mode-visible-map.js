@@ -1,4 +1,5 @@
 import { codeMirrorSelectionInfo } from './components/editor-codemirror-selection.js'
+import { decodeNamedCharacterReference } from 'decode-named-character-reference'
 const SNIPPET_LEN = 24
 
 // --------------------------- shared snippet matching ---------------------------
@@ -11,7 +12,7 @@ const stripMdForSnippet = (s) => s
   .replace(/^\s{0,3}#{1,6}\s*/gm, '')         // heading markers
   .replace(/^\s{0,3}>\s?/gm, '')              // blockquote markers
   .replace(/^\s{0,3}[-*+]\s+/gm, '')          // bullet list markers
-  .replace(/^\s{0,3}\d+\.\s+/gm, '')          // ordered list markers
+  .replace(/^\s{0,3}\d+[.)]\s+/gm, '')        // ordered list markers
   .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // image ![alt](url) → alt
   .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // link [text](url) → text
   .replace(/```[\s\S]*?```/g, '')            // fenced code blocks
@@ -84,7 +85,20 @@ const nearestIndexOf = (hay, needle, nearestTo = -1) => {
   return best
 }
 
-const appendInlineVisible = (out, raw, base = 0) => {
+const decodeMarkdownEntity = (value) => {
+  if (/^#x[0-9a-f]+$/i.test(value)) {
+    try { return String.fromCodePoint(Number.parseInt(value.slice(2), 16)) } catch { return null }
+  }
+  if (/^#[0-9]+$/.test(value)) {
+    try { return String.fromCodePoint(Number.parseInt(value.slice(1), 10)) } catch { return null }
+  }
+  return decodeNamedCharacterReference(value) || null
+}
+
+const isWordCharacter = (value) => !!value && /[\p{L}\p{N}]/u.test(value)
+const normalizeReferenceLabel = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+const appendInlineVisible = (out, raw, base = 0, referenceLabels = new Set()) => {
   let i = 0
   const push = (ch, rawIndex) => {
     out.text += ch
@@ -110,6 +124,22 @@ const appendInlineVisible = (out, raw, base = 0) => {
           continue
         }
       }
+      if (close >= 0 && raw[close + 1] === '[') {
+        const referenceEnd = raw.indexOf(']', close + 2)
+        const explicit = referenceEnd >= 0 ? raw.slice(close + 2, referenceEnd) : ''
+        const label = explicit || raw.slice(i + 2, close)
+        if (referenceEnd >= 0 && referenceLabels.has(normalizeReferenceLabel(label))) {
+          i = referenceEnd + 1
+          continue
+        }
+      }
+      if (
+        close >= 0 &&
+        referenceLabels.has(normalizeReferenceLabel(raw.slice(i + 2, close)))
+      ) {
+        i = close + 1
+        continue
+      }
     }
     if (raw[i] === '[') {
       const close = raw.indexOf(']', i + 1)
@@ -121,6 +151,24 @@ const appendInlineVisible = (out, raw, base = 0) => {
           continue
         }
       }
+      if (close >= 0 && raw[close + 1] === '[') {
+        const referenceEnd = raw.indexOf(']', close + 2)
+        const explicit = referenceEnd >= 0 ? raw.slice(close + 2, referenceEnd) : ''
+        const label = explicit || raw.slice(i + 1, close)
+        if (referenceEnd >= 0 && referenceLabels.has(normalizeReferenceLabel(label))) {
+          for (let j = i + 1; j < close; j++) push(raw[j], base + j)
+          i = referenceEnd + 1
+          continue
+        }
+      }
+      if (
+        close >= 0 &&
+        referenceLabels.has(normalizeReferenceLabel(raw.slice(i + 1, close)))
+      ) {
+        for (let j = i + 1; j < close; j++) push(raw[j], base + j)
+        i = close + 1
+        continue
+      }
     }
     if (raw[i] === '`') {
       i++
@@ -129,9 +177,45 @@ const appendInlineVisible = (out, raw, base = 0) => {
     if (raw[i] === '<') {
       const end = raw.indexOf('>', i + 1)
       if (end >= 0) {
+        const inside = raw.slice(i + 1, end)
+        if (/^(?:https?:\/\/|mailto:)/i.test(inside) || /^[^\s@<>]+@[^\s@<>]+$/.test(inside)) {
+          const visible = inside.replace(/^mailto:/i, '')
+          const rawOffset = inside.length - visible.length
+          for (let j = 0; j < visible.length; j++) push(visible[j], base + i + 1 + rawOffset + j)
+        }
         i = end + 1
         continue
       }
+    }
+    if (raw[i] === '&') {
+      const match = raw.slice(i).match(/^&(#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]+);/i)
+      const decoded = match ? decodeMarkdownEntity(match[1]) : null
+      if (decoded) {
+        for (const character of decoded) push(character, base + i)
+        i += match[0].length
+        continue
+      }
+    }
+    if (
+      raw[i] === '_' &&
+      raw[i + 1] === '_' &&
+      isWordCharacter(raw[i - 1]) &&
+      isWordCharacter(raw[i + 2])
+    ) {
+      push('_', base + i)
+      push('_', base + i + 1)
+      i += 2
+      continue
+    }
+    if (
+      raw[i] === '_' &&
+      raw[i + 1] !== '_' &&
+      isWordCharacter(raw[i - 1]) &&
+      isWordCharacter(raw[i + 1])
+    ) {
+      push('_', base + i)
+      i++
+      continue
     }
     if ((raw[i] === '*' || raw[i] === '_' || raw[i] === '~') && raw[i + 1] === raw[i]) {
       i += 2
@@ -161,6 +245,10 @@ const appendRawVisible = (out, raw, base = 0) => {
 const sourceVisibleIndex = (md) => {
   const out = { text: '', map: [] }
   if (!md) return out
+  const referenceLabels = new Set(
+    [...md.matchAll(/^\s{0,3}\[([^\]]+)\]:\s*/gm)]
+      .map((match) => normalizeReferenceLabel(match[1]))
+  )
   const lines = md.split(/(\n)/)
   let rawPos = 0
   let inFence = false
@@ -178,40 +266,78 @@ const sourceVisibleIndex = (md) => {
     }
     const lineStart = rawPos
     rawPos += line.length
-    const fence = line.match(/^\s*(```|~~~)/)
+    let visibleLine = line
+    let visibleLineStart = lineStart
+    // UTF-8 BOM and CR in CRLF are file-format bytes, not rendered characters.
+    // Keeping them in the visible stream shifts every source/rich offset on
+    // Windows and makes a local rich edit look like a document-wide mismatch.
+    if (visibleLineStart === 0 && visibleLine.startsWith('\uFEFF')) {
+      visibleLine = visibleLine.slice(1)
+      visibleLineStart += 1
+    }
+    if (visibleLine.endsWith('\r')) visibleLine = visibleLine.slice(0, -1)
+    // Setext underlines, thematic breaks, and reference definitions do not
+    // contribute characters to ProseMirror's visible text stream.
+    if (
+      /^\s{0,3}(?:=+|-+|\*{3,}|_{3,})\s*$/.test(visibleLine) ||
+      /^\s{0,3}\[[^\]]+\]:\s*/.test(visibleLine)
+    ) {
+      continue
+    }
+    const fence = visibleLine.match(/^\s*(```|~~~)/)
     if (fence) {
       inFence = !inFence
       continue
     }
     if (inFence) {
-      appendRawVisible(out, line, lineStart)
+      appendRawVisible(out, visibleLine, visibleLineStart)
       continue
     }
-    const hasPipe = line.includes('|')
-    const tableLike = /^\s*\|.*\|\s*$/.test(line) ||
-      (hasPipe && (inTable || isTableSeparator(line) || isTableSeparator(lines[i - 2]) || isTableSeparator(lines[i + 2])))
-    if (isTableSeparator(line)) {
+    // Markdown hard breaks can be authored as two trailing spaces or a trailing
+    // backslash. Neither form contributes a visible character in ProseMirror.
+    // Keep them only inside fenced code, handled above.
+    visibleLine = visibleLine.replace(/[ \t]+$/, '').replace(/\\$/, '')
+    const hasPipe = visibleLine.includes('|')
+    const previousLine = String(lines[i - 2] || '').replace(/\r$/, '')
+    const nextLine = String(lines[i + 2] || '').replace(/\r$/, '')
+    const tableLike = /^\s*\|.*\|\s*$/.test(visibleLine) ||
+      (hasPipe && (inTable || isTableSeparator(visibleLine) || isTableSeparator(previousLine) || isTableSeparator(nextLine)))
+    if (isTableSeparator(visibleLine)) {
       inTable = true
       continue
     }
     if (tableLike) {
       inTable = true
       let cursor = 0
-      const cells = line.split('|')
+      const cells = visibleLine.split('|')
       for (const cell of cells) {
         const cellRawStart = cursor
         cursor += cell.length + 1
         const leading = cell.match(/^\s*/)?.[0].length || 0
         const trailing = cell.match(/\s*$/)?.[0].length || 0
         const core = cell.slice(leading, Math.max(leading, cell.length - trailing))
-        if (core) appendInlineVisible(out, core, lineStart + cellRawStart + leading)
+          if (core) {
+            appendInlineVisible(
+              out,
+              core,
+              visibleLineStart + cellRawStart + leading,
+              referenceLabels
+            )
+          }
       }
       continue
     }
     inTable = false
-    const marker = line.match(/^(\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+))/)
+    const marker = visibleLine.match(
+      /^(\s{0,3}(?:#{1,6}\s+|>\s?|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?))/
+    )
     const offset = marker ? marker[0].length : 0
-    appendInlineVisible(out, line.slice(offset), lineStart + offset)
+    appendInlineVisible(
+      out,
+      visibleLine.slice(offset),
+      visibleLineStart + offset,
+      referenceLabels
+    )
   }
   return out
 }

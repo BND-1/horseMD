@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.27`。当前工作区在 Markdown 原文保真基础上完成 #93/#96/#97/#98，并补齐正文中间按 Enter 后切源码的两条事务路径：快速输入按块边界插入，停顿输入隔离 Crepe `<br />` 占位；列表、表格等结构仍走专用映射。行内代码、标题间距、PDF 预览竞态、原生复制和可选会话恢复详见 `docs/issues-93-98-implementation-report.md`。
+- 当前测试版本号：`package.json` 为 `0.12.30`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入及闭合后继续输入路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及行内代码无法可靠进入/退出的问题。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md`。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -146,8 +146,10 @@ android/, ios/           Capacitor 原生壳
 
 - Crepe 在源码模式中必须保持挂载，只隐藏，不卸载。
 - 源码 textarea 是非受控的，保留 `liveContentRef` / `commitLive` 流程。
+- textarea DOM 会把 CRLF 变成 LF；任何源码输入或源码命令写回 `liveContentRef` 前必须经过 `source-text-fidelity.js`，禁止直接保存 `textarea.value`。
 - 只有源码真的改过，切回富文本才同步到 Crepe。
 - Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。普通文字只允许字符级回写；结构操作最多替换受影响列表、表格或行；映射失败必须保留原文并报告失败。任何路径都不能用 canonical 内容覆盖整篇源码。
+- 分块大文档追加完成后必须记录完整 `canonicalMarkdownRef`，但绝不能用 canonical 重建 `lastMarkdownRef`。富文本插入类命令必须以 `tab.content` / `lastMarkdownRef` 为全文基底，不得以 `getMarkdown()` 为基底。
 - 源码调用 `replaceAll` 同步到 Crepe 时可能连续发出多个 `markdownUpdated`。`programmaticReplaceRef` 必须保持到下一次明确的 `markUserEdit`，不能只跳过第一条回调，否则前一次用户编辑的 TTL 会把后续同步事务误判为用户编辑。
 - Crepe canonical 始终带结尾换行，文档末尾新建的空 paragraph 又没有 visible index。不能把其后续输入映射到“最后一个可见字符”；`preserveAppendedParagraph` 必须按用户源码原有结尾换行数追加标准段落边界。修改后运行 `npm run test:paragraph-source-ui`，并确认测试包含保存、退出和全新进程重开。
 - 源码 textarea 是非受控组件，`defaultValue` 只在挂载时读取。富文本→源码切换前必须调用 `editorApis[id].flushMarkdown()`，同步更新 `tabsRef` 和 tab state 后再挂载 textarea；不能只依赖异步 `markdownUpdated`，否则立即切换会显示旧内容且后续 state 更新无法回填。专项测试必须在最后一次 `Input.insertText` 后零等待切换。
