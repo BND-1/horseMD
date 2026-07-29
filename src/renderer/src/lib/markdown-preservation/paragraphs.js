@@ -1,0 +1,227 @@
+import {
+  sourceVisibleIndex
+} from '../../mode-visible-map.js'
+import {
+  adaptCanonicalRegionToSource,
+  isTableLine,
+  lineAt,
+  lineEndingNear,
+  listMarker,
+  markdownLines
+} from './core.js'
+import {
+  sameVisibleLines,
+  visibleLineEntries
+} from './regions.js'
+
+const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
+  const eol = lineEndingNear(source, source.length)
+  const sourceTrailingBreaks = source.match(/(?:(?:\r\n)|\n|\r)*$/)?.[0] || ''
+  const sourceTrailingNewlines = sourceTrailingBreaks.match(/\r\n|\n|\r/g)?.length || 0
+  const block = canonicalBlock
+    .replace(/^(?:(?:\r\n)|\n|\r)+/, '')
+    .replace(/(?:(?:\r\n)|\n|\r)+$/, '')
+  if (!block) return null
+  const separator = eol.repeat(Math.max(0, 2 - sourceTrailingNewlines))
+  const finalNewline = sourceTrailingNewlines > 0 ? eol : ''
+  return source + separator +
+    adaptCanonicalRegionToSource(block, source, { start: source.length, end: source.length }) +
+    finalNewline
+}
+
+const trailingEmptyBlock = (markdown) => {
+  const match = markdown.match(/(?:^|\n{2})<br\s*\/?>\n*$/i)
+  if (!match) return null
+  const prefixLength = match[0].startsWith('\n\n') ? 2 : 0
+  return {
+    start: match.index + prefixLength,
+    end: markdown.length
+  }
+}
+
+const standaloneEmptyBlockLines = (markdown) => markdownLines(markdown)
+  .filter((line) => /^\s*<br\s*\/?>\s*$/i.test(line.text))
+
+const withoutStandaloneEmptyBlockLines = (markdown) => String(markdown || '')
+  .replace(/(^|\n)[ \t]*<br\s*\/?>[ \t]*(?=\n|$)/gi, '$1')
+
+const rangeTouches = (range, start, end) =>
+  range.start <= Math.max(start, end) && range.end >= Math.min(start, end)
+
+const hasDedicatedBlockSyntax = (markdown) => markdownLines(markdown).some(({ text }) => {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return !!listMarker(text) ||
+    isTableLine(text) ||
+    /^(?:#{1,6}\s|>|```|~~~|(?:-{3,}|\*{3,}|_{3,})\s*$)/.test(trimmed)
+})
+
+// Preserve an empty paragraph inserted between two existing blocks without
+// leaking Crepe's transient standalone `<br />` into authored Markdown.
+export const preserveMiddleEmptyBlock = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousEmpty = standaloneEmptyBlockLines(previous)
+  const nextEmpty = standaloneEmptyBlockLines(next)
+  const previousChangedEmpty = previousEmpty.some((range) =>
+    rangeTouches(range, start, previousEnd)
+  )
+  const nextChangedEmpty = nextEmpty.some((range) =>
+    rangeTouches(range, start, nextEnd)
+  )
+  const previousChangedText = withoutStandaloneEmptyBlockLines(
+    previous.slice(start, previousEnd)
+  ).trim()
+  const nextChangedText = withoutStandaloneEmptyBlockLines(
+    next.slice(start, nextEnd)
+  ).trim()
+
+  if (
+    nextEmpty.length > previousEmpty.length &&
+    nextChangedEmpty &&
+    !previousChangedText &&
+    !nextChangedText
+  ) {
+    return {
+      markdown: source,
+      preserved: true,
+      reason: 'middle-empty-block-created'
+    }
+  }
+
+  const directBlockInsertion =
+    previousEnd === start &&
+    !previousChangedText &&
+    !!nextChangedText
+  if ((!previousChangedEmpty && !directBlockInsertion) || !nextChangedText) return null
+  if (hasDedicatedBlockSyntax(next.slice(start, nextEnd))) return null
+
+  const previousLines = visibleLineEntries(previous)
+  const sourceLines = visibleLineEntries(source)
+  if (!sameVisibleLines(sourceLines, previousLines)) return null
+
+  let beforeIndex = -1
+  for (let index = 0; index < previousLines.length; index += 1) {
+    if (previousLines[index].end <= start) beforeIndex = index
+  }
+  const afterIndex = previousLines.findIndex((line) => line.start >= previousEnd)
+  if (beforeIndex < 0 || afterIndex < 0 || afterIndex <= beforeIndex) return null
+
+  const previousBefore = previousLines[beforeIndex]
+  const previousAfter = previousLines[afterIndex]
+  const sourceBefore = sourceLines[beforeIndex]
+  const sourceAfter = sourceLines[afterIndex]
+  if (
+    directBlockInsertion &&
+    previous.slice(previousBefore.end, previousAfter.start).trim()
+  ) {
+    return null
+  }
+  const delta = nextEnd - previousEnd
+  const nextBefore = lineAt(next, previousBefore.start)
+  const nextAfter = lineAt(next, previousAfter.start + delta)
+  if (
+    sourceVisibleIndex(next.slice(nextBefore.start, nextBefore.end)).text.trim() !== previousBefore.visible ||
+    sourceVisibleIndex(next.slice(nextAfter.start, nextAfter.end)).text.trim() !== previousAfter.visible
+  ) {
+    return null
+  }
+
+  const sourceGap = source.slice(sourceBefore.end, sourceAfter.start)
+  if (standaloneEmptyBlockLines(sourceGap).length) return null
+
+  const nextGap = next.slice(nextBefore.end, nextAfter.start)
+  const sourceGapRegion = { start: sourceBefore.end, end: sourceAfter.start }
+  return {
+    markdown: source.slice(0, sourceBefore.end) +
+      adaptCanonicalRegionToSource(
+        withoutStandaloneEmptyBlockLines(nextGap),
+        source,
+        sourceGapRegion
+      ) +
+      source.slice(sourceAfter.start),
+    preserved: true,
+    reason: previousChangedEmpty
+      ? 'middle-empty-block-filled'
+      : 'middle-block-inserted'
+  }
+}
+
+export const preserveTrailingEmptyBlock = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const sourceEmpty = trailingEmptyBlock(source)
+  const previousEmpty = trailingEmptyBlock(previous)
+  const nextEmpty = trailingEmptyBlock(next)
+
+  if (!sourceEmpty && !previousEmpty && nextEmpty) {
+    return {
+      markdown: source,
+      preserved: true,
+      reason: 'trailing-empty-block-created'
+    }
+  }
+
+  if (
+    !sourceEmpty &&
+    previousEmpty &&
+    !nextEmpty &&
+    start <= previousEmpty.end &&
+    previousEnd >= previousEmpty.start
+  ) {
+    const markdown = appendBlockAtDocumentEnd(source, next.slice(start, nextEnd))
+    if (markdown !== null) {
+      return {
+        markdown,
+        preserved: true,
+        reason: 'trailing-empty-block-filled'
+      }
+    }
+  }
+
+  return null
+}
+
+export const preserveAppendedParagraph = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd,
+  replacementVisible
+}) => {
+  const replacement = next.slice(start, nextEnd)
+  const previousTrailingNewlines = previous.match(/\n*$/)?.[0].length || 0
+  const replacementLeadingNewlines = replacement.match(/^\n*/)?.[0].length || 0
+  if (
+    start !== previous.length ||
+    previousEnd !== start ||
+    !replacementVisible ||
+    (
+      replacementLeadingNewlines === 0 &&
+      previousTrailingNewlines < 2
+    )
+  ) {
+    return null
+  }
+
+  const markdown = appendBlockAtDocumentEnd(source, replacement)
+  if (markdown === null) return null
+
+  return {
+    markdown,
+    preserved: true,
+    reason: 'appended-paragraph'
+  }
+}

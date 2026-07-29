@@ -161,8 +161,10 @@ npm run test:ui-regression
 - `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
   - 对普通 Markdown 追加 `--mode-switch`，验证保持查找栏时源码→富文本→源码缓存重建
 - `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证普通文字只改目标字符；标题、分段、列表新增/转换和表格行列变化只改受影响行或块，不重写整篇原文
+- `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格和代码等 6 个位置验证 source/rich 连续双向切换始终落在同一 raw offset 语义位置
 - `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
 - `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
+- `scripts/test-source-fidelity-audit-ui.mjs`、`scripts/test-large-doc-source-preservation-ui.mjs` —— 分别验证异构 Markdown 多点编辑后的逐字节局部性，以及 120k+ BOM/CRLF 分块文档的首次富文本编辑
 - `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化
 - `scripts/test-review-ui.mjs` —— 真实源码同步后的 Review 高亮、同段批注堆叠、卡片编辑/取消/完成和 substitution DOM
 

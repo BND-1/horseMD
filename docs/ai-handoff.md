@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-28。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-29。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.30`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入及闭合后继续输入路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及行内代码无法可靠进入/退出的问题。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md`。
+- 当前测试版本号：`package.json` 为 `0.12.30`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入及闭合后继续输入路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及行内代码无法可靠进入/退出的问题。行为基线提交为 `67f51fa`。原 993 行原文保真文件已拆成 268 行稳定 façade 和 `lib/markdown-preservation/` 下 6 个纯函数模块，三个公共导出及调用方未变化。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md` 与 `docs/markdown-source-preservation.md`。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`

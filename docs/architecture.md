@@ -60,7 +60,14 @@ src/
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
       settings.js          用户偏好（正文/列表排版、图床、拼写、隐藏文件）持久化 + CSS var 应用
       scrollAnchor.js      模式切换稳定 façade（仅 re-export 公共 API）
-      markdown-source-preservation.js 富文本局部编辑的原始 Markdown 保真映射
+      markdown-source-preservation.js 原文保真稳定 façade 与跨语法策略编排
+      lib/markdown-preservation/
+        core.js            通用差分、可见字符与 raw offset
+        frontmatter.js     YAML front matter 块替换
+        lists.js           列表结构与原文保真
+        tables.js          表格结构、单元格文字与空单元格
+        paragraphs.js      新段落与空块事务时序
+        regions.js         普通行、文字和结构前缀变化
       mode-visible-map.js  源码/富文本可见字符 fallback 映射
       mode-caret-anchor.js 双向光标 capture/restore
       mode-viewport-anchor.js 阅读视口 capture/restore
@@ -176,7 +183,7 @@ build/
 
 > **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
 
-> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑由 `markdown-source-preservation.js` 回写到原始源码；非受控 textarea 通过 `source-text-fidelity.js` 保留 BOM、CRLF、混合换行和 raw offset；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md) 与 [2026-07 深度审计](./source-fidelity-audit-2026-07.md)。
+> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑经 `markdown-source-preservation.js` 稳定 façade 回写到原始源码；列表、表格、段落、front matter 和普通区域的纯函数实现位于 `lib/markdown-preservation/`。非受控 textarea 通过 `source-text-fidelity.js` 保留 BOM、CRLF、混合换行和 raw offset；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md) 与 [2026-07 深度审计](./source-fidelity-audit-2026-07.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

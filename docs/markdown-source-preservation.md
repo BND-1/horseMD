@@ -27,7 +27,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - `lastMarkdownRef`：用户当前的原始 Markdown，是 App、保存和源码 textarea 的来源。
 - `canonicalMarkdownRef`：Crepe 最近一次序列化的规范 Markdown，只用于识别富文本事务实际改变了什么。
 
-普通富文本编辑触发 `markdownUpdated` 后，`markdown-source-preservation.js` 会比较前后 canonical 快照，并把局部变更映射回原始源码：
+普通富文本编辑触发 `markdownUpdated` 后，`markdown-source-preservation.js` façade 会比较前后 canonical 快照，并把局部变更路由到内部纯函数模块，再映射回原始源码：
 
 - 普通文字输入只替换对应的 raw 字符区间；
 - 文档末尾按 Enter 新建正文时，按源文件原有结尾换行风格写入标准段落边界；空段落没有 visible index，不能用最后一个可见字符位置代替；
@@ -69,11 +69,19 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 ## 关键文件
 
 - `src/renderer/src/components/Editor.jsx`：原始/规范快照、真实用户编辑回写、成功 Markdown 粘贴事务。
-- `src/renderer/src/markdown-source-preservation.js`：局部 serializer delta 到原始源码的纯函数映射。
+- `src/renderer/src/markdown-source-preservation.js`：稳定公共入口与策略编排；仅公开 `preserveRichMarkdownSource`、`replaceMarkdownFrontmatterBlock`、`replaceMarkdownListBlock`，调用方不得越过该入口依赖内部实现。
+- `src/renderer/src/lib/markdown-preservation/core.js`：通用差分、可见字符与 raw offset 转换。
+- `src/renderer/src/lib/markdown-preservation/frontmatter.js`：YAML front matter 块替换。
+- `src/renderer/src/lib/markdown-preservation/lists.js`：列表边界、结构变化与同块保真。
+- `src/renderer/src/lib/markdown-preservation/tables.js`：表格结构/单元格文字变化与空单元格规范化。
+- `src/renderer/src/lib/markdown-preservation/paragraphs.js`：文档末尾和中间位置的新段落、空块时序。
+- `src/renderer/src/lib/markdown-preservation/regions.js`：普通行、局部文字与结构前缀变化。
 - `src/renderer/src/source-text-fidelity.js`：非受控 textarea 的 raw snapshot、CRLF/BOM 保真和 offset 转换。
 - `src/renderer/src/components/editor-md-paste.js`：Markdown 与网页 HTML 的粘贴路由和语义覆盖判断。
 - `src/renderer/src/components/editor-source-map.js`：Markdown raw offset ↔ ProseMirror position 映射。
 - `src/renderer/src/hooks/useSourceModeSwitch.js`：源码/富文本状态机；源码真的改过才同步回 Crepe。
+
+内部模块保持单向依赖：façade 可以组合各模块，领域模块只依赖 `core.js`、`mode-visible-map.js` 或同领域纯函数，不能反向导入 façade、React、Editor 或 App。新增语法保真能力时优先进入对应领域模块；只有跨领域决策和最终降级顺序留在 façade。该边界于 2026-07-29 从原 993 行单文件完成行为保持型拆分，公共导出和调用方均未改变。
 
 ## 回归矩阵
 
@@ -86,6 +94,9 @@ npm run test:source-text-fidelity
 
 # 映射：重复文本、表格、代码、图片、HTML
 npm run test:source-map
+
+# 精确 raw offset：表格、代码和连续双向切换
+npm run test:mode-switch-raw-offset-ui
 
 # 真实 Electron：10 个快照、真实写盘、列表新增、双向切换和粘贴
 npm run test:issue-77-ui
@@ -101,6 +112,9 @@ npm run test:source-fidelity-ui
 
 # 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本和源码编辑
 npm run test:large-source-fidelity-ui
+
+# 标准逐键输入、闭合并退出行内代码；发布前连续运行 10 次
+npm run test:inline-code-ui
 
 # 已安装 macOS 包也必须至少跑一次
 HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
