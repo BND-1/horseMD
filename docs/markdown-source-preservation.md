@@ -2,6 +2,8 @@
 
 > 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-29。
 
+0.12.34 对“切换后立即输入”“复杂文档中间段落合并”“硬换行/行内图片后的光标偏移”和“新段落以行内代码起笔”进行了一次联合根因排查。具体症状、失败方案、证据和复现步骤见 [0.12.34 编辑器源码保真与模式切换疑难问题报告](./editor-source-switch-regression-0.12.34.md)。
+
 ## 为什么需要这份文档
 
 HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它会把 Markdown 解析为 ProseMirror 文档，再把整个文档序列化回 Markdown。这个过程保证的是语义等价，不保证字符级写法等价：例如单个 `~` 可能变为 `\~`，紧凑 `-` 列表可能变为 `*` 列表，标题/段落间可能加入空行。
@@ -38,6 +40,8 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 标题等级、分段等结构变化只替换受影响的原始行；
 - 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
 
+当原始源码与上一份 canonical 基线逐字完全一致时，不存在需要保留的非 canonical 写法。完成空段落占位、列表和表格等专用分支后，可直接采用下一份 canonical 结果（同时规范化表格空单元格）。若全文不一致，但变更位于最后一个独立单行块，且该块在原始源码与 canonical 中逐字相同，则只替换这一行，保留之前的紧凑单换行、额外空行和其他原始写法。这两个确定性路径共同保护“新段落首个内容是行内代码”的时序：左反引号会先形成仅含 `\`` 的临时段落，它没有稳定可见字符；若继续走 visible offset，首个代码字符可能被错误映射到上一段行尾并吞掉段落分隔符，随后令模式切换光标整体偏移一行。
+
 源码模式修改后，`replaceAll` 产生的全部程序化 `markdownUpdated` 事务会持续隔离，直到下一次明确的用户输入。这样即使前一次富文本编辑的短时活动标记仍存在，也不会把同步事务再次当成用户编辑。
 
 源码 textarea 为性能原因保持非受控。富文本输入后的 `markdownUpdated` 可能晚于用户点击模式切换；若先挂载 textarea，后到的 React 内容更新不会改变它的 `defaultValue`。因此富文本→源码必须先调用编辑器 API 的 `flushMarkdown()`，同步读取当前 Crepe 文档并执行同一套原文保真映射，再同步更新 `tabsRef` 和 tab state，最后才显示源码。禁止用固定延时或把大型 textarea 改成受控组件规避该竞态。
@@ -49,6 +53,12 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 空文档会在 ProseMirror 中建立一个仅供起笔使用的“空一级标题 + 空正文”骨架，但磁盘源码仍是空字符串。这个 UI 骨架必须在 `canonicalForSource()` 中从 canonical 差异基线排除：用户跳过标题从正文起笔时不能凭空写入 `#`，用户在标题中输入后则立即把标题视为真实 Markdown。否则第一次输入会因 `#\n\n` 与空源码的 visible stream 不一致而被原文保护器拒绝，表现为未保存切源码后内容为空或仍是旧快照。
 
 真实手打存在两种时序。停顿输入时，Enter 创建的空 paragraph 会先被 Crepe 序列化成独立 `<br />` 块；原文保护层必须只推进 canonical 基线，等文字填入后再写入真实段落。快速输入时，Enter 和文字可能被合并成一次块插入事务，完全不出现 `<br />` 中间态。文档末尾通过结尾边界追加，中间位置通过前后未变化可见行的序号映射定位 raw 间隙。不能把零可见字符位置当作前一段末尾，否则正文会拼接，且占位符会泄漏。列表、表格、标题、引用和代码围栏必须绕过这个普通段落分支，继续走各自的结构映射。
+
+中间块定位只能校验编辑点相邻的前后块，不能要求整篇文档的可见行逐项完全一致。Crepe 对前部表格的列对齐空格、紧凑列表的空行和标记符进行 canonical 化时，这些无关差异不得让后部段落插入降级为普通字符映射。若后继块包含代码围栏等没有可见文本的语法前缀，应从 `nextGap` 中剥离原有 canonical gap，只把新增 gap 插入原源码，不能连带重写用户的围栏写法。
+
+源码→富文本的首次 raw-offset 恢复必须在 `useLayoutEffect` 中同步执行，保证新视图接收输入前选区已就位。`90/220/450ms` 与后续布局稳定重试只用于图片、代码块等异步高度变化；富文本根节点发生任意真实键盘、`beforeinput`、输入法完成或鼠标按下后，所有旧重试必须终止并清除 round-trip offset。否则用户切回后立即输入时，旧恢复会在单词中途把光标拉回上一段，随后源码结构和光标同时失真。
+
+raw offset ↔ ProseMirror 映射不能以 `textContent.length` 代表 textblock 的位置长度。硬换行和行内图片在 ProseMirror 中各占一个位置但不进入 `textContent`；两侧现在都构建逐字符/逐原子 item 序列并按 item index 对齐。新增映射类型时必须同时测试节点之前、节点之后和段尾。
 
 ### 双 MIME Markdown 粘贴
 
@@ -92,10 +102,10 @@ npm run test:markdown-preservation
 # 纯函数：源码 textarea 保留 CRLF、BOM、混合换行
 npm run test:source-text-fidelity
 
-# 映射：重复文本、表格、代码、图片、HTML
+# 映射：重复文本、表格、代码、硬换行、行内/块级图片、HTML
 npm run test:source-map
 
-# 精确 raw offset：表格、代码和连续双向切换
+# 精确 raw offset：表格、代码、硬换行、连续双向切换及切回后立即输入
 npm run test:mode-switch-raw-offset-ui
 
 # 真实 Electron：10 个快照、真实写盘、列表新增、双向切换和粘贴
@@ -113,7 +123,7 @@ npm run test:source-fidelity-ui
 # 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本和源码编辑
 npm run test:large-source-fidelity-ui
 
-# 标准逐键输入、闭合并退出行内代码；发布前连续运行 10 次
+# 标准逐键输入、方向键退出、新段落首个内容为行内代码；发布前连续运行 10 次
 npm run test:inline-code-ui
 
 # 已安装 macOS 包也必须至少跑一次

@@ -17,6 +17,10 @@ export function mountEditorInteractionBindings({
   getSelectionToolbarEnabled,
   isReadOnly
 }) {
+  const noteUserInteraction = () => {
+    view.dom.__horsemdUserInteractionAt = performance.now()
+  }
+
   const updateHighlightActive = () => {
     const currentView = viewRef.current
     let active = false
@@ -34,6 +38,7 @@ export function mountEditorInteractionBindings({
   }
 
   const onKeydown = (event) => {
+    noteUserInteraction()
     if (isReadOnly?.()) {
       // Keep navigation, selection and copy available. Everything else that can
       // write (including CodeMirror's independent key handler) is stopped at
@@ -178,7 +183,10 @@ export function mountEditorInteractionBindings({
     reportActiveBlock()
     updateHighlightActive()
   }
-  const onUserEditIntent = () => markUserEdit()
+  const onUserEditIntent = () => {
+    noteUserInteraction()
+    markUserEdit()
+  }
   const onReadOnlyInput = (event) => {
     if (!isReadOnly?.()) return
     event.preventDefault()
@@ -186,6 +194,7 @@ export function mountEditorInteractionBindings({
   }
   const onPointerDown = (event) => {
     view.dom.__horsemdLastPointerDown = { left: event.clientX, top: event.clientY, at: Date.now() }
+    noteUserInteraction()
     markUserEdit()
   }
 

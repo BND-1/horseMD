@@ -17,6 +17,7 @@ import {
 import {
   preserveAppendedParagraph,
   preserveMiddleEmptyBlock,
+  preserveTrailingExactLineChange,
   preserveTrailingEmptyBlock
 } from './lib/markdown-preservation/paragraphs.js'
 import {
@@ -195,6 +196,22 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     replacementVisible
   })
   if (appendedParagraph) return appendedParagraph
+  const trailingExactLine = preserveTrailingExactLineChange({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (trailingExactLine) return trailingExactLine
+  if (sourceMarkdown === previous) {
+    return {
+      markdown: normalizeEmptyTableCells(next),
+      preserved: true,
+      reason: 'exact-canonical-baseline'
+    }
+  }
 
   // Enter in a list is emitted as an empty-item transaction followed by text.
   // Reapply the bounded list tree instead of mapping that zero-width span past

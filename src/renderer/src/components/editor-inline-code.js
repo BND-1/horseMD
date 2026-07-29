@@ -224,6 +224,34 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         return true
       },
 
+      handleKeyDown(view, event) {
+        if (
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey ||
+          (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+        ) {
+          return false
+        }
+
+        const { state } = view
+        const range = inlineCodeRangeAtSelection(state)
+        const exitsLeft = event.key === 'ArrowLeft' && state.selection.head === range?.from
+        const exitsRight = event.key === 'ArrowRight' && state.selection.head === range?.to
+        if (!exitsLeft && !exitsRight) return false
+
+        // A mark boundary has one ProseMirror position for both visual sides.
+        // Keep that position and clear the stored inline-code mark so one arrow
+        // press moves across the rendered delimiter without skipping text.
+        const type = inlineCodeType(state)
+        const baseMarks = state.storedMarks || state.selection.$head.marks()
+        const tr = state.tr.setSelection(TextSelection.create(state.doc, state.selection.head))
+        tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
+        view.dispatch(setActive(tr, false))
+        return true
+      },
+
       handleClick(view, pos, event) {
         const target = event.target
         const code = target?.closest?.('code')

@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.30`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入及闭合后继续输入路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及行内代码无法可靠进入/退出的问题。行为基线提交为 `67f51fa`。原 993 行原文保真文件已拆成 268 行稳定 façade 和 `lib/markdown-preservation/` 下 6 个纯函数模块，三个公共导出及调用方未变化。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md` 与 `docs/markdown-source-preservation.md`。
+- 当前测试版本号：`package.json` 为 `0.12.34`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入、闭合后继续输入、首尾方向键退出、“非 canonical 文档的新段落以行内代码起笔”及“源码切回富文本后立即输入”路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及延迟选区恢复把后续输入拉回上一段、硬换行/行内图片少算 ProseMirror 位置、复杂文档中间段落被拼接的问题。原文保真行为基线提交为 `67f51fa`，0.12.34 追加修复与测试由本轮提交承接。原 993 行原文保真文件已拆成当前稳定 façade 和 `lib/markdown-preservation/` 下 6 个纯函数模块，三个公共导出及调用方未变化。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md`、`docs/markdown-source-preservation.md` 与 `docs/editor-source-switch-regression-0.12.34.md`。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -89,9 +89,10 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 6. [development.md](./development.md)：构建、CDP、发布验证。
 7. [handoff-mode-switch.md](./handoff-mode-switch.md)：源码/富文本切换根因和修复历史。
 8. [markdown-source-preservation.md](./markdown-source-preservation.md)：原始 Markdown 保真合同、粘贴边界与 Live Preview 远期决策。
-9. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
-10. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
-11. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
+9. [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md)：段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的联合根因报告。
+10. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
+11. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
+12. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
 
 历史文档说明：
 
@@ -159,6 +160,7 @@ android/, ios/           Capacitor 原生壳
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
+- 该模式切换回归还必须覆盖硬换行后的 raw offset，以及源码→富文本后零等待 Enter、跨 `90/220ms` 分段输入。首次恢复在 layout 阶段同步执行；富文本一旦收到真实键盘、输入法或鼠标交互，延迟 settle 重试必须终止，不能覆盖用户的新选区。
 - `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格结构变化只替换对应 canonical 表格块，禁止扩大到整篇源码；不要在序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
 - `npm run test:table-ui` 保护另一条独立的表格 UI 合同：短表自然宽度、宽表内部横向滚动和不撑开页面；列边缘的短暂悬停仍用于加行/加列，只有按住约 220ms 才实时调整列宽；宽表最右端连续 10 次悬浮/调整均不得把 `scrollLeft` 重置为 0。不要重新注册 `columnResizingPlugin`，它会与 Crepe 自定义 `TableNodeView` 竞争 hover transaction，重新引入跳回和非确定性预览。
 - `editor-block-handle-guard.js` 只负责块操作条的触发过滤和滚动隐藏；横向位置由 `Feature.BlockEdit.blockHandle.getPosition` 交给 Milkdown BlockProvider 一次性计算，禁止再用 `translate`、MutationObserver 或 ResizeObserver 二次改坐标。标题、正文和各级列表必须共用正文左边界这一条轨道。修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:block-handle-gutter-ui` 与 `npm run test:inline-html-block-handle-ui`。

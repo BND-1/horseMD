@@ -10,7 +10,6 @@ import {
   markdownLines
 } from './core.js'
 import {
-  sameVisibleLines,
   visibleLineEntries
 } from './regions.js'
 
@@ -27,6 +26,65 @@ const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
   return source + separator +
     adaptCanonicalRegionToSource(block, source, { start: source.length, end: source.length }) +
     finalNewline
+}
+
+const trailingSingleLineBlock = (markdown) => {
+  const value = String(markdown || '')
+  const trailingBreaks = value.match(/(?:(?:\r\n)|\n|\r)*$/)?.[0] || ''
+  const end = value.length - trailingBreaks.length
+  if (end <= 0) return null
+  const before = value.slice(0, end)
+  const previousBreak = Math.max(
+    before.lastIndexOf('\n'),
+    before.lastIndexOf('\r')
+  )
+  const start = previousBreak + 1
+  const prefixBreaks = value.slice(0, start).match(/(?:(?:\r\n)|\n|\r)+$/)?.[0] || ''
+  const breakCount = prefixBreaks.match(/\r\n|\n|\r/g)?.length || 0
+  if (start > 0 && breakCount < 2) return null
+  const text = value.slice(start, end)
+  if (!text.trim() || /\r|\n/.test(text)) return null
+  return { start, end, text, trailingBreaks }
+}
+
+// A syntax-only trailing paragraph (for example the temporary escaped
+// backtick before inline code gets its first character) has no stable visible
+// offset. If that exact final line still exists in the authored source, replace
+// the line directly and preserve every non-canonical byte before it.
+export const preserveTrailingExactLineChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const sourceBlock = trailingSingleLineBlock(source)
+  const previousBlock = trailingSingleLineBlock(previous)
+  const nextBlock = trailingSingleLineBlock(next)
+  if (!sourceBlock || !previousBlock || !nextBlock) return null
+  if (
+    start < previousBlock.start ||
+    start < nextBlock.start ||
+    previousEnd > previousBlock.end ||
+    nextEnd > nextBlock.end ||
+    sourceBlock.text !== previousBlock.text
+  ) {
+    return null
+  }
+
+  const replacement = adaptCanonicalRegionToSource(
+    nextBlock.text,
+    source,
+    sourceBlock
+  )
+  return {
+    markdown: source.slice(0, sourceBlock.start) +
+      replacement +
+      source.slice(sourceBlock.end),
+    preserved: true,
+    reason: 'trailing-exact-line-change'
+  }
 }
 
 const trailingEmptyBlock = (markdown) => {
@@ -103,7 +161,6 @@ export const preserveMiddleEmptyBlock = ({
 
   const previousLines = visibleLineEntries(previous)
   const sourceLines = visibleLineEntries(source)
-  if (!sameVisibleLines(sourceLines, previousLines)) return null
 
   let beforeIndex = -1
   for (let index = 0; index < previousLines.length; index += 1) {
@@ -117,8 +174,10 @@ export const preserveMiddleEmptyBlock = ({
   const sourceBefore = sourceLines[beforeIndex]
   const sourceAfter = sourceLines[afterIndex]
   if (
-    directBlockInsertion &&
-    previous.slice(previousBefore.end, previousAfter.start).trim()
+    !sourceBefore ||
+    !sourceAfter ||
+    sourceBefore.visible !== previousBefore.visible ||
+    sourceAfter.visible !== previousAfter.visible
   ) {
     return null
   }
@@ -134,8 +193,25 @@ export const preserveMiddleEmptyBlock = ({
 
   const sourceGap = source.slice(sourceBefore.end, sourceAfter.start)
   if (standaloneEmptyBlockLines(sourceGap).length) return null
-
   const nextGap = next.slice(nextBefore.end, nextAfter.start)
+  if (directBlockInsertion) {
+    const previousGap = previous.slice(previousBefore.end, previousAfter.start)
+    if (!nextGap.endsWith(previousGap)) return null
+    const insertedGap = nextGap.slice(0, nextGap.length - previousGap.length)
+    if (!insertedGap) return null
+    return {
+      markdown: source.slice(0, sourceBefore.end) +
+        adaptCanonicalRegionToSource(
+          insertedGap,
+          source,
+          { start: sourceBefore.end, end: sourceBefore.end }
+        ) +
+        source.slice(sourceBefore.end),
+      preserved: true,
+      reason: 'middle-block-inserted'
+    }
+  }
+
   const sourceGapRegion = { start: sourceBefore.end, end: sourceAfter.start }
   return {
     markdown: source.slice(0, sourceBefore.end) +

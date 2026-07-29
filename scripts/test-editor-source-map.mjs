@@ -21,6 +21,8 @@ const schema = new Schema({
     table_row: { content: 'table_cell+' },
     table_cell: { content: 'paragraph+' },
     image: { group: 'block', atom: true, attrs: { src: { default: '' } } },
+    inline_image: { group: 'inline', inline: true, atom: true, attrs: { src: { default: '' } } },
+    hard_break: { group: 'inline', inline: true, atom: true },
     html: { group: 'block', atom: true, attrs: { value: { default: '' } } },
     text: { group: 'inline' }
   }
@@ -62,7 +64,17 @@ const nthNodePos = (pmDoc, type, occurrence = 0) => {
   return found
 }
 
-const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 0, local = 0, pmText, pmOccurrence = 0 }) => {
+const assertTextRoundTrip = ({
+  label,
+  markdown,
+  pmDoc,
+  token,
+  tokenOccurrence = 0,
+  local = 0,
+  pmText,
+  pmOccurrence = 0,
+  pmExtraBefore = 0
+}) => {
   let rawStart = -1
   let from = 0
   for (let i = 0; i <= tokenOccurrence; i++) {
@@ -71,7 +83,10 @@ const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 
     from = rawStart + token.length
   }
   const rawOffset = rawStart + local
-  const pmOffset = nthTextblockPos(pmDoc, pmText, pmOccurrence) + pmText.indexOf(token) + local
+  const pmOffset = nthTextblockPos(pmDoc, pmText, pmOccurrence) +
+    pmText.indexOf(token) +
+    local +
+    pmExtraBefore
   const mapped = markdownOffsetToPmPos(markdown, rawOffset, pmDoc, remark)
   assert.equal(mapped?.atom, false, `${label}: source should map to text`)
   assert.equal(mapped?.pos, pmOffset, `${label}: source -> PM`)
@@ -79,6 +94,60 @@ const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 
 }
 
 const cases = []
+
+{
+  const markdown = 'first  \nsecond tail\n\nXYZ\n\nAfter\n'
+  const pmDoc = doc(
+    schema.node('paragraph', null, [
+      text('first'),
+      schema.node('hard_break'),
+      text('second tail')
+    ]),
+    paragraph('XYZ'),
+    paragraph('After')
+  )
+  assertTextRoundTrip({
+    label: 'text after hard break',
+    markdown,
+    pmDoc,
+    token: 'second tail',
+    local: 7,
+    pmText: 'firstsecond tail',
+    pmExtraBefore: 1
+  })
+  const rawEnd = markdown.indexOf('second tail') + 'second tail'.length
+  const pmEnd = nthTextblockPos(pmDoc, 'firstsecond tail') + 'firstsecond tail'.length + 1
+  assert.equal(markdownOffsetToPmPos(markdown, rawEnd, pmDoc, remark)?.pos, pmEnd, 'hard break: source end -> PM end')
+  assert.equal(pmPosToMarkdownOffset(markdown, pmEnd, pmDoc, remark), rawEnd, 'hard break: PM end -> source end')
+  assertTextRoundTrip({
+    label: 'paragraph after hard break',
+    markdown,
+    pmDoc,
+    token: 'XYZ',
+    local: 3,
+    pmText: 'XYZ'
+  })
+  cases.push('hard break inline position')
+}
+
+{
+  const markdown = 'before ![diagram](https://example.com/image.png) after\n'
+  const pmDoc = doc(schema.node('paragraph', null, [
+    text('before '),
+    schema.node('inline_image', { src: 'https://example.com/image.png' }),
+    text(' after')
+  ]))
+  assertTextRoundTrip({
+    label: 'text after inline image',
+    markdown,
+    pmDoc,
+    token: 'after',
+    local: 3,
+    pmText: 'before  after',
+    pmExtraBefore: 1
+  })
+  cases.push('inline image position')
+}
 
 {
   const markdown = '# Title\n\nsame paragraph\n\nmiddle\n\nsame paragraph\n'

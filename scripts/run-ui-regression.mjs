@@ -137,6 +137,10 @@ const standalone = [
     script: 'scripts/test-paragraph-source-preservation-ui.mjs'
   },
   {
+    name: 'Mode switch raw offsets: hard breaks, inline atoms, and immediate input',
+    script: 'scripts/test-mode-switch-raw-offset-ui.mjs'
+  },
+  {
     name: 'Source fidelity audit: heterogeneous Markdown stays byte-local',
     script: 'scripts/test-source-fidelity-audit-ui.mjs'
   },

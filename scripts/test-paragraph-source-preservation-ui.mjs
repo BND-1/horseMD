@@ -108,6 +108,107 @@ const pressEnter = async (send) => {
   })
 }
 
+const typeNativeCharacter = async (send, character) => {
+  const isDigit = /^\d$/.test(character)
+  const upper = character.toUpperCase()
+  const code = isDigit ? `Digit${character}` : `Key${upper}`
+  const virtualKeyCode = upper.charCodeAt(0)
+  await send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: character,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'char',
+    key: character,
+    code,
+    text: character,
+    unmodifiedText: character,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: character,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode
+  })
+  await sleep(35)
+}
+
+const typeBacktick = async (send) => {
+  await send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: '`',
+    code: 'Backquote',
+    windowsVirtualKeyCode: 192,
+    nativeVirtualKeyCode: 192
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'char',
+    key: '`',
+    code: 'Backquote',
+    text: '`',
+    unmodifiedText: '`',
+    windowsVirtualKeyCode: 192,
+    nativeVirtualKeyCode: 192
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: '`',
+    code: 'Backquote',
+    windowsVirtualKeyCode: 192,
+    nativeVirtualKeyCode: 192
+  })
+  await sleep(80)
+}
+
+const pressArrowRight = async (send) => {
+  await send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39,
+    nativeVirtualKeyCode: 39
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39,
+    nativeVirtualKeyCode: 39
+  })
+  await sleep(80)
+}
+
+const visibleSourceCaret = (evaluate) => evaluate(`(() => {
+  const textarea = [...document.querySelectorAll('textarea.source-editor')]
+    .find((node) => node.offsetParent)
+  return textarea
+    ? { start: textarea.selectionStart, end: textarea.selectionEnd, value: textarea.value }
+    : null
+})()`)
+
+const richCaret = (evaluate) => evaluate(`(() => {
+  const selection = getSelection()
+  const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+  const node = selection?.anchorNode
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node
+  const paragraph = element?.closest?.('p')
+  if (!editor || !paragraph || !editor.contains(paragraph) || !selection.rangeCount) return null
+  const before = document.createRange()
+  before.selectNodeContents(paragraph)
+  before.setEnd(selection.anchorNode, selection.anchorOffset)
+  return {
+    text: paragraph.textContent,
+    offset: before.toString().length,
+    collapsed: selection.isCollapsed
+  }
+})()`)
+
 const typeHumanPaced = async (send, text) => {
   for (const character of text) {
     await send('Input.insertText', { text: character })
@@ -294,6 +395,57 @@ async function editAndSave() {
     )
 
     assert.equal(await toggleSource(evaluate), true)
+    assert.equal(await placeCaretAfter(evaluate, '连续段落 D'), true)
+    await pressEnter(send)
+    await typeBacktick(send)
+    for (const character of 'feaef') await typeNativeCharacter(send, character)
+    await pressArrowRight(send)
+    for (const character of '212afea') await typeNativeCharacter(send, character)
+
+    const expectedWithInlineCode = expected + '\n\n`feaef`212afea'
+    assert.equal(await toggleSource(evaluate), true)
+    const firstSourceCaret = await waitFor(
+      async () => {
+        const caret = await visibleSourceCaret(evaluate)
+        return caret?.value === expectedWithInlineCode && caret.start === expectedWithInlineCode.length
+          ? caret
+          : null
+      },
+      'new trailing inline-code paragraph merged or its source caret drifted'
+    )
+    assert.deepEqual(firstSourceCaret, {
+      start: expectedWithInlineCode.length,
+      end: expectedWithInlineCode.length,
+      value: expectedWithInlineCode
+    })
+
+    assert.equal(await toggleSource(evaluate), true)
+    assert.deepEqual(
+      await waitFor(
+        async () => {
+          const caret = await richCaret(evaluate)
+          return caret?.text === 'feaef212afea' && caret.offset === caret.text.length
+            ? caret
+            : null
+        },
+        'source-to-rich caret did not return to the trailing inline-code paragraph'
+      ),
+      { text: 'feaef212afea', offset: 12, collapsed: true }
+    )
+
+    assert.equal(await toggleSource(evaluate), true)
+    const secondSourceCaret = await waitFor(
+      async () => {
+        const caret = await visibleSourceCaret(evaluate)
+        return caret?.value === expectedWithInlineCode && caret.start === expectedWithInlineCode.length
+          ? caret
+          : null
+      },
+      'rich-to-source caret drifted after the second inline-code switch'
+    )
+    assert.equal(secondSourceCaret.end, expectedWithInlineCode.length)
+
+    assert.equal(await toggleSource(evaluate), true)
     await waitFor(
       () => evaluate(`!!document.querySelector('.hm-save-fab')`),
       'save button did not appear'
@@ -303,8 +455,12 @@ async function editAndSave() {
       () => evaluate(`!document.querySelector('.hm-save-fab')`),
       'save did not finish'
     )
-    assert.equal(await readFile(file, 'utf8'), expected, 'saved Markdown differs from the source snapshot')
-    return expected
+    assert.equal(
+      await readFile(file, 'utf8'),
+      expectedWithInlineCode,
+      'saved Markdown differs from the source snapshot'
+    )
+    return expectedWithInlineCode
   } finally {
     await stopBuiltElectron(app)
   }
@@ -339,7 +495,8 @@ async function reopenAndVerify(expected) {
         '中间快速段落',
         '标准段落 B',
         '新建段落 C',
-        '连续段落 D'
+        '连续段落 D',
+        'feaef212afea'
       ],
       'saved paragraph structure changed after a clean reopen'
     )

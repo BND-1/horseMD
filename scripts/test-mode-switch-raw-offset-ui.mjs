@@ -8,7 +8,7 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 
 const root = '/tmp/horsemd-mode-switch-raw-offset'
-const port = 9494
+const port = Number(process.env.CDP_PORT || 9494)
 const fixture = join(root, 'raw-offset.md')
 
 const markdown = `# Raw offset fixture
@@ -23,6 +23,9 @@ Before table paragraph with a unique caret target.
 - First list item
 - unique-list-target with inline \`code\`
 
+Hard break first\\
+unique-hardbreak-target after break
+
 \`\`\`javascript
 const uniqueCodeTarget = 'keep exact position'
 \`\`\`
@@ -35,6 +38,7 @@ const targets = [
   { token: 'unique-table-model-target', local: 12 },
   { token: 'unique-table-shell-target', local: 11 },
   { token: 'unique-list-target', local: 10 },
+  { token: 'unique-hardbreak-target', local: 14 },
   { token: 'uniqueCodeTarget', local: 8 },
   { token: 'unique final target', local: 6 }
 ]
@@ -54,7 +58,7 @@ const click = async (send, point) => {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point })
 }
 
-const toggle = async (app) => {
+const toggle = async (app, settleMs = 700) => {
   const point = await app.evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
       .find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
@@ -64,7 +68,7 @@ const toggle = async (app) => {
   })()`)
   if (!point) throw new Error('Source toggle button not found')
   await click(app.send, point)
-  await sleep(700)
+  if (settleMs > 0) await sleep(settleMs)
 }
 
 const sourceMode = (app) => app.evaluate(`Boolean([...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent !== null))`)
@@ -73,7 +77,13 @@ const sourceCaret = (app) => app.evaluate(`(() => {
   const textarea = [...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent !== null)
   if (!textarea) return null
   const offset = textarea.selectionStart
-  return { offset, text: textarea.value.slice(Math.max(0, offset - 20), offset + 20) }
+  const xyzOffset = textarea.value.indexOf('XYZ')
+  return {
+    offset,
+    text: textarea.value.slice(Math.max(0, offset - 20), offset + 20),
+    xyzOffset,
+    xyzText: xyzOffset >= 0 ? textarea.value.slice(Math.max(0, xyzOffset - 30), xyzOffset + 30) : ''
+  }
 })()`)
 
 const richCaret = (app) => app.evaluate(`(() => {
@@ -122,6 +132,34 @@ const assertHasToken = (snapshot, token, stage) => {
   assert.ok(snapshot?.text.includes(token), `${stage}: caret no longer belongs to ${token}: ${JSON.stringify(snapshot)}`)
 }
 
+const dispatchKey = async (app, key, code, virtualKeyCode, text = '') => {
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode
+  })
+  if (text) {
+    await app.send('Input.dispatchKeyEvent', {
+      type: 'char',
+      key,
+      code,
+      text,
+      unmodifiedText: text,
+      windowsVirtualKeyCode: virtualKeyCode,
+      nativeVirtualKeyCode: virtualKeyCode
+    })
+  }
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode
+  })
+}
+
 async function runChain(app, target) {
   const rawOffset = markdown.indexOf(target.token) + target.local
   assert.ok(rawOffset >= target.local, `Missing fixture token ${target.token}`)
@@ -159,6 +197,66 @@ async function runChain(app, target) {
   assert.equal(rich2.visible, true, 'rich chain caret should stay visible')
 }
 
+async function runImmediateInputAfterSourceSwitch(app) {
+  if (!await sourceMode(app)) await toggle(app)
+  const paragraphTail = 'unique-hardbreak-target after break'
+  const richParagraph = `Hard break first${paragraphTail}`
+  const rawOffset = markdown.indexOf(paragraphTail) + paragraphTail.length
+  await setSourceCaret(app, rawOffset)
+
+  // Do not wait for the old 90/220/450/700ms settle retries. A real user can
+  // start typing as soon as the rich pane paints; those retries must yield to
+  // that input instead of restoring the pre-edit source caret mid-word.
+  await toggle(app, 0)
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent !== null)`),
+    'Rich editor did not return for immediate-input regression'
+  )
+  await dispatchKey(app, 'Enter', 'Enter', 13)
+  await dispatchKey(app, 'X', 'KeyX', 88, 'X')
+  await sleep(140)
+  await dispatchKey(app, 'Y', 'KeyY', 89, 'Y')
+  await sleep(140)
+  await dispatchKey(app, 'Z', 'KeyZ', 90, 'Z')
+  await sleep(800)
+
+  const rich = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const paragraphs = [...editor.querySelectorAll(':scope > p')].map((node) => node.textContent)
+    const selection = getSelection()
+    return {
+      paragraphs,
+      caretText: selection?.anchorNode?.nodeValue || '',
+      caretOffset: selection?.anchorOffset
+    }
+  })()`)
+  const paragraphIndex = rich.paragraphs.indexOf(richParagraph)
+  assert.ok(
+    paragraphIndex >= 0,
+    `hard-break paragraph disappeared before immediate input: ${JSON.stringify(rich.paragraphs)}`
+  )
+  assert.deepEqual(
+    rich.paragraphs.slice(paragraphIndex, paragraphIndex + 2),
+    [richParagraph, 'XYZ'],
+    'delayed source-caret restore moved immediate rich input into the previous paragraph'
+  )
+  assert.equal(rich.caretText, 'XYZ')
+  assert.equal(rich.caretOffset, 3)
+
+  await toggle(app)
+  const source = await sourceCaret(app)
+  const expectedOffset = rawOffset + '\n\nXYZ'.length
+  assert.equal(
+    source.offset,
+    expectedOffset,
+    `immediate rich input produced a stale source caret: ${JSON.stringify(source)}`
+  )
+  assert.ok(
+    source.text.includes('after break\n\nXYZ'),
+    `immediate rich input lost its paragraph separator: ${JSON.stringify(source)}`
+  )
+}
+
 async function main() {
   await rm(root, { recursive: true, force: true })
   await mkdir(root, { recursive: true })
@@ -169,7 +267,14 @@ async function main() {
       () => app.evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent !== null)`),
       'Rich editor did not render'
     )
-    for (const target of targets) await runChain(app, target)
+    if (!process.env.HORSEMD_ONLY_IMMEDIATE_SWITCH) {
+      for (const target of targets) {
+        console.log(`  testing ${target.token}`)
+        await runChain(app, target)
+      }
+    }
+    console.log('  testing immediate input after source switch')
+    await runImmediateInputAfterSourceSwitch(app)
     console.log(`PASS mode-switch raw offset UI: ${targets.length} positions across both continuous chains`)
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })

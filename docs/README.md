@@ -15,6 +15,7 @@
 | [development.md](./development.md) | 本地开发、构建、打包（Windows / macOS）、自动化测试方法 |
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
 | [source-fidelity-audit-2026-07.md](./source-fidelity-audit-2026-07.md) | 文件读写全链路原文保真审计、已修根因、允许变化边界与自动化证据 |
+| [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md) | 段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的症状索引、根因与防回归要求 |
 | [mobile.md](./mobile.md) | 移动端（iOS / Android · Capacitor）方案、接口适配、打包发布 |
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |

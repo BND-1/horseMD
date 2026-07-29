@@ -43,6 +43,7 @@ export function useSourceModeSwitch({
   const preserveRichCaretFollowRef = useRef(false)
   const sourceEnteredWithCaretFollowRef = useRef(false)
   const sourceCaretRoundTripRef = useRef(null)
+  const richRestoreInteractionRef = useRef(null)
 
   useEffect(() => {
     const live = new Set(tabs.map((tab) => tab.id))
@@ -146,7 +147,12 @@ export function useSourceModeSwitch({
         viewportAnchorRef.current = followSourceCaret ? null : captureSourceViewport(sourceEl)
       }
       syncSourceToRich(id)
+      richRestoreInteractionRef.current = {
+        id,
+        at: Number(view?.dom?.__horsemdUserInteractionAt || 0)
+      }
     } else {
+      richRestoreInteractionRef.current = null
       preserveRichCaretFollowRef.current = false
       caretFollowRef.current = isRichCaretVisible(view, editorHostRef.current)
       sourceEnteredWithCaretFollowRef.current = caretFollowRef.current
@@ -205,6 +211,16 @@ export function useSourceModeSwitch({
       }
       if (findStateRef.current.open && findStateRef.current.query) return
       const view = editorApis.current[restoreId]?.getView?.()
+      if (!sourceMode) {
+        const baseline = richRestoreInteractionRef.current
+        const interactionAt = Number(view?.dom?.__horsemdUserInteractionAt || 0)
+        if (baseline?.id === restoreId && interactionAt > baseline.at) {
+          sourceCaretRoundTripRef.current = null
+          richRestoreInteractionRef.current = null
+          supersededByUserFocus = true
+          return false
+        }
+      }
       if (sourceMode) {
         const sourceEl = sourceRef.current
         // The scheduled settle retries must not overwrite a caret that the user
@@ -251,6 +267,12 @@ export function useSourceModeSwitch({
       return true
     }
 
+    // The first restore must happen in the layout phase, before the newly
+    // visible pane can receive input. Deferring every restore to RAF leaves a
+    // real window where fast typing lands in the stale hidden-pane selection.
+    // Later retries are only for asynchronous layout settling and yield as soon
+    // as the user interacts.
+    apply()
     const raf = requestAnimationFrame(apply)
     const t1 = setTimeout(apply, 90)
     const t2 = setTimeout(apply, 220)

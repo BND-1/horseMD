@@ -19,7 +19,9 @@ async function main() {
   const app = await launchBuiltElectron({
     profileDir: `/tmp/horsemd-inline-code-ui-${process.pid}`,
     port,
-    appArgs: [fixture]
+    appArgs: [fixture],
+    executable: process.env.HORSEMD_APP_PATH || undefined,
+    entrypoint: process.env.HORSEMD_APP_PATH ? null : undefined
   })
   const { evaluate, send } = app
 
@@ -107,6 +109,24 @@ async function main() {
       await sleep(35)
     }
 
+    const pressArrowRight = async () => {
+      await send('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        windowsVirtualKeyCode: 39,
+        nativeVirtualKeyCode: 39
+      })
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        windowsVirtualKeyCode: 39,
+        nativeVirtualKeyCode: 39
+      })
+      await sleep(80)
+    }
+
     // Use native key events rather than Input.insertText: the latter bypasses
     // ProseMirror's handleTextInput hook and therefore cannot validate the
     // keyboard path users actually take.
@@ -124,11 +144,11 @@ async function main() {
       }
     })()`)
     assert.deepEqual(editing, { code: 'awdawdwa', delimiters: '``' })
-    await typeBacktick()
+    await pressArrowRight()
     assert.equal(
       await evaluate(`document.querySelectorAll('.hm-inline-code-delimiter').length`),
       0,
-      'inline-code delimiters should hide after the caret exits'
+      'inline-code delimiters should hide after ArrowRight exits the trailing boundary'
     )
     for (const character of 'outside') {
       await typeCharacter(character)
@@ -157,6 +177,20 @@ async function main() {
     await send('Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
     })
+    await typeBacktick()
+    for (const character of 'feaef') {
+      await typeCharacter(character)
+    }
+    await pressArrowRight()
+    for (const character of '212afea') {
+      await typeCharacter(character)
+    }
+    await send('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
+    })
+    await send('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
+    })
     for (let index = 0; index < 3; index += 1) {
       await typeBacktick()
     }
@@ -173,10 +207,11 @@ async function main() {
       'source editor did not open'
     )
     assert.ok(
-      source.includes('`awdawdwa`outside') && source.replaceAll('\\', '').includes('```'),
+      source.includes('`awdawdwa`outside\n\n`feaef`212afea') &&
+        source.replaceAll('\\', '').includes('```'),
       `inline-code exit or triple backticks changed in Markdown: ${JSON.stringify(source)}; rich text was: ${richTextBeforeSource}`
     )
-    console.log('PASS inline code UI: standard one-by-one input, explicit exit, and manual triple-backtick input')
+    console.log('PASS inline code UI: standard one-by-one input, arrow-boundary exit, and manual triple-backtick input')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }

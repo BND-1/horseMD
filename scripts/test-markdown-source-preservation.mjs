@@ -117,6 +117,56 @@ assert.equal(
   'new rich-text block separators must follow the source CRLF convention'
 )
 
+const unrelatedFormattingSource = [
+  '| A | B |',
+  '| --- | --- |',
+  '| one | two |',
+  '',
+  '- tight one',
+  '- tight two',
+  '',
+  'Hard break first\\',
+  'target after break',
+  '',
+  '```js',
+  'const after = true',
+  '```'
+].join('\n')
+const unrelatedFormattingCanonical = [
+  '| A   | B   |',
+  '| --- | --- |',
+  '| one | two |',
+  '',
+  '* tight one',
+  '',
+  '* tight two',
+  '',
+  'Hard break first\\',
+  'target after break',
+  '',
+  '```js',
+  'const after = true',
+  '```'
+].join('\n')
+const paragraphInsertedAfterHardBreak = preserveRichMarkdownSource(
+  unrelatedFormattingSource,
+  unrelatedFormattingCanonical,
+  unrelatedFormattingCanonical.replace(
+    'target after break\n\n```js',
+    'target after break\n\nXYZ\n\n```js'
+  )
+)
+assert.equal(paragraphInsertedAfterHardBreak.preserved, true)
+assert.equal(paragraphInsertedAfterHardBreak.reason, 'middle-block-inserted')
+assert.equal(
+  paragraphInsertedAfterHardBreak.markdown,
+  unrelatedFormattingSource.replace(
+    'target after break\n\n```js',
+    'target after break\n\nXYZ\n\n```js'
+  ),
+  'unrelated table/list formatting must not merge a newly inserted paragraph into a hard-break line'
+)
+
 const listTextEdited = preserveRichMarkdownSource(
   source,
   canonical,
@@ -474,6 +524,28 @@ assert.equal(
   inlineCodeExitedAtLineEnd.markdown,
   'Type target`awdawdwa`outside\n',
   'plain text typed after closing inline code must stay outside the backticks'
+)
+
+const trailingInlineCodeParagraphStarted = preserveRichMarkdownSource(
+  '前一段\n\n\\`\n',
+  '前一段\n\n\\`\n',
+  '前一段\n\n`f`\n'
+)
+assert.equal(
+  trailingInlineCodeParagraphStarted.markdown,
+  '前一段\n\n`f`\n',
+  'turning a lone backtick paragraph into inline code must keep its block separator'
+)
+
+const nonCanonicalTrailingInlineCodeParagraphStarted = preserveRichMarkdownSource(
+  '紧凑第一行\n紧凑第二行\n\n中间段落\n\n\n\n连续段落 D\n\n\\`\n',
+  '紧凑第一行\n紧凑第二行\n\n中间段落\n\n连续段落 D\n\n\\`\n',
+  '紧凑第一行\n紧凑第二行\n\n中间段落\n\n连续段落 D\n\n`f`\n'
+)
+assert.equal(
+  nonCanonicalTrailingInlineCodeParagraphStarted.markdown,
+  '紧凑第一行\n紧凑第二行\n\n中间段落\n\n\n\n连续段落 D\n\n`f`\n',
+  'a trailing inline-code paragraph must preserve earlier non-canonical blank lines'
 )
 
 const emphasisExitedBeforeHardBreak = preserveRichMarkdownSource(

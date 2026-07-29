@@ -152,6 +152,25 @@ const isInsideTableCell = (doc, pos) => {
   return false
 }
 
+const collectPmInlineItems = (node, contentPos) => {
+  const items = []
+  node.descendants((child, offset) => {
+    const start = contentPos + offset
+    if (child.isText) {
+      for (let index = 0; index < child.nodeSize; index += 1) {
+        items.push({ pmStart: start + index, pmEnd: start + index + 1 })
+      }
+      return false
+    }
+    if (child.isInline && isPmAtom(child)) {
+      items.push({ pmStart: start, pmEnd: start + child.nodeSize, atom: true })
+      return false
+    }
+    return true
+  })
+  return items
+}
+
 const collectPmBlocks = (doc) => {
   const blocks = []
   doc.descendants((node, pos) => {
@@ -164,6 +183,7 @@ const collectPmBlocks = (doc) => {
         pos,
         contentPos: pos + 1,
         text: node.textContent || '',
+        items: collectPmInlineItems(node, pos + 1),
         textblock: true,
         node
       })
@@ -277,16 +297,24 @@ const correspondingMdBlock = (mdBlocks, pmBlocks, pmIndex) => {
   return mdBlocks[Math.max(0, Math.min(mdBlocks.length - 1, pmIndex))]
 }
 
+const pmBlockEnd = (block) => {
+  if (!block?.textblock) return (block?.pos || 0) + 1
+  const items = block.items || []
+  return items.length
+    ? items[items.length - 1].pmEnd
+    : block.contentPos
+}
+
 const pmBlockIndexAtPos = (blocks, pmPos) => {
   if (!blocks.length) return -1
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i]
-    const textEnd = b.textblock ? b.contentPos + (b.text?.length || 0) : b.pos + 1
+    const textEnd = pmBlockEnd(b)
     if (pmPos >= b.pos && pmPos <= textEnd) return i
     if (pmPos < b.pos) {
       if (i === 0) return 0
       const prev = blocks[i - 1]
-      const prevEnd = prev.textblock ? prev.contentPos + (prev.text?.length || 0) : prev.pos + 1
+      const prevEnd = pmBlockEnd(prev)
       return pmPos - prevEnd <= b.pos - pmPos ? i - 1 : i
     }
   }
@@ -299,6 +327,30 @@ const rawOffsetFromBlockLocal = (block, local) => {
   const idx = Math.max(0, Math.min(Math.round(local || 0), items.length))
   if (idx >= items.length) return items[items.length - 1].rawEnd
   return items[idx].rawStart
+}
+
+const pmItemIndexAtPos = (block, pmPos) => {
+  const items = block.items || []
+  if (!items.length) return 0
+  const pos = Math.max(block.contentPos, Number(pmPos) || 0)
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
+    if (pos >= item.pmStart && pos < item.pmEnd) return index
+    if (pos < item.pmStart) {
+      if (index === 0) return 0
+      const previous = items[index - 1]
+      return pos - previous.pmEnd <= item.pmStart - pos ? index - 1 : index
+    }
+  }
+  return items.length
+}
+
+const pmPosFromItemIndex = (block, index) => {
+  const items = block.items || []
+  if (!items.length) return block.contentPos
+  const safe = Math.max(0, Math.min(Math.round(index || 0), items.length))
+  if (safe >= items.length) return items[items.length - 1].pmEnd
+  return items[safe].pmStart
 }
 
 export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
@@ -317,7 +369,7 @@ export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
   const md = correspondingMdBlock(mdBlocks, pmBlocks, pmIndex)
   if (!md) return null
   if (pm.atom) return md.start
-  const local = Math.max(0, Math.min((pmPos || 0) - pm.contentPos, pm.text?.length || 0))
+  const local = pmItemIndexAtPos(pm, pmPos)
   return rawOffsetFromBlockLocal(md, local)
 }
 
@@ -338,5 +390,5 @@ export function markdownOffsetToPmPos(markdown, rawOffset, doc, remark) {
   if (!pm) return null
   if (pm.atom) return { pos: pm.pos, atom: true }
   const local = blockLocalIndex(md, rawOffset)
-  return { pos: pm.contentPos + Math.max(0, Math.min(local, pm.text.length)), atom: false }
+  return { pos: pmPosFromItemIndex(pm, local), atom: false }
 }

@@ -51,7 +51,13 @@ assert.equal(view.state.doc.textContent, 'awdawdwa')
 assert.ok(code.type.isInSet(view.state.doc.firstChild.firstChild.marks))
 assert.deepEqual(inlineCodeRangeAtSelection(view.state), { from: 1, to: 9 })
 assert.equal(plugin.props.decorations(view.state).find().length, 2)
-assert.equal(plugin.props.handleTextInput(view, 9, 9, '`'), true)
+assert.equal(plugin.props.handleKeyDown(view, {
+  key: 'ArrowRight',
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  shiftKey: false
+}), true)
 assert.equal(plugin.props.decorations(view.state), null)
 assert.equal(plugin.props.handleTextInput(view, 9, 9, 'x'), false)
 view.dispatch(view.state.tr.insertText('x'))
@@ -60,6 +66,56 @@ assert.equal(view.state.doc.firstChild.firstChild.text, 'awdawdwa')
 assert.ok(code.type.isInSet(view.state.doc.firstChild.firstChild.marks))
 assert.equal(view.state.doc.firstChild.child(1).text, 'x')
 assert.equal(view.state.doc.firstChild.child(1).marks.length, 0)
+
+// The symmetric left-boundary action exits before the code without moving
+// over or deleting the first code character.
+const leftBoundaryDoc = schema.node('doc', null, [
+  paragraph(schema.text('ab', [code]))
+])
+state = EditorState.create({
+  schema,
+  doc: leftBoundaryDoc,
+  selection: TextSelection.create(leftBoundaryDoc, 1),
+  plugins: [plugin]
+})
+view = mockView(state)
+assert.equal(plugin.props.handleKeyDown(view, {
+  key: 'ArrowLeft',
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  shiftKey: false
+}), true)
+assert.equal(plugin.props.handleTextInput(view, 1, 1, 'x'), false)
+view.dispatch(view.state.tr.insertText('x'))
+assert.equal(view.state.doc.textContent, 'xab')
+assert.equal(view.state.doc.firstChild.firstChild.text, 'x')
+assert.equal(view.state.doc.firstChild.firstChild.marks.length, 0)
+assert.equal(view.state.doc.firstChild.child(1).text, 'ab')
+assert.ok(code.type.isInSet(view.state.doc.firstChild.child(1).marks))
+
+// Arrow keys inside the mark and modified navigation remain native.
+state = EditorState.create({
+  schema,
+  doc: leftBoundaryDoc,
+  selection: TextSelection.create(leftBoundaryDoc, 2),
+  plugins: [plugin]
+})
+view = mockView(state)
+assert.equal(plugin.props.handleKeyDown(view, {
+  key: 'ArrowRight',
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  shiftKey: false
+}), false)
+assert.equal(plugin.props.handleKeyDown(view, {
+  key: 'ArrowRight',
+  altKey: false,
+  ctrlKey: false,
+  metaKey: true,
+  shiftKey: false
+}), false)
 
 // Two consecutive backticks stay literal until the next ordinary character.
 // This preserves manual `` and ``` input, while text after an empty pair enters

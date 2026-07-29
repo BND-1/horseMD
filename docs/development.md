@@ -138,8 +138,8 @@ npm run test:ui-regression
 
 ### 工具
 
-- `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、#93、#98、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路
-- `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证只有 `awdawdwa` 保持代码标记、闭合后的正文已退出、源码边界正确，并回归连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
+- `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、#93、#98、精确 raw-offset 与零等待输入、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路
+- `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证闭合、首尾方向键退出、新段落以代码起笔、源码边界和连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
 - `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、Markdown 标记复制、真实撤销及关闭会话恢复后的显式文件打开
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
@@ -161,9 +161,9 @@ npm run test:ui-regression
 - `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
   - 对普通 Markdown 追加 `--mode-switch`，验证保持查找栏时源码→富文本→源码缓存重建
 - `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证普通文字只改目标字符；标题、分段、列表新增/转换和表格行列变化只改受影响行或块，不重写整篇原文
-- `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格和代码等 6 个位置验证 source/rich 连续双向切换始终落在同一 raw offset 语义位置
+- `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格、列表、硬换行和代码等位置验证 source/rich 连续双向切换始终落在同一 raw offset；另覆盖源码切回富文本后零等待 Enter，并跨 90/220ms 恢复窗口继续输入
 - `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
-- `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
+- `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落，以及非 canonical 前缀后以行内代码起笔；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
 - `scripts/test-source-fidelity-audit-ui.mjs`、`scripts/test-large-doc-source-preservation-ui.mjs` —— 分别验证异构 Markdown 多点编辑后的逐字节局部性，以及 120k+ BOM/CRLF 分块文档的首次富文本编辑
 - `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化
 - `scripts/test-review-ui.mjs` —— 真实源码同步后的 Review 高亮、同段批注堆叠、卡片编辑/取消/完成和 substitution DOM
