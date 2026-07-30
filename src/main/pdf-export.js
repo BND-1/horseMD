@@ -1,4 +1,4 @@
-import { BrowserWindow, app, dialog, shell } from 'electron'
+import { BrowserWindow, app, dialog, net, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import {
   buildPdfHeaderFooter,
   resolvePdfPage
 } from './pdf-document.js'
+import { stagePdfImages } from './pdf-images.js'
 import { createLatestTaskRunner } from './latest-task-runner.js'
 
 const RESOURCE_WAIT_MS = 12000
@@ -141,39 +142,56 @@ export function createPdfExportService({ getMainWindow }) {
   const render = async ({ source, options }, signal) => {
     validateSource(source)
     const page = resolvePdfPage(options)
-    const tempHtml = join(app.getPath('temp'), `horsemd-pdf-preview-${randomUUID()}.html`)
-    await fs.writeFile(tempHtml, buildPdfDocument(source, page), 'utf8')
-    if (signal.aborted) {
-      fs.unlink(tempHtml).catch(() => {})
-      throw new Error('PDF preview canceled')
-    }
-    const window = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    })
+    const tempDir = join(app.getPath('temp'), `horsemd-pdf-preview-${randomUUID()}`)
+    const tempHtml = join(tempDir, 'index.html')
+    await fs.mkdir(tempDir, { recursive: true })
+    let window = null
+    let printing = false
     const abort = () => {
-      if (!window.isDestroyed()) window.destroy()
+      // Destroying a BrowserWindow while Chromium is inside printToPDF rejects
+      // the promise before the native print backend has actually recovered.
+      // A replacement print started immediately afterwards can then fail with
+      // "Printing failed". Once printing starts, let it finish and discard its
+      // stale result; loading/resource stages remain safe to interrupt.
+      if (!printing && window && !window.isDestroyed()) window.destroy()
     }
     signal.addEventListener('abort', abort, { once: true })
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     try {
+      const prepared = await stagePdfImages(source, {
+        assetsDir: tempDir,
+        fetchImpl: (url, init) => net.fetch(url, init),
+        signal
+      })
+      await fs.writeFile(tempHtml, buildPdfDocument(prepared.source, page), 'utf8')
+      if (signal.aborted) throw new Error('PDF preview canceled')
+      window = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true
+        }
+      })
+      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       await window.loadFile(tempHtml)
       const resources = await window.webContents.executeJavaScript(printableResourcesScript, true)
       const headerFooter = buildPdfHeaderFooter(page)
-      const pdf = await window.webContents.printToPDF({
-        printBackground: true,
-        pageSize: page.printPageSize,
-        scale: page.scale / 100,
-        pageRanges: page.pageRanges,
-        preferCSSPageSize: true,
-        generateTaggedPDF: page.generateOutline,
-        generateDocumentOutline: page.generateOutline,
-        ...headerFooter
-      })
+      printing = true
+      let pdf
+      try {
+        pdf = await window.webContents.printToPDF({
+          printBackground: true,
+          pageSize: page.printPageSize,
+          scale: page.scale / 100,
+          pageRanges: page.pageRanges,
+          preferCSSPageSize: true,
+          generateTaggedPDF: page.generateOutline,
+          generateDocumentOutline: page.generateOutline,
+          ...headerFooter
+        })
+      } finally {
+        printing = false
+      }
       return {
         pdf,
         warnings: {
@@ -181,13 +199,15 @@ export function createPdfExportService({ getMainWindow }) {
           pendingImages: Number(resources?.pendingImages || 0),
           failedImages: Number(resources?.failedImages || 0),
           totalImages: Number(resources?.totalImages || 0),
-          wrappedMath: Number(resources?.wrappedMath || 0)
+          wrappedMath: Number(resources?.wrappedMath || 0),
+          stagedImages: Number(prepared.stagedImages || 0),
+          unresolvedImages: Number(prepared.unresolvedImages || 0)
         }
       }
     } finally {
       signal.removeEventListener('abort', abort)
-      if (!window.isDestroyed()) window.destroy()
-      fs.unlink(tempHtml).catch(() => {})
+      if (window && !window.isDestroyed()) window.destroy()
+      fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
     }
   }
 

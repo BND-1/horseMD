@@ -2,12 +2,12 @@ import { TextSelection, NodeSelection } from '@milkdown/prose/state'
 import { commandsCtx, remarkCtx } from '@milkdown/kit/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
-import katex from 'katex'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { preserveRichMarkdownSource } from '../markdown-source-preservation.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
+import { createPdfSourceFromEditor } from './editor-pdf-content.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 import {
@@ -17,116 +17,6 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { strikethroughSchema } from '@milkdown/kit/preset/gfm'
 import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
-
-const stripEditorOnlyForExport = (clone) => {
-  clone
-    .querySelectorAll(
-      'button, select, .language-picker, .language-list, .tools, ' +
-        '.tools-button-group, .button-group, .cm-panel, .cm-tooltip, ' +
-        '.preview-panel, .cell-handle, .line-handle, .handle, .add-button, ' +
-        '.operation, .operation-item, .drag-preview, .milkdown-block-handle, ' +
-        '.milkdown-toolbar, .image-resize-handle, .label-wrapper, .hm-frontmatter-wrap, ' +
-        '.hm-review-widget, .hm-review-card'
-    )
-    .forEach((el) => el.remove())
-}
-
-const cleanMathForExport = (math, { display } = {}) => {
-  const copy = math.cloneNode(true)
-  copy.querySelectorAll('annotation').forEach((node) => node.remove())
-  ;[...copy.childNodes].forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) node.remove()
-  })
-  if (display) copy.setAttribute('display', 'block')
-  return copy
-}
-
-const mathmlFromLatex = (doc, latex, { display } = {}) => {
-  if (!latex) return null
-  try {
-    const tpl = doc.createElement('template')
-    tpl.innerHTML = katex.renderToString(latex, {
-      throwOnError: false,
-      displayMode: !!display,
-      output: 'mathml'
-    })
-    const math = tpl.content.querySelector('math')
-    return math ? cleanMathForExport(math, { display }) : null
-  } catch {
-    return null
-  }
-}
-
-const codeBlockText = (block) => {
-  const lines = [...block.querySelectorAll('.cm-line')].map((line) => line.textContent)
-  if (lines.length) return lines.join('\n').replace(/\n+$/, '')
-  return (block.textContent || '').replace(/^\s*LaTeX\s*/, '').replace(/\s*复制\s*/, '').trim()
-}
-
-const isLatexCodeBlock = (block) => {
-  const codeMirrorLanguage = block.querySelector('.cm-content')?.dataset?.language?.trim().toLowerCase() || ''
-  const pickerLanguage = block.querySelector('.language-button')?.textContent?.trim().toLowerCase() || ''
-  // Crepe labels this language "LaTeX" in its picker but CodeMirror exposes
-  // the underlying `stex` mode. Accept both representations.
-  return ['latex', 'tex', 'stex'].includes(codeMirrorLanguage) || pickerLanguage.startsWith('latex')
-}
-
-const replaceKatexWithMathml = (root) => {
-  const doc = root.ownerDocument
-  root.querySelectorAll('.katex-display').forEach((display) => {
-    const math = display.querySelector('math')
-    if (math) display.replaceWith(cleanMathForExport(math, { display: true }))
-  })
-  root.querySelectorAll('.katex').forEach((katex) => {
-    const math = katex.querySelector('math')
-    if (math) {
-      katex.replaceWith(cleanMathForExport(math))
-      return
-    }
-    const inline = katex.closest("span[data-type='math_inline']")
-    const fallback = mathmlFromLatex(doc, inline?.dataset?.value || '', { display: false })
-    if (fallback) katex.replaceWith(fallback)
-  })
-}
-
-const materializeLatexPreviewsForExport = (clone) => {
-  const doc = clone.ownerDocument
-  clone.querySelectorAll('.milkdown-code-block').forEach((block) => {
-    // CodeMirror backs every fenced block. Only blocks explicitly marked as
-    // LaTeX can become MathML; trying KaTeX as a fallback for C++/JS/etc. turns
-    // ordinary code that happens to resemble math into a formula (#91).
-    if (!isLatexCodeBlock(block)) return
-    const math = block.querySelector('.preview-panel math') ||
-      mathmlFromLatex(doc, codeBlockText(block), { display: true })
-    if (!math) return
-    const wrapper = doc.createElement('figure')
-    wrapper.appendChild(math.tagName?.toLowerCase() === 'math' ? cleanMathForExport(math, { display: true }) : math)
-    block.replaceWith(wrapper)
-  })
-}
-
-const flattenCodeMirrorBlocks = (clone) => {
-  const doc = clone.ownerDocument
-  clone.querySelectorAll('.cm-editor').forEach((cm) => {
-    const lines = [...cm.querySelectorAll('.cm-line')].map((l) => l.textContent)
-    const pre = doc.createElement('pre')
-    const code = doc.createElement('code')
-    code.textContent = (lines.length ? lines.join('\n') : cm.textContent).replace(/\n+$/, '')
-    pre.appendChild(code)
-    cm.replaceWith(pre)
-  })
-}
-
-const stripEditorAttributes = (clone) => {
-  clone.querySelectorAll('*').forEach((el) => {
-    el.removeAttribute('class')
-    el.removeAttribute('style')
-    el.removeAttribute('contenteditable')
-    ;[...el.attributes].forEach((a) => {
-      if (a.name.startsWith('data-') || a.name.startsWith('aria-')) el.removeAttribute(a.name)
-    })
-  })
-}
 
 export function createEditorApi({
   viewRef,
@@ -143,25 +33,10 @@ export function createEditorApi({
   getT,
   notify
 }) {
-  const getPdfSource = () => {
+  const getPdfSource = async () => {
     const v = viewRef.current
     if (!v) return null
-    const clone = v.dom.cloneNode(true)
-    materializeLatexPreviewsForExport(clone)
-    stripEditorOnlyForExport(clone)
-    flattenCodeMirrorBlocks(clone)
-    replaceKatexWithMathml(clone)
-    stripEditorAttributes(clone)
-    const headings = [...clone.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading, index) => {
-      const id = `hm-pdf-heading-${index + 1}`
-      heading.id = id
-      return {
-        id,
-        level: Number(heading.tagName.slice(1)),
-        text: heading.textContent?.trim() || ''
-      }
-    })
-    return { html: clone.innerHTML, headings }
+    return createPdfSourceFromEditor(v.dom)
   }
 
   const getMarkdown = () => {

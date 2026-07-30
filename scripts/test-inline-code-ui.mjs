@@ -134,7 +134,14 @@ async function main() {
     for (const character of 'awdawdwa') {
       await typeCharacter(character)
     }
-    await sleep(120)
+    await waitFor(
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'awdawdwa')
+        return Boolean(code && editor.querySelectorAll('.hm-inline-code-delimiter').length === 2)
+      })()`),
+      'inline-code edit decorations did not settle after native typing'
+    )
     const editing = await evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'awdawdwa')

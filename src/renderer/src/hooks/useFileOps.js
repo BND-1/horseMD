@@ -406,7 +406,7 @@ export function useFileOps({
       const norm = (path || '').replace(/\\/g, '/')
       const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
       if (!tab) return
-      const source = getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
+      const source = await getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
       if (!source?.html) {
         window.alert(tRef.current('error.exportPdfUnavailable'))
         return

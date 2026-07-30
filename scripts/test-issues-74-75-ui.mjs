@@ -179,7 +179,7 @@ async function main() {
         (button) => button.title === '设置' || button.title === 'Settings' || textOf(button) === '设置' || textOf(button) === 'Settings',
         'settings'
       )
-      await clickButton((button) => ['编辑器', 'Editor'].includes(textOf(button)), 'editor settings')
+      await clickButton((button) => ['外观', 'Appearance'].includes(textOf(button)), 'appearance settings')
       const field = [...document.querySelectorAll('.settings-font-field')].filter(visible)[0]
       if (!field) throw new Error('Missing font field')
       field.click()

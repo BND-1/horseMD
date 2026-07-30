@@ -25,6 +25,7 @@ const runner = createLatestTaskRunner((value, signal) => new Promise((resolve, r
 const first = runner.run('renderer-1', 'first')
 const second = runner.run('renderer-1', 'second')
 assert.deepEqual(await first, { stale: true }, 'superseded task resolves as stale')
+await new Promise((resolve) => setImmediate(resolve))
 pending.get('second')()
 assert.deepEqual(await second, { stale: false, value: 'second' }, 'latest task wins')
 assert.equal(maxRunning, 1, 'cancellation prevents concurrent work for one key')
@@ -34,4 +35,32 @@ assert.equal(runner.cancel('renderer-1'), true)
 assert.deepEqual(await third, { stale: true }, 'explicit cancellation resolves as stale')
 assert.equal(runner.cancel('missing'), false)
 
-console.log('PASS latest task runner: one active task, latest wins, explicit cancel')
+const starts = []
+const finishes = []
+let asynchronousRunning = 0
+let asynchronousMaxRunning = 0
+const asynchronousRunner = createLatestTaskRunner((value, signal) => new Promise((resolve, reject) => {
+  starts.push(value)
+  asynchronousRunning += 1
+  asynchronousMaxRunning = Math.max(asynchronousMaxRunning, asynchronousRunning)
+  const finish = (callback) => {
+    setTimeout(() => {
+      asynchronousRunning -= 1
+      finishes.push(value)
+      callback()
+    }, 40)
+  }
+  signal.addEventListener('abort', () => finish(() => reject(new Error('asynchronous cleanup complete'))), { once: true })
+  if (value === 'latest') finish(() => resolve(value))
+}))
+
+const asynchronousFirst = asynchronousRunner.run('renderer-2', 'printing')
+const asynchronousLatest = asynchronousRunner.run('renderer-2', 'latest')
+assert.deepEqual(starts, ['printing'], 'replacement waits while the old worker cleans up')
+assert.deepEqual(await asynchronousFirst, { stale: true })
+assert.deepEqual(await asynchronousLatest, { stale: false, value: 'latest' })
+assert.deepEqual(starts, ['printing', 'latest'])
+assert.deepEqual(finishes, ['printing', 'latest'])
+assert.equal(asynchronousMaxRunning, 1, 'asynchronous abort cleanup never overlaps the replacement worker')
+
+console.log('PASS latest task runner: latest wins, explicit cancel, and asynchronous cleanup stays serialized')

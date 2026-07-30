@@ -12,7 +12,17 @@ const click = async (send, point) => {
 
 const inSource = (ev) => ev(`[...document.querySelectorAll('textarea.source-editor')].some((node) => node.offsetParent !== null)`)
 
+const waitForContext = async (read, label, attempts = 30) => {
+  for (let index = 0; index < attempts; index += 1) {
+    const context = await read()
+    if (context) return context
+    await sleep(100)
+  }
+  throw new Error(`Timed out waiting for ${label}`)
+}
+
 const toggle = async (send, ev) => {
+  const startedInSource = await inSource(ev)
   const point = await ev(`(() => {
     const button = [...document.querySelectorAll('.status-btn')].find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
     if (!button) return null
@@ -21,7 +31,11 @@ const toggle = async (send, ev) => {
   })()`)
   if (!point) throw new Error('Source toggle button not found')
   await click(send, point)
-  await sleep(1300)
+  for (let index = 0; index < 30; index += 1) {
+    if (await inSource(ev) !== startedInSource) break
+    await sleep(100)
+  }
+  await sleep(250)
 }
 
 const ensureRich = async (send, ev) => {
@@ -265,11 +279,11 @@ const main = async () => {
     await scrollSourceAndClick(send, ev, ratio)
     const source0 = await sourceContext(ev)
     await toggle(send, ev)
-    const rich1 = await richContext(ev)
+    const rich1 = await waitForContext(() => richContext(ev), 'first rich caret')
     await toggle(send, ev)
-    const source2 = await sourceContext(ev)
+    const source2 = await waitForContext(() => sourceContext(ev), 'second source caret')
     await toggle(send, ev)
-    const rich3 = await richContext(ev)
+    const rich3 = await waitForContext(() => richContext(ev), 'second rich caret')
     const crossModeMatch = semanticMatch(source0, rich1) && semanticMatch(source2, rich3)
     results.push({
       chain: 'source-rich-source-rich', ratio,
@@ -284,11 +298,11 @@ const main = async () => {
     await scrollRichAndClick(send, ev, ratio)
     const rich0 = await richContext(ev)
     await toggle(send, ev)
-    const source1 = await sourceContext(ev)
+    const source1 = await waitForContext(() => sourceContext(ev), 'first source caret')
     await toggle(send, ev)
-    const rich2 = await richContext(ev)
+    const rich2 = await waitForContext(() => richContext(ev), 'second rich caret')
     await toggle(send, ev)
-    const source3 = await sourceContext(ev)
+    const source3 = await waitForContext(() => sourceContext(ev), 'second source caret')
     results.push({
       chain: 'rich-source-rich-source', ratio,
       pass: sameCaret(rich0, rich2) && sameCaret(source1, source3) &&

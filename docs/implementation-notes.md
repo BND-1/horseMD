@@ -434,6 +434,20 @@ Crepe 的 CodeMirror 功能**拥有** `code_block` 的 node view,且代码块自
 
 单行单元格行高一度 **84px**:单元格内边距 + **单元格里 `<p>` 的上下 margin(~25px)** + 行高 1.85 三者叠加。修法:`td/th>p { margin:0 }`、内边距 10×14 → 6×12、行高 → 1.5、表格上下 margin 1.5em → 1.1em,行高降到 ~45px。重叠则是行内代码/长串不换行撑破固定列宽 → 给单元格加 `overflow-wrap/word-break: break-word`(行内 `code` 继承生效)。
 
+## bug：PDF 表格列宽和行距与编辑器分叉
+
+编辑器已经采用内容驱动列宽和紧凑单元格，但 PDF 仍保留 `width:100%` +
+`table-layout:fixed`，且 `.doc p` 的全局段落 margin 继续命中 `th/td > p`。
+第一次只修复列宽后，最终 PDF X 坐标已经正确，用户仍能看到每行上下留白过大；
+这说明视觉验收只测一个轴线不完整。
+
+最终做法是在 `editor-pdf-content.js` 清理 DOM 前测量 live table 并写入 PDF 专用
+列比例，在 `pdf-print-styles.js` 只重置 cell paragraph 的 margin/padding。测试
+直接读取最终 PDF 的 X/Y 坐标并渲染 PNG，不以 source HTML 或成功生成 Buffer
+代替视觉验收。完整根因和工程流程见
+[pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) 与
+[pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
+
 ## 坑：表格单元格内换行只能走 `<br>`,不能用 hardbreak 序列化（issue #7）
 
 GFM 表格单元格必须单行。直接在单元格插入换行/hardbreak,`mdast-util-to-markdown` 在 `tableCell` 构造里会把换行**强制转成一个空格**(`handle/break.js`),换行保存即丢;直接写 `<br>` 又被我们丢掉、不渲染。最终方案(`editor-tablebreak.js`,均不改 Milkdown 节点定义):① keymap 在单元格插入 hardbreak(渲染为 `<br>`);② 自定义 remark stringify `break` 处理器**仅当 `state.stack.includes('tableCell')`** 时输出 `<br>`,否则回落默认(段落换行不变);③ remark 解析插件把内联 `<br>` 的 html 节点转回 `break`。用真实 mdast 库做了 round-trip 隔离测试 + 应用内端到端验证(`第一行<br>第二行<br>第三行` 单行不损坏)。

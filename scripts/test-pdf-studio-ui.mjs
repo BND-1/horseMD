@@ -1,5 +1,7 @@
 // Real Electron regression for the browser-style PDF export studio.
 // Launch HorseMD with scripts/fixtures/issues-57-60.md and CDP enabled first.
+import assert from 'node:assert/strict'
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { connectCdp, sleep } from './lib/cdp.mjs'
 
 const waitFor = async (evaluate, expression, message, attempts = 100) => {
@@ -61,8 +63,29 @@ const snapshot = (evaluate) => evaluate(`(() => {
   }
 })()`)
 
+const pdfTextHeight = async (evaluate, pattern) => {
+  const bytes = await evaluate(`Array.from(window.__horsemdLastPdfPreviewData || [])`)
+  assert.ok(bytes.length > 1000, 'PDF preview bytes were not captured')
+  const loadingTask = getDocument({ data: Uint8Array.from(bytes) })
+  const document = await loadingTask.promise
+  try {
+    const page = await document.getPage(1)
+    const text = await page.getTextContent()
+    const item = text.items.find((candidate) => pattern.test(candidate.str || ''))
+    assert.ok(item, `PDF text item was not found: ${pattern}`)
+    return item.height
+  } finally {
+    await document.destroy()
+  }
+}
+
 const main = async () => {
   const { ws, send, evaluate } = await connectCdp()
+  await evaluate(`(() => {
+    window.__HORSEMD_TEST_CAPTURE_PDF__ = true
+    window.__HORSEMD_TEST_CAPTURE_PDF_DATA__ = true
+    return true
+  })()`)
   await evaluate(`document.querySelector('.hm-pdf-close')?.click()`)
   const menuOpened = await evaluate(`(() => {
     const tab = document.querySelector('.tab.active') || document.querySelector('.tab')
@@ -101,6 +124,67 @@ const main = async () => {
   if (!(portrait.width > 0 && portrait.height > portrait.width && portrait.outline > 0 && !portrait.outlinePanel)) {
     throw new Error(`Default portrait/bookmark preview is wrong: ${JSON.stringify(portrait)}`)
   }
+  const fontSizeUi = await evaluate(`(() => {
+    const input = document.querySelector('input[data-pdf-font-size]')
+    const scaleLabel = [...document.querySelectorAll('.hm-pdf-field > span')]
+      .find((node) => /整体缩放|Overall scale/i.test(node.textContent || ''))
+    return {
+      value: input?.value || '',
+      min: input?.min || '',
+      max: input?.max || '',
+      step: input?.step || '',
+      hasOverallScaleLabel: !!scaleLabel
+    }
+  })()`)
+  assert.deepEqual(fontSizeUi, {
+    value: '11',
+    min: '8',
+    max: '24',
+    step: '0.5',
+    hasOverallScaleLabel: true
+  })
+  const defaultTextHeight = await pdfTextHeight(evaluate, /PDF export options/)
+  const rapidFontErrors = []
+  for (const value of ['8', '9', '10', '11', '12', '13', '14']) {
+    await setInput(evaluate, 'input[data-pdf-font-size]', value)
+    await sleep(190)
+    const error = await evaluate(`document.querySelector('.hm-pdf-preview-error')?.textContent || ''`)
+    if (error) rapidFontErrors.push(error)
+  }
+  await waitFor(
+    evaluate,
+    `window.__horsemdLastPdfPreview?.options?.fontSizePt === 14 &&
+      window.__horsemdLastPdfPreview?.result?.ok === true`,
+    'Rapid PDF font-size changes did not settle on the latest preview'
+  )
+  const largerFont = await snapshot(evaluate)
+  assert.deepEqual(rapidFontErrors, [], 'Rapid PDF font-size changes exposed a transient preview error')
+  assert.equal(largerFont.error, '', 'Rapid PDF font-size changes left the studio in an error state')
+  const largerTextHeight = await pdfTextHeight(evaluate, /PDF export options/)
+  const capturedFontSize = await evaluate(`window.__horsemdLastPdfPreview?.options?.fontSizePt`)
+  assert.equal(capturedFontSize, 14)
+  assert.ok(
+    largerTextHeight > defaultTextHeight * 1.2,
+    `PDF body font size did not affect the final PDF: ${JSON.stringify({ defaultTextHeight, largerTextHeight })}`
+  )
+  await evaluate(`(() => {
+    const input = document.querySelector('input[data-pdf-font-size]')
+    if (!input) return false
+    input.focus()
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '30')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.blur()
+    return true
+  })()`)
+  await waitPreview(evaluate, largerFont.token)
+  const clampedFont = await snapshot(evaluate)
+  assert.equal(
+    await evaluate(`document.querySelector('input[data-pdf-font-size]')?.value`),
+    '24',
+    'Out-of-range PDF font size was not reflected as the normalized value after blur'
+  )
+  await setInput(evaluate, 'input[data-pdf-font-size]', '11')
+  await waitPreview(evaluate, clampedFont.token)
   await evaluate(`document.querySelector('.hm-pdf-preview-leading > button')?.click()`)
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-outline')`, 'Embedded PDF outline did not open')
   const outlineShown = await snapshot(evaluate)
@@ -183,7 +267,19 @@ const main = async () => {
   const shortcutExport = await evaluate(`Number(document.querySelector('.hm-pdf-studio')?.dataset.sourceHeadings || 0)`)
   if (shortcutExport < 3) throw new Error(`Global PDF command used stale source: ${shortcutExport}`)
   await evaluate(`document.querySelector('.hm-pdf-close')?.click()`)
-  console.log(`PASS PDF studio UI: ${JSON.stringify({ portrait, outlineShown, landscape, toc, noOutline, range, finalPortrait, sourceExport, shortcutExport })}`)
+  console.log(`PASS PDF studio UI: ${JSON.stringify({
+    portrait,
+    fontSizeUi,
+    fontSize: { defaultTextHeight, largerTextHeight, capturedFontSize },
+    outlineShown,
+    landscape,
+    toc,
+    noOutline,
+    range,
+    finalPortrait,
+    sourceExport,
+    shortcutExport
+  })}`)
   ws.close()
 }
 

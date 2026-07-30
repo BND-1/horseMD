@@ -78,6 +78,20 @@ async function ensureRender(theme, code, onDone) {
   }
 }
 
+// PDF export must not depend on whether the live preview happened to be
+// mounted, visible, or finished rendering. Resolve the same strict Mermaid
+// renderer explicitly and use the light theme that matches the PDF surface.
+export async function renderMermaidForExport(code, { theme = 'default' } = {}) {
+  const trimmed = String(code || '').trim()
+  if (!trimmed) return null
+  const key = keyFor(theme, trimmed)
+  if (!cache.has(key)) {
+    await new Promise((resolve) => ensureRender(theme, trimmed, resolve))
+  }
+  const result = cache.get(key)
+  return result?.svg || null
+}
+
 // The HTML string to show as the block's preview for a given mermaid source.
 // Kicks off (or reuses) a render; `onUpdate` fires when an async render lands.
 function previewHtml(code, t, onUpdate) {

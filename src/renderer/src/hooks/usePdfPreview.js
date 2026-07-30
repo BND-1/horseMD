@@ -42,6 +42,9 @@ export function usePdfPreview({ request, options, delay = 160 }) {
         if (!result?.ok || !result.token || !data?.length) {
           throw new Error(result?.error || 'PDF preview returned no data')
         }
+        if (window.__HORSEMD_TEST_CAPTURE_PDF_DATA__) {
+          window.__horsemdLastPdfPreviewData = data
+        }
         tokenRef.current = result.token
         setState({
           status: 'ready',

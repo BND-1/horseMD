@@ -53,6 +53,7 @@ src/main/security.js   external-URL protocol allowlist (https/http/mailto) + loc
 src/main/pdf-export.js  cancellable preview sessions, resource wait, printToPDF, save
 src/main/pdf-document.js pure PDF document/TOC/header/footer construction
 src/main/pdf-print-styles.js isolated print stylesheet and pagination rules
+src/main/pdf-images.js  stages local/remote images for isolated PDF printing
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
@@ -70,6 +71,7 @@ src/renderer/src/
   components/editor-slash-menu.js      Feishu-style slash menu: raw ProseMirror plugin (prosePluginsCtx) + SlashProvider; keyword filtering + keyboard nav (see "Slash menu" convention)
   components/editor-dom-bindings.js    ProseMirror DOM behavior: shortcuts, context menu, selection sync, rich-copy, image paste/drop + relative-path resolve, lightbox trigger, caption focus, code-block copy feedback, selection-toolbar scan, slash-menu bounds
   components/editor-api.js             onReady API surface: export markdown/html, review apply, replaceMarkdown, restoreMarkdownOffset, markdownOffsetFromSelection
+  components/editor-pdf-content.js     structured PDF snapshot, Mermaid/LaTeX materialization, table measurement, editor-DOM cleanup
   components/editor-source-map.js      markdown raw-offset ↔ ProseMirror block-level mapping (the mode-switch caret anchor)
   components/editor-image-persistence.js  image paste/drop → local save / image-host / data-URL fallback
   components/editor-lightbox.js        image/Mermaid lightbox (Esc / Ctrl-wheel zoom / drag-pan)
@@ -457,15 +459,35 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   for the split-pane divider + the outline/file-tree resizer. Both used to
   hand-roll the same mousemove/mouseup + body-class dance. onStart returns state
   (e.g. mousedown x / start width) passed to onMove as 2nd arg.
+- **PDF visual fidelity**: PDF Studio renders the same final PDF Buffer that is
+  saved to disk. Do not validate layout only from source HTML or print CSS.
+  Body font size is a separate 8–24pt setting (11pt default); overall scale
+  still scales the complete page, while headings, tables, code, and spacing
+  remain relative to the body size.
+  Table export preserves measured total width and column ratios, while
+  `th/td > p` margins stay reset so document paragraph spacing cannot inflate
+  rows. Follow [`docs/pdf-visual-fidelity-runbook.md`](./docs/pdf-visual-fidelity-runbook.md)
+  for final-PDF X/Y coordinate checks, PNG rendering, regression commands, and
+  handoff stop conditions.
+- **PDF preview cancellation**: latest-request-only does not mean destroying a
+  BrowserWindow during `printToPDF()`. Chromium can reject the Promise before
+  its native print backend has recovered, causing the next request to fail with
+  `Printing failed`. Let active printing finish, discard stale output, and wait
+  for the worker's asynchronous cleanup before starting the latest request.
 
 ## Testing
 
-No unit tests. Verification is done by running the packaged app and observing
-behavior (screenshots), plus the CDP e2e scripts in `scripts/` — see
-[`docs/development.md`](./docs/development.md). On macOS, when scripting the dev
-build, note that `osascript "tell application \"Electron\""` can launch the
-generic `node_modules` Electron bundle (a name collision); prefer testing the
-packaged **HorseMD.app**, which has a unique name and bundle id.
+There is no single `npm test` command. The repository has deterministic Node
+tests plus hidden, isolated Electron/CDP UI sessions. Run `npm run build` before
+focused tests and use `npm run test:ui-regression` for editor/PDF/UI changes;
+the suite currently covers seven sessions plus standalone regressions. Input
+rules and source-fidelity tests type one character at a time through
+`scripts/lib/human-input.mjs`. See [`docs/development.md`](./docs/development.md).
+
+On macOS, scripting `osascript "tell application \"Electron\""` can launch the
+generic `node_modules` Electron bundle. Automated regression must use
+`scripts/lib/electron-test-app.mjs` in background mode; user handoff must rebuild,
+install and verify the current `/Applications/HorseMD.app`.
 
 ## When in doubt
 

@@ -93,12 +93,29 @@ async function main() {
       if (session.lang !== 'en') throw new Error('Language did not persist to session: ' + rawSession)
 
       await clickNav(['编辑器', 'Editor'])
+      const softBreakToggle = [...document.querySelectorAll('button[role="switch"]')]
+        .find((button) => visible(button) && /保留源码单换行|Preserve source line breaks/i.test(button.getAttribute('aria-label') || ''))
+      if (!softBreakToggle) throw new Error('Missing source line-break display toggle')
+      if (softBreakToggle.getAttribute('aria-checked') !== 'true' || !document.body.classList.contains('hm-preserve-soft-breaks')) {
+        throw new Error('Source line-break display must default to enabled')
+      }
+      softBreakToggle.click()
+      await sleep(240)
+      if (settings().preserveSoftBreaks !== false || document.body.classList.contains('hm-preserve-soft-breaks')) {
+        throw new Error('Source line-break display setting did not disable and persist')
+      }
+      softBreakToggle.click()
+      await sleep(240)
+      if (settings().preserveSoftBreaks !== true || !document.body.classList.contains('hm-preserve-soft-breaks')) {
+        throw new Error('Source line-break display setting did not re-enable and persist')
+      }
       const spellToggle = [...document.querySelectorAll('button[role="switch"]')]
         .find((button) => visible(button) && /英文拼写检查|English spell-check/.test(button.getAttribute('aria-label') || ''))
       if (!spellToggle) throw new Error('Missing spellcheck toggle')
       spellToggle.click()
       await sleep(240)
       if (settings().spellcheck !== true) throw new Error('Spellcheck did not persist true')
+      await clickNav(['外观', 'Appearance'])
       const tableWrapToggle = [...document.querySelectorAll('button[role="switch"]')]
         .find((button) => visible(button) && /宽表自动换行|wrap wide tables/i.test(button.getAttribute('aria-label') || ''))
       if (!tableWrapToggle) throw new Error('Missing wide-table wrap toggle')

@@ -92,6 +92,24 @@ Linux job 安装桌面构建依赖，打包后执行 `dpkg-deb --info`；由于 
 
 项目以 **Chrome DevTools Protocol** 端到端验证为主，同时为可纯函数验证的源码映射提供快速 Node 单测。CDP 连进运行中的 Electron，真实派发鼠标/键盘事件并回读 DOM，测的是"用户真实体验"。
 
+自动化默认通过 `launchBuiltElectron()` 加入 `--horsemd-test-background`，主
+窗口保持隐藏、不获取 macOS 原生焦点，同时关闭 Chromium 后台节流。CDP
+事件只发送给隔离的 Electron renderer，不调用系统级键鼠，因此不会移动
+用户的鼠标、输入到其他应用或把测试窗口切到前台。需要人工观察窗口时显式
+传入 `{ background: false }`。
+
+输入类测试遵循“增量输入优先”：
+
+- Markdown 输入规则、行内代码/公式、Enter/退格、模式切换后立即输入和原文
+  保真必须逐字符派发，不能一次性注入整句。
+- 普通文本使用 `scripts/lib/human-input.mjs` 的
+  `typeTextLikeUser()`；快捷键和特殊键使用 `pressKey()` 或原生
+  `Input.dispatchKeyEvent`。
+- 设置赋值、构造大文档和粘贴测试可以使用批量数据，因为这些路径并不声称
+  模拟键盘逐字输入。
+- 中文逐字输入表示“输入法已经提交一个汉字后的文本事件”。拼音候选、
+  composition 更新和候选确认属于独立 IME 测试，不能用逐汉字注入冒充。
+
 ```bash
 # 无需启动 Electron：Markdown raw offset ↔ ProseMirror 映射
 npm run test:source-map
@@ -134,23 +152,37 @@ npm run test:shortcuts
 
 # 真实 Electron UI 回归编排，串行启动隔离 profile，避免多个 CDP 脚本抢窗口
 npm run test:ui-regression
+
+# PDF 表格视觉保真：保留最终 PDF 和 PNG 便于人工核对
+KEEP_PDF_ARTIFACTS=1 npm run test:pdf-table-layout-ui
+
+# 验证测试窗口不抢原生焦点，且后台仍能逐字符输入
+npm run test:background-ui
 ```
 
 ### 工具
 
 - `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、#93、#98、精确 raw-offset 与零等待输入、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路
+- `scripts/lib/electron-test-app.mjs`、`scripts/lib/human-input.mjs` —— 默认以隐藏且不抢原生焦点的 Electron 窗口运行 CDP；提供统一逐字符文本输入和特殊键工具
+- `scripts/test-background-cdp-ui.mjs` —— 验证后台启动参数、初始原生焦点和隐藏窗口内逐字符输入，防止测试基础设施退化后再次抢用户窗口
 - `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证闭合、首尾方向键退出、新段落以代码起笔、源码边界和连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
 - `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、Markdown 标记复制、真实撤销及关闭会话恢复后的显式文件打开
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
-- `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、快速设置、源码同步和快捷入口
+- `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、正文字号范围与最终 PDF 文字高度、整体缩放标签、快速设置、源码同步和快捷入口
+- `scripts/test-pdf-preview-churn-ui.mjs` —— 生成 24 章节、8 页的长文档，以 190ms 间隔连续修改 9 次字号，监视瞬时错误并验证只生成最终 14pt；保护 `printToPDF()` 不被强杀及异步清理串行合同
 - `scripts/test-pdf-latex-ui.mjs` —— 真实 Electron PDF 导出回归：段落 LaTeX 公式必须导出为渲染后的 MathML，不允许打印 `$$...$$` 源码或公式编辑控件
-- `scripts/test-editor-style-settings-ui.mjs` —— 真实 Electron 设置页回归：自定义 CSS 位于编辑器设置并作用到预览，源码字号设置作用到源码 textarea
+- `scripts/test-pdf-rendered-formats-ui.mjs` —— 不等待 live preview 就立即真实导出，验证流程图、时序图、饼图、类图、状态图和 ER 图均成为安全 SVG；同时覆盖异常 Mermaid 降级、LaTeX、普通代码、任务列表、表格、引用、HTML、无编辑器控件和 PDF.js 实际绘制
+- `scripts/test-pdf-table-layout-fidelity-ui.mjs` —— 测量同一紧凑表在编辑器、结构化 PDF source 和最终 PDF 文字坐标中的列宽比例，并比较编辑器 row height 与 PDF 文字 Y 基线，要求不得退化为等分或重新叠加正文段落留白；再以真实长按拖动验证手动列宽，最后将第一页渲染为 PNG。设置 `KEEP_PDF_ARTIFACTS=1` 可在 `/tmp/horsemd-pdf-table-layout-*` 保留 `.pdf` / `.png`
+- `scripts/test-pdf-images.mjs` / `scripts/test-pdf-images-ui.mjs` —— 验证本地与网络图片会先暂存到 PDF 临时目录；真实 Electron 覆盖 `%20` 相对路径、远程图片、无失败提示和实际 PDF 字节
+- `scripts/test-editor-images.mjs` —— 验证 macOS、Linux 和 Windows 图片路径只编码一次，保护空格、中文与已编码 Markdown 地址
+- `scripts/test-editor-style-settings-ui.mjs` —— 真实 Electron 设置页回归：编辑器页只保留行为设置；外观页按排版预览、自定义 CSS、表格、源码外观排序；CSS 片段、预览、字体和源码字号继续即时生效
 - `scripts/test-selection-toolbar-ui.mjs` —— 真实 Electron 回归：块级公式紧凑留白不影响普通代码块；编辑器设置可即时关闭浮动选中文字工具栏；右键紧凑子菜单能实际悬停展开、保持原选区并执行格式和审阅标记
 - `scripts/test-inline-html-block-handle-ui.mjs` —— 真实 Electron 验证行内 `<font>` / `<span>` 不会在正文中唤起块拖拽柄，左侧块操作热区仍保留该功能
 - `scripts/test-block-handle-gutter-ui.mjs` —— 真实 Electron 覆盖窄、压缩、宽、全宽布局，以及标题、正文、一级/嵌套列表、有序列表和待办列表；验证所有块共用一条可见、可点击且不遮挡正文的操作轨道
-- `scripts/test-table-scroll-ui.mjs` —— 真实 Electron 表格回归：短表自然宽度、宽表内部滚动、主题表面、行列控件、长按实时列宽，以及最右端连续 10 次调整不回跳
-- `scripts/test-latest-task-runner.mjs` —— 验证同一渲染器仅运行一个 PDF 生成任务，旧任务取消且最新请求胜出
+- `scripts/test-table-scroll-ui.mjs` —— 真实 Electron 表格回归：未手动调整时长内容列必须宽于短内容列；同时覆盖短表自然宽度、手动列宽优先级、宽表内部滚动、主题表面、行列控件、长按实时列宽，以及最右端连续 10 次调整不回跳
+- `scripts/test-task-list-persistence-ui.mjs` —— 真实文件任务清单回归：点击勾选、保存、彻底退出并重开，再取消勾选、保存并重开；每一步只允许目标 Markdown 标记在 `[ ]` 与 `[x]` 间变化
+- `scripts/test-latest-task-runner.mjs` —— 验证同一渲染器仅运行一个 PDF 生成任务，旧任务异步清理完整结束后最新请求才可启动
 - `scripts/test-editor-api-registry.mjs` —— 验证按 Tab 的编辑器 API ready、关闭释放与超时行为
 - `scripts/test-pdf-studio-ui.mjs` —— 真实验证 PDF 横纵向、目录页、书签、页码范围、PDF.js Canvas 与快速设置更新的最终一致性
 - `scripts/test-editor-inline-code.mjs`、`scripts/test-menu-position.mjs` —— 不启动 Electron 的输入边界与浮层几何回归
@@ -164,6 +196,7 @@ npm run test:ui-regression
 - `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格、列表、硬换行和代码等位置验证 source/rich 连续双向切换始终落在同一 raw offset；另覆盖源码切回富文本后零等待 Enter，并跨 90/220ms 恢复窗口继续输入
 - `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
 - `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落，以及非 canonical 前缀后以行内代码起笔；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
+- `scripts/test-soft-line-breaks-ui.mjs` —— 真实 Electron 验证普通源码单换行默认按多行显示、显式硬换行仍为 `<br>`、双向切换后的 textarea 与磁盘字节不变；设置开关接线由 `test-settings-view-ui.mjs` 保护
 - `scripts/test-source-fidelity-audit-ui.mjs`、`scripts/test-large-doc-source-preservation-ui.mjs` —— 分别验证异构 Markdown 多点编辑后的逐字节局部性，以及 120k+ BOM/CRLF 分块文档的首次富文本编辑
 - `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化
 - `scripts/test-review-ui.mjs` —— 真实源码同步后的 Review 高亮、同段批注堆叠、卡片编辑/取消/完成和 substitution DOM
@@ -180,6 +213,9 @@ node scripts/etv.mjs
 
 ### 关键经验（CDP 的坑）
 
+- **后台运行**：自动化统一通过 `launchBuiltElectron()` 启动；不要为普通回归手工 `open -a` 或使用 AppleScript/系统级键鼠。人工验收和教程截图才使用可见窗口。
+- **PDF 视觉问题必须验证最终 Buffer**：source HTML、隐藏打印 DOM 和最终 PDF 是不同层。布局修复至少读取 PDF.js 的 X/Y 坐标并渲染 PNG；完整流程见 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
+- **逐字符不等于真实 IME**：逐字符 CDP 输入能覆盖 ProseMirror 的增量事务和 Markdown 输入规则，但不能覆盖 macOS/Windows 输入法候选框与 composition 生命周期；涉及输入法的缺陷必须增加平台专项人工验证。
 - **响应取值路径**：`Runtime.evaluate` 的值在 `msg.result.result.value`（别写成 `msg.result.value`）
 - **合成事件的局限**：
   - `Input.dispatchMouseEvent` 的合成**拖拽不驱动 ProseMirror 的 `state.selection`**（DOM 有选区但 PM 内部是空的）→ 测选区相关功能要用**键盘选区**（Shift+方向键）

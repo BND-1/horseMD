@@ -10,13 +10,15 @@ export async function launchBuiltElectron({
   cwd = process.cwd(),
   appArgs = [],
   executable = electronPath,
-  entrypoint = 'out/main/index.cjs'
+  entrypoint = 'out/main/index.cjs',
+  background = true
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
   const child = spawn(executable, [
     ...(profileDir ? [`--user-data-dir=${profileDir}`] : []),
     `--remote-debugging-port=${port}`,
     ...(entrypoint ? [entrypoint] : []),
+    ...(background ? ['--horsemd-test-background'] : []),
     ...appArgs
   ], {
     cwd,

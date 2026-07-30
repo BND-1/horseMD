@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { typeTextLikeUser } from './lib/human-input.mjs'
 
 const dir = '/tmp/horsemd-paragraph-source-preservation'
 const file = join(dir, 'paragraphs.md')
@@ -210,10 +211,7 @@ const richCaret = (evaluate) => evaluate(`(() => {
 })()`)
 
 const typeHumanPaced = async (send, text) => {
-  for (const character of text) {
-    await send('Input.insertText', { text: character })
-    await sleep(120)
-  }
+  await typeTextLikeUser(send, text, { delayMs: 120 })
   // Let Crepe publish this block's canonical snapshot before Enter. Without
   // this pause, CDP batches all blocks into one update and misses the real
   // hand-typing path that previously merged later paragraphs into the title.

@@ -97,6 +97,10 @@ const sessions = [
 
 const standalone = [
   {
+    name: 'Background CDP: no native focus and per-character input',
+    script: 'scripts/test-background-cdp-ui.mjs'
+  },
+  {
     name: 'Source textarea fidelity: CRLF, BOM, mixed EOL and offset mapping',
     script: 'scripts/test-source-text-fidelity.mjs'
   },
@@ -117,6 +121,10 @@ const standalone = [
     script: 'scripts/test-issues-70-72-ui.mjs'
   },
   {
+    name: 'Task list: checkbox state saves and survives reopen',
+    script: 'scripts/test-task-list-persistence-ui.mjs'
+  },
+  {
     name: 'Issues 74-75: inline math deletion and font picker names',
     script: 'scripts/test-issues-74-75-ui.mjs'
   },
@@ -129,12 +137,32 @@ const standalone = [
     script: 'scripts/test-pdf-latex-ui.mjs'
   },
   {
+    name: 'PDF rendered formats: Mermaid and structural Markdown',
+    script: 'scripts/test-pdf-rendered-formats-ui.mjs'
+  },
+  {
+    name: 'PDF preview churn: rapid settings stay serialized on a long document',
+    script: 'scripts/test-pdf-preview-churn-ui.mjs'
+  },
+  {
+    name: 'PDF images: local and remote resources stage for printing',
+    script: 'scripts/test-pdf-images-ui.mjs'
+  },
+  {
+    name: 'PDF tables: editor column proportions survive export',
+    script: 'scripts/test-pdf-table-layout-fidelity-ui.mjs'
+  },
+  {
     name: 'Issue 77: localized rich edits preserve original Markdown spelling',
     script: 'scripts/test-issue-77-source-preservation-ui.mjs'
   },
   {
     name: 'Paragraph source preservation: compact lines and Enter survive reopen',
     script: 'scripts/test-paragraph-source-preservation-ui.mjs'
+  },
+  {
+    name: 'Soft line breaks: visual lines preserve source bytes and explicit hard breaks',
+    script: 'scripts/test-soft-line-breaks-ui.mjs'
   },
   {
     name: 'Mode switch raw offsets: hard breaks, inline atoms, and immediate input',

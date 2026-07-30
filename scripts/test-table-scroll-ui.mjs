@@ -2,6 +2,7 @@
 // Launch a built app with --remote-debugging-port first and open the fixture at
 // scripts/fixtures/table-scroll.md.
 import { connectCdp, sleep } from './lib/cdp.mjs'
+import { typeTextLikeUser } from './lib/human-input.mjs'
 
 function verifyLayout(result, label) {
   if (!result.rootLocked || result.documentScrollTop !== 0) {
@@ -13,8 +14,14 @@ function verifyLayout(result, label) {
   if (result.markdownTables < 2 || !result.wideMarkdownScrollable) {
     throw new Error(`${label}: wide Markdown table is not independently scrollable: ${JSON.stringify(result)}`)
   }
-  if (!result.compactContentSized) {
+  if (!result.compactManualWidths && !result.compactContentSized) {
     throw new Error(`${label}: compact Markdown table is still stretched to the editor width: ${JSON.stringify(result)}`)
+  }
+  if (!result.compactManualWidths && (
+    result.compactColumnWidths.length < 2 ||
+    result.compactColumnWidths[1] < result.compactColumnWidths[0] * 1.25
+  )) {
+    throw new Error(`${label}: compact table columns do not adapt to their cell content: ${JSON.stringify(result)}`)
   }
   if (!result.tableSurfaceVisible) {
     throw new Error(`${label}: table surface is transparent or indistinguishable from its header: ${JSON.stringify(result)}`)
@@ -39,6 +46,10 @@ async function inspect(evaluate, mobile = false) {
     const wideWrapper = markdownTables[1]?.querySelector('.table-wrapper')
     const compactTable = compactWrapper?.querySelector('table.children')
     const compactHeader = compactTable?.querySelector('th')
+    const compactColumnWidths = [...(compactTable?.rows?.[0]?.cells || [])]
+      .map((cell) => cell.getBoundingClientRect().width)
+    const compactManualWidths = compactTable?.dataset.hmColumnWidths === 'true' ||
+      !!compactTable?.querySelector('[data-colwidth]')
     const rawBlock = rich?.querySelector('.hm-html-block')
     const appRect = app?.getBoundingClientRect()
     const editorHost = rich?.closest('.editor-host')
@@ -78,6 +89,8 @@ async function inspect(evaluate, mobile = false) {
       markdownTables: markdownTables.length,
       compactMarkdownScrollable,
       compactContentSized,
+      compactColumnWidths,
+      compactManualWidths,
       tableSurfaceVisible,
       tableBackground,
       headerBackground,
@@ -116,6 +129,85 @@ async function verifyThemeTableSurface(evaluate, theme) {
   if (!visible(result.tableBackground) || result.tableBackground === 'rgba(0, 0, 0, 0)' ||
     result.tableBackground === result.headerBackground) {
     throw new Error(`${theme}: table surface is missing or indistinguishable from the header: ${JSON.stringify(result)}`)
+  }
+}
+
+async function verifyTableFontScaling(evaluate) {
+  const samples = await evaluate(`(async () => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const cell = rich?.querySelector('.milkdown-table-block th')
+    if (!rich || !cell) return []
+    const previous = rich.style.getPropertyValue('--editor-font-size')
+    const results = []
+    for (const size of [12, 16, 24]) {
+      rich.style.setProperty('--editor-font-size', size + 'px')
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const style = getComputedStyle(cell)
+      results.push({
+        requested: size,
+        fontSize: parseFloat(style.fontSize),
+        lineHeight: parseFloat(style.lineHeight),
+        paddingTop: parseFloat(style.paddingTop),
+        height: cell.getBoundingClientRect().height
+      })
+    }
+    if (previous) rich.style.setProperty('--editor-font-size', previous)
+    else rich.style.removeProperty('--editor-font-size')
+    return results
+  })()`)
+  if (samples.length !== 3) throw new Error('desktop: table font scaling samples were not available')
+  for (const sample of samples) {
+    const paddingRatio = sample.paddingTop / sample.fontSize
+    const lineRatio = sample.lineHeight / sample.fontSize
+    if (Math.abs(paddingRatio - 0.28) > 0.03 || Math.abs(lineRatio - 1.4) > 0.03) {
+      throw new Error(`desktop: table spacing is not font-relative: ${JSON.stringify(samples)}`)
+    }
+  }
+  const heightRatio = samples[2].height / samples[0].height
+  const fontRatio = samples[2].fontSize / samples[0].fontSize
+  if (heightRatio < fontRatio * 0.92 || heightRatio > fontRatio * 1.08 || samples[1].height > 34) {
+    throw new Error(`desktop: table row height does not scale compactly with font size: ${JSON.stringify(samples)}`)
+  }
+}
+
+async function verifyContentDrivenColumnWidths(send, evaluate) {
+  const before = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const table = rich?.querySelector('.milkdown-table-block table.children')
+    const target = table?.rows?.[1]?.cells?.[1]?.querySelector('p')
+    if (!table || !target) return null
+    const range = document.createRange()
+    range.selectNodeContents(target)
+    range.collapse(false)
+    const selection = window.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+    rich.focus()
+    return {
+      widths: [...table.rows[0].cells].map((cell) => cell.getBoundingClientRect().width),
+      hasManualWidths: table.dataset.hmColumnWidths === 'true' ||
+        !!table.querySelector('[data-colwidth]')
+    }
+  })()`)
+  if (!before || before.hasManualWidths) {
+    throw new Error(`desktop: untouched table already has manual widths: ${JSON.stringify(before)}`)
+  }
+
+  await typeTextLikeUser(send, ' with a substantially longer explanation', { delayMs: 8 })
+  await sleep(180)
+  const after = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const table = rich?.querySelector('.milkdown-table-block table.children')
+    return {
+      widths: [...(table?.rows?.[0]?.cells || [])].map((cell) => cell.getBoundingClientRect().width),
+      hasManualWidths: table?.dataset.hmColumnWidths === 'true' ||
+        !!table?.querySelector('[data-colwidth]')
+    }
+  })()`)
+  if (after.hasManualWidths ||
+      after.widths[1] < before.widths[1] + 80 ||
+      after.widths[1] <= after.widths[0] * 2) {
+    throw new Error(`desktop: editing cell content did not adapt its column: ${JSON.stringify({ before, after })}`)
   }
 }
 
@@ -220,7 +312,10 @@ async function verifyColumnResize(send, evaluate) {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = rich?.querySelector('.milkdown-table-block')
     block.scrollIntoView({ block: 'center' })
-    const cell = block?.querySelector('th')
+    // Use a body-cell boundary. With compact rows, Crepe's add-column button
+    // legitimately overlaps the header midpoint; clicking there tests the add
+    // control instead of HorseMD's hold-to-resize interaction.
+    const cell = block?.querySelector('td')
     const rect = cell?.getBoundingClientRect()
     if (!rect) return null
     return {
@@ -353,7 +448,7 @@ async function verifyFarRightColumnResize(send, evaluate) {
       block.scrollIntoView({ block: 'center' })
       wrapper.scrollLeft = wrapper.scrollWidth - wrapper.clientWidth
       const wrapperRect = wrapper.getBoundingClientRect()
-      const header = [...block.querySelectorAll('th')].reverse().find((node) => {
+      const header = [...block.querySelectorAll('td')].reverse().find((node) => {
         const rect = node.getBoundingClientRect()
         return rect.right > wrapperRect.left + 8 && rect.right <= wrapperRect.right + 2
       })
@@ -843,8 +938,10 @@ async function main() {
 
   const desktop = await inspect(evaluate)
   verifyLayout(desktop, 'desktop')
+  await verifyTableFontScaling(evaluate)
   await verifyThemeTableSurface(evaluate, 'light')
   await verifyThemeTableSurface(evaluate, 'dark')
+  await verifyContentDrivenColumnWidths(send, evaluate)
   await verifyColumnResize(send, evaluate)
   await verifyFarRightColumnResize(send, evaluate)
   await verifyTableHandles(send, evaluate)

@@ -131,9 +131,9 @@ async function main() {
       settingsButton.click()
       await sleep(350)
 
-      const editorNav = buttons().find((button) => ['编辑器', 'Editor'].includes(textOf(button)))
-      if (!editorNav) throw new Error('missing editor settings navigation')
-      editorNav.click()
+      const appearanceNav = buttons().find((button) => ['外观', 'Appearance'].includes(textOf(button)))
+      if (!appearanceNav) throw new Error('missing appearance settings navigation')
+      appearanceNav.click()
       await sleep(220)
 
       await clickPreset(['Line Height', '行间距'], ['Loose', '宽松'])

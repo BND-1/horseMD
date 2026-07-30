@@ -19,6 +19,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
+const backgroundTestMode = process.argv.includes('--horsemd-test-background')
 
 let mainWindow = null
 // When true, the window is allowed to close without re-prompting (the renderer
@@ -124,6 +125,7 @@ function focusMainWindow() {
     if (app.isReady()) createWindow()
     return false
   }
+  if (backgroundTestMode) return true
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
@@ -170,12 +172,13 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      spellcheck: true
+      spellcheck: true,
+      backgroundThrottling: !backgroundTestMode
     }
   })
 
   mainWindow.once('ready-to-show', () => {
-    focusMainWindow()
+    if (!backgroundTestMode) focusMainWindow()
     // Launch files/folders are delivered on the renderer's 'app-ready' signal
     // (see pendingLaunch below) — sending here races the renderer's IPC listener
     // registration, and the double-clicked file is lost to the restored session

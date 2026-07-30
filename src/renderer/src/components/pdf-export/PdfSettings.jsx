@@ -20,6 +20,12 @@ const Switch = ({ checked, disabled = false, onChange, label, description, t }) 
 
 export default function PdfSettings({ options, setOptions, rangeError, t }) {
   const set = (key, value) => setOptions((previous) => ({ ...previous, [key]: value }))
+  const commitFontSize = (value) => {
+    const parsed = Number(value)
+    set('fontSizePt', Number.isFinite(parsed) && value !== ''
+      ? Math.min(24, Math.max(8, parsed))
+      : 11)
+  }
   const setMargin = (key, value) => setOptions((previous) => ({
     ...previous,
     margins: { ...previous.margins, [key]: value }
@@ -62,6 +68,23 @@ export default function PdfSettings({ options, setOptions, rangeError, t }) {
             ))}
           </div>
         )}
+        <label className="hm-pdf-field">
+          <span>{t('pdf.fontSize')}</span>
+          <div className="hm-pdf-unit-field">
+            <input
+              type="number"
+              min="8"
+              max="24"
+              step="0.5"
+              value={options.fontSizePt}
+              data-pdf-font-size
+              onChange={(event) => set('fontSizePt', event.target.value)}
+              onBlur={(event) => commitFontSize(event.target.value)}
+            />
+            <small>pt</small>
+          </div>
+          <small className="hm-pdf-field-help">{t('pdf.fontSizeHelp')}</small>
+        </label>
         <label className="hm-pdf-field hm-pdf-scale">
           <span>{t('pdf.scale')}</span>
           <div><input type="range" min="50" max="200" step="5" value={options.scale} onChange={(event) => set('scale', Number(event.target.value))} /><output>{options.scale}%</output></div>

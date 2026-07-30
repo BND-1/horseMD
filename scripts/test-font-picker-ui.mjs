@@ -13,7 +13,7 @@ async function waitFor(check, message, attempts = 50) {
   throw new Error(message)
 }
 
-async function openEditorSettings(evaluate) {
+async function openAppearanceSettings(evaluate) {
   await evaluate(`(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const textOf = (node) => node?.textContent?.replace(/\s+/g, ' ').trim() || ''
@@ -28,9 +28,9 @@ async function openEditorSettings(evaluate) {
     if (!settings) throw new Error('Missing settings button')
     settings.click()
     await sleep(250)
-    const editor = buttons().find((button) => ['编辑器', 'Editor'].includes(textOf(button)))
-    if (!editor) throw new Error('Missing Editor settings navigation')
-    editor.click()
+    const appearance = buttons().find((button) => ['外观', 'Appearance'].includes(textOf(button)))
+    if (!appearance) throw new Error('Missing Appearance settings navigation')
+    appearance.click()
     await sleep(200)
   })()`)
 }
@@ -78,7 +78,7 @@ async function main() {
   const app = await launchBuiltElectron({ profileDir: '/tmp/horsemd-font-picker-ui', port })
   try {
     const { evaluate, send } = app
-    await openEditorSettings(evaluate)
+    await openAppearanceSettings(evaluate)
     await checkPicker(evaluate, send, 0, 'source serif')
     await checkPicker(evaluate, send, 1, 'source code')
     console.log('PASS font picker UI: document and code font searches accept input and retain focus')

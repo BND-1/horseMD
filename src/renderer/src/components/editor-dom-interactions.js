@@ -209,6 +209,10 @@ export function mountEditorInteractionBindings({
   view.dom.addEventListener('drop', onUserEditIntent, true)
   view.dom.addEventListener('cut', onUserEditIntent, true)
   view.dom.addEventListener('compositionend', onUserEditIntent, true)
+  // Crepe's task-list label toggles on pointerdown and prevents the compatible
+  // mousedown event. Capture pointerdown at the editor root so that checkbox
+  // attribute transactions enter the same markdownUpdated/save path as typing.
+  view.dom.addEventListener('pointerdown', onPointerDown, true)
   view.dom.addEventListener('mousedown', onPointerDown, true)
   view.dom.addEventListener('contextmenu', onContextMenu)
   cleanups.push(() => view.dom.removeEventListener('keydown', onKeydown, true))
@@ -222,6 +226,7 @@ export function mountEditorInteractionBindings({
   cleanups.push(() => view.dom.removeEventListener('drop', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('cut', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('compositionend', onUserEditIntent, true))
+  cleanups.push(() => view.dom.removeEventListener('pointerdown', onPointerDown, true))
   cleanups.push(() => view.dom.removeEventListener('mousedown', onPointerDown, true))
   cleanups.push(() => view.dom.removeEventListener('contextmenu', onContextMenu))
 

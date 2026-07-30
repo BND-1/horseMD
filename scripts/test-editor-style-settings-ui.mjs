@@ -33,18 +33,25 @@ async function main() {
         await sleep(100)
       }
       if (!appearance) throw new Error('missing appearance nav')
-      appearance.click()
-      await sleep(150)
-      if (document.querySelector('.settings-css-editor')) {
-        throw new Error('custom CSS editor should not live under Appearance')
-      }
-
       const editor = byText(['编辑器', 'Editor'])
       if (!editor) throw new Error('missing editor nav')
       editor.click()
+      await sleep(150)
+      if (document.querySelector('.settings-css-editor') ||
+        document.querySelector('.settings-preview') ||
+        document.querySelector('.settings-table-preview')) {
+        throw new Error('visual settings should not remain under Editor')
+      }
+      const editorSectionTitles = [...document.querySelectorAll('.settings-block-title')].map(textOf)
+      if (!editorSectionTitles.some((title) => /校对|Proofreading/.test(title)) ||
+        !editorSectionTitles.some((title) => /编辑|Editing/.test(title))) {
+        throw new Error('Editor should retain proofreading and editing behavior settings')
+      }
+
+      appearance.click()
       await sleep(200)
       const cssEditor = document.querySelector('.settings-css-editor')
-      if (!cssEditor) throw new Error('missing custom CSS editor under Editor')
+      if (!cssEditor) throw new Error('missing custom CSS editor under Appearance')
       const preview = document.querySelector('.settings-preview.milkdown .ProseMirror h1')
       if (!preview) throw new Error('missing HorseMD-style typography preview')
       const previewRoot = document.querySelector('.settings-preview.milkdown .ProseMirror')
@@ -94,10 +101,18 @@ async function main() {
       }
       const sourceTitle = [...document.querySelectorAll('.settings-block-title')]
         .find((title) => ['源码模式', 'Source mode'].includes(textOf(title)))
+      const typographyBlock = preview.closest('.settings-block')
       const cssBlock = cssEditor.closest('.settings-block')
+      const tableBlock = document.querySelector('[data-settings-group="tables"]')
       const sourceBlock = sourceTitle?.closest('.settings-block')
-      if (!cssBlock || !sourceBlock || !(cssBlock.compareDocumentPosition(sourceBlock) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-        throw new Error('custom CSS must appear before source-mode settings')
+      const follows = (before, after) => Boolean(
+        before?.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      if (!typographyBlock || !cssBlock || !tableBlock || !sourceBlock ||
+        !follows(typographyBlock, cssBlock) ||
+        !follows(cssBlock, tableBlock) ||
+        !follows(tableBlock, sourceBlock)) {
+        throw new Error('Appearance order must be typography, custom CSS, tables, then source mode')
       }
       cssEditor.focus()
       cssEditor.select()

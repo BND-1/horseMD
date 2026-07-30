@@ -5,7 +5,7 @@ description: 使用 LaTeX 数学公式和 Mermaid 图表，并查看全屏预览
 
 # 公式与 Mermaid
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.12.38</span>
 
 ## 数学公式
 
@@ -48,3 +48,8 @@ flowchart LR
 灯箱顶部提供缩小、当前倍率、放大、适应窗口和 `1:1` 原始尺寸按钮。也可以按住拖动进行平移，使用 `Ctrl+滚轮` 在 0.2～10 倍之间缩放，按 Escape 或点击背景关闭。普通图片灯箱使用同一套比例和缩放控制。
 
 Mermaid 语法错误时保留源码供修改，不会执行图表中的脚本。
+
+导出 PDF 时，HorseMD 会主动重新生成图表 SVG，不依赖当前图表是否滚动到可视区，
+也不会把流程图、时序图、饼图、类图、状态图或 ER 图退化成 Mermaid 源码。图表按
+原始宽高比适应纸张；若语法有误或渲染超时，该代码块会保留为源码，其他正文仍可
+正常导出。

@@ -108,7 +108,7 @@ export function createMenuHandlers({
     attachFile: attachFiles,
     exportPdf: async () => {
       const id = pickEditableId()
-      const source = getPdfSourceForTab(id)
+      const source = await getPdfSourceForTab(id)
       if (!source?.html) {
         window.alert(tRef.current('error.exportPdfUnavailable'))
         return

@@ -42,7 +42,17 @@ export function resolveToFileUrl(baseDir, src) {
   const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '')
   const isWin = /^[a-zA-Z]:/.test(base)
   const segs = base.split('/')
-  for (const part of src.replace(/\\/g, '/').split('/')) {
+  // Markdown parsers preserve authored percent escapes such as `%20`. Decode
+  // those once before constructing the file URL; passing them straight to
+  // encodeURI turns `%20` into `%2520`, so paths with spaces/CJK fail (#101).
+  let decodedSrc = String(src || '')
+  try {
+    decodedSrc = decodeURI(decodedSrc)
+  } catch {
+    // Keep malformed percent sequences literal; encodeURI below will make them
+    // a valid path rather than rejecting the whole image.
+  }
+  for (const part of decodedSrc.replace(/\\/g, '/').split('/')) {
     if (part === '' || part === '.') continue
     if (part === '..') segs.pop()
     else segs.push(part)

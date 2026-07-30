@@ -163,6 +163,9 @@ export const DEFAULT_SETTINGS = {
   // Users who prefer an uninterrupted writing surface can use the expanded
   // right-click formatting menu instead.
   selectionToolbar: true,
+  // Keep ordinary source newlines visible in rich mode without changing their
+  // Markdown meaning or serializing them as explicit hard breaks.
+  preserveSoftBreaks: true,
   // Reopen saved files and unsaved scratch tabs from the previous session.
   // Disabling this affects startup only; files explicitly passed by the OS or
   // command line still open normally.
@@ -240,6 +243,7 @@ export function loadSettings() {
       spellcheck: raw.spellcheck === true,
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
       selectionToolbar: raw.selectionToolbar !== false,
+      preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
@@ -329,4 +333,12 @@ export function applyHeadingSpacing(value) {
 // into fitting every column into the writing area.
 export function applyTableAutoWrap(enabled) {
   document.body.classList.toggle('hm-table-auto-wrap', enabled === true)
+}
+
+// Milkdown preserves an ordinary Markdown newline as an inline hardbreak node
+// whose DOM contains a space. This class changes only that node's visual
+// presentation; parsing, serialization, source offsets, and explicit <br>
+// hardbreaks remain untouched.
+export function applySoftBreakDisplay(enabled) {
+  document.body.classList.toggle('hm-preserve-soft-breaks', enabled !== false)
 }

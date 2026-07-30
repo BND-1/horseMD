@@ -1,6 +1,6 @@
 # Markdown 原文保真与 Live Preview 架构决策
 
-> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-29。
+> 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-30。
 
 0.12.34 对“切换后立即输入”“复杂文档中间段落合并”“硬换行/行内图片后的光标偏移”和“新段落以行内代码起笔”进行了一次联合根因排查。具体症状、失败方案、证据和复现步骤见 [0.12.34 编辑器源码保真与模式切换疑难问题报告](./editor-source-switch-regression-0.12.34.md)。
 
@@ -19,6 +19,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 5. 来自网页的富文本粘贴优先保留 HTML 语义；不能因为其 `text/plain` 回退内容像 Markdown 就丢失标题、加粗、链接或图片。
 6. 只有真实用户编辑或粘贴才会标脏；纯模式切换和程序化源码同步不能标脏或再次改写源码。
 7. UTF-8 BOM、CRLF 和混合换行属于原文的一部分。源码模式只改一个字符时，不得把整篇文件统一成 LF。
+8. 段落内的普通单换行可在富文本中按行显示，但这只能是视觉策略；不得把它改写为两个尾随空格、`<br>` 或空白段落。详见 [源码单换行显示问题报告](./soft-line-break-display-report.md)。
 
 ## 当前实现
 
@@ -113,6 +114,9 @@ npm run test:issue-77-ui
 
 # 真实 Electron：空文档起笔、文档末尾与中间 Enter 新段落、保存重开
 npm run test:paragraph-source-ui
+
+# 真实 Electron：普通单换行视觉显示、显式硬换行和源码/磁盘字节保真
+npm run test:soft-break-ui
 
 # 真实 Electron：重复表格行列编辑、富文本保存、完全退出并重开文件
 npm run test:issue-86-ui

@@ -207,11 +207,15 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 导出前可选择 A4、A3、Letter 或 50–1000 mm 的自定义尺寸，并设置纵向/横向。分页既可交给 Chromium 自动处理，也可在一级、二级或三级标题前强制换页，或把 Markdown 分隔符作为“本页结束”标记。
 
 **实现**：
-- `editor-api.js` 的 `getPdfSource()` 克隆当前 ProseMirror 视图并生成干净 HTML 和标题列表：先把 LaTeX 预览块物化为可打印 MathML，再移除编辑器控件，把普通 CodeMirror 代码块压平成 `<pre><code>`，并清理临时属性。
-- 支持 A4/A3/Letter/自定义尺寸、横纵向、四档边距、50%–200% 缩放、标题/分隔符分页、打印目录页、目录层级、PDF 书签、页眉页脚、标题、日期、页码和页码范围；代码与表头背景默认保留。
-- `usePdfExport` 管理打开与保存状态；`usePdfPreview` 负责防抖、过期结果隔离和预览会话清理。主进程 `pdf-export.js` 等待字体与图片，生成 Tagged PDF/书签并缓存最新 Buffer。同一渲染器始终只有一个生成任务，设置变化会取消旧任务并只保留最新请求。
+- `editor-api.js` 的异步 `getPdfSource()` 委托 `editor-pdf-content.js` 克隆当前 ProseMirror 视图并生成干净 HTML、标题和图片列表。导出器先主动把 LaTeX 物化为 MathML、把 Mermaid 物化为经过安全清理且保留原始比例的 SVG，再移除编辑器控件；普通 CodeMirror 代码块仍压平成 `<pre><code>`。Mermaid 导出不依赖 live preview 是否位于可视区或已经加载，语法错误或超时则保留源码。
+- PDF source 在清理编辑器 class/style 前会测量每张可见表格的总宽度和首行列边界，并写成专用 `data-hm-pdf-*` 与 `<colgroup>` 百分比。紧凑表以实测像素宽度打印，宽表才限制为 `100%`；隐藏或无法测量的表格回退为 `table-layout: auto`。打印样式不得再对所有表格使用固定等分列宽。
+- PDF 表格单元格保留编辑器同样的紧凑密度：`th/td > p` 必须清除 margin/padding 并继承 cell line-height，避免全局 `.doc p` 段距进入每个单元格。该规则只作用于表格内部，不能通过降低正文段距解决。
+- 支持 A4/A3/Letter/自定义尺寸、横纵向、四档边距、8–24pt 正文字号、50%–200% 整体缩放、标题/分隔符分页、打印目录页、目录层级、PDF 书签、页眉页脚、标题、日期、页码和页码范围；代码与表头背景默认保留。正文字号由标准化后的 `fontSizePt` 写入 `--hm-pdf-font-size`，默认 11pt；标题、表格、代码和间距使用相对单位随正文等比变化，整体缩放则继续作用于完整页面内容。
+- `usePdfExport` 管理打开与保存状态；`usePdfPreview` 负责防抖、过期结果隔离和预览会话清理。renderer 的 `getPdfSource()` 用占位符和图片清单描述当前已解析的本地/网络图片，主进程 `pdf-images.js` 将其暂存到隔离打印目录后再由 `pdf-export.js` 等待字体与图片、生成 Tagged PDF/书签并缓存最新 Buffer。这样打印窗口不依赖相对路径、浏览器缓存或远程图片的第二次直接加载。同一渲染器始终只有一个生成任务，设置变化会取消旧任务并只保留最新请求。
+- PDF 取消必须遵守打印阶段边界：进入 `printToPDF()` 前可销毁隐藏窗口，进入后必须让当前打印自然结束并把结果标记为 stale。`latest-task-runner.js` 等待旧 worker 的异步 `finally` 完成后才启动最后一次请求，避免 Chromium 打印后端尚未恢复时触发 `Printing failed`。专项事故记录见 [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md)。
 - `pdf-document.js` 保持纯函数，负责尺寸、范围、目录和打印模板；`pdf-print-styles.js` 单独维护打印 CSS。临时 HTML 使用禁止脚本执行的 CSP，隐藏窗口保持 Electron 默认 Web 安全策略。
 - 多标签下导出当前聚焦文档。`editor-api-registry.js` 按 `tab.id` 注册 API，侧栏对尚未打开的文件导出时等待明确的 ready 通知，不依赖固定延迟或错误命中其他标签。
+- 预览型格式的导出合同和回归矩阵见 [pdf-rendered-content-export-report.md](./pdf-rendered-content-export-report.md)；表格事故复盘和通用 PDF 工程流程分别见 [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) 与 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
 
 ## 18. 自定义窗口按钮（Windows / Linux）+ 关闭前确认
 
@@ -318,24 +322,28 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 ## 30. 表格排版优化
 
-Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧内边距与行高(单行行高约从 84px 降到 45px),并对超列宽内容/行内代码自动换行(`word-break`),不再与相邻列重叠。
+Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe 额外 padding，单元格内边距与行高使用 `em` 随文档字号等比变化，而不是保持固定像素高度；并对超列宽内容/行内代码自动换行（`word-break`），不再与相邻列重叠。PDF 打印表格采用同一套字号相对密度。
 
-短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。**设置 → 编辑器 → 宽表自动换行** 可改为把 Markdown 表格的所有列收进正文宽度并自动换行；该模式会暂时忽略手动列宽，避免历史列宽留下隐藏的横向滚动面。列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
+短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；未手动调宽时使用浏览器 `table-layout: auto`，综合表头和所有单元格内容为每一列分配不同宽度，而不是按首行把各列等分。只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。**设置 → 外观 → 表格 → 宽表自动换行** 可改为把 Markdown 表格的所有列收进正文宽度并自动换行；该模式会暂时忽略手动列宽，避免历史列宽留下隐藏的横向滚动面。
 
-**验证**：`npm run test:table-ui` 在真实 Electron 中覆盖浅/深主题、移动窄屏、宽表内部滚动、行列按钮、长按实时调宽，以及宽表最右侧连续 10 次悬浮/调整时横向位置不回退。
+列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。只有此时表格才切换为 `table-layout: fixed`，明确尊重用户指定的整组列宽。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
+
+**验证**：`npm run test:table-ui` 在真实 Electron 中检查内容较长列必须明显宽于短内容列，并覆盖 12/16/24px 字号下的等比紧凑行高、浅/深主题、移动窄屏、宽表内部滚动、行列按钮、长按实时调宽、手动宽度持久化，以及宽表最右侧连续 10 次悬浮/调整时横向位置不回退。
 
 ## 31. 设置页（一站式配置）
 
 - 左下角齿轮（ActivityBar）/ 移动端 ••• 打开设置标签页
 - **常规**：中文 / English
-- **编辑器**：文档字体、代码字体、字号 / 行距 / 段距 / 页宽、宽表自动换行、桌面端选中文字浮动工具栏、英文拼写检查，带实时预览
-- **外观**：6 套内置主题 + 自定义 Typora 主题；可打开主题目录或跳转 theme.typora.io
+- **编辑器**：英文拼写检查、源码单换行显示、桌面端选中文字浮动工具栏、行内公式删除等编辑行为
+- **外观**：6 套内置主题 + 自定义 Typora 主题，以及文档/代码字体、字号 / 行距 / 段距 / 标题间距 / 页宽、自定义 CSS、宽表自动换行和源码字号；顺序为主题、排版预览、自定义 CSS、表格、源码外观
 - **文件与图片**：显示隐藏文件、Typora 式自定义图床上传命令
 - **键盘快捷键**：展示全部首批命令，支持搜索、录制、清空、单项恢复默认、全部恢复默认、冲突提示和系统保留键提示
 - **关于**：版本号、手动检查更新、官网与仓库链接
 - 打开设置时侧栏自动收起；设置标签页不持久化（纯 transient）
 
-**实现**：`SettingsView.jsx` 只做设置壳层和模块导航，具体页面在 `components/settings/`（`GeneralSettings`、`EditorSettings`、`AppearanceSettings`、`FilesSettings`、`KeyboardSettings`、`AboutSettings`）。`ui/Toggle.jsx` 提供 DNA 开关，`ui/AdjustGroup.jsx` 是排版共享控件，`settings.js` 保存 spellcheck / showHiddenFiles / selectionToolbar 等 pref。快捷键配置独立存储在 `localStorage["horsemd.keybindings.v1"]`，不污染文档 session；设置页激活时会阻断保存、查找、侧边栏等后台文档快捷键。
+普通 Markdown 单换行会保留为 Milkdown 的 inline hardbreak 节点。默认开启“保留源码单换行”时，HorseMD 只在 CSS 层把该节点显示为换行；关闭后按 CommonMark 规则显示为空格。两种状态都不改变源码、节点位置或 PDF。Enter 仍创建标准段落，Shift+Enter 仍创建显式硬换行，不能把三种行为混合。
+
+**实现**：`SettingsView.jsx` 只做设置壳层和模块导航，具体页面在 `components/settings/`。`EditorSettings.jsx` 只拥有编辑行为；`AppearanceSettings.jsx` 编排主题与 `DocumentAppearanceSettings.jsx`，后者集中排版、CSS、表格和源码视觉设置。所有搬迁继续使用原 `settings` 键与 App 应用逻辑，不执行偏好迁移。`ui/Toggle.jsx` 提供 DNA 开关，`ui/AdjustGroup.jsx` 是排版共享控件，`settings.js` 保存 spellcheck / showHiddenFiles / selectionToolbar / preserveSoftBreaks 等 pref，并由 `applySoftBreakDisplay()` 切换纯显示 class。快捷键配置独立存储在 `localStorage["horsemd.keybindings.v1"]`，不污染文档 session；设置页激活时会阻断保存、查找、侧边栏等后台文档快捷键。
 
 ## 32. Mermaid 全屏灯箱
 
@@ -425,7 +433,7 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 
 ### 怎么用
 
-设置 → 编辑器 → 顶部两个选择器：**文档字体**（`--font-write`，影响正文 + 标题）和**代码字体**（`--font-mono`，影响代码块）。空 = 默认栈。相同页面还提供字号、行间距、段落间距、页面宽度、源码字号和自定义 CSS。
+设置 → 外观 → 排版中的两个选择器：**文档字体**（`--font-write`，影响正文 + 标题）和**代码字体**（`--font-mono`，影响代码块）。空 = 默认栈。相同页面还提供字号、行间距、段落间距、标题间距、页面宽度、源码字号和自定义 CSS。
 
 自定义 CSS 采用可组合的命名片段：每个片段可独立启停、重命名、排序和删除；启用的片段按列表顺序层叠，后面的规则可覆盖前面的规则。旧版单个 CSS 文本会自动迁移为第一个片段。设置预览使用真实编辑器的 `.milkdown .ProseMirror` 选择器，并覆盖标题、强调、删除线、链接、行内代码、`kbd`、引用、普通/有序/任务列表、表格和代码块；切换文档再回到设置时，当前 CSS 片段仍由 App 的临时 `settingsViewState.activeCssSnippetId` 选中，不写入偏好或会话。桌面端可从片段底部的“检查编辑器”打开现有 DevTools 来查看真实选择器；该入口不向 renderer 暴露 Node 权限。
 
@@ -437,6 +445,7 @@ Markdown 表格渲染更紧凑:去掉单元格内段落的上下 margin、收紧
 - 列表底部有外部链接：文档字体 → [方正字库](https://www.foundertype.com/)（国内官方），代码字体 → [Nerd Fonts](https://www.nerdfonts.com/)。
 - 行距和段距同时作用于普通段落、无序列表、有序列表和嵌套列表；仅改变显示，不改写 Markdown 源码。
 - **列表类型转换（桌面富文本）**：右键普通列表的任意层级，悬停“列表”子菜单后可在有序/无序之间转换，或转为待办清单；待办清单也可显式转为有序或无序列表，并移除勾选状态。操作仅改变当前列表容器及其直接项目，父层和嵌套子层保持原样；列表菜单不显示无法作用的正文/标题项。正文段落的“转换为”子菜单也提供有序、无序和待办清单，命令以右键命中的 ProseMirror 位置为准，不会误改之前光标所在段落。转换后的源码仅替换定位到的列表块；无法安全定位时宁可回退为合法序列化，也不做猜测式拼接。
+- **任务清单状态持久化**：点击任务方框时，Crepe 在 `pointerdown` 阶段通过节点属性事务切换 `checked`。`editor-dom-interactions.js` 必须在编辑器根节点的 capture 阶段记录这次用户编辑，因为 Crepe 随后会阻止兼容 `mousedown`；这样既有 `markdownUpdated`、原文保真和保存链路才能接收变化。勾选与取消勾选只写回目标项的 `[ ]` / `[x]`，保存并重开后状态保持。
 
 ### 怎么实现
 

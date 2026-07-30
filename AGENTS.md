@@ -46,6 +46,15 @@ Use ES modules, React functional components, two-space indentation, single quote
 
 There is no single `npm test` command. Run `npm run build` before PRs. For editor/review logic, add or update focused scripts under `scripts/`. For UI changes, follow `docs/manual-test-checklist.md`; CDP helpers are in `docs/development.md`.
 
+CDP automation must use `scripts/lib/electron-test-app.mjs` with its default
+background mode so tests do not take native keyboard focus or show over the
+user's work. Input-rule, caret, line-break, mode-switch, and source-fidelity
+tests must send committed text one character at a time via
+`scripts/lib/human-input.mjs`, with raw key events for delimiters and special
+keys. Bulk text insertion is only appropriate for paste semantics, fixture
+setup, or behavior unrelated to incremental typing. Per-character committed
+Chinese text is not a substitute for a real IME composition test.
+
 User-facing changes must update the matching `guide/` page. Tutorial screenshots must come from a rebuilt and freshly installed current app using an isolated profile; follow `docs/user-guide-maintenance.md`. Never publish screenshots containing personal paths or stale UI.
 
 ## Commit & Pull Request Guidelines
@@ -100,10 +109,14 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 
 - PDF export uses `getPdfSource()` structured HTML/headings, not a clone of the live editor DOM.
 - Sidebar export waits for the per-tab editor API readiness signal; do not restore fixed polling delays.
-- Main-process preview generation is latest-request-only per renderer. New settings cancel stale hidden-window work.
+- Main-process preview generation is latest-request-only per renderer. New settings cancel stale hidden-window work, but once `printToPDF()` starts its BrowserWindow must not be destroyed for ordinary supersession. Let printing finish, discard the stale result, and start the latest worker only after asynchronous cleanup; keep `scripts/test-pdf-preview-churn-ui.mjs` in the regression matrix.
 - Keep PDF temporary documents script-free through CSP and retain Electron's default web security policy.
 - A printed contents page and the embedded PDF navigation outline are independent features.
+- PDF body font size is `fontSizePt`, normalized to 8–24pt with an 11pt default and emitted through `--hm-pdf-font-size`. Keep it separate from overall page scaling; headings, tables, code, and spacing should remain relative to the body size.
 - Display LaTeX blocks are preview-backed CodeMirror blocks in the editor, but PDF export must print rendered MathML, not the raw `$$...$$` source or editor controls. Keep `scripts/test-pdf-latex-ui.mjs` in the UI regression matrix.
+- Mermaid blocks are also preview-backed. PDF export must actively render and sanitize their SVG through `editor-pdf-content.js`; it must not depend on a visible `.preview-panel`. Keep `scripts/test-pdf-rendered-formats-ui.mjs` in the UI regression matrix.
+- PDF tables preserve the live editor's measured total width and column proportions. Compact tables remain compact; only tables wider than their editor viewport collapse to the printable width. Do not restore a global fixed/equal-width print rule, and keep `scripts/test-pdf-table-layout-fidelity-ui.mjs` in the UI regression matrix.
+- PDF table cells contain paragraph wrappers. Keep their margins and padding reset in print CSS so global document paragraph spacing cannot inflate every exported row. Visual PDF fixes must be checked against the final PDF Buffer with X/Y coordinates and a rendered page; follow `docs/pdf-visual-fidelity-runbook.md`.
 
 ### Feature-Specific Notes
 
@@ -111,6 +124,8 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
+- Markdown tables use content-driven `table-layout: auto` until the user explicitly resizes a column. Persisted `data-colwidth` then switches that table to fixed layout; do not make untouched tables equal-width or overwrite deliberate widths.
+- Crepe task checkboxes toggle on `pointerdown` and suppress the compatible `mousedown`. Keep the editor-root capture listener so checkbox transactions are recognized as user edits and flow through `markdownUpdated`; verify both checked and unchecked states survive save and full reopen.
 - YAML front matter follows the standard document-header boundary only. Do not infer YAML from body `---` separators plus colon-containing headings; Q&A headings such as `Q3:` must remain headings.
 - Image handling supports custom command/PicGo/local assets/base64 fallback. Empty image-host command must not intercept paste/drop into dead blob URLs.
 - Renderer CSP intentionally allows `img-src http:` for local image hosts and PicGo-style HTTP URLs.
@@ -135,7 +150,7 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - When asking the user to manually test, always rebuild and install the current source first. Never ask the user to test an older installed app or a stale artifact; explicitly verify the installed app was produced after the latest relevant code change.
 - When handing a macOS build to the user for manual testing, do not only overwrite `/Applications/HorseMD.app`. First kill any running HorseMD/Electron processes, then copy the new app, clear quarantine, launch it, and verify the running process points at `/Applications/HorseMD.app` with the intended document. If a specific fix has a marker string, verify `/Applications/HorseMD.app/Contents/Resources/app.asar` contains it before telling the user to test. This avoids macOS reusing an old app process after a reinstall.
 - macOS unsigned app launch may need `xattr -dr com.apple.quarantine /Applications/HorseMD.app`.
-- CDP test scripts require launching Electron with `--remote-debugging-port=9222`; with multiple mounted tabs, select visible `.ProseMirror` nodes via `offsetParent`.
+- CDP test scripts launched through `launchBuiltElectron()` run hidden by default and must not take native keyboard/mouse focus; use `background: false` only for explicit visual inspection. With multiple mounted tabs, select visible `.ProseMirror` nodes via `offsetParent`.
 - The manual regression baseline is `docs/manual-test-checklist.md`; mode-switch, save, find/replace, review, settings, and large-doc behavior are high-priority checks.
 
 ### Refactor Guidance

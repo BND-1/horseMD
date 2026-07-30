@@ -5483,6 +5483,18 @@ body.dark .milkdown {
   margin-bottom: 0;
 }
 
+/* Milkdown keeps an ordinary Markdown newline as an inline hardbreak span whose
+   text content is a space. When enabled, append a visual line feed without
+   replacing the span, changing its width, or turning it into an explicit <br>.
+   This keeps ProseMirror positions and Markdown round-tripping unchanged. */
+body.hm-preserve-soft-breaks
+  .milkdown
+  .ProseMirror
+  span[data-type='hardbreak'][data-is-inline='true']::after {
+  content: '\A';
+  white-space: pre;
+}
+
 /* Links */
 .milkdown .ProseMirror a {
   color: var(--accent);
@@ -5796,12 +5808,18 @@ body.dark .milkdown {
 .milkdown .ProseMirror .milkdown-table-block table.children {
   /* Keep compact tables at their natural content width. The wrapper stays as
      the full-width scroll viewport, but the table itself only grows beyond it
-     when its actual columns need the space. Fixed layout is required here:
-     ProseMirror stores a user-resized column in colgroup/data-colwidth, and an
-     auto layout can discard that explicit width in favor of cell contents. */
-  table-layout: fixed;
+     when its actual columns need the space. Until the user resizes a column,
+     let the browser distribute width from all cell contents instead of making
+     every column follow the first row's fixed-layout geometry. */
+  table-layout: auto;
   width: max-content;
   min-width: 0;
+}
+.milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-widths='true'],
+.milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-preview='true'] {
+  /* A deliberate drag is an explicit layout decision. Freeze the measured
+     column set while previewing and after data-colwidth has been persisted. */
+  table-layout: fixed;
 }
 
 /* Readers can opt into a print-like wide-table layout in Settings. Keep the
@@ -5851,10 +5869,10 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
 .milkdown .ProseMirror td {
   border: none;
   border-bottom: 1px solid var(--border-soft);
-  /* Compact rows: tight padding + line-height so a Markdown table reads densely
-     instead of wasting vertical space. */
-  padding: 7px 10px;
-  line-height: 1.5;
+  /* Keep row density proportional to the configured document font. Fixed px
+     padding made small-font tables stay disproportionately tall (#101). */
+  padding: 0.28em 0.6em;
+  line-height: 1.4;
   text-align: left;
   /* Wrap long content (incl. unbroken CJK / URLs) instead of letting it overflow
      and overlap neighbouring cells/rows (issue #6). */
@@ -5870,9 +5888,10 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
 }
 /* Cell content is a paragraph; drop its block margins so each row stays one line
    tall (this was the main reason rows looked so airy). */
-.milkdown .ProseMirror th > p,
-.milkdown .ProseMirror td > p {
+.milkdown .ProseMirror .milkdown-table-block th > p,
+.milkdown .ProseMirror .milkdown-table-block td > p {
   margin: 0;
+  padding: 0;
   line-height: inherit;
 }
 .milkdown .ProseMirror th {

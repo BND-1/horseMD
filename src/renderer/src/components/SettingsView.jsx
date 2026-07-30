@@ -48,9 +48,6 @@ export default function SettingsView({
           <EditorSettings
             settings={settings}
             onUpdateSettings={onUpdateSettings}
-            onHoverFont={onHoverFont}
-            activeCssSnippetId={activeCssSnippetId}
-            onActiveCssSnippetIdChange={onActiveCssSnippetIdChange}
             t={t}
           />
         )}
@@ -66,6 +63,9 @@ export default function SettingsView({
             settings={settings}
             onUpdateSettings={onUpdateSettings}
             followsSystemTheme={followsSystemTheme}
+            onHoverFont={onHoverFont}
+            activeCssSnippetId={activeCssSnippetId}
+            onActiveCssSnippetIdChange={onActiveCssSnippetIdChange}
             lang={lang}
             t={t}
           />

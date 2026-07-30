@@ -95,6 +95,7 @@ src/
         editor-dom-interactions.js 键盘、选择、右键与编辑意图
         editor-dom-layout.js 斜杠菜单边界、空白续写、表格控件定位与长按实时列宽
         editor-dom-content.js 链接、复制、图片、粘贴与 Mermaid
+        editor-pdf-content.js PDF 快照、预览型代码块物化与导出 DOM 清理
         pdf-export/        PDF 设置、PDF.js 单页渲染、书签解析与独立样式
         commands/          命令注册表、快捷键规范化、冲突检测、菜单 accelerator 转换
         useFindReplace.js  查找替换（CSS Highlight API）
@@ -104,10 +105,11 @@ src/
         Editor.jsx         Crepe 编辑器封装 + 块控件 + 灯箱 + 拼写检查
         SettingsView.jsx   设置页壳层（模块导航 + 当前设置模块）
         settings/          常规/编辑器/外观/文件图片/快捷键/关于设置模块
+          DocumentAppearanceSettings.jsx 排版预览、自定义 CSS、表格与源码外观编排
         editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换
         editor-images.js   相对图片路径解析为 file:// （纯函数）
         editor-copy.js     富文本复制的内联样式（纯函数）
-        editor-mermaid.js  Mermaid widget 装饰插件（懒加载 mermaid）
+        editor-mermaid.js  Mermaid 预览与 PDF 共用的严格模式懒加载渲染器
         editor-highlight.js ==text== 高亮 mark + 工具栏颜色选择
         editor-review.js   审阅插件状态机与命令入口
         editor-review-card.js 审阅卡片 DOM、编辑和导航交互
@@ -184,6 +186,26 @@ build/
 > **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
 
 > **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑经 `markdown-source-preservation.js` 稳定 façade 回写到原始源码；列表、表格、段落、front matter 和普通区域的纯函数实现位于 `lib/markdown-preservation/`。非受控 textarea 通过 `source-text-fidelity.js` 保留 BOM、CRLF、混合换行和 raw offset；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md) 与 [2026-07 深度审计](./source-fidelity-audit-2026-07.md)。
+
+## PDF 导出数据流（重要）
+
+```
+可见 ProseMirror
+  → editor-pdf-content.js 冻结快照、物化预览内容、测量表格、收集图片
+  → getPdfSource() 返回 { html, headings, title, images }
+  → pdf-images.js 暂存本地/网络资源并替换占位符
+  → pdf-document.js + pdf-print-styles.js 生成无脚本打印文档
+  → pdf-export.js 隐藏 BrowserWindow + printToPDF()
+  → 同一 PDF Buffer 同时提供给 PDF Studio 和最终保存
+```
+
+边界约束：
+
+- renderer 负责读取 live editor 的结构和几何；主进程不反向读取编辑器 DOM。
+- 主进程负责资源、安全模板、页面参数和最终打印；不得把脚本或 Node 能力交给临时文档。
+- PDF Studio 不是 HTML 预览，而是 PDF.js 展示最终 Buffer。布局验收必须落到该 Buffer。
+- 表格列宽需要在 renderer 清理 class/style 前测量；表格行距由打印 CSS 独立控制，单元格内层 `<p>` 不能继承正文段距。
+- 视觉问题的分层诊断、坐标断言与停止条件见 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

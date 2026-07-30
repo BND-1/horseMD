@@ -15,7 +15,7 @@ const BASE_PDF_CSS = `
   .doc {
     font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB',
       'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
-    font-size: 14.5px; line-height: 1.75; color: #2a2620;
+    font-size: var(--hm-pdf-font-size, 11pt); line-height: 1.75; color: #2a2620;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     overflow-wrap: anywhere;
   }
@@ -57,15 +57,21 @@ const BASE_PDF_CSS = `
     white-space: pre-wrap; word-break: break-word;
   }
   .doc table {
-    border-collapse: collapse; width: 100%; max-width: 100%; margin: 1em 0;
-    font-size: 0.9em; table-layout: fixed;
+    border-collapse: collapse; width: max-content; max-width: 100%; margin: 1em 0;
+    font-size: 0.9em; table-layout: auto;
     break-inside: auto; page-break-inside: auto;
   }
+  .doc table[data-hm-pdf-table-layout="measured"] { table-layout: fixed; }
+  .doc table[data-hm-pdf-table-wide="true"] { width: 100% !important; }
   .doc thead { display: table-header-group; }
   .doc tr, .doc th, .doc td { break-inside: auto; page-break-inside: auto; }
   .doc th, .doc td {
-    border: 1px solid #e6e1d8; padding: 6px 8px; text-align: left; vertical-align: top;
-    min-width: 0; max-width: 0; overflow-wrap: anywhere; word-break: break-word; white-space: normal;
+    border: 1px solid #e6e1d8; padding: 0.28em 0.55em; line-height: 1.4;
+    text-align: left; vertical-align: top;
+    min-width: 0; overflow-wrap: anywhere; word-break: break-word; white-space: normal;
+  }
+  .doc th > p, .doc td > p {
+    margin: 0; padding: 0; line-height: inherit;
   }
   .doc th { background: #f4f1ea; font-weight: 700; color: #16130e; }
   .doc tr:nth-child(even) td { background: #faf8f4; }
@@ -73,6 +79,9 @@ const BASE_PDF_CSS = `
   .doc img { border-radius: 6px; }
   .doc figure {
     margin: 1.1em 0; text-align: center; break-inside: avoid; page-break-inside: avoid;
+  }
+  .doc .hm-pdf-diagram svg {
+    width: auto; height: auto; max-width: 100%; max-height: 85vh; margin: 0 auto;
   }
   .doc math { font-size: 1.05em; }
   .doc math[display="block"] {
@@ -87,7 +96,10 @@ const BASE_PDF_CSS = `
     display: block; margin: 0.18em auto; max-width: 100%;
   }
   .doc hr { border: none; border-top: 1px solid #e6e1d8; margin: 1.8em 0; }
-  .doc input[type="checkbox"] { margin-right: 0.4em; }
+  .doc li:has(> input[type="checkbox"]) { list-style: none; }
+  .doc input[type="checkbox"] {
+    margin: 0 0.45em 0 -1.45em; opacity: 1; accent-color: #c86b35;
+  }
   .pdf-toc { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif; color: #2a2620; }
   .pdf-toc.break-after { break-after: page; page-break-after: always; }
   .pdf-toc.break-after + .doc { break-before: page; page-break-before: always; }
@@ -100,5 +112,5 @@ const BASE_PDF_CSS = `
 
 export function buildPdfPrintStyles(page) {
   const { top, right, bottom, left } = page.margins
-  return `@page { size: ${page.width}mm ${page.height}mm; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }\n${BASE_PDF_CSS}\n${paginationCss(page.pagination)}`
+  return `@page { size: ${page.width}mm ${page.height}mm; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }\n:root { --hm-pdf-font-size: ${page.fontSizePt}pt; }\n${BASE_PDF_CSS}\n${paginationCss(page.pagination)}`
 }

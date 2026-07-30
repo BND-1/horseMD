@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-29。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-30。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.34`。在 #93/#96/#97/#98 基础上完成 Markdown 原文保真深度审计，并补齐标准 `` `text` `` 逐键输入、闭合后继续输入、首尾方向键退出、“非 canonical 文档的新段落以行内代码起笔”及“源码切回富文本后立即输入”路径：修复大文档首次编辑、CRLF/BOM textarea、表格文字重排、源码审阅、附件插入的全文改写风险，以及延迟选区恢复把后续输入拉回上一段、硬换行/行内图片少算 ProseMirror 位置、复杂文档中间段落被拼接的问题。原文保真行为基线提交为 `67f51fa`，0.12.34 追加修复与测试由本轮提交承接。原 993 行原文保真文件已拆成当前稳定 façade 和 `lib/markdown-preservation/` 下 6 个纯函数模块，三个公共导出及调用方未变化。结论、边界和证据见 `docs/source-fidelity-audit-2026-07.md`、`docs/markdown-source-preservation.md` 与 `docs/editor-source-switch-regression-0.12.34.md`。
+- 当前测试版本号：`package.json` 为 `0.12.44`。在 0.12.34 原文保真与模式切换基线之上，0.12.35 修复 PDF 图片暂存和表格字号相对密度，0.12.36 增加源码普通单换行的可选视觉策略，0.12.37 重整设置中心信息架构，0.12.38 把 Mermaid、LaTeX 等预览型内容统一接入 PDF 导出物化流程，0.12.39 让未手动调整的表格按内容分配列宽，0.12.40 修复任务清单勾选状态保存与重开持久化，0.12.41 让 PDF 保留编辑器实测表格宽度和列比例，0.12.42 清除 PDF 表格单元格误继承的正文段落留白，0.12.43 增加 8–24pt PDF 正文字号并把原缩放控件明确为整体缩放，0.12.44 修复连续调整 PDF 设置时强杀打印窗口造成的 `Printing failed` 竞态。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -36,6 +36,12 @@
 - 教程站的 `guide/package.json` 表示已发布教程与截图基准，不随本地测试包自动升级；页面可单独标注较新的测试功能版本。`npm run guide:check` 只禁止应用版本低于教程基准，避免把尚未发布的下载文件和截图伪装成新版本。
 - 一个可手测的大功能完成并通过专项验证后，如用户没有要求暂停或改方向，默认立即构建、安装、启动当前源码版本交给用户验收；不要等待用户再次要求“打最新包”。
 - 不要只说“理论上可以”。涉及 UI、PDF、编辑器、模式切换、表格、图片、移动端时，要用自动化或真实 app 复现。
+- 自动化测试不能抢用户的 macOS 键鼠和前台窗口。通过
+  `scripts/lib/electron-test-app.mjs` 启动时保持默认 `background: true`；
+  只有人工观察或教程截图才显式使用可见窗口。
+- 输入规则、Enter/退格、模式切换后立即输入和源码保真必须逐字符派发，优先
+  使用 `scripts/lib/human-input.mjs`。批量 `Input.insertText` 只能用于粘贴、
+  数据准备或与逐键行为无关的测试；中文逐字提交不能代替真实 IME composition。
 - 不要把大文件、小文件、富文本、源码模式混为一谈。HorseMD 很多 bug 只在真实大文档、表格、代码块、LaTeX、远程图片、源码/富文本双向切换里出现。
 - 不要轻易重写敏感状态机。源码/富文本切换、dirty 状态、保存、PDF 预览、编辑器生命周期都已经踩过坑。
 - UI 需要“高级、优雅、和谐”。如果改视觉，至少检查浅色、深色、莫兰迪主题和窄屏，不要只看一个默认主题。
@@ -93,6 +99,10 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 10. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
 11. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
 12. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
+13. [issue-101-pdf-images-table-density-report.md](./issue-101-pdf-images-table-density-report.md)：PDF 图片二次加载、路径双重编码与表格固定行高的根因。
+14. [soft-line-break-display-report.md](./soft-line-break-display-report.md)：普通源码单换行在富文本中显示为空格的根因、显示合同和防回归测试。
+15. [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)：PDF 表格列宽与行距两次修复的完整事故复盘。
+16. [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)：所有“编辑器正常、PDF 不一致”问题的工程化排查和验收流程。
 
 历史文档说明：
 
@@ -109,6 +119,7 @@ src/main/
   watchers.js            chokidar watcher，必须防止系统根目录/受限目录
   security.js            外部协议、本地字体权限等安全口
   pdf-export.js          PDF 预览/保存、隐藏窗口、printToPDF、任务取消
+  pdf-images.js          PDF 图片暂存、单图/总量限制、资源地址替换
   pdf-document.js        PDF HTML/目录/页眉页脚纯函数
   pdf-print-styles.js    PDF 打印 CSS
 
@@ -147,6 +158,7 @@ android/, ios/           Capacitor 原生壳
 
 - Crepe 在源码模式中必须保持挂载，只隐藏，不卸载。
 - 源码 textarea 是非受控的，保留 `liveContentRef` / `commitLive` 流程。
+- 普通源码单换行由 Milkdown 保留为 `data-is-inline="true"` 的 hardbreak 节点。默认多行显示只能通过 `hm-preserve-soft-breaks` 做视觉处理；禁止把它序列化为 `<br>`、尾随空格或空段落。Enter 与 Shift+Enter 的编辑语义不得随该偏好变化，修改后必须运行 `npm run test:soft-break-ui`、`test:paragraph-source-ui` 和 `test:mode-switch-raw-offset-ui`。
 - textarea DOM 会把 CRLF 变成 LF；任何源码输入或源码命令写回 `liveContentRef` 前必须经过 `source-text-fidelity.js`，禁止直接保存 `textarea.value`。
 - 只有源码真的改过，切回富文本才同步到 Crepe。
 - Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。普通文字只允许字符级回写；结构操作最多替换受影响列表、表格或行；映射失败必须保留原文并报告失败。任何路径都不能用 canonical 内容覆盖整篇源码。
@@ -163,6 +175,7 @@ android/, ios/           Capacitor 原生壳
 - 该模式切换回归还必须覆盖硬换行后的 raw offset，以及源码→富文本后零等待 Enter、跨 `90/220ms` 分段输入。首次恢复在 layout 阶段同步执行；富文本一旦收到真实键盘、输入法或鼠标交互，延迟 settle 重试必须终止，不能覆盖用户的新选区。
 - `npm run test:issue-86-ui` 用真实表格手柄连续新增两行和两列，填写最后一行全部单元格、从富文本真实保存、彻底退出并以全新用户目录重开文件，保护单元格归属、表格维度、空单元格 `| |` 序列化，以及原有 `<br>` 单元格换行。表格结构变化只替换对应 canonical 表格块，禁止扩大到整篇源码；不要在序列化中途删除空单元格占位。详见 `docs/issue-86-table-save-report.md`。
 - `npm run test:table-ui` 保护另一条独立的表格 UI 合同：短表自然宽度、宽表内部横向滚动和不撑开页面；列边缘的短暂悬停仍用于加行/加列，只有按住约 220ms 才实时调整列宽；宽表最右端连续 10 次悬浮/调整均不得把 `scrollLeft` 重置为 0。不要重新注册 `columnResizingPlugin`，它会与 Crepe 自定义 `TableNodeView` 竞争 hover transaction，重新引入跳回和非确定性预览。
+- `npm run test:task-list-persistence-ui` 保护任务复选框的完整写盘链路：勾选、保存、退出重开、取消、保存、再次重开。Crepe 的任务标签在 `pointerdown` 阶段更新节点并阻止兼容 `mousedown`，因此根节点必须在 capture 阶段标记用户编辑；不要用全篇重新序列化或单独改文件绕过现有 `markdownUpdated` 与原文保真链路。
 - `editor-block-handle-guard.js` 只负责块操作条的触发过滤和滚动隐藏；横向位置由 `Feature.BlockEdit.blockHandle.getPosition` 交给 Milkdown BlockProvider 一次性计算，禁止再用 `translate`、MutationObserver 或 ResizeObserver 二次改坐标。标题、正文和各级列表必须共用正文左边界这一条轨道。修改 BlockEdit、插件顺序或 editor gutter 时，必须同时运行 `npm run test:block-handle-gutter-ui` 与 `npm run test:inline-html-block-handle-ui`。
 - 编辑状态：可见光标要跟随光标。阅读状态：光标不在可视区时保持视口。
 - 回归必须覆盖：
@@ -173,10 +186,16 @@ android/, ios/           Capacitor 原生壳
 ### 5.3 PDF 导出
 
 - PDF 导出读取 `getPdfSource()` 生成的结构化 `{ html, headings, title }`，不是直接打印 live editor DOM。
+- `getPdfSource()` 是异步快照 API；调用方必须 `await`。DOM 在异步 Mermaid 渲染前立即克隆，不能在等待期间重新读取 live editor。
+- `getPdfSource()` 会把非 data URL 图片替换为唯一占位符，并附带图片清单。主进程 `pdf-images.js` 必须先把本地和网络图片暂存到 PDF 临时目录，再生成打印 HTML；不要让隔离的 `file://` 隐藏窗口按原 URL 二次加载。暂存失败才回退原地址并由真实加载结果决定是否警告。
+- Markdown 图片相对路径只能解码并编码各一次。尤其要保护空格、中文、Windows 盘符和已写成 `%20` 的路径，禁止产生 `%2520`。
 - 普通 CodeMirror 代码块导出为 `<pre><code>`。
 - LaTeX 段落公式不能导出源码；要先把预览块物化为可打印 MathML。
+- Mermaid 不能依赖 `.preview-panel` 当前是否挂载或可见；`editor-pdf-content.js` 必须主动通过 `renderMermaidForExport()` 生成并清理 SVG，再删除预览 DOM。语法错误或总截止时间耗尽时保留源码。
 - 超宽行外 MathML 不得用比例缩小处理；PDF 临时文档中按顶层运算符拆成多行，编辑器内公式不变。
 - PDF 预览是 latest-request-only；设置快速变化时旧任务必须取消。
+- PDF 表格不能统一强制 `table-layout: fixed; width: 100%`。`editor-pdf-content.js` 在清理 DOM 前用可见表格实测总宽度和每列比例，紧凑表保留自然宽度，宽表才收敛至打印区域。`npm run test:pdf-table-layout-ui` 会同时检查 source `<colgroup>` 和最终 PDF 文字 X 坐标；只断言 HTML 存在表格不足以保护视觉一致性。
+- PDF 表格单元格通常包含内层 `<p>`。必须保留 `.doc th > p, .doc td > p { margin: 0; padding: 0; line-height: inherit; }`，否则全局正文段落间距会把每一行撑高。表格回归同时检查最终 PDF 的纵向文字基线距离。
 - 打印目录页和 PDF 书签大纲是两个独立功能。
 - 隐藏窗口临时 HTML 禁止脚本执行，保留 Electron 默认 web security。
 
@@ -261,12 +280,15 @@ android/, ios/           Capacitor 原生壳
 
 - A4/A3/Letter/自定义尺寸
 - 横向/纵向
-- 边距、缩放
+- 边距、8–24pt 正文字号、整体缩放
 - 标题分页、目录页、PDF 书签
 - 页眉页脚、日期、页码、页码范围
 - 预览 buffer 与最终保存 buffer 一致
 
 用户很在意 PDF 的真实预览和可配置项，不要退回简单保存对话框。
+PDF 设置采用 latest-request-only，但进入 `printToPDF()` 后不能通过销毁隐藏窗口
+来取消；必须等待当前打印自然结束并丢弃 stale 结果。详见
+[pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md)。
 
 ### 大纲
 
@@ -344,8 +366,12 @@ npm run test:floating-outline-ui
 ## 8. CDP 实战注意
 
 - 启动 Electron 时要加 `--remote-debugging-port=9222` 或脚本指定的端口。
+- 自动化优先使用 `launchBuiltElectron()`；它默认追加
+  `--horsemd-test-background`，隐藏主窗口并避免获取 macOS 原生焦点。
 - 多 tab / 分屏会有多个 `.ProseMirror`，必须用 `offsetParent` 找可见实例。
-- 用真实 `Input.dispatchMouseEvent` / `Input.insertText`，不要只改 DOM selection。
+- 用真实 `Input.dispatchMouseEvent`；输入敏感路径通过
+  `typeTextLikeUser()` 逐字符提交或使用 `Input.dispatchKeyEvent`，不要只改
+  DOM selection，也不要一次注入整句来替代真人输入。
 - `Runtime.evaluate` 取值在 `msg.result.result.value`。
 - macOS 可能复用旧 app 进程；安装前必须 kill。
 - 如果脚本连接了错误窗口，结果没有意义。用隔离 `--user-data-dir=/tmp/...`。

@@ -70,6 +70,30 @@
   color: var(--danger);
 }
 
+.hm-pdf-unit-field {
+  position: relative;
+}
+
+.hm-pdf-unit-field input {
+  padding-right: 38px !important;
+}
+
+.hm-pdf-unit-field > small {
+  position: absolute;
+  right: 28px;
+  top: 50%;
+  color: var(--faint);
+  line-height: 1;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.hm-pdf-field > .hm-pdf-field-help {
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .hm-pdf-segmented {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

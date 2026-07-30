@@ -26,6 +26,7 @@ import {
   applyParagraphSpacing,
   applyHeadingSpacing,
   applyTableAutoWrap,
+  applySoftBreakDisplay,
   fontStack,
   DEFAULT_FONT_WRITE,
   DEFAULT_FONT_MONO
@@ -335,6 +336,9 @@ export default function App() {
     applyTableAutoWrap(settings.tableAutoWrap)
   }, [settings.tableAutoWrap])
   useEffect(() => {
+    applySoftBreakDisplay(settings.preserveSoftBreaks)
+  }, [settings.preserveSoftBreaks])
+  useEffect(() => {
     applyUserCss(settings.userCssSnippets)
   }, [settings.userCssSnippets])
   useEffect(() => {
@@ -408,7 +412,7 @@ export default function App() {
     savePdfExport
   } = usePdfExport({ tRef })
 
-  const getPdfSourceForTab = useCallback((id) => {
+  const getPdfSourceForTab = useCallback(async (id) => {
     const api = editorApis.current[id]
     if (!api) return null
     const sourceElement = sourceTextareas.current[id]
@@ -416,13 +420,13 @@ export default function App() {
     if (sourceElement && api.getMarkdown?.() !== source) {
       api.replaceMarkdown?.(source)
     }
-    return api.getPdfSource?.() || null
+    return await api.getPdfSource?.() || null
   }, [editorApis, sourceTextareas])
 
   const waitForPdfSourceForTab = useCallback(async (id) => {
     const api = await waitForEditorApi(id)
     if (!api) return null
-    return getPdfSourceForTab(id)
+    return await getPdfSourceForTab(id)
   }, [getPdfSourceForTab, waitForEditorApi])
 
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.

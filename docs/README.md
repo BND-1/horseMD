@@ -16,6 +16,13 @@
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
 | [source-fidelity-audit-2026-07.md](./source-fidelity-audit-2026-07.md) | 文件读写全链路原文保真审计、已修根因、允许变化边界与自动化证据 |
 | [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md) | 段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的症状索引、根因与防回归要求 |
+| [soft-line-break-display-report.md](./soft-line-break-display-report.md) | 源码普通单换行在富文本中被显示为空格的根因、显示合同、禁止修法与真实 UI 回归 |
+| [pdf-rendered-content-export-report.md](./pdf-rendered-content-export-report.md) | Mermaid 在 PDF 中退化为源码的根因、统一预览导出链路、安全降级和格式回归矩阵 |
+| [issue-101-pdf-images-table-density-report.md](./issue-101-pdf-images-table-density-report.md) | PDF 图片二次加载、路径双重编码、编辑器表格密度及 0.12.42 打印行距后续修正 |
+| [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) | PDF 表格列宽、行距与富文本不一致的两层根因、修复过程、量化证据与防回归命令 |
+| [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md) | “编辑器正常、PDF 不一致”问题的分层诊断、fixture、坐标/像素验证、禁止捷径和停止条件 |
+| [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md) | 连续修改 PDF 设置触发 `Printing failed` 的 Chromium 打印取消竞态、修复模型与长文档压力测试 |
+| [task-list-persistence-report.md](./task-list-persistence-report.md) | 任务清单勾选只改界面、不写入文件的事件根因、修复边界与关闭重开回归 |
 | [mobile.md](./mobile.md) | 移动端（iOS / Android · Capacitor）方案、接口适配、打包发布 |
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
