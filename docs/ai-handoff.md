@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-30。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-31。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.47`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.44 依次完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单和打印竞态；0.12.45 补齐“从富文本新输入 Markdown 结构”的保真链路；0.12.46 修复 Mermaid 粘贴重复渲染；0.12.47 修复 0.12.46 引入的外部纯文本复制空行和列表编号回归，并明确三通道剪贴板契约。
+- 当前测试版本号：`package.json` 为 `0.12.49`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图（PDF 报「图片加载失败」、HTML 不报警丢图）。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -126,6 +126,12 @@ src/main/
   pdf-images.js          PDF 图片暂存、单图/总量限制、资源地址替换
   pdf-document.js        PDF HTML/目录/页眉页脚纯函数
   pdf-print-styles.js    PDF 打印 CSS
+  html-export.js         HTML 预览 token、图片内嵌、保存与资源清理
+  html-document.js       独立 HTML 模板、主题、目录和 CSP 纯函数
+  pandoc-export.js       Pandoc 检测、选择、转换与错误映射
+  pandoc-core.js         Pandoc 格式白名单、版本与参数纯函数
+  subprocess.js          无 shell 子进程、超时与输出上限
+  ai/                    AI 上下文快照与变更提案纯逻辑
 
 src/preload/index.js     安全的 window.api bridge
 
@@ -134,7 +140,7 @@ src/renderer/src/
   components/Editor.jsx  Crepe 生命周期拥有者，避免继续膨胀
   components/editor-*.js 编辑器专项能力
   components/settings/   设置中心模块
-  hooks/                 workspace/source-mode/pdf/find/sidebar 等 hooks
+  hooks/                 workspace/source-mode/pdf/html/pandoc/find/sidebar 等 hooks
   lib/                   命令、菜单、纯工具
   platform/              Capacitor shim 和跨平台 API 合同
   styles/app.css         主样式和主题变量
@@ -203,6 +209,16 @@ android/, ios/           Capacitor 原生壳
 - PDF 表格单元格通常包含内层 `<p>`。必须保留 `.doc th > p, .doc td > p { margin: 0; padding: 0; line-height: inherit; }`，否则全局正文段落间距会把每一行撑高。表格回归同时检查最终 PDF 的纵向文字基线距离。
 - 打印目录页和 PDF 书签大纲是两个独立功能。
 - 隐藏窗口临时 HTML 禁止脚本执行，保留 Electron 默认 web security。
+
+### 5.3b HTML、Pandoc 与 AI 基础
+
+- HTML 与 PDF 共用异步结构化导出快照，但页面模板和设置独立。不要 clone live DOM，也不要把 PDF 打印 CSS 当网页 CSS。
+- HTML 预览由主进程生成最终字节并返回 token；保存必须写 token 对应的同一份 HTML，不能在保存时重新生成。
+- HTML 输出和预览必须保持无脚本：结构快照移除危险节点/属性，模板带严格 CSP，renderer iframe 使用无权限 sandbox。
+- Pandoc 只接收当前聚焦标签的最新 Markdown。源码读取 live textarea，富文本先 `flushMarkdown()`；导出不得改变 dirty、光标或磁盘源文件。
+- Pandoc 可执行路径必须通过绝对路径、文件名和 `--version` 验证；目标格式是白名单，参数由主进程构造，Markdown 走 stdin，`shell: false`，两分钟超时。
+- `src/shared/ai-contracts.js` 与 `src/main/ai/` 是 Phase 0 基础，不代表 AI 已对用户开放。后续 Provider、密钥、网络和 UI 不能绕过 revision 校验与 ChangeProposal 直接写文档。
+- 详细边界见 [document-export-architecture.md](./document-export-architecture.md)、[document-export-prd.md](./document-export-prd.md) 和 [ai-vmark-phase-plan.md](./ai-vmark-phase-plan.md)。
 
 ### 5.4 工作区和文件系统
 
@@ -436,14 +452,14 @@ npm run guide:capture
 1. 稳定核心编辑链路：保存、dirty、源码/富文本切换、查找、大纲、表格、PDF。
 2. 继续补自动化测试，特别是用户真实反馈路径。
 3. 完善 Windows/Linux 实机包验证。
-4. AI 能力先做架构方案，不急着写大模块。
+4. AI Phase 0 的合同、上下文快照和变更提案纯逻辑已落地；下一步仍先做只读 Provider，不急着开放自动写入或 Agent 权限。
 5. 插件市场难度高，先不急；优先可控的自定义快捷键、同步、AI provider 合同。
 6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；先维护已落地的原文保真层。
 
 已在 Roadmap 中记录：
 
 - 自定义快捷键第一版已落地，后续谨慎开放编辑器内部命令。
-- AI 能力后期探索，倾向原生体验 + provider 可插拔 + Review-first 修改。
+- AI 能力倾向原生体验 + provider 可插拔 + Review-first 修改；VMark 参考结论和具体分期见 [vmark-reference-review.md](./vmark-reference-review.md) 与 [ai-vmark-phase-plan.md](./ai-vmark-phase-plan.md)。
 - 云同步桌面端手动闭环已完成当前阶段；自动同步、移动端同步、历史恢复、E2EE、插件市场属于后续阶段。
 - 当前公开 Issue 的分流、前置条件和验收边界见 [ROADMAP.md](../ROADMAP.md#当前-issue-分流2026-07-21)。#62 已加 Windows 专属 compositor 降级，但仍必须 Windows 实机复现；#65 必须先定信息架构，#76/#23 都是原生平台项目；不要把它们当成可直接在 renderer 内完成的小修。
 
@@ -474,12 +490,15 @@ npm run guide:capture
 
 ## 14. 最近一次稳定基线
 
-截至 2026-07-31，`0.12.47` 下面这组已经跑通：
+截至 2026-07-31，`0.12.49` 在原有 0.12.47 基线之外新增以下必测项（0.12.49 在此基础上修复多图导出丢图，`npm run test:document-export` 已含 20 张图的资源暂存回归）：
 
 ```bash
 npm run build
 npm run build:mobile
 npm run guide:check
+npm run test:document-export
+npm run test:document-export-ui
+npm run test:ai-core
 npm run test:ui-regression
 node scripts/test-pdf-document.mjs
 npm run test:pdf-latex-ui
@@ -492,6 +511,6 @@ npm run test:issue-82-ui
 npm run test:floating-outline-ui
 ```
 
-其中 `npm run test:ui-regression` 的最终结果为 `7 sessions + 25 standalone`；真实 12 万字旧样本文档路径不存在而被明确跳过，合成大文档与 `电脑档案.md` 双向切换链均通过。排版宽度还单独通过 `npm run test:settings-ui`、`test:settings-layout-ui`、`test:editor-style-settings-ui`，复制与软换行单独通过 `test:issue-98-ui`、`test:soft-break-ui`。
+其中 0.12.47 的 `npm run test:ui-regression` 最终结果为 `7 sessions + 25 standalone`；0.12.48 再次跑出同样的全绿结果。导出专项使用后台 Electron 验证 HTML 四主题/四宽度、结构化 Mermaid/LaTeX/表格/任务列表/图片、设置入口和模拟 Pandoc 异常；本机 Pandoc 3.10.1 还实际生成并检查了 docx、tex、epub。SVG 写入部分格式会按 Pandoc 规则要求额外的 `rsvg-convert`，不能由 HorseMD 静默伪装。
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。

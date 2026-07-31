@@ -268,5 +268,23 @@ npm run test:ui-regression
   只保留 14pt。详见
   [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md)。
 
+### 0.12.49：导出图片占位符前缀碰撞（≥10 张图丢图）
+
+- 症状：含 10 张及以上图片的文档，导出 PDF 报「有 N 张图片加载失败」，HTML
+  导出则静默丢图（不报警）。≤9 张图一切正常，故长期间歇出现。
+- 根因：`editor-pdf-content.js` 给每张图生成占位符 `horsemd-pdf-resource-N`，
+  `pdf-images.js` 的 `stagePdfImages` 用子串 `html.includes(placeholder)` 守卫
+  + `html.split(placeholder).join(replacement)` 替换。`horsemd-pdf-resource-1`
+  是 `-10`～`-19` 的子串、`-2` 是 `-20` 的子串，处理第 1、2 张时把第 10 张起的
+  占位符一并破坏（变成 `./image-0001.png0` 之类的死链），轮到它们时 `includes`
+  守卫失败 → `continue` 静默跳过，既不计入 `stagedImages` 也不计入
+  `unresolvedImages`。20 张图实测只有 9 张暂存、11 张变死链。
+- 修复：占位符改为定宽 `String(index + 1).padStart(4, '0')`，等长且内容不同 →
+  互不为子串。生成点是单一源头，`stagePdfImages` 把它当不透明 token，改格式安全。
+- 诊断要点：图片问题不要只盯路径解析（反斜杠、中文、`%20` 是常见红鲱鱼）。当
+  `unresolvedImages === 0` 却仍有图加载失败时，比对 `stagedImages` 与清单总数；
+  两者不一致即为占位符或替换阶段的问题，而非源/路径问题。`scripts/test-pdf-images.mjs`
+  原只有 3 张图，永远覆盖不到碰撞，已补 20 张图回归。
+
 详细事故记录见 [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)
 和 [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md)。
