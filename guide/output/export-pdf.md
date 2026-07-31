@@ -5,7 +5,7 @@ description: 将当前 HorseMD 文档导出为干净的 PDF 文件。
 
 # 导出 PDF
 
-<span class="version-badge">适用于 HorseMD v0.12.44</span>
+<span class="version-badge">适用于 HorseMD v0.12.46</span>
 
 ## 打开导出中心
 

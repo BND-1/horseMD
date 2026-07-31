@@ -11,6 +11,7 @@ export function mountEditorContentBindings({
   docPath,
   crepe,
   cleanups,
+  markUserEdit,
   insertUploadedImage,
   prepareRawMarkdownPaste,
   setZoom,
@@ -198,7 +199,7 @@ export function mountEditorContentBindings({
       } catch {
         return null
       }
-    }, prepareRawMarkdownPaste)
+    }, prepareRawMarkdownPaste, markUserEdit)
   )
   cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onImageClick, true))

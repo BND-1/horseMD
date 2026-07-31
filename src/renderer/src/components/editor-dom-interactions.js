@@ -15,6 +15,7 @@ export function mountEditorInteractionBindings({
   setCtxMenu,
   getKeybindings,
   getSelectionToolbarEnabled,
+  onMarkdownInputIntent,
   isReadOnly
 }) {
   const noteUserInteraction = () => {
@@ -183,9 +184,21 @@ export function mountEditorInteractionBindings({
     reportActiveBlock()
     updateHighlightActive()
   }
-  const onUserEditIntent = () => {
+  const onUserEditIntent = (event) => {
     noteUserInteraction()
     markUserEdit()
+    if (
+      event.type === 'beforeinput' &&
+      event.inputType === 'insertText' &&
+      event.data === ' '
+    ) {
+      const { selection } = view.state
+      if (selection.empty && selection.$from.parent.isTextblock) {
+        const prefix = selection.$from.parent.textBetween(0, selection.$from.parentOffset)
+        const marker = prefix.match(/^([-+*])$/)?.[1]
+        if (marker) onMarkdownInputIntent?.({ type: 'bullet-list', marker })
+      }
+    }
   }
   const onReadOnlyInput = (event) => {
     if (!isReadOnly?.()) return

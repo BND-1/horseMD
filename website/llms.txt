@@ -21,7 +21,7 @@ HorseMD 是一款桌面 Markdown 编辑器（Electron + Milkdown/ProseMirror）�
 
 ## 关键事实
 
-- 版本：v0.12.10（2026-07）· 协议：MIT · 价格：免费
+- 版本：v0.12.46（2026-07）· 协议：MIT · 价格：免费
 - 平台：Windows（NSIS .exe）/ macOS（.dmg，Apple Silicon & Intel）/ Linux（.deb）/ Android（.apk）；iOS 当前需 Xcode 开发安装
 - 技术栈：Electron + Vite + React + Milkdown Crepe（ProseMirror）
 - Typora 有的：所见即所得、表格、代码高亮、LaTeX 公式、Mermaid、任务列表、斜杠菜单、源码模式、自定义主题

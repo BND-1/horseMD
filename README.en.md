@@ -28,18 +28,19 @@ renderer for iOS and Android, and the whole interface speaks both **English and 
 
 ## Features
 
-> Current stable release: **v0.10.4**. See the full [release notes](./docs/release-v0.10.4.md).
+> Current stable release: **v0.12.46**. See the full [release notes](./docs/release-v0.12.46.md).
 
 **Editing — everything Typora has**
 
 - Seamless **WYSIWYG live preview** — type Markdown, see it render in place
 - Slash menu (`/`) for inserting blocks; smart lists, selection toolbar, link tooltips
-- Tables (**with in-cell line breaks**, natural sizing, on-demand horizontal scroll, and live hold-to-resize columns), fenced **code blocks with syntax highlighting**, **LaTeX math**, **Mermaid diagrams**, images, task lists, blockquotes
+- Tables (**with in-cell line breaks**, content-adaptive columns, on-demand horizontal scroll, and live hold-to-resize columns), fenced **code blocks with syntax highlighting**, **LaTeX math**, **Mermaid diagrams**, images, task lists, blockquotes
 - **Configurable image host** — paste / drop / upload an image and it runs your upload command (Typora-style), inserting the returned URL
-- **Source mode** toggle (`Ctrl/Cmd+/`) for raw Markdown — preserves the reading viewport or a visible editing caret, including tables, lists, code blocks, and large documents
+- **Source mode** toggle (`Ctrl/Cmd+/`) for raw Markdown — preserves the reading viewport or a visible editing caret, and can display ordinary source newlines without changing the file
+- **Source-preserving rich edits** — HorseMD writes back only what you changed instead of normalizing untouched list markers, blank lines, BOM/CRLF, tables, or surrounding Markdown
 - **Plain-text files (`.txt`) open in a fast plain editor** — no markdown reflow, instant on huge files
 - Rich-text copy with inline styles (paste into WeChat / email / Notion keeps formatting)
-- **Browser-style PDF export studio** (`Ctrl/Cmd+Shift+E`) — real paginated preview with paper, orientation, margins, scale, contents page, bookmarks, headers/footers, page numbers and ranges; no editor chrome in the output
+- **Browser-style PDF export studio** (`Ctrl/Cmd+Shift+E`) — real paginated preview with paper, orientation, margins, body font size, scale, contents page, bookmarks, headers/footers, page numbers and ranges; math, Mermaid, tables, and images print without editor chrome
 - Relative-path images resolve against the file's folder (display only — your file stays untouched)
 - **Double-click an image to view it enlarged** in a lightbox (Esc / click to close)
 - **Raw HTML tables** (`<table>…</table>` in the Markdown) render as real tables, like Typora — display only, the source is preserved
@@ -52,7 +53,7 @@ renderer for iOS and Android, and the whole interface speaks both **English and 
 - **Adjustable editor width** — status-bar presets (Narrow/Medium/Wide/Full) + a fine-tune slider
 - **Document and code fonts** — choose separately from installed system fonts, with search and live preview
 - **Composable Custom CSS** — enable, reorder, rename, and remove named CSS snippets; the expanded settings preview covers common Markdown elements, and desktop can inspect real document selectors
-- **Custom themes** — drop a `.css` into the themes folder; **Typora themes work directly**
+- **Custom themes** — drop a `.css` into the themes folder; **Typora themes work directly**; optional system appearance following lets you choose separate light and dark themes
 - **Unsaved scratch tabs survive a restart** — a new, never-saved doc is still there next time you open HorseMD
 - **Folder workspace** — a file tree with create / rename / duplicate / delete / reveal / export-PDF, plus **drag-and-drop to move** and expand-all / collapse-all
 - **Cloud-sync folders** — explicitly connect an existing local folder to WebDAV or S3-compatible storage, with upload/download, joining, two-way sync, previews, and conflict preservation; ordinary workspaces are never uploaded automatically
@@ -61,7 +62,7 @@ renderer for iOS and Android, and the whole interface speaks both **English and 
 - **Find in file** (`Ctrl/Cmd+F`) — highlights matches in the document with a live count
 - **Outline panel** (`Ctrl+Shift+L`) — jump, expand/collapse by level, and drag-reorder sibling sections; when the side outline is closed, a quiet floating chapter navigator is available at the right edge
 - **Custom keyboard shortcuts** — record, clear, or restore application shortcuts with conflict feedback; menus and in-editor commands share the same effective configuration
-- **Settings center** — typography, fonts, Custom CSS, appearance, files and image hosting, cloud sync, keyboard shortcuts, spellcheck, language, and about
+- **Settings center** — Appearance now groups themes, typography, fonts, Custom CSS, tables, and source styling; Editor contains only writing behavior such as spellcheck, newline display, and the selection toolbar
 - Live word / character count & reading time
 - Session restore — reopens your folder and tabs
 - Auto-refreshing file tree & open files — watches for external changes and clearly warns before an external save could overwrite local unsaved edits
@@ -189,7 +190,7 @@ implementation, and the bugs/decisions log.
 - [docs/implementation-notes.md](./docs/implementation-notes.md) — root causes of key bugs, design decisions
 - [docs/development.md](./docs/development.md) — develop, build, Windows/macOS packaging, CDP e2e tests
 - [docs/user-guide-feature-coverage.md](./docs/user-guide-feature-coverage.md) — user-visible features, code owners, guide pages, and release checks
-- [docs/release-v0.10.4.md](./docs/release-v0.10.4.md) — v0.10.4 release notes, installers, verification, and linked issues
+- [docs/release-v0.12.46.md](./docs/release-v0.12.46.md) — v0.12.46 release notes, installers, verification, and linked issues
 
 ## Contributing
 

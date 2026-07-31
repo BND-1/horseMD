@@ -18,7 +18,8 @@ import {
   preserveAppendedParagraph,
   preserveMiddleEmptyBlock,
   preserveTrailingExactLineChange,
-  preserveTrailingEmptyBlock
+  preserveTrailingEmptyBlock,
+  withoutStandaloneEmptyBlockLines
 } from './lib/markdown-preservation/paragraphs.js'
 import {
   hasStructuralPrefixChange,
@@ -36,7 +37,8 @@ export {
   replaceMarkdownFrontmatterBlock
 } from './lib/markdown-preservation/frontmatter.js'
 export {
-  replaceMarkdownListBlock
+  replaceMarkdownListBlock,
+  restoreTypedBulletMarker
 } from './lib/markdown-preservation/lists.js'
 
 // Milkdown serializes the complete document after every rich-text transaction.
@@ -52,7 +54,7 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   if (!previous) {
     if (!sourceMarkdown) {
       return {
-        markdown: normalizeEmptyTableCells(next),
+        markdown: normalizeEmptyTableCells(withoutStandaloneEmptyBlockLines(next)),
         preserved: true,
         reason: 'new-document'
       }

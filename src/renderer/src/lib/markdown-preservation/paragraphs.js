@@ -17,7 +17,7 @@ const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
   const eol = lineEndingNear(source, source.length)
   const sourceTrailingBreaks = source.match(/(?:(?:\r\n)|\n|\r)*$/)?.[0] || ''
   const sourceTrailingNewlines = sourceTrailingBreaks.match(/\r\n|\n|\r/g)?.length || 0
-  const block = canonicalBlock
+  const block = withoutStandaloneEmptyBlockLines(canonicalBlock)
     .replace(/^(?:(?:\r\n)|\n|\r)+/, '')
     .replace(/(?:(?:\r\n)|\n|\r)+$/, '')
   if (!block) return null
@@ -100,7 +100,7 @@ const trailingEmptyBlock = (markdown) => {
 const standaloneEmptyBlockLines = (markdown) => markdownLines(markdown)
   .filter((line) => /^\s*<br\s*\/?>\s*$/i.test(line.text))
 
-const withoutStandaloneEmptyBlockLines = (markdown) => String(markdown || '')
+export const withoutStandaloneEmptyBlockLines = (markdown) => String(markdown || '')
   .replace(/(^|\n)[ \t]*<br\s*\/?>[ \t]*(?=\n|$)/gi, '$1')
 
 const rangeTouches = (range, start, end) =>
@@ -197,7 +197,9 @@ export const preserveMiddleEmptyBlock = ({
   if (directBlockInsertion) {
     const previousGap = previous.slice(previousBefore.end, previousAfter.start)
     if (!nextGap.endsWith(previousGap)) return null
-    const insertedGap = nextGap.slice(0, nextGap.length - previousGap.length)
+    const insertedGap = withoutStandaloneEmptyBlockLines(
+      nextGap.slice(0, nextGap.length - previousGap.length)
+    )
     if (!insertedGap) return null
     return {
       markdown: source.slice(0, sourceBefore.end) +

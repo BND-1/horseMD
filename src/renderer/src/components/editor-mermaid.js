@@ -122,39 +122,41 @@ export function createMermaidPreviewRenderer(getT) {
   }
 }
 
-// Mermaid diagram-type keywords that START a new diagram. Used to (a) split a
-// block that accidentally holds two diagrams, and (b) recognize pasted raw
-// mermaid code so it becomes a block instead of plain text. A diagram header =
-// a directional keyword + direction (`flowchart TD` / `graph LR`) OR a
-// standalone keyword (`sequenceDiagram`, `erDiagram`, …). The direction
-// requirement avoids matching common words (`graph`, `pie`) inside labels/text.
+// Mermaid diagram-type keywords that START a new diagram. A header is valid only
+// at the start of the source or a later line. Searching anywhere in the text is
+// unsafe: labels can legitimately contain strings such as "flowchart TD" or
+// "sequenceDiagram", which previously split one diagram into duplicate blocks.
 import { Plugin, PluginKey } from '@milkdown/prose/state'
 const DIRECTIONS = '(?:TB|TD|BT|RL|LR)'
-const DIAGRAM_HEADER = new RegExp(
-  '(?:flowchart|graph)\\s+' + DIRECTIONS + '\\b' +
-    '|(?:sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|journey|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4Context)(?=\\s|$)',
-  'gi'
+const DIAGRAM_HEADER_SOURCE =
+  '(?:(?:flowchart|graph)\\s+' + DIRECTIONS + '\\b' +
+  '|(?:sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|C4Context|sankey-beta|block-beta|architecture-beta|packet-beta)(?=\\s|$))'
+const DIAGRAM_START = new RegExp(
+  '^' + DIAGRAM_HEADER_SOURCE,
+  'i'
+)
+const DIAGRAM_LINE_START = new RegExp(
+  '^' + DIAGRAM_HEADER_SOURCE,
+  'gim'
 )
 
 // Does `text` begin with a mermaid diagram header? (Used by the paste handler to
 // turn pasted raw mermaid into a block instead of plain text.)
 export function startsAsMermaid(text) {
   const t = String(text || '').trim()
-  if (!t) return false
-  DIAGRAM_HEADER.lastIndex = 0
-  const m = DIAGRAM_HEADER.exec(t)
-  return !!m && m.index === 0
+  return !!t && DIAGRAM_START.test(t)
 }
 
 // Split mermaid source into one chunk per diagram, by finding every diagram
-// header ANYWHERE (a 2nd paste often concatenates mid-line: `…Car]flowchart TD`,
-// so a line-start check misses it). Returns [] for a single/empty diagram.
+// header at column zero. A second paste is now intercepted at the CodeMirror
+// block boundary, so this plugin is only a safety net for already-mashed source
+// and no longer needs the old, false-positive-prone mid-line heuristic.
 function splitDiagrams(text) {
   const t = String(text || '').replace(/\r\n?/g, '\n')
-  DIAGRAM_HEADER.lastIndex = 0
+  DIAGRAM_LINE_START.lastIndex = 0
   const idx = []
   let m
-  while ((m = DIAGRAM_HEADER.exec(t))) idx.push(m.index)
+  while ((m = DIAGRAM_LINE_START.exec(t))) idx.push(m.index)
   if (idx.length <= 1) return []
   const segs = []
   for (let i = 0; i < idx.length; i++) {

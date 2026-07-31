@@ -24,6 +24,7 @@ export function mountEditorDomBindings({
   getT,
   getKeybindings,
   getSelectionToolbarEnabled,
+  onMarkdownInputIntent,
   isReadOnly,
   isDestroyed
 }) {
@@ -41,6 +42,7 @@ export function mountEditorDomBindings({
     setCtxMenu,
     getKeybindings,
     getSelectionToolbarEnabled,
+    onMarkdownInputIntent,
     isReadOnly
   })
 
@@ -57,6 +59,7 @@ export function mountEditorDomBindings({
     docPath,
     crepe,
     cleanups,
+    markUserEdit,
     insertUploadedImage,
     prepareRawMarkdownPaste,
     setZoom,

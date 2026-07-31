@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.44`。在 0.12.34 原文保真与模式切换基线之上，0.12.35 修复 PDF 图片暂存和表格字号相对密度，0.12.36 增加源码普通单换行的可选视觉策略，0.12.37 重整设置中心信息架构，0.12.38 把 Mermaid、LaTeX 等预览型内容统一接入 PDF 导出物化流程，0.12.39 让未手动调整的表格按内容分配列宽，0.12.40 修复任务清单勾选状态保存与重开持久化，0.12.41 让 PDF 保留编辑器实测表格宽度和列比例，0.12.42 清除 PDF 表格单元格误继承的正文段落留白，0.12.43 增加 8–24pt PDF 正文字号并把原缩放控件明确为整体缩放，0.12.44 修复连续调整 PDF 设置时强杀打印窗口造成的 `Printing failed` 竞态。
+- 当前测试版本号：`package.json` 为 `0.12.46`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.44 依次完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单和打印竞态；0.12.45 补齐“从富文本新输入 Markdown 结构”的保真链路；0.12.46 修复 Mermaid 粘贴时声明关键词误判、裸源码与围栏源码模型不一致造成的重复渲染。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -19,10 +19,11 @@
   - `npm run build:mobile`
   - `npm run guide:check`
   - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
+  - 0.12.46：`npm run test:mermaid-paste-ui` 以隔离 profile 连续 10/10 通过；完整 UI 回归为 `7 sessions + 25 standalone`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
   - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
-  - 最近增量验证：`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:display-math-scroll-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`、`npm run test:issue-79-ui`、`npm run test:editor-style-settings-ui`、`npm run test:inline-html-block-handle-ui`
+  - 最近增量验证：`npm run test:mermaid-paste-ui`、`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:display-math-scroll-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`、`npm run test:issue-79-ui`、`npm run test:editor-style-settings-ui`、`npm run test:inline-html-block-handle-ui`
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -169,6 +170,7 @@ android/, ios/           Capacitor 原生壳
 - 空文档的默认“空 H1 + 空正文”只属于富文本起笔 UI，磁盘源码仍是空字符串。`canonicalForSource()` 必须在标题保持为空时剥离该骨架；用户在标题输入后才将其纳入 canonical。移除这层会使首次输入因 `#\n\n` 与空源码基线不一致而被原文保护器拒绝。`test:paragraph-source-ui` 必须同时覆盖从 H1 起笔和跳过 H1 从正文起笔。
 - Enter 创建的末尾空 paragraph 会被 Crepe canonical 暂时写成独立 `<br />` 块。`preserveTrailingEmptyBlock()` 必须在创建时只推进 canonical、不改 raw source，填入文字时再调用文档末尾块追加逻辑；否则真人慢速输入会把正文并入标题并残留 `<br />`。CDP 测试必须逐字输入且每行停顿到上一条 `markdownUpdated` 已提交，高速整句输入会掩盖该问题。
 - 在已有块之间按 Enter 还有两条独立路径：快速输入可能直接产生一个新 paragraph，停顿输入会先产生 `<br />` 占位。`preserveMiddleEmptyBlock()` 只可用前后未变化可见行的序号映射替换中间 raw 间隙，不能用零可见字符 affinity；并且必须把列表、表格、标题、引用和 fenced code 排除，让专用结构处理器保留原有语法风格。
+- ProseMirror 的 `bullet_list` 节点不保存用户触发输入规则时键入的 `-`、`*` 或 `+`。必须在空段落输入空格前记录 marker intent，再把它恢复到刚创建的列表层级；不能全局替换 serializer 的 `*`。松散列表可跨项目间空行，但顶层有序/无序类型变化必须截断；转换后 canonical 若把相邻同类型列表合并，`replaceMarkdownListBlock()` 必须按转换前项目内容缩小到原列表子区间。详见 [0.12.45 新输入源码保真报告](./new-input-source-fidelity-report.md)。
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。

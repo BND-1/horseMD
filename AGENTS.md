@@ -97,6 +97,7 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - For the current mode-switch fix, Crepe must stay mounted when source mode is shown. Only sync source back into rich when source text was actually edited.
 - Do not replace source/rich mapping with plain keyword matching. The primary caret path is block-aware Markdown raw-offset mapping; global visible-character positions and snippets/context are fallback only.
 - Keep `scrollAnchor.js` as the stable public facade. Implement visible-stream, caret, viewport, and source-heading changes in the focused `mode-*.js` modules and preserve the facade exports.
+- ProseMirror bullet-list nodes do not retain whether an input rule started from `-`, `*`, or `+`. Capture that marker before the rule consumes it and restore only the newly created list level; never solve this with a global serializer default or source replacement. Standalone `<br />` emitted for empty paragraphs is internal canonical state and must not enter raw source, while table-cell and user-authored `<br>` remain valid. Protect both rules with `test:new-source-fidelity-ui`.
 
 ### Performance-Sensitive Areas
 
@@ -123,6 +124,7 @@ Use this section as the short, high-signal handoff for AI agents. Start with `do
 - Review parsing lives in `reviewMarkup.js`; plugin state, decoration scanning, and card DOM live in `editor-review.js`, `editor-review-decorations.js`, and `editor-review-card.js`. Protect all four with focused script and real UI tests when changed.
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
+- One Mermaid clipboard payload must map to one `code_block`, one preview, and one fenced source block. Detect diagram declarations only at source line starts; labels may legitimately contain strings such as `flowchart TD` or `sequenceDiagram`. A second paste into a non-empty Mermaid block is handled at the target block boundary, not by scanning arbitrary source substrings.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
 - Markdown tables use content-driven `table-layout: auto` until the user explicitly resizes a column. Persisted `data-colwidth` then switches that table to fixed layout; do not make untouched tables equal-width or overwrite deliberate widths.
 - Crepe task checkboxes toggle on `pointerdown` and suppress the compatible `mousedown`. Keep the editor-root capture listener so checkbox transactions are recognized as user edits and flow through `markdownUpdated`; verify both checked and unchecked states survive save and full reopen.

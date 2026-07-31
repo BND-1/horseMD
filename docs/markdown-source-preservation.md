@@ -20,6 +20,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 6. 只有真实用户编辑或粘贴才会标脏；纯模式切换和程序化源码同步不能标脏或再次改写源码。
 7. UTF-8 BOM、CRLF 和混合换行属于原文的一部分。源码模式只改一个字符时，不得把整篇文件统一成 LF。
 8. 段落内的普通单换行可在富文本中按行显示，但这只能是视觉策略；不得把它改写为两个尾随空格、`<br>` 或空白段落。详见 [源码单换行显示问题报告](./soft-line-break-display-report.md)。
+9. 从富文本新建 Markdown 结构同样受保护：手打 `-`、`*` 或 `+` 创建列表时保留实际输入的符号；连续回车产生的内部空 paragraph 不得以独立 `<br />` 写入源码。
 
 ## 当前实现
 
@@ -35,7 +36,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 普通文字输入只替换对应的 raw 字符区间；
 - 文档末尾按 Enter 新建正文时，按源文件原有结尾换行风格写入标准段落边界；空段落没有 visible index，不能用最后一个可见字符位置代替；
 - 在已有块之间按 Enter 新建正文时，以前后两个未变化的可见行作为边界，只替换它们之间的 raw 间隙；快速输入和停顿输入分别对应单事务块插入、`<br />` 占位后填充两条路径；
-- 列表结构变化只替换映射到的列表树，并保留原有 `-` / `*` 风格及紧凑列表间距；
+- 列表结构变化只替换映射到的列表树，并保留原有 `-` / `*` / `+` 风格及紧凑列表间距；新列表在输入规则吞掉 marker 前记录用户意图，转换后 canonical 合并相邻列表时再按转换前项目内容缩小写回区间；
 - 表格行列变化只替换对应表格块，空单元格占位只在该表格内规范化；
 - 表格单元格的普通文字输入只映射真实 cell 文本 delta，不采用 serializer 重新对齐后的整张表；
 - 标题等级、分段等结构变化只替换受影响的原始行；
@@ -53,7 +54,9 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 空文档会在 ProseMirror 中建立一个仅供起笔使用的“空一级标题 + 空正文”骨架，但磁盘源码仍是空字符串。这个 UI 骨架必须在 `canonicalForSource()` 中从 canonical 差异基线排除：用户跳过标题从正文起笔时不能凭空写入 `#`，用户在标题中输入后则立即把标题视为真实 Markdown。否则第一次输入会因 `#\n\n` 与空源码的 visible stream 不一致而被原文保护器拒绝，表现为未保存切源码后内容为空或仍是旧快照。
 
-真实手打存在两种时序。停顿输入时，Enter 创建的空 paragraph 会先被 Crepe 序列化成独立 `<br />` 块；原文保护层必须只推进 canonical 基线，等文字填入后再写入真实段落。快速输入时，Enter 和文字可能被合并成一次块插入事务，完全不出现 `<br />` 中间态。文档末尾通过结尾边界追加，中间位置通过前后未变化可见行的序号映射定位 raw 间隙。不能把零可见字符位置当作前一段末尾，否则正文会拼接，且占位符会泄漏。列表、表格、标题、引用和代码围栏必须绕过这个普通段落分支，继续走各自的结构映射。
+真实手打存在两种时序。停顿输入时，Enter 创建的空 paragraph 会先被 Crepe 序列化成独立 `<br />` 块；原文保护层必须只推进 canonical 基线，等文字填入后再写入真实段落。连续回车还可能生成多个中间占位，写回前必须统一移除独立 `<br />` 行，但不能删除用户原文或表格单元格里的真实 `<br>`。快速输入时，Enter 和文字可能被合并成一次块插入事务，完全不出现 `<br />` 中间态。文档末尾通过结尾边界追加，中间位置通过前后未变化可见行的序号映射定位 raw 间隙。不能把零可见字符位置当作前一段末尾，否则正文会拼接，且占位符会泄漏。列表、表格、标题、引用和代码围栏必须绕过这个普通段落分支，继续走各自的结构映射。
+
+列表输入规则有另一种信息丢失：ProseMirror 只保留“这是无序列表”，不保留触发符号。`editor-dom-interactions.js` 在用户键入 marker 后的空格进入编辑器前记录 `-`、`*` 或 `+`，`lists.js` 再按结构序号恢复刚创建的列表层级。这个意图只在光标仍位于对应无序列表时短期有效，不能变成全文 marker 偏好。列表块扫描允许同类型松散项目跨空行，但顶层类型变化必须截断；列表转换后 canonical 若把相邻同类型列表合并，必须用转换前项目内容定位原列表子区间，否则会复制相邻任务列表。
 
 中间块定位只能校验编辑点相邻的前后块，不能要求整篇文档的可见行逐项完全一致。Crepe 对前部表格的列对齐空格、紧凑列表的空行和标记符进行 canonical 化时，这些无关差异不得让后部段落插入降级为普通字符映射。若后继块包含代码围栏等没有可见文本的语法前缀，应从 `nextGap` 中剥离原有 canonical gap，只把新增 gap 插入原源码，不能连带重写用户的围栏写法。
 
@@ -70,6 +73,11 @@ raw offset ↔ ProseMirror 映射不能以 `textContent.length` 代表 textblock
 
 `editor-md-paste.js` 会先判断 Markdown 是否覆盖 HTML 中的关键语义：标题、列表、表格、粗斜体、链接、图片和硬换行。覆盖时直接解析 Markdown 并阻止默认 HTML 粘贴，Markdown 原文随该成功插入事务传入保存链路；不覆盖时保留原 HTML 路径。这避免了“先粘 HTML，再异步猜测恢复 Markdown”的时序依赖。
 
+裸 Mermaid 是该合同中的特殊结构输入：富文本会创建 `code_block`，因此源码快照也
+必须同步写成一个合法的 Mermaid 围栏，不能继续保存为普通裸文字。一份 Mermaid
+剪贴板内容只允许生成一个节点、一个预览和一个围栏；完整事故与测试见
+[Mermaid 粘贴重复渲染问题报告](./mermaid-paste-duplicate-render-report.md)。
+
 ## 明确边界
 
 - 富文本结构操作仍可能规范化“被修改的语法块”本身，例如表格对齐分隔符或真正切换后的列表标记；未触及的标题、段落、相邻列表和空行必须逐字符保持。需要逐字符控制目标语法块时使用源码模式。详见 [Issue #86 表格保存问题报告](./issue-86-table-save-report.md)。
@@ -80,7 +88,7 @@ raw offset ↔ ProseMirror 映射不能以 `textContent.length` 代表 textblock
 ## 关键文件
 
 - `src/renderer/src/components/Editor.jsx`：原始/规范快照、真实用户编辑回写、成功 Markdown 粘贴事务。
-- `src/renderer/src/markdown-source-preservation.js`：稳定公共入口与策略编排；仅公开 `preserveRichMarkdownSource`、`replaceMarkdownFrontmatterBlock`、`replaceMarkdownListBlock`，调用方不得越过该入口依赖内部实现。
+- `src/renderer/src/markdown-source-preservation.js`：稳定公共入口与策略编排；公开原文保真入口以及 front matter、列表精确写回和新输入 marker 恢复 helper，调用方不得越过 façade 依赖内部实现。
 - `src/renderer/src/lib/markdown-preservation/core.js`：通用差分、可见字符与 raw offset 转换。
 - `src/renderer/src/lib/markdown-preservation/frontmatter.js`：YAML front matter 块替换。
 - `src/renderer/src/lib/markdown-preservation/lists.js`：列表边界、结构变化与同块保真。
@@ -115,6 +123,9 @@ npm run test:issue-77-ui
 # 真实 Electron：空文档起笔、文档末尾与中间 Enter 新段落、保存重开
 npm run test:paragraph-source-ui
 
+# 真实 Electron：逐字手打 -/*/+ 列表、连续空段落、往返切换和真实写盘
+npm run test:new-source-fidelity-ui
+
 # 真实 Electron：普通单换行视觉显示、显式硬换行和源码/磁盘字节保真
 npm run test:soft-break-ui
 
@@ -134,7 +145,7 @@ npm run test:inline-code-ui
 HORSEMD_APP_PATH=/Applications/HorseMD.app/Contents/MacOS/HorseMD npm run test:issue-77-ui
 ```
 
-发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次，并至少各运行一次 `test:source-fidelity-ui` 与 `test:large-source-fidelity-ui`。段落测试必须同时覆盖快速输入的单事务块插入、停顿输入的 `<br />` 两阶段事务、文档末尾和后续块之前的中间插入；并验证空文档从默认标题起笔、跳过标题从正文起笔、输入后立即切源码、标准空行分隔，以及真实保存、退出和全新进程重开后的 paragraph 结构。人工验证另测微信公众号段落、标题、加粗、图片和表格。
+发布前使用不同 CDP 端口连续运行 `test:issue-77-ui` 和 `test:paragraph-source-ui` 10 次，并运行 `test:new-source-fidelity-ui`、`test:source-fidelity-ui` 与 `test:large-source-fidelity-ui`。段落测试必须同时覆盖快速输入的单事务块插入、停顿输入的 `<br />` 两阶段事务、连续回车、文档末尾和后续块之前的中间插入；列表测试必须逐字输入 `-`、`*`、`+`，再执行多次富文本/源码往返、保存和磁盘比较。人工验证另测微信公众号段落、标题、加粗、图片和表格。
 
 ## 市场调研与长期决策
 

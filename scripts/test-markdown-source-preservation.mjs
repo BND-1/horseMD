@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import {
   preserveRichMarkdownSource,
-  replaceMarkdownFrontmatterBlock
+  replaceMarkdownFrontmatterBlock,
+  replaceMarkdownListBlock,
+  restoreTypedBulletMarker
 } from '../src/renderer/src/markdown-source-preservation.js'
 import { sourceVisibleIndex } from '../src/renderer/src/mode-visible-map.js'
 
@@ -352,6 +354,75 @@ assert.equal(listItemInserted.markdown, [
   '这段不要改。'
 ].join('\n'), 'adding one item must keep the authored compact-list and bullet style')
 
+const typedListItemAppended = preserveRichMarkdownSource(
+  '- 第一项\n\n',
+  '* 第一项\n\n',
+  '* 第一项\n\n* 第二项\n\n'
+)
+assert.equal(
+  typedListItemAppended.markdown,
+  '- 第一项\n- 第二项\n\n',
+  'a newly typed compact list must keep its authored marker when Enter adds another item'
+)
+
+const listItemAppendedBeforeParagraph = preserveRichMarkdownSource(
+  '- first\n- second\n\nparagraph',
+  '* first\n\n* second\n\nparagraph',
+  '* first\n\n* second\n\n* new\n\nparagraph'
+)
+assert.equal(
+  listItemAppendedBeforeParagraph.markdown,
+  '- first\n- second\n- new\n\nparagraph',
+  'an item appended at a following paragraph boundary must inherit the compact list marker'
+)
+
+assert.equal(
+  restoreTypedBulletMarker({
+    markdown: '* 第一项\n* 第二项\n\n',
+    previousCanonical: '\\-\n',
+    canonical: '* 第一项\n\n* 第二项\n\n',
+    canonicalOffset: 4,
+    marker: '-'
+  }),
+  '- 第一项\n- 第二项\n\n',
+  'the typed bullet marker must apply to the complete newly-created list level'
+)
+
+const adjacentListKinds = preserveRichMarkdownSource(
+  '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
+  '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
+  '* Existing bullet\n\n1. Convert this paragraph\n\n* [ ] Existing task\n'
+)
+assert.equal(
+  adjacentListKinds.markdown,
+  '* Existing bullet\n\n1. Convert this paragraph\n\n* [ ] Existing task\n',
+  'a top-level list type change must not merge adjacent bullet, ordered, and task lists'
+)
+
+const paragraphBetweenBulletLists = preserveRichMarkdownSource(
+  '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
+  '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
+  '* Existing bullet\n\n* Convert this paragraph\n\n* [ ] Existing task\n'
+)
+assert.equal(
+  paragraphBetweenBulletLists.markdown,
+  '* Existing bullet\n\n* Convert this paragraph\n\n* [ ] Existing task\n',
+  'wrapping a paragraph must replace only that line even when adjacent bullet lists become contiguous'
+)
+
+assert.equal(
+  replaceMarkdownListBlock({
+    source: '- [ ] Task one\n- [x] Task two\n\n1. First\n   1. First child\n2. Second\n',
+    previous: '* [ ] Task one\n\n* [x] Task two\n\n1. First\n\n   1. First child\n2. Second\n',
+    next: '* [ ] Task one\n\n* [x] Task two\n\n* First\n\n  1. First child\n* Second\n',
+    sourceOffset: 31,
+    previousOffset: 32,
+    nextOffset: 32
+  }),
+  '- [ ] Task one\n- [x] Task two\n\n* First\n  1. First child\n* Second\n',
+  'a list conversion must not duplicate an adjacent list that canonical Markdown merges into the same block'
+)
+
 const listChanged = preserveRichMarkdownSource(listSource, listCanonical, listNext)
 assert.equal(listChanged.preserved, true)
 assert.equal(listChanged.reason, 'list-type-change')
@@ -463,6 +534,12 @@ assert.equal(
   trailingEmptyParagraphCreated.markdown,
   '# 看了苏规范\n\n',
   "pressing Enter must not persist Crepe's standalone empty-paragraph <br /> placeholder"
+)
+
+assert.equal(
+  preserveRichMarkdownSource('', '', '第一段\n\n<br />\n\n第二段\n').markdown,
+  '第一段\n\n\n\n第二段\n',
+  'a new document must not expose Crepe empty-paragraph placeholders as authored HTML'
 )
 
 const trailingEmptyParagraphFilled = preserveRichMarkdownSource(

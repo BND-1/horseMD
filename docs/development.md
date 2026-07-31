@@ -129,6 +129,9 @@ npm run test:large-source-fidelity-ui
 # 真实 Electron：#77 原始空行、列表符和转义；含真实保存写盘
 npm run test:issue-77-ui
 
+# 真实 Electron：Mermaid 裸源码/围栏/二次粘贴一一对应
+npm run test:mermaid-paste-ui
+
 # 真实 Electron：正文单换行保真；Enter 新段落保存并重开
 npm run test:paragraph-source-ui
 
@@ -196,6 +199,7 @@ npm run test:background-ui
 - `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格、列表、硬换行和代码等位置验证 source/rich 连续双向切换始终落在同一 raw offset；另覆盖源码切回富文本后零等待 Enter，并跨 90/220ms 恢复窗口继续输入
 - `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
 - `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落，以及非 canonical 前缀后以行内代码起笔；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
+- `scripts/test-new-markdown-source-fidelity-ui.mjs` —— 后台真实 Electron 逐字输入 `-`、`*`、`+` 列表与连续空段落，执行多轮富文本/源码往返并真实保存，确认 marker 不被 serializer 替换且独立 `<br />` 不进入磁盘
 - `scripts/test-soft-line-breaks-ui.mjs` —— 真实 Electron 验证普通源码单换行默认按多行显示、显式硬换行仍为 `<br>`、双向切换后的 textarea 与磁盘字节不变；设置开关接线由 `test-settings-view-ui.mjs` 保护
 - `scripts/test-source-fidelity-audit-ui.mjs`、`scripts/test-large-doc-source-preservation-ui.mjs` —— 分别验证异构 Markdown 多点编辑后的逐字节局部性，以及 120k+ BOM/CRLF 分块文档的首次富文本编辑
 - `scripts/test-issue-79-list-spacing-ui.mjs` —— 真实 Electron 验证 #79：通过设置页选项调整行距和段距后，正文无序/有序/嵌套列表以及设置预览的列表样本同步变化

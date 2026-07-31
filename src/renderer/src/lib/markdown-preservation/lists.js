@@ -4,6 +4,8 @@ import {
 } from '../../mode-visible-map.js'
 import {
   adaptCanonicalRegionToSource,
+  commonChange,
+  lineAt,
   lineIndexAt,
   listMarker,
   markdownLines
@@ -27,37 +29,39 @@ export const listBlockAt = (markdown, offset) => {
   }
   if (markerIndex < 0) return null
 
-  const baseIndent = listMarker(lines[markerIndex].text)[1].length
+  const baseLineMarker = lines[markerIndex].text.match(/^(\s*)([-+*]|\d{1,9}[.)])\s+/)
+  const baseIndent = baseLineMarker[1].length
+  const baseKind = /^\d/.test(baseLineMarker[2]) ? 'ordered' : 'bullet'
   const belongsToList = (line) => {
     if (!line.text.trim()) return false
     const marker = listMarker(line.text)
     const indent = line.text.match(/^\s*/)[0].length
-    return (marker && indent >= baseIndent) || (!marker && indent > baseIndent)
+    if (!marker) return indent > baseIndent
+    if (indent > baseIndent) return true
+    if (indent < baseIndent) return false
+    const token = line.text.match(/^\s*([-+*]|\d{1,9}[.)])\s+/)?.[1] || ''
+    const kind = /^\d/.test(token) ? 'ordered' : 'bullet'
+    return kind === baseKind
   }
 
   let startIndex = markerIndex
-  let pendingBlankStart = null
   for (let current = markerIndex - 1; current >= 0; current--) {
     if (!lines[current].text.trim()) {
-      pendingBlankStart = current
       continue
     }
     if (!belongsToList(lines[current])) break
-    startIndex = pendingBlankStart ?? current
-    pendingBlankStart = null
+    // The previous member owns the pending separator. Starting at the blank
+    // line would split one loose Markdown list into several independent blocks.
+    startIndex = current
   }
 
   let endIndex = markerIndex
-  let pendingBlankEnd = null
   for (let current = markerIndex + 1; current < lines.length; current++) {
     if (!lines[current].text.trim()) {
-      pendingBlankEnd = current
       continue
     }
     if (!belongsToList(lines[current])) break
     endIndex = current
-    if (pendingBlankEnd !== null) endIndex = current
-    pendingBlankEnd = null
   }
 
   return {
@@ -77,6 +81,70 @@ const listBlockNear = (markdown, ...offsets) => {
     }
   }
   return null
+}
+
+const bulletMarkerLines = (markdown) => markdownLines(markdown)
+  .map((line) => ({
+    ...line,
+    match: line.text.match(/^(\s*)([-+*])(?=\s+)/)
+  }))
+  .filter((line) => line.match)
+
+// ProseMirror's bullet-list node does not retain whether the user triggered
+// the input rule with "-", "*" or "+". Crepe therefore serializes every new
+// bullet list with its configured default marker. Match the just-created item
+// by structural ordinal and restore only that marker; later list edits then use
+// the authored marker through formatCanonicalListLikeSource.
+export const restoreTypedBulletMarker = ({
+  markdown,
+  canonical,
+  previousCanonical,
+  canonicalOffset,
+  marker
+}) => {
+  if (!/^[-+*]$/.test(marker || '')) return markdown
+  const canonicalText = String(canonical || '')
+  const canonicalLines = bulletMarkerLines(canonicalText)
+  if (!canonicalLines.length) return markdown
+
+  const previousText = String(previousCanonical || '')
+  const change = commonChange(previousText, canonicalText)
+  const changedLine = canonicalLines.find((line) =>
+    line.end >= change.start && line.start <= change.nextEnd
+  )
+  const target = changedLine
+    ? { line: changedLine, distance: 0 }
+    : canonicalLines.reduce((best, line) => {
+      if (!Number.isFinite(canonicalOffset)) return best
+      const distance = canonicalOffset < line.start
+        ? line.start - canonicalOffset
+        : canonicalOffset > line.end
+          ? canonicalOffset - line.end
+          : 0
+      return !best || distance < best.distance ? { line, distance } : best
+    }, null)
+  if (!target || target.distance > 4) return markdown
+
+  const sourceLines = bulletMarkerLines(String(markdown || ''))
+  const targetBlock = listBlockAt(canonicalText, target.line.start)
+  if (!targetBlock) return markdown
+  const targetIndent = target.line.match[1].length
+  const offsets = canonicalLines
+    .map((line, ordinal) => ({ line, ordinal }))
+    .filter(({ line }) =>
+      line.start >= targetBlock.start &&
+      line.end <= targetBlock.end &&
+      line.match[1].length === targetIndent
+    )
+    .map(({ ordinal }) => sourceLines[ordinal])
+    .filter(Boolean)
+    .map((line) => line.start + line.match[1].length)
+    .filter((offset) => markdown[offset] !== marker)
+    .sort((left, right) => right - left)
+  return offsets.reduce(
+    (result, offset) => result.slice(0, offset) + marker + result.slice(offset + 1),
+    markdown
+  )
 }
 
 const listMarkerMeta = (markdown) => {
@@ -138,11 +206,52 @@ const formatCanonicalListLikeSource = (sourceList, previousList, nextList) => {
   }).join('\n')
 }
 
+const comparableListLine = (line) => line
+  .replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '')
+  .trim()
+
 const comparableListText = (markdown) => markdown
   .split('\n')
-  .map((line) => line.replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s+/, '').trim())
+  .map(comparableListLine)
   .filter(Boolean)
   .join('\n')
+
+const listTextIsSubsequence = (candidate, target) => {
+  const candidateLines = candidate.split('\n').filter(Boolean)
+  const targetLines = target.split('\n').filter(Boolean)
+  let targetIndex = 0
+  return candidateLines.every((line) => {
+    while (targetIndex < targetLines.length && targetLines[targetIndex] !== line) targetIndex += 1
+    if (targetIndex >= targetLines.length) return false
+    targetIndex += 1
+    return true
+  })
+}
+
+const narrowListBlockByContent = (markdown, block, comparable, offset) => {
+  const target = comparable.split('\n').filter(Boolean)
+  if (!target.length) return null
+  const lines = markdownLines(markdown)
+    .filter((line) => line.start >= block.start && line.end <= block.end)
+    .map((line) => ({ ...line, comparable: comparableListLine(line.text) }))
+    .filter((line) => line.comparable)
+  const candidates = []
+  for (let start = 0; start <= lines.length - target.length; start += 1) {
+    if (!target.every((text, index) => lines[start + index].comparable === text)) continue
+    const first = lines[start]
+    const last = lines[start + target.length - 1]
+    const distance = offset < first.start
+      ? first.start - offset
+      : offset > last.end
+        ? offset - last.end
+        : 0
+    candidates.push({ start: first.start, end: last.end, indent: block.indent, distance })
+  }
+  if (!candidates.length) return null
+  candidates.sort((left, right) => left.distance - right.distance)
+  const { distance: _distance, ...region } = candidates[0]
+  return region
+}
 
 // List conversion already knows the exact ProseMirror list position before and
 // after its transaction. Use those raw offsets to replace only that list tree.
@@ -157,7 +266,7 @@ export function replaceMarkdownListBlock({
   const rawSource = String(source || '')
   const rawNext = String(next || '')
   const sourceList = listBlockAt(rawSource, sourceOffset)
-  const nextList = listBlockAt(rawNext, nextOffset)
+  let nextList = listBlockAt(rawNext, nextOffset)
   if (!sourceList || !nextList) return null
   let previousList = null
   if (previous && Number.isFinite(previousOffset)) {
@@ -166,6 +275,8 @@ export function replaceMarkdownListBlock({
     const sourceText = comparableListText(rawSource.slice(sourceList.start, sourceList.end))
     const previousText = comparableListText(String(previous).slice(previousList.start, previousList.end))
     if (!sourceText || sourceText !== previousText) return null
+    nextList = narrowListBlockByContent(rawNext, nextList, previousText, nextOffset)
+    if (!nextList) return null
   }
   const replacement = formatCanonicalListLikeSource(
     rawSource.slice(sourceList.start, sourceList.end),
@@ -180,6 +291,19 @@ export function replaceMarkdownListBlock({
 }
 
 export const preserveListBlockChange = ({ source, previous, next, start, previousEnd, nextEnd }) => {
+  const previousChangedLine = lineAt(previous, start)
+  const nextChangedLine = lineAt(next, start)
+  const previousChangedText = previous.slice(previousChangedLine.start, previousChangedLine.end)
+  const nextChangedText = next.slice(nextChangedLine.start, nextChangedLine.end)
+  if (
+    previousChangedText.trim() &&
+    !listMarker(previousChangedText) &&
+    listMarker(nextChangedText) &&
+    comparableListLine(nextChangedText) === previousChangedText.trim()
+  ) {
+    return null
+  }
+
   const previousList = listBlockNear(previous, start, previousEnd)
   const nextList = listBlockNear(next, start, nextEnd)
   if (!previousList || !nextList) return null
@@ -187,13 +311,25 @@ export const preserveListBlockChange = ({ source, previous, next, start, previou
   if (start < previousList.start || start > previousList.end + 2 || previousEnd > previousList.end + 2) return null
   if (start < nextList.start || start > nextList.end + 2 || nextEnd > nextList.end + 2) return null
 
+  const previousListText = comparableListText(previous.slice(previousList.start, previousList.end))
+  const nextListText = comparableListText(next.slice(nextList.start, nextList.end))
+  if (
+    !previousListText ||
+    !nextListText ||
+    (
+      !listTextIsSubsequence(previousListText, nextListText) &&
+      !listTextIsSubsequence(nextListText, previousListText)
+    )
+  ) {
+    return null
+  }
+
   const listStart = sourceVisiblePositionAtRaw(previous, previousList.start)
   const rawInsideSource = sourceRawFromVisibleIndex(source, listStart.visibleIndex, 'forward')
   const sourceList = listBlockAt(source, rawInsideSource)
   if (!sourceList) return null
 
   const sourceListText = comparableListText(source.slice(sourceList.start, sourceList.end))
-  const previousListText = comparableListText(previous.slice(previousList.start, previousList.end))
   if (!sourceListText || sourceListText !== previousListText) return null
 
   const replacement = formatCanonicalListLikeSource(

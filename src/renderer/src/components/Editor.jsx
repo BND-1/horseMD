@@ -32,7 +32,8 @@ import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 import {
   preserveRichMarkdownSource,
   replaceMarkdownFrontmatterBlock,
-  replaceMarkdownListBlock
+  replaceMarkdownListBlock,
+  restoreTypedBulletMarker
 } from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
 
@@ -202,6 +203,7 @@ export default function Editor({
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const pendingRawMarkdownPasteRef = { current: null }
     let pendingListConversion = null
+    let pendingMarkdownInputIntent = null
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
@@ -435,6 +437,45 @@ export default function Editor({
               canonical
             )
           }
+          const currentView = viewRef.current
+          const selectionInBulletList = (() => {
+            const $head = currentView?.state.selection.$head
+            if (!$head) return false
+            for (let depth = $head.depth; depth > 0; depth -= 1) {
+              if ($head.node(depth).type.name === 'bullet_list') return true
+            }
+            return false
+          })()
+          if (
+            pendingMarkdownInputIntent?.type === 'bullet-list' &&
+            Date.now() - pendingMarkdownInputIntent.at < 30000 &&
+            selectionInBulletList
+          ) {
+            try {
+              const remark = crepe.editor.ctx.get(remarkCtx)
+              const canonicalOffset = pmPosToMarkdownOffset(
+                canonical,
+                currentView.state.selection.head,
+                currentView.state.doc,
+                remark
+              )
+              const markdown = restoreTypedBulletMarker({
+                markdown: preserved.markdown,
+                canonical,
+                previousCanonical: pendingMarkdownInputIntent.canonical,
+                canonicalOffset,
+                marker: pendingMarkdownInputIntent.marker
+              })
+              if (markdown !== preserved.markdown) {
+                preserved = { ...preserved, markdown, reason: 'typed-bullet-marker' }
+              }
+            } catch {
+              // The normal source-preservation result remains valid if the
+              // transient selection cannot be mapped during editor teardown.
+            }
+          } else if (pendingMarkdownInputIntent) {
+            pendingMarkdownInputIntent = null
+          }
           // Source mapping must use the same markdown snapshot that App stores
           // and shows in the source textarea after this user edit.
           lastMarkdownRef.current = preserved.markdown
@@ -548,6 +589,13 @@ export default function Editor({
           getT: (key) => tRef.current(key),
           getKeybindings: () => effectiveKeybindingsRef.current,
           getSelectionToolbarEnabled: () => selectionToolbarRef.current,
+          onMarkdownInputIntent: (intent) => {
+            pendingMarkdownInputIntent = {
+              ...intent,
+              at: Date.now(),
+              canonical: canonicalMarkdownRef.current
+            }
+          },
           isReadOnly: () => readOnlyRef.current,
           isDestroyed: () => destroyed
         })

@@ -141,6 +141,10 @@ const standalone = [
     script: 'scripts/test-pdf-rendered-formats-ui.mjs'
   },
   {
+    name: 'Mermaid paste: one clipboard diagram maps to one block and preview',
+    script: 'scripts/test-mermaid-paste-ui.mjs'
+  },
+  {
     name: 'PDF preview churn: rapid settings stay serialized on a long document',
     script: 'scripts/test-pdf-preview-churn-ui.mjs'
   },
@@ -159,6 +163,10 @@ const standalone = [
   {
     name: 'Paragraph source preservation: compact lines and Enter survive reopen',
     script: 'scripts/test-paragraph-source-preservation-ui.mjs'
+  },
+  {
+    name: 'New Markdown source fidelity: typed list markers and empty paragraphs',
+    script: 'scripts/test-new-markdown-source-fidelity-ui.mjs'
   },
   {
     name: 'Soft line breaks: visual lines preserve source bytes and explicit hard breaks',
