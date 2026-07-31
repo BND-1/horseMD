@@ -169,7 +169,7 @@ npm run test:background-ui
 - `scripts/lib/electron-test-app.mjs`、`scripts/lib/human-input.mjs` —— 默认以隐藏且不抢原生焦点的 Electron 窗口运行 CDP；提供统一逐字符文本输入和特殊键工具
 - `scripts/test-background-cdp-ui.mjs` —— 验证后台启动参数、初始原生焦点和隐藏窗口内逐字符输入，防止测试基础设施退化后再次抢用户窗口
 - `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证闭合、首尾方向键退出、新段落以代码起笔、源码边界和连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
-- `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、Markdown 标记复制、真实撤销及关闭会话恢复后的显式文件打开
+- `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、段落纯文本无额外回车、列表纯文本无生成编号、HorseMD 内部 Markdown 结构粘贴、真实撤销及关闭会话恢复后的显式文件打开
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
 - `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、正文字号范围与最终 PDF 文字高度、整体缩放标签、快速设置、源码同步和快捷入口

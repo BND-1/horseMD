@@ -4,9 +4,9 @@
 // with `#` headings / tables / blockquotes / `$$` math / ```fences / `---` front
 // matter lands as flat text. This handler runs in the DOM CAPTURE phase (before
 // ProseMirror's own paste handler, which would build a slice from text/html and
-// bypass us), reads text/plain from the clipboard, and — when it clearly IS
-// Markdown — runs it through Milkdown's own remark parser so it renders with full
-// fidelity. Scoped triggers:
+// bypass us), reads text/markdown when HorseMD supplied it and otherwise inspects
+// text/plain. When the payload clearly IS Markdown, it runs through Milkdown's
+// own remark parser so it renders with full fidelity. Scoped triggers:
 //   (1) raw mermaid code that starts with a diagram header → a mermaid block;
 //   (2) any strong Markdown block marker → parse the whole clipboard as Markdown.
 // Never takes over when pasting INTO a code block (append code there).
@@ -122,7 +122,9 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
     // Browsers provide text/plain alongside text/html. Numbered headings and
     // divider-like prose in that fallback can resemble Markdown; keep the
     // structured HTML instead of flattening headings, marks and images.
-    const text = event.clipboardData?.getData('text/plain') || ''
+    const plainText = event.clipboardData?.getData('text/plain') || ''
+    const markdownText = event.clipboardData?.getData('text/markdown') || ''
+    const text = markdownText || plainText
     const html = event.clipboardData?.getData('text/html') || ''
     const pastedMermaid = mermaidPaste(text)
     const codeBlockElement = event.target.closest?.('.milkdown-code-block')
@@ -166,7 +168,7 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
 
     const structuredHtml = hasStructuredWebHtml(html)
     const shouldHandleRawMarkdown = text && looksLikeMarkdown(text) &&
-      (!structuredHtml || rawMarkdownCoversStructuredHtml(text, html))
+      (markdownText || !structuredHtml || rawMarkdownCoversStructuredHtml(text, html))
 
     // A Markdown-aware app often puts both a rendered HTML fragment and its
     // exact Markdown source on the clipboard. When the source covers all HTML

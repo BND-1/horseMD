@@ -153,12 +153,45 @@ async function main() {
       await clickPreset(['Paragraph Spacing', '段落间距'], ['Loose', '宽松'])
       if (settings().paragraphSpacing !== 1.6) throw new Error('Paragraph spacing did not persist 1.6: ' + JSON.stringify(settings()))
       if (cssVar('--editor-para-spacing') !== '1.6em') throw new Error('Paragraph spacing CSS variable did not update: ' + cssVar('--editor-para-spacing'))
+      const typographyPreviewPage = document.querySelector('.settings-preview .ProseMirror')
+      if (!typographyPreviewPage || !visible(typographyPreviewPage)) throw new Error('Missing visible typography preview page')
+      const standardPreviewWidth = typographyPreviewPage.getBoundingClientRect().width
+      const pageWidthGroup = groupByTitle(['Editor width', '编辑区宽度', 'Page Width', '页面宽度'])
+      const pageWidthTrack = pageWidthGroup?.querySelector('.hm-ftrack')
+      if (!pageWidthTrack || !visible(pageWidthTrack)) throw new Error('Missing page-width fine-tune track')
+      const trackRect = pageWidthTrack.getBoundingClientRect()
+      pageWidthTrack.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        clientX: trackRect.right - 1,
+        clientY: trackRect.top + trackRect.height / 2
+      }))
+      await sleep(120)
+      const draggingPreviewWidth = typographyPreviewPage.getBoundingClientRect().width
+      if (draggingPreviewWidth <= standardPreviewWidth + 80) {
+        throw new Error('Page-width preview did not update while the pointer was still held: ' + JSON.stringify({
+          standardPreviewWidth,
+          draggingPreviewWidth
+        }))
+      }
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await sleep(260)
+      if (settings().pageWidth !== 1400) throw new Error('Page-width fine tune did not persist after pointer release: ' + JSON.stringify(settings()))
+      await clickPreset(['Editor width', '编辑区宽度', 'Page Width', '页面宽度'], ['Medium', '中', 'Standard', '标准'])
+      if (settings().pageWidth !== 800) throw new Error('Page width did not return to 800: ' + JSON.stringify(settings()))
       await clickPreset(['Editor width', '编辑区宽度', 'Page Width', '页面宽度'], ['Wide', '宽'])
       if (settings().pageWidth !== 1000) throw new Error('Page width did not persist 1000: ' + JSON.stringify(settings()))
       if (cssVar('--editor-max-width') !== '1000px') throw new Error('Page width CSS variable did not update: ' + cssVar('--editor-max-width'))
+      const widePreviewWidth = typographyPreviewPage.getBoundingClientRect().width
+      if (widePreviewWidth <= standardPreviewWidth + 20) {
+        throw new Error('Wide page setting did not visibly widen the preview: ' + JSON.stringify({ standardPreviewWidth, widePreviewWidth }))
+      }
       await clickPreset(['Editor width', '编辑区宽度', 'Page Width', '页面宽度'], ['Full width', '全宽', 'Full', '通栏'])
       if (settings().pageWidth !== 'full') throw new Error('Full width did not persist: ' + JSON.stringify(settings()))
       if (!bodyHas('hm-full-width')) throw new Error('Full width body class did not apply')
+      const fullPreviewWidth = typographyPreviewPage.getBoundingClientRect().width
+      if (fullPreviewWidth <= widePreviewWidth + 20) {
+        throw new Error('Full-width setting did not visibly widen the preview: ' + JSON.stringify({ widePreviewWidth, fullPreviewWidth }))
+      }
       const fontFields = [...document.querySelectorAll('.settings-font-field')].filter(visible)
       if (fontFields.length < 2) throw new Error('Missing font picker fields')
       fontFields[0].click()

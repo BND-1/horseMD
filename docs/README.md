@@ -16,9 +16,12 @@
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
 | [new-input-source-fidelity-report.md](./new-input-source-fidelity-report.md) | 0.12.45 新输入列表 marker 与连续空段落 `<br />` 泄漏的根因、修复和回归证据 |
 | [mermaid-paste-duplicate-render-report.md](./mermaid-paste-duplicate-render-report.md) | 0.12.46 Mermaid 粘贴重复渲染的历史误判、源码模型不一致、精确粘贴修复与防回归测试 |
+| [clipboard-mime-regression-0.12.46.md](./clipboard-mime-regression-0.12.46.md) | 0.12.46 外部复制增加空行/列表编号的根因、三通道剪贴板契约与防回归测试 |
 | [source-fidelity-audit-2026-07.md](./source-fidelity-audit-2026-07.md) | 文件读写全链路原文保真审计、已修根因、允许变化边界与自动化证据 |
 | [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md) | 段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的症状索引、根因与防回归要求 |
 | [soft-line-break-display-report.md](./soft-line-break-display-report.md) | 源码普通单换行在富文本中被显示为空格的根因、显示合同、禁止修法与真实 UI 回归 |
+| [cross-editor-line-break-comparison.md](./cross-editor-line-break-comparison.md) | HorseMD、Typora、Obsidian 的换行、段落、列表、保存与复制行为对照 |
+| [settings-page-width-preview-regression.md](./settings-page-width-preview-regression.md) | 设置页宽度预览被固定上限截断的根因、实时反馈修复与可见 UI 防回归方法 |
 | [pdf-rendered-content-export-report.md](./pdf-rendered-content-export-report.md) | Mermaid 在 PDF 中退化为源码的根因、统一预览导出链路、安全降级和格式回归矩阵 |
 | [issue-101-pdf-images-table-density-report.md](./issue-101-pdf-images-table-density-report.md) | PDF 图片二次加载、路径双重编码、编辑器表格密度及 0.12.42 打印行距后续修正 |
 | [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) | PDF 表格列宽、行距与富文本不一致的两层根因、修复过程、量化证据与防回归命令 |
@@ -30,6 +33,7 @@
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
 | [user-guide-feature-coverage.md](./user-guide-feature-coverage.md) | 用户可见功能、代码所有者、教程页面与发布前核对状态矩阵 |
 | [release-v0.12.46.md](./release-v0.12.46.md) | v0.12.46 发布说明、安装产物、验证记录与关联 Issue |
+| [release-v0.12.47.md](./release-v0.12.47.md) | v0.12.47 紧急修复发布说明、跨编辑器核验与安装产物 |
 | [release-v0.12.10.md](./release-v0.12.10.md) | v0.12.10 发布说明、安装产物、验证记录与关联 Issue |
 | [custom-shortcuts-architecture.md](./custom-shortcuts-architecture.md) | 设置中心重构、统一命令模型与自定义快捷键目标架构 |
 | [custom-shortcuts-implementation-checklist.md](./custom-shortcuts-implementation-checklist.md) | 分阶段实施步骤、测试矩阵、停止条件与交付清单 |

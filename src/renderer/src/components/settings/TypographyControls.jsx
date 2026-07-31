@@ -12,6 +12,11 @@ import {
 
 const round1 = (n) => Math.round(n * 10) / 10
 const round10 = (n) => Math.round(n / 10) * 10
+const previewPageWidth = (pageWidth) => {
+  if (pageWidth === 'full') return '100%'
+  const normalized = Math.min(1, Math.max(0, (Number(pageWidth) - PAGE_WIDTH_MIN) / (PAGE_WIDTH_MAX - PAGE_WIDTH_MIN)))
+  return `${Math.round(440 + normalized * 240)}px`
+}
 
 export default function TypographyControls({ settings, onUpdateSettings, onHoverFont, t }) {
   const { fontSize, lineHeight, paragraphSpacing, headingSpacing, pageWidth } = settings
@@ -24,7 +29,12 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
     p.width === 'full' ? isFull : !isFull && pageWidth === p.width
   )
   const fontsLoadedRef = useRef(false)
+  const previewRef = useRef(null)
   const [fontFamilies, setFontFamilies] = useState(null)
+  const applyPageWidthPreview = useCallback((width) => {
+    applyPageWidth(width)
+    previewRef.current?.style.setProperty('--settings-preview-page-width', previewPageWidth(width))
+  }, [])
   const ensureFonts = useCallback(async () => {
     if (fontsLoadedRef.current || typeof window.queryLocalFonts !== 'function') return
     fontsLoadedRef.current = true
@@ -104,7 +114,7 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             presets={PAGE_WIDTH_PRESETS.map((p) => ({ ...p, label: t('settings.width.' + p.id) }))}
             activeIndex={widthIdx} onPick={(p) => onUpdateSettings({ pageWidth: p.width })}
             value={isFull ? PAGE_WIDTH_MAX : pageWidth} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} round={round10}
-            onSet={(w) => onUpdateSettings({ pageWidth: w })} liveApply={applyPageWidth}
+            onSet={(w) => onUpdateSettings({ pageWidth: w })} liveApply={applyPageWidthPreview}
           />
         </div>
         <div className="settings-typo-row settings-typo-row-single">
@@ -124,7 +134,11 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             <span />
             <span />
           </div>
-          <div className="settings-preview milkdown">
+          <div
+            className="settings-preview milkdown"
+            ref={previewRef}
+            style={{ '--settings-preview-page-width': previewPageWidth(pageWidth) }}
+          >
             <article className="ProseMirror markdown-body" contentEditable={false}>
               <h1>HorseMD</h1>
               <p>{t('settings.previewIntro')}</p>

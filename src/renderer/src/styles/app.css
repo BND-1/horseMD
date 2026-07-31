@@ -3875,17 +3875,19 @@ body.hm-full-width .source-editor {
   height: calc(100% - 34px);
   min-height: 0;
   box-sizing: border-box;
-  background: var(--bg-editor);
+  background: var(--bg-elevated);
   color: var(--text);
   overflow-y: auto;
 }
 .settings-preview .ProseMirror {
-  width: min(100%, 680px, var(--editor-max-width, 800px));
+  width: min(100%, var(--settings-preview-page-width, 500px));
   min-height: 100%;
   box-sizing: border-box;
   margin: 0 auto;
   padding: 26px clamp(22px, 6vw, 56px) 36px;
   outline: none;
+  background: var(--bg-editor);
+  border-inline: 1px solid var(--border-soft);
   font-family: var(--font-write);
   --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
 }

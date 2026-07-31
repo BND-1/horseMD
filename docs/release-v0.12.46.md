@@ -83,3 +83,5 @@ Android 当前仍使用 `0.12.10` 安装包；本次 `0.12.46` 发布不提供�
 - [#101 导出 PDF 图片与表格密度](https://github.com/BND-1/horseMD/issues/101)
 
 完整变更见 [CHANGELOG.md](../CHANGELOG.md)。
+
+> 已知回归：0.12.46 将块级 Markdown serializer 错误用于 `text/plain`，会使外部纯文本粘贴增加段落空行或列表编号。该问题已在 0.12.47 改为独立的纯文本、HTML、Markdown 三通道契约。

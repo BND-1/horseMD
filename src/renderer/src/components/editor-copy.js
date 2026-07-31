@@ -27,6 +27,31 @@ const COPY_STYLES = {
   IMG: 'max-width:100%;'
 }
 
+const INLINE_SOFT_BREAK = 'span[data-type="hardbreak"][data-is-inline="true"]'
+
+// Ordinary Markdown newlines are represented by Milkdown as space-only spans
+// and become visual line feeds through CSS. Clipboard targets cannot see that
+// pseudo-element, so materialize it only in the cloned clipboard fragment.
+export function materializeCopiedSoftBreaks(root) {
+  root.querySelectorAll(INLINE_SOFT_BREAK).forEach((node) => {
+    node.replaceWith(document.createElement('br'))
+  })
+}
+
+export function copiedPlainText(root, fallback = '') {
+  if (!root.querySelector('br')) return fallback
+  const probe = root.cloneNode(true)
+  probe.setAttribute(
+    'style',
+    'position:fixed;left:-100000px;top:0;width:1000px;white-space:normal;'
+  )
+  probe.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(probe)
+  const text = probe.innerText
+  probe.remove()
+  return text || fallback
+}
+
 export function inlineRichStyles(root) {
   root.querySelectorAll('*').forEach((el) => {
     // strip editor-only attributes

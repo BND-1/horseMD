@@ -68,9 +68,13 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 
 ## 6. 富文本复制（带 inline style）
 
-复制内容时，剪贴板 HTML 版本注入内联样式，粘到微信公众号/邮件/Notion 等不读外部 CSS 的地方也能保留格式（加粗、标题大小、行内代码、代码块灰底、引用、表格边框等）。`text/plain` 同时使用 Milkdown Markdown serializer，选中的粗体、行内代码等语法不会丢失成对标记。
+复制内容时，剪贴板 HTML 版本注入内联样式，粘到微信公众号/邮件/Notion 等不读外部 CSS 的地方也能保留格式（加粗、标题大小、行内代码、代码块灰底、引用、表格边框等）。剪贴板同时提供三个用途明确的通道：
 
-**实现**：`Editor.jsx` 拦截 `copy` 事件，对选区 HTML 逐元素套用固定浅色配色的内联样式（`COPY_STYLES`），写入 `text/html`；CodeMirror 代码块内的复制交还给它自己处理。
+- `text/plain`：用户实际选中的可见文字，粘贴到记事本、终端或普通输入框时不增加段落空行和列表编号；富文本中可见的普通源码单换行保持为一个换行。
+- `text/html`：带内联样式的富文本，供公众号、邮件、Notion、Word 等目标使用。
+- `text/markdown`：Milkdown serializer 生成的结构化 Markdown，仅供 HorseMD 内部粘贴优先恢复列表、加粗和行内代码等结构。
+
+**实现**：`editor-dom-content.js` 拦截 `copy` 事件，分别写入三个 MIME；`editor-copy.js` 只在剪贴板克隆中把 CSS 视觉软换行物化为 `<br>`，随后套用固定浅色配色的内联样式，不修改 ProseMirror 或磁盘源码。CodeMirror 代码块内的复制交还给它自己处理，代码块按钮则通过原生剪贴板 IPC 写入完整代码。
 
 ## 7. 相对路径图片解析
 
@@ -296,6 +300,8 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 状态栏**页宽按钮** → 小弹窗:分段预设(窄 / 中 / 宽 / 全宽,选中胶囊滑动)+ 「微调」滑块(像素级)。
 
 **实现**：`StatusBar.jsx` 的 `PageWidthControl`;CSS 变量 `--editor-max-width` 驱动 `.editor-host` / `.source-editor` / 骨架屏宽度,「全宽」用 `body.hm-full-width` 类(源码模式靠 calc 居中,变量无法单独表达"无上限")。值存 settings.js。
+
+设置页无法直接展示真实 600–1400px 页面，因此 `TypographyControls.jsx` 会把实际宽度等比映射到预览画布的 440–680px；“全宽”占满画布。滑杆拖动时同时更新真实 CSS 变量与预览专用变量，松手后才持久化设置。不要再给预览正文增加低于预设范围的固定 `max-width`，否则多个预设会再次显示为相同宽度。
 
 ## 27. Mermaid 图表 + LaTeX 公式
 

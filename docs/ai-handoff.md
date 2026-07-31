@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.46`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.44 依次完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单和打印竞态；0.12.45 补齐“从富文本新输入 Markdown 结构”的保真链路；0.12.46 修复 Mermaid 粘贴时声明关键词误判、裸源码与围栏源码模型不一致造成的重复渲染。
+- 当前测试版本号：`package.json` 为 `0.12.47`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.44 依次完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单和打印竞态；0.12.45 补齐“从富文本新输入 Markdown 结构”的保真链路；0.12.46 修复 Mermaid 粘贴重复渲染；0.12.47 修复 0.12.46 引入的外部纯文本复制空行和列表编号回归，并明确三通道剪贴板契约。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -20,6 +20,9 @@
   - `npm run guide:check`
   - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
   - 0.12.46：`npm run test:mermaid-paste-ui` 以隔离 profile 连续 10/10 通过；完整 UI 回归为 `7 sessions + 25 standalone`
+  - 0.12.47：`node scripts/test-issue-98-copy-undo-ui.mjs` 验证段落、列表、内部结构粘贴、代码复制和撤销
+  - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
+  - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
   - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
   - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
@@ -467,10 +470,11 @@ npm run guide:capture
 - `src/main/pdf-export.js` / `pdf-document.js` / `pdf-print-styles.js`：PDF 预览、生成、打印样式。
 - `src/main/filesystem.js` / `watchers.js` / `security.js`：本地文件和安全边界。
 - `src/renderer/src/styles/app.css`：全局样式。改 UI 时查多个主题和移动端。
+- 设置页排版预览是实际编辑器的缩尺模型。页宽不能直接套用低于真实预设的固定 `max-width`；测试必须测量可见宽度，不能只检查设置值和 CSS 变量。
 
 ## 14. 最近一次稳定基线
 
-截至 2026-07-18，下面这组已经跑通：
+截至 2026-07-31，`0.12.47` 下面这组已经跑通：
 
 ```bash
 npm run build
@@ -487,5 +491,7 @@ npm run test:outline-reorder
 npm run test:issue-82-ui
 npm run test:floating-outline-ui
 ```
+
+其中 `npm run test:ui-regression` 的最终结果为 `7 sessions + 25 standalone`；真实 12 万字旧样本文档路径不存在而被明确跳过，合成大文档与 `电脑档案.md` 双向切换链均通过。排版宽度还单独通过 `npm run test:settings-ui`、`test:settings-layout-ui`、`test:editor-style-settings-ui`，复制与软换行单独通过 `test:issue-98-ui`、`test:soft-break-ui`。
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。

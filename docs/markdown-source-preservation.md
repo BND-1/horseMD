@@ -64,14 +64,15 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 raw offset ↔ ProseMirror 映射不能以 `textContent.length` 代表 textblock 的位置长度。硬换行和行内图片在 ProseMirror 中各占一个位置但不进入 `textContent`；两侧现在都构建逐字符/逐原子 item 序列并按 item index 对齐。新增映射类型时必须同时测试节点之前、节点之后和段尾。
 
-### 双 MIME Markdown 粘贴
+### 多 MIME 复制与 Markdown 粘贴
 
-浏览器/聊天工具常同时提供：
+HorseMD 富文本复制提供三个语义不同的通道：
 
-- `text/plain`：用户复制的 Markdown 原文。
-- `text/html`：同一内容的渲染 HTML。
+- `text/plain`：用户实际选中的可见文字，供外部纯文本目标使用。
+- `text/html`：带内联样式的渲染 HTML，供富文本目标使用。
+- `text/markdown`：选区对应的结构化 Markdown，供 HorseMD 内部粘贴恢复结构。
 
-`editor-md-paste.js` 会先判断 Markdown 是否覆盖 HTML 中的关键语义：标题、列表、表格、粗斜体、链接、图片和硬换行。覆盖时直接解析 Markdown 并阻止默认 HTML 粘贴，Markdown 原文随该成功插入事务传入保存链路；不覆盖时保留原 HTML 路径。这避免了“先粘 HTML，再异步猜测恢复 Markdown”的时序依赖。
+`text/plain` 绝不能使用块级 Markdown serializer：serializer 会为段落补分隔换行、为列表补 marker，这些字符并不是用户选中的外部纯文本。`editor-md-paste.js` 优先读取 HorseMD 提供的 `text/markdown`；对于其他应用只提供 `text/plain` + `text/html` 的情况，再判断 Markdown 是否覆盖 HTML 中的关键语义。覆盖时直接解析 Markdown 并阻止默认 HTML 粘贴，不覆盖时保留原 HTML 路径。
 
 裸 Mermaid 是该合同中的特殊结构输入：富文本会创建 `code_block`，因此源码快照也
 必须同步写成一个合法的 Mermaid 围栏，不能继续保存为普通裸文字。一份 Mermaid

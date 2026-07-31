@@ -2,7 +2,11 @@ import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/prose/state'
 import { copyToClipboard } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
-import { inlineRichStyles } from './editor-copy.js'
+import {
+  copiedPlainText,
+  inlineRichStyles,
+  materializeCopiedSoftBreaks
+} from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
 import { hasStructuredWebHtml } from './editor-web-paste.js'
 
@@ -48,6 +52,8 @@ export function mountEditorContentBindings({
       const fragment = selection.getRangeAt(0).cloneContents()
       const wrapper = document.createElement('div')
       wrapper.appendChild(fragment)
+      materializeCopiedSoftBreaks(wrapper)
+      const plain = copiedPlainText(wrapper, selection.toString())
       inlineRichStyles(wrapper)
       let serialized = ''
       if (!view.state.selection.empty) {
@@ -57,15 +63,15 @@ export function mountEditorContentBindings({
           if (doc) serialized = crepe.editor.ctx.get(serializerCtx)(doc)
         } catch {}
       }
-      const plain = typeof serialized === 'string' && serialized
-        ? serialized
-        : selection.toString()
       if (!wrapper.innerHTML.trim() && !plain) return
       event.clipboardData.setData(
         'text/html',
         `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:#24292f;">${wrapper.innerHTML}</div>`
       )
       event.clipboardData.setData('text/plain', plain)
+      if (typeof serialized === 'string' && serialized) {
+        event.clipboardData.setData('text/markdown', serialized)
+      }
       event.preventDefault()
     } catch {
       // Fall back to the browser's default copy behavior.

@@ -40,6 +40,7 @@ Milkdown 的 CommonMark 插件会把段落内的普通源码换行解析为 `har
 - `settings.preserveSoftBreaks` 默认开启，设置入口为“设置 → 编辑器 → 编辑 → 保留源码单换行”。
 - `applySoftBreakDisplay()` 只切换 `body.hm-preserve-soft-breaks`。
 - CSS 为 `span[data-type="hardbreak"][data-is-inline="true"]` 追加视觉换行；不替换原节点、不把它变成 `<br>`，也不改变节点宽度。
+- 复制时是唯一例外：`editor-copy.js` 只在剪贴板克隆中把该节点物化为 `<br>`，使纯文本得到 `\n`、富文本 HTML 得到 `<br>`；编辑器模型、源码和保存结果不变。
 - 显式硬换行仍由 Milkdown 原来的 `<br>` 节点负责。
 - PDF 临时打印文档不带该应用级 class，因此没有被编辑器显示偏好暗中改写。
 
@@ -62,4 +63,4 @@ npm run test:markdown-preservation
 npm run test:source-map
 ```
 
-`test:soft-break-ui` 使用真实 Electron 打开包含普通单换行和显式硬换行的文件，检查视觉坐标、节点类型、源码模式逐字符内容、富文本往返以及磁盘文件字节。其余测试分别保护设置接线、Enter 段落语义、双向光标位置和原文保真。
+`test:soft-break-ui` 使用真实 Electron 打开包含普通单换行和显式硬换行的文件，检查视觉坐标、节点类型、源码模式逐字符内容、富文本往返以及磁盘文件字节。`test:issue-98-ui` 额外验证其纯文本和 HTML 剪贴板行数。其余测试分别保护设置接线、Enter 段落语义、双向光标位置和原文保真。
