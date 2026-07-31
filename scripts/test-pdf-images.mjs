@@ -64,5 +64,32 @@ assert.equal(totalLimited.stagedImages, 1)
 assert.equal(totalLimited.unresolvedImages, 2)
 assert.equal(totalLimited.stagedBytes, svg.length)
 
+// Regression: ≥10 images. With a bare `${index + 1}` placeholder,
+// `horsemd-pdf-resource-1` is a substring of `-10`…`-19` and `-2` of `-20`, so the
+// substring split/join in stagePdfImages silently destroys placeholders 10+ (they fail
+// the `html.includes` guard and are skipped — neither staged nor unresolved). With 20
+// images only 9 staged and 11 became dead links like `./image-0001.png0`.
+// editor-pdf-content.js now emits fixed-width placeholders; this must hold end-to-end.
+{
+  const COUNT = 20
+  const pad = (i) => String(i + 1).padStart(4, '0')
+  const manySource = {
+    html: Array.from({ length: COUNT }, (_, i) => `<img src="horsemd-pdf-resource-${pad(i)}">`).join(''),
+    headings: [],
+    images: Array.from({ length: COUNT }, (_, i) => ({
+      placeholder: `horsemd-pdf-resource-${pad(i)}`,
+      src: new URL(`file://${localImage.replace(/ /g, '%20')}`).href
+    }))
+  }
+  const many = await stagePdfImages(manySource, { assetsDir: join(root, 'many'), fetchImpl })
+  assert.equal(many.stagedImages, COUNT, `all ${COUNT} images must stage (placeholder prefix-collision regression)`)
+  assert.equal(many.unresolvedImages, 0)
+  assert.ok(!many.source.html.includes('horsemd-pdf-resource-'), 'no placeholder token may survive staging')
+  assert.ok(!many.source.html.includes('.png0'), 'no corrupted dead-link like ./image-0001.png0 may remain')
+  for (let i = 1; i <= COUNT; i += 1) {
+    await fs.readFile(join(root, 'many', `image-${String(i).padStart(4, '0')}.svg`))
+  }
+}
+
 await fs.rm(root, { recursive: true, force: true })
 console.log('PASS PDF images: local and remote resources stage beside the temporary print document')

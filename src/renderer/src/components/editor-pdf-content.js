@@ -14,6 +14,7 @@ const stripEditorOnlyForExport = (clone) => {
         '.hm-review-widget, .hm-review-card, .ProseMirror-separator, .ProseMirror-trailingBreak'
     )
     .forEach((el) => el.remove())
+  clone.querySelectorAll('script, iframe, object, embed, form').forEach((el) => el.remove())
 }
 
 const cleanMathForExport = (math, { display } = {}) => {
@@ -255,6 +256,8 @@ const stripEditorAttributes = (clone) => {
     el.removeAttribute('contenteditable')
     ;[...el.attributes].forEach((attribute) => {
       if (
+        attribute.name.startsWith('on') ||
+        (/^(?:href|src|xlink:href)$/i.test(attribute.name) && /^\s*javascript:/i.test(attribute.value)) ||
         (attribute.name.startsWith('data-') && !attribute.name.startsWith('data-hm-pdf-')) ||
         attribute.name.startsWith('aria-')
       ) {
@@ -283,7 +286,12 @@ export async function createPdfSourceFromEditor(root) {
       return
     }
     if (/^data:/i.test(src)) return
-    const placeholder = `horsemd-pdf-resource-${index + 1}`
+    // Fixed-width index so no placeholder is a substring of another: with a
+    // bare `${index + 1}`, `horsemd-pdf-resource-1` is a substring of `-10`…`-19`
+    // and `-2` of `-20`, so the substring-based split/join in stagePdfImages
+    // silently destroys placeholders 10+ (they fail the `html.includes` guard and
+    // are skipped — neither staged nor counted as unresolved). ≥10 images broke.
+    const placeholder = `horsemd-pdf-resource-${String(index + 1).padStart(4, '0')}`
     image.setAttribute('src', placeholder)
     images.push({ placeholder, src })
   })
