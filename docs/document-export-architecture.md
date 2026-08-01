@@ -16,6 +16,14 @@ Electron main
 
 `App.jsx` 只负责装配 hook 和懒加载 Studio；菜单只发起用户命令。格式构建、进程执行和任务生命周期不得写入 `App.jsx`、`Editor.jsx` 或 `documents.js`。
 
+PDF 导出在以上三链路之外，但在「密度」上与 HTML 共用一份间距约定：
+
+- **排版密度（0.12.50）**：`src/shared/pdf-options.js` 的 `PDF_DENSITY_VALUES`（comfort/standard/compact）是单一事实源；`pdf-print-styles.js` 把 12 条间距规则改成 `var(--hm-pdf-*, 旧字面量)`，并按 `page.densityPreset` 在 `:root` 注入对应数值。`standard` 逐字等于改动前的硬编码值（no-op 基线）。标题行高 1.3、代码 1.6、表格单元格 1.4 与 `th/td > p` 复位保持硬编码，不作为密度杠杆（保护表格测量与标题层级）。`em` 间距不随 `line-height` 变化，因此必须把全部间距规则一起参数化才能均匀紧凑。预览的真实页数通过 `onPageCount` 回调上抛到设置面板实时显示。`pdf-document.js` 无需改动：`densityPreset` 经 `normalizePdfOptions` 自动透传到 `buildPdfPrintStyles`。
+
+保存位置（0.12.50）是三链路共享的能力：
+
+- **`export-prefs.js`** 持久化用户按文件记住的保存目录（`userData/export-prefs.json`）。PDF/HTML/Pandoc 的保存对话框都先调 `getSaveDirFor(sourcePath)`：同一文件记得它上次被改存到的目录；不同文件各自回到源 Markdown 所在目录；未命名文档回退到全局上次目录。保存成功后调 `recordSaveDir(sourcePath, dir)`。纯决策逻辑拆到 `export-prefs-logic.js`，便于 `scripts/test-export-prefs.mjs` 在无 Electron 环境锁定 per-file 语义。
+
 ## 2. 共享快照，不共享格式实现
 
 PDF 与 HTML 使用编辑器 API 的结构化快照：

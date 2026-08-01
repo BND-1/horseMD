@@ -220,6 +220,8 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 - `pdf-document.js` 保持纯函数，负责尺寸、范围、目录和打印模板；`pdf-print-styles.js` 单独维护打印 CSS。临时 HTML 使用禁止脚本执行的 CSP，隐藏窗口保持 Electron 默认 Web 安全策略。
 - 多标签下导出当前聚焦文档。`editor-api-registry.js` 按 `tab.id` 注册 API，侧栏对尚未打开的文件导出时等待明确的 ready 通知，不依赖固定延迟或错误命中其他标签。
 - 预览型格式的导出合同和回归矩阵见 [pdf-rendered-content-export-report.md](./pdf-rendered-content-export-report.md)；表格事故复盘和通用 PDF 工程流程分别见 [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) 与 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
+- **排版密度（0.12.50）**：`PDF_DENSITY_VALUES`（comfort/standard/compact）在 `pdf-print-styles.js` 把 12 条间距规则（行高、段落、标题、列表、引用、图片、公式、分隔线）参数化为 `var(--hm-pdf-*, 旧字面量)`；`standard` 逐字等于改动前的硬编码值（no-op 基线，由 `test-pdf-density.mjs` 锁定），`compact` 收紧全部间距、`comfort` 放宽。标题行高 1.3、代码 1.6、表格单元格 1.4 与 `th/td > p` 复位保持硬编码（不动表格测量）。`em` 间距不随 `line-height` 变化，所以必须把全部间距规则一起参数化才能均匀紧凑。密度下方实时显示预览的真实页数（`onPageCount` 回调）。只持久化 `densityPreset`（`settings.lastPdfDensityPreset`），不持久化整个 options 包（页眉/页脚/标题/页码范围是每篇文档的，不能串文档）。
+- **导出保存位置（0.12.50）**：PDF/HTML/Pandoc 保存对话框默认打开在源 Markdown 所在目录；`export-prefs.js` 按源文件记住用户改过的目录（同一个文件记住、不同文件各自回自己文件夹），未命名文档回退到全局上次目录，持久化在 `userData/export-prefs.json`。纯决策逻辑拆到 `export-prefs-logic.js` 供 `test-export-prefs.mjs` 在无 Electron 环境锁定语义。
 
 ### 17b. HTML 预览导出与 Pandoc 文档转换
 

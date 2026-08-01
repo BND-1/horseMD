@@ -54,6 +54,13 @@ src/main/pdf-export.js  cancellable preview sessions, resource wait, printToPDF,
 src/main/pdf-document.js pure PDF document/TOC/header/footer construction
 src/main/pdf-print-styles.js isolated print stylesheet and pagination rules
 src/main/pdf-images.js  stages local/remote images for isolated PDF printing
+src/main/html-export.js   HTML Studio: preview token, image embed, precise save (latest-request-only)
+src/main/html-document.js pure HTML template (themes/widths/CSP/TOC) — no Electron
+src/main/pandoc-export.js Pandoc detect/select/export + save dialog + error mapping
+src/main/pandoc-core.js   Pandoc format whitelist, version parse, args (pure)
+src/main/subprocess.js    no-shell subprocess: timeout→kill→SIGKILL, 64 KiB stderr cap
+src/main/export-prefs.js  per-file export save-dir remembering (userData/export-prefs.json)
+src/main/ai/              AI Phase 0 pure logic: context-snapshot (sha256 revision) + change-proposal
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
@@ -474,6 +481,55 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   its native print backend has recovered, causing the next request to fail with
   `Printing failed`. Let active printing finish, discard stale output, and wait
   for the worker's asynchronous cleanup before starting the latest request.
+- **Document export subsystem** (PDF / HTML / Pandoc / AI): three independent
+  output pipelines. PDF and HTML share the structured editor snapshot
+  `{ html, headings, title, images }` from `editor-pdf-content.js`
+  (`getPdfSource()`/`getExportSource()`) but have **separate templates and
+  settings** — never paste PDF print CSS into the HTML template. Pandoc does
+  **not** use the snapshot: it reads the active tab's raw Markdown only (source
+  textarea live buffer, or `flushMarkdown()` in rich mode — never a stale React
+  tab snapshot), and export must not change dirty/cursor/disk. See
+  [`docs/document-export-architecture.md`](./docs/document-export-architecture.md).
+- **HTML export** (`html-export.js` + `html-document.js`): the main-process
+  preview returns an opaque token; the saved file is the SAME bytes the token
+  refers to (no re-render on save). Output is no-script: the snapshot strips
+  dangerous nodes/attrs, the template ships a strict CSP, the renderer preview
+  is a no-permission sandbox iframe. Latest-request-only like PDF.
+- **Pandoc export** (`pandoc-export.js` + `pandoc-core.js` + `subprocess.js`):
+  the executable is verified by absolute path + `--version`; the target format
+  is a whitelist; args are built main-side; Markdown goes via stdin; `shell:
+  false`; 2-min timeout. The source file's directory is passed as
+  `--resource-path` so relative images resolve. Only the chosen executable
+  path is persisted (`userData/document-tools.json`).
+- **AI Phase 0** (`src/shared/ai-contracts.js` + `src/main/ai/`): pure, no-UI,
+  no-network contracts (`AiRequest`, `ProviderAdapter`, `ContextSnapshot` with
+  sha256 revision, `ChangeProposal` with before-check + stale refusal). **Not
+  user-facing yet** — future Provider/key/network/UI must not bypass revision
+  validation and `ChangeProposal`. See
+  [`docs/ai-vmark-phase-plan.md`](./docs/ai-vmark-phase-plan.md).
+- **Export save-dir remembering** (`export-prefs.js` + `export-prefs-logic.js`):
+  PDF/HTML/Pandoc save dialogs default to the source Markdown's folder, and the
+  choice is remembered **per file** — the same file keeps its chosen folder, but
+  a different file still defaults to its own folder (do NOT use a single global
+  last-dir); untitled docs fall back to a global last dir. Persisted in
+  `userData/export-prefs.json`. The pure decision logic is split into
+  `export-prefs-logic.js` so `scripts/test-export-prefs.mjs` can lock the
+  per-file semantics without Electron.
+- **PDF density** (`PDF_DENSITY_VALUES` in `src/shared/pdf-options.js` +
+  `pdf-print-styles.js`): a comfort/standard/compact preset. The 12 spacing
+  rules (body line-height, para/heading/list/li/blockquote/figure/img/math/hr
+  margins) are CSS vars (`var(--hm-pdf-*, literal)`); `standard`'s values ARE
+  the pre-density literals, so the default renders identically — validate via
+  the rendered PDF, **not a CSS string diff** (the string changes because of
+  `var()`). Heading line-height (1.3), code (1.6) and table-cell (1.4)
+  line-heights + the `th/td > p { margin:0 }` reset stay **hardcoded** (not
+  density levers — protects table measurement + heading hierarchy). Note `em`
+  margins do NOT scale with `line-height` (em is font-size-relative), so ALL
+  spacing rules must be parameterized for uniform compactness. Persist only
+  `densityPreset` (`settings.lastPdfDensityPreset`), **not the whole options
+  bag** (header/footer/title/page-ranges are per-document and must not leak
+  across docs). The live page-count estimate is the preview's real `numPages`,
+  lifted via an `onPageCount` callback. Locked by `scripts/test-pdf-density.mjs`.
 
 ## Testing
 
