@@ -221,6 +221,19 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 - 多标签下导出当前聚焦文档。`editor-api-registry.js` 按 `tab.id` 注册 API，侧栏对尚未打开的文件导出时等待明确的 ready 通知，不依赖固定延迟或错误命中其他标签。
 - 预览型格式的导出合同和回归矩阵见 [pdf-rendered-content-export-report.md](./pdf-rendered-content-export-report.md)；表格事故复盘和通用 PDF 工程流程分别见 [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) 与 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
 
+### 17b. HTML 预览导出与 Pandoc 文档转换
+
+桌面端“文件”菜单和命令面板提供两条互不混淆的输出链路：
+
+- **导出 HTML**打开独立 Studio。`useHtmlExport.js` 只管理打开/保存状态，`useHtmlPreview.js` 只管理防抖预览会话，`components/html-export/` 只负责界面；主进程 `html-export.js` 负责图片暂存、预览 token 和精确保存，`html-document.js` 是不依赖 Electron 的模板纯函数。
+- **使用 Pandoc 导出**直接转换当前 Markdown，支持 docx、epub、tex、odt、rtf 和 txt。`pandoc-core.js` 保存格式白名单和参数纯函数，`pandoc-export.js` 负责检测、选择程序、保存路径和错误映射，`subprocess.js` 负责无 shell、超时和输出上限。
+
+两条链路都从当前聚焦标签取得最新内容：源码模式读取非受控 textarea 的 live buffer，富文本模式先 `flushMarkdown()`，不能只读可能滞后的 React tab snapshot。HTML 使用与 PDF 相同的异步结构化快照，因此 Mermaid、LaTeX、表格、任务列表和图片的物化规则一致，但页面模板和设置模型独立，不能用 PDF CSS 临时拼成网页。
+
+HTML 预览返回不透明 token，保存时写入该 token 对应的同一份 HTML，避免“预览一种、保存另一种”。输出移除脚本、iframe、object、embed、form、事件属性和 `javascript:` URL，模板附带 CSP；iframe 预览也保持无权限 sandbox。
+
+Pandoc 可执行文件只从已验证的绝对路径运行，参数由目标格式白名单生成，Markdown 通过 stdin 传入，不经过 shell。已有文件的目录作为 `--resource-path`，配置只保存程序路径。架构和验收细节见 [document-export-architecture.md](./document-export-architecture.md)。
+
 ## 18. 自定义窗口按钮（Windows / Linux）+ 关闭前确认
 
 Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自己画 **最小化 / 最大化(还原) / 关闭** 三个按钮，带自定义 hover 态（关闭悬浮变红）。macOS 仍用原生红绿灯。

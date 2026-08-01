@@ -11,7 +11,8 @@ export async function launchBuiltElectron({
   appArgs = [],
   executable = electronPath,
   entrypoint = 'out/main/index.cjs',
-  background = true
+  background = true,
+  env = process.env
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
   const child = spawn(executable, [
@@ -22,6 +23,7 @@ export async function launchBuiltElectron({
     ...appArgs
   ], {
     cwd,
+    env,
     stdio: ['ignore', 'pipe', 'pipe']
   })
   child.stdout.on('data', () => {})

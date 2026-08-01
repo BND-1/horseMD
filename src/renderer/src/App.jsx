@@ -46,6 +46,8 @@ import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useAttachments } from './hooks/useAttachments.js'
 import { useSyncWorkspaces } from './hooks/useSyncWorkspaces.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
+import { useHtmlExport } from './hooks/useHtmlExport.js'
+import { usePandocExport } from './hooks/usePandocExport.js'
 import { useKeybindings } from './hooks/useKeybindings.js'
 import { useSystemColorScheme } from './hooks/useSystemColorScheme.js'
 import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
@@ -65,6 +67,12 @@ const PANE_DEFAULT = 260
 const PdfExportStudio = __MOBILE_BUILD__
   ? null
   : lazy(() => import('./components/pdf-export/PdfExportStudio.jsx'))
+const HtmlExportStudio = __MOBILE_BUILD__
+  ? null
+  : lazy(() => import('./components/html-export/HtmlExportStudio.jsx'))
+const PandocExportStatus = __MOBILE_BUILD__
+  ? null
+  : lazy(() => import('./components/pandoc-export/PandocExportStatus.jsx'))
 
 export default function App() {
   const session = useRef(loadSession()).current
@@ -411,8 +419,19 @@ export default function App() {
     cancelPdfExport,
     savePdfExport
   } = usePdfExport({ tRef })
+  const {
+    htmlExportState,
+    requestHtmlExport,
+    cancelHtmlExport,
+    saveHtmlExport
+  } = useHtmlExport({ tRef })
+  const {
+    pandocExportState,
+    requestPandocExport,
+    dismissPandocExport
+  } = usePandocExport()
 
-  const getPdfSourceForTab = useCallback(async (id) => {
+  const getExportSourceForTab = useCallback(async (id) => {
     const api = editorApis.current[id]
     if (!api) return null
     const sourceElement = sourceTextareas.current[id]
@@ -420,14 +439,27 @@ export default function App() {
     if (sourceElement && api.getMarkdown?.() !== source) {
       api.replaceMarkdown?.(source)
     }
-    return await api.getPdfSource?.() || null
+    return await (api.getExportSource?.() || api.getPdfSource?.()) || null
   }, [editorApis, sourceTextareas])
+
+  // Compatibility name for the existing file/PDF API. New rendered export
+  // formats should use getExportSourceForTab so the shared snapshot is not
+  // mistaken for a PDF-specific DOM clone.
+  const getPdfSourceForTab = getExportSourceForTab
 
   const waitForPdfSourceForTab = useCallback(async (id) => {
     const api = await waitForEditorApi(id)
     if (!api) return null
     return await getPdfSourceForTab(id)
   }, [getPdfSourceForTab, waitForEditorApi])
+
+  const getMarkdownForTab = useCallback((id) => {
+    const sourceElement = sourceTextareas.current[id]
+    if (sourceElement) return getTextareaSourceValue(sourceElement)
+    const flushed = editorApis.current[id]?.flushMarkdown?.()
+    if (typeof flushed === 'string') return flushed
+    return tabsRef.current.find((tab) => tab.id === id)?.content || ''
+  }, [editorApis, sourceTextareas, tabsRef])
 
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
@@ -471,6 +503,7 @@ export default function App() {
     liveContentRef,
     liveTimersRef,
     getPdfSourceForTab,
+    getMarkdownForTab,
     waitForPdfSourceForTab,
     isMobile,
     t,
@@ -733,6 +766,8 @@ export default function App() {
     toggleSource,
     cycleTheme,
     getPdfSourceForTab,
+    getExportSourceForTab,
+    getMarkdownForTab,
     tabs,
     tRef,
     setFind,
@@ -740,7 +775,9 @@ export default function App() {
     replaceInputRef,
     openFind,
     review,
-    requestPdfExport
+    requestPdfExport,
+    requestHtmlExport,
+    requestPandocExport
   })
 
   // App lifecycle (session restore/persist/flush + update check + toast +
@@ -1156,6 +1193,30 @@ export default function App() {
             saveError={pdfExportState.error}
             onCancel={cancelPdfExport}
             onSave={savePdfExport}
+          />
+        </Suspense>
+      )}
+
+      {htmlExportState && HtmlExportStudio && (
+        <Suspense fallback={<div role="status" style={{ position: 'fixed', inset: 0, zIndex: 1500, display: 'grid', placeItems: 'center', color: 'var(--text)', background: 'var(--bg-elevated)' }}>{t('html.previewWaiting')}</div>}>
+          <HtmlExportStudio
+            t={t}
+            request={htmlExportState}
+            saving={htmlExportState.status === 'saving'}
+            saveError={htmlExportState.error}
+            onCancel={cancelHtmlExport}
+            onSave={saveHtmlExport}
+          />
+        </Suspense>
+      )}
+
+      {pandocExportState && PandocExportStatus && (
+        <Suspense fallback={null}>
+          <PandocExportStatus
+            state={pandocExportState}
+            onDismiss={dismissPandocExport}
+            onInstall={() => window.api.openExternal('https://pandoc.org/installing.html')}
+            t={t}
           />
         </Suspense>
       )}

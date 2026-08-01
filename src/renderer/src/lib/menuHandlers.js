@@ -23,6 +23,13 @@ const COMMAND_PALETTE_ICONS = {
   'file.saveAs': 'save',
   'file.attach': 'paperclip',
   'file.exportPdf': 'file',
+  'file.exportHtml': 'globe',
+  'file.exportPandocDocx': 'file',
+  'file.exportPandocEpub': 'file',
+  'file.exportPandocLatex': 'file',
+  'file.exportPandocOdt': 'file',
+  'file.exportPandocRtf': 'file',
+  'file.exportPandocTxt': 'file',
   'view.toggleSidebar': 'sidebar',
   'view.showFiles': 'folder',
   'view.showOutline': 'outline',
@@ -44,6 +51,13 @@ export const SETTINGS_BACKGROUND_HANDLERS = new Set([
   'saveAs',
   'attachFile',
   'exportPdf',
+  'exportHtml',
+  'exportPandocDocx',
+  'exportPandocEpub',
+  'exportPandocLatex',
+  'exportPandocOdt',
+  'exportPandocRtf',
+  'exportPandocTxt',
   'toggleSidebar',
   'toggleOutline',
   'toggleFiles',
@@ -80,6 +94,8 @@ export function createMenuHandlers({
   toggleSource,
   cycleTheme,
   getPdfSourceForTab,
+  getExportSourceForTab,
+  getMarkdownForTab,
   tabs,
   tRef,
   setFind,
@@ -87,8 +103,33 @@ export function createMenuHandlers({
   openFind,
   replaceInputRef,
   review,
-  requestPdfExport
+  requestPdfExport,
+  requestHtmlExport,
+  requestPandocExport
 }) {
+  const exportRendered = async (kind) => {
+    const id = pickEditableId()
+    const source = await (getExportSourceForTab || getPdfSourceForTab)(id)
+    if (!source?.html) {
+      window.alert(tRef.current(`error.export${kind === 'html' ? 'Html' : 'Pdf'}Unavailable`))
+      return
+    }
+    const tab = tabs.find((x) => x.id === id)
+    const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
+    if (kind === 'html') requestHtmlExport({ ...source, title: base }, base + '.html', tab?.path || null)
+    else requestPdfExport({ ...source, title: base }, base + '.pdf', tab?.path || null)
+  }
+  const exportPandoc = (format) => {
+    const id = pickEditableId()
+    if (!id) return
+    const tab = tabs.find((candidate) => candidate.id === id)
+    requestPandocExport({
+      markdown: getMarkdownForTab(id),
+      format,
+      defaultName: tab?.title || 'Untitled',
+      sourcePath: tab?.path || null
+    })
+  }
   return {
     home: () => {
       setHome(true)
@@ -106,17 +147,14 @@ export function createMenuHandlers({
       if (id) saveTab(id, true)
     },
     attachFile: attachFiles,
-    exportPdf: async () => {
-      const id = pickEditableId()
-      const source = await getPdfSourceForTab(id)
-      if (!source?.html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
-        return
-      }
-      const tab = tabs.find((x) => x.id === id)
-      const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      requestPdfExport({ ...source, title: base }, base + '.pdf')
-    },
+    exportPdf: () => exportRendered('pdf'),
+    exportHtml: () => exportRendered('html'),
+    exportPandocDocx: () => exportPandoc('docx'),
+    exportPandocEpub: () => exportPandoc('epub'),
+    exportPandocLatex: () => exportPandoc('latex'),
+    exportPandocOdt: () => exportPandoc('odt'),
+    exportPandocRtf: () => exportPandoc('rtf'),
+    exportPandocTxt: () => exportPandoc('txt'),
     closeTab: () => activeId && closeTab(activeId),
     palette: () => setPaletteOpen((v) => !v),
     toggleSidebar: () => setSidebarOpen((v) => !v),

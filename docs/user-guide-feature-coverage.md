@@ -38,6 +38,8 @@
 | 功能 | 主要代码所有者 | 用户教程 | 状态 / 下次动作 |
 | --- | --- | --- | --- |
 | PDF 导出中心 | `hooks/usePdfExport.js`、`components/pdf-export/`、`main/pdf-export.js` | `guide/output/export-pdf.md` | 教程已对齐真实 Buffer、8–24pt 正文字号、整体缩放、表格列宽/行距、尺寸、目录页、书签、页码范围、图片、Mermaid 和长公式；下次正式发布仍需用最新安装包复核截图。 |
+| HTML 导出中心 | `hooks/useHtmlExport.js`、`hooks/useHtmlPreview.js`、`components/html-export/`、`main/html-export.js` | `guide/output/export-html.md` | 已用 0.12.48 新安装包和隔离测试文档复核正文、第一版边界及 1440×900 Studio 截图。 |
+| Pandoc 文档转换 | `hooks/usePandocExport.js`、`main/pandoc-export.js`、`main/subprocess.js` | `guide/output/export-pandoc.md`、`guide/customization/settings.md` | 自动检测、手动选择、格式与安全边界已复核；Pandoc 3.10.1 已实际生成并检查 docx、tex、epub，教程说明了 SVG 等资源可能需要额外转换工具。 |
 | 富文本复制、移动分享 | `editor-copy.js`、`capacitor-api.js` | `guide/output/rich-copy.md`、`mobile-share.md` | 待专项复核。 |
 | 桌面 WebDAV / S3 云同步 | `useSyncWorkspaces.js`、`SyncSettings.jsx`、`main/sync/` | `guide/basics/cloud-sync.md`、`guide/troubleshooting/faq.md` | 已复核：明确工作区不会自动同步、根目录唯一 `.horsemd/workspace.json`、WebDAV/S3、可选 User-Agent、上传/下载/双向同步、远端清空保护、冲突回收和仅桌面端。 |
 | iOS / Android 只读与平台边界 | `capacitor-api.js`、`mobileReadOnly`、移动壳 | `guide/mobile/ios.md`、`android.md` | 已复核：只读模式和“移动端不提供云同步”已写明；真机发布前仍需手测。 |
@@ -46,6 +48,6 @@
 
 | 项目 | 原因 | 文档位置 |
 | --- | --- | --- |
-| AI 文档助手、Provider、Agent、插件生态 | 仍处于产品与架构阶段，尚无可交付用户入口。 | `docs/ai-product-architecture.md`、`docs/ai-readiness-audit.md`、`ROADMAP.md` |
+| AI 文档助手、Provider、Agent、插件生态 | Phase 0 只有请求契约、上下文快照和变更提案纯函数，尚无用户入口、密钥或网络请求。 | `docs/ai-product-architecture.md`、`docs/ai-vmark-phase-plan.md`、`docs/ai-readiness-audit.md`、`ROADMAP.md` |
 | 云同步 v2 决策与实现细节 | 用户教程只说明安全行为；manifest、策略和恢复状态机属于开发实现。 | `docs/cloud-sync-v2-prd.md`、`docs/cloud-sync-v2-architecture.md` |
 | 编辑器保真、模式切换和表格根因报告 | 用户需要知道结果与限制，不需要内部算法和故障历史。 | `docs/markdown-source-preservation.md`、`docs/issue-86-table-save-report.md` |

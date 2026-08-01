@@ -18,7 +18,7 @@
 │  · 单实例锁：第二次启动把文件/文件夹转发给已有窗口            │
 │  · 文件系统 IPC：读写/重命名/删除/新建/复制/列目录          │
 │  · 文件夹监听（刷新文件树） + 单文件监听（自动重载内容）       │
-│  · 窗口控制 IPC（win/Linux 自绘按钮）+ 导出 PDF + 更新检查   │
+│  · 窗口控制 IPC + PDF/HTML/Pandoc 导出 + 更新检查           │
 │  · 关闭拦截：未保存时先问渲染层（app-close-request）         │
 │  · 应用菜单（主要用于快捷键加速器）                          │
 └───────────────▲───────────────────────────┬──────────────┘
@@ -41,7 +41,11 @@
 ```
 src/
   main/index.js            主进程：窗口生命周期、IPC 装配、菜单
-  main/documents.js        打开/保存对话框与 PDF 导出 IPC
+  main/documents.js        打开/保存对话框与文档导出 IPC
+  main/html-export.js      HTML 预览 token、资源内嵌与精确保存
+  main/html-document.js    HTML 阅读模板、主题、目录与 CSP
+  main/pandoc-export.js    Pandoc 检测、选择与格式转换
+  main/subprocess.js       无 shell 的受控子进程运行器
   main/filesystem.js       文件读写、目录树与复制 IPC
   main/watchers.js         工作区与单文件监听 IPC
   main/pdf-document.js     PDF 页面、目录与页眉页脚文档构建（纯函数）
@@ -83,6 +87,9 @@ src/
         useAttachments.js 附件复制、链接生成与源码/富文本插入
         useFileOps.js      文件与标签操作、单文件 watcher
         usePdfExport.js    PDF 导出请求、保存锁、取消与错误状态
+        useHtmlExport.js   HTML Studio 打开、保存与错误状态
+        useHtmlPreview.js  HTML latest-only 预览会话
+        usePandocExport.js Pandoc 一次性转换状态
         usePdfPreview.js   防抖预览、过期请求隔离与临时会话清理
         useWorkspace.js    多根工作区状态、目录 watcher 与命令面板文件列表
         useSidebarTree.js  文件树加载、展开与当前文件跟随
@@ -192,7 +199,7 @@ build/
 ```
 可见 ProseMirror
   → editor-pdf-content.js 冻结快照、物化预览内容、测量表格、收集图片
-  → getPdfSource() 返回 { html, headings, title, images }
+  → getExportSource()（兼容旧名 getPdfSource()）返回 { html, headings, title, images }
   → pdf-images.js 暂存本地/网络资源并替换占位符
   → pdf-document.js + pdf-print-styles.js 生成无脚本打印文档
   → pdf-export.js 隐藏 BrowserWindow + printToPDF()
@@ -206,6 +213,29 @@ build/
 - PDF Studio 不是 HTML 预览，而是 PDF.js 展示最终 Buffer。布局验收必须落到该 Buffer。
 - 表格列宽需要在 renderer 清理 class/style 前测量；表格行距由打印 CSS 独立控制，单元格内层 `<p>` 不能继承正文段距。
 - 视觉问题的分层诊断、坐标断言与停止条件见 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
+
+## HTML 与 Pandoc 导出数据流
+
+HTML 沿用上面的结构化快照，但不沿用打印模板：
+
+```text
+getExportSource()
+  → html-export.js 暂存并内嵌可读取图片
+  → html-document.js 应用阅读主题、宽度、字号、目录和 CSP
+  → 预览返回 token + 最终 HTML
+  → 保存按 token 写入同一份 HTML
+```
+
+Pandoc 则必须保留 Markdown 输入，不经过 HTML serializer：
+
+```text
+source textarea live buffer / editor.flushMarkdown()
+  → pandoc-export.js 校验格式、程序路径和保存路径
+  → subprocess.js 以 stdin、shell:false、固定参数启动 Pandoc
+  → docx / epub / tex / odt / rtf / txt
+```
+
+两条链路的产品边界、错误语义和回归矩阵见 [document-export-prd.md](./document-export-prd.md) 与 [document-export-architecture.md](./document-export-architecture.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

@@ -30,6 +30,13 @@ export const LEGACY_COMMAND_ALIASES = {
   saveAs: 'file.saveAs',
   attachFile: 'file.attach',
   exportPdf: 'file.exportPdf',
+  exportHtml: 'file.exportHtml',
+  exportPandocDocx: 'file.exportPandocDocx',
+  exportPandocEpub: 'file.exportPandocEpub',
+  exportPandocLatex: 'file.exportPandocLatex',
+  exportPandocOdt: 'file.exportPandocOdt',
+  exportPandocRtf: 'file.exportPandocRtf',
+  exportPandocTxt: 'file.exportPandocTxt',
   closeTab: 'tab.close',
   nextTab: 'tab.next',
   previousTab: 'tab.previous',
@@ -123,6 +130,35 @@ export const COMMAND_DEFINITIONS = [
     capability: 'pdfExport',
     palette: true
   },
+  {
+    id: 'file.exportHtml',
+    handler: 'exportHtml',
+    titleKey: 'cmd.exportHtml',
+    category: COMMAND_CATEGORIES.FILE,
+    context: COMMAND_CONTEXTS.DOCUMENT,
+    defaultKeybindings: [],
+    electronAccelerator: true,
+    capability: 'htmlExport',
+    palette: true
+  },
+  ...[
+    ['Docx', 'cmd.exportPandocDocx'],
+    ['Epub', 'cmd.exportPandocEpub'],
+    ['Latex', 'cmd.exportPandocLatex'],
+    ['Odt', 'cmd.exportPandocOdt'],
+    ['Rtf', 'cmd.exportPandocRtf'],
+    ['Txt', 'cmd.exportPandocTxt']
+  ].map(([suffix, titleKey]) => ({
+    id: `file.exportPandoc${suffix}`,
+    handler: `exportPandoc${suffix}`,
+    titleKey,
+    category: COMMAND_CATEGORIES.FILE,
+    context: COMMAND_CONTEXTS.DOCUMENT,
+    defaultKeybindings: [],
+    electronAccelerator: true,
+    capability: 'pandocExport',
+    palette: true
+  })),
   {
     id: 'tab.close',
     handler: 'closeTab',

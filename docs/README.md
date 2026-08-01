@@ -27,6 +27,8 @@
 | [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) | PDF 表格列宽、行距与富文本不一致的两层根因、修复过程、量化证据与防回归命令 |
 | [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md) | “编辑器正常、PDF 不一致”问题的分层诊断、fixture、坐标/像素验证、禁止捷径和停止条件 |
 | [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md) | 连续修改 PDF 设置触发 `Printing failed` 的 Chromium 打印取消竞态、修复模型与长文档压力测试 |
+| [document-export-prd.md](./document-export-prd.md) | HTML 预览导出、Pandoc 安装引导与多格式转换的产品范围、用户流程和验收标准 |
+| [document-export-architecture.md](./document-export-architecture.md) | 结构化导出快照、HTML 预览会话、Pandoc 子进程隔离与模块边界 |
 | [task-list-persistence-report.md](./task-list-persistence-report.md) | 任务清单勾选只改界面、不写入文件的事件根因、修复边界与关闭重开回归 |
 | [mobile.md](./mobile.md) | 移动端（iOS / Android · Capacitor）方案、接口适配、打包发布 |
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
@@ -41,6 +43,8 @@
 | [custom-shortcuts-verification-report.md](./custom-shortcuts-verification-report.md) | 自定义快捷键自动化验证、真实安装证据、剩余人工验收边界 |
 | [ai-product-architecture.md](./ai-product-architecture.md) | AI 文档助手、工作区上下文、Provider、Review-first 改写、桌面 Agent 与插件生态的产品边界和分期架构 |
 | [ai-readiness-audit.md](./ai-readiness-audit.md) | AI 开发前的技术债、阻塞项、非阻塞风险、实施门槛与验收重点 |
+| [vmark-reference-review.md](./vmark-reference-review.md) | VMark 的 AI Provider、MCP、Pandoc 与 HTML 导出实现对 HorseMD 的可借鉴边界 |
+| [ai-vmark-phase-plan.md](./ai-vmark-phase-plan.md) | 参考 VMark 后确定的 HorseMD AI 分阶段路线、Phase 0 契约和停止条件 |
 | [cloud-sync-prd.md](./cloud-sync-prd.md) | 文件夹级 WebDAV / S3 云同步的产品边界、数据模型、阶段计划与验收矩阵 |
 | [cloud-sync-v2-prd.md](./cloud-sync-v2-prd.md) | Sync v2 的方向选择、远端清空保护和可恢复变更产品规则 |
 | [cloud-sync-v2-architecture.md](./cloud-sync-v2-architecture.md) | Sync v2 的策略 API、计划层、执行顺序和兼容性设计 |

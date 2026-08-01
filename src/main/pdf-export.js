@@ -1,7 +1,7 @@
 import { BrowserWindow, app, dialog, net, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   buildPdfDocument,
   buildPdfHeaderFooter,
@@ -9,6 +9,7 @@ import {
 } from './pdf-document.js'
 import { stagePdfImages } from './pdf-images.js'
 import { createLatestTaskRunner } from './latest-task-runner.js'
+import { getSaveDirFor, recordSaveDir } from './export-prefs.js'
 
 const RESOURCE_WAIT_MS = 12000
 const FONT_WAIT_MS = 1500
@@ -213,7 +214,7 @@ export function createPdfExportService({ getMainWindow }) {
 
   const previewTasks = createLatestTaskRunner(render)
 
-  const createPreview = async (event, { source, options, defaultName } = {}) => {
+  const createPreview = async (event, { source, options, defaultName, sourcePath } = {}) => {
     trackSender(event.sender)
     const senderId = event.sender.id
     const result = await previewTasks.run(senderId, { source, options })
@@ -223,20 +224,26 @@ export function createPdfExportService({ getMainWindow }) {
     previews.set(senderId, {
       token,
       pdf,
-      defaultName: String(defaultName || 'Untitled.pdf')
+      defaultName: String(defaultName || 'Untitled.pdf'),
+      sourcePath: typeof sourcePath === 'string' ? sourcePath : ''
     })
     return { ok: true, token, data: pdf, warnings }
   }
 
-  const savePreview = async (event, { token, defaultName } = {}) => {
+  const savePreview = async (event, { token } = {}) => {
     const preview = previews.get(event.sender.id)
     if (!preview || preview.token !== token) return { ok: false, error: 'PDF preview expired' }
+    const fileName = preview.defaultName || 'Untitled.pdf'
+    // Per-file: default to this document's own folder, or the folder it was
+    // last saved to. Other files keep their own defaults.
+    const startDir = await getSaveDirFor(preview.sourcePath)
     const result = await dialog.showSaveDialog(getMainWindow(), {
-      defaultPath: defaultName || preview.defaultName,
+      defaultPath: startDir ? join(startDir, fileName) : fileName,
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
     })
     if (result.canceled || !result.filePath) return { canceled: true }
     await fs.writeFile(result.filePath, preview.pdf)
+    await recordSaveDir(preview.sourcePath, dirname(result.filePath))
     shell.openPath(result.filePath)
     return { path: result.filePath }
   }

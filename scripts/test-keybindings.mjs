@@ -138,9 +138,9 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 35)
+assert.equal(COMMAND_DEFINITIONS.length, 42)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 3)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 21)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 28)
 assert.ok(COMMAND_DEFINITIONS.filter((command) => command.palette).every((command) => command.handler && command.titleKey))
 for (const command of COMMAND_DEFINITIONS) {
   assert.ok(command.fallbackTitle || i18nKeyCount(command.titleKey) >= 2, `missing i18n title for ${command.id}`)

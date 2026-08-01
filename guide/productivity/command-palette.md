@@ -5,7 +5,7 @@ description: 使用 Ctrl/Cmd+P 搜索文件和执行 HorseMD 命令。
 
 # 命令面板
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.12.48</span>
 
 按 `Ctrl/Cmd+P`，或点击顶栏右侧的命令图标。
 
@@ -17,9 +17,9 @@ description: 使用 Ctrl/Cmd+P 搜索文件和执行 HorseMD 命令。
 - 新建、打开、保存和另存为。
 - 打开文件夹、切换侧边栏和大纲。
 - 查找、切换源码模式和主题。
-- 插入附件、导出 PDF。
+- 插入附件、导出 PDF、导出 HTML，以及通过 Pandoc 导出 Word、EPUB、LaTeX 等格式。
 - 打开设置或 GitHub 页面。
 
-平台不支持的命令不会显示。例如移动端没有 PDF 导出、桌面附件复制和系统文件夹定位入口。
+平台不支持的命令不会显示。例如移动端没有 PDF、HTML、Pandoc 导出、桌面附件复制和系统文件夹定位入口。
 
 命令面板适合记不住快捷键时使用，也能减少在多级菜单中寻找功能的时间。

@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.49`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图（PDF 报「图片加载失败」、HTML 不报警丢图）。
+- 当前测试版本号：`package.json` 为 `0.12.50`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图（PDF 报「图片加载失败」、HTML 不报警丢图）；0.12.50 新增导出保存位置默认到 Markdown 同级目录并按文件记住（`userData/export-prefs.json`，per-file 不串扰），以及 PDF 导出「排版密度」选择（舒适/标准/紧凑，`standard` 与原排版逐字一致，`compact` 实测同一文档约减 19% 页数）。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -490,7 +490,7 @@ npm run guide:capture
 
 ## 14. 最近一次稳定基线
 
-截至 2026-07-31，`0.12.49` 在原有 0.12.47 基线之外新增以下必测项（0.12.49 在此基础上修复多图导出丢图，`npm run test:document-export` 已含 20 张图的资源暂存回归）：
+截至 2026-07-31，`0.12.50` 在原有 0.12.47 基线之外新增以下必测项（`npm run test:document-export` 已含子进程 / Pandoc 核心 / HTML 文档 / 导出保存目录 per-file 语义 / PDF 密度 no-op 基线共 5 个纯模块回归；0.12.50 紧凑密度实测同一文档从 43 页降到 35 页）：
 
 ```bash
 npm run build

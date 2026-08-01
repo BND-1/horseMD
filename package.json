@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.12.49",
+  "version": "0.12.50",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -92,7 +92,7 @@
     "test:issues-74-75-ui": "node scripts/test-issues-74-75-ui.mjs",
     "test:pdf-latex-ui": "node scripts/test-pdf-latex-ui.mjs",
     "test:pdf-rendered-ui": "node scripts/test-pdf-rendered-formats-ui.mjs",
-    "test:document-export": "node scripts/test-subprocess.mjs && node scripts/test-pandoc-core.mjs && node scripts/test-html-document.mjs",
+    "test:document-export": "node scripts/test-subprocess.mjs && node scripts/test-pandoc-core.mjs && node scripts/test-html-document.mjs && node scripts/test-export-prefs.mjs && node scripts/test-pdf-density.mjs",
     "test:document-export-ui": "node scripts/test-document-export-ui.mjs",
     "test:ai-core": "node scripts/test-ai-core.mjs",
     "test:mermaid-paste-ui": "node scripts/test-mermaid-paste-ui.mjs",

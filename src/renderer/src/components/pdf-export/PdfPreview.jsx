@@ -3,7 +3,7 @@ import { Icon } from '../icons.jsx'
 import PdfPage from './PdfPage.jsx'
 import { loadPdfJs, readPdfOutline } from './pdf-js.js'
 
-export default function PdfPreview({ data, status, token, error, warnings, retry, t }) {
+export default function PdfPreview({ data, status, token, error, warnings, retry, t, onPageCount }) {
   const scrollRef = useRef(null)
   const [document, setDocument] = useState(null)
   const [size, setSize] = useState({ width: 595, height: 842 })
@@ -17,6 +17,7 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
     if (!data?.length) {
       setDocument(null)
       setLoadedToken('')
+      onPageCount?.(null)
       return
     }
     let canceled = false
@@ -43,6 +44,7 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
       if (!outlineRows.length) setOutlineOpen(false)
       setCurrentPage(1)
       setLoadedToken(token || '')
+      onPageCount?.(nextDocument.numPages)
       scrollRef.current?.scrollTo({ top: 0 })
     }).catch((loadError) => {
       if (!canceled) console.error('PDF preview load failed', loadError)

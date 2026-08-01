@@ -296,7 +296,9 @@ app.on('window-all-closed', () => {
 
 registerDocumentIpc(ipcMain, {
   getMainWindow: () => mainWindow,
-  markdownExtensions: MD_EXTS
+  getUserDataPath: () => app.getPath('userData'),
+  markdownExtensions: MD_EXTS,
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
 })
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
@@ -829,6 +831,18 @@ function buildMenu() {
         { label: 'Save', accelerator: menuAccelerator('file.save'), click: menuCmd('save') },
         { label: 'Save As…', accelerator: menuAccelerator('file.saveAs'), click: menuCmd('saveAs') },
         { label: 'Export as PDF…', accelerator: menuAccelerator('file.exportPdf'), click: menuCmd('exportPdf') },
+        { label: 'Export as HTML…', accelerator: menuAccelerator('file.exportHtml'), click: menuCmd('exportHtml') },
+        {
+          label: 'Export via Pandoc',
+          submenu: [
+            { label: 'Word (.docx)…', accelerator: menuAccelerator('file.exportPandocDocx'), click: menuCmd('exportPandocDocx') },
+            { label: 'EPUB (.epub)…', accelerator: menuAccelerator('file.exportPandocEpub'), click: menuCmd('exportPandocEpub') },
+            { label: 'LaTeX (.tex)…', accelerator: menuAccelerator('file.exportPandocLatex'), click: menuCmd('exportPandocLatex') },
+            { label: 'OpenDocument (.odt)…', accelerator: menuAccelerator('file.exportPandocOdt'), click: menuCmd('exportPandocOdt') },
+            { label: 'Rich Text (.rtf)…', accelerator: menuAccelerator('file.exportPandocRtf'), click: menuCmd('exportPandocRtf') },
+            { label: 'Plain Text (.txt)…', accelerator: menuAccelerator('file.exportPandocTxt'), click: menuCmd('exportPandocTxt') }
+          ]
+        },
         { type: 'separator' },
         { label: 'Close Tab', accelerator: menuAccelerator('tab.close'), click: menuCmd('closeTab') },
         // macOS: give "Close Window" Shift+Cmd+W so it doesn't fight Close Tab

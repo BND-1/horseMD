@@ -9,7 +9,7 @@ HorseMD 官网负责产品介绍和下载，`guide/` 是面向普通用户的独
 - `basics/`：界面、文件、工作区、标签和编辑模式。
 - `editing/`：Markdown 内容块、图片、链接和附件。
 - `productivity/`：查找、大纲、命令面板、审阅和快捷键。
-- `output/`：富文本复制、PDF 和移动分享。
+- `output/`：富文本复制、PDF、HTML、Pandoc 文档转换和移动分享。
 - `customization/`：主题、字体和设置。
 - `mobile/`：iOS 与 Android 的平台差异。
 - `troubleshooting/`：安装、文件、性能和 FAQ。

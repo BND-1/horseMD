@@ -1,5 +1,7 @@
 # HorseMD AI 产品与架构方案
 
+> VMark 的 Provider、Genie、MCP 与导出实现对照结论见 `vmark-reference-review.md`；近期可执行分期见 `ai-vmark-phase-plan.md`。本文件仍是 HorseMD AI 的总架构约束。
+
 **状态：** 设计草案，待产品确认，尚未实现。  
 **范围：** 原生 AI 写作与文档助手、后续桌面开发 Agent 的共同底座。  
 **最后更新：** 2026-07-22。

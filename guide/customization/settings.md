@@ -5,7 +5,7 @@ description: 了解 HorseMD 编辑器样式、外观、校对、语言、图床�
 
 # 设置说明
 
-<span class="version-badge">适用于 HorseMD v0.12.37</span>
+<span class="version-badge">适用于 HorseMD v0.12.48</span>
 
 点击活动栏左下角齿轮打开设置。设置以临时标签呈现，离开后不会像普通文档一样在下次启动时恢复。
 
@@ -28,7 +28,7 @@ description: 了解 HorseMD 编辑器样式、外观、校对、语言、图床�
 
 ## 文件与键盘
 
-文件设置中可以开启“显示隐藏文件”，文件树会显示 `.claude`、`.cursor` 等隐藏目录，但 `.git` 和 `node_modules` 始终隐藏，避免噪声和性能问题。键盘快捷键设置支持录制大部分应用命令的快捷键，并会提示冲突和保留键。
+文件设置中可以开启“显示隐藏文件”，文件树会显示 `.claude`、`.cursor` 等隐藏目录，但 `.git` 和 `node_modules` 始终隐藏，避免噪声和性能问题。桌面端还会显示“文档转换工具”，用于检测或手动选择 Pandoc；具体步骤见[使用 Pandoc 导出](/output/export-pandoc)。键盘快捷键设置支持录制大部分应用命令的快捷键，并会提示冲突和保留键。
 
 ## 校对与语言
 

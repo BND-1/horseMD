@@ -1,4 +1,5 @@
 import Toggle from '../ui/Toggle.jsx'
+import DocumentToolsSettings from './DocumentToolsSettings.jsx'
 
 export default function FilesSettings({ settings, onUpdateSettings, t }) {
   return (
@@ -27,6 +28,7 @@ export default function FilesSettings({ settings, onUpdateSettings, t }) {
           onChange={(e) => onUpdateSettings({ imageUploadCommand: e.target.value })}
         />
       </section>
+      {window.api.capabilities?.pandocExport && <DocumentToolsSettings t={t} />}
     </>
   )
 }

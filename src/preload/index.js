@@ -13,11 +13,19 @@ const api = {
   openAttachments: () => ipcRenderer.invoke('dialog:openAttachments'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   saveAs: (defaultName) => ipcRenderer.invoke('dialog:saveAs', defaultName),
-  previewPDF: (source, defaultName, options) =>
-    ipcRenderer.invoke('pdf:preview', { source, defaultName, options }),
+  previewPDF: (source, defaultName, options, sourcePath) =>
+    ipcRenderer.invoke('pdf:preview', { source, defaultName, options, sourcePath }),
   savePDFPreview: (token, defaultName) =>
     ipcRenderer.invoke('pdf:savePreview', { token, defaultName }),
   disposePDFPreview: (token) => ipcRenderer.invoke('pdf:disposePreview', token),
+  previewHTML: (source, defaultName, options, sourcePath) =>
+    ipcRenderer.invoke('html:preview', { source, defaultName, options, sourcePath }),
+  saveHTMLPreview: (token, defaultName) =>
+    ipcRenderer.invoke('html:savePreview', { token, defaultName }),
+  disposeHTMLPreview: (token) => ipcRenderer.invoke('html:disposePreview', token),
+  detectPandoc: () => ipcRenderer.invoke('pandoc:detect'),
+  selectPandocExecutable: () => ipcRenderer.invoke('pandoc:selectExecutable'),
+  exportWithPandoc: (payload) => ipcRenderer.invoke('pandoc:export', payload),
   allowLocalFonts: () => ipcRenderer.invoke('permissions:allowLocalFonts'),
 
   // fs
@@ -132,6 +140,8 @@ const api = {
     windowControls: true,
     devtools: true,
     pdfExport: true,
+    htmlExport: true,
+    pandocExport: true,
     imageHostExec: true,
     nativeMenus: true,
     externalShell: true,

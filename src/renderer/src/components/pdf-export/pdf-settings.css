@@ -107,6 +107,7 @@
 .hm-pdf-segmented button {
   border: 0;
   border-radius: 3px;
+  padding: 0 8px;
   color: var(--muted);
   background: transparent;
   font: inherit;
@@ -117,6 +118,10 @@
   color: var(--text-strong);
   background: var(--bg-elevated);
   box-shadow: 0 1px 3px rgba(20, 18, 14, 0.16);
+}
+
+.hm-pdf-segmented.hm-pdf-density {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .hm-pdf-dimension-grid,

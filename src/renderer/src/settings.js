@@ -155,6 +155,9 @@ export const DEFAULT_SETTINGS = {
   // attribute on the Crepe `.ProseMirror` contenteditable; other surfaces (the
   // source textarea, inputs) always opt out via spellCheck={false}.
   spellcheck: false,
+  // Last-chosen PDF export density preset (comfort/standard/compact). Persisted
+  // so the user's "compact format" choice survives across exports.
+  lastPdfDensityPreset: 'standard',
   // Inline LaTeX deletion mode. "protect" prevents accidental whole-formula
   // deletion by selecting the formula on the first Backspace/Delete and only
   // deleting it on the second press. "fast" keeps the previous one-key delete.
@@ -251,7 +254,10 @@ export function loadSettings() {
       userCss: typeof raw.userCss === 'string' ? raw.userCss : '',
       userCssSnippets: normalizeUserCssSnippets(raw.userCssSnippets, raw.userCss),
       mobileReadOnly: raw.mobileReadOnly === true,
-      tableAutoWrap: raw.tableAutoWrap === true
+      tableAutoWrap: raw.tableAutoWrap === true,
+      lastPdfDensityPreset: ['comfort', 'standard', 'compact'].includes(raw.lastPdfDensityPreset)
+        ? raw.lastPdfDensityPreset
+        : 'standard'
     }
   } catch {
     return { ...DEFAULT_SETTINGS }

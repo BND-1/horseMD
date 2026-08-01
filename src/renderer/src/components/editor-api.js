@@ -247,6 +247,7 @@ export function createEditorApi({
 
   return {
     setBlock,
+    getExportSource: getPdfSource,
     getPdfSource,
     getMarkdown,
     toggleHighlight,

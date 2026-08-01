@@ -286,5 +286,25 @@ npm run test:ui-regression
   两者不一致即为占位符或替换阶段的问题，而非源/路径问题。`scripts/test-pdf-images.mjs`
   原只有 3 张图，永远覆盖不到碰撞，已补 20 张图回归。
 
+### 0.12.50：PDF 排版密度（舒适/标准/紧凑）
+
+- 需求：用户同一文档在 HorseMD 导出 36 页、Typora 26 页，要求一个「紧凑」
+  导出选项。
+- 根因：打印 CSS 的正文 `line-height: 1.75` 与段落/标题/列表/引用/图片/
+  公式/分隔线间距都是硬编码、用户不可调；`em` 间距又不会随 `line-height`
+  收紧（em 相对字号），所以只动行高会让列表/引用/图片仍松散——必须把所有
+  间距规则一起参数化。
+- 实现：`pdf-options.js` 新增 `PDF_DENSITY_VALUES`（comfort/standard/compact
+  三档），`standard` 逐字等于改动前的硬编码字面量；`pdf-print-styles.js`
+  把 12 条间距规则改成 `var(--hm-pdf-*, 字面量)`，并按 `densityPreset` 在
+  `:root` 注入对应数值。标题行高 1.3、代码 1.6、表格单元格 1.4 与
+  `th/td > p { margin:0 }` 复位保持硬编码（不动表格测量）。
+- 不变量：`standard` 必须与改动前**渲染**一致（CSS 字节变了，因为加了
+  `var()`，但 var 回退值就是旧字面量；用最终 PDF 坐标验证，不是字符串 diff）。
+- 持久化：只持久化 `densityPreset`（`settings.lastPdfDensityPreset`），不持久化
+  整个 options 包（避免页眉/页脚/标题/页码范围这些每篇文档的值串文档）。
+- 诊断要点：密度只动间距，不动页边距——紧凑 + 「窄」边距才接近 Typora。
+  `scripts/test-pdf-density.mjs` 锁定 `standard` == 旧字面量的 no-op 基线。
+
 详细事故记录见 [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)
 和 [pdf-preview-printing-race-report.md](./pdf-preview-printing-race-report.md)。

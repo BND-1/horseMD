@@ -88,6 +88,8 @@ export default defineConfig({
         items: [
           { text: '富文本复制', link: '/output/rich-copy' },
           { text: '导出 PDF', link: '/output/export-pdf' },
+          { text: '导出 HTML', link: '/output/export-html' },
+          { text: '使用 Pandoc 导出', link: '/output/export-pandoc' },
           { text: '移动端分享', link: '/output/mobile-share' }
         ]
       },

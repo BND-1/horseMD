@@ -1,8 +1,13 @@
 import { dialog } from 'electron'
 import { createPdfExportService } from './pdf-export.js'
+import { createPandocExportService } from './pandoc-export.js'
+import { createHtmlExportService } from './html-export.js'
 
-export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions }) {
+export function registerDocumentIpc(ipcMain, { getMainWindow, getUserDataPath, markdownExtensions, isTrustedSender }) {
   const pdfExport = createPdfExportService({ getMainWindow })
+  const htmlExport = createHtmlExportService({ getMainWindow })
+  const pandocExport = createPandocExportService({ getMainWindow, getUserDataPath })
+  const trusted = (event) => !isTrustedSender || isTrustedSender(event)
   ipcMain.handle('dialog:openFiles', async () => {
     const res = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openFile', 'multiSelections'],
@@ -38,4 +43,22 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions
   ipcMain.handle('pdf:preview', (event, payload) => pdfExport.createPreview(event, payload))
   ipcMain.handle('pdf:savePreview', (event, payload) => pdfExport.savePreview(event, payload))
   ipcMain.handle('pdf:disposePreview', (event, token) => pdfExport.disposePreview(event, token))
+  ipcMain.handle('html:preview', (event, payload) => trusted(event)
+    ? htmlExport.createPreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('html:savePreview', (event, payload) => trusted(event)
+    ? htmlExport.savePreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('html:disposePreview', (event, token) => trusted(event)
+    ? htmlExport.disposePreview(event, token)
+    : false)
+  ipcMain.handle('pandoc:detect', (event) => trusted(event)
+    ? pandocExport.detect()
+    : { available: false, path: null, version: null, error: 'Untrusted renderer.' })
+  ipcMain.handle('pandoc:selectExecutable', (event) => trusted(event)
+    ? pandocExport.chooseExecutable()
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pandoc:export', (event, payload) => trusted(event)
+    ? pandocExport.exportDocument(payload)
+    : { ok: false, error: 'Untrusted renderer.' })
 }

@@ -1,24 +1,7 @@
-import { PDF_MARGIN_PRESETS, PDF_PAGE_SIZES, PDF_PAGINATION } from '../../../../shared/pdf-options.js'
+import { PDF_DENSITY_PRESETS, PDF_MARGIN_PRESETS, PDF_PAGE_SIZES, PDF_PAGINATION } from '../../../../shared/pdf-options.js'
+import ExportSwitch from '../export/ExportSwitch.jsx'
 
-const Switch = ({ checked, disabled = false, onChange, label, description, t }) => (
-  <button
-    type="button"
-    className="hm-pdf-switch"
-    role="switch"
-    aria-checked={checked}
-    disabled={disabled}
-    onClick={() => onChange(!checked)}
-  >
-    <span className="hm-pdf-switch-track" aria-hidden="true" />
-    <span className="hm-pdf-switch-copy">
-      <b>{label}</b>
-      {description && <small>{description}</small>}
-    </span>
-    <em>{t(checked ? 'pdf.switchOn' : 'pdf.switchOff')}</em>
-  </button>
-)
-
-export default function PdfSettings({ options, setOptions, rangeError, t }) {
+export default function PdfSettings({ options, setOptions, rangeError, t, pageEstimate }) {
   const set = (key, value) => setOptions((previous) => ({ ...previous, [key]: value }))
   const commitFontSize = (value) => {
     const parsed = Number(value)
@@ -35,6 +18,19 @@ export default function PdfSettings({ options, setOptions, rangeError, t }) {
     <aside className="hm-pdf-settings">
       <section>
         <h3>{t('pdf.section.page')}</h3>
+        <div className="hm-pdf-field">
+          <span>{t('pdf.density')}</span>
+          <div className="hm-pdf-segmented hm-pdf-density">
+            {PDF_DENSITY_PRESETS.map((value) => (
+              <button key={value} type="button" className={options.densityPreset === value ? 'active' : ''} onClick={() => set('densityPreset', value)}>{t(`pdf.density.${value}`)}</button>
+            ))}
+          </div>
+          <small className="hm-pdf-field-help">
+            {pageEstimate === 'estimating'
+              ? t('pdf.estimatingPages')
+              : (Number.isFinite(pageEstimate) ? t('pdf.estimatedPages', { n: pageEstimate }) : t('pdf.densityHelp'))}
+          </small>
+        </div>
         <label className="hm-pdf-field">
           <span>{t('pdf.pageSize')}</span>
           <select value={options.pageSize} onChange={(event) => set('pageSize', event.target.value)}>
@@ -99,32 +95,32 @@ export default function PdfSettings({ options, setOptions, rangeError, t }) {
             {PDF_PAGINATION.map((value) => <option key={value} value={value}>{t(`pdf.pagination.${value}`)}</option>)}
           </select>
         </label>
-        <Switch checked={options.includeToc} onChange={(value) => set('includeToc', value)} label={t('pdf.includeToc')} description={t('pdf.includeTocHelp')} t={t} />
+        <ExportSwitch checked={options.includeToc} onChange={(value) => set('includeToc', value)} label={t('pdf.includeToc')} description={t('pdf.includeTocHelp')} t={t} />
         {options.includeToc && (
           <div className="hm-pdf-nested-settings">
             <label className="hm-pdf-field"><span>{t('pdf.tocDepth')}</span><select value={options.tocDepth} onChange={(event) => set('tocDepth', Number(event.target.value))}>{[1, 2, 3, 4, 5, 6].map((level) => <option key={level} value={level}>H1–H{level}</option>)}</select></label>
-            <Switch checked={options.tocPageBreak} onChange={(value) => set('tocPageBreak', value)} label={t('pdf.tocPageBreak')} t={t} />
+            <ExportSwitch checked={options.tocPageBreak} onChange={(value) => set('tocPageBreak', value)} label={t('pdf.tocPageBreak')} t={t} />
           </div>
         )}
-        <Switch checked={options.generateOutline} onChange={(value) => set('generateOutline', value)} label={t('pdf.generateOutline')} description={t('pdf.generateOutlineHelp')} t={t} />
+        <ExportSwitch checked={options.generateOutline} onChange={(value) => set('generateOutline', value)} label={t('pdf.generateOutline')} description={t('pdf.generateOutlineHelp')} t={t} />
       </section>
 
       <section>
         <h3>{t('pdf.section.headerFooter')}</h3>
         <label className="hm-pdf-field"><span>{t('pdf.documentTitle')}</span><input type="text" value={options.documentTitle} onChange={(event) => set('documentTitle', event.target.value)} /></label>
-        <Switch checked={options.headerEnabled} onChange={(value) => set('headerEnabled', value)} label={t('pdf.header')} t={t} />
+        <ExportSwitch checked={options.headerEnabled} onChange={(value) => set('headerEnabled', value)} label={t('pdf.header')} t={t} />
         {options.headerEnabled && (
           <div className="hm-pdf-nested-settings">
             <label className="hm-pdf-field"><span>{t('pdf.headerText')}</span><input type="text" value={options.headerText} placeholder={t('pdf.optional')} onChange={(event) => set('headerText', event.target.value)} /></label>
-            <Switch checked={options.includeTitle} onChange={(value) => set('includeTitle', value)} label={t('pdf.includeTitle')} t={t} />
-            <Switch checked={options.includeDate} onChange={(value) => set('includeDate', value)} label={t('pdf.includeDate')} t={t} />
+            <ExportSwitch checked={options.includeTitle} onChange={(value) => set('includeTitle', value)} label={t('pdf.includeTitle')} t={t} />
+            <ExportSwitch checked={options.includeDate} onChange={(value) => set('includeDate', value)} label={t('pdf.includeDate')} t={t} />
           </div>
         )}
-        <Switch checked={options.footerEnabled} onChange={(value) => set('footerEnabled', value)} label={t('pdf.footer')} t={t} />
+        <ExportSwitch checked={options.footerEnabled} onChange={(value) => set('footerEnabled', value)} label={t('pdf.footer')} t={t} />
         {options.footerEnabled && (
           <div className="hm-pdf-nested-settings">
             <label className="hm-pdf-field"><span>{t('pdf.footerText')}</span><input type="text" value={options.footerText} placeholder={t('pdf.optional')} onChange={(event) => set('footerText', event.target.value)} /></label>
-            <Switch checked={options.includePageNumbers} onChange={(value) => set('includePageNumbers', value)} label={t('pdf.includePageNumbers')} t={t} />
+            <ExportSwitch checked={options.includePageNumbers} onChange={(value) => set('includePageNumbers', value)} label={t('pdf.includePageNumbers')} t={t} />
           </div>
         )}
       </section>

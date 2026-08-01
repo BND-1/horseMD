@@ -60,7 +60,7 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 
 ### 产品与远期探索
 
-- **#46 AI**：先落实 provider、上下文、权限与 Review-first 修改合同，再实现 UI。
+- **#46 AI**：Phase 0 已落实请求、上下文快照、revision 与 Review-first 变更提案合同；下一步先做桌面只读 Provider，再实现经确认的写作动作。
 - **#44 用户交流渠道**：属于社区运营，不应阻塞编辑器代码计划。
 
 ## 自定义快捷键（第一版已落地）
@@ -83,9 +83,9 @@ HorseMD 已具备 Windows、macOS、Android 和 iOS 共用的 Markdown 编辑器
 
 > #63 中 H5/H6 强制大写、标题公式转义属于独立编辑器问题，不并入快捷键 Roadmap，应分别修复和测试。
 
-## AI 能力（后期探索）
+## AI 能力（Phase 0 已完成）
 
-AI 暂不进入当前 `0.6.x` 稳定线，待核心版本发布稳定后再单独设计。当前倾向是：
+`0.12.48` 已加入无 UI、无网络、无密钥的 AI Phase 0 纯模块与测试。它只建立后续功能必须遵守的边界，不代表用户已经能调用模型。当前方向是：
 
 1. **原生 AI 写作体验**：选区润色、改写、翻译、总结、当前文档问答和工作区上下文由 HorseMD 提供统一 UI。
 2. **可插拔 Provider**：通过内部稳定合同适配 OpenAI、Anthropic、OpenAI-compatible 和本地模型，不让上层界面绑定单一厂商协议。
@@ -94,16 +94,13 @@ AI 暂不进入当前 `0.6.x` 稳定线，待核心版本发布稳定后再单�
 5. **插件扩展后置**：先稳定 AI session、context、provider、tool 和权限合同，再评估允许插件注册模型、命令、上下文来源和工具；不先建设完整插件市场。
 6. **隐私与跨平台**：API Key 不进入 renderer；用户能看到发送了哪些文档；移动端首期只考虑 API 助手，本地 Agent 作为桌面能力隔离。
 
-正式开发前将先完成独立的 AI 产品与架构方案，并用思源、Obsidian AI 插件、Zed Agent 等产品的实际体验校验交互方向。
-
-已完成的方案见 [AI 产品与架构方案](./docs/ai-product-architecture.md)。它明确了原生文档助手优先、插件与 Agent 后置、工作区结构可单独作为上下文，以及 Review-first 改写和权限阶梯的实施边界。
+下一阶段只做桌面只读助手：Provider、流式响应、停止/重试、显式上下文范围和复制结果；不直接写文档。已完成的方案见 [AI 产品与架构方案](./docs/ai-product-architecture.md)、[VMark 参考调研](./docs/vmark-reference-review.md) 与 [分阶段实施计划](./docs/ai-vmark-phase-plan.md)。
 
 ## 远期方向
 
 - Android Storage Access Framework 外部目录工作区，让用户选择并原地管理设备上的 Markdown 文件（Issue #23）。
 - 桌面与移动端文档同步、外部目录镜像/备份，以及 WebDAV 等可自托管存储方案。
-- 更完善的导出、发布和跨应用内容工作流。
-- **Pandoc 导出**：后续作为导出扩展/插件能力评估，统一处理外部 Pandoc 运行时探测、模板、参数、错误提示和跨平台安装差异；当前不把外部进程依赖接入编辑器核心。
+- 更完善的导出、发布和跨应用内容工作流；后续可在已落地的 HTML Studio 上增加结构化模板，在 Pandoc 白名单上逐项评估 reference-doc 等高级选项。
 - 在安全模型与 API 稳定后评估通用插件机制。
 - **源码优先 Live Preview（独立架构项目）**：远期评估以 CodeMirror Markdown 文本为唯一数据模型、以编辑器 decorations 呈现格式化内容的方案。目标是从架构上消除富文本 serializer 改写未编辑源码的风险；它会牵动表格、代码块、Mermaid、图片、Review、PDF、移动端和全部编辑器插件，不能作为当前 Crepe 模式切换的临时重构。当前原文保真合同见 [docs/markdown-source-preservation.md](./docs/markdown-source-preservation.md)。
 
@@ -112,7 +109,7 @@ AI 暂不进入当前 `0.6.x` 稳定线，待核心版本发布稳定后再单�
 - 标签式多文件编辑、分屏、文件树、多根工作区、命令面板和会话恢复。
 - Milkdown Crepe 富文本与源码模式、查找替换、大纲、Review/CriticMarkup。
 - Mermaid、LaTeX、表格、代码块、图片持久化、图床、自定义主题与字体。
-- PDF 导出、附件插入、外部文件变更监听和大文件快速打开。
+- PDF 与 HTML 预览导出、Pandoc 多格式转换、附件插入、外部文件变更监听和大文件快速打开。
 - Windows、macOS、Android、iOS 共用 renderer 与平台能力适配。
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。

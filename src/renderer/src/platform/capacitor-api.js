@@ -287,6 +287,8 @@ const capabilities = {
   windowControls: false,
   devtools: false,
   pdfExport: false, // no print-to-PDF save dialog on mobile
+  htmlExport: false,
+  pandocExport: false,
   imageHostExec: false,
   nativeMenus: false,
   externalShell: true,

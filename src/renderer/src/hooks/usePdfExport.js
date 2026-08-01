@@ -20,12 +20,12 @@ export function usePdfExport({ tRef }) {
   const inFlightRef = useRef(false)
   stateRef.current = pdfExportState
 
-  const requestPdfExport = useCallback((source, defaultName) => {
+  const requestPdfExport = useCallback((source, defaultName, sourcePath) => {
     if (!source || inFlightRef.current) return
     const normalizedSource = typeof source === 'string'
       ? { html: source, headings: [], title: String(defaultName || '').replace(/\.pdf$/i, '') }
       : source
-    const next = { source: normalizedSource, defaultName, status: 'idle', error: null }
+    const next = { source: normalizedSource, defaultName, sourcePath: sourcePath || null, status: 'idle', error: null }
     stateRef.current = next
     setPdfExportState(next)
   }, [])
