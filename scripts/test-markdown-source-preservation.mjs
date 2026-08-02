@@ -442,7 +442,7 @@ assert.equal(
     previousOffset: 32,
     nextOffset: 32
   }),
-  '- [ ] Task one\n- [x] Task two\n\n* First\n   1. First child\n* Second\n',
+  '- [ ] Task one\n- [x] Task two\n\n- First\n   1. First child\n- Second\n',
   'a list conversion must not duplicate an adjacent list that canonical Markdown merges into the same block'
 )
 
@@ -485,7 +485,7 @@ assert.equal(
     previousOffset: 2,
     nextOffset: 2
   }),
-  mixedLooseOuterCompactInnerSource.replace(/^\d+\. /gm, '* '),
+  mixedLooseOuterCompactInnerSource.replace(/^\d+\. /gm, '- '),
   'converting a loose outer list must change only its markers and preserve compact nested-list bytes'
 )
 assert.equal(

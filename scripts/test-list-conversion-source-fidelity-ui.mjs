@@ -24,7 +24,7 @@ const source = [
   '   * 实现新功能',
   ''
 ].join('\n')
-const convertedExpected = source.replace(/^\d+\. /gm, '* ')
+const convertedExpected = source.replace(/^\d+\. /gm, '- ')
 
 async function waitFor(check, message, attempts = 60) {
   for (let index = 0; index < attempts; index += 1) {

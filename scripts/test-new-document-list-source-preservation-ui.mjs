@@ -14,6 +14,7 @@ const appendBulletAfterNestedList = process.env.NEW_DOCUMENT_LIST_WITH_BULLET ==
 const immediateSourceSwitch = process.env.NEW_DOCUMENT_LIST_IMMEDIATE === '1'
 const asciiBulletText = process.env.NEW_DOCUMENT_LIST_ASCII_BULLET === '1' ? 'bullet-item' : '无序项'
 const deleteAndRecreateList = process.env.NEW_DOCUMENT_LIST_DELETE_RECREATE === '1'
+const continueBulletList = process.env.NEW_DOCUMENT_LIST_BULLET_CONTINUATION === '1'
 const inputDelay = rapid ? 35 : 100
 const settleDelay = rapid ? 40 : 600
 const listSettleDelay = rapid ? 40 : 500
@@ -25,7 +26,9 @@ const expected = [
   '1. 第一项',
   '2. 第二项',
   '   1. 嵌套项',
-  ...(appendBulletAfterNestedList && !deleteAndRecreateList ? [`- ${asciiBulletText}`] : []),
+  ...(appendBulletAfterNestedList && !deleteAndRecreateList
+    ? [`- ${asciiBulletText}`, ...(continueBulletList ? ['- bullet-continued'] : [])]
+    : []),
   ...(deleteAndRecreateList ? ['1. 重新有序项', '   1. 继续嵌套项'] : []),
   '',
   ''
@@ -139,6 +142,13 @@ async function main() {
       await typeRawDelimiter(send, '-', 'Minus', 189)
       await typeRawDelimiter(send, ' ', 'Space', 32)
       await typeTextLikeUser(send, asciiBulletText, { delayMs: inputDelay })
+      if (continueBulletList && !deleteAndRecreateList) {
+        // No new input rule fires here: this is the ordinary “press Enter and
+        // keep writing the next bullet” path. It used to make the prior `-`
+        // fall back to Crepe's `*` when the list gained one more row.
+        await pressEnter(send)
+        await typeTextLikeUser(send, 'bullet-continued', { delayMs: inputDelay })
+      }
       if (deleteAndRecreateList) {
         // Continue editing the same fresh document like a real writer: remove
         // the unordered item, leave the list, then create and extend a new
@@ -185,7 +195,7 @@ async function main() {
       })()`)
       assert.deepEqual(
         bulletShape,
-        deleteAndRecreateList ? [] : [asciiBulletText],
+        deleteAndRecreateList ? [] : [asciiBulletText, ...(continueBulletList ? ['bullet-continued'] : [])],
         'rich unordered list after nested ordered list was not created or deleted'
       )
     }

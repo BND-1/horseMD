@@ -460,7 +460,13 @@ const patchConvertedListMarkers = ({ source, sourceList, previous, previousList,
     }
     if (previousRow.kind === nextRow.kind && previousRow.task === nextRow.task) continue
 
-    const token = previousRow.kind === nextRow.kind ? sourceRow.token : nextRow.token
+    // Converting an ordered/task list into an unordered list has no authored
+    // bullet character to carry over. Prefer HorseMD's typed-list default (`-`)
+    // instead of leaking Crepe's serializer default (`*`). This applies only
+    // to the converted level; nested rows keep their original marker tokens.
+    const token = previousRow.kind === nextRow.kind
+      ? sourceRow.token
+      : nextRow.kind === 'bullet' ? '-' : nextRow.token
     const task = nextRow.task == null
       ? ''
       : `[${nextRow.task}]${sourceRow.taskSpacing || nextRow.taskSpacing || ' '}`
