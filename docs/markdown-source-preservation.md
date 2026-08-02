@@ -25,6 +25,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 11. 纯富文本新建文档在用户尚未编辑源码前，没有既有 Markdown 排版可保护。嵌套列表退出时出现的空有序项属于编辑器中间态，不得成为增量映射基线；应从完整实时 canonical 文档生成结构，再逐项带回已记录的 `-` / `*` / `+` marker。用户实际编辑源码后，立即回到普通局部原文保真路径。
 12. 相邻的 `-`、`+`、`*` 在 ProseMirror 中可能合并为一棵 bullet tree，但在作者原文中仍可代表独立列表。延迟 `markdownUpdated` 合并多次编辑时，必须按作者列表的文字围栏分别回写；不得用宽泛 canonical tree 把某个列表的 marker、空行或 `<br />` 占位扩散到相邻列表。混乱编辑回归与根因见 [富文本源码保真：混乱编辑回归计划](./rich-source-chaos-regression-plan.md)。
 13. `Tab` 自动生成子列表时没有可捕获的字面 marker；若该子层尚无作者源码行，必须继承紧邻父级的 bullet marker。显式手打的子级 `-` / `+` 优先级更高，不能被父级风格覆盖。
+14. 富文本事务已经可见但 `markdownUpdated` 尚未发布时，立即保存、切源码和导出仍必须读取当前 ProseMirror `doc` 的序列化结果；不得写入滞后的 `tab.content`，也不得在下一次同步中重复追加现有图片链接。完整根因与回归见 [Issue #105/#106 富文本保存保真报告](./issues-105-106-save-fidelity-regression.md)。
 
 ## 当前实现
 
@@ -139,6 +140,9 @@ npm run test:new-source-fidelity-ui
 
 # 真实 Electron：已有正文后逐字 Enter、-、空格和首个列表文字；检查 - 标记、源码切换、保存和完整重开
 npm run test:rich-list-source-ui
+
+# 真实 Electron：八次“富文本逐字编辑 → 立即保存 → 源码往返”并完整重开；正文不得回退，图片链接各一份
+npm run test:issues-105-106-ui
 
 # 真实 Electron：默认 H1 + 正文的新文档，逐字创建 1. 有序列表和 Tab 嵌套项；未保存连续切源码
 npm run test:new-document-list-source-ui
