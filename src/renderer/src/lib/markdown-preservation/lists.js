@@ -119,20 +119,13 @@ const listMarkerTokenLines = (markdown) => markdownLines(markdown)
 export const preserveGeneratedBulletMarkers = (source, markdown) => {
   const sourceLines = listMarkerTokenLines(source)
   const nextLines = listMarkerTokenLines(markdown)
-  if (!sourceLines.length || sourceLines.length !== nextLines.length) return markdown
+  if (!sourceLines.length || !nextLines.length) return markdown
 
   const replacements = []
-  for (let index = 0; index < nextLines.length; index += 1) {
-    const sourceLine = sourceLines[index]
-    const nextLine = nextLines[index]
+  const replaceMarker = (sourceLine, nextLine) => {
     const sourceIndent = sourceLine.match[1].length
     const nextIndent = nextLine.match[1].length
-    if (sourceIndent !== nextIndent) continue
-
-    // Text commonly changes one character at a time after a list input rule.
-    // The marker belongs to the list row, not to a completed copy of its text;
-    // ordinal + indentation are the stable structural identity while this
-    // document still has no authored source formatting to preserve.
+    if (sourceIndent !== nextIndent) return
     const sourceMarker = sourceLine.match[2]
     const nextMarker = nextLine.match[2]
     const sourceIsOrdered = /^\d/.test(sourceMarker)
@@ -143,13 +136,72 @@ export const preserveGeneratedBulletMarkers = (source, markdown) => {
           sourceMarker.slice(0, -1) === nextMarker.slice(0, -1)
         ? sourceMarker
         : null
-    if (!preserveMarker || preserveMarker === nextMarker) continue
+    if (!preserveMarker || preserveMarker === nextMarker) return
     replacements.push({
       start: nextLine.start + nextIndent,
       end: nextLine.start + nextIndent + nextMarker.length,
       marker: preserveMarker
     })
   }
+
+  const sourceBullets = sourceLines.filter((line) => !/^\d/.test(line.match[2]))
+  const nextBullets = nextLines.filter((line) => !/^\d/.test(line.match[2]))
+  const ordinallyMatchedBullets = new Set()
+  if (sourceLines.length === nextLines.length) {
+    // Text commonly changes one character at a time after a list input rule.
+    // The marker belongs to the list row, not to a completed copy of its text;
+    // ordinal + indentation are the stable structural identity while this
+    // document still has no authored source formatting to preserve.
+    nextLines.forEach((nextLine, index) => replaceMarker(sourceLines[index], nextLine))
+    nextBullets.forEach((nextLine, index) => {
+      const sourceLine = sourceBullets[index]
+      const sourceContent = sourceLine?.text.slice(sourceLine.match[0].length).trim()
+      const sourceIsGeneratedDefaultPlaceholder = sourceLine?.match[2] === '*' &&
+        /^<br\s*\/?>(?:\s*)$/i.test(sourceContent || '')
+      if (
+        sourceLine?.match[1].length === nextLine.match[1].length &&
+        !sourceIsGeneratedDefaultPlaceholder
+      ) {
+        ordinallyMatchedBullets.add(nextLine.start)
+      }
+    })
+  }
+
+  // Pressing Enter to add another item does not invoke a list input rule. A
+  // later Tab can simultaneously replace an empty top-level row with a nested
+  // one, leaving the total document list-row count unchanged but invalidating
+  // its global ordinal alignment. Preserve a bullet style only when that level
+  // has an unambiguous authored token; a new nested level can inherit the
+  // nearest unambiguous ancestor. Mixed-marker levels stay untouched rather
+  // than guessing which marker belongs to a new row.
+  const markersByIndent = new Map()
+  sourceBullets.forEach((line) => {
+    const indent = line.match[1].length
+    const marker = line.match[2]
+    const content = line.text.slice(line.match[0].length).trim()
+    // Tab creates a nested `* <br />` before the user has typed a marker or
+    // any text. That is a Crepe placeholder, not an authored preference; if
+    // it became the level's style, a parent `-` list would drift back to `*`
+    // on the next ordinary keystroke. A populated `* item` remains authored
+    // and continues to participate in mixed-marker ambiguity detection.
+    if (marker === '*' && /^<br\s*\/?>(?:\s*)$/i.test(content)) return
+    const prior = markersByIndent.get(indent)
+    markersByIndent.set(indent, prior == null ? marker : prior === marker ? marker : false)
+  })
+  nextBullets.forEach((nextLine) => {
+    if (ordinallyMatchedBullets.has(nextLine.start)) return
+    const indent = nextLine.match[1].length
+    let marker = markersByIndent.get(indent)
+    if (!marker) {
+      const ancestorIndent = [...markersByIndent.keys()]
+        .filter((candidate) => candidate < indent && markersByIndent.get(candidate))
+        .sort((left, right) => right - left)[0]
+      marker = ancestorIndent == null ? null : markersByIndent.get(ancestorIndent)
+    }
+    if (!marker || marker === nextLine.match[2]) return
+    const start = nextLine.start + indent
+    replacements.push({ start, end: start + nextLine.match[2].length, marker })
+  })
 
   return replacements
     .sort((left, right) => right.start - left.start)
@@ -301,7 +353,8 @@ export const restoreTypedBulletMarker = ({
   canonical,
   previousCanonical,
   canonicalOffset,
-  marker
+  marker,
+  inheritNested = false
 }) => {
   const isBullet = /^[-+*]$/.test(marker || '')
   const isOrdered = /^\d{1,9}[.)]$/.test(marker || '')
@@ -384,7 +437,8 @@ export const restoreTypedBulletMarker = ({
     .filter(({ line }) =>
       line.start >= targetBlock.start &&
       line.end <= targetBlock.end &&
-      line.match[1].length === targetIndent
+      (line.match[1].length === targetIndent ||
+        (inheritNested && line.match[1].length > targetIndent))
     )
     .map(({ ordinal }) => sourceLines[ordinal])
     .filter(Boolean)

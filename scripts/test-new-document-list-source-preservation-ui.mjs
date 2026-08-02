@@ -15,6 +15,7 @@ const immediateSourceSwitch = process.env.NEW_DOCUMENT_LIST_IMMEDIATE === '1'
 const asciiBulletText = process.env.NEW_DOCUMENT_LIST_ASCII_BULLET === '1' ? 'bullet-item' : '无序项'
 const deleteAndRecreateList = process.env.NEW_DOCUMENT_LIST_DELETE_RECREATE === '1'
 const continueBulletList = process.env.NEW_DOCUMENT_LIST_BULLET_CONTINUATION === '1'
+const extendedListTree = process.env.NEW_DOCUMENT_LIST_EXTENDED_TREE === '1'
 const inputDelay = rapid ? 35 : 100
 const settleDelay = rapid ? 40 : 600
 const listSettleDelay = rapid ? 40 : 500
@@ -25,9 +26,15 @@ const expected = [
   '',
   '1. 第一项',
   '2. 第二项',
+  ...(extendedListTree ? ['3. 第三项'] : []),
   '   1. 嵌套项',
+  ...(extendedListTree ? ['   2. 第二嵌套项'] : []),
   ...(appendBulletAfterNestedList && !deleteAndRecreateList
-    ? [`- ${asciiBulletText}`, ...(continueBulletList ? ['- bullet-continued'] : [])]
+    ? [
+        `- ${asciiBulletText}`,
+        ...(continueBulletList || extendedListTree ? ['- bullet-continued'] : []),
+        ...(extendedListTree ? ['  - bullet-child'] : [])
+      ]
     : []),
   ...(deleteAndRecreateList ? ['1. 重新有序项', '   1. 继续嵌套项'] : []),
   '',
@@ -129,8 +136,16 @@ async function main() {
     await typeTextLikeUser(send, '第二项', { delayMs: inputDelay })
     await sleep(listSettleDelay)
     await pressEnter(send)
+    if (extendedListTree) {
+      await typeTextLikeUser(send, '第三项', { delayMs: inputDelay })
+      await pressEnter(send)
+    }
     await pressKey(send, { key: 'Tab', code: 'Tab', delayMs: inputDelay })
     await typeTextLikeUser(send, '嵌套项', { delayMs: inputDelay })
+    if (extendedListTree) {
+      await pressEnter(send)
+      await typeTextLikeUser(send, '第二嵌套项', { delayMs: inputDelay })
+    }
     if (appendBulletAfterNestedList) {
       // A real writer exits the nested item, then its parent list, before
       // entering a new unordered block below it. This was the user-reported
@@ -142,12 +157,17 @@ async function main() {
       await typeRawDelimiter(send, '-', 'Minus', 189)
       await typeRawDelimiter(send, ' ', 'Space', 32)
       await typeTextLikeUser(send, asciiBulletText, { delayMs: inputDelay })
-      if (continueBulletList && !deleteAndRecreateList) {
+      if ((continueBulletList || extendedListTree) && !deleteAndRecreateList) {
         // No new input rule fires here: this is the ordinary “press Enter and
         // keep writing the next bullet” path. It used to make the prior `-`
         // fall back to Crepe's `*` when the list gained one more row.
         await pressEnter(send)
         await typeTextLikeUser(send, 'bullet-continued', { delayMs: inputDelay })
+        if (extendedListTree) {
+          await pressEnter(send)
+          await pressKey(send, { key: 'Tab', code: 'Tab', delayMs: inputDelay })
+          await typeTextLikeUser(send, 'bullet-child', { delayMs: inputDelay })
+        }
       }
       if (deleteAndRecreateList) {
         // Continue editing the same fresh document like a real writer: remove
@@ -184,7 +204,13 @@ async function main() {
       listShape,
       deleteAndRecreateList
         ? ['第一项', '第二项', '嵌套项', '重新有序项', '继续嵌套项']
-        : ['第一项', '第二项', '嵌套项'],
+        : [
+            '第一项',
+            '第二项',
+            ...(extendedListTree ? ['第三项'] : []),
+            '嵌套项',
+            ...(extendedListTree ? ['第二嵌套项'] : [])
+          ],
       'rich ordered-list hierarchy was not created'
     )
     if (appendBulletAfterNestedList) {
@@ -195,14 +221,17 @@ async function main() {
       })()`)
       assert.deepEqual(
         bulletShape,
-        deleteAndRecreateList ? [] : [asciiBulletText, ...(continueBulletList ? ['bullet-continued'] : [])],
+        deleteAndRecreateList
+          ? []
+          : [asciiBulletText, ...(continueBulletList || extendedListTree ? ['bullet-continued'] : []), ...(extendedListTree ? ['bullet-child'] : [])],
         'rich unordered list after nested ordered list was not created or deleted'
       )
     }
 
     assert.equal(await toggleSource(evaluate), true, 'could not switch the unsaved document to source mode')
+    const firstSource = await waitFor(() => visibleSource(evaluate), 'source textarea did not open')
     assert.equal(
-      await waitFor(() => visibleSource(evaluate), 'source textarea did not open'),
+      firstSource,
       expected,
       'new-document title/body/ordered-list source was merged or lost before save'
     )
