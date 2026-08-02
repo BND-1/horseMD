@@ -15,7 +15,7 @@ import {
 // Find the syntactic list tree around an offset without parsing the entire
 // Markdown again. Blank lines are retained only when they sit between members
 // of the same list, so a preceding paragraph's separator is never replaced.
-export const listBlockAt = (markdown, offset) => {
+export const listBlockAt = (markdown, offset, { splitBulletMarkers = false } = {}) => {
   const lines = markdownLines(markdown)
   let index = lineIndexAt(lines, offset)
   if (index < 0) return null
@@ -32,7 +32,8 @@ export const listBlockAt = (markdown, offset) => {
 
   const baseLineMarker = lines[markerIndex].text.match(/^(\s*)([-+*]|\d{1,9}[.)])\s+/)
   const baseIndent = baseLineMarker[1].length
-  const baseKind = /^\d/.test(baseLineMarker[2]) ? 'ordered' : 'bullet'
+  const baseToken = baseLineMarker[2]
+  const baseKind = /^\d/.test(baseToken) ? 'ordered' : 'bullet'
   const belongsToList = (line) => {
     if (!line.text.trim()) return false
     const marker = listMarker(line.text)
@@ -42,7 +43,12 @@ export const listBlockAt = (markdown, offset) => {
     if (indent < baseIndent) return false
     const token = line.text.match(/^\s*([-+*]|\d{1,9}[.)])\s+/)?.[1] || ''
     const kind = /^\d/.test(token) ? 'ordered' : 'bullet'
-    return kind === baseKind
+    // Markdown parsers commonly canonicalize `-`, `+` and `*` into one
+    // bullet-list node. In authored source they can still be intentionally
+    // separate neighbouring lists; callers repairing source regions can opt
+    // into that stronger boundary so one list's style never leaks into another.
+    return kind === baseKind &&
+      !(splitBulletMarkers && kind === 'bullet' && token !== baseToken)
   }
 
   let startIndex = markerIndex
@@ -119,36 +125,80 @@ const listMarkerTokenLines = (markdown) => markdownLines(markdown)
 export const preserveGeneratedBulletMarkers = (source, markdown) => {
   const sourceLines = listMarkerTokenLines(source)
   const nextLines = listMarkerTokenLines(markdown)
-  if (!sourceLines.length || sourceLines.length !== nextLines.length) return markdown
+  if (!sourceLines.length || !nextLines.length) return markdown
 
-  const replacements = []
-  for (let index = 0; index < nextLines.length; index += 1) {
-    const sourceLine = sourceLines[index]
-    const nextLine = nextLines[index]
-    const sourceIndent = sourceLine.match[1].length
-    const nextIndent = nextLine.match[1].length
-    if (sourceIndent !== nextIndent) continue
+  // A fresh Crepe document is serialized after every keystroke.  When Enter
+  // adds another row, the new canonical document has one more list marker than
+  // the previous authored snapshot.  The former ordinal-only implementation
+  // intentionally gave up in that case, which immediately reverted a typed
+  // `-` or `+` list to Crepe's default `*`.
+  //
+  // Match rows which already have visible text first, then let a newly-added
+  // adjacent row inherit the resolved marker of its preceding sibling.  The
+  // inheritance is deliberately limited to uninterrupted canonical list rows:
+  // a distinct list after a paragraph must wait for its own captured input-rule
+  // intent rather than borrowing an unrelated earlier marker.
+  const listText = (line) => line.text
+    .replace(/^(\s*)(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '$1')
+  const sourceByText = new Map()
+  for (const sourceLine of sourceLines) {
+    const key = `${sourceLine.match[1].length}\u0000${listText(sourceLine)}`
+    const matches = sourceByText.get(key) || []
+    matches.push(sourceLine)
+    sourceByText.set(key, matches)
+  }
 
-    // Text commonly changes one character at a time after a list input rule.
-    // The marker belongs to the list row, not to a completed copy of its text;
-    // ordinal + indentation are the stable structural identity while this
-    // document still has no authored source formatting to preserve.
-    const sourceMarker = sourceLine.match[2]
-    const nextMarker = nextLine.match[2]
+  const compatibleMarker = (sourceMarker, nextMarker) => {
     const sourceIsOrdered = /^\d/.test(sourceMarker)
     const nextIsOrdered = /^\d/.test(nextMarker)
-    const preserveMarker = !sourceIsOrdered && !nextIsOrdered
-      ? sourceMarker
-      : sourceIsOrdered && nextIsOrdered &&
-          sourceMarker.slice(0, -1) === nextMarker.slice(0, -1)
-        ? sourceMarker
-        : null
-    if (!preserveMarker || preserveMarker === nextMarker) continue
-    replacements.push({
-      start: nextLine.start + nextIndent,
-      end: nextLine.start + nextIndent + nextMarker.length,
-      marker: preserveMarker
-    })
+    if (!sourceIsOrdered && !nextIsOrdered) return sourceMarker
+    if (sourceIsOrdered && nextIsOrdered && sourceMarker.slice(0, -1) === nextMarker.slice(0, -1)) {
+      return sourceMarker
+    }
+    return null
+  }
+
+  const replacements = []
+  let previous = null
+  for (let index = 0; index < nextLines.length; index += 1) {
+    const nextLine = nextLines[index]
+    const nextIndent = nextLine.match[1].length
+    const nextMarker = nextLine.match[2]
+    const key = `${nextIndent}\u0000${listText(nextLine)}`
+    const candidates = sourceByText.get(key)
+    const sourceLine = candidates?.shift()
+    let preserveMarker = sourceLine
+      ? compatibleMarker(sourceLine.match[2], nextMarker)
+      : null
+
+    const uninterruptedFromPrevious = previous &&
+      previous.indent === nextIndent &&
+      /^(?:\r?\n)$/.test(markdown.slice(previous.end, nextLine.start))
+    const newlyNestedFromPrevious = previous &&
+      previous.indent < nextIndent &&
+      /^(?:\r?\n)$/.test(markdown.slice(previous.end, nextLine.start))
+    // Tab creates a child bullet list without a literal `-`/`+` input token,
+    // so there is no input-rule intent to restore.  While the child has no
+    // authored source row yet, inherit its parent bullet spelling rather than
+    // leaking Crepe's `*`.  Only inherit the canonical default `*`: an
+    // explicit nested `+`/`-` captured by an input rule must remain explicit.
+    if (!preserveMarker && nextMarker === '*' && (uninterruptedFromPrevious || newlyNestedFromPrevious)) {
+      preserveMarker = compatibleMarker(previous.marker, nextMarker)
+    }
+    if (preserveMarker && preserveMarker !== nextMarker) {
+      replacements.push({
+        start: nextLine.start + nextIndent,
+        end: nextLine.start + nextIndent + nextMarker.length,
+        marker: preserveMarker
+      })
+    }
+    // Keep the resolved spelling (or canonical fallback) as the inheritance
+    // source for the next uninterrupted sibling.
+    previous = {
+      indent: nextIndent,
+      end: nextLine.end,
+      marker: preserveMarker || nextMarker
+    }
   }
 
   return replacements
@@ -357,10 +407,18 @@ export const restoreTypedBulletMarker = ({
   // so an outer `1.` and a later nested `1.` are restored independently.
   const orderedDefaultCandidate = nearestOrderedDefaultCandidate ||
     orderedDefaultCandidates.at(-1)
+  // The ProseMirror position captured before Space belongs to the literal
+  // marker paragraph. Once the input rule has wrapped that paragraph in a
+  // (possibly nested) list, mapping that old position can be far from the
+  // serialized marker row. Prefer it only when it still lands nearby; otherwise
+  // the concrete changed marker line is the reliable target. Previously the
+  // distant stale position won and made us abort, so nested `-` lists fell back
+  // to Crepe's default `*`.
+  const nearbyOffsetTarget = offsetTarget?.distance <= 4 ? offsetTarget : null
   const target = orderedDefaultCandidate
     ? { line: orderedDefaultCandidate.line || orderedDefaultCandidate, distance: 0 }
-    : offsetTarget || (changedLine ? { line: changedLine, distance: 0 } : null)
-  if (!target || target.distance > 4) return markdown
+    : nearbyOffsetTarget || (changedLine ? { line: changedLine, distance: 0 } : null)
+  if (!target) return markdown
 
   if (isOrdered) {
     // Ordered punctuation is item-specific: applying a new `1.` to every row
@@ -551,6 +609,130 @@ const listTextIsSubsequence = (candidate, target) => {
   })
 }
 
+// Canonical Markdown collapses every bullet marker to `*`, so a source list
+// whose authored marker is `+` or `-` cannot be located by marker alone. Use
+// stable neighbouring item text as fences: from this source segment's first
+// item through the item before the next authored top-level list. This keeps
+// compactness and marker style local even when Crepe has merged adjacent bullet
+// lists into one canonical tree.
+const nextTopLevelListText = (markdown, block) => {
+  const lines = markdownLines(markdown)
+  const after = lines.findIndex((line) => line.start >= block.end)
+  if (after < 0) return null
+  for (let index = after; index < lines.length; index += 1) {
+    const row = listMarkerRow(lines[index])
+    if (row && row.indent.length === block.indent) return comparableListLine(row.text)
+    // Keep a following paragraph as a text fence too. It may itself have been
+    // converted into a list in `next`; without this fence, that newly-listified
+    // paragraph would be incorrectly absorbed into the preceding source list.
+    if (lines[index].text.trim() && !/^\s/.test(lines[index].text) && !row) {
+      return comparableListLine(lines[index].text)
+    }
+  }
+  return null
+}
+
+const canonicalListSegmentForSource = ({ source, sourceList, canonical, offset }) => {
+  const sourceRows = listMarkerRows(source, sourceList)
+  const first = sourceRows[0] ? comparableListLine(sourceRows[0].text) : ''
+  if (!first) return null
+  const boundary = nextTopLevelListText(source, sourceList)
+  // Do not constrain this lookup to `listBlockAt(canonical, changeOffset)`.
+  // A just-added sibling can lie past that block's stale end boundary when a
+  // deferred Crepe update includes the Enter transaction and its text together.
+  // The authored next-list fence below is the real boundary we need here.
+  const lines = markdownLines(canonical)
+  const candidates = lines
+    .map((line, index) => ({ line, index, comparable: comparableListLine(line.text) }))
+    .filter(({ comparable }) => comparable === first)
+  if (!candidates.length) return null
+  const candidate = candidates.reduce((best, current) => {
+    const distance = Number.isFinite(offset)
+      ? Math.abs(current.line.start - offset)
+      : 0
+    return !best || distance < best.distance ? { ...current, distance } : best
+  }, null)
+  let last = candidate.index
+  for (let index = candidate.index + 1; index < lines.length; index += 1) {
+    const row = listMarkerRow(lines[index])
+    if (row && row.indent.length === sourceList.indent && boundary && comparableListLine(row.text) === boundary) break
+    if (lines[index].text.trim() && !row && !/^\s/.test(lines[index].text)) break
+    if (lines[index].text.trim()) last = index
+  }
+  return {
+    start: candidate.line.start,
+    end: lines[last].end,
+    indent: sourceList.indent
+  }
+}
+
+const authoredTopLevelListBlocks = (markdown) => {
+  const blocks = new Map()
+  markdownLines(markdown).forEach((line) => {
+    const row = listMarkerRow(line)
+    if (!row || row.indent.length !== 0) return
+    const block = listBlockAt(markdown, line.start, { splitBulletMarkers: true })
+    if (block) blocks.set(`${block.start}:${block.end}`, block)
+  })
+  return [...blocks.values()].sort((left, right) => left.start - right.start)
+}
+
+// A markdownUpdated callback is sometimes deferred until several ordinary
+// list edits have already happened (for example: add an item to `-`, add one
+// to a following `+` list, then delete an item from a `*` list). The document
+// delta then spans all three lists, so a single changed-list range is not
+// meaningful. Reconcile every independently authored top-level list through
+// its stable text fences instead. This remains fail-closed: each source block
+// must align exactly with its previous canonical counterpart; otherwise the
+// caller keeps the authored source untouched.
+export const preserveBatchedListBlockChanges = ({ source, previous, next }) => {
+  const replacements = []
+  for (const sourceList of authoredTopLevelListBlocks(source)) {
+    const sourcePosition = sourceVisiblePositionAtRaw(source, sourceList.start)
+    const previousOffset = sourceRawFromVisibleIndex(previous, sourcePosition.visibleIndex, 'forward')
+    const previousList = canonicalListSegmentForSource({
+      source,
+      sourceList,
+      canonical: previous,
+      offset: previousOffset
+    })
+    const nextList = canonicalListSegmentForSource({
+      source,
+      sourceList,
+      canonical: next,
+      offset: previousOffset
+    })
+    if (!previousList || !nextList) continue
+
+    const sourceText = comparableListText(source.slice(sourceList.start, sourceList.end))
+    const previousText = comparableListText(previous.slice(previousList.start, previousList.end))
+    if (!sourceText || sourceText !== previousText) continue
+
+    const replacement = formatCanonicalListLikeSource(
+      source.slice(sourceList.start, sourceList.end),
+      previous.slice(previousList.start, previousList.end),
+      next.slice(nextList.start, nextList.end)
+    )
+    if (replacement === source.slice(sourceList.start, sourceList.end)) continue
+    replacements.push({ ...sourceList, replacement })
+  }
+  if (!replacements.length) return null
+
+  return {
+    markdown: replacements
+      .sort((left, right) => right.start - left.start)
+      .reduce(
+        (markdown, replacement) =>
+          markdown.slice(0, replacement.start) +
+          adaptCanonicalRegionToSource(replacement.replacement, source, replacement) +
+          markdown.slice(replacement.end),
+        source
+      ),
+    preserved: true,
+    reason: 'batched-list-block-changes'
+  }
+}
+
 const narrowListBlockByContent = (markdown, block, comparable, offset) => {
   const target = comparable.split('\n').filter(Boolean)
   if (!target.length) return null
@@ -645,8 +827,20 @@ export const preserveListBlockChange = ({ source, previous, next, start, previou
   const nextList = listBlockNear(next, start, nextEnd)
   if (!previousList || !nextList) return null
   if (previousList.indent > 0 || nextList.indent > 0) return null
+  // After removing the final text from a list item and pressing Enter, Crepe
+  // can leave a standalone `<br />` immediately after the surviving list.
+  // It is an editor placeholder for the now-empty block, not source authored
+  // by the user. Permit that *local* tail while locating the list; the segment
+  // formatter stops before it, so we do not persist it or erase real `<br />`
+  // content elsewhere in the document.
+  const nextTailIsGeneratedEmptyBlock = nextEnd > nextList.end &&
+    /^[\s\r\n]*<br\s*\/?>\s*$/i.test(next.slice(nextList.end, nextEnd))
   if (start < previousList.start || start > previousList.end + 2 || previousEnd > previousList.end + 2) return null
-  if (start < nextList.start || start > nextList.end + 2 || nextEnd > nextList.end + 2) return null
+  if (
+    start < nextList.start ||
+    start > nextList.end + 2 ||
+    (nextEnd > nextList.end + 2 && !nextTailIsGeneratedEmptyBlock)
+  ) return null
 
   const previousListText = comparableListText(previous.slice(previousList.start, previousList.end))
   const nextListText = comparableListText(next.slice(nextList.start, nextList.end))
@@ -661,18 +855,79 @@ export const preserveListBlockChange = ({ source, previous, next, start, previou
     return null
   }
 
-  const listStart = sourceVisiblePositionAtRaw(previous, previousList.start)
-  const rawInsideSource = sourceRawFromVisibleIndex(source, listStart.visibleIndex, 'forward')
-  const sourceList = listBlockAt(source, rawInsideSource)
+  // `previousList` may be a canonical bullet tree that starts at an earlier
+  // neighbouring list (Crepe normalizes `-`/`+`/`*` into the same node). Map
+  // the actual change, not that widened tree's start, back into authored
+  // source; otherwise editing a `+` list rewrites the preceding `-` list.
+  const changedPosition = sourceVisiblePositionAtRaw(previous, start)
+  const rawInsideSource = sourceRawFromVisibleIndex(source, changedPosition.visibleIndex, 'forward')
+  let sourceList = listBlockAt(source, rawInsideSource, { splitBulletMarkers: true })
+  // A sibling inserted with Enter has a zero-width range in `previous` and
+  // starts exactly where the following source list begins. Mapping that
+  // boundary "forward" therefore lands on the following (`+`, `*`, …) list,
+  // even though the new canonical row belongs to the preceding list. Prefer
+  // that preceding authored list only for this exact structural insertion.
+  const nextLineAtChange = lineAt(next, start)
+  const sourceLineAtMappedPosition = Number.isFinite(rawInsideSource)
+    ? lineAt(source, rawInsideSource)
+    : null
+  const sourceLineMarker = sourceLineAtMappedPosition
+    ? listMarker(source.slice(sourceLineAtMappedPosition.start, sourceLineAtMappedPosition.end))
+    : null
+  if (
+    previousEnd === start &&
+    listMarker(next.slice(nextLineAtChange.start, nextLineAtChange.end)) &&
+    sourceLineAtMappedPosition &&
+    rawInsideSource >= sourceLineAtMappedPosition.start &&
+    rawInsideSource <= sourceLineAtMappedPosition.end &&
+    sourceLineMarker
+  ) {
+    const precedingList = listBlockAt(source, sourceLineAtMappedPosition.start - 1, { splitBulletMarkers: true })
+    if (
+      precedingList &&
+      precedingList.indent === sourceLineMarker[1].length &&
+      precedingList.end < sourceLineAtMappedPosition.start
+    ) {
+      sourceList = precedingList
+    }
+  }
+  if (!sourceList) {
+    // Appending through the paragraph immediately after a list has no visible
+    // list character at the delta start. Only in that boundary case fall back
+    // to the canonical list start; normal edits must keep the exact changed
+    // position above so neighbouring `-`/`+`/`*` lists stay separate.
+    const listStart = sourceVisiblePositionAtRaw(previous, previousList.start)
+    const fallbackRaw = sourceRawFromVisibleIndex(source, listStart.visibleIndex, 'forward')
+    sourceList = listBlockAt(source, fallbackRaw, { splitBulletMarkers: true })
+  }
   if (!sourceList) return null
 
+  const narrowedPreviousList = canonicalListSegmentForSource({
+    source,
+    sourceList,
+    canonical: previous,
+    offset: start
+  })
+  const narrowedNextList = canonicalListSegmentForSource({
+    source,
+    sourceList,
+    canonical: next,
+    offset: start
+  })
+  if (!narrowedPreviousList || !narrowedNextList) return null
   const sourceListText = comparableListText(source.slice(sourceList.start, sourceList.end))
-  if (!sourceListText || sourceListText !== previousListText) return null
+  const narrowedPreviousText = comparableListText(previous.slice(narrowedPreviousList.start, narrowedPreviousList.end))
+  if (
+    !sourceListText ||
+    !narrowedPreviousText ||
+    !listTextIsSubsequence(sourceListText, narrowedPreviousText) ||
+    !listTextIsSubsequence(narrowedPreviousText, sourceListText)
+  ) return null
 
   const replacement = formatCanonicalListLikeSource(
     source.slice(sourceList.start, sourceList.end),
-    previous.slice(previousList.start, previousList.end),
-    next.slice(nextList.start, nextList.end)
+    previous.slice(narrowedPreviousList.start, narrowedPreviousList.end),
+    next.slice(narrowedNextList.start, narrowedNextList.end)
   )
   return {
     markdown: source.slice(0, sourceList.start) +

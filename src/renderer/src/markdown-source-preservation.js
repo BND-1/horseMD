@@ -14,6 +14,7 @@ import {
   listBlockAt,
   compactGeneratedListSpacing,
   normalizeEmptyListItems,
+  preserveBatchedListBlockChanges,
   preserveEmptyListItemTextChange,
   preserveListBlockChange,
   preserveTypedBulletInputRule,
@@ -198,6 +199,12 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
         ? { ...listPreserved, markdown: repaired, reason: 'list-merge-repaired' }
         : listPreserved
     }
+    const batchedListPreserved = preserveBatchedListBlockChanges({
+      source: sourceMarkdown,
+      previous,
+      next
+    })
+    if (batchedListPreserved) return batchedListPreserved
     const linesPreserved = preserveChangedLineRegion({
       source: sourceMarkdown,
       previous,

@@ -355,6 +355,79 @@ assert.equal(listItemInserted.markdown, [
   '这段不要改。'
 ].join('\n'), 'adding one item must keep the authored compact-list and bullet style')
 
+// A delayed markdownUpdated can batch several independent edits before the
+// preservation layer sees a new canonical snapshot. Distinct neighbouring
+// `-`, `+` and `*` lists must still retain their own authored spelling rather
+// than inheriting the serializer's marker from whichever list is first.
+const mixedMarkerSource = [
+  '- dash-one',
+  '- dash-two',
+  '',
+  '+ plus-one',
+  '+ plus-two',
+  '',
+  '* star-one',
+  '* star-two',
+  '',
+  '1) paren-one',
+  '2) paren-two'
+].join('\n')
+const mixedMarkerCanonical = [
+  '* dash-one',
+  '',
+  '* dash-two',
+  '',
+  '- plus-one',
+  '',
+  '- plus-two',
+  '',
+  '* star-one',
+  '',
+  '* star-two',
+  '',
+  '1. paren-one',
+  '2. paren-two'
+].join('\n')
+const mixedMarkerBatch = preserveRichMarkdownSource(
+  mixedMarkerSource,
+  mixedMarkerCanonical,
+  [
+    '* dash-one',
+    '',
+    '* dash-two',
+    '',
+    '* dash-three',
+    '',
+    '- plus-one',
+    '',
+    '- plus-two',
+    '',
+    '- plus-three',
+    '',
+    '* star-one',
+    '',
+    '<br />',
+    '',
+    '1. paren-one',
+    '2. paren-two'
+  ].join('\n')
+)
+assert.equal(mixedMarkerBatch.preserved, true)
+assert.equal(mixedMarkerBatch.markdown, [
+  '- dash-one',
+  '- dash-two',
+  '- dash-three',
+  '',
+  '+ plus-one',
+  '+ plus-two',
+  '+ plus-three',
+  '',
+  '* star-one',
+  '',
+  '1) paren-one',
+  '2) paren-two'
+].join('\n'), 'batched independent list edits must retain per-list markers and omit transient empty blocks')
+
 const typedListItemAppended = preserveRichMarkdownSource(
   '- 第一项\n\n',
   '* 第一项\n\n',
@@ -391,6 +464,20 @@ assert.equal(
 
 assert.equal(
   restoreTypedBulletMarker({
+    markdown: 'intro\n\n* nested-one\n* nested-two\n',
+    previousCanonical: 'intro\n',
+    canonical: 'intro\n\n* nested-one\n* nested-two\n',
+    // Simulates the old paragraph position after an input rule moved it into
+    // a nested list: it is no longer close to the serialized marker row.
+    canonicalOffset: 999,
+    marker: '-'
+  }),
+  'intro\n\n- nested-one\n- nested-two\n',
+  'a stale pre-input position must fall back to the actual changed list row instead of losing the authored bullet marker'
+)
+
+assert.equal(
+  restoreTypedBulletMarker({
     markdown: '1. 第一项\n2. 第二项\n1) 重新创建项\n',
     previousCanonical: '1. 第一项\n2. 第二项\n',
     canonical: '1. 第一项\n2. 第二项\n1) 重新创建项\n',
@@ -408,6 +495,33 @@ assert.equal(
   ),
   '1. 外层\n   1. 子项\n',
   'a second generated serialization must retain ordered punctuation after the input intent is consumed'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '- dash one\n',
+    '* dash one\n* dash two\n'
+  ),
+  '- dash one\n- dash two\n',
+  'a newly appended scratch-list row must inherit the authored dash instead of reverting to Crepe’s star'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '- dash one\n- dash two\n\n+ plus one\n',
+    '* dash one\n* dash two\n* plus one\n* plus two\n'
+  ),
+  '- dash one\n- dash two\n+ plus one\n+ plus two\n',
+  'a newly appended row in a later scratch list must inherit that list’s own marker, even if Crepe merges adjacent bullet nodes'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '- outer one\n- outer two\n',
+    '* outer one\n* outer two\n  * child one\n  * child two\n'
+  ),
+  '- outer one\n- outer two\n  - child one\n  - child two\n',
+  'a Tab-created child list must inherit its parent marker instead of serializing as Crepe’s default star'
 )
 
 

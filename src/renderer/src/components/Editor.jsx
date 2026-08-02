@@ -314,6 +314,7 @@ export default function Editor({
       const generatedInputIntents = pendingMarkdownInputIntents.length
         ? pendingMarkdownInputIntents
         : pendingMarkdownInputIntent ? [pendingMarkdownInputIntent] : []
+      const consumedInputIntents = new Set()
       for (const inputIntent of generatedInputIntents) {
         if (inputIntent?.type !== 'bullet-list' && inputIntent?.type !== 'ordered-list') continue
         try {
@@ -325,22 +326,40 @@ export default function Editor({
             currentView?.state.doc,
             remark
           )
-          markdown = restoreTypedBulletMarker({
+          const restored = restoreTypedBulletMarker({
             markdown,
             canonical,
             previousCanonical: inputIntent.canonical,
             canonicalOffset,
             marker: inputIntent.marker
           })
+          // A real macOS key sequence can publish an intermediate
+          // markdownUpdated for the literal `-`/`+` line *before* Milkdown's
+          // input rule turns it into a list.  Do not discard the intent in that
+          // intermediate callback: only consume it once it actually changed a
+          // serialized list marker.  Otherwise the following list transaction
+          // falls back to Crepe's `*` permanently.
+          if (restored !== markdown) consumedInputIntents.add(inputIntent)
+          markdown = restored
         } catch {
           // Canonical Markdown is still structurally correct if a transient
           // selection cannot be mapped while the editor is switching modes.
         }
       }
       markdown = preserveGeneratedBulletMarkers(lastMarkdownRef.current, markdown)
+      if (consumedInputIntents.size) {
+        pendingMarkdownInputIntents = pendingMarkdownInputIntents
+          .filter((intent) => !consumedInputIntents.has(intent))
+        if (pendingMarkdownInputIntent && consumedInputIntents.has(pendingMarkdownInputIntent)) {
+          pendingMarkdownInputIntent = pendingMarkdownInputIntents.at(-1) || null
+        }
+      }
       if (consumeInputIntent) {
-        pendingMarkdownInputIntent = null
-        pendingMarkdownInputIntents = []
+        // A source-mode flush must not throw away an intent that has only seen
+        // the literal pre-input marker. Keep unresolved intents for the next
+        // real list transaction; stale entries are already pruned at capture.
+        pendingMarkdownInputIntents = pendingMarkdownInputIntents
+          .filter((intent) => Date.now() - intent.at < 30000)
       }
       return markdown
     }
@@ -532,8 +551,6 @@ export default function Editor({
           } else if (generatedScratchRef.current) {
             const markdown = generatedScratchMarkdownForCanonical(canonical)
             preserved = { markdown, reason: 'generated-scratch-canonical' }
-            pendingMarkdownInputIntent = null
-            pendingMarkdownInputIntents = []
           } else if (pendingList?.convertedSource && pendingList?.convertedCanonical) {
             preserved = canonical === pendingList.convertedCanonical
               ? { markdown: pendingList.convertedSource }
