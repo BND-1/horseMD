@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import {
@@ -22,13 +23,14 @@ const schema = new Schema({
     table_cell: { content: 'paragraph+' },
     image: { group: 'block', atom: true, attrs: { src: { default: '' } } },
     inline_image: { group: 'inline', inline: true, atom: true, attrs: { src: { default: '' } } },
+    inline_math: { group: 'inline', inline: true, atom: true, attrs: { value: { default: '' } } },
     hard_break: { group: 'inline', inline: true, atom: true },
     html: { group: 'block', atom: true, attrs: { value: { default: '' } } },
     text: { group: 'inline' }
   }
 })
 
-const remark = unified().use(remarkParse).use(remarkGfm)
+const remark = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
 const text = (value) => value ? schema.text(value) : null
 const paragraph = (value) => schema.node('paragraph', null, text(value))
 const heading = (value, level = 1) => schema.node('heading', { level }, text(value))
@@ -147,6 +149,25 @@ const cases = []
     pmExtraBefore: 1
   })
   cases.push('inline image position')
+}
+
+{
+  const markdown = 'before $x^2 + y^2$ unique-after-inline-math\n'
+  const pmDoc = doc(schema.node('paragraph', null, [
+    text('before '),
+    schema.node('inline_math', { value: 'x^2 + y^2' }),
+    text(' unique-after-inline-math')
+  ]))
+  assertTextRoundTrip({
+    label: 'text after inline math',
+    markdown,
+    pmDoc,
+    token: 'unique-after-inline-math',
+    local: 12,
+    pmText: 'before  unique-after-inline-math',
+    pmExtraBefore: 1
+  })
+  cases.push('inline math atom position')
 }
 
 {

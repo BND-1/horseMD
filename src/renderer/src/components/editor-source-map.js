@@ -9,6 +9,33 @@ const textOf = (node) => {
   return node.children.map(textOf).join('')
 }
 
+// ProseMirror represents inline math, images and hard breaks as atomic inline
+// nodes. Their Markdown spelling is not part of the PM paragraph's textContent,
+// so it cannot participate in cross-model block identification. Keep the
+// regular `text` value for source-local mapping, but compare blocks through a
+// projection that omits those atoms on both sides. Otherwise one inline `$…$`
+// makes an exact match fail and the old positional fallback can select a wholly
+// unrelated paragraph in a chunked long document.
+const comparableTextOf = (node) => {
+  if (!node) return ''
+  switch (node.type) {
+    case 'inlineMath':
+    case 'image':
+    case 'imageReference':
+    case 'break':
+      return ''
+    case 'text':
+    case 'inlineCode':
+    case 'code':
+    case 'html':
+    case 'yaml':
+    case 'math':
+      return node.value == null ? '' : String(node.value)
+    default:
+      return node.children ? node.children.map(comparableTextOf).join('') : ''
+  }
+}
+
 const valueSpan = (markdown, node) => {
   const start = nodeStart(node)
   const end = nodeEnd(node)
@@ -37,11 +64,11 @@ const collectInlineItems = (markdown, node, items = []) => {
     case 'html':
     case 'yaml':
     case 'math':
-    case 'inlineMath':
       pushTextItems(items, markdown, node)
       return items
     case 'image':
-    case 'imageReference': {
+    case 'imageReference':
+    case 'inlineMath': {
       const start = nodeStart(node)
       const end = nodeEnd(node)
       if (Number.isFinite(start) && Number.isFinite(end)) items.push({ rawStart: start, rawEnd: end, atom: true })
@@ -71,6 +98,7 @@ const mdBlock = (markdown, node, kind = node.type) => {
     start,
     end,
     text: textOf(node),
+    matchText: comparableTextOf(node),
     items: collectInlineItems(markdown, node)
   }
 }
@@ -183,6 +211,7 @@ const collectPmBlocks = (doc) => {
         pos,
         contentPos: pos + 1,
         text: node.textContent || '',
+        matchText: node.textContent || '',
         items: collectPmInlineItems(node, pos + 1),
         textblock: true,
         node
@@ -195,6 +224,7 @@ const collectPmBlocks = (doc) => {
         pos,
         contentPos: pos,
         text: node.textContent || '',
+        matchText: node.textContent || '',
         atom: true,
         node
       })
@@ -249,17 +279,17 @@ const normText = (text) => String(text || '').replace(/\s+/g, ' ').trim()
 const correspondingPmBlock = (mdBlocks, pmBlocks, mdIndex) => {
   if (!pmBlocks.length || mdIndex < 0) return null
   const md = mdBlocks[mdIndex]
-  const targetText = normText(md.text)
+  const targetText = normText(md.matchText ?? md.text)
   if (targetText) {
     const sameTextBefore = mdBlocks
       .slice(0, mdIndex)
-      .filter((b) => sameKind(b.kind, md.kind) && normText(b.text) === targetText)
+      .filter((b) => sameKind(b.kind, md.kind) && normText(b.matchText ?? b.text) === targetText)
       .length
-    const exact = pmBlocks.filter((b) => sameKind(md.kind, b.kind) && normText(b.text) === targetText)
+    const exact = pmBlocks.filter((b) => sameKind(md.kind, b.kind) && normText(b.matchText ?? b.text) === targetText)
     if (exact.length) return exact[Math.min(sameTextBefore, exact.length - 1)]
     const contains = pmBlocks.filter((b) => {
       if (!sameKind(md.kind, b.kind)) return false
-      const text = normText(b.text)
+      const text = normText(b.matchText ?? b.text)
       return text && (text.includes(targetText) || targetText.includes(text))
     })
     if (contains.length) return contains[Math.min(sameTextBefore, contains.length - 1)]
@@ -275,17 +305,17 @@ const correspondingPmBlock = (mdBlocks, pmBlocks, mdIndex) => {
 const correspondingMdBlock = (mdBlocks, pmBlocks, pmIndex) => {
   if (!mdBlocks.length || pmIndex < 0) return null
   const pm = pmBlocks[pmIndex]
-  const targetText = normText(pm.text)
+  const targetText = normText(pm.matchText ?? pm.text)
   if (targetText) {
     const sameTextBefore = pmBlocks
       .slice(0, pmIndex)
-      .filter((b) => sameKind(b.kind, pm.kind) && normText(b.text) === targetText)
+      .filter((b) => sameKind(b.kind, pm.kind) && normText(b.matchText ?? b.text) === targetText)
       .length
-    const exact = mdBlocks.filter((b) => sameKind(b.kind, pm.kind) && normText(b.text) === targetText)
+    const exact = mdBlocks.filter((b) => sameKind(b.kind, pm.kind) && normText(b.matchText ?? b.text) === targetText)
     if (exact.length) return exact[Math.min(sameTextBefore, exact.length - 1)]
     const contains = mdBlocks.filter((b) => {
       if (!sameKind(b.kind, pm.kind)) return false
-      const text = normText(b.text)
+      const text = normText(b.matchText ?? b.text)
       return text && (text.includes(targetText) || targetText.includes(text))
     })
     if (contains.length) return contains[Math.min(sameTextBefore, contains.length - 1)]

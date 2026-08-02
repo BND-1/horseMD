@@ -75,6 +75,10 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 raw offset ↔ ProseMirror 映射不能以 `textContent.length` 代表 textblock 的位置长度。硬换行和行内图片在 ProseMirror 中各占一个位置但不进入 `textContent`；两侧现在都构建逐字符/逐原子 item 序列并按 item index 对齐。新增映射类型时必须同时测试节点之前、节点之后和段尾。
 
+行内公式也属于这一类 atom：mdast 的 `inlineMath` 有 TeX 原文，而 ProseMirror 的 `math_inline` 不会把 TeX 放入段落 `textContent`。块定位不能直接拿两种文本做相等判断；`editor-source-map.js` 必须另外使用**同时忽略 inline math、图片和硬换行 atom 的比较投影**先锁定同一段，再用完整 inline item 序列计算段内 raw offset。否则某一段中的 `$…$` 会让块匹配失败，并在长文档的 index fallback 下把光标送到无关段落。该回归由 `inline math atom position` 与 `HORSEMD_RAW_OFFSET_TARGET=inline-math npm run test:mode-switch-raw-offset-ui` 覆盖，事故和真实文档验证见 [Issue #104 长文档模式切换报告](./issue-104-long-document-mode-switch.md)。
+
+只滚动阅读而可见区没有 caret 时，富文本编辑器保持挂载，原有 selection 已足以供返回富文本时保留；此时不得为了计算一个未使用的 caret/raw viewport offset 而重新序列化或完整解析整篇 Markdown。`useSourceModeSwitch.js` 仅在可见 caret 跟随路径调用 `markdownOffsetFromSelection()`；阅读路径只保存 DOM viewport 的 snippet + 比例锚点。`flushMarkdown()` 也仅在真实用户编辑尚未被 `markdownUpdated` 提交时读取 `view.state.doc`。这既避免 400KB+ 文档的纯阅读切换卡顿，也避免把 atom 结构上的错误 raw offset 用作滚动恢复优先级。
+
 ### 多 MIME 复制与 Markdown 粘贴
 
 HorseMD 富文本复制提供三个语义不同的通道：
@@ -123,11 +127,14 @@ npm run test:markdown-preservation
 # 纯函数：源码 textarea 保留 CRLF、BOM、混合换行
 npm run test:source-text-fidelity
 
-# 映射：重复文本、表格、代码、硬换行、行内/块级图片、HTML
+# 映射：重复文本、表格、代码、硬换行、行内公式、行内/块级图片、HTML
 npm run test:source-map
 
-# 精确 raw offset：表格、代码、硬换行、连续双向切换及切回后立即输入
+# 精确 raw offset：表格、代码、行内公式、硬换行、连续双向切换及切回后立即输入
 npm run test:mode-switch-raw-offset-ui
+
+# 仅运行行内公式位置的双向 UI 回归
+HORSEMD_RAW_OFFSET_TARGET=inline-math npm run test:mode-switch-raw-offset-ui
 
 # 真实 Electron：10 个快照、真实写盘、列表新增、双向切换和粘贴
 npm run test:issue-77-ui

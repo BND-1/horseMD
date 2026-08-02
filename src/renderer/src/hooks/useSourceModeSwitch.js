@@ -156,24 +156,27 @@ export function useSourceModeSwitch({
       preserveRichCaretFollowRef.current = false
       caretFollowRef.current = isRichCaretVisible(view, editorHostRef.current)
       sourceEnteredWithCaretFollowRef.current = caretFollowRef.current
-      const richCaret = captureRichCaret(view)
+      // When the existing caret is off-screen, the user is reading rather than
+      // editing. The mounted rich editor already retains that selection for the
+      // return trip, so computing a full raw caret map only burns time on a
+      // large document and can let an inline atom choose a wrong source block.
+      // The independent viewport anchor is the only state that owns this path.
+      const richCaret = caretFollowRef.current ? captureRichCaret(view) : null
       const carried = sourceCaretRoundTripRef.current
       const canReuseSourceOffset = !!carried &&
         carried.id === id &&
         carried.doc === view?.state.doc &&
         carried.pmPos === view?.state.selection.head
-      const rawOffset = canReuseSourceOffset
-        ? carried.rawOffset
-        : editorApis.current[id]?.markdownOffsetFromSelection?.()
-      if (richCaret && Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
+      if (richCaret) {
+        const rawOffset = canReuseSourceOffset
+          ? carried.rawOffset
+          : editorApis.current[id]?.markdownOffsetFromSelection?.()
+        if (Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
+      }
       caretAnchorRef.current = richCaret
 
       const viewport = captureRichViewport(editorHostRef.current, view)
-      const viewportRawOffset = editorApis.current[id]?.markdownOffsetFromViewportTop?.()
-      if (viewport && Number.isFinite(viewportRawOffset)) {
-        viewport.origin = 'rich'
-        viewport.rawOffset = viewportRawOffset
-      }
+      if (viewport) viewport.origin = 'rich'
       viewportAnchorRef.current = viewport
     }
 

@@ -29,6 +29,8 @@ export function createEditorApi({
   lastMarkdownRef,
   canonicalMarkdownRef,
   programmaticReplaceRef,
+  hasPendingRichFlush,
+  clearPendingRichFlush,
   generatedScratchRef,
   getGeneratedScratchMarkdown,
   canonicalForSource,
@@ -148,6 +150,7 @@ export function createEditorApi({
       }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
       lastMarkdownRef.current = source
+      clearPendingRichFlush?.()
       if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
       const canonical = canonicalForSource(serializeCurrentDocument())
@@ -166,11 +169,20 @@ export function createEditorApi({
   const flushMarkdown = () => {
     if (isDestroyed?.() || !crepeRef.current) return null
     try {
+      // A reading-only source toggle must not serialize an entire large
+      // ProseMirror document. The flag is raised synchronously for every user
+      // edit and cleared only after markdownUpdated (or this flush) commits the
+      // matching source snapshot, so immediate save/switch correctness remains
+      // intact without making ordinary reading toggles needlessly slow.
+      if (!hasPendingRichFlush?.()) return lastMarkdownRef.current
       // Saves and source-mode switches can occur before Milkdown publishes its
       // delayed markdownUpdated callback. Serialize the current ProseMirror
       // document instead of reading Crepe's potentially stale cached snapshot.
       const canonical = canonicalForSource(serializeCurrentDocument())
-      if (canonical === canonicalMarkdownRef.current) return lastMarkdownRef.current
+      if (canonical === canonicalMarkdownRef.current) {
+        clearPendingRichFlush?.()
+        return lastMarkdownRef.current
+      }
       const preserved = generatedScratchRef?.current
         ? {
             markdown: getGeneratedScratchMarkdown?.(canonical) || preserveGeneratedBulletMarkers(
@@ -187,6 +199,7 @@ export function createEditorApi({
           )
       lastMarkdownRef.current = preserved.markdown
       canonicalMarkdownRef.current = canonical
+      clearPendingRichFlush?.()
       return preserved.markdown
     } catch {
       return null

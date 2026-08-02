@@ -1,6 +1,6 @@
 # 用户教程功能覆盖矩阵
 
-> 用途：把用户实际看得到的能力、代码所有者、教程入口和发布前检查放在同一处。更新时间：2026-07-23。
+> 用途：把用户实际看得到的能力、代码所有者、教程入口和发布前检查放在同一处。更新时间：2026-08-02。
 >
 > 状态说明：**已复核**表示教程步骤和当前实现边界已核对；**待发布截图**表示正文可用，但下次正式发布需用新安装包确认并重拍受影响界面；**待专项复核**表示已有教程，尚未按本轮变更逐项对照。
 
@@ -17,7 +17,7 @@
 | --- | --- | --- | --- |
 | 新建、打开、保存、外部修改提醒 | `useFileOps.js`、`useAppLifecycle.js` | `guide/basics/create-open-save.md` | 待专项复核：下次发布检查外部保存冲突提示截图与文案。 |
 | 多根工作区、文件树、文件操作 | `useWorkspace.js`、`useSidebarTree.js`、`Sidebar.jsx` | `guide/basics/workspace.md` | 已复核：明确工作区只管理本地文件；与同步区分。 |
-| 富文本 / 源码切换、原文保真、源码查找 | `useSourceModeSwitch.js`、`scrollAnchor.js`、`markdown-source-preservation.js` | `guide/basics/rich-and-source.md` | 待发布截图：正文已覆盖光标/阅读位置、表格和大文档边界。 |
+| 富文本 / 源码切换、原文保真、源码查找 | `useSourceModeSwitch.js`、`scrollAnchor.js`、`markdown-source-preservation.js` | `guide/basics/rich-and-source.md` | 已复核：正文覆盖可见光标/纯阅读视口、表格、代码、行内公式和 400KB+ 长文档边界；根因与真实验证记录见 `issue-104-long-document-mode-switch.md`。 |
 | 斜杠命令 | `editor-slash-menu.js` | `guide/editing/slash-command.md` | 待专项复核：确认所有可见别名与命令清单一致。 |
 | 格式、图片、链接、附件 | `Editor.jsx`、`editor-dom-content.js`、`useAttachments.js` | `guide/editing/formatting.md`、`images.md`、`links-and-attachments.md` | 待专项复核：链接协议与附件路径应在发布前用真实文件再验。 |
 | 表格、HTML 表格、单元格换行、列宽 | `editor-tablebreak.js`、`editor-dom-layout.js`、`editor-html.js` | `guide/editing/tables.md` | 已复核：自然宽度、内部横向滚动、`/表格`/`/table`/`/bg`、长按实时调列宽、不回跳，以及 PDF 保留列比例和紧凑行距均已写入。 |

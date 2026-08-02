@@ -23,6 +23,8 @@ Before table paragraph with a unique caret target.
 - First list item
 - unique-list-target with inline \`code\`
 
+Text before $x^2 + y^2$ unique-inline-math-target after formula
+
 Hard break first\\
 unique-hardbreak-target after break
 
@@ -38,10 +40,19 @@ const targets = [
   { token: 'unique-table-model-target', local: 12 },
   { token: 'unique-table-shell-target', local: 11 },
   { token: 'unique-list-target', local: 10 },
+  { token: 'unique-inline-math-target', local: 12 },
   { token: 'unique-hardbreak-target', local: 14 },
   { token: 'uniqueCodeTarget', local: 8 },
   { token: 'unique final target', local: 6 }
 ]
+
+const selectedTargets = process.env.HORSEMD_RAW_OFFSET_TARGET
+  ? targets.filter((target) => target.token.includes(process.env.HORSEMD_RAW_OFFSET_TARGET))
+  : targets
+
+if (!selectedTargets.length) {
+  throw new Error(`No raw-offset target matches ${process.env.HORSEMD_RAW_OFFSET_TARGET}`)
+}
 
 const waitFor = async (check, message, attempts = 80) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -268,14 +279,14 @@ async function main() {
       'Rich editor did not render'
     )
     if (!process.env.HORSEMD_ONLY_IMMEDIATE_SWITCH) {
-      for (const target of targets) {
+      for (const target of selectedTargets) {
         console.log(`  testing ${target.token}`)
         await runChain(app, target)
       }
     }
     console.log('  testing immediate input after source switch')
     await runImmediateInputAfterSourceSwitch(app)
-    console.log(`PASS mode-switch raw offset UI: ${targets.length} positions across both continuous chains`)
+    console.log(`PASS mode-switch raw offset UI: ${selectedTargets.length} positions across both continuous chains`)
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

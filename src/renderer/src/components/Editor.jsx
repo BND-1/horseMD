@@ -211,11 +211,18 @@ export default function Editor({
     })
 
     let userEditUntil = 0
+    // `markdownUpdated` normally catches up immediately, but a mode switch can
+    // happen in the narrow gap after a visible ProseMirror transaction. Keep a
+    // precise flag for that gap: it preserves the required immediate flush
+    // without serializing a 400K+ document again for a reading-only toggle.
+    let richFlushPending = false
     const markUserEdit = (ttl = 8000) => {
       programmaticReplaceRef.current = null
       userEditUntil = Date.now() + ttl
+      richFlushPending = true
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
+    const clearRichFlushPending = () => { richFlushPending = false }
     const pendingRawMarkdownPasteRef = { current: null }
     let pendingListConversion = null
     let pendingMarkdownInputIntent = null
@@ -265,6 +272,7 @@ export default function Editor({
         ).markdown
         lastMarkdownRef.current = committed
         canonicalMarkdownRef.current = canonical
+        clearRichFlushPending()
         onChange?.(committed, false)
       } catch {
         // The live editor remains correct; the normal markdownUpdated callback
@@ -283,6 +291,7 @@ export default function Editor({
         )
         lastMarkdownRef.current = preserved.markdown
         canonicalMarkdownRef.current = canonical
+        clearRichFlushPending()
         onChange?.(preserved.markdown, false)
       } catch {
         // The editor remains usable if serialization is transiently unavailable;
@@ -394,6 +403,7 @@ export default function Editor({
           )
           lastMarkdownRef.current = preserved.markdown
           canonicalMarkdownRef.current = canonical
+          clearRichFlushPending()
           onChange?.(preserved.markdown, false)
         } catch {
           // markdownUpdated remains the authoritative fallback if a serializer
@@ -505,6 +515,7 @@ export default function Editor({
       ) {
         lastMarkdownRef.current = pending.convertedSource
         canonicalMarkdownRef.current = pending.convertedCanonical
+        clearRichFlushPending()
         pendingListConversion = null
         onChange?.(pending.convertedSource, false)
       }
@@ -544,7 +555,13 @@ export default function Editor({
         const pendingPaste = pendingRawMarkdownPasteRef.current
         const pendingList = pendingListConversion
         if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
-          if (!pendingPaste && !pendingList && canonical === canonicalMarkdownRef.current) return
+          if (!pendingPaste && !pendingList && canonical === canonicalMarkdownRef.current) {
+            // The matching source snapshot has already been committed. Clear
+            // the synchronous edit guard so a later reading-only mode switch
+            // does not reserialize the same large document.
+            clearRichFlushPending()
+            return
+          }
           let preserved
           if (pendingPaste) {
             preserved = { markdown: pendingPaste.markdown }
@@ -679,6 +696,7 @@ export default function Editor({
           // and shows in the source textarea after this user edit.
           lastMarkdownRef.current = preserved.markdown
           canonicalMarkdownRef.current = canonical
+          clearRichFlushPending()
           pendingRawMarkdownPasteRef.current = null
           pendingListConversion = null
           onChange?.(preserved.markdown, false)
@@ -854,6 +872,8 @@ export default function Editor({
           lastMarkdownRef,
           canonicalMarkdownRef,
           programmaticReplaceRef,
+          hasPendingRichFlush: () => richFlushPending,
+          clearPendingRichFlush: clearRichFlushPending,
           generatedScratchRef,
           getGeneratedScratchMarkdown: (canonical) => generatedScratchMarkdownForCanonical(canonical, true),
           canonicalForSource,
