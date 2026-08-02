@@ -330,12 +330,7 @@ export default function Editor({
             canonical,
             previousCanonical: inputIntent.canonical,
             canonicalOffset,
-            marker: inputIntent.marker,
-            // A first callback can batch `- `, later Enter/Tab and nested
-            // typing while source is still empty. Nested `* <br />` nodes in
-            // that batch are editor-generated, so inherit the user's explicit
-            // outer bullet token before any generated source baseline exists.
-            inheritNested: !lastMarkdownRef.current && inputIntent.type === 'bullet-list'
+            marker: inputIntent.marker
           })
         } catch {
           // Canonical Markdown is still structurally correct if a transient
