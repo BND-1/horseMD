@@ -1,6 +1,20 @@
 import { sleep } from './cdp.mjs'
 
 const keyCode = (value) => {
+  const special = {
+    Backspace: 8,
+    Tab: 9,
+    Enter: 13,
+    Escape: 27,
+    End: 35,
+    Home: 36,
+    ArrowLeft: 37,
+    ArrowUp: 38,
+    ArrowRight: 39,
+    ArrowDown: 40,
+    Delete: 46
+  }
+  if (special[value]) return special[value]
   if (value.length !== 1) return 0
   const code = value.toUpperCase().charCodeAt(0)
   return Number.isFinite(code) ? code : 0

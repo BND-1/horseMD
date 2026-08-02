@@ -176,10 +176,54 @@ async function main() {
     return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
   })()`)
   if (!tabPoint) throw new Error('Active tab not found')
-  await click(send, tabPoint.x, tabPoint.y, 'right')
+  await evaluate(`(() => {
+    const tab = document.querySelector('.tab.active') || document.querySelector('.tab')
+    tab.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: innerWidth - 4,
+      clientY: innerHeight - 4,
+      button: 2
+    }))
+  })()`)
   await sleep(150)
+  const exportMenuOpened = await evaluate(`(() => {
+    const trigger = document.querySelector('.tab-ctxmenu .context-submenu-trigger')
+    if (!trigger) return false
+    trigger.focus()
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    return true
+  })()`)
+  if (!exportMenuOpened) throw new Error('Export submenu trigger not found')
+  for (let i = 0; i < 20; i += 1) {
+    if (await evaluate(`!!document.querySelector('.context-submenu')`)) break
+    await sleep(50)
+  }
+  const exportFormats = await evaluate(`(() => [...document.querySelectorAll('.context-submenu button')]
+    .map((node) => node.textContent.trim()))()`)
+  if (exportFormats.length !== 8 || !exportFormats.some((text) => /HTML/i.test(text)) || !exportFormats.some((text) => /Word/i.test(text))) {
+    throw new Error(`Export submenu formats incomplete: ${JSON.stringify(exportFormats)}`)
+  }
+  const submenuGeometry = await evaluate(`(() => {
+    const trigger = document.querySelector('.tab-ctxmenu .context-submenu-trigger')?.getBoundingClientRect()
+    const submenu = document.querySelector('.context-submenu')?.getBoundingClientRect()
+    return trigger && submenu ? {
+      left: submenu.left,
+      right: submenu.right,
+      top: submenu.top,
+      bottom: submenu.bottom,
+      triggerLeft: trigger.left,
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight
+    } : null
+  })()`)
+  if (!submenuGeometry || submenuGeometry.left < 0 || submenuGeometry.right > submenuGeometry.viewportWidth ||
+    submenuGeometry.top < 0 || submenuGeometry.bottom > submenuGeometry.viewportHeight ||
+    submenuGeometry.left >= submenuGeometry.triggerLeft) {
+    throw new Error(`Export submenu did not flip into the viewport: ${JSON.stringify(submenuGeometry)}`)
+  }
   const opened = await evaluate(`(() => {
-    const button = [...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent))
+    const button = [...document.querySelectorAll('.context-submenu button')].find((node) => /PDF/i.test(node.textContent))
     button?.click()
     return !!button
   })()`)
@@ -190,12 +234,13 @@ async function main() {
     return {
       open: !!studio,
       sections: studio?.querySelectorAll('.hm-pdf-settings section').length || 0,
-      orientationCount: studio?.querySelectorAll('.hm-pdf-segmented button').length || 0,
+      orientationCount: studio?.querySelectorAll('.hm-pdf-segmented:not(.hm-pdf-density) button').length || 0,
+      densityCount: studio?.querySelectorAll('.hm-pdf-density button').length || 0,
       switches: studio?.querySelectorAll('.hm-pdf-switch').length || 0,
       hasPreview: !!studio?.querySelector('.hm-pdf-preview')
     }
   })()`)
-  if (!dialog.open || dialog.sections !== 4 || dialog.orientationCount !== 2 || dialog.switches < 5 || !dialog.hasPreview) {
+  if (!dialog.open || dialog.sections !== 4 || dialog.orientationCount !== 2 || dialog.densityCount !== 3 || dialog.switches < 5 || !dialog.hasPreview) {
     throw new Error(`PDF export studio incomplete: ${JSON.stringify(dialog)}`)
   }
   await waitForPreview(evaluate, 'initial')

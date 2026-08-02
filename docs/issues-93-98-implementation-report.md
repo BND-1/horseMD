@@ -32,6 +32,8 @@ PDF 预览继续采用每个 renderer 最新请求胜出。被后续设置替代
 
 Crepe 代码块按钮原先直接调用浏览器 Clipboard API，HorseMD 的监听器无论实际写入结果如何都会显示“已复制”。现在捕获按钮点击，从对应 ProseMirror `code_block` 读取完整文本，并通过 preload 的原生剪贴板 IPC 写入；成功后才显示反馈。
 
+后续长代码回归发现，旧节点查找只检查 `nodeAt/nodeAfter/nodeBefore`，没有检查 `ResolvedPos` 所在的父节点。短代码恰好能命中，超过约 50 行的 CodeMirror 开始虚拟化后，定位失败会回退读取当前 DOM 中约 30–65 个 `.cm-line`，于是 100 行以上的 `settings.json` 被静默截断。修复后先从当前位置逐层向上查找 `code_block`，再按 DOM 与 ProseMirror 中代码块的文档顺序兜底；虚拟 DOM 文本回退已经移除。真实 UI 回归使用 120 行 JSON，并明确断言 DOM 行数小于源码行数时，系统剪贴板仍逐字等于完整 122 行代码。代码块内部的 `Cmd+A/Cmd+C` 与从首行真实 Shift 选择 65 行也分别校验系统剪贴板；两者由 CodeMirror 文档状态处理，原本即可跨越虚拟 DOM，不应为修复按钮而接管或改写其原生选区复制。完整事故、停止条件和测试基础设施注意事项见 [长代码块复制截断事故复盘](./long-code-copy-virtualization-regression.md)。
+
 富文本 copy 的 HTML 通道保留内联样式。0.12.46 曾把 Milkdown serializer 的结果直接写入 `text/plain`，试图保留粗体、行内代码等 Markdown 标记；但 serializer 输出的是块级 Markdown，不是选区纯文本，因此段落会带额外换行，有序列表会带自动生成的 `1. `。0.12.47 改为三通道契约：`text/plain` 使用浏览器选区的可见文字，`text/html` 保留富文本样式，`text/markdown` 单独保存结构化 Markdown，HorseMD 内部粘贴优先读取该通道。完整事故记录见 [0.12.46 剪贴板 MIME 回归报告](./clipboard-mime-regression-0.12.46.md)。
 
 Crepe 当前构建已经加载官方 history 插件，Electron 菜单也保留原生 undo/redo role。真实键盘测试证明普通富文本输入可由 `Cmd+Z` 撤销，因此未重复安装历史插件或新增第二套撤销栈。
@@ -47,7 +49,7 @@ Crepe 当前构建已经加载官方 history 插件，Electron 菜单也保留�
 - `npm run test:pdf-export`：保存状态和 latest-task runner 通过。
 - `npm run test:security`：主进程权限和 PDF CSP/文档构建通过。
 - `npm run test:settings-update`：设置状态合并通过。
-- `node scripts/test-issue-98-copy-undo-ui.mjs`：段落纯文本无额外回车、列表纯文本无生成编号、内部粘贴仍恢复列表结构、代码按钮复制与撤销通过。
+- `node scripts/test-issue-98-copy-undo-ui.mjs`：段落纯文本无额外回车、列表纯文本无生成编号、内部粘贴仍恢复列表结构；短代码和虚拟化长代码按钮复制、完整选择、65 行部分选择及撤销通过。
 - `npm run build`、`npm run build:mobile`：桌面和共享移动 renderer 构建通过。
 
 真实大文档路径在本轮环境中不存在，UI 编排明确跳过该单项；`电脑档案.md` 的 source→rich→source→rich 与 rich→source→rich→source 在 20%、50%、80% 三处共 6 条链路全部通过。

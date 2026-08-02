@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  preserveGeneratedBulletMarkers,
   preserveRichMarkdownSource,
   replaceMarkdownFrontmatterBlock,
   replaceMarkdownListBlock,
@@ -388,6 +389,28 @@ assert.equal(
   'the typed bullet marker must apply to the complete newly-created list level'
 )
 
+assert.equal(
+  restoreTypedBulletMarker({
+    markdown: '1. 第一项\n2. 第二项\n1) 重新创建项\n',
+    previousCanonical: '1. 第一项\n2. 第二项\n',
+    canonical: '1. 第一项\n2. 第二项\n1) 重新创建项\n',
+    canonicalOffset: '1. 第一项\n2. 第二项\n'.length,
+    marker: '1.'
+  }),
+  '1. 第一项\n2. 第二项\n1. 重新创建项\n',
+  'a recreated ordered list must retain its typed dot without rewriting existing numbering'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '1. 外层\n   1. 子项\n',
+    '1) 外层\n   1) 子项\n'
+  ),
+  '1. 外层\n   1. 子项\n',
+  'a second generated serialization must retain ordered punctuation after the input intent is consumed'
+)
+
+
 const adjacentListKinds = preserveRichMarkdownSource(
   '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
   '* Existing bullet\n\nConvert this paragraph\n\n* [ ] Existing task\n',
@@ -419,8 +442,63 @@ assert.equal(
     previousOffset: 32,
     nextOffset: 32
   }),
-  '- [ ] Task one\n- [x] Task two\n\n* First\n  1. First child\n* Second\n',
+  '- [ ] Task one\n- [x] Task two\n\n* First\n   1. First child\n* Second\n',
   'a list conversion must not duplicate an adjacent list that canonical Markdown merges into the same block'
+)
+
+const mixedLooseOuterCompactInnerSource = [
+  '1. 用来做推特运营',
+  '',
+  '   * 发每日更新',
+  '   * 搜索值得收藏的内容',
+  '2. 自动写公众号',
+  '',
+  '   * 找选题、写文章',
+  '3. 开发 HorseMD',
+  '',
+  '   * 监控 issue',
+  '   * 实现新功能'
+].join('\n')
+const mixedLooseOuterCompactInnerPrevious = [
+  '1. 用来做推特运营',
+  '',
+  '   * 发每日更新',
+  '',
+  '   * 搜索值得收藏的内容',
+  '2. 自动写公众号',
+  '',
+  '   * 找选题、写文章',
+  '3. 开发 HorseMD',
+  '',
+  '   * 监控 issue',
+  '',
+  '   * 实现新功能'
+].join('\n')
+const mixedLooseOuterCompactInnerNext = mixedLooseOuterCompactInnerPrevious
+  .replace(/^\d+\. /gm, '* ')
+assert.equal(
+  replaceMarkdownListBlock({
+    source: mixedLooseOuterCompactInnerSource,
+    previous: mixedLooseOuterCompactInnerPrevious,
+    next: mixedLooseOuterCompactInnerNext,
+    sourceOffset: 2,
+    previousOffset: 2,
+    nextOffset: 2
+  }),
+  mixedLooseOuterCompactInnerSource.replace(/^\d+\. /gm, '* '),
+  'converting a loose outer list must change only its markers and preserve compact nested-list bytes'
+)
+assert.equal(
+  replaceMarkdownListBlock({
+    source: mixedLooseOuterCompactInnerSource,
+    previous: mixedLooseOuterCompactInnerPrevious,
+    next: mixedLooseOuterCompactInnerNext.replace('用来做推特运营', '用来立即继续输入'),
+    sourceOffset: 2,
+    previousOffset: 2,
+    nextOffset: 2
+  }),
+  null,
+  'an ambiguous combined conversion/text delta must fail closed instead of replacing the canonical list tree'
 )
 
 const listChanged = preserveRichMarkdownSource(listSource, listCanonical, listNext)

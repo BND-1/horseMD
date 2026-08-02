@@ -11,6 +11,7 @@
 //   setActiveId/setHome/setSplitId/setRecents — tab/split/recents setters
 //   commitAllLive/liveContentRef/liveTimersRef — uncontrolled-textarea contract
 //   getPdfSourceForTab/waitForPdfSourceForTab — resolves structured PDF source
+//   getMarkdownForTab — flushes current Markdown for saves and Pandoc exports
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen/initialFolderRoots — forwarded to useWorkspace
@@ -37,6 +38,7 @@ export function useFileOps({
   liveContentRef,
   liveTimersRef,
   getPdfSourceForTab,
+  getMarkdownForTab,
   waitForPdfSourceForTab,
   isMobile,
   t,
@@ -44,6 +46,8 @@ export function useFileOps({
   setRenameState,
   setSaveNameState,
   requestPdfExport,
+  requestHtmlExport,
+  requestPandocExport,
   setSidebarOpen,
   initialFolderRoots
 }) {
@@ -354,8 +358,18 @@ export function useFileOps({
   const saveTab = useCallback(
     async (id, forceDialog = false) => {
       commitAllLive() // flush any textarea edits in the debounce window before reading
-      const tab = tabsRef.current.find((t) => t.id === id)
+      let tab = tabsRef.current.find((t) => t.id === id)
       if (!tab) return
+      // A rich ProseMirror transaction can already be visible while Milkdown's
+      // markdownUpdated callback and React state are still one task behind.
+      // Resolve the editor's current document before writing so an immediate
+      // save cannot persist the previous tab.content snapshot.
+      const currentMarkdown = getMarkdownForTab(id)
+      if (typeof currentMarkdown === 'string' && currentMarkdown !== tab.content) {
+        tab = { ...tab, content: currentMarkdown }
+        tabsRef.current = tabsRef.current.map((item) => item.id === id ? tab : item)
+        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, content: currentMarkdown } : item))
+      }
       // Settings tabs aren't documents — ⌘S / the save button must never try to
       // write one to disk (it has no path and no real content).
       if (tab.kind === 'settings') return
@@ -373,7 +387,7 @@ export function useFileOps({
       }
       await writeTab(tab, target)
     },
-    [commitAllLive, writeTab, isMobile, tabsRef, setSaveNameState]
+    [commitAllLive, getMarkdownForTab, writeTab, isMobile, setTabs, tabsRef, setSaveNameState]
   )
 
   // Commit a mobile "save as": let the platform layer place the named file in
@@ -397,25 +411,49 @@ export function useFileOps({
     [commitAllLive, writeTab, tabsRef, setSaveNameState, tRef]
   )
 
-  // Export a file (by path) to PDF: open/focus it, wait for its editor to report ready,
-  // then reuse the same structured HTML/headings pipeline as the menu command. Driven from the
-  // sidebar's right-click menu, where the file may not be open yet.
+  // A file-tree or tab-menu export may target a document that has never mounted
+  // an editor. Focus it and wait for the shared rendered snapshot before opening
+  // a PDF/HTML studio. Pandoc consumes the current Markdown instead.
+  const resolveExportTab = useCallback(async (path) => {
+    await openPaths([path])
+    const norm = (path || '').replace(/\\/g, '/')
+    return tabsRef.current.find((tab) => (tab.path || '').replace(/\\/g, '/') === norm) || null
+  }, [openPaths, tabsRef])
+
+  const exportPathAsRendered = useCallback(async (path, kind) => {
+    const tab = await resolveExportTab(path)
+    if (!tab) return
+    const source = await getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
+    if (!source?.html) {
+      window.alert(tRef.current(kind === 'html' ? 'error.exportHtmlUnavailable' : 'error.exportPdfUnavailable'))
+      return
+    }
+    const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
+    const payload = { ...source, title: base }
+    if (kind === 'html') requestHtmlExport(payload, base + '.html', tab.path || null)
+    else requestPdfExport(payload, base + '.pdf', tab.path || null)
+  }, [resolveExportTab, getPdfSourceForTab, waitForPdfSourceForTab, tRef, requestHtmlExport, requestPdfExport])
+
   const exportPathToPdf = useCallback(
-    async (path) => {
-      await openPaths([path])
-      const norm = (path || '').replace(/\\/g, '/')
-      const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
-      if (!tab) return
-      const source = await getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
-      if (!source?.html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
-        return
-      }
-      const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      requestPdfExport({ ...source, title: base }, base + '.pdf')
-    },
-    [openPaths, tabsRef, getPdfSourceForTab, waitForPdfSourceForTab, tRef, requestPdfExport]
+    (path) => exportPathAsRendered(path, 'pdf'),
+    [exportPathAsRendered]
   )
+
+  const exportPathToHtml = useCallback(
+    (path) => exportPathAsRendered(path, 'html'),
+    [exportPathAsRendered]
+  )
+
+  const exportPathWithPandoc = useCallback(async (path, format) => {
+    const tab = await resolveExportTab(path)
+    if (!tab) return
+    requestPandocExport({
+      markdown: getMarkdownForTab(tab.id),
+      format,
+      defaultName: tab.title || 'Untitled',
+      sourcePath: tab.path || null
+    })
+  }, [resolveExportTab, getMarkdownForTab, requestPandocExport])
 
   // --------- auto-reload open files edited by external programs ----------
   const watchedRef = useRef(new Set())
@@ -506,6 +544,8 @@ export function useFileOps({
     saveTab,
     commitMobileSave,
     exportPathToPdf,
+    exportPathToHtml,
+    exportPathWithPandoc,
     ...workspace,
     reloadTabFromDisk
   }

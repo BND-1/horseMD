@@ -5,7 +5,7 @@ description: 安装并连接 Pandoc，将 Markdown 导出为 Word、LaTeX、EPUB
 
 # 使用 Pandoc 导出
 
-<span class="version-badge">适用于 HorseMD v0.12.48</span>
+<span class="version-badge">适用于 HorseMD v0.12.51</span>
 
 HorseMD 不会在安装包中捆绑 Pandoc。你可以自行安装官方 Pandoc，然后由 HorseMD 调用本机工具完成格式转换。
 
@@ -31,7 +31,11 @@ HorseMD 不会在安装包中捆绑 Pandoc。你可以自行安装官方 Pandoc�
 
 也可以按 `Ctrl/Cmd+P` 打开命令面板并搜索对应格式。导出使用当前编辑状态；不必为了导出而先保存 Markdown。
 
+还可以右键当前文档标签或工作区中的 Markdown 文件，打开“导出”子菜单，直接选择 Word、EPUB、LaTeX、OpenDocument、富文本或纯文本。子菜单靠近窗口边缘时会自动换向，支持方向键和 Enter 操作。
+
 若当前文件已经保存在磁盘上，HorseMD 会把文件所在目录作为 Pandoc 的资源目录，使相对图片路径能够按原文档位置解析。转换完成后会在文件管理器中显示输出文件。
+
+保存对话框同样默认打开当前 Markdown 所在文件夹，并按文件记住用户另选的目录；不同文档之间不会串用保存位置。
 
 ## 使用边界
 

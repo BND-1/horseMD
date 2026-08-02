@@ -1,10 +1,14 @@
 import { TextSelection, NodeSelection } from '@milkdown/prose/state'
-import { commandsCtx, remarkCtx } from '@milkdown/kit/core'
+import { commandsCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
-import { preserveRichMarkdownSource } from '../markdown-source-preservation.js'
+import {
+  generatedScratchMarkdown,
+  preserveGeneratedBulletMarkers,
+  preserveRichMarkdownSource
+} from '../markdown-source-preservation.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
@@ -25,6 +29,8 @@ export function createEditorApi({
   lastMarkdownRef,
   canonicalMarkdownRef,
   programmaticReplaceRef,
+  generatedScratchRef,
+  getGeneratedScratchMarkdown,
   canonicalForSource,
   setBlock,
   markUserEdit,
@@ -39,13 +45,21 @@ export function createEditorApi({
     return createPdfSourceFromEditor(v.dom)
   }
 
-  const getMarkdown = () => {
+  const serializeCurrentDocument = () => {
+    try {
+      const view = viewRef.current
+      if (view) return crepe.editor.ctx.get(serializerCtx)(view.state.doc)
+    } catch {
+      // Fall through to Crepe's cached serializer snapshot during teardown.
+    }
     try {
       return crepe.getMarkdown()
     } catch {
       return ''
     }
   }
+
+  const getMarkdown = () => serializeCurrentDocument()
 
   const toggleHighlight = () => {
     try {
@@ -125,11 +139,18 @@ export function createEditorApi({
     const programmaticReplace = {}
     try {
       const source = md || ''
+      // Once source mode has supplied Markdown, that source is authored. A
+      // formerly blank scratch document must therefore leave the generated
+      // canonical path; later rich edits must preserve the user's spacing and
+      // marker choices exactly like any document opened from disk.
+      if (generatedScratchRef && source !== lastMarkdownRef.current) {
+        generatedScratchRef.current = false
+      }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
       lastMarkdownRef.current = source
       if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
-      const canonical = canonicalForSource(crepe.getMarkdown())
+      const canonical = canonicalForSource(serializeCurrentDocument())
       canonicalMarkdownRef.current = canonical
       onStructureChange?.()
       return true
@@ -145,13 +166,25 @@ export function createEditorApi({
   const flushMarkdown = () => {
     if (isDestroyed?.() || !crepeRef.current) return null
     try {
-      const canonical = canonicalForSource(crepe.getMarkdown())
+      // Saves and source-mode switches can occur before Milkdown publishes its
+      // delayed markdownUpdated callback. Serialize the current ProseMirror
+      // document instead of reading Crepe's potentially stale cached snapshot.
+      const canonical = canonicalForSource(serializeCurrentDocument())
       if (canonical === canonicalMarkdownRef.current) return lastMarkdownRef.current
-      const preserved = preserveRichMarkdownSource(
-        lastMarkdownRef.current,
-        canonicalMarkdownRef.current,
-        canonical
-      )
+      const preserved = generatedScratchRef?.current
+        ? {
+            markdown: getGeneratedScratchMarkdown?.(canonical) || preserveGeneratedBulletMarkers(
+              lastMarkdownRef.current,
+              generatedScratchMarkdown(canonical)
+            ),
+            preserved: true,
+            reason: 'generated-scratch-flush'
+          }
+        : preserveRichMarkdownSource(
+            lastMarkdownRef.current,
+            canonicalMarkdownRef.current,
+            canonical
+          )
       lastMarkdownRef.current = preserved.markdown
       canonicalMarkdownRef.current = canonical
       return preserved.markdown

@@ -129,6 +129,12 @@ npm run test:large-source-fidelity-ui
 # 真实 Electron：#77 原始空行、列表符和转义；含真实保存写盘
 npm run test:issue-77-ui
 
+# 真实 Electron：#98 系统剪贴板、长代码虚拟化复制、内部粘贴、撤销和会话恢复
+npm run test:issue-98-ui
+
+# 真实 Electron：preload clipboard IPC 与系统剪贴板写入
+npm run test:clipboard-ipc-ui
+
 # 真实 Electron：Mermaid 裸源码/围栏/二次粘贴一一对应
 npm run test:mermaid-paste-ui
 
@@ -169,7 +175,8 @@ npm run test:background-ui
 - `scripts/lib/electron-test-app.mjs`、`scripts/lib/human-input.mjs` —— 默认以隐藏且不抢原生焦点的 Electron 窗口运行 CDP；提供统一逐字符文本输入和特殊键工具
 - `scripts/test-background-cdp-ui.mjs` —— 验证后台启动参数、初始原生焦点和隐藏窗口内逐字符输入，防止测试基础设施退化后再次抢用户窗口
 - `scripts/test-inline-code-ui.mjs` —— 用原生键盘事件逐键输入 `` `awdawdwa`outside ``，验证闭合、首尾方向键退出、新段落以代码起笔、源码边界和连续三个普通反引号；禁止用 `Input.insertText` 代替真实字符键
-- `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、段落纯文本无额外回车、列表纯文本无生成编号、HorseMD 内部 Markdown 结构粘贴、真实撤销及关闭会话恢复后的显式文件打开
+- `scripts/test-issue-98-copy-undo-ui.mjs`、`scripts/test-session-restore-setting-ui.mjs` —— 验证系统剪贴板代码复制、段落纯文本无额外回车、列表纯文本无生成编号、HorseMD 内部 Markdown 结构粘贴、真实撤销及关闭会话恢复后的显式文件打开；代码复制夹具含 122 行 JSON，明确要求 CodeMirror DOM 发生虚拟化后，按钮和全选仍复制全文，而真实 Shift 选择 65 行只复制选区
+- `scripts/test-clipboard-ipc-ui.mjs` —— 单独验证 renderer 经 preload 写入系统剪贴板；复制断言前必须先写 sentinel，避免沿用旧剪贴板造成假通过
 - `scripts/etv.mjs` —— 端到端验证：命中测试每个按钮、读计算样式、检测 `-webkit-app-region`、驱动块切换器/右键菜单/选区等
 - `scripts/test-issues-57-60-ui.mjs` —— 真实验证 `$$`/`/math` 连续输入、行内代码末端追加、底部文件菜单边界和 PDF 导出中心基础控件；文件树场景通过 `ISSUE59_DIR` 指向已由第二实例加入的测试目录
 - `scripts/test-pdf-studio-ui.mjs` —— 真实 Electron PDF 导出中心回归：开关命中区域、页面方向、目录页、嵌入书签、页码范围、正文字号范围与最终 PDF 文字高度、整体缩放标签、快速设置、源码同步和快捷入口
@@ -196,6 +203,9 @@ npm run test:background-ui
 - `scripts/test-source-find.mjs` —— 源码查找 selection、居中滚动、高亮和连续上下一个
   - 对普通 Markdown 追加 `--mode-switch`，验证保持查找栏时源码→富文本→源码缓存重建
 - `scripts/test-markdown-source-preservation.mjs` —— 纯函数验证普通文字只改目标字符；标题、分段、列表新增/转换和表格行列变化只改受影响行或块，不重写整篇原文
+- `scripts/test-list-conversion-source-fidelity-ui.mjs` —— 后台 Electron 验证混合松散/紧凑嵌套列表：右键转换外层后零等待逐字输入，切源码逐字节比对，真实保存并以新 profile 完整重开；由 `npm run test:list-conversion-ui` 与原有菜单/层级用例串行运行
+- `scripts/test-rich-list-source-preservation-ui.mjs` —— 后台 Electron 逐字验证已有正文后的 `Enter` → `-` → 空格 → 首个列表文字；刻意等待每个 `markdownUpdated` 时序，断言首项不并回正文、输入的 `-` 不退化为 `*`、内部 `<br />` 不泄漏，并覆盖源码切换、保存和全新 profile 重开。可单独运行 `npm run test:rich-list-source-ui`，也被 `npm run test:list-conversion-ui` 纳入。
+- `scripts/test-new-document-list-source-preservation-ui.mjs` —— 后台 Electron 验证默认空 H1 + 正文路径：逐字键入标题、正文、`1. ` 有序列表、第二项目和 Tab 嵌套项目，不保存即连续源码↔富文本↔源码；同时覆盖稳定节奏、35ms 连续键入、标题 Enter 进入正文造成的合并 `markdownUpdated`，以及嵌套项退出后立刻输入 `- ` 无序项、**不等待回调立即切源码**、保存和全新进程重开。源码必须完整保留层级和用户的 `-` 标记，不能合并项目、残留空 `3.` 或只留下最深层。运行 `npm run test:new-document-list-source-ui`。
 - `scripts/test-mode-switch-raw-offset-ui.mjs` —— 真实 Electron 在普通段落、重复文本、表格、列表、硬换行和代码等位置验证 source/rich 连续双向切换始终落在同一 raw offset；另覆盖源码切回富文本后零等待 Enter，并跨 90/220ms 恢复窗口继续输入
 - `scripts/test-issue-77-source-preservation-ui.mjs` —— 真实 Electron 验证 #77：10 次源码快照覆盖标题、普通段落、单个 `~`、紧凑列表和列表硬换行；新增紧凑列表项后通过保存按钮写盘并逐字节读取文件；另覆盖源码→富文本→源码、Markdown + HTML 双 MIME 粘贴及网页 HTML 语义
 - `scripts/test-paragraph-source-preservation-ui.mjs` —— 真实 Electron 验证空文档从默认 H1 或正文起笔、相邻单换行正文只改文字、文档末尾和后续块之前按 Enter 新建段落，以及非 canonical 前缀后以行内代码起笔；覆盖快速单事务与停顿后的 `<br />` 两阶段事务，再真实保存、退出并以全新用户目录重开，确认标题和 paragraph 节点没有丢失、合并或凭空增加
@@ -234,3 +244,7 @@ node scripts/etv.mjs
 - 会话存于 `localStorage`，键 `minimd.session.v1`：`{workspace, theme, lang, recents, sidebarOpen, sidebarMode, openPaths, activePath}`
 - 首次引导标记：`localStorage['horsemd.onboarded.v1']`
 - 主题以 `body` 的 class 表达：`light|dark` 基类 + 可选 `theme-*` 覆盖类
+
+### macOS 真实键盘/鼠标输入验证
+
+需要核验前台焦点、输入规则或富文本/源码保真时，可使用 `CGEvent` 向真实 HorseMD 发布逐键 key-down/key-up，并通过源码截图、磁盘文件或按需的系统剪贴板读取结果。完整方法、键码和列表示例见 [macOS 真实输入测试方法](macos-real-input-testing.md)。

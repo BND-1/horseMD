@@ -169,6 +169,10 @@ const standalone = [
     script: 'scripts/test-new-markdown-source-fidelity-ui.mjs'
   },
   {
+    name: 'List conversion source fidelity: immediate typing, save, and full reopen',
+    script: 'scripts/test-list-conversion-source-fidelity-ui.mjs'
+  },
+  {
     name: 'Soft line breaks: visual lines preserve source bytes and explicit hard breaks',
     script: 'scripts/test-soft-line-breaks-ui.mjs'
   },

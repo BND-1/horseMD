@@ -15,8 +15,10 @@
 | [development.md](./development.md) | 本地开发、构建、打包（Windows / macOS）、自动化测试方法 |
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
 | [new-input-source-fidelity-report.md](./new-input-source-fidelity-report.md) | 0.12.45 新输入列表 marker 与连续空段落 `<br />` 泄漏的根因、修复和回归证据 |
+| [list-conversion-source-race-regression.md](./list-conversion-source-race-regression.md) | 0.12.52 列表转换、立即输入、源码 flush 时序竞争和嵌套列表整块规范化的根因、修复与保存重开回归 |
 | [mermaid-paste-duplicate-render-report.md](./mermaid-paste-duplicate-render-report.md) | 0.12.46 Mermaid 粘贴重复渲染的历史误判、源码模型不一致、精确粘贴修复与防回归测试 |
 | [clipboard-mime-regression-0.12.46.md](./clipboard-mime-regression-0.12.46.md) | 0.12.46 外部复制增加空行/列表编号的根因、三通道剪贴板契约与防回归测试 |
+| [long-code-copy-virtualization-regression.md](./long-code-copy-virtualization-regression.md) | 长 CodeMirror 代码块只复制可见 30–65 行的虚拟化根因、完整节点修复与系统剪贴板回归 |
 | [source-fidelity-audit-2026-07.md](./source-fidelity-audit-2026-07.md) | 文件读写全链路原文保真审计、已修根因、允许变化边界与自动化证据 |
 | [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md) | 段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的症状索引、根因与防回归要求 |
 | [soft-line-break-display-report.md](./soft-line-break-display-report.md) | 源码普通单换行在富文本中被显示为空格的根因、显示合同、禁止修法与真实 UI 回归 |

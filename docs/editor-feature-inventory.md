@@ -88,7 +88,7 @@
 
 - Ctrl/Cmd+点击链接用系统浏览器打开。
 - 富文本复制写入带 inline style 的 HTML clipboard。
-- CodeMirror 代码块复制按钮有反馈和 toast。
+- CodeMirror 代码块复制按钮只从完整 ProseMirror `code_block` 读取正文，成功写入系统剪贴板后才显示反馈和 toast；不得从虚拟化 `.cm-line` DOM 拼接全文。
 - Markdown 源码粘贴走 Milkdown parser，而不是普通纯文本。
 - 网页富文本粘贴会优先保留结构化 HTML，并规范化叶子 `section`/`div` 与微信懒加载图片，避免编号标题触发 Markdown 误判或视觉段落被合并。
 - 粘贴/拖入图片不劫持代码块、input、textarea、caption input。
@@ -96,7 +96,7 @@
 验证：
 
 - 富文本复制到外部编辑器保留基本样式。
-- 代码块复制按钮有反馈。
+- 超过 120 行的代码块即使 DOM 只渲染约 30–65 行，复制按钮和 `Ctrl/Cmd+A` 仍得到全文；从第一行 Shift 选择 65 行时只得到该选区。
 - Markdown 表格/标题/代码块粘贴后被解析。
 - 代码块内粘贴文本不被图片/Markdown handler 误处理。
 

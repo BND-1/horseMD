@@ -12,7 +12,12 @@ import {
   hasEmptyListItem,
   hasListStructureChange,
   listBlockAt,
-  preserveListBlockChange
+  compactGeneratedListSpacing,
+  normalizeEmptyListItems,
+  preserveEmptyListItemTextChange,
+  preserveListBlockChange,
+  preserveTypedBulletInputRule,
+  repairMergedListItems
 } from './lib/markdown-preservation/lists.js'
 import {
   preserveAppendedParagraph,
@@ -37,9 +42,16 @@ export {
   replaceMarkdownFrontmatterBlock
 } from './lib/markdown-preservation/frontmatter.js'
 export {
+  preserveTypedBulletInputRule,
+  preserveGeneratedBulletMarkers,
   replaceMarkdownListBlock,
   restoreTypedBulletMarker
 } from './lib/markdown-preservation/lists.js'
+
+export const generatedScratchMarkdown = (canonical) =>
+  compactGeneratedListSpacing(
+    withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(canonical))
+  )
 
 // Milkdown serializes the complete document after every rich-text transaction.
 // Preserve the user's untouched source spelling by applying only the serializer's
@@ -48,13 +60,17 @@ export {
 // the complete document.
 export function preserveRichMarkdownSource(source, previousCanonical, nextCanonical) {
   const sourceMarkdown = String(source || '')
-  const previous = String(previousCanonical || '')
-  const next = String(nextCanonical || '')
+  // Empty list items have a Crepe-only `<br />` placeholder. Normalize it on
+  // both sides of the delta before source mapping so a normal rich-text flow
+  // (paragraph → Enter → `- ` → text) never persists that implementation
+  // detail or loses the new list item's structural boundary on its next edit.
+  const previous = normalizeEmptyListItems(String(previousCanonical || ''))
+  const next = normalizeEmptyListItems(String(nextCanonical || ''))
   if (previous === next) return { markdown: sourceMarkdown, preserved: true, reason: 'unchanged' }
   if (!previous) {
     if (!sourceMarkdown) {
       return {
-        markdown: normalizeEmptyTableCells(withoutStandaloneEmptyBlockLines(next)),
+        markdown: normalizeEmptyTableCells(compactGeneratedListSpacing(withoutStandaloneEmptyBlockLines(next))),
         preserved: true,
         reason: 'new-document'
       }
@@ -65,6 +81,14 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
   const previousVisible = sourceVisibleIndex(previous)
   const { start, previousEnd, nextEnd } = commonChange(previous, next)
+  // Crepe's cached Markdown and direct ProseMirror serialization can disagree
+  // about *only* the number of terminal newlines. That is not a user edit.
+  // In particular, treating it as a structural deletion on a list rewrites a
+  // no-op rich→source switch and drops the author's final blank line.
+  const withoutTrailingLineEndings = (value) => value.replace(/(?:\r\n|\r|\n)+$/, '')
+  if (withoutTrailingLineEndings(previous) === withoutTrailingLineEndings(next)) {
+    return { markdown: sourceMarkdown, preserved: true, reason: 'canonical-trailing-newline-drift' }
+  }
   const trailingEmptyPreserved = preserveTrailingEmptyBlock({
     source: sourceMarkdown,
     previous,
@@ -83,6 +107,15 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     nextEnd
   })
   if (middleEmptyPreserved) return middleEmptyPreserved
+  const emptyListItemTextPreserved = preserveEmptyListItemTextChange({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (emptyListItemTextPreserved) return emptyListItemTextPreserved
   const tableTextPreserved = preserveTableTextChange({
     source: sourceMarkdown,
     previous,
@@ -159,7 +192,12 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
       previousEnd,
       nextEnd
     })
-    if (listPreserved) return listPreserved
+    if (listPreserved) {
+      const repaired = repairMergedListItems(listPreserved.markdown, next)
+      return repaired !== listPreserved.markdown
+        ? { ...listPreserved, markdown: repaired, reason: 'list-merge-repaired' }
+        : listPreserved
+    }
     const linesPreserved = preserveChangedLineRegion({
       source: sourceMarkdown,
       previous,
@@ -169,7 +207,12 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
       nextEnd,
       reason: 'list-line-change'
     })
-    if (linesPreserved) return linesPreserved
+    if (linesPreserved) {
+      const repaired = repairMergedListItems(linesPreserved.markdown, next)
+      return repaired !== linesPreserved.markdown
+        ? { ...linesPreserved, markdown: repaired, reason: 'list-merge-repaired' }
+        : linesPreserved
+    }
     return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-list-change' }
   }
 

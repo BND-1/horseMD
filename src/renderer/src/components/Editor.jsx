@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom'
 import {
   editorViewCtx,
   parserCtx,
-  remarkCtx
+  remarkCtx,
+  serializerCtx
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
 import { TextSelection } from '@milkdown/prose/state'
@@ -30,7 +31,10 @@ import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 import {
+  generatedScratchMarkdown,
   preserveRichMarkdownSource,
+  preserveGeneratedBulletMarkers,
+  preserveTypedBulletInputRule,
   replaceMarkdownFrontmatterBlock,
   replaceMarkdownListBlock,
   restoreTypedBulletMarker
@@ -156,6 +160,12 @@ export default function Editor({
   // background after create(). `chunks` is null for normal-sized docs.
   const chunks = (initialContent?.length || 0) > CHUNK_THRESHOLD ? splitMarkdown(initialContent, CHUNK_SIZE) : null
   const firstContent = chunks ? chunks[0] : initialContent || ''
+  // A newly-created (or initially empty) document has no authored Markdown
+  // layout to preserve yet. During its first rich-text writing session, using
+  // the current ProseMirror serialization as the structural source of truth
+  // avoids replaying intermediate empty-list transactions into later lists.
+  // Existing documents always retain the local-delta preservation path below.
+  const generatedScratchRef = useRef(!(initialContent || '').trim())
   // Keep the source snapshot separate from Crepe's canonical serialization.
   // The first is what the user wrote; the second lets us isolate a rich-text
   // transaction instead of replacing untouched source with formatter output.
@@ -174,7 +184,12 @@ export default function Editor({
     const canonicalForSource = (markdown) => {
       const canonical = normalizeReviewMarkupMarkdown(markdown)
       if (!hasSyntheticEmptyTitle) return canonical
-      const emptyTitle = canonical.match(/^#[ \t]*\n(?:\n)?/)
+      // The synthetic title owns every immediately following blank line until
+      // the first authored body block. A list input rule can temporarily make
+      // Crepe serialize that skeleton as `#\n\n\n- ...`; stripping only two
+      // newlines leaks a phantom blank prefix into a brand-new document's
+      // source. This branch runs only while the title itself remains empty.
+      const emptyTitle = canonical.match(/^#[ \t]*(?:\r?\n)+/)
       if (emptyTitle) return canonical.slice(emptyTitle[0].length)
       // Once the user types in or transforms the optional title, it becomes
       // authored Markdown and participates in every later source delta.
@@ -204,6 +219,11 @@ export default function Editor({
     const pendingRawMarkdownPasteRef = { current: null }
     let pendingListConversion = null
     let pendingMarkdownInputIntent = null
+    // A physical/IME input sequence can create an outer list and a nested list
+    // before Milkdown emits its first markdownUpdated callback. Keep every
+    // marker intent until that callback serializes the generated document;
+    // retaining only the latest intent loses the outer marker (`1.` -> `1)`).
+    let pendingMarkdownInputIntents = []
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
@@ -285,6 +305,46 @@ export default function Editor({
     })
     crepeRef.current = crepe
 
+    // Both `markdownUpdated` and an immediate rich -> source flush need the
+    // identical generated-document serialization. The latter can run before
+    // Milkdown has delivered the input-rule callback, so it must still consume
+    // the physical `-` / `*` / `+` intent captured by the DOM binding.
+    const generatedScratchMarkdownForCanonical = (canonical, consumeInputIntent = false) => {
+      let markdown = generatedScratchMarkdown(canonical)
+      const generatedInputIntents = pendingMarkdownInputIntents.length
+        ? pendingMarkdownInputIntents
+        : pendingMarkdownInputIntent ? [pendingMarkdownInputIntent] : []
+      for (const inputIntent of generatedInputIntents) {
+        if (inputIntent?.type !== 'bullet-list' && inputIntent?.type !== 'ordered-list') continue
+        try {
+          const remark = crepe.editor.ctx.get(remarkCtx)
+          const currentView = viewRef.current
+          const canonicalOffset = pmPosToMarkdownOffset(
+            canonical,
+            inputIntent.pmPos ?? currentView?.state.selection.head,
+            currentView?.state.doc,
+            remark
+          )
+          markdown = restoreTypedBulletMarker({
+            markdown,
+            canonical,
+            previousCanonical: inputIntent.canonical,
+            canonicalOffset,
+            marker: inputIntent.marker
+          })
+        } catch {
+          // Canonical Markdown is still structurally correct if a transient
+          // selection cannot be mapped while the editor is switching modes.
+        }
+      }
+      markdown = preserveGeneratedBulletMarkers(lastMarkdownRef.current, markdown)
+      if (consumeInputIntent) {
+        pendingMarkdownInputIntent = null
+        pendingMarkdownInputIntents = []
+      }
+      return markdown
+    }
+
     // Block controls live in editor-block-controls.js; mount them here and
     // reuse the same conversion path across shortcuts, menus and toolbars.
     const { setBlock: setEditableBlock, canConvertCurrentBlockToList, convertCurrentBlockToList, reportActiveBlock } = createBlockControls({
@@ -324,7 +384,7 @@ export default function Editor({
       return converted
     }
     const canConvertBlockToList = (blockPos) => !readOnlyRef.current && canConvertCurrentBlockToList(blockPos)
-    const convertList = (targetType, listPos) => {
+    const convertList = (targetType, listPos, anchorPos) => {
       if (readOnlyRef.current) return false
       const view = viewRef.current
       if (!view) return false
@@ -335,15 +395,23 @@ export default function Editor({
       if (Number.isFinite(listPos) && lastMarkdownRef.current) {
         try {
           const remark = crepe.editor.ctx.get(remarkCtx)
+          // A list container boundary has no visible Markdown character. On a
+          // nested tree, mapping `listPos + 1` can therefore land in the first
+          // child list and patch the wrong source level. Use the actual text
+          // position hit by the context menu; the replacement keeps text node
+          // sizes stable, so the same anchor remains valid after conversion.
+          const mappingPos = Number.isFinite(anchorPos)
+            ? Math.max(listPos + 1, Math.min(anchorPos, view.state.doc.content.size))
+            : view.state.selection.head
           const sourceOffset = pmPosToMarkdownOffset(
             lastMarkdownRef.current,
-            Math.min(listPos + 1, view.state.doc.content.size),
+            mappingPos,
             view.state.doc,
             remark
           )
           const previousOffset = pmPosToMarkdownOffset(
             canonicalMarkdownRef.current,
-            Math.min(listPos + 1, view.state.doc.content.size),
+            mappingPos,
             view.state.doc,
             remark
           )
@@ -352,6 +420,7 @@ export default function Editor({
               source: lastMarkdownRef.current,
               sourceOffset,
               listPos,
+              anchorPos: mappingPos,
               previous: canonicalMarkdownRef.current,
               previousOffset
             }
@@ -361,10 +430,64 @@ export default function Editor({
         }
       }
       markUserEdit()
-      const converted = convertListAtSelection(view, targetType, listPos)
+      // Capture the conversion-only document before dispatch. markdownUpdated
+      // can run during dispatch or after the user's next keystroke, so taking
+      // this snapshot afterwards is inherently racy.
+      const pending = pendingListConversion
+      let conversionPreparationFailed = false
+      const converted = convertListAtSelection(view, targetType, listPos, (convertedDoc) => {
+        if (!pending || pendingListConversion !== pending) {
+          conversionPreparationFailed = true
+          return false
+        }
+        try {
+          const serializer = crepe.editor.ctx.get(serializerCtx)
+          const convertedCanonical = canonicalForSource(serializer(convertedDoc))
+          const remark = crepe.editor.ctx.get(remarkCtx)
+          const convertedOffset = pmPosToMarkdownOffset(
+            convertedCanonical,
+            Math.min(pending.anchorPos, convertedDoc.content.size),
+            convertedDoc,
+            remark
+          )
+          const convertedSource = Number.isFinite(convertedOffset)
+            ? replaceMarkdownListBlock({
+                source: pending.source,
+                next: convertedCanonical,
+                sourceOffset: pending.sourceOffset,
+                nextOffset: convertedOffset,
+                previous: pending.previous,
+                previousOffset: pending.previousOffset
+              })
+            : null
+          if (convertedSource) {
+            pending.convertedCanonical = convertedCanonical
+            pending.convertedSource = convertedSource
+            return true
+          }
+        } catch (error) {
+          console.error('List conversion source snapshot failed', error)
+        }
+        conversionPreparationFailed = true
+        return false
+      })
       if (!converted) {
         pendingListConversion = null
+        if (conversionPreparationFailed) fireToast(tRef.current('list.convertFailed'))
         return false
+      }
+      // Some Milkdown paths do not emit markdownUpdated until a later input or
+      // source-mode flush. Commit the verified conversion snapshot now; if the
+      // callback already ran during dispatch it has cleared this same object.
+      if (
+        pendingListConversion === pending &&
+        pending?.convertedSource &&
+        pending?.convertedCanonical
+      ) {
+        lastMarkdownRef.current = pending.convertedSource
+        canonicalMarkdownRef.current = pending.convertedCanonical
+        pendingListConversion = null
+        onChange?.(pending.convertedSource, false)
       }
       view.focus()
       setCtxMenu(null)
@@ -391,18 +514,40 @@ export default function Editor({
           canonicalMarkdownRef.current = canonical
           return
         }
+        // IME composition (pinyin / cangjie / kana …) pushes the in-flight
+        // candidate text into the document. Processing markdownUpdated
+        // mid-composition captures that transient text and corrupts the source
+        // (e.g. "测试" ends up as pinyin fragments "c", "ce", "s"). Defer: PM's
+        // `view.composing` is true only while a composition is active, and
+        // compositionend fires a final markdownUpdated with the committed
+        // characters, which is the only state worth preserving.
+        if (viewRef.current?.composing) return
         const pendingPaste = pendingRawMarkdownPasteRef.current
         const pendingList = pendingListConversion
         if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
+          if (!pendingPaste && !pendingList && canonical === canonicalMarkdownRef.current) return
           let preserved
           if (pendingPaste) {
             preserved = { markdown: pendingPaste.markdown }
+          } else if (generatedScratchRef.current) {
+            const markdown = generatedScratchMarkdownForCanonical(canonical)
+            preserved = { markdown, reason: 'generated-scratch-canonical' }
+            pendingMarkdownInputIntent = null
+            pendingMarkdownInputIntents = []
+          } else if (pendingList?.convertedSource && pendingList?.convertedCanonical) {
+            preserved = canonical === pendingList.convertedCanonical
+              ? { markdown: pendingList.convertedSource }
+              : preserveRichMarkdownSource(
+                  pendingList.convertedSource,
+                  pendingList.convertedCanonical,
+                  canonical
+                )
           } else if (pendingList) {
             try {
               const remark = crepe.editor.ctx.get(remarkCtx)
               const nextOffset = pmPosToMarkdownOffset(
                 canonical,
-                Math.min(pendingList.listPos + 1, viewRef.current?.state.doc.content.size || 1),
+                Math.min(pendingList.anchorPos, viewRef.current?.state.doc.content.size || 1),
                 viewRef.current?.state.doc,
                 remark
               )
@@ -438,18 +583,20 @@ export default function Editor({
             )
           }
           const currentView = viewRef.current
-          const selectionInBulletList = (() => {
+          const selectionInList = (() => {
             const $head = currentView?.state.selection.$head
             if (!$head) return false
             for (let depth = $head.depth; depth > 0; depth -= 1) {
-              if ($head.node(depth).type.name === 'bullet_list') return true
+              const name = $head.node(depth).type.name
+              if (name === 'bullet_list' || name === 'ordered_list') return true
             }
             return false
           })()
           if (
-            pendingMarkdownInputIntent?.type === 'bullet-list' &&
+            (pendingMarkdownInputIntent?.type === 'bullet-list' ||
+              pendingMarkdownInputIntent?.type === 'ordered-list') &&
             Date.now() - pendingMarkdownInputIntent.at < 30000 &&
-            selectionInBulletList
+            selectionInList
           ) {
             try {
               const remark = crepe.editor.ctx.get(remarkCtx)
@@ -459,16 +606,51 @@ export default function Editor({
                 currentView.state.doc,
                 remark
               )
-              const markdown = restoreTypedBulletMarker({
-                markdown: preserved.markdown,
-                canonical,
-                previousCanonical: pendingMarkdownInputIntent.canonical,
-                canonicalOffset,
-                marker: pendingMarkdownInputIntent.marker
-              })
-              if (markdown !== preserved.markdown) {
-                preserved = { ...preserved, markdown, reason: 'typed-bullet-marker' }
+              // A deferred markdownUpdated can batch title, body, list, and
+              // nested-list typing into one first callback. With no authored
+              // baseline yet, generic new-document preservation already owns
+              // the complete canonical document; replacing it with only the
+              // list targeted by an old input-rule intent would drop title and
+              // outer list items.
+              const inputStartedFromEmptyDocument =
+                !pendingMarkdownInputIntent.source &&
+                !pendingMarkdownInputIntent.canonical
+              const inputRuleMarkdown = inputStartedFromEmptyDocument
+                ? null
+                : preserveTypedBulletInputRule({
+                    source: pendingMarkdownInputIntent.source,
+                    canonical,
+                    previousCanonical: pendingMarkdownInputIntent.canonical,
+                    sourceOffset: pendingMarkdownInputIntent.sourceOffset,
+                    canonicalOffset,
+                    marker: pendingMarkdownInputIntent.marker
+                  })
+              if (inputRuleMarkdown) {
+                preserved = {
+                  ...preserved,
+                  markdown: inputRuleMarkdown,
+                  reason: 'typed-bullet-input-rule'
+                }
               }
+              if (pendingMarkdownInputIntent.type === 'bullet-list') {
+                const markdown = restoreTypedBulletMarker({
+                  markdown: preserved.markdown,
+                  canonical,
+                  previousCanonical: pendingMarkdownInputIntent.canonical,
+                  canonicalOffset,
+                  marker: pendingMarkdownInputIntent.marker
+                })
+                if (markdown !== preserved.markdown) {
+                  preserved = { ...preserved, markdown, reason: 'typed-bullet-marker' }
+                }
+              }
+              // This intent belongs to exactly one input-rule transition. Once
+              // its list has been reconstructed, retaining the old source
+              // snapshot makes a later Enter/Tab/nested-list transaction look
+              // like the original list creation and can replace the outer list
+              // with only its nested child. Subsequent typing is now handled by
+              // normal list-tree preservation against the new source baseline.
+              if (inputRuleMarkdown || inputStartedFromEmptyDocument) pendingMarkdownInputIntent = null
             } catch {
               // The normal source-preservation result remains valid if the
               // transient selection cannot be mapped during editor teardown.
@@ -590,11 +772,31 @@ export default function Editor({
           getKeybindings: () => effectiveKeybindingsRef.current,
           getSelectionToolbarEnabled: () => selectionToolbarRef.current,
           onMarkdownInputIntent: (intent) => {
+            const currentView = viewRef.current
+            let sourceOffset = null
+            try {
+              const remark = crepe.editor.ctx.get(remarkCtx)
+              sourceOffset = pmPosToMarkdownOffset(
+                lastMarkdownRef.current,
+                currentView?.state.selection.head,
+                currentView?.state.doc,
+                remark
+              )
+            } catch {
+              // The input rule will still take the generic preservation path.
+            }
             pendingMarkdownInputIntent = {
               ...intent,
               at: Date.now(),
-              canonical: canonicalMarkdownRef.current
+              pmPos: currentView?.state.selection.head,
+              canonical: canonicalMarkdownRef.current,
+              source: lastMarkdownRef.current,
+              sourceOffset
             }
+            pendingMarkdownInputIntents = [
+              ...pendingMarkdownInputIntents.filter((pending) => Date.now() - pending.at < 30000),
+              pendingMarkdownInputIntent
+            ]
           },
           isReadOnly: () => readOnlyRef.current,
           isDestroyed: () => destroyed
@@ -635,6 +837,8 @@ export default function Editor({
           lastMarkdownRef,
           canonicalMarkdownRef,
           programmaticReplaceRef,
+          generatedScratchRef,
+          getGeneratedScratchMarkdown: (canonical) => generatedScratchMarkdownForCanonical(canonical, true),
           canonicalForSource,
           setBlock,
           markUserEdit,
@@ -741,8 +945,18 @@ export default function Editor({
           if (destroyed) return
           if (recordCanonical) {
             try {
-              canonicalMarkdownRef.current = canonicalForSource(crepe.getMarkdown())
-            } catch { /* */ }
+              // Source-mode switches and saves serialize `view.state.doc`
+              // through serializerCtx (see editor-api.js). Capture the initial
+              // baseline through that exact path too: Crepe's cached
+              // getMarkdown() can differ in trailing list newlines, making a
+              // no-op source switch look like an edit and rewrite source bytes.
+              const serializer = crepe.editor.ctx.get(serializerCtx)
+              canonicalMarkdownRef.current = canonicalForSource(serializer(view.state.doc))
+            } catch {
+              try {
+                canonicalMarkdownRef.current = canonicalForSource(crepe.getMarkdown())
+              } catch { /* editor teardown */ }
+            }
           }
           ready = true
           reportActiveBlock()
@@ -838,8 +1052,8 @@ export default function Editor({
   // The floating bar and context menu reuse the same conversion path as the
   // keyboard shortcuts (defined inside the effect, reached through apiRef).
   const pickBlock = (id) => apiRef.current?.setBlock(id)
-  const pickListConversion = (targetType, listPos) =>
-    apiRef.current?.convertList(targetType, listPos)
+  const pickListConversion = (targetType, listPos, anchorPos) =>
+    apiRef.current?.convertList(targetType, listPos, anchorPos)
   const pickBlockListConversion = (targetType, blockPos) => apiRef.current?.convertBlockToList(targetType, blockPos)
   const pickTextFormat = (format, selection) => {
     const applied = apiRef.current?.applyTextFormat(format, selection)
@@ -999,7 +1213,11 @@ export default function Editor({
                       data-list-conversion={action.targetType}
                       className="block-menu-item block-list-conversion"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => pickListConversion(action.targetType, ctxMenu.listConversion.listPos)}
+                      onClick={() => pickListConversion(
+                        action.targetType,
+                        ctxMenu.listConversion.listPos,
+                        ctxMenu.listConversion.anchorPos
+                      )}
                     >
                       <span className="block-menu-short">
                         {action.targetType === 'ordered_list' ? '1.' : action.targetType === 'task_list' ? '☐' : '-'}

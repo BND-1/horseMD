@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
@@ -230,7 +230,11 @@ async function writeNewDocument({ path, profile, port: scenarioPort, startBlock,
 
   try {
     await waitFor(
-      () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      () => evaluate(`(() => {
+        const tab = document.querySelector('.tab.active')
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return !!editor && (tab?.textContent || '').includes(${JSON.stringify(basename(path))})
+      })()`),
       'empty rich editor did not open'
     )
     await nativeClick(
@@ -285,7 +289,10 @@ async function verifyNewDocumentReopen({ path, profile, port: scenarioPort, expe
 
   try {
     await waitFor(
-      () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return !!editor && editor.textContent.includes(${JSON.stringify('正文第一段')})
+      })()`),
       'new document did not reopen'
     )
     const blocks = await evaluate(`(() => {
@@ -326,7 +333,10 @@ async function editAndSave() {
 
   try {
     await waitFor(
-      () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return editor?.textContent?.includes('紧凑第二行') || false
+      })()`),
       'rich editor did not open'
     )
 
@@ -476,7 +486,10 @@ async function reopenAndVerify(expected) {
 
   try {
     await waitFor(
-      () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return editor?.textContent?.includes('连续段落 D') || false
+      })()`),
       'saved document did not reopen'
     )
     const paragraphs = await evaluate(`(() => {

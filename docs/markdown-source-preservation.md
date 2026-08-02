@@ -21,6 +21,8 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 7. UTF-8 BOM、CRLF 和混合换行属于原文的一部分。源码模式只改一个字符时，不得把整篇文件统一成 LF。
 8. 段落内的普通单换行可在富文本中按行显示，但这只能是视觉策略；不得把它改写为两个尾随空格、`<br>` 或空白段落。详见 [源码单换行显示问题报告](./soft-line-break-display-report.md)。
 9. 从富文本新建 Markdown 结构同样受保护：手打 `-`、`*` 或 `+` 创建列表时保留实际输入的符号；连续回车产生的内部空 paragraph 不得以独立 `<br />` 写入源码。
+10. “正文 → Enter → 手打 `- ` → 输入首项”必须形成独立的 `-` 列表项；慢速逐字输入、立即切源码、保存和完整重开均不得把首项并回正文、退回为 `*` 或留下 `<br />`。
+11. 纯富文本新建文档在用户尚未编辑源码前，没有既有 Markdown 排版可保护。嵌套列表退出时出现的空有序项属于编辑器中间态，不得成为增量映射基线；应从完整实时 canonical 文档生成结构，再逐项带回已记录的 `-` / `*` / `+` marker。用户实际编辑源码后，立即回到普通局部原文保真路径。
 
 ## 当前实现
 
@@ -44,6 +46,8 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 当原始源码与上一份 canonical 基线逐字完全一致时，不存在需要保留的非 canonical 写法。完成空段落占位、列表和表格等专用分支后，可直接采用下一份 canonical 结果（同时规范化表格空单元格）。若全文不一致，但变更位于最后一个独立单行块，且该块在原始源码与 canonical 中逐字相同，则只替换这一行，保留之前的紧凑单换行、额外空行和其他原始写法。这两个确定性路径共同保护“新段落首个内容是行内代码”的时序：左反引号会先形成仅含 `\`` 的临时段落，它没有稳定可见字符；若继续走 visible offset，首个代码字符可能被错误映射到上一段行尾并吞掉段落分隔符，随后令模式切换光标整体偏移一行。
 
+这个“可采用 canonical”的例外还包括从空白启动、全程只在富文本写作的新文档；它不等于用 canonical 覆盖已存在或已从源码提交的用户文档。特别是“嵌套有序项 → Enter ×3 → `- ` 无序项”会发布短暂空的有序项，逐回调增量拼接会把空 `3.` 或默认 `*` 固化。此时 `markdownUpdated` 与 `flushMarkdown()` 必须共享同一完整 canonical 生成函数，并在立即切源码时消费尚未发布的物理 Space marker 意图。
+
 源码模式修改后，`replaceAll` 产生的全部程序化 `markdownUpdated` 事务会持续隔离，直到下一次明确的用户输入。这样即使前一次富文本编辑的短时活动标记仍存在，也不会把同步事务再次当成用户编辑。
 
 源码 textarea 为性能原因保持非受控。富文本输入后的 `markdownUpdated` 可能晚于用户点击模式切换；若先挂载 textarea，后到的 React 内容更新不会改变它的 `defaultValue`。因此富文本→源码必须先调用编辑器 API 的 `flushMarkdown()`，同步读取当前 Crepe 文档并执行同一套原文保真映射，再同步更新 `tabsRef` 和 tab state，最后才显示源码。禁止用固定延时或把大型 textarea 改成受控组件规避该竞态。
@@ -56,7 +60,11 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 真实手打存在两种时序。停顿输入时，Enter 创建的空 paragraph 会先被 Crepe 序列化成独立 `<br />` 块；原文保护层必须只推进 canonical 基线，等文字填入后再写入真实段落。连续回车还可能生成多个中间占位，写回前必须统一移除独立 `<br />` 行，但不能删除用户原文或表格单元格里的真实 `<br>`。快速输入时，Enter 和文字可能被合并成一次块插入事务，完全不出现 `<br />` 中间态。文档末尾通过结尾边界追加，中间位置通过前后未变化可见行的序号映射定位 raw 间隙。不能把零可见字符位置当作前一段末尾，否则正文会拼接，且占位符会泄漏。列表、表格、标题、引用和代码围栏必须绕过这个普通段落分支，继续走各自的结构映射。
 
-列表输入规则有另一种信息丢失：ProseMirror 只保留“这是无序列表”，不保留触发符号。`editor-dom-interactions.js` 在用户键入 marker 后的空格进入编辑器前记录 `-`、`*` 或 `+`，`lists.js` 再按结构序号恢复刚创建的列表层级。这个意图只在光标仍位于对应无序列表时短期有效，不能变成全文 marker 偏好。列表块扫描允许同类型松散项目跨空行，但顶层类型变化必须截断；列表转换后 canonical 若把相邻同类型列表合并，必须用转换前项目内容定位原列表子区间，否则会复制相邻任务列表。
+列表输入规则有另一种信息丢失：ProseMirror 只保留“这是无序列表”，不保留触发符号。`editor-dom-interactions.js` 必须在物理 Space 的 `keydown`（`beforeinput` 仅作 IME/辅助输入兜底）记录 `-`、`*` 或 `+`，`lists.js` 再按结构序号恢复刚创建的列表层级。连续 Enter、marker、Space 时，源码快照可能尚未包含空 paragraph 或转义 marker；此时不能相信 `pmPosToMarkdownOffset()` 返回的旧位置，必须用该次输入规则的 canonical 前/后快照，在前后可见内容边界处重建**这一个**列表。文档末尾与正文中间都要覆盖。这个意图只在光标仍位于对应无序列表时短期有效，不能变成全文 marker 偏好。Crepe 对刚创建的空列表项会输出 `* <br />` 一类内部占位；保真层必须把它写作用户可见的空项 `- `，并在首个文字输入时按列表树顺序回填该项，不能按零可见字符位置落到上一段。空白新文档的嵌套列表退出场景则不重放逐次局部快照，而以实时完整 canonical 建立结构、再恢复所有已知 marker；源码实际编辑后关闭该生成路径。列表块扫描允许同类型松散项目跨空行，但顶层类型变化必须截断；列表转换后 canonical 若把相邻同类型列表合并，必须用转换前项目内容定位原列表子区间，否则会复制相邻任务列表。
+
+右键列表类型转换还必须处理 transaction 回调时序：`markdownUpdated` 可能在 dispatch 内触发，也可能延迟到下一次输入或源码 flush。转换链路因此在 dispatch 前序列化目标 ProseMirror `doc`，按实际右键文字位置只修改当前层级 marker，并立即建立新的 authored/canonical 基线；紧接着的输入再走普通局部文字差分。禁止用整棵 canonical 列表覆盖“外层松散、内层紧凑”的用户源码。完整事故记录见 [0.12.52 列表转换源码竞态报告](./list-conversion-source-race-regression.md)。
+
+强制保存/切换的 `flushMarkdown()` 必须序列化当前 `view.state.doc`，不能把 `crepe.getMarkdown()` 的 listener 缓存当作实时文档；后者在输入 transaction 已提交但 `markdownUpdated` 尚未发布时可能落后一拍。初始化 canonical baseline 也必须使用同一 `serializerCtx(view.state.doc)` 路径；缓存与直接序列化在列表末尾换行上可能不同，把它们混用会把纯模式切换误判为编辑并删除用户的尾部空行。
 
 中间块定位只能校验编辑点相邻的前后块，不能要求整篇文档的可见行逐项完全一致。Crepe 对前部表格的列对齐空格、紧凑列表的空行和标记符进行 canonical 化时，这些无关差异不得让后部段落插入降级为普通字符映射。若后继块包含代码围栏等没有可见文本的语法前缀，应从 `nextGap` 中剥离原有 canonical gap，只把新增 gap 插入原源码，不能连带重写用户的围栏写法。
 
@@ -126,6 +134,12 @@ npm run test:paragraph-source-ui
 
 # 真实 Electron：逐字手打 -/*/+ 列表、连续空段落、往返切换和真实写盘
 npm run test:new-source-fidelity-ui
+
+# 真实 Electron：已有正文后逐字 Enter、-、空格和首个列表文字；检查 - 标记、源码切换、保存和完整重开
+npm run test:rich-list-source-ui
+
+# 真实 Electron：默认 H1 + 正文的新文档，逐字创建 1. 有序列表和 Tab 嵌套项；未保存连续切源码
+npm run test:new-document-list-source-ui
 
 # 真实 Electron：普通单换行视觉显示、显式硬换行和源码/磁盘字节保真
 npm run test:soft-break-ui

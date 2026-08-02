@@ -5,7 +5,7 @@ description: 使用实时预览和多种阅读样式，将当前文档导出为�
 
 # 导出 HTML
 
-<span class="version-badge">适用于 HorseMD v0.12.48</span>
+<span class="version-badge">适用于 HorseMD v0.12.51</span>
 
 ## 打开 HTML 导出中心
 
@@ -14,8 +14,11 @@ description: 使用实时预览和多种阅读样式，将当前文档导出为�
 1. 打开“文件”菜单，选择“导出为 HTML”。
 2. 按 `Ctrl/Cmd+P` 打开命令面板，搜索“导出 HTML”。
 3. 在“设置 → 键盘快捷键”中为“导出 HTML”录制自己的快捷键。
+4. 右键当前文档标签，或右键工作区中的 Markdown 文件，打开“导出”子菜单并选择“网页”。
 
 HorseMD 会打开独立的 HTML 导出中心。左侧用于调整样式和文档结构，右侧显示最终 HTML 的实时预览；点击“导出 HTML”后选择保存位置即可。
+
+保存对话框默认打开当前 Markdown 所在文件夹；如果曾为这个文件另选目录，HorseMD 会单独记住它，不会影响其他文档的默认位置。未命名文档使用上一次导出目录。
 
 ![HTML 导出中心，左侧为阅读样式设置，右侧为最终网页预览](/images/v0.12.48/html-export.png)
 <span class="image-caption">预览由当前安装版本实际生成；桌面和手机图标可切换预览宽度。</span>

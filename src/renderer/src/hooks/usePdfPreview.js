@@ -28,8 +28,13 @@ export function usePdfPreview({ request, options, delay = 160 }) {
     setState((previous) => ({ ...previous, status: 'previewing', error: null }))
     const timer = setTimeout(async () => {
       try {
-        capturePdfPreviewForTest({ source: request.source, options })
-        const result = await window.api.previewPDF(request.source, request.defaultName, options)
+        capturePdfPreviewForTest({ source: request.source, sourcePath: request.sourcePath || null, options })
+        const result = await window.api.previewPDF(
+          request.source,
+          request.defaultName,
+          options,
+          request.sourcePath
+        )
         if (requestId !== requestIdRef.current) {
           if (result?.token) window.api.disposePDFPreview(result.token).catch(() => {})
           return
@@ -55,6 +60,7 @@ export function usePdfPreview({ request, options, delay = 160 }) {
         })
         capturePdfPreviewForTest({
           source: request.source,
+          sourcePath: request.sourcePath || null,
           options,
           result: {
             ok: true,
@@ -67,6 +73,7 @@ export function usePdfPreview({ request, options, delay = 160 }) {
         if (requestId !== requestIdRef.current) return
         capturePdfPreviewForTest({
           source: request.source,
+          sourcePath: request.sourcePath || null,
           options,
           result: {
             ok: false,

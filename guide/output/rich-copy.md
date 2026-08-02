@@ -5,7 +5,7 @@ description: 将 HorseMD 内容带格式复制到微信公众号、邮件、Noti
 
 # 富文本复制
 
-<span class="version-badge">适用于 HorseMD v0.12.47</span>
+<span class="version-badge">适用于 HorseMD v0.12.51</span>
 
 在富文本模式选中内容并按 `Ctrl/Cmd+C`。HorseMD 会同时提供纯文本、带内联样式的 HTML 和内部使用的 Markdown，目标应用会选择自己支持的格式。
 
@@ -17,6 +17,8 @@ description: 将 HorseMD 内容带格式复制到微信公众号、邮件、Noti
 - Word 或其他办公软件。
 
 标题、段落、列表、引用、表格、代码和链接会尽量保留当前主题下的可读样式。编辑器专用控件不会被复制，例如代码块复制按钮、表格手柄和块级菜单。
+
+若需要复制整个代码块，点击代码块右上角的“复制”。HorseMD 会读取完整代码内容，而不是只读取当前屏幕里渲染的行；超过 100 行的长代码也会保留第一行、最后一行、空行和原始换行。
 
 ## 粘贴到纯文本应用
 

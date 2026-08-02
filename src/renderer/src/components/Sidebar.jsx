@@ -21,6 +21,8 @@ export default function Sidebar({
   onOpenFile,
   onOpenRight,
   onExportPdf,
+  onExportHtml,
+  onExportPandoc,
   refreshNonce,
   syncSupported = false,
   syncFolderPaths = [],
@@ -473,6 +475,8 @@ export default function Sidebar({
         onRename={(node) => setRename({ path: node.path, value: node.name })}
         onDuplicate={doDuplicate}
         onExportPdf={onExportPdf}
+        onExportHtml={onExportHtml}
+        onExportPandoc={onExportPandoc}
         onDelete={doDelete}
       />
     </div>

@@ -43,10 +43,10 @@ Phase 0 不增加聊天入口，不保存 API Key，不运行 CLI。
 - 不在移动端安全存储与原生网络合同完成前开放 API Key。
 - 不做每次键入触发的 AI 自动补全，避免打断写作和放大大文档序列化成本。
 
-## Phase 0 验收
+## Phase 0 当前验收状态
 
-- 所有合同均为无 UI、无网络的纯测试。
-- Provider fixture 覆盖流分片、错误 JSON、取消和超时。
-- Context fixture 覆盖大文档截断、选区、章节边界和 revision 变化。
-- AI 模块不导入 React、ProseMirror、Electron renderer API 或具体厂商 SDK。
-
+- [x] 合同、上下文快照和变更提案均为无 UI、无网络的纯模块与测试。
+- [x] Context fixture 覆盖文档截断、选区和 revision 变化；应用提案前同时校验 revision、range 与 before 文本。
+- [x] AI 模块不导入 React、ProseMirror、Electron renderer API 或具体厂商 SDK。
+- [ ] Provider fixture 尚未实现。首个真实 Provider 开发前，必须先明确流式 `invoke` 契约，并覆盖流分片、错误 JSON、取消、超时、auth、rate-limit 与 network 错误；不能把当前只有方法形状校验的 `assertProviderAdapter` 误认为 Provider 已验收。
+- [ ] 章节范围边界 fixture 尚未实现。Phase 1 接入编辑器选区/章节上下文前补齐，避免 renderer 自行拼接章节文本。

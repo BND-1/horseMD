@@ -388,6 +388,20 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   remark stringify `break` handler emits `<br>` **only inside `tableCell`** (else
   default); a remark transform parses inline `<br>` back to a break. Don't let a
   cell break serialize to a newline — it corrupts the table.
+- **List conversion source fidelity**: right-click conversion owns only the
+  current list level's marker/checkbox. Use the actual hit text position, build
+  the converted canonical snapshot from the transaction document before
+  dispatch, and patch only changed marker prefixes. `markdownUpdated` can arrive
+  during dispatch, after the next keystroke, or at source flush; waiting for it
+  and replacing the complete serializer list rewrites nested compact spacing and
+  indentation. `npm run test:list-conversion-ui` must cover immediate human-like
+  typing, source bytes, save, process exit and full reopen.
+- **Forced rich flushes** must serialize `view.state.doc` with `serializerCtx`.
+  `crepe.getMarkdown()` is a listener-backed snapshot and may lag behind a
+  keyboard transaction that is already visible in ProseMirror; using it for an
+  immediate save or source switch can lose the last input after reopen.
+  `saveTab()` must call `getMarkdownForTab()` and update `tabsRef` before writing;
+  `commitAllLive()` alone covers only uncontrolled source textareas.
 - **Image host** (`ImageHostButton` + `image:upload` IPC): a Typora-style custom
   command. Renderer reads the file bytes and calls main, which writes a temp file,
   runs `<command> "<file>"`, and returns the last http(s) URL it prints. Empty
@@ -450,6 +464,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   wouldn't apply. The rule `.milkdown .cm-editor .cm-content, .cm-line {
   font-family: var(--font-mono) }` (in app.css, specificity beats CM's default)
   is the root fix — don't remove it.
+- **CodeMirror long-code copy**: CodeMirror virtualizes long code blocks, so
+  `.cm-line` contains only the visible window (often 30–65 lines). Whole-block
+  copy must resolve the complete ProseMirror `code_block`; never fall back to
+  DOM text, and never show success after a partial/failed resolution. Keep
+  native CodeMirror selection copy untouched, then run `npm run test:issue-98-ui`
+  for the 122-line whole-copy and 65-line partial-selection cases. Full report:
+  `docs/long-code-copy-virtualization-regression.md`.
 - **queryLocalFonts (Local Font Access API)**: the Settings font pickers
   enumerate installed system fonts via `window.queryLocalFonts()` on first
   focus/click (needs a user gesture). Permission is granted in `main/index.js`

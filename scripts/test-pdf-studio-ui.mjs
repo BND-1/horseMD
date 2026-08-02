@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { connectCdp, sleep } from './lib/cdp.mjs'
+import { chooseContextExportFormat } from './lib/context-menu.mjs'
 
 const waitFor = async (evaluate, expression, message, attempts = 100) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -94,8 +95,7 @@ const main = async () => {
     return true
   })()`)
   if (!menuOpened) throw new Error('Active tab not found')
-  await waitFor(evaluate, `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`, 'PDF export command not found')
-  await evaluate(`([...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
+  await chooseContextExportFormat(evaluate, 'PDF')
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-studio')`, 'PDF studio did not open')
   // Settings remain interactive while the initial export button is disabled.
   // Rapid header/footer changes must cancel superseded previews silently.
@@ -163,6 +163,8 @@ const main = async () => {
   const largerTextHeight = await pdfTextHeight(evaluate, /PDF export options/)
   const capturedFontSize = await evaluate(`window.__horsemdLastPdfPreview?.options?.fontSizePt`)
   assert.equal(capturedFontSize, 14)
+  const capturedSourcePath = await evaluate(`window.__horsemdLastPdfPreview?.sourcePath || ''`)
+  assert.ok(capturedSourcePath.endsWith('/scripts/fixtures/issues-57-60.md'), `PDF preview lost its source path: ${capturedSourcePath}`)
   assert.ok(
     largerTextHeight > defaultTextHeight * 1.2,
     `PDF body font size did not affect the final PDF: ${JSON.stringify({ defaultTextHeight, largerTextHeight })}`
@@ -223,7 +225,7 @@ const main = async () => {
 
   // Only the final value in a rapid change burst may win.
   await evaluate(`(() => {
-    const buttons = [...document.querySelectorAll('.hm-pdf-segmented button')]
+    const buttons = [...document.querySelectorAll('.hm-pdf-segmented:not(.hm-pdf-density) button')]
     buttons[0].click(); buttons[1].click(); buttons[0].click()
   })()`)
   await waitPreview(evaluate, range.token)
@@ -245,8 +247,7 @@ const main = async () => {
     const tab = document.querySelector('.tab.active') || document.querySelector('.tab')
     tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20, button: 2 }))
   })()`)
-  await waitFor(evaluate, `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`, 'Source-mode PDF command not found')
-  await evaluate(`([...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
+  await chooseContextExportFormat(evaluate, 'PDF')
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-studio')`, 'Source-mode PDF studio did not open')
   await waitPreview(evaluate)
   const sourceExport = await evaluate(`({ headings: Number(document.querySelector('.hm-pdf-studio')?.dataset.sourceHeadings || 0), outline: Number(document.querySelector('.hm-pdf-preview')?.dataset.outlineCount || 0) })`)

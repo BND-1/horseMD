@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { chooseContextExportFormat } from './lib/context-menu.mjs'
 
 const root = '/tmp/horsemd-pdf-rendered-formats-ui'
 const profileDir = join(root, 'profile')
@@ -119,12 +120,7 @@ try {
   })()`)
   if (!tabPoint) throw new Error('Rendered-format tab point is unavailable')
   await click(send, tabPoint, 'right')
-  await waitFor(
-    evaluate,
-    `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`,
-    'PDF export command did not open'
-  )
-  await evaluate(`([...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
+  await chooseContextExportFormat(evaluate, 'PDF')
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-studio')`, 'PDF studio did not open')
   await waitFor(evaluate, `window.__horsemdLastPdfPreview?.result?.ok === true`, 'Rendered-format PDF preview did not complete')
   await waitFor(evaluate, `(() => {

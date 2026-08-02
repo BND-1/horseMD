@@ -5,6 +5,7 @@ import { createCanvas } from '@napi-rs/canvas'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { chooseContextExportFormat } from './lib/context-menu.mjs'
 
 const root = `/tmp/horsemd-pdf-table-layout-${process.pid}`
 const fixture = join(root, 'table-layout.md')
@@ -48,13 +49,7 @@ const openPdfStudio = async (app) => {
   })()`)
   assert.ok(tabPoint, 'Active document tab was not found')
   await click(app, tabPoint, 'right')
-  const exportPoint = await waitFor(() => app.evaluate(`(() => {
-    const button = [...document.querySelectorAll('button')]
-      .find((node) => node.offsetParent && /PDF/i.test(node.textContent || ''))
-    const rect = button?.getBoundingClientRect()
-    return rect ? { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 } : null
-  })()`), 'PDF export command was not found')
-  await click(app, exportPoint)
+  await chooseContextExportFormat(app.evaluate, 'PDF')
   await waitFor(
     () => app.evaluate(`window.__horsemdLastPdfPreview?.result?.ok === true`),
     'PDF preview did not complete'

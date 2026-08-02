@@ -40,9 +40,15 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, getUserDataPath, m
     return res.canceled ? null : res.filePath
   })
 
-  ipcMain.handle('pdf:preview', (event, payload) => pdfExport.createPreview(event, payload))
-  ipcMain.handle('pdf:savePreview', (event, payload) => pdfExport.savePreview(event, payload))
-  ipcMain.handle('pdf:disposePreview', (event, token) => pdfExport.disposePreview(event, token))
+  ipcMain.handle('pdf:preview', (event, payload) => trusted(event)
+    ? pdfExport.createPreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pdf:savePreview', (event, payload) => trusted(event)
+    ? pdfExport.savePreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pdf:disposePreview', (event, token) => trusted(event)
+    ? pdfExport.disposePreview(event, token)
+    : false)
   ipcMain.handle('html:preview', (event, payload) => trusted(event)
     ? htmlExport.createPreview(event, payload)
     : { ok: false, error: 'Untrusted renderer.' })

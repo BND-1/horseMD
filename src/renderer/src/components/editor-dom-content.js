@@ -148,28 +148,38 @@ export function mountEditorContentBindings({
     event.preventDefault()
     event.stopImmediatePropagation()
 
-    let text = ''
+    let node = null
     try {
       const pos = view.posAtDOM(block, 0)
       const $pos = view.state.doc.resolve(pos)
-      const node = [
+      const ancestors = []
+      for (let depth = $pos.depth; depth >= 0; depth -= 1) ancestors.push($pos.node(depth))
+      node = [
+        ...ancestors,
         view.state.doc.nodeAt(pos),
         $pos.nodeAfter,
         $pos.nodeBefore
       ].find((candidate) => candidate?.type?.name === 'code_block')
-      if (node) text = node.textContent
-      else {
-        text = [...block.querySelectorAll('.cm-line')]
-          .map((line) => line.textContent || '')
-          .join('\n')
-      }
-    } catch {
-      text = [...block.querySelectorAll('.cm-line')]
-        .map((line) => line.textContent || '')
-        .join('\n')
-    }
+    } catch {}
 
-    if (!await copyToClipboard(text, getT('code.copied'))) return
+    // CodeMirror virtualizes long documents, so `.cm-line` only represents the
+    // visible window (often about 30–65 lines). If DOM position mapping ever
+    // fails, match the wrapper's document-order index to the full PM node;
+    // never report a successful copy from the partial rendered DOM.
+    if (!node) {
+      const blockIndex = [...view.dom.querySelectorAll('.milkdown-code-block')].indexOf(block)
+      let currentIndex = -1
+      view.state.doc.descendants((candidate) => {
+        if (candidate.type.name !== 'code_block') return true
+        currentIndex += 1
+        if (currentIndex !== blockIndex) return true
+        node = candidate
+        return false
+      })
+    }
+    if (!node) return
+
+    if (!await copyToClipboard(node.textContent, getT('code.copied'))) return
     button.classList.add('hm-copied')
     setTimeout(() => button.classList.remove('hm-copied'), 1100)
   }

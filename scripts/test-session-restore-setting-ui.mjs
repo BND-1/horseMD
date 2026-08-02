@@ -26,6 +26,10 @@ try {
   await writeFile(explicitFile, '# EXPLICIT_OPEN_98\n', 'utf8')
 
   app = await launchBuiltElectron({ profileDir: profile, port, appArgs: [restoredFile] })
+  await waitFor(
+    () => app.evaluate(`document.body.textContent.includes('SHOULD_NOT_RESTORE_98')`),
+    'initial startup file did not become active before opening settings'
+  )
   const disabled = await app.evaluate(`(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const visible = (node) => Boolean(node?.offsetParent)

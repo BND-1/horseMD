@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { chooseContextExportFormat } from './lib/context-menu.mjs'
 
 const root = '/tmp/horsemd-pdf-images-ui'
 const profileDir = join(root, 'profile')
@@ -75,12 +76,7 @@ try {
   })()`)
   if (!tabPoint) throw new Error('Active tab not found')
   await click(send, tabPoint, 'right')
-  await waitFor(
-    evaluate,
-    `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`,
-    'PDF export command not found'
-  )
-  await evaluate(`([...document.querySelectorAll('button')].find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
+  await chooseContextExportFormat(evaluate, 'PDF')
   await waitFor(evaluate, `window.__horsemdLastPdfPreview?.result?.ok === true`, 'PDF preview did not complete')
 
   const snapshot = await evaluate(`(() => {

@@ -5,7 +5,7 @@ description: 将当前 HorseMD 文档导出为干净的 PDF 文件。
 
 # 导出 PDF
 
-<span class="version-badge">适用于 HorseMD v0.12.50</span>
+<span class="version-badge">适用于 HorseMD v0.12.51</span>
 
 ## 打开导出中心
 
@@ -14,7 +14,7 @@ description: 将当前 HorseMD 文档导出为干净的 PDF 文件。
 1. 按 `Ctrl/Cmd+Shift+E`。
 2. 打开“文件”菜单，选择“导出为 PDF”。
 3. 按 `Ctrl/Cmd+P` 打开命令面板，搜索“导出 PDF”。
-4. 右键当前文档标签，或右键工作区中的 Markdown 文件，选择“导出为 PDF”。
+4. 右键当前文档标签，或右键工作区中的 Markdown 文件，打开“导出”子菜单并选择“PDF 文档”。
 
 HorseMD 会打开独立的 PDF 导出中心：左侧调整设置，右侧显示真实 PDF 分页预览。确认后点击“导出 PDF”，选择保存位置；生成完成后会使用系统默认 PDF 阅读器打开。保存位置默认就是当前 Markdown 文件所在的文件夹；如果你曾把某个文件另存到别处，HorseMD 会**按文件记住**那个目录（同一个文件下次默认它，不同文件仍各自回到自己的文件夹），未命名文档则回到上次保存的目录。
 

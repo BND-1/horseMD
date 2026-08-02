@@ -91,6 +91,33 @@ try {
       return { found: !!action, disabled: !!action?.disabled }
     })()`)
     assert.deepEqual(registeredState, { found: true, disabled: true }, 'registered folder should show a non-actionable sync status')
+    await app.evaluate(`document.body.click()`)
+
+    await openContextMenu(app, notePath)
+    const exportTrigger = await app.evaluate(`(() => {
+      const trigger = document.querySelector('.context-menu .context-submenu-trigger')
+      if (!trigger) return false
+      trigger.focus()
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      return true
+    })()`)
+    assert.equal(exportTrigger, true, 'Markdown file menu should expose one export submenu')
+    await waitFor(app.evaluate, `!!document.querySelector('.context-submenu')`, 'file export submenu')
+    const exportFormats = await app.evaluate(`(() => [...document.querySelectorAll('.context-submenu button')]
+      .map((node) => node.textContent.trim()))()`)
+    assert.equal(exportFormats.length, 8, 'export submenu should include PDF, HTML, and six Pandoc formats')
+    assert.equal(exportFormats.some((label) => /PDF/i.test(label)), true)
+    assert.equal(exportFormats.some((label) => /HTML/i.test(label)), true)
+    assert.equal(exportFormats.some((label) => /Word/i.test(label)), true)
+    const htmlOpened = await app.evaluate(`(() => {
+      const action = [...document.querySelectorAll('.context-submenu button')]
+        .find((node) => /HTML/i.test(node.textContent || ''))
+      action?.click()
+      return !!action
+    })()`)
+    assert.equal(htmlOpened, true, 'HTML export action should be clickable from the file submenu')
+    await waitFor(app.evaluate, `!!document.querySelector('.hm-html-studio')`, 'HTML export studio', 80)
+    await app.evaluate(`document.querySelector('.hm-html-studio .hm-pdf-close')?.click()`)
   } finally {
     await stopBuiltElectron(app)
   }
@@ -98,4 +125,4 @@ try {
   await rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS sidebar sync menu UI: root/file entry, registration, visible registered state')
+console.log('PASS sidebar context menu UI: sync actions and complete keyboard-accessible export submenu')

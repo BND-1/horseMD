@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { chooseContextExportFormat } from './lib/context-menu.mjs'
 
 const waitFor = async (evaluate, expression, message, attempts = 160) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -64,13 +65,7 @@ try {
       button: 2
     }))
   })()`)
-  await waitFor(
-    evaluate,
-    `[...document.querySelectorAll('button')].some((node) => /PDF/i.test(node.textContent || ''))`,
-    'PDF export command not found'
-  )
-  await evaluate(`([...document.querySelectorAll('button')]
-    .find((node) => /PDF/i.test(node.textContent || ''))?.click(), true)`)
+  await chooseContextExportFormat(evaluate, 'PDF')
   await waitFor(evaluate, `!!document.querySelector('.hm-pdf-studio')`, 'PDF studio did not open')
   await evaluate(`(() => {
     window.__horsemdPdfChurnErrors = []
@@ -106,7 +101,7 @@ try {
         window.__horsemdLastPdfPreview?.result?.ok === true &&
         !document.querySelector('.hm-pdf-preview-progress')`,
       'Long-document PDF churn did not settle on the latest font size',
-      200
+      300
     )
   } catch (error) {
     const diagnostics = await evaluate(`(() => ({

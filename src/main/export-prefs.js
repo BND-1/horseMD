@@ -9,31 +9,45 @@ import { resolveSaveDir, withRecordedSaveDir } from './export-prefs-logic.js'
 const FILE = 'export-prefs.json'
 
 let cache = null
-let loaded = false
+let loadPromise = null
+let writeQueue = Promise.resolve()
 
 const filePath = () => join(app.getPath('userData'), FILE)
 
 async function load() {
-  if (loaded) return cache
-  loaded = true
-  try {
-    const parsed = JSON.parse(await fs.readFile(filePath(), 'utf8'))
-    const saveDirs = parsed?.saveDirs && typeof parsed.saveDirs === 'object' ? parsed.saveDirs : {}
-    cache = {
-      saveDirs,
-      lastSaveDir: typeof parsed?.lastSaveDir === 'string' ? parsed.lastSaveDir : ''
-    }
-  } catch {
-    // First run or corrupt file → start empty.
-    cache = { saveDirs: {}, lastSaveDir: '' }
+  if (cache) return cache
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      try {
+        const parsed = JSON.parse(await fs.readFile(filePath(), 'utf8'))
+        const saveDirs = parsed?.saveDirs && typeof parsed.saveDirs === 'object'
+          ? Object.fromEntries(Object.entries(parsed.saveDirs).filter(([, value]) => typeof value === 'string'))
+          : {}
+        cache = {
+          saveDirs,
+          lastSaveDir: typeof parsed?.lastSaveDir === 'string' ? parsed.lastSaveDir : ''
+        }
+      } catch {
+        // First run or corrupt file -> start empty.
+        cache = { saveDirs: {}, lastSaveDir: '' }
+      }
+      return cache
+    })()
   }
-  return cache
+  return loadPromise
 }
 
-async function persist() {
-  // Preferences are non-critical: a write failure (read-only userData, full
-  // disk) must not abort the user's save.
-  await fs.writeFile(filePath(), JSON.stringify(cache, null, 2), 'utf8').catch(() => {})
+function persist(state) {
+  const serialized = JSON.stringify(state, null, 2)
+  writeQueue = writeQueue.then(async () => {
+    try {
+      await fs.writeFile(filePath(), serialized, 'utf8')
+    } catch {
+      // Preferences are non-critical: a write failure (read-only userData,
+      // full disk) must not abort the user's export.
+    }
+  })
+  return writeQueue
 }
 
 export async function getSaveDirFor(sourcePath) {
@@ -42,5 +56,5 @@ export async function getSaveDirFor(sourcePath) {
 
 export async function recordSaveDir(sourcePath, chosenDir) {
   cache = withRecordedSaveDir(await load(), sourcePath, chosenDir)
-  await persist()
+  await persist(cache)
 }

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { isMarkdownName } from '../paths.js'
 import { clampFloatingRect } from '../lib/menuPosition.js'
+import ExportContextSubmenu from './ExportContextSubmenu.jsx'
 
 export default function SidebarContextMenu({
   menu,
@@ -16,6 +17,8 @@ export default function SidebarContextMenu({
   onRename,
   onDuplicate,
   onExportPdf,
+  onExportHtml,
+  onExportPandoc,
   onDelete
 }) {
   const menuRef = useRef(null)
@@ -53,6 +56,7 @@ export default function SidebarContextMenu({
     <div
       ref={menuRef}
       className="context-menu"
+      role="menu"
       style={position}
       onClick={(event) => event.stopPropagation()}
     >
@@ -97,8 +101,14 @@ export default function SidebarContextMenu({
       {node && !isRoot && <div className="menu-sep" />}
       {node && !isRoot && <button onClick={run(() => onRename(node))}>{t('side.rename')}</button>}
       {node?.type === 'file' && <button onClick={run(() => onDuplicate(node))}>{t('side.duplicate')}</button>}
-      {node?.type === 'file' && isMarkdownName(node.name) && window.api.capabilities?.pdfExport !== false && (
-        <button onClick={run(() => onExportPdf?.(node.path))}>{t('side.exportPdf')}</button>
+      {node?.type === 'file' && isMarkdownName(node.name) && (
+        <ExportContextSubmenu
+          t={t}
+          onClose={onClose}
+          onExportPdf={onExportPdf ? () => onExportPdf(node.path) : undefined}
+          onExportHtml={onExportHtml ? () => onExportHtml(node.path) : undefined}
+          onExportPandoc={onExportPandoc ? (format) => onExportPandoc(node.path, format) : undefined}
+        />
       )}
       {node && !isRoot && <div className="menu-sep" />}
       {node && !isRoot && <button className="danger" onClick={run(() => onDelete(node))}>{t('side.delete')}</button>}

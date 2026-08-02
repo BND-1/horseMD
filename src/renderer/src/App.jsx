@@ -483,6 +483,8 @@ export default function App() {
     saveTab,
     commitMobileSave,
     exportPathToPdf,
+    exportPathToHtml,
+    exportPathWithPandoc,
     openFolder,
     folderRoots,
     addFolder,
@@ -511,6 +513,8 @@ export default function App() {
     setRenameState,
     setSaveNameState,
     requestPdfExport,
+    requestHtmlExport,
+    requestPandocExport,
     setSidebarOpen,
     initialFolderRoots: initialFolderRoots
   })
@@ -913,6 +917,8 @@ export default function App() {
         onDuplicate={duplicateTabFile}
         onDelete={deleteTabFile}
         onExportPdf={exportPathToPdf}
+        onExportHtml={exportPathToHtml}
+        onExportPandoc={exportPathWithPandoc}
         onReorder={reorderTabs}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onToggleReadOnly={() => updateSettings({ mobileReadOnly: !settings.mobileReadOnly })}
@@ -940,6 +946,8 @@ export default function App() {
                 onOpenFile={(p) => { openPaths([p]); if (isMobile) setSidebarOpen(false) }}
                 onOpenRight={openFileRight}
                 onExportPdf={exportPathToPdf}
+                onExportHtml={exportPathToHtml}
+                onExportPandoc={exportPathWithPandoc}
                 refreshNonce={refreshNonce}
                 syncSupported={syncWorkspaces.supported}
                 syncFolderPaths={syncWorkspaces.registered.map((entry) => entry.rootPath)}

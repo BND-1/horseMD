@@ -21,7 +21,7 @@
 | 斜杠命令 | `editor-slash-menu.js` | `guide/editing/slash-command.md` | 待专项复核：确认所有可见别名与命令清单一致。 |
 | 格式、图片、链接、附件 | `Editor.jsx`、`editor-dom-content.js`、`useAttachments.js` | `guide/editing/formatting.md`、`images.md`、`links-and-attachments.md` | 待专项复核：链接协议与附件路径应在发布前用真实文件再验。 |
 | 表格、HTML 表格、单元格换行、列宽 | `editor-tablebreak.js`、`editor-dom-layout.js`、`editor-html.js` | `guide/editing/tables.md` | 已复核：自然宽度、内部横向滚动、`/表格`/`/table`/`/bg`、长按实时调列宽、不回跳，以及 PDF 保留列比例和紧凑行距均已写入。 |
-| 代码块、Mermaid、LaTeX | `editor-codeblock-eager.js`、`editor-mermaid.js`、`editor-math.js` | `guide/editing/code-blocks.md`、`math-and-mermaid.md` | 待专项复核：下次发布确认公式预览、灯箱和 PDF 长公式截图。 |
+| 代码块、Mermaid、LaTeX | `editor-codeblock-eager.js`、`editor-dom-content.js`、`editor-mermaid.js`、`editor-math.js` | `guide/editing/code-blocks.md`、`math-and-mermaid.md` | 长代码复制已专项复核：虚拟化 122 行 JSON 的按钮全文复制、全选复制和 65 行部分选择均读取真实系统剪贴板；下次发布仍需确认公式预览、灯箱和 PDF 长公式截图。 |
 
 ## 导航、效率与外观
 
@@ -40,7 +40,7 @@
 | PDF 导出中心 | `hooks/usePdfExport.js`、`components/pdf-export/`、`main/pdf-export.js` | `guide/output/export-pdf.md` | 教程已对齐真实 Buffer、8–24pt 正文字号、整体缩放、表格列宽/行距、尺寸、目录页、书签、页码范围、图片、Mermaid 和长公式；下次正式发布仍需用最新安装包复核截图。 |
 | HTML 导出中心 | `hooks/useHtmlExport.js`、`hooks/useHtmlPreview.js`、`components/html-export/`、`main/html-export.js` | `guide/output/export-html.md` | 已用 0.12.48 新安装包和隔离测试文档复核正文、第一版边界及 1440×900 Studio 截图。 |
 | Pandoc 文档转换 | `hooks/usePandocExport.js`、`main/pandoc-export.js`、`main/subprocess.js` | `guide/output/export-pandoc.md`、`guide/customization/settings.md` | 自动检测、手动选择、格式与安全边界已复核；Pandoc 3.10.1 已实际生成并检查 docx、tex、epub，教程说明了 SVG 等资源可能需要额外转换工具。 |
-| 富文本复制、移动分享 | `editor-copy.js`、`capacitor-api.js` | `guide/output/rich-copy.md`、`mobile-share.md` | 待专项复核。 |
+| 富文本复制、移动分享 | `editor-copy.js`、`editor-dom-content.js`、`capacitor-api.js` | `guide/output/rich-copy.md`、`mobile-share.md` | 桌面三通道复制与长代码块系统剪贴板已专项复核；移动分享仍待真机复核。 |
 | 桌面 WebDAV / S3 云同步 | `useSyncWorkspaces.js`、`SyncSettings.jsx`、`main/sync/` | `guide/basics/cloud-sync.md`、`guide/troubleshooting/faq.md` | 已复核：明确工作区不会自动同步、根目录唯一 `.horsemd/workspace.json`、WebDAV/S3、可选 User-Agent、上传/下载/双向同步、远端清空保护、冲突回收和仅桌面端。 |
 | iOS / Android 只读与平台边界 | `capacitor-api.js`、`mobileReadOnly`、移动壳 | `guide/mobile/ios.md`、`android.md` | 已复核：只读模式和“移动端不提供云同步”已写明；真机发布前仍需手测。 |
 

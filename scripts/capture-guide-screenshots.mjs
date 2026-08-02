@@ -179,9 +179,15 @@ async function main() {
     if (!tabPoint) throw new Error('Could not locate active tab for PDF export')
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
-    await waitFor("[...document.querySelectorAll('.tab-ctxmenu button')].some((button) => /PDF/i.test(button.textContent))")
+    await waitFor("document.querySelector('.tab-ctxmenu .context-submenu-trigger')")
+    await evaluate(`(() => {
+      const trigger = document.querySelector('.tab-ctxmenu .context-submenu-trigger')
+      trigger.focus()
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })()`)
+    await waitFor("[...document.querySelectorAll('.context-submenu button')].some((button) => /PDF/i.test(button.textContent))")
     const exportPoint = await evaluate(`(() => {
-      const button = [...document.querySelectorAll('.tab-ctxmenu button')].find((node) => /PDF/i.test(node.textContent))
+      const button = [...document.querySelectorAll('.context-submenu button')].find((node) => /PDF/i.test(node.textContent))
       if (!button) return null
       const rect = button.getBoundingClientRect()
       return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }

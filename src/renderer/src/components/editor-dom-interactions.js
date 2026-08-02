@@ -38,6 +38,25 @@ export function mountEditorInteractionBindings({
       .forEach((button) => button.classList.toggle('active', active))
   }
 
+  // Markdown list input rules consume the space after a typed `-`, `*`, `+`,
+  // or `1.`/`1)`. Capture the authored marker during keydown, while the literal
+  // marker is still present in the ProseMirror text block. By `beforeinput` the
+  // input rule may already have replaced the block with a list, which loses
+  // both the user's marker choice and the raw position needed by source preservation.
+  // Keep the beforeinput path below as a fallback for non-keyboard insertion
+  // (IME/accessibility APIs), but physical typing must take this earlier path.
+  const noteListInputRuleIntent = () => {
+    const { selection } = view.state
+    if (!selection.empty || !selection.$from.parent.isTextblock) return
+    const prefix = selection.$from.parent.textBetween(0, selection.$from.parentOffset)
+    const marker = prefix.match(/^([-+*]|\d{1,9}[.)])$/)?.[1]
+    if (!marker) return
+    onMarkdownInputIntent?.({
+      type: /^\d/.test(marker) ? 'ordered-list' : 'bullet-list',
+      marker
+    })
+  }
+
   const onKeydown = (event) => {
     noteUserInteraction()
     if (isReadOnly?.()) {
@@ -51,6 +70,10 @@ export function mountEditorInteractionBindings({
       return
     }
     markUserEdit()
+    if (!event.ctrlKey && !event.metaKey && !event.altKey &&
+      (event.key === ' ' || event.code === 'Space')) {
+      noteListInputRuleIntent()
+    }
     const keybindings = getKeybindings?.() || getEffectiveKeybindingMap()
     const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
     if (keybindingMatchesEvent(keybindings['editor.block.paragraph']?.[0], event, platform)) {
@@ -192,12 +215,7 @@ export function mountEditorInteractionBindings({
       event.inputType === 'insertText' &&
       event.data === ' '
     ) {
-      const { selection } = view.state
-      if (selection.empty && selection.$from.parent.isTextblock) {
-        const prefix = selection.$from.parent.textBetween(0, selection.$from.parentOffset)
-        const marker = prefix.match(/^([-+*])$/)?.[1]
-        if (marker) onMarkdownInputIntent?.({ type: 'bullet-list', marker })
-      }
+      noteListInputRuleIntent()
     }
   }
   const onReadOnlyInput = (event) => {

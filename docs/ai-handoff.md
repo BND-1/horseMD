@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-07-31。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-01。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.50`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图（PDF 报「图片加载失败」、HTML 不报警丢图）；0.12.50 新增导出保存位置默认到 Markdown 同级目录并按文件记住（`userData/export-prefs.json`，per-file 不串扰），以及 PDF 导出「排版密度」选择（舒适/标准/紧凑，`standard` 与原排版逐字一致，`compact` 实测同一文档约减 19% 页数）。
+- 当前测试版本号：`package.json` 为 `0.12.58`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图；0.12.50 新增导出保存位置按文件记忆和 PDF 排版密度；0.12.51 补齐导出参数/并发/IPC、文件右键导出子菜单和长代码块完整复制；0.12.52 修复列表转换与紧接输入的时序竞争；0.12.58 修复空白新文档中“嵌套有序列表退出后立即创建无序列表”被中间空有序项污染的源码竞态，覆盖立即切源码、保存、重开与真实 macOS 键盘输入。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -20,7 +20,8 @@
   - `npm run guide:check`
   - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
   - 0.12.46：`npm run test:mermaid-paste-ui` 以隔离 profile 连续 10/10 通过；完整 UI 回归为 `7 sessions + 25 standalone`
-  - 0.12.47：`node scripts/test-issue-98-copy-undo-ui.mjs` 验证段落、列表、内部结构粘贴、代码复制和撤销
+  - 0.12.51：`npm run test:issue-98-ui` 使用 122 行 JSON 强制触发 CodeMirror 虚拟化，验证按钮全文复制、全选复制和 65 行部分选择；系统剪贴板每次先写 sentinel，避免旧内容造成假通过
+  - 0.12.52：`npm run test:list-conversion-ui` 覆盖当前层级/任务/正文转换，并用混合松散-紧凑嵌套列表验证转换后立即逐字输入、源码逐字节、保存和新进程重开
   - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
   - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
@@ -107,6 +108,7 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 14. [soft-line-break-display-report.md](./soft-line-break-display-report.md)：普通源码单换行在富文本中显示为空格的根因、显示合同和防回归测试。
 15. [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)：PDF 表格列宽与行距两次修复的完整事故复盘。
 16. [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)：所有“编辑器正常、PDF 不一致”问题的工程化排查和验收流程。
+17. [long-code-copy-virtualization-regression.md](./long-code-copy-virtualization-regression.md)：长代码块复制截断的虚拟化根因、正确数据源和防回归停止条件。
 
 历史文档说明：
 
@@ -171,7 +173,7 @@ android/, ios/           Capacitor 原生壳
 - 普通源码单换行由 Milkdown 保留为 `data-is-inline="true"` 的 hardbreak 节点。默认多行显示只能通过 `hm-preserve-soft-breaks` 做视觉处理；禁止把它序列化为 `<br>`、尾随空格或空段落。Enter 与 Shift+Enter 的编辑语义不得随该偏好变化，修改后必须运行 `npm run test:soft-break-ui`、`test:paragraph-source-ui` 和 `test:mode-switch-raw-offset-ui`。
 - textarea DOM 会把 CRLF 变成 LF；任何源码输入或源码命令写回 `liveContentRef` 前必须经过 `source-text-fidelity.js`，禁止直接保存 `textarea.value`。
 - 只有源码真的改过，切回富文本才同步到 Crepe。
-- Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。普通文字只允许字符级回写；结构操作最多替换受影响列表、表格或行；映射失败必须保留原文并报告失败。任何路径都不能用 canonical 内容覆盖整篇源码。
+- Crepe 的 serializer 不保证原始 Markdown 写法；`lastMarkdownRef` 是用户源码，`canonicalMarkdownRef` 只用于识别局部富文本变更。普通文字只允许字符级回写；结构操作最多替换受影响列表、表格或行；映射失败必须保留原文并报告失败。唯一例外是从空白起步、全程仅富文本写作的新文档：它没有既有源码格式，嵌套列表退出的中间空项不能进入增量基线，应以完整实时 canonical 建立结构并恢复已记录 marker；一旦用户实际编辑源码，立刻关闭该例外。
 - 分块大文档追加完成后必须记录完整 `canonicalMarkdownRef`，但绝不能用 canonical 重建 `lastMarkdownRef`。富文本插入类命令必须以 `tab.content` / `lastMarkdownRef` 为全文基底，不得以 `getMarkdown()` 为基底。
 - 源码调用 `replaceAll` 同步到 Crepe 时可能连续发出多个 `markdownUpdated`。`programmaticReplaceRef` 必须保持到下一次明确的 `markUserEdit`，不能只跳过第一条回调，否则前一次用户编辑的 TTL 会把后续同步事务误判为用户编辑。
 - Crepe canonical 始终带结尾换行，文档末尾新建的空 paragraph 又没有 visible index。不能把其后续输入映射到“最后一个可见字符”；`preserveAppendedParagraph` 必须按用户源码原有结尾换行数追加标准段落边界。修改后运行 `npm run test:paragraph-source-ui`，并确认测试包含保存、退出和全新进程重开。
@@ -180,6 +182,7 @@ android/, ios/           Capacitor 原生壳
 - Enter 创建的末尾空 paragraph 会被 Crepe canonical 暂时写成独立 `<br />` 块。`preserveTrailingEmptyBlock()` 必须在创建时只推进 canonical、不改 raw source，填入文字时再调用文档末尾块追加逻辑；否则真人慢速输入会把正文并入标题并残留 `<br />`。CDP 测试必须逐字输入且每行停顿到上一条 `markdownUpdated` 已提交，高速整句输入会掩盖该问题。
 - 在已有块之间按 Enter 还有两条独立路径：快速输入可能直接产生一个新 paragraph，停顿输入会先产生 `<br />` 占位。`preserveMiddleEmptyBlock()` 只可用前后未变化可见行的序号映射替换中间 raw 间隙，不能用零可见字符 affinity；并且必须把列表、表格、标题、引用和 fenced code 排除，让专用结构处理器保留原有语法风格。
 - ProseMirror 的 `bullet_list` 节点不保存用户触发输入规则时键入的 `-`、`*` 或 `+`。必须在空段落输入空格前记录 marker intent，再把它恢复到刚创建的列表层级；不能全局替换 serializer 的 `*`。松散列表可跨项目间空行，但顶层有序/无序类型变化必须截断；转换后 canonical 若把相邻同类型列表合并，`replaceMarkdownListBlock()` 必须按转换前项目内容缩小到原列表子区间。详见 [0.12.45 新输入源码保真报告](./new-input-source-fidelity-report.md)。
+- 新建空列表项的 Crepe `<br />` 是内部占位，不是用户 Markdown：源码只能短暂表示为用户输入的 `- ` / `* ` / `+ ` / `1. ` / `1) `，首个列表文字必须按列表树顺序填回该项，绝不能落到上一段。物理键盘必须在 Space 的 `keydown` 记录 marker；连续 Enter、marker、Space 时若原始源码尚未发布空段落，禁止使用失真的 raw offset，改以 canonical 前/后快照在前后可见内容边界插入仅该列表（末尾与中间均覆盖）。若新文档的首次 `markdownUpdated` 已合并标题、正文和嵌套列表，source/canonical 都为空时必须保留完整 canonical，不能让当前内层 selection 的输入规则补丁覆盖外层；生成的全新列表采用紧凑间距。嵌套项退出后紧接无序项时，`markdownUpdated` 和立即源码切换的 `flushMarkdown()` 必须共用完整 canonical 生成路径并恢复未发布的 `-` marker，避免中间空 `3.` 或默认 `*` 固化；用户实际编辑源码后关闭该路径。输入规则意图在首次成功重建该列表后必须立即清除；不得在后续 Enter/Tab 的嵌套列表操作中重放旧 source snapshot。初始化与 `flushMarkdown()` 必须同用 `serializerCtx(view.state.doc)`；缓存 serializer 与实时 serializer 的尾换行差异也必须视为非用户编辑。修改此边界后运行 `npm run test:rich-list-source-ui`、`npm run test:new-document-list-source-ui`、`npm run test:new-source-fidelity-ui` 和 `npm run test:list-conversion-ui`。
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。
 - `npm run test:mode-switch-raw-offset-ui` 是当前的精确 UI 回归：它按 Markdown raw offset 覆盖正文、表格、列表、代码块，并执行两条连续切换链。不能只用相邻文本或关键词断言。
@@ -193,6 +196,15 @@ android/, ios/           Capacitor 原生壳
   - 富文本 → 源码 → 富文本 → 源码
   - 源码 → 富文本 → 源码 → 富文本
   - 表格、代码块、行内代码、图片附近、大文档、重复文本
+
+### 5.2b CodeMirror 与剪贴板
+
+- CodeMirror 长代码块使用虚拟化 DOM，`.cm-line` 只代表当前渲染窗口，不能作为“完整代码”的数据源。
+- 代码块右上角复制按钮必须解析完整 ProseMirror `code_block`；解析失败时应停止且不能显示成功反馈，禁止回退拼接 `.cm-line`。
+- CodeMirror 内部的全选和部分选区复制由其文档状态负责。修复“复制整块”时不能拦截或扩大原生选区，否则选择 65 行会错误复制全文。
+- 复制测试必须读取真实系统剪贴板，并在每次操作前写入 sentinel；只检查 toast、按钮颜色或未清空的旧剪贴板会产生假通过。
+- 修改代码块 node view、复制事件、DOM 映射或 clipboard IPC 后，先运行 `npm run build`，再运行 `npm run test:issue-98-ui` 和 `npm run test:clipboard-ipc-ui`。构建与 UI 测试不能并行，否则测试可能加载旧 `out/`。
+- 完整根因和验收数据见 [长代码块复制截断事故复盘](./long-code-copy-virtualization-regression.md)。
 
 ### 5.3 PDF 导出
 
@@ -380,6 +392,8 @@ npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui
 npm run test:floating-outline-ui
+npm run test:issue-98-ui
+npm run test:clipboard-ipc-ui
 ```
 
 `test:math-ui`、`test:pdf-ui` 等部分脚本连接已有 CDP session。单独跑时先按 fixture 启动，或参考 `scripts/run-ui-regression.mjs`。
@@ -514,3 +528,7 @@ npm run test:floating-outline-ui
 其中 0.12.47 的 `npm run test:ui-regression` 最终结果为 `7 sessions + 25 standalone`；0.12.48 再次跑出同样的全绿结果。导出专项使用后台 Electron 验证 HTML 四主题/四宽度、结构化 Mermaid/LaTeX/表格/任务列表/图片、设置入口和模拟 Pandoc 异常；本机 Pandoc 3.10.1 还实际生成并检查了 docx、tex、epub。SVG 写入部分格式会按 Pandoc 规则要求额外的 `rsvg-convert`，不能由 HorseMD 静默伪装。
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。
+
+### 真实 macOS 输入补充
+
+疑难编辑问题除后台 CDP 回归外，可用 `CGEvent` 在前台 HorseMD 中逐键输入，并以截图、保存重开和按需 `pbpaste` 交叉核验；方法见 [macOS 真实输入测试方法](macos-real-input-testing.md)。英文原始键码与中文拼音组合输入需分别覆盖。

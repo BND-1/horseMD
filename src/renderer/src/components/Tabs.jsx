@@ -4,6 +4,7 @@ import { useI18n } from '../i18n.jsx'
 import { isMarkdownName } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
+import ExportContextSubmenu from './ExportContextSubmenu.jsx'
 
 export default function Tabs({
   tabs,
@@ -19,6 +20,8 @@ export default function Tabs({
   onDuplicate,
   onDelete,
   onExportPdf,
+  onExportHtml,
+  onExportPandoc,
   onReorder,
   effectiveKeybindings
 }) {
@@ -136,6 +139,7 @@ export default function Tabs({
           />
           <div
             className="tab-ctxmenu"
+            role="menu"
             style={{
               left: Math.min(menu.x, window.innerWidth - 220),
               top: Math.min(menu.y, window.innerHeight - 400)
@@ -174,10 +178,15 @@ export default function Tabs({
                   <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => onDuplicate?.(tab.id))}>
                     {t('side.duplicate')}
                   </button>
-                  {window.api.capabilities?.pdfExport !== false && hasPath && isMarkdownName(tab.title) && (
-                    <button className="tab-menu-item" onClick={run(() => onExportPdf?.(tab.path))}>
-                      {t('side.exportPdf')}
-                    </button>
+                  {hasPath && isMarkdownName(tab.title) && (
+                    <ExportContextSubmenu
+                      t={t}
+                      itemClassName="tab-menu-item"
+                      onClose={() => setMenu(null)}
+                      onExportPdf={onExportPdf ? () => onExportPdf(tab.path) : undefined}
+                      onExportHtml={onExportHtml ? () => onExportHtml(tab.path) : undefined}
+                      onExportPandoc={onExportPandoc ? (format) => onExportPandoc(tab.path, format) : undefined}
+                    />
                   )}
                   <div className="tab-menu-sep" />
                   <button className="tab-menu-item" onClick={run(() => onClose(tab.id))}>
