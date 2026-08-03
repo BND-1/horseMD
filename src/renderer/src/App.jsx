@@ -478,6 +478,7 @@ export default function App() {
     updateContent,
     closeTab,
     closeOthers,
+    closeRight,
     renameTabFile,
     commitTabRename,
     duplicateTabFile,
@@ -915,6 +916,7 @@ export default function App() {
         onClose={closeTab}
         onNew={newTab}
         onCloseOthers={closeOthers}
+        onCloseRight={closeRight}
         onOpenRight={openRight}
         onRename={renameTabFile}
         onDuplicate={duplicateTabFile}
