@@ -2,6 +2,7 @@ import { TextSelection } from '@milkdown/prose/state'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
 import { isReadOnlyMutationKey } from './editor-read-only.js'
+import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
   view,
@@ -218,6 +219,11 @@ export function mountEditorInteractionBindings({
       noteListInputRuleIntent()
     }
   }
+  const onMermaidCodeInput = (event) => {
+    const code = event.target.closest?.('.milkdown-code-block .cm-content')
+    const block = code?.closest('.milkdown-code-block')
+    if (block) refreshMermaidPreviewFromCodeBlock(block, readMermaidCodeSource(code, view))
+  }
   const onReadOnlyInput = (event) => {
     if (!isReadOnly?.()) return
     event.preventDefault()
@@ -236,6 +242,7 @@ export function mountEditorInteractionBindings({
   view.dom.addEventListener('cut', onReadOnlyInput, true)
   view.dom.addEventListener('beforeinput', onUserEditIntent, true)
   view.dom.addEventListener('input', onUserEditIntent, true)
+  view.dom.addEventListener('input', onMermaidCodeInput, true)
   view.dom.addEventListener('paste', onUserEditIntent, true)
   view.dom.addEventListener('drop', onUserEditIntent, true)
   view.dom.addEventListener('cut', onUserEditIntent, true)
@@ -253,6 +260,7 @@ export function mountEditorInteractionBindings({
   cleanups.push(() => view.dom.removeEventListener('cut', onReadOnlyInput, true))
   cleanups.push(() => view.dom.removeEventListener('beforeinput', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('input', onUserEditIntent, true))
+  cleanups.push(() => view.dom.removeEventListener('input', onMermaidCodeInput, true))
   cleanups.push(() => view.dom.removeEventListener('paste', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('drop', onUserEditIntent, true))
   cleanups.push(() => view.dom.removeEventListener('cut', onUserEditIntent, true))

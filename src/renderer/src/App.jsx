@@ -456,7 +456,10 @@ export default function App() {
   const getMarkdownForTab = useCallback((id) => {
     const sourceElement = sourceTextareas.current[id]
     if (sourceElement) return getTextareaSourceValue(sourceElement)
-    const flushed = editorApis.current[id]?.flushMarkdown?.()
+    // Save/export is a durability boundary. Unlike a reading-only source-mode
+    // toggle, it must serialize the live ProseMirror doc even when a custom
+    // node view has not yet delivered its edit-intent callback.
+    const flushed = editorApis.current[id]?.flushMarkdown?.({ force: true })
     if (typeof flushed === 'string') return flushed
     return tabsRef.current.find((tab) => tab.id === id)?.content || ''
   }, [editorApis, sourceTextareas, tabsRef])

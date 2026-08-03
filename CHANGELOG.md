@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.62] - 2026-08-02
+
+### Fixed
+- **富文本修改无法保存（[#105](https://github.com/BND-1/horseMD/issues/105)）** — 修复富文本中修改或删除内容后点击保存，源码视图、磁盘文件或关闭重开仍回到旧内容的问题。保存与导出现在强制从当前 ProseMirror 文档序列化，而非读取可能尚未被异步通知更新的 Markdown 缓存；已删除内容不会“复活”。
+- **长文档 Mermaid 永久加载** — 修复打开含多张 Mermaid 图的 Markdown 时，长流程图可能永久停在“正在渲染图表…”的问题。CodeMirror 会虚拟化长代码块，旧实现错误地只读取当前可见的部分 `.cm-line`，导致图表源码被截断；现在预览与编辑刷新均从完整 ProseMirror `code_block` 取源，并统一处理 CRLF/LF。多图实际渲染改为串行队列，避免竞争 Mermaid 的模块级状态；原始 Markdown 不会被修改。
+
+## [0.12.61] - 2026-08-02
+
+### Fixed
+- **Mermaid 手动编辑刷新与保存** — 修复在富文本中修改 Mermaid 源码后，预览停留在旧图或输入中间态的语法错误、保存或重开后又回到旧内容的问题。每个 Mermaid 代码块现在以自身最新源码为准，异步渲染的旧结果不会覆盖新图；保存、源码模式和重开均写入当前图表源码。
+- **富文本删除持久化** — 保存和导出改为强制序列化当前 ProseMirror 文档，不再只依赖异步 Markdown 缓存。富文本中已删除的内容不会在源码模式、磁盘或关闭重开后重新出现。
+
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).

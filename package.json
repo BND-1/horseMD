@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.12.60",
+  "version": "0.12.62",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -102,6 +102,7 @@
     "test:document-export-ui": "node scripts/test-document-export-ui.mjs",
     "test:ai-core": "node scripts/test-ai-core.mjs",
     "test:mermaid-paste-ui": "node scripts/test-mermaid-paste-ui.mjs",
+    "test:mermaid-edit-save-ui": "node scripts/test-mermaid-edit-save-ui.mjs",
     "test:issue-91-pdf-ui": "node scripts/test-issue-91-pdf-codeblock-ui.mjs",
     "test:web-paste-ui": "node scripts/test-web-paste-and-blank-ui.mjs",
     "test:lightbox-ui": "node scripts/test-lightbox-ui.mjs",
@@ -133,7 +134,8 @@
     "guide:build": "npm --prefix guide run build",
     "guide:check": "npm --prefix guide run check",
     "guide:test:visual": "npm --prefix guide run test:visual",
-    "guide:capture": "node scripts/capture-guide-screenshots.mjs"
+    "guide:capture": "node scripts/capture-guide-screenshots.mjs",
+    "test:mermaid-long-document-ui": "node scripts/test-mermaid-long-document-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

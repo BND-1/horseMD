@@ -13,7 +13,7 @@
 
 当前实现不等待定时器，也不信任 `crepe.getMarkdown()` 的缓存：
 
-1. `editor-api.js` 的 `flushMarkdown()` 直接用 `serializerCtx(view.state.doc)` 序列化当前 ProseMirror 文档。
+1. `editor-api.js` 的 `flushMarkdown({ force: true })` 直接用 `serializerCtx(view.state.doc)` 序列化当前 ProseMirror 文档；保存和导出明确走强制路径，阅读型模式切换保留非强制快照优化。
 2. 序列化结果经 `preserveRichMarkdownSource()` 回写到作者 Markdown，保持未改区域的源码写法。
 3. `App.jsx#getMarkdownForTab()` 在富文本页优先调用该实时 flush；源码页仍走 textarea 的 raw-source 保真入口。
 4. `useFileOps.js#saveTab()` 在任何写盘前同步取得这份 Markdown，并同时更新 `tabsRef` 和 React tab state，随后才调用文件写入。
@@ -28,7 +28,8 @@
 2. 在富文本正文逐字输入，**不等待** `markdownUpdated`，立刻保存。
 3. 连续执行 8 次“逐字编辑 → 保存 → 切源码 → 切回富文本”。
 4. 每轮检查磁盘和源码视图都含最新正文，且每条图片链接的出现次数严格等于 `1`。
-5. 关闭进程、以全新 profile 重开同一文件，再次检查正文和图片链接计数。
+5. 选中并删除独立正文，立刻保存、切源码，确认删除文本不在磁盘和源码中。
+6. 关闭进程、以全新 profile 重开同一文件，再次检查正文、删除结果和图片链接计数。
 
 运行：
 

@@ -166,7 +166,7 @@ export function createEditorApi({
     }
   }
 
-  const flushMarkdown = () => {
+  const flushMarkdown = ({ force = false } = {}) => {
     if (isDestroyed?.() || !crepeRef.current) return null
     try {
       // A reading-only source toggle must not serialize an entire large
@@ -174,7 +174,11 @@ export function createEditorApi({
       // edit and cleared only after markdownUpdated (or this flush) commits the
       // matching source snapshot, so immediate save/switch correctness remains
       // intact without making ordinary reading toggles needlessly slow.
-      if (!hasPendingRichFlush?.()) return lastMarkdownRef.current
+      // Reading-only mode switches may reuse the committed snapshot for speed.
+      // Saves and exports pass `force` because data durability outranks that
+      // optimization: a node view can have a visible transaction even if an
+      // edit-intent event was missed or an asynchronous callback is delayed.
+      if (!force && !hasPendingRichFlush?.()) return lastMarkdownRef.current
       // Saves and source-mode switches can occur before Milkdown publishes its
       // delayed markdownUpdated callback. Serialize the current ProseMirror
       // document instead of reading Crepe's potentially stale cached snapshot.

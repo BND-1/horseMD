@@ -26,6 +26,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 12. 相邻的 `-`、`+`、`*` 在 ProseMirror 中可能合并为一棵 bullet tree，但在作者原文中仍可代表独立列表。延迟 `markdownUpdated` 合并多次编辑时，必须按作者列表的文字围栏分别回写；不得用宽泛 canonical tree 把某个列表的 marker、空行或 `<br />` 占位扩散到相邻列表。混乱编辑回归与根因见 [富文本源码保真：混乱编辑回归计划](./rich-source-chaos-regression-plan.md)。
 13. `Tab` 自动生成子列表时没有可捕获的字面 marker；若该子层尚无作者源码行，必须继承紧邻父级的 bullet marker。显式手打的子级 `-` / `+` 优先级更高，不能被父级风格覆盖。
 14. 富文本事务已经可见但 `markdownUpdated` 尚未发布时，立即保存、切源码和导出仍必须读取当前 ProseMirror `doc` 的序列化结果；不得写入滞后的 `tab.content`，也不得在下一次同步中重复追加现有图片链接。完整根因与回归见 [Issue #105/#106 富文本保存保真报告](./issues-105-106-save-fidelity-regression.md)。
+15. 保存和导出是数据持久化边界，必须强制序列化 live ProseMirror `doc`；不得因“尚未观察到 pending edit”而复用 Markdown 缓存。富文本删除后，源码、磁盘和重开结果必须同时删除，不能在重开后复活。仅阅读型的模式切换可复用已提交快照以保护长文档性能。
 
 ## 当前实现
 
@@ -68,6 +69,10 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 右键列表类型转换还必须处理 transaction 回调时序：`markdownUpdated` 可能在 dispatch 内触发，也可能延迟到下一次输入或源码 flush。转换链路因此在 dispatch 前序列化目标 ProseMirror `doc`，按实际右键文字位置只修改当前层级 marker，并立即建立新的 authored/canonical 基线；紧接着的输入再走普通局部文字差分。禁止用整棵 canonical 列表覆盖“外层松散、内层紧凑”的用户源码。完整事故记录见 [0.12.52 列表转换源码竞态报告](./list-conversion-source-race-regression.md)。
 
 强制保存/切换的 `flushMarkdown()` 必须序列化当前 `view.state.doc`，不能把 `crepe.getMarkdown()` 的 listener 缓存当作实时文档；后者在输入 transaction 已提交但 `markdownUpdated` 尚未发布时可能落后一拍。初始化 canonical baseline 也必须使用同一 `serializerCtx(view.state.doc)` 路径；缓存与直接序列化在列表末尾换行上可能不同，把它们混用会把纯模式切换误判为编辑并删除用户的尾部空行。
+
+这里的“强制”只用于保存与导出：`getMarkdownForTab()` 调用 `flushMarkdown({ force: true })`，确保
+自定义节点视图的 transaction 即使漏过 edit-intent 回调也会持久化。只读的富文本→源码阅读切换仍只在
+确有 pending rich edit 时 flush，避免 400KB+ 文档每次阅读切换都全量序列化。
 
 中间块定位只能校验编辑点相邻的前后块，不能要求整篇文档的可见行逐项完全一致。Crepe 对前部表格的列对齐空格、紧凑列表的空行和标记符进行 canonical 化时，这些无关差异不得让后部段落插入降级为普通字符映射。若后继块包含代码围栏等没有可见文本的语法前缀，应从 `nextGap` 中剥离原有 canonical gap，只把新增 gap 插入原源码，不能连带重写用户的围栏写法。
 

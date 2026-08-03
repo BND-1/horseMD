@@ -19,6 +19,8 @@ const source = [
   '',
   '正文尾部',
   '',
+  '删除后绝不能复活',
+  '',
   '![image1](assets/one.png)',
   '![image2](assets/two.png)'
 ].join('\n')
@@ -88,6 +90,47 @@ async function putCaretAfter(evaluate, text) {
   assert.equal(placed, true, `Could not place the rich-text caret after ${text}`)
 }
 
+async function selectRichText(evaluate, text) {
+  const needle = JSON.stringify(text)
+  const selected = await evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    if (!editor) return false
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const node = walker.currentNode
+      const index = node.nodeValue.indexOf(${needle})
+      if (index < 0) continue
+      const range = document.createRange()
+      range.setStart(node, index)
+      range.setEnd(node, index + ${needle}.length)
+      const selection = getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      editor.focus()
+      return true
+    }
+    return false
+  })()`)
+  assert.equal(selected, true, `Could not select rich text ${text}`)
+}
+
+async function deleteSelection(send) {
+  await send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: 'Backspace',
+    code: 'Backspace',
+    windowsVirtualKeyCode: 8,
+    nativeVirtualKeyCode: 8
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Backspace',
+    code: 'Backspace',
+    windowsVirtualKeyCode: 8,
+    nativeVirtualKeyCode: 8
+  })
+}
+
 async function assertSavedAndSource({ evaluate, expectedSuffix, stage }) {
   await waitFor(async () => {
     const markdown = await readFile(file, 'utf8')
@@ -145,6 +188,17 @@ async function main() {
       await save(evaluate)
       await assertSavedAndSource({ evaluate, expectedSuffix: suffix, stage: `round ${index}` })
     }
+
+    // Deletion is a separate durability boundary: it used to disappear in rich
+    // mode yet remain in source/disk, then resurrect after reopening.
+    await selectRichText(evaluate, '删除后绝不能复活')
+    await deleteSelection(send)
+    await save(evaluate)
+    await waitFor(async () => !(await readFile(file, 'utf8')).includes('删除后绝不能复活'), 'Deleted rich text remained on disk')
+    await toggleSource(evaluate)
+    const deletedSource = await waitFor(() => visibleSource(evaluate), 'Source mode did not open after rich deletion')
+    assert.ok(!deletedSource.includes('删除后绝不能复活'), 'Deleted rich text resurrected in source mode')
+    await toggleSource(evaluate)
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }
@@ -159,6 +213,7 @@ async function main() {
     await toggleSource(evaluate)
     const sourceValue = await waitFor(() => visibleSource(evaluate), 'Reopened source mode did not open')
     assert.ok(sourceValue.includes('正文尾部-1-2-3-4-5-6-7-8'), 'Reopened document reverted the rich edits')
+    assert.ok(!sourceValue.includes('删除后绝不能复活'), 'Reopened document resurrected deleted rich text')
     assertImageLinksExactlyOnce(sourceValue, 'reopened source')
     assertImageLinksExactlyOnce(await readFile(file, 'utf8'), 'reopened disk')
     console.log('PASS issues 105/106 UI: eight immediate rich-save-source rounds and a fresh reopen preserve edits and exactly one copy of each image link')
