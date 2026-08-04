@@ -93,6 +93,13 @@ export function mountEditorInteractionBindings({
   }
   const onContextMenu = (event) => {
     if (window.api?.platform === 'ios' || window.api?.platform === 'android') return
+    // The source+preview right pane is intentionally a viewer. Suppress the
+    // app menu there so formatting, review and block operations cannot imply
+    // that preview content is editable.
+    if (isReadOnly?.()) {
+      event.preventDefault()
+      return
+    }
     // A selection update can make Crepe refresh a table node view. Its internal
     // horizontal scroller is not part of ProseMirror state, so preserve it
     // explicitly before opening the context menu on a far-right column handle.
@@ -241,7 +248,9 @@ export function mountEditorInteractionBindings({
   const onPointerDown = (event) => {
     view.dom.__horsemdLastPointerDown = { left: event.clientX, top: event.clientY, at: Date.now() }
     noteUserInteraction()
-    markUserEdit()
+    // Preview-side pointer interactions may select/copy or establish scroll
+    // ownership, but they are not edits and must never produce a dirty state.
+    if (!isReadOnly?.()) markUserEdit()
   }
 
   view.dom.addEventListener('keydown', onKeydown, true)

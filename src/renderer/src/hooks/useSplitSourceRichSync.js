@@ -119,33 +119,6 @@ export function useSplitSourceRichSync({
     scheduleSourcePreview(id, source)
   }, [isEnabledFor, scheduleSourcePreview, sourceTextareas, stateFor])
 
-  // Call this instead of updateContent for Editor's normal onChange. Rich
-  // programmatic replaces are suppressed in Editor.jsx, so this path represents
-  // a genuine rich edit when split mode is active.
-  const onRichContent = useCallback((id, markdown, isInitial, updateContent) => {
-    updateContent(id, markdown, isInitial)
-    if (isInitial || !isEnabledFor(id)) return
-
-    const state = stateFor(id)
-    state.revision += 1
-    clearTimer(id)
-    const timer = liveTimersRef.current.get(id)
-    if (timer) clearTimeout(timer)
-    liveTimersRef.current.delete(id)
-    liveContentRef.current.delete(id)
-
-    const sourceEl = sourceTextareas.current[id]
-    if (sourceEl) {
-      // Direct DOM assignment preserves the textarea's uncontrolled contract and
-      // cannot dispatch a second source input event. Do not focus/select here:
-      // the rich pane remains the interaction owner.
-      setTextareaSourceValue(sourceEl, markdown)
-      sourceEl.__horsemdSourceBaseline = sourceEl.value || ''
-      sourceEditedIds.current.delete(id)
-    }
-    commitTabContent(id, markdown)
-    setPreviewState('idle')
-  }, [clearTimer, commitTabContent, isEnabledFor, liveContentRef, liveTimersRef, sourceEditedIds, sourceTextareas, stateFor])
 
   useEffect(() => {
     const live = new Set(tabs.map((tab) => tab.id))
@@ -179,7 +152,6 @@ export function useSplitSourceRichSync({
     onSourceInput,
     onSourceCompositionStart,
     onSourceCompositionEnd,
-    onRichContent,
     cancelSourcePreview: clearTimer
   }
 }

@@ -68,7 +68,6 @@ export default function Editor({
   spellcheck,
   inlineMathDeleteMode,
   selectionToolbar,
-  sourceRichSplitMode = false,
   onToggleSourceRichSplit,
   readOnly = false,
   effectiveKeybindings,
@@ -1354,7 +1353,7 @@ export default function Editor({
                 >
                   <span className="block-menu-short">▯</span>
                   <span className="block-menu-name">
-                    {sourceRichSplitMode ? t('sourceRich.close') : t('status.sourceRich')}
+                    {t('status.sourceRich')}
                   </span>
                 </button>
               </>

@@ -53,29 +53,7 @@ async function placeSourceCaretAtEnd(evaluate) {
   assert.equal(placed, true, 'Could not focus source pane')
 }
 
-async function placeRichCaretAfter(evaluate, text) {
-  const target = JSON.stringify(text)
-  const placed = await evaluate(`(() => {
-    const editor = document.querySelector('.editor-scroll.hm-source-rich-right .ProseMirror')
-    if (!editor) return false
-    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
-    while (walker.nextNode()) {
-      const node = walker.currentNode
-      const offset = (node.nodeValue || '').indexOf(${target})
-      if (offset < 0) continue
-      const range = document.createRange()
-      range.setStart(node, offset + ${target}.length)
-      range.collapse(true)
-      const selection = getSelection()
-      selection.removeAllRanges()
-      selection.addRange(range)
-      editor.focus()
-      return true
-    }
-    return false
-  })()`)
-  assert.equal(placed, true, `Could not place rich caret after ${text}`)
-}
+
 
 async function main() {
   await rm(dir, { recursive: true, force: true })
@@ -138,24 +116,42 @@ async function main() {
       'Source edit did not reach rich preview'
     )
 
-    // Rich -> source: wait for Milkdown's intentional serializer debounce, then
-    // confirm the source DOM mirrors the real edited document without a mode
-    // switch or a second editor instance.
-    await placeRichCaretAfter(evaluate, '开头段落。')
-    await typeTextLikeUser(send, '右侧')
-    await waitFor(
-      () => evaluate(`document.querySelector('textarea.source-editor.hm-source-rich-left')?.value.includes('开头段落。右侧')`),
-      'Rich edit did not mirror to source pane',
-      140,
-      25
-    )
+    // The rich side is deliberately a preview: it cannot accept editing,
+    // show block/selection affordances, open HorseMD's context menu, or turn
+    // a click into an unsaved edit. It still remains scrollable for comparison.
+    const previewContract = await evaluate(`(() => {
+      const rich = document.querySelector('.editor-scroll.hm-source-rich-right .ProseMirror')
+      const root = document.querySelector('.editor-scroll.hm-source-rich-right')
+      if (!rich || !root) return null
+      const rect = rich.getBoundingClientRect()
+      rich.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(rect.left + 18),
+        clientY: Math.round(rect.top + 18)
+      }))
+      rich.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: Math.round(rect.left + 18), clientY: Math.round(rect.top + 18) }))
+      return {
+        editable: rich.getAttribute('contenteditable'),
+        toolbarDisplay: (() => {
+          const toolbar = root.querySelector('.milkdown-toolbar')
+          return toolbar ? getComputedStyle(toolbar).display : 'missing'
+        })(),
+        blockHandleDisplay: (() => {
+          const handle = root.querySelector('.milkdown-block-handle')
+          return handle ? getComputedStyle(handle).display : 'missing'
+        })(),
+        hasContextMenu: !!document.querySelector('.block-ctxmenu'),
+        dirty: !!document.querySelector('.tab-close.dirty')
+      }
+    })()`)
+    assert.deepEqual(previewContract, {
+      editable: 'false', toolbarDisplay: 'none', blockHandleDisplay: 'none', hasContextMenu: false, dirty: false
+    }, `Rich side was not a non-editing preview: ${JSON.stringify(previewContract)}`)
 
-    // The shared tab state remains the only save boundary. Saving directly from
-    // split mode must write the same source shown on the left, not a stale rich
-    // serializer cache or a second preview buffer.
-    await waitFor(() => evaluate(`!!document.querySelector('.hm-save-fab')`), 'Split edit did not expose Save')
-    await evaluate(`document.querySelector('.hm-save-fab')?.click()`)
-    await waitFor(async () => (await readFile(file, 'utf8')).includes('开头段落。右侧') && (await readFile(file, 'utf8')).includes('## 源码实时标题'), 'Saving split view did not write the synchronized source')
+    // The source edit was already saved before preview refresh. Preview-side
+    // reading must not manufacture a second save/dirty state.
+    assert.equal(await evaluate(`!!document.querySelector('.hm-save-fab')`), false, 'Preview interaction incorrectly exposed Save')
 
     // Alternate source/rich scroll ownership ten times. The opposite pane must
     // follow without a reset to the document top or an infinite bounce.
@@ -183,13 +179,21 @@ async function main() {
       assert.ok(opposite > 10, `Scroll ${index + 1} did not move the ${side === 'source' ? 'rich' : 'source'} pane`)
     }
 
-    await toggleSplitPreview(evaluate)
+    // The normal source/rich control remains the explicit exit route; it first
+    // leaves preview, then enters source mode, and the second click returns to
+    // single rich mode.
+    await evaluate(`[...document.querySelectorAll('.status-right .status-btn')].find((button) => /富文本|Rich/.test(button.textContent || ''))?.click()`)
     await waitFor(
-      () => evaluate(`!document.querySelector('textarea.source-editor.hm-source-rich-left') && !![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
-      'Closing source + preview did not return to single rich view'
+      () => evaluate(`!!document.querySelector('textarea.source-editor') && !document.querySelector('textarea.source-editor.hm-source-rich-left')`),
+      'Source/rich control did not exit preview into source mode'
+    )
+    await evaluate(`[...document.querySelectorAll('.status-right .status-btn')].find((button) => /源码|Source/.test(button.textContent || ''))?.click()`)
+    await waitFor(
+      () => evaluate(`!document.querySelector('textarea.source-editor') && !![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      'Second source/rich control click did not return to single rich view'
     )
 
-    console.log('PASS source + rich split UI: shared layout, source→rich, rich→source, 10 alternating scroll links, close')
+    console.log('PASS source + rich split UI: context entry, source-only editing, preview contract, save, 10 scroll links, close')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(dir, { recursive: true, force: true })

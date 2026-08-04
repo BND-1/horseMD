@@ -2157,6 +2157,16 @@ body.hm-col-resizing * {
 .editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right {
   border-left: 0;
 }
+/* The right side is a projection, not a second editing surface. Keep text
+   selection and scrolling available, but hide rich-editor affordances that
+   could suggest formatting, conversion or review actions are active there. */
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .milkdown-toolbar,
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .milkdown-block-handle {
+  display: none !important;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .ProseMirror {
+  cursor: default;
+}
 .editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-host,
 .editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-skeleton {
   box-sizing: border-box;

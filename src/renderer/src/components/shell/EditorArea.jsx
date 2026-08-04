@@ -61,7 +61,6 @@ export default function EditorArea({
   onSourceCompositionEnd,
   onSourcePaneFocus,
   onRichPaneFocus,
-  onRichContent,
   onToggleSourceRichSplit,
   updateContent,
   markRichEditPending,
@@ -241,8 +240,8 @@ export default function EditorArea({
               className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}${isSourceRichSplit ? ' hm-source-rich-right' : ''}`}
               ref={setEditorHost}
               style={{ display: inView && !sourceMode ? undefined : 'none', order: isSourceRichSplit ? 3 : order, flex: isSourceRichSplit ? undefined : paneFlex }}
-              onFocusCapture={() => onPaneFocus('rich')}
-              onMouseDownCapture={() => onPaneFocus('rich')}
+              onFocusCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
+              onMouseDownCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
             >
               <Editor
                 tabId={`${tab.id}:${tab.reloadNonce}`}
@@ -252,14 +251,10 @@ export default function EditorArea({
                 spellcheck={spellcheck}
                 inlineMathDeleteMode={inlineMathDeleteMode}
                 selectionToolbar={selectionToolbar}
-                readOnly={readOnly}
+                readOnly={readOnly || isSourceRichSplit}
                 effectiveKeybindings={effectiveKeybindings}
-                onChange={(md, isInitial) => {
-                  if (onRichContent) onRichContent(tab.id, md, isInitial, updateContent)
-                  else updateContent(tab.id, md, isInitial)
-                }}
-                sourceRichSplitMode={isSourceRichSplit}
-                onToggleSourceRichSplit={onToggleSourceRichSplit}
+                onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
+                onToggleSourceRichSplit={isSourceRichSplit ? undefined : onToggleSourceRichSplit}
                 onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)

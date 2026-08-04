@@ -39,7 +39,7 @@ hooks/useSourceModeSwitch.js
 hooks/useSplitSourceRichSync.js                  (new)
   ├─ owns source/rich revision state
   ├─ source input debounce + IME settle
-  ├─ rich→source mirror application
+  ├─ source→rich replace scheduling/cancellation
   ├─ source→rich replace scheduling/cancellation
   ├─ programmatic-write suppression
   └─ exposes activity / preview status
@@ -94,7 +94,7 @@ viewModeByTab[id] = 'rich' | 'source' | 'split'
 
 - **提交真相**：`tabsRef.current[id].content`，用于保存、会话、关闭、外部修改和导出。
 - **源码表面**：左侧无控制 textarea，`__horsemdSourceRawValue` 保留浏览器 LF 值背后的原始字节。
-- **富文本表面**：右侧同 Tab 的 ProseMirror `view.state.doc`。
+- **富文本表面**：右侧同 Tab 的只读 ProseMirror 投影。
 - **同步协调器**：唯一有权把一个表面的编辑应用到另一个表面并提交 tab 内容的模块。
 
 双栏不是“双向同时写数据库”。任一时刻只有一个来源事件拥有下一次同步权。
@@ -126,19 +126,13 @@ const sync = {
 3. `compositionend` 或约 180ms 无新输入后，协调器读取**同一个 revision**的 raw source；先 `commitLive(id)`，使 tab 提交真相同步。
 4. 调用 `api.replaceMarkdown(rawSource)` 前设置 `programmaticRichWrite` token。
 5. `replaceMarkdown` 返回/富文本回调到来时，仅当 token 仍是最新 revision 才设置 `appliedToRichRevision`；旧任务静默丢弃。
-6. 富文本产生的程序化 `markdownUpdated` 不得再触发 rich→source 写回或标记为第二次用户编辑。
+6. 富文本投影由程序化 `replaceMarkdown()` 更新；其 `markdownUpdated` 不得被误判为用户编辑或标记为第二次用户编辑。
 
 若解析/替换失败：保留左侧 raw source 和 tab 内容，右侧留在最后成功状态，`previewStatus = error`；不可回滚或丢弃源码。
 
-### 4.4 右侧富文本 → 左侧源码
+### 4.4 右侧富文本只读
 
-1. 仅 `Editor` 判定为真实用户编辑的回调进入同步协调器；程序化 `replaceMarkdown` 的回调被 token 抑制。
-2. 以 `flushMarkdown()` / 当前 serializer 取得最新 Markdown，并通过现有源码保真策略生成可提交结果。
-3. 先同步更新 `tabsRef` / React tabs，保证保存和关闭立即可见；再使用 `setTextareaSourceValue()` 更新 textarea DOM。
-4. 写 textarea 前增加 `programmaticSourceWrite` token；直接 DOM 赋值本身不触发 `onChange`，但 token 同样保护手动封装事件或后续监听。
-5. 更新 textarea 的 baseline、raw mirror、`liveContentRef` 与 source edit 标记，避免之后旧 debounce 用旧值覆盖新结果。
-
-重点：右侧已编辑后，不允许左侧尚未清除的 debounce 将旧源码重新套回富文本。每个定时任务持有 revision，只能应用仍等于当前 `sourceRevision` 的值。
+右侧是投影而非第二编辑器：它设为非可编辑，隐藏块柄和选择工具条，并阻止应用右键菜单。点击、选中或滚动仅服务于阅读和复制，绝不写入 `tabsRef`、不触发 `markdownUpdated`、不标脏。唯一内容方向是左侧源码 → 右侧预览；这样避免两个编辑器表面争抢同一份 Markdown。
 
 ### 4.5 保存和外部变更
 
@@ -185,9 +179,9 @@ scroll = {
 
 ## 6. 光标、焦点与模式切换
 
-- 双栏内每个面板各自保留原生选区；不因另一面板滚动而移动光标。
+- 左侧保留唯一可编辑光标；右侧可保留浏览器选区用于复制，但不是编辑光标。
 - 左侧编辑后，右侧预览更新**不自动夺取焦点**。
-- 右侧编辑后，左侧值更新不调用 textarea focus/selection API。
+- 右侧点击不改变活动编辑面板或查找目标；查找、替换、保存等仍以左侧源码为准。
 - 从双栏退出时，记录最后实际用户交互面板；调用当前 `useSourceModeSwitch` 中同一类 caret/viewport anchor 恢复路径。
 - 既有“有可见光标则跟随光标；阅读时优先视口”不改变。
 - 复杂结构映射仍以 raw Markdown offset 为首选；可见字符、上下文、标题、比例依次回退。禁止仅用关键词匹配。
@@ -236,7 +230,7 @@ scroll = {
 
 ## 9. 第一版落地记录
 
-- `useSplitSourceRichSync.js`：维护每 Tab revision、输入合并、IME 边界、程序化替换抑制和 rich→source 镜像；它不接管保存/原文保真算法。
+- `useSplitSourceRichSync.js`：维护每 Tab revision、输入合并、IME 边界和程序化替换抑制；它不接管保存/原文保真算法。
 - `useSplitScrollSync.js`：复用 `scrollAnchor` 的 viewport capture/restore，只在用户当前操作的一侧安排 rAF，同步目标的回显 scroll 由时间/位置 token 抑制。
 - `EditorArea.jsx`：只负责同一 Tab 两个既有表面的布局和事件转发；富文本节点仍是原有 `Editor`。
 - `App.jsx`：持有独立的 `sourceRichSplitId`，与 `splitId`（两个文件）互斥；现有 Ctrl/Cmd+/ 退出双栏后再进入单视图，避免视图状态重叠。

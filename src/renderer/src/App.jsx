@@ -270,8 +270,7 @@ export default function App() {
     previewState: richPreviewState,
     onSourceInput,
     onSourceCompositionStart,
-    onSourceCompositionEnd,
-    onRichContent
+    onSourceCompositionEnd
   } = useSplitSourceRichSync({
     enabled: sourceRichSplitMode,
     activeId,
@@ -1159,7 +1158,6 @@ export default function App() {
             onSourceCompositionEnd={onSourceCompositionEnd}
             onSourcePaneFocus={() => setSourceRichFocusedPane('source')}
             onRichPaneFocus={() => setSourceRichFocusedPane('rich')}
-            onRichContent={onRichContent}
             onToggleSourceRichSplit={toggleSourceRichSplit}
             updateContent={updateContent}
             markRichEditPending={markRichEditPending}
