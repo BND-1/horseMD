@@ -68,6 +68,8 @@ export default function Editor({
   spellcheck,
   inlineMathDeleteMode,
   selectionToolbar,
+  sourceRichSplitMode = false,
+  onToggleSourceRichSplit,
   readOnly = false,
   effectiveKeybindings,
   onChange,
@@ -1337,6 +1339,25 @@ export default function Editor({
                   ))}
                 </div>
               </div>
+            )}
+            {onToggleSourceRichSplit && (
+              <>
+                <div className="block-menu-divider" />
+                <button
+                  data-source-rich-toggle
+                  className="block-menu-item hm-source-rich-menu-item"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setCtxMenu(null)
+                    onToggleSourceRichSplit()
+                  }}
+                >
+                  <span className="block-menu-short">▯</span>
+                  <span className="block-menu-name">
+                    {sourceRichSplitMode ? t('sourceRich.close') : t('status.sourceRich')}
+                  </span>
+                </button>
+              </>
             )}
           </div>
         </>

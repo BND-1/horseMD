@@ -1160,6 +1160,7 @@ export default function App() {
             onSourcePaneFocus={() => setSourceRichFocusedPane('source')}
             onRichPaneFocus={() => setSourceRichFocusedPane('rich')}
             onRichContent={onRichContent}
+            onToggleSourceRichSplit={toggleSourceRichSplit}
             updateContent={updateContent}
             markRichEditPending={markRichEditPending}
             t={t}
@@ -1263,9 +1264,6 @@ export default function App() {
         effectiveKeybindings={effectiveKeybindings}
         sourceMode={sourceMode}
         onToggleSource={toggleSourceView}
-        sourceRichSplitMode={sourceRichSplitMode}
-        sourceRichSplitDisabled={split || isMobile || !activeTab || isPlainTextDoc(activeTab) || (activeTab.heavy && !richForced.has(activeTab.id))}
-        onToggleSourceRichSplit={toggleSourceRichSplit}
         activeBlock={activeBlock}
         onPickBlock={mobileReadOnly ? undefined : (id) => editorApis.current[activeId]?.setBlock(id)}
         pageWidth={settings.pageWidth}

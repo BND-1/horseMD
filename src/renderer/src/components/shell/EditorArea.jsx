@@ -62,6 +62,7 @@ export default function EditorArea({
   onSourcePaneFocus,
   onRichPaneFocus,
   onRichContent,
+  onToggleSourceRichSplit,
   updateContent,
   markRichEditPending,
   t
@@ -257,6 +258,8 @@ export default function EditorArea({
                   if (onRichContent) onRichContent(tab.id, md, isInitial, updateContent)
                   else updateContent(tab.id, md, isInitial)
                 }}
+                sourceRichSplitMode={isSourceRichSplit}
+                onToggleSourceRichSplit={onToggleSourceRichSplit}
                 onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)

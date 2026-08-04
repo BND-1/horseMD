@@ -2146,15 +2146,25 @@ body.hm-col-resizing * {
   opacity: 1;
 }
 /* A single document's authored source (left) and existing rich projection
-   (right). The divider deliberately reuses the standard split hit target, but
-   the two sides carry a subtle label-free distinction through their border. */
+   (right). Each panel is a working surface, not a miniature reading page: its
+   content must use the full panel width instead of inheriting the single-view
+   800px centered column and leaving a dead strip at the inner edge. */
 .editor-area.is-source-rich-split .source-editor.hm-source-rich-left {
+  box-sizing: border-box;
   border-right: 0;
-  padding-left: max(28px, calc((100% - var(--editor-max-width, 800px)) / 2));
-  padding-right: 28px;
+  padding: 40px 32px 60vh;
 }
 .editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right {
   border-left: 0;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-host,
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-skeleton {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-left: 32px;
+  padding-right: 32px;
 }
 .hm-rich-preview-state {
   position: absolute;
@@ -2171,10 +2181,6 @@ body.hm-col-resizing * {
 }
 .hm-rich-preview-state.is-error {
   color: var(--danger, #bf5a4d);
-}
-.status-btn.hm-source-rich-toggle.active {
-  color: var(--accent);
-  background: var(--hover);
 }
 
 .editor-scroll {

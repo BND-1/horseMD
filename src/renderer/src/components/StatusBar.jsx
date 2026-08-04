@@ -336,9 +336,6 @@ export default function StatusBar({
   effectiveKeybindings,
   sourceMode,
   onToggleSource,
-  sourceRichSplitMode,
-  sourceRichSplitDisabled,
-  onToggleSourceRichSplit,
   pageWidth,
   onSetPageWidth,
   fontSize,
@@ -442,14 +439,6 @@ export default function StatusBar({
               title={labelWithShortcut(t('tip.toggleSource'), 'view.toggleSource', effectiveKeybindings)}
             >
               <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
-            </button>
-            <button
-              className={`status-btn hm-source-rich-toggle${sourceRichSplitMode ? ' active' : ''}`}
-              onClick={onToggleSourceRichSplit}
-              disabled={sourceRichSplitDisabled}
-              title={sourceRichSplitDisabled ? t('sourceRich.unavailable') : t('tip.toggleSourceRich')}
-            >
-              <Icon name="columns" size={14} /> {t('status.sourceRich')}
             </button>
             <LayoutControl
               fontSize={fontSize}

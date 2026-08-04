@@ -20,13 +20,27 @@ async function waitFor(check, message, attempts = 100, delay = 25) {
 }
 
 async function toggleSplitPreview(evaluate) {
-  const result = await evaluate(`(() => {
-    const button = document.querySelector('.hm-source-rich-toggle')
-    button?.click()
-    return Boolean(button)
+  const opened = await evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const target = editor?.querySelector('p, h1, h2') || editor
+    if (!target) return false
+    const rect = target.getBoundingClientRect()
+    target.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: Math.round(rect.left + Math.min(24, rect.width / 2)),
+      clientY: Math.round(rect.top + Math.min(20, rect.height / 2))
+    }))
+    return true
   })()`)
-  assert.equal(result, true, 'Source + preview toggle was not available')
+  assert.equal(opened, true, 'Could not open the rich editor context menu')
+  await waitFor(
+    () => evaluate(`!!document.querySelector('[data-source-rich-toggle]')`),
+    'Source + preview was not available from the rich editor context menu'
+  )
+  await evaluate(`document.querySelector('[data-source-rich-toggle]')?.click()`)
 }
+
 
 async function placeSourceCaretAtEnd(evaluate) {
   const placed = await evaluate(`(() => {
@@ -74,16 +88,30 @@ async function main() {
       () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent && node.dataset.horsemdReady === 'true')`),
       'Rich editor did not become ready'
     )
+    assert.equal(await evaluate(`!!document.querySelector('.hm-source-rich-toggle')`), false, 'Source + preview must not occupy the status bar')
     await toggleSplitPreview(evaluate)
 
     const layout = await waitFor(() => evaluate(`(() => {
       const source = document.querySelector('textarea.source-editor.hm-source-rich-left')
       const rich = document.querySelector('.editor-scroll.hm-source-rich-right')
-      if (!source || !rich || !source.offsetParent || !rich.offsetParent) return null
-      const l = source.getBoundingClientRect(), r = rich.getBoundingClientRect()
-      return { sourceLeft: l.left, sourceRight: l.right, richLeft: r.left, richRight: r.right }
+      const host = rich?.querySelector('.editor-host')
+      if (!source || !rich || !host || !source.offsetParent || !rich.offsetParent) return null
+      const l = source.getBoundingClientRect(), r = rich.getBoundingClientRect(), h = host.getBoundingClientRect()
+      const sourceStyle = getComputedStyle(source)
+      return {
+        sourceLeft: l.left, sourceRight: l.right, richLeft: r.left, richRight: r.right,
+        hostLeft: h.left, hostRight: h.right,
+        sourcePaddingRight: sourceStyle.paddingRight,
+        hostPaddingLeft: getComputedStyle(host).paddingLeft,
+        hostPaddingRight: getComputedStyle(host).paddingRight
+      }
     })()`), 'Source + rich panes did not become visible together')
     assert.ok(layout.sourceRight <= layout.richLeft + 8, `Panes overlap: ${JSON.stringify(layout)}`)
+    assert.ok(Math.abs(layout.hostLeft - layout.richLeft) <= 2 && Math.abs(layout.hostRight - layout.richRight) <= 12,
+      `Rich preview host did not fill its panel: ${JSON.stringify(layout)}`)
+    assert.equal(layout.sourcePaddingRight, '32px', `Source pane retained the single-view empty strip: ${JSON.stringify(layout)}`)
+    assert.equal(layout.hostPaddingLeft, '32px', `Rich preview retained the single-view empty strip: ${JSON.stringify(layout)}`)
+    assert.equal(layout.hostPaddingRight, '32px', `Rich preview retained the single-view empty strip: ${JSON.stringify(layout)}`)
     assert.equal(await evaluate(`!!document.querySelector('.tab-close.dirty')`), false, 'Opening split preview incorrectly marked the document dirty')
 
     // Source -> rich: every committed character goes through the normal input
