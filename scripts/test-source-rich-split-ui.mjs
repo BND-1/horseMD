@@ -8,7 +8,7 @@ import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 const dir = '/tmp/horsemd-source-rich-split'
 const file = join(dir, 'split-preview.md')
 const port = Number(process.env.CDP_PORT || 9885)
-const source = `# 双栏预览\n\n开头段落。\n\n## 中段锚点\n\n${Array.from({ length: 80 }, (_, i) => `第 ${i + 1} 段：滚动联动与源码保真测试内容。`).join('\n\n')}\n\n- 保持短横线列表\n- 第二项\n`
+const source = `# 双栏预览\n\n开头段落。\n\n## 页面对应关系\n\n${Array.from({ length: 80 }, (_, i) => `第 ${i + 1} 段：滚动联动与源码保真测试内容。`).join('\n\n')}\n\n- 保持短横线列表\n- 第二项\n`
 
 async function waitFor(check, message, attempts = 100, delay = 25) {
   for (let index = 0; index < attempts; index += 1) {
@@ -84,7 +84,10 @@ async function assertLeadingSourceCaret({ evaluate, send }, selector, text) {
     const style = getComputedStyle(textarea)
     return {
       offset,
-      x: rect.left + parseFloat(style.paddingLeft) + 1,
+      // Click into the first glyph, not merely in the padding. Chromium has
+      // historically placed this at offset +1 for Markdown punctuation/CJK;
+      // source caret handling must snap that leading hit area back to offset 0.
+      x: rect.left + parseFloat(style.paddingLeft) + Math.max(4, parseFloat(style.fontSize) * 0.55),
       y: rect.top + parseFloat(style.paddingTop) + (line * parseFloat(style.lineHeight)) + (parseFloat(style.fontSize) / 2),
       textStartX: rect.left + parseFloat(style.paddingLeft)
     }
@@ -154,7 +157,7 @@ async function main() {
       `Source pane retained more bottom scroll room than rich preview: ${JSON.stringify(layout)}`)
     assert.equal(await evaluate(`!!document.querySelector('.tab-close.dirty')`), false, 'Opening split preview incorrectly marked the document dirty')
 
-    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor.hm-source-rich-left', '开头段落。')
+    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor.hm-source-rich-left', '## 页面对应关系')
 
     // Source -> rich: every committed character goes through the normal input
     // path; only the final settled source snapshot may update the projection.
@@ -267,7 +270,7 @@ async function main() {
       return true
     })()`)
     await sleep(100)
-    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor', '开头段落。')
+    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor', '## 页面对应关系')
     await toggleNormalSourceMode({ evaluate, send })
     await waitFor(
       () => evaluate(`!document.querySelector('textarea.source-editor') && !![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),

@@ -33,6 +33,15 @@ export function attachSourceCaret(textarea) {
 
   let mirroredValue = null
 
+  const syncMirrorText = () => {
+    const val = textarea.value
+    if (val !== mirroredValue) {
+      mirrorText.data = val + '\u200b'
+      mirroredValue = val
+    }
+    return val
+  }
+
   let raf = 0
   let fallbackTimer = 0
   const hide = () => { bar.style.display = 'none' }
@@ -48,13 +57,20 @@ export function attachSourceCaret(textarea) {
       // Only show for a collapsed caret (a selection range has no blinking caret).
       if (start !== end) return hide()
       const cs = syncTextareaMirrorStyle(textarea, mirror)
-      const val = textarea.value
-      if (val !== mirroredValue) {
-        mirrorText.data = val + '\u200b'
-        mirroredValue = val
+      const val = syncMirrorText()
+      const offset = Math.max(0, Math.min(start, val.length))
+      const lineStart = val.lastIndexOf('\n', Math.max(0, offset - 1)) + 1
+      // Chromium reports the collapsed Range at the *right* edge of the first
+      // glyph after a newline. At a logical line start measure the first glyph
+      // itself and use its left edge; this is both the correct visual caret
+      // boundary and avoids a `## heading` caret appearing after the first #.
+      if (offset === lineStart && offset < val.length && val[offset] !== '\n') {
+        range.setStart(mirrorText, offset)
+        range.setEnd(mirrorText, offset + 1)
+      } else {
+        range.setStart(mirrorText, offset)
+        range.collapse(true)
       }
-      range.setStart(mirrorText, Math.max(0, Math.min(start, val.length)))
-      range.collapse(true)
       const mRect = range.getBoundingClientRect()
       const baseRect = mirror.getBoundingClientRect()
       const taRect = textarea.getBoundingClientRect()
@@ -102,8 +118,49 @@ export function attachSourceCaret(textarea) {
     }
   }
 
+  // Chromium can resolve a click on the leading edge of a visible glyph to the
+  // position *after* that glyph, especially for Markdown punctuation such as
+  // the first `#` in a heading. That is an unusable hit target in a source
+  // editor: users need to be able to place the caret before the first marker.
+  // Keep native textarea editing everywhere else, but snap only a collapsed
+  // click that Chromium placed immediately after a non-empty logical line's
+  // first character and whose pointer was inside that character's leading hit
+  // area. The mirror gives the same wrapping/font geometry as the textarea.
+  const snapLeadingCharacterClick = (event) => {
+    if (event.button !== 0 || textarea.selectionStart !== textarea.selectionEnd) return
+    try {
+      const selected = textarea.selectionStart
+      const val = syncMirrorText()
+      const lineStart = val.lastIndexOf('\n', Math.max(0, selected - 1)) + 1
+      if (selected <= lineStart || selected > lineStart + 1 || lineStart >= val.length || val[lineStart] === '\n') return
+
+      const cs = syncTextareaMirrorStyle(textarea, mirror)
+      range.setStart(mirrorText, lineStart)
+      range.setEnd(mirrorText, lineStart + 1)
+      const glyph = range.getBoundingClientRect()
+      const base = mirror.getBoundingClientRect()
+      const bounds = textarea.getBoundingClientRect()
+      const glyphLeft = bounds.left + glyph.left - base.left - textarea.scrollLeft
+      const glyphTop = bounds.top + glyph.top - base.top - textarea.scrollTop
+      const glyphWidth = Math.max(glyph.width, parseFloat(cs.fontSize) * 0.65)
+      const inLeadingHitArea =
+        event.clientX >= glyphLeft - 3 &&
+        event.clientX <= glyphLeft + glyphWidth &&
+        event.clientY >= glyphTop - 3 &&
+        event.clientY <= glyphTop + Math.max(glyph.height, parseFloat(cs.lineHeight) || 0) + 3
+      if (!inLeadingHitArea) return
+
+      textarea.setSelectionRange(lineStart, lineStart)
+      schedule()
+    } catch {
+      // Native textarea placement remains the safe fallback if measurement is
+      // temporarily unavailable during a layout transition.
+    }
+  }
+
   const events = ['input', 'click', 'keydown', 'keyup', 'select', 'scroll', 'focus', 'blur']
   events.forEach((e) => textarea.addEventListener(e, schedule, { passive: true }))
+  textarea.addEventListener('mouseup', snapLeadingCharacterClick)
   doc.defaultView.addEventListener('resize', schedule)
   const resizeObserver = new doc.defaultView.ResizeObserver(schedule)
   resizeObserver.observe(textarea)
@@ -123,6 +180,7 @@ export function attachSourceCaret(textarea) {
     if (fallbackTimer) doc.defaultView.clearTimeout(fallbackTimer)
     settleTimers.forEach((timer) => doc.defaultView.clearTimeout(timer))
     events.forEach((e) => textarea.removeEventListener(e, schedule))
+    textarea.removeEventListener('mouseup', snapLeadingCharacterClick)
     doc.defaultView.removeEventListener('resize', schedule)
     resizeObserver.disconnect()
     doc.removeEventListener('selectionchange', schedule)
