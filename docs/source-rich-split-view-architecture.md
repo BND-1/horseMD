@@ -1,7 +1,7 @@
 # 源码 + 富文本双栏实时预览架构
 
-> 状态：实现前设计  
-> 日期：2026-08-04  
+> 状态：第一版已实现；后续以本架构继续扩展
+> 日期：2026-08-04
 > 对应 PRD：`docs/source-rich-split-view-prd.md`
 
 ## 1. 现有基础与结论
@@ -234,7 +234,17 @@ scroll = {
 
 发布候选在 macOS 按 `docs/macos-real-input-testing.md` 进行真实前端输入检查，重点：中文输入法、长按删除、连续撤销、快速切换面板、拖动滚动条、图片异步加载。常规自动测试必须后台运行，不抢占用户窗口和键鼠。
 
-## 9. 实施顺序与可回退点
+## 9. 第一版落地记录
+
+- `useSplitSourceRichSync.js`：维护每 Tab revision、输入合并、IME 边界、程序化替换抑制和 rich→source 镜像；它不接管保存/原文保真算法。
+- `useSplitScrollSync.js`：复用 `scrollAnchor` 的 viewport capture/restore，只在用户当前操作的一侧安排 rAF，同步目标的回显 scroll 由时间/位置 token 抑制。
+- `EditorArea.jsx`：只负责同一 Tab 两个既有表面的布局和事件转发；富文本节点仍是原有 `Editor`。
+- `App.jsx`：持有独立的 `sourceRichSplitId`，与 `splitId`（两个文件）互斥；现有 Ctrl/Cmd+/ 退出双栏后再进入单视图，避免视图状态重叠。
+- `useFindReplace.js`：接收活动表面提示，在双栏内不会总是错误地优先源码 textarea。
+
+回归：`npm run test:source-rich-split`（含 10 次交替滚动）、`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:list-conversion-ui`、`npm run test:rich-list-source-ui`。
+
+## 10. 实施顺序与可回退点
 
 1. 新建 `useSplitSourceRichSync`，只做无 UI 的 revision 与同步单测。
 2. 在 `EditorArea` 增加同 Tab 双栏结构，但功能开关默认关闭；确认不多创建 Crepe。

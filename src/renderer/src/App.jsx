@@ -44,6 +44,8 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
+import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
+import { useSplitScrollSync } from './hooks/useSplitScrollSync.js'
 import { useAttachments } from './hooks/useAttachments.js'
 import { useSyncWorkspaces } from './hooks/useSyncWorkspaces.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
@@ -114,6 +116,11 @@ export default function App() {
   // Fraction of the editor area given to the left pane (0..1), dragged via the
   // divider between the two panes.
   const [splitRatio, setSplitRatio] = useState(0.5)
+  // One document shown as source (left) + rich preview (right). This remains
+  // separate from splitId, which represents two different documents.
+  const [sourceRichSplitId, setSourceRichSplitId] = useState(null)
+  const [sourceRichSplitRatio, setSourceRichSplitRatio] = useState(0.45)
+  const [sourceRichFocusedPane, setSourceRichFocusedPane] = useState('source')
   // Which split pane is focused ('left' = active tab, 'right' = split tab). A tab
   // click loads into the focused pane, so both panes are switchable from the one
   // tab strip. Always 'left' when not split.
@@ -201,6 +208,7 @@ export default function App() {
     [tabs, splitId]
   )
   const split = !home && !!splitTab && splitId !== activeId
+  const sourceRichSplitMode = !isMobile && !home && !split && sourceRichSplitId === activeId
   // Always-current activeId for callbacks that fire after a tab switch.
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -257,6 +265,49 @@ export default function App() {
     findStateRef,
     richLoadingRef
   })
+
+  const {
+    previewState: richPreviewState,
+    onSourceInput,
+    onSourceCompositionStart,
+    onSourceCompositionEnd,
+    onRichContent
+  } = useSplitSourceRichSync({
+    enabled: sourceRichSplitMode,
+    activeId,
+    tabs,
+    tabsRef,
+    setTabs,
+    editorApis,
+    sourceTextareas,
+    sourceEditedIds,
+    liveContentRef,
+    liveTimersRef,
+    commitLive
+  })
+
+  // The existing rich/source control remains an exclusive mode switch. From a
+  // source+preview screen it first exits the dual-pane layout, then enters the
+  // requested single source/rich mode; otherwise the rich pane would be hidden
+  // while the “Source + preview” control still appeared active.
+  const toggleSourceView = useCallback(() => {
+    if (sourceRichSplitMode) setSourceRichSplitId(null)
+    toggleSource()
+  }, [sourceRichSplitMode, toggleSource])
+
+  useSplitScrollSync({
+    enabled: sourceRichSplitMode,
+    activeId,
+    sourceTextareas,
+    editorHosts,
+    editorApis
+  })
+
+  useEffect(() => {
+    if (sourceRichSplitId && !tabs.some((tab) => tab.id === sourceRichSplitId)) {
+      setSourceRichSplitId(null)
+    }
+  }, [sourceRichSplitId, tabs])
 
   // Drop editor APIs for tabs that have closed.
   useEffect(() => {
@@ -565,6 +616,7 @@ export default function App() {
     const target = tabsRef.current.find((t) => t.id === id)
     if (target?.kind !== 'doc') return
     setHome(false)
+    setSourceRichSplitId(null)
     if (id === activeIdRef.current) {
       const others = tabsRef.current.filter((t) => t.id !== id)
       if (!others.length) return // only one tab — nothing to split against
@@ -575,6 +627,7 @@ export default function App() {
 
   // Toggle split: off → on picks the next DOC tab as the right pane; on → off closes it.
   const toggleSplit = useCallback(() => {
+    setSourceRichSplitId(null)
     setSplitId((cur) => {
       if (cur != null) return null
       const docs = tabsRef.current.filter((t) => t.kind !== 'settings')
@@ -589,6 +642,29 @@ export default function App() {
     setHome(false)
   }, [])
 
+  const toggleSourceRichSplit = useCallback(() => {
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    if (isMobile || !tab || tab.kind === 'settings') return
+    if (split) {
+      fireToast(tRef.current('sourceRich.closeDocumentSplit'))
+      return
+    }
+    if (isPlainTextDoc(tab) || (tab.heavy && !richForced.has(tab.id))) {
+      fireToast(tRef.current('sourceRich.unavailable'))
+      return
+    }
+    if (sourceRichSplitId === tab.id) {
+      setSourceRichSplitId(null)
+      return
+    }
+    // Existing source mode owns a sensitive caret/viewport restoration path.
+    // Close it through its public toggle before exposing both panes; the rich
+    // editor stays mounted throughout, so this is not a re-parse.
+    if (sourceMode) toggleSource()
+    setSourceRichFocusedPane('source')
+    setSourceRichSplitId(tab.id)
+  }, [isMobile, richForced, sourceMode, sourceRichSplitId, split, tRef, toggleSource])
+
   // Drag the divider between the two split panes to change their ratio.
   const startSplitDrag = useColDrag({
     bodyClass: 'hm-col-resizing',
@@ -600,6 +676,18 @@ export default function App() {
       if (!rect) return
       setSplitRatio(Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width)))
     },
+  })
+
+  const startSourceRichSplitDrag = useColDrag({
+    bodyClass: 'hm-col-resizing',
+    onStart: () => {
+      const area = editorAreaRef.current
+      return area ? area.getBoundingClientRect() : null
+    },
+    onMove: (ev, rect) => {
+      if (!rect) return
+      setSourceRichSplitRatio(Math.min(0.72, Math.max(0.28, (ev.clientX - rect.left) / rect.width)))
+    }
   })
 
   // Open a file (by path) directly into the right split pane — used by the
@@ -623,7 +711,7 @@ export default function App() {
   const outlineSourceMode = !!outlineTab && (
     isPlainTextDoc(outlineTab) ||
     (outlineTab.heavy && !richForced.has(outlineId)) ||
-    (sourceMode && outlineId === activeId)
+    ((sourceMode || (sourceRichSplitMode && sourceRichFocusedPane === 'source')) && outlineId === activeId)
   )
   const richLoading = !!outlineId && richLoadingIds.has(outlineId)
   // The compact navigator is a separate reading affordance on the opposite
@@ -697,13 +785,17 @@ export default function App() {
   // Find & replace (issue #19) — hoisted above the handlers so createMenuHandlers
   // (US-6) can close over setFind/findInputRef/replaceInputRef. Returns the same
   // names the findbar JSX uses.
+  const findSourceActive = sourceMode ||
+    (sourceRichSplitMode && sourceRichFocusedPane === 'source') ||
+    isPlainTextDoc(activeTab) || (activeTab?.heavy && !richForced.has(activeTab.id))
   const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind } =
     useFindReplace({
       editorHostRef,
       sourceRef,
       editorApis,
       activeId,
-      viewModeKey: sourceMode,
+      viewModeKey: `${sourceMode ? 'source' : 'rich'}:${sourceRichSplitMode ? sourceRichFocusedPane : 'single'}`,
+      sourceFindActive: findSourceActive,
       commitLive,
       liveContentRef
     })
@@ -772,7 +864,7 @@ export default function App() {
     saveTab,
     attachFiles,
     closeTab,
-    toggleSource,
+    toggleSource: toggleSourceView,
     cycleTheme,
     getPdfSourceForTab,
     getExportSourceForTab,
@@ -1029,6 +1121,9 @@ export default function App() {
             focusedPane={focusedPane}
             home={home}
             sourceMode={sourceMode}
+            sourceRichSplitMode={sourceRichSplitMode}
+            sourceRichSplitRatio={sourceRichSplitRatio}
+            richPreviewState={richPreviewState}
             richForced={richForced}
             mountedIds={mountedIds}
             activeTab={activeTab}
@@ -1058,6 +1153,13 @@ export default function App() {
             setRichDocVersion={setRichDocVersion}
             setTabRichLoading={setTabRichLoading}
             startSplitDrag={startSplitDrag}
+            startSourceRichSplitDrag={startSourceRichSplitDrag}
+            onSourceInput={onSourceInput}
+            onSourceCompositionStart={onSourceCompositionStart}
+            onSourceCompositionEnd={onSourceCompositionEnd}
+            onSourcePaneFocus={() => setSourceRichFocusedPane('source')}
+            onRichPaneFocus={() => setSourceRichFocusedPane('rich')}
+            onRichContent={onRichContent}
             updateContent={updateContent}
             markRichEditPending={markRichEditPending}
             t={t}
@@ -1160,7 +1262,10 @@ export default function App() {
         setLang={setLang}
         effectiveKeybindings={effectiveKeybindings}
         sourceMode={sourceMode}
-        onToggleSource={toggleSource}
+        onToggleSource={toggleSourceView}
+        sourceRichSplitMode={sourceRichSplitMode}
+        sourceRichSplitDisabled={split || isMobile || !activeTab || isPlainTextDoc(activeTab) || (activeTab.heavy && !richForced.has(activeTab.id))}
+        onToggleSourceRichSplit={toggleSourceRichSplit}
         activeBlock={activeBlock}
         onPickBlock={mobileReadOnly ? undefined : (id) => editorApis.current[activeId]?.setBlock(id)}
         pageWidth={settings.pageWidth}

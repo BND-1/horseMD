@@ -184,6 +184,12 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 - 源码 textarea 是非受控输入，内容写入 `liveContentRef`；textarea 因切 tab 重挂时用 live buffer 作为 `defaultValue`，避免未保存源码编辑丢失。
 - `sourceEditedIds` 只标记真正改过的源码 buffer；切回富文本时仅这些标签调用 `replaceMarkdown()` 同步到已挂载 Crepe，未编辑的源码切换不触发 dirty。
 
+### 15c. 同一文档的源码 + 富文本实时预览（桌面）
+
+状态栏“**源码 + 预览**”会把同一 Markdown 同时展示为左侧无控制源码 textarea 和右侧已挂载的 Crepe 富文本。它不是双文件分屏：两个面板共享一个标签、一份保存内容和一套脏状态。
+
+**实现**：`useSplitSourceRichSync.js` 用 revision 取消旧的源码输入 debounce，约 180ms 后调用既有 `replaceMarkdown()` 更新右侧；右侧真实编辑再通过现有保真序列化镜像回左侧。`useSplitScrollSync.js` 使用 `scrollAnchor` 的内容锚点而非原始滚动条百分比，并抑制程序化滚动的回显。普通文本、未加载富文本的重文档、移动端及“双文件分屏”期间不提供入口。完整约束见 [source-rich-split-view-architecture.md](./source-rich-split-view-architecture.md)。
+
 ### 16b. 重文档自动用纯文本极速模式打开
 
 有些 Markdown 文件**几乎没有空行**（笔记/转写直接粘进来，几千行连续不空行）。Markdown 会把它们压成几个超大段落、段内有上千个换行节点，ProseMirror 近乎平方级渲染 → **主线程能卡死十几秒**（实测一个 81KB 文件冻结 10.2 秒）。

@@ -2145,6 +2145,37 @@ body.hm-col-resizing * {
   color: var(--text-strong);
   opacity: 1;
 }
+/* A single document's authored source (left) and existing rich projection
+   (right). The divider deliberately reuses the standard split hit target, but
+   the two sides carry a subtle label-free distinction through their border. */
+.editor-area.is-source-rich-split .source-editor.hm-source-rich-left {
+  border-right: 0;
+  padding-left: max(28px, calc((100% - var(--editor-max-width, 800px)) / 2));
+  padding-right: 28px;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right {
+  border-left: 0;
+}
+.hm-rich-preview-state {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 26;
+  padding: 4px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.hm-rich-preview-state.is-error {
+  color: var(--danger, #bf5a4d);
+}
+.status-btn.hm-source-rich-toggle.active {
+  color: var(--accent);
+  background: var(--hover);
+}
 
 .editor-scroll {
   flex: 1;

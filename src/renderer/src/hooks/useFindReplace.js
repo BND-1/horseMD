@@ -32,7 +32,7 @@ import {
   matchIndices
 } from '../find.js'
 
-export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, viewModeKey, commitLive, liveContentRef }) {
+export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, viewModeKey, sourceFindActive = true, commitLive, liveContentRef }) {
   const [find, setFind] = useState({ open: false, query: '', matches: 0, active: 0, replace: '' })
   // Current match set: Range objects (rich editor) or character offsets (source).
   const findRangesRef = useRef([])
@@ -43,11 +43,16 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   const replaceInputRef = useRef(null)
   const sourceFindTextareaRef = useRef(null)
   const findContextRef = useRef({ activeId, viewModeKey })
+  // A source + rich split has two visible surfaces. The most recently focused
+  // one is the find target; ordinary source/plain-text views keep this true.
+  const sourceFindActiveRef = useRef(sourceFindActive)
+  sourceFindActiveRef.current = sourceFindActive
 
   // Discriminate the active view: the source <textarea> sets sourceRef only when
   // it's mounted (source mode or a .txt doc); otherwise we're in the rich editor.
   const richRoot = () => editorHostRef.current?.querySelector('.ProseMirror') || null
   const activeSourceTextarea = () => {
+    if (!sourceFindActiveRef.current) return null
     const isVisibleSource = (el) => {
       if (!el?.isConnected) return false
       const rect = el.getBoundingClientRect()

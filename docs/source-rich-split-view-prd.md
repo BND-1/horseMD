@@ -1,7 +1,7 @@
 # 源码 + 富文本双栏实时预览 PRD
 
-> 状态：设计完成，尚未开始实现  
-> 日期：2026-08-04  
+> 状态：第一版已实现，待扩展真实大文档/人工验收
+> 日期：2026-08-04
 > 关联：`docs/source-rich-split-view-architecture.md`、`docs/handoff-mode-switch.md`、`docs/markdown-source-preservation.md`
 
 ## 1. 要解决的问题
@@ -160,7 +160,22 @@
 
 文本输入敏感场景必须使用每字符输入的后台 CDP 测试；在 macOS 发布候选阶段还需按 `docs/macos-real-input-testing.md` 做一次真实键盘/鼠标人工回归，但不得抢占用户正在使用的窗口。
 
-## 8. 分阶段实施清单
+## 8. 当前实现范围（第一版）
+
+已落地的范围：
+
+- 桌面状态栏新增“源码 + 预览”入口；普通 Markdown 在左源码、右富文本之间并排显示，并可拖动分隔线。
+- 两侧复用同一 Tab 的 textarea 与既有 Crepe 实例；不创建第二个 Crepe。
+- 左侧连续输入经过 180ms 合并后刷新右侧；IME composition 结束后才刷新。
+- 右侧真实编辑回写左侧源码；程序化更新和过期 debounce 通过 revision 抑制，避免循环覆盖。
+- 两侧滚动采用内容锚点、单侧主控和 rAF 合并；已自动覆盖十次交替方向滚动。
+- 查找/替换按最后聚焦面板选择源码或富文本后端；双文档分屏、移动端、纯文本与未显式加载富文本的重文档禁用入口。
+
+实现文件：`hooks/useSplitSourceRichSync.js`、`hooks/useSplitScrollSync.js`、`components/shell/EditorArea.jsx`、`App.jsx`。自动化入口：`npm run test:source-rich-split`。
+
+仍需发布前人工验收：大图片/表格/代码块长文档、中文输入法真实 composition、与 PDF/评阅/外部修改提示组合使用。
+
+## 9. 分阶段实施清单
 
 1. **同步协调器与纯函数测试**：先实现 revision/epoch、程序化写入抑制、输入合并、IME 边界；不改 UI。
 2. **双栏结构**：在 `EditorArea` 中复用同一富文本实例与无控制 textarea，新增模式和面板焦点管理。

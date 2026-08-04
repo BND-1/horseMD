@@ -169,6 +169,9 @@ npm run test:rich-dirty-indicator-ui
 # 真实 Electron：富文本立即保存、源码切换、删除后重开不复活
 npm run test:issues-105-106-ui
 
+# 真实 Electron：同一 Markdown 左源码/右富文本双栏；逐字源码输入、立即保存、富文本回写、十次交替滚动与关闭双栏
+npm run test:source-rich-split
+
 # 本地 Markdown 链接：POSIX/Windows/UNC/相对路径归一化与 Cmd/Ctrl+点击
 npm run test:local-markdown-links
 

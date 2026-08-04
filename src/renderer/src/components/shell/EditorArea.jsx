@@ -23,6 +23,9 @@ export default function EditorArea({
   focusedPane,
   home,
   sourceMode,
+  sourceRichSplitMode,
+  sourceRichSplitRatio,
+  richPreviewState,
   richForced,
   mountedIds,
   activeTab,
@@ -52,6 +55,13 @@ export default function EditorArea({
   setRichDocVersion,
   setTabRichLoading,
   startSplitDrag,
+  startSourceRichSplitDrag,
+  onSourceInput,
+  onSourceCompositionStart,
+  onSourceCompositionEnd,
+  onSourcePaneFocus,
+  onRichPaneFocus,
+  onRichContent,
   updateContent,
   markRichEditPending,
   t
@@ -59,7 +69,7 @@ export default function EditorArea({
   return (
     <div
       ref={editorAreaRef}
-      className={`editor-area${split ? ' is-split' : ''}`}
+      className={`editor-area${split || sourceRichSplitMode ? ' is-split' : ''}${sourceRichSplitMode ? ' is-source-rich-split' : ''}`}
       style={{ display: home || !activeTab || activeTab?.kind === 'settings' ? 'none' : undefined }}
     >
       {tabs.map((tab) => {
@@ -79,22 +89,33 @@ export default function EditorArea({
         const isFocusedPane = split && ((isRight && focusedPane === 'right') || (isLeft && focusedPane === 'left'))
         const paneClass =
           (isRight ? ' hm-pane-right' : isLeft ? ' hm-pane-left' : '') + (isFocusedPane ? ' hm-focused' : '')
-        const onPaneFocus = () => {
+        // The source/rich split is ONE tab represented by two surfaces. It is
+        // intentionally distinct from `split`, which shows TWO documents.
+        const heavyAsSource = tab.heavy && !richForced.has(tab.id)
+        const plainText = isPlainTextDoc(tab)
+        const isSourceRichSplit = sourceRichSplitMode && isLeft && !plainText && !heavyAsSource
+        const onPaneFocus = (pane = null) => {
           focusedTabRef.current = tab.id
           if (split) setFocusedPane(isRight ? 'right' : 'left')
+          if (isSourceRichSplit) {
+            if (pane === 'source') onSourcePaneFocus?.()
+            if (pane === 'rich') onRichPaneFocus?.()
+          }
         }
-        // In split view the left pane holds a fixed fraction; the right pane
-        // grows to fill the rest. Outside split, panes fill the row.
+        // In normal document split the left pane holds a fixed fraction. In a
+        // source/rich split the source pane is the left fixed column and the
+        // existing rich editor fills the right column.
         const paneFlex = split && isLeft ? `0 0 calc(${(splitRatio * 100).toFixed(2)}% - 3px)` : undefined
+        const sourceRichFlex = isSourceRichSplit
+          ? `0 0 calc(${(sourceRichSplitRatio * 100).toFixed(2)}% - 3px)`
+          : undefined
 
         // Plain-text docs always use the textarea; "heavy" Markdown docs do
         // too until the user opts into rich (avoids a multi-second freeze).
         // In global source mode the active Markdown pane shows a textarea too,
         // but its already-mounted Crepe editor stays mounted underneath. That
         // avoids a full re-parse/image reload when switching back to rich.
-        const heavyAsSource = tab.heavy && !richForced.has(tab.id)
-        const plainText = isPlainTextDoc(tab)
-        const sourceForActiveRich = sourceMode && isLeft && !plainText && !heavyAsSource
+        const sourceForActiveRich = (sourceMode || isSourceRichSplit) && isLeft && !plainText && !heavyAsSource
         const usesTextarea = plainText || heavyAsSource || sourceForActiveRich
         // content-visibility virtualization (see .hm-cv in app.css) is reserved
         // for genuinely huge RICH documents. Medium CJK-heavy docs have enough
@@ -131,14 +152,14 @@ export default function EditorArea({
             <textarea
               key={`source:${tab.id}:${tab.reloadNonce}`}
               ref={setSourceTextareaRef}
-              className={`source-editor${paneClass}`}
+              className={`source-editor${paneClass}${isSourceRichSplit ? ' hm-source-rich-left' : ''}`}
               defaultValue={initialSource}
               readOnly={readOnly}
               spellCheck={false}
-              style={{ order, flex: paneFlex }}
-              onFocus={onPaneFocus}
+              style={{ order: isSourceRichSplit ? 1 : order, flex: isSourceRichSplit ? sourceRichFlex : paneFlex }}
+              onFocus={() => onPaneFocus('source')}
               onMouseDown={(e) => {
-                onPaneFocus()
+                onPaneFocus('source')
               }}
               onMouseUp={(e) => {
                 e.currentTarget.__horsemdSourceSelectionUser = true
@@ -176,6 +197,8 @@ export default function EditorArea({
                 const selectedAt = e.currentTarget.__horsemdSourceSelectionAt || 0
                 if (performance.now() - selectedAt > 250) e.currentTarget.__horsemdSourceViewportMoved = true
               }}
+              onCompositionStart={() => onSourceCompositionStart?.(tab.id)}
+              onCompositionEnd={() => onSourceCompositionEnd?.(tab.id)}
               onChange={(e) => {
                 // Uncontrolled: stash the edit and debounce-commit it, so
                 // typing never re-renders App or re-sets a multi-MB value per
@@ -186,6 +209,7 @@ export default function EditorArea({
                 sourceEditedIds.current.add(tab.id)
                 const v = updateTextareaSourceFromDom(e.target)
                 liveContentRef.current.set(tab.id, v)
+                onSourceInput?.(tab.id, v)
                 const prev = liveTimersRef.current.get(tab.id)
                 if (prev) clearTimeout(prev)
                 liveTimersRef.current.set(tab.id, setTimeout(() => commitLive(tab.id), 400))
@@ -213,11 +237,11 @@ export default function EditorArea({
               // Crepe editor with the new content (the create effect only
               // runs on mount). tab switches keep the same key → stay mounted.
               key={`rich:${tab.id}:${tab.reloadNonce}`}
-              className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}`}
+              className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}${isSourceRichSplit ? ' hm-source-rich-right' : ''}`}
               ref={setEditorHost}
-              style={{ display: inView && !sourceForActiveRich ? undefined : 'none', order, flex: paneFlex }}
-              onFocusCapture={onPaneFocus}
-              onMouseDownCapture={onPaneFocus}
+              style={{ display: inView && !sourceMode ? undefined : 'none', order: isSourceRichSplit ? 3 : order, flex: isSourceRichSplit ? undefined : paneFlex }}
+              onFocusCapture={() => onPaneFocus('rich')}
+              onMouseDownCapture={() => onPaneFocus('rich')}
             >
               <Editor
                 tabId={`${tab.id}:${tab.reloadNonce}`}
@@ -229,7 +253,10 @@ export default function EditorArea({
                 selectionToolbar={selectionToolbar}
                 readOnly={readOnly}
                 effectiveKeybindings={effectiveKeybindings}
-                onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
+                onChange={(md, isInitial) => {
+                  if (onRichContent) onRichContent(tab.id, md, isInitial, updateContent)
+                  else updateContent(tab.id, md, isInitial)
+                }}
                 onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)
@@ -258,13 +285,19 @@ export default function EditorArea({
         </div>
       )}
 
-      {split && (
+      {(split || sourceRichSplitMode) && (
         <div
           className="hm-split-divider"
           style={{ order: 2 }}
-          onMouseDown={startSplitDrag}
+          onMouseDown={sourceRichSplitMode ? startSourceRichSplitDrag : startSplitDrag}
           title={t('split.drag')}
         />
+      )}
+
+      {sourceRichSplitMode && richPreviewState !== 'idle' && (
+        <div className={`hm-rich-preview-state ${richPreviewState === 'error' ? 'is-error' : ''}`} role="status">
+          {richPreviewState === 'error' ? t('sourceRich.previewError') : t('sourceRich.previewUpdating')}
+        </div>
       )}
 
       {split && (
