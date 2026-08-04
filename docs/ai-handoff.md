@@ -24,6 +24,7 @@
   - 0.12.52：`npm run test:list-conversion-ui` 覆盖当前层级/任务/正文转换，并用混合松散-紧凑嵌套列表验证转换后立即逐字输入、源码逐字节、保存和新进程重开
   - 0.12.63：`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:local-markdown-links`、`npm run test:block-list-source`、`npm run test:list-conversion-ui`、`npm run test:security` 与 `npm run guide:check` 均通过；已构建并安装 `/Applications/HorseMD.app`，`Info.plist` 与运行进程均为 0.12.63。
   - 0.12.67（已安装、待人工验收）：`npm run test:source-rich-split`（含同步 revision 合同、源码立即保存、双栏/独占源码真实鼠标行首光标、匹配的尾部留白、十次交替滚动与面板内关闭）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui`、`npm run build`、`npm run build:mobile` 与 `npm run guide:check` 通过。已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`；`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.67。双栏尚需在当前构建包上进行含图片/表格/代码块的大文档和真实中文输入法人工回归。
+  - 0.12.68（已安装、待人工验收）：补足 Chromium 对非空行首字符点击的实际选区校正，并修正 textarea mirror 对行首折叠 Range 的首字符右缘定位。`npm run build`、`npm run test:source-rich-split`（精确覆盖 `## 页面对应关系` 在独占源码与源码预览左栏的首个 `#` 点击）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui` 和 `git diff --check` 通过；已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`，`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.68。
   - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
   - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
