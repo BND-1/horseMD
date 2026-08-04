@@ -61,6 +61,7 @@ export default function EditorArea({
   onSourceCompositionEnd,
   onSourcePaneFocus,
   onRichPaneFocus,
+  onCloseSourceRichSplit,
   onToggleSourceRichSplit,
   updateContent,
   markRichEditPending,
@@ -296,6 +297,19 @@ export default function EditorArea({
         <div className={`hm-rich-preview-state ${richPreviewState === 'error' ? 'is-error' : ''}`} role="status">
           {richPreviewState === 'error' ? t('sourceRich.previewError') : t('sourceRich.previewUpdating')}
         </div>
+      )}
+
+      {sourceRichSplitMode && (
+        <button
+          className="hm-source-rich-close"
+          type="button"
+          title={t('sourceRich.close')}
+          aria-label={t('sourceRich.close')}
+          onClick={onCloseSourceRichSplit}
+        >
+          <Icon name="close" size={13} />
+          <span>{t('sourceRich.close')}</span>
+        </button>
       )}
 
       {split && (

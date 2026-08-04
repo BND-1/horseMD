@@ -53,6 +53,64 @@ async function placeSourceCaretAtEnd(evaluate) {
   assert.equal(placed, true, 'Could not focus source pane')
 }
 
+async function click(send, point) {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, button: 'none' })
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+}
+
+async function toggleNormalSourceMode({ evaluate, send }) {
+  const point = await evaluate(`(() => {
+    const button = [...document.querySelectorAll('.status-right .status-btn')]
+      .find((node) => /Ctrl\\+\\/|⌘\\//.test(node.title || ''))
+    const rect = button?.getBoundingClientRect()
+    return rect && button.offsetParent ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+  })()`)
+  assert.ok(point, 'Could not locate the normal source/rich mode control')
+  await click(send, point)
+}
+
+// Use a real browser mouse click at the leading edge of a populated source
+// line. This catches regressions where the custom thick caret visually covers
+// the first glyph even though textarea.selectionStart is correctly zero.
+async function assertLeadingSourceCaret({ evaluate, send }, selector, text) {
+  const target = await evaluate(`(() => {
+    const textarea = document.querySelector(${JSON.stringify(selector)})
+    const offset = textarea?.value.indexOf(${JSON.stringify(text)}) ?? -1
+    if (!textarea || offset < 0) return null
+    textarea.scrollTop = 0
+    const line = textarea.value.slice(0, offset).split('\\n').length - 1
+    const rect = textarea.getBoundingClientRect()
+    const style = getComputedStyle(textarea)
+    return {
+      offset,
+      x: rect.left + parseFloat(style.paddingLeft) + 1,
+      y: rect.top + parseFloat(style.paddingTop) + (line * parseFloat(style.lineHeight)) + (parseFloat(style.fontSize) / 2),
+      textStartX: rect.left + parseFloat(style.paddingLeft)
+    }
+  })()`)
+  assert.ok(target, `Could not locate source text ${text}`)
+  await click(send, target)
+  try {
+    await waitFor(() => evaluate(`(() => {
+      const textarea = document.querySelector(${JSON.stringify(selector)})
+      return textarea?.selectionStart === ${target.offset} && textarea.selectionEnd === ${target.offset}
+    })()`), `Mouse click could not place the source caret before ${text}`)
+  } catch {
+    const actual = await evaluate(`(() => {
+      const textarea = document.querySelector(${JSON.stringify(selector)})
+      return textarea && { selectionStart: textarea.selectionStart, selectionEnd: textarea.selectionEnd, scrollTop: textarea.scrollTop, valueAtSelection: textarea.value.slice(textarea.selectionStart - 12, textarea.selectionStart + 12) }
+    })()`)
+    throw new Error(`Mouse click could not place the source caret before ${text}: ${JSON.stringify({ target, actual })}`)
+  }
+  const result = await waitFor(() => evaluate(`(() => {
+    const caret = document.querySelector('.hm-source-caret')?.getBoundingClientRect()
+    return caret?.width ? { caretLeft: caret.left, caretRight: caret.right } : null
+  })()`), `Custom source caret did not render after clicking before ${text}`)
+  assert.ok(result.caretLeft < target.textStartX && result.caretRight <= target.textStartX + 1,
+    `Wide source caret covered the first glyph instead of sitting before it: ${JSON.stringify({ result, target })}`)
+}
+
 
 
 async function main() {
@@ -80,8 +138,10 @@ async function main() {
         sourceLeft: l.left, sourceRight: l.right, richLeft: r.left, richRight: r.right,
         hostLeft: h.left, hostRight: h.right,
         sourcePaddingRight: sourceStyle.paddingRight,
+        sourcePaddingBottom: sourceStyle.paddingBottom,
         hostPaddingLeft: getComputedStyle(host).paddingLeft,
-        hostPaddingRight: getComputedStyle(host).paddingRight
+        hostPaddingRight: getComputedStyle(host).paddingRight,
+        hostPaddingBottom: getComputedStyle(host).paddingBottom
       }
     })()`), 'Source + rich panes did not become visible together')
     assert.ok(layout.sourceRight <= layout.richLeft + 8, `Panes overlap: ${JSON.stringify(layout)}`)
@@ -90,7 +150,11 @@ async function main() {
     assert.equal(layout.sourcePaddingRight, '32px', `Source pane retained the single-view empty strip: ${JSON.stringify(layout)}`)
     assert.equal(layout.hostPaddingLeft, '32px', `Rich preview retained the single-view empty strip: ${JSON.stringify(layout)}`)
     assert.equal(layout.hostPaddingRight, '32px', `Rich preview retained the single-view empty strip: ${JSON.stringify(layout)}`)
+    assert.equal(layout.sourcePaddingBottom, layout.hostPaddingBottom,
+      `Source pane retained more bottom scroll room than rich preview: ${JSON.stringify(layout)}`)
     assert.equal(await evaluate(`!!document.querySelector('.tab-close.dirty')`), false, 'Opening split preview incorrectly marked the document dirty')
+
+    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor.hm-source-rich-left', '开头段落。')
 
     // Source -> rich: every committed character goes through the normal input
     // path; only the final settled source snapshot may update the projection.
@@ -179,21 +243,38 @@ async function main() {
       assert.ok(opposite > 10, `Scroll ${index + 1} did not move the ${side === 'source' ? 'rich' : 'source'} pane`)
     }
 
-    // The normal source/rich control remains the explicit exit route; it first
-    // leaves preview, then enters source mode, and the second click returns to
-    // single rich mode.
-    await evaluate(`[...document.querySelectorAll('.status-right .status-btn')].find((button) => /富文本|Rich/.test(button.textContent || ''))?.click()`)
+    // A visible in-panel close returns directly to the normal rich view; users
+    // no longer have to discover that the status-bar mode toggle also exits.
+    await evaluate(`document.querySelector('.hm-source-rich-close')?.click()`)
+    await waitFor(
+      () => evaluate(`!document.querySelector('textarea.source-editor') && !![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
+      'In-panel close did not return to the normal rich view'
+    )
+    await toggleNormalSourceMode({ evaluate, send })
     await waitFor(
       () => evaluate(`!!document.querySelector('textarea.source-editor') && !document.querySelector('textarea.source-editor.hm-source-rich-left')`),
-      'Source/rich control did not exit preview into source mode'
+      'Source/rich control did not enter normal source mode'
     )
-    await evaluate(`[...document.querySelectorAll('.status-right .status-btn')].find((button) => /源码|Source/.test(button.textContent || ''))?.click()`)
+    // Simulate the user returning to the top before clicking the leading edge.
+    // Marking this as a user selection suppresses the mode-switch settle retry,
+    // just as a real pointer action does.
+    await evaluate(`(() => {
+      const textarea = document.querySelector('textarea.source-editor')
+      if (!textarea) return false
+      textarea.focus()
+      textarea.__horsemdSourceSelectionUser = true
+      textarea.scrollTop = 0
+      return true
+    })()`)
+    await sleep(100)
+    await assertLeadingSourceCaret({ evaluate, send }, 'textarea.source-editor', '开头段落。')
+    await toggleNormalSourceMode({ evaluate, send })
     await waitFor(
       () => evaluate(`!document.querySelector('textarea.source-editor') && !![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
       'Second source/rich control click did not return to single rich view'
     )
 
-    console.log('PASS source + rich split UI: context entry, source-only editing, preview contract, save, 10 scroll links, close')
+    console.log('PASS source + rich split UI: context entry, source-only editing, leading caret, matched scroll room, preview contract, save, 10 scroll links, close')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(dir, { recursive: true, force: true })

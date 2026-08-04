@@ -74,7 +74,11 @@ export function attachSourceCaret(textarea) {
           caretTop + caretHeight < taRect.top + inset || caretTop > taRect.bottom - inset) {
         return hide()
       }
-      bar.style.left = Math.round(screenX - (CARET_WIDTH - 1) / 2) + 'px'
+      // A wide custom caret must sit wholly *before* the character boundary.
+      // Centering a 3px bar on the boundary paints over the first glyph (most
+      // noticeable at the beginning of a non-empty line) and makes a real
+      // offset-0 selection look as though it is after the first character.
+      bar.style.left = Math.round(screenX - CARET_WIDTH) + 'px'
       bar.style.top = Math.round(caretTop) + 'px'
       bar.style.width = `${CARET_WIDTH}px`
       bar.style.height = Math.round(caretHeight) + 'px'

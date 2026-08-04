@@ -179,10 +179,10 @@ scroll = {
 
 ## 6. 光标、焦点与模式切换
 
-- 左侧保留唯一可编辑光标；右侧可保留浏览器选区用于复制，但不是编辑光标。
+- 左侧保留唯一可编辑光标；右侧可保留浏览器选区用于复制，但不是编辑光标。源码的加粗自绘光标必须完整放在测得的字符边界前，不能覆盖非空行首字或制造“只能落在首字后”的视觉错觉。
 - 左侧编辑后，右侧预览更新**不自动夺取焦点**。
 - 右侧点击不改变活动编辑面板或查找目标；查找、替换、保存等仍以左侧源码为准。
-- 从双栏退出时，记录最后实际用户交互面板；调用当前 `useSourceModeSwitch` 中同一类 caret/viewport anchor 恢复路径。
+- 右上角“关闭预览”直接清除 `sourceRichSplitId` 并返回普通富文本；状态栏模式切换仍按既有路径进入独占源码。
 - 既有“有可见光标则跟随光标；阅读时优先视口”不改变。
 - 复杂结构映射仍以 raw Markdown offset 为首选；可见字符、上下文、标题、比例依次回退。禁止仅用关键词匹配。
 
@@ -236,7 +236,7 @@ scroll = {
 - `App.jsx`：持有独立的 `sourceRichSplitId`，与 `splitId`（两个文件）互斥；现有 Ctrl/Cmd+/ 退出双栏后再进入单视图，避免视图状态重叠。
 - `useFindReplace.js`：接收活动表面提示，在双栏内不会总是错误地优先源码 textarea。
 
-回归：`npm run test:source-rich-split`（含 10 次交替滚动）、`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:list-conversion-ui`、`npm run test:rich-list-source-ui`。
+回归：`npm run test:source-rich-split`（含 10 次交替滚动、两种源码视图的真实鼠标行首光标、尾部留白与面板内关闭）、`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:list-conversion-ui`、`npm run test:rich-list-source-ui`。
 
 ## 10. 实施顺序与可回退点
 

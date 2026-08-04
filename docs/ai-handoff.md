@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.66`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题；0.12.64 新增桌面端同一文档“左源码、右富文本”双栏实时预览，复用现有 textarea 与 Crepe 实例并保持统一保存边界；0.12.65 将入口收进富文本右键菜单，并让两侧按面板宽度工作，避免单栏阅读最大宽度造成空白条；0.12.66 将双栏收敛为左源码唯一编辑、右富文本只读预览，避免两个表面竞争内容真相。
+- 当前测试版本号：`package.json` 为 `0.12.67`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题；0.12.64 新增桌面端同一文档“左源码、右富文本”双栏实时预览，复用现有 textarea 与 Crepe 实例并保持统一保存边界；0.12.65 将入口收进富文本右键菜单，并让两侧按面板宽度工作，避免单栏阅读最大宽度造成空白条；0.12.66 将双栏收敛为左源码唯一编辑、右富文本只读预览，避免两个表面竞争内容真相；0.12.67 修正源码粗光标的字符边界、统一双栏尾部留白，并加入面板内直接关闭入口。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -23,7 +23,7 @@
   - 0.12.51：`npm run test:issue-98-ui` 使用 122 行 JSON 强制触发 CodeMirror 虚拟化，验证按钮全文复制、全选复制和 65 行部分选择；系统剪贴板每次先写 sentinel，避免旧内容造成假通过
   - 0.12.52：`npm run test:list-conversion-ui` 覆盖当前层级/任务/正文转换，并用混合松散-紧凑嵌套列表验证转换后立即逐字输入、源码逐字节、保存和新进程重开
   - 0.12.63：`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:local-markdown-links`、`npm run test:block-list-source`、`npm run test:list-conversion-ui`、`npm run test:security` 与 `npm run guide:check` 均通过；已构建并安装 `/Applications/HorseMD.app`，`Info.plist` 与运行进程均为 0.12.63。
-  - 0.12.66（未安装、待人工验收）：`npm run test:source-rich-split`（含同步 revision 合同、源码立即保存、富文本→源码、十次交替滚动、关闭双栏）通过；`npm run build`、`npm run build:mobile`、`npm run test:source-map`、`npm run test:markdown-preservation`、`npm run test:list-conversion-ui`、`npm run test:rich-dirty-indicator-ui` 与 `npm run guide:check` 均通过。双栏尚需在当前构建包上进行含图片/表格/代码块的大文档和真实中文输入法人工回归。
+  - 0.12.67（待安装、待人工验收）：`npm run test:source-rich-split`（含同步 revision 合同、源码立即保存、双栏/独占源码真实鼠标行首光标、匹配的尾部留白、十次交替滚动与面板内关闭）通过；`npm run test:rich-dirty-indicator-ui` 通过。双栏尚需在当前构建包上进行含图片/表格/代码块的大文档和真实中文输入法人工回归。
   - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
   - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）

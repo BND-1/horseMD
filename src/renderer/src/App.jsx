@@ -664,6 +664,14 @@ export default function App() {
     setSourceRichSplitId(tab.id)
   }, [isMobile, richForced, sourceMode, sourceRichSplitId, split, tRef, toggleSource])
 
+  // The split has an in-panel exit in addition to the existing view-mode
+  // control. Closing it returns directly to the normal rich editor instead of
+  // routing through exclusive source mode.
+  const closeSourceRichSplit = useCallback(() => {
+    setSourceRichSplitId(null)
+    setSourceRichFocusedPane('source')
+  }, [])
+
   // Drag the divider between the two split panes to change their ratio.
   const startSplitDrag = useColDrag({
     bodyClass: 'hm-col-resizing',
@@ -1158,6 +1166,7 @@ export default function App() {
             onSourceCompositionEnd={onSourceCompositionEnd}
             onSourcePaneFocus={() => setSourceRichFocusedPane('source')}
             onRichPaneFocus={() => setSourceRichFocusedPane('rich')}
+            onCloseSourceRichSplit={closeSourceRichSplit}
             onToggleSourceRichSplit={toggleSourceRichSplit}
             updateContent={updateContent}
             markRichEditPending={markRichEditPending}

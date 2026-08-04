@@ -186,7 +186,7 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 
 ### 15c. 同一文档的源码 + 富文本实时预览（桌面）
 
-富文本编辑区右键菜单的“**源码 + 预览**”会把同一 Markdown 同时展示为左侧无控制源码 textarea 和右侧已挂载的 Crepe 富文本。它不是双文件分屏：两个面板共享一个标签、一份保存内容和一套脏状态。双栏两侧均使用完整面板宽度，而不是沿用单栏阅读模式的居中最大宽度。
+富文本编辑区右键菜单的“**源码 + 预览**”会把同一 Markdown 同时展示为左侧无控制源码 textarea 和右侧已挂载的 Crepe 富文本。它不是双文件分屏：两个面板共享一个标签、一份保存内容和一套脏状态。双栏两侧均使用完整面板宽度，而不是沿用单栏阅读模式的居中最大宽度；左侧尾部阅读留白与右侧一致，右上角“关闭预览”直接返回普通富文本视图。源码的加粗光标完整放在字符边界前，非空行首也可准确定位。
 
 **实现**：`useSplitSourceRichSync.js` 用 revision 取消旧的源码输入 debounce，约 180ms 后调用既有 `replaceMarkdown()` 更新只读右侧预览。`useSplitScrollSync.js` 使用 `scrollAnchor` 的内容锚点而非原始滚动条百分比，并抑制程序化滚动的回显。普通文本、未加载富文本的重文档、移动端及“双文件分屏”期间不提供入口。完整约束见 [source-rich-split-view-architecture.md](./source-rich-split-view-architecture.md)。
 
