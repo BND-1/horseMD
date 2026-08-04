@@ -68,6 +68,8 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 右键列表类型转换还必须处理 transaction 回调时序：`markdownUpdated` 可能在 dispatch 内触发，也可能延迟到下一次输入或源码 flush。转换链路因此在 dispatch 前序列化目标 ProseMirror `doc`，按实际右键文字位置只修改当前层级 marker，并立即建立新的 authored/canonical 基线；紧接着的输入再走普通局部文字差分。禁止用整棵 canonical 列表覆盖“外层松散、内层紧凑”的用户源码。完整事故记录见 [0.12.52 列表转换源码竞态报告](./list-conversion-source-race-regression.md)。
 
+正文右键“转为有序/无序/待办列表”是不同的结构操作：它把一个普通段落包进新列表，Crepe 的 `getMarkdown()` 在 dispatch 后可能仍是旧缓存，且通用差分面对“仅增加 marker、可见文本不变”时会保守拒绝覆盖。该路径必须序列化当前 `view.state.doc`；再用转换前记录的 raw offset，仅给被操作的 authored 段落行添加 `- `、`1. ` 或 `- [ ] `。实现位于 `editor-block-list-source.js`，只接受普通非空段落，拒绝标题、引用、已有列表和空行。它不可退化为重写整篇 canonical Markdown。回归：`npm run test:block-list-source` 与 `npm run test:list-conversion-ui`。
+
 强制保存/切换的 `flushMarkdown()` 必须序列化当前 `view.state.doc`，不能把 `crepe.getMarkdown()` 的 listener 缓存当作实时文档；后者在输入 transaction 已提交但 `markdownUpdated` 尚未发布时可能落后一拍。初始化 canonical baseline 也必须使用同一 `serializerCtx(view.state.doc)` 路径；缓存与直接序列化在列表末尾换行上可能不同，把它们混用会把纯模式切换误判为编辑并删除用户的尾部空行。
 
 这里的“强制”只用于保存与导出：`getMarkdownForTab()` 调用 `flushMarkdown({ force: true })`，确保

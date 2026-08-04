@@ -61,6 +61,28 @@ Windows 与 macOS 共用一份配置，在 macOS 上 `npm run dist` 即出 `.dmg
 
 > dev 模式在 macOS 上用 `osascript tell application "Electron"` 驱动时，可能误启动 `node_modules` 里的通用 Electron 壳（同名冲突，显示默认页）。验证请用打好的 **HorseMD.app**（名字与 bundle id 唯一）。
 
+#### 验证已安装 app 而不污染仓库
+
+构建后先确认 app bundle 与实际进程，而不是只看 `dist/` 时间：
+
+```bash
+plutil -extract CFBundleShortVersionString raw /Applications/HorseMD.app/Contents/Info.plist
+ps -ax | rg '/Applications/HorseMD.app/Contents/MacOS/HorseMD'
+```
+
+如需读取 `app.asar` 内的 `package.json`，**不能在仓库根目录直接运行** `asar extract-file`：该命令会把同名文件写到当前目录，可能覆盖根 `package.json`。必须在临时目录提取：
+
+```bash
+CHECK_DIR="$(mktemp -d)"
+(
+  cd "$CHECK_DIR"
+  npx asar extract-file /Applications/HorseMD.app/Contents/Resources/app.asar package.json
+  node -e "console.log(require('./package.json').version)"
+)
+```
+
+这只用于验证安装产物；完成后可删除临时目录。若误覆盖仓库配置，立即从 Git 基线恢复完整 `package.json`，再重新写入当前版本和本轮新增脚本，不能将被裁剪的生产依赖清单提交。
+
 ### Linux 打包与发布
 
 Linux 目前发布 `amd64.deb`，应在 Ubuntu x64 环境执行：
@@ -140,6 +162,18 @@ npm run test:mermaid-paste-ui
 
 # 真实 Electron：正文单换行保真；Enter 新段落保存并重开
 npm run test:paragraph-source-ui
+
+# 真实 Electron：富文本输入的即时未保存提示、显式保存与撤销对账
+npm run test:rich-dirty-indicator-ui
+
+# 真实 Electron：富文本立即保存、源码切换、删除后重开不复活
+npm run test:issues-105-106-ui
+
+# 本地 Markdown 链接：POSIX/Windows/UNC/相对路径归一化与 Cmd/Ctrl+点击
+npm run test:local-markdown-links
+
+# 纯函数：正文右键转有序/无序/待办列表时，只修改目标源码行
+npm run test:block-list-source
 
 # 真实 Electron：#79 无序/有序/嵌套列表跟随行距和段距设置
 npm run test:issue-79-ui

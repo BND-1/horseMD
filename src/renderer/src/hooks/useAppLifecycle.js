@@ -19,6 +19,7 @@
 //   tabsRef        — live tabs mirror (restore adds scratch tabs; flush reads it)
 //   setActiveId/setTabs/setSidebarMode/setSidebarOpen/setHome/tRef — restore + onboarding
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isTabDirty } from '../lib/tab-state.js'
 import { LS, genId, isHeavyDoc, isNewerVersion } from '../paths.js'
 import { HM_TOAST_EVENT } from '../ui.js'
 import { welcomeDoc } from '../onboarding.js'
@@ -65,7 +66,7 @@ export function useAppLifecycle({
       // captures edits still inside a tab's debounce window. (commitAllLive, run
       // before this on the close path, already synced tabsRef.current.)
       const untitled = tabsRef.current
-        .filter((t) => t.kind !== 'settings' && !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .filter((t) => t.kind !== 'settings' && !t.path && isTabDirty(t) && (t.content || '').trim())
         .map((t) => ({ title: t.title, content: t.content }))
       localStorage.setItem(LS, JSON.stringify({ ...sessionRef.current, untitled }))
     } catch {
@@ -147,7 +148,7 @@ export function useAppLifecycle({
       // dirty tabs are stored, so the untouched welcome doc / empty new tabs
       // don't keep coming back. Saved files are reopened from disk instead.
       untitled: tabs
-        .filter((t) => t.kind !== 'settings' && !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .filter((t) => t.kind !== 'settings' && !t.path && isTabDirty(t) && (t.content || '').trim())
         .map((t) => ({ title: t.title, content: t.content })),
       activePath
     }

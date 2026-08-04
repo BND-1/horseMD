@@ -324,7 +324,10 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
   }
   return openExternalUrl(url)
 })
-ipcMain.handle('shell:openFileUrl', async (_e, url) => {
+ipcMain.handle('shell:openFileUrl', async (event, url) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, error: 'Untrusted renderer.' }
+  }
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'file:') return { ok: false, error: 'Only file:// URLs are supported.' }

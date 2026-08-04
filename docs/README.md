@@ -14,6 +14,8 @@
 | [implementation-notes.md](./implementation-notes.md) | 开发过程中踩的坑、关键 bug 的根因与修法、设计决策 |
 | [development.md](./development.md) | 本地开发、构建、打包（Windows / macOS）、自动化测试方法 |
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
+| [source-rich-split-view-prd.md](./source-rich-split-view-prd.md) | 计划中的桌面端左源码、右富文本双栏实时预览：产品范围、交互、性能策略与验收标准 |
+| [source-rich-split-view-architecture.md](./source-rich-split-view-architecture.md) | 双栏同步协调器、滚动联动、内容保真、现有接口复用与分阶段实施架构 |
 | [new-input-source-fidelity-report.md](./new-input-source-fidelity-report.md) | 0.12.45 新输入列表 marker 与连续空段落 `<br />` 泄漏的根因、修复和回归证据 |
 | [list-conversion-source-race-regression.md](./list-conversion-source-race-regression.md) | 0.12.52 列表转换、立即输入、源码 flush 时序竞争和嵌套列表整块规范化的根因、修复与保存重开回归 |
 | [mermaid-paste-duplicate-render-report.md](./mermaid-paste-duplicate-render-report.md) | 0.12.46 Mermaid 粘贴重复渲染的历史误判、源码模型不一致、精确粘贴修复与防回归测试 |

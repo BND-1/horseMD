@@ -9,6 +9,7 @@
 //     onAppCloseRequest + the Ctrl+Tab, Ctrl+Shift+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
+import { isTabDirty } from './tab-state.js'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
 import { COMMAND_DEFINITIONS, getCommandHandler, getCommandTitle, isCommandAvailable } from './commands/command-definitions.js'
 import { keybindingMatchesEvent } from './commands/keybinding-normalize.js'
@@ -200,6 +201,7 @@ export function useGlobalKeys({
   setSidebarMode,
   setSidebarOpen,
   commitAllLive,
+  flushPendingRichEdits,
   flushSession,
   tabsRef,
   tRef,
@@ -234,8 +236,9 @@ export function useGlobalKeys({
       // Flush textarea edits still inside the per-tab debounce window, then write
       // the session — so a recent keystroke isn't lost on quit.
       commitAllLive()
+      flushPendingRichEdits?.()
       flushSession()
-      const dirty = tabsRef.current.some((t) => t.content !== t.savedContent)
+      const dirty = tabsRef.current.some(isTabDirty)
       if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
         window.api.confirmAppClose()
       } else {
@@ -248,7 +251,7 @@ export function useGlobalKeys({
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers, activeTabKind])
+  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushPendingRichEdits, flushSession, tabsRef, tRef, handlers, activeTabKind])
 
   // Tab cycling uses the user keybinding map. The defaults intentionally remain
   // Ctrl+Tab / Ctrl+Shift+Tab on macOS to preserve the historical behavior.

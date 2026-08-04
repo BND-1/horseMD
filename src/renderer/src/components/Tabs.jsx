@@ -5,6 +5,7 @@ import { isMarkdownName } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 import ExportContextSubmenu from './ExportContextSubmenu.jsx'
+import { isTabDirty } from '../lib/tab-state.js'
 
 export default function Tabs({
   tabs,
@@ -68,7 +69,7 @@ export default function Tabs({
     <div className="tabs">
       <div className="tabs-scroll">
         {tabs.map((tab, index) => {
-          const dirty = tab.content !== tab.savedContent
+          const dirty = isTabDirty(tab)
           const isLeft = tab.id === activeId
           const isRight = splitId != null && tab.id === splitId
           // Both panes' tabs are highlighted in split view; the focused pane's tab

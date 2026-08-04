@@ -9,6 +9,7 @@ export function mountEditorInteractionBindings({
   viewRef,
   cleanups,
   markUserEdit,
+  onRichEditPending,
   reportActiveBlock,
   setBlock,
   canConvertBlockToList,
@@ -211,6 +212,14 @@ export function mountEditorInteractionBindings({
   const onUserEditIntent = (event) => {
     noteUserInteraction()
     markUserEdit()
+    // Milkdown only publishes source-preserving Markdown after its built-in
+    // 200ms debounce. `input` is already a real committed DOM mutation, so the
+    // app can safely show its unsaved indicator now without serializing on
+    // every keystroke. Paste/cut/drop can mutate without an input event on
+    // some platforms, so they get the same visual hint.
+    if (event.type === 'input' || event.type === 'paste' || event.type === 'cut' || event.type === 'drop') {
+      onRichEditPending?.()
+    }
     if (
       event.type === 'beforeinput' &&
       event.inputType === 'insertText' &&

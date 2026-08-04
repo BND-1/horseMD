@@ -53,6 +53,7 @@ export default function EditorArea({
   setTabRichLoading,
   startSplitDrag,
   updateContent,
+  markRichEditPending,
   t
 }) {
   return (
@@ -229,6 +230,7 @@ export default function EditorArea({
                 readOnly={readOnly}
                 effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
+                onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)
                 }}

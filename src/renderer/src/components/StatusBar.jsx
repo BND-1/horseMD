@@ -7,6 +7,7 @@ import { FONT_SIZE_MIN, FONT_SIZE_MAX } from '../settings.js'
 import LayoutControl from './LayoutControl.jsx'
 import { usePopover } from '../hooks/usePopover.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
+import { isTabDirty } from '../lib/tab-state.js'
 
 function stats(md) {
   const text = (md || '')
@@ -370,7 +371,7 @@ export default function StatusBar({
     const id = setTimeout(() => setS(stats(tab?.content)), 400)
     return () => clearTimeout(id)
   }, [tab?.id, tab?.content])
-  const dirty = tab && tab.content !== tab.savedContent
+  const dirty = isTabDirty(tab)
   return (
     <div className="statusbar">
       <div className="status-left">

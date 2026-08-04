@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.12.62",
+  "version": "0.12.63",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -135,7 +135,10 @@
     "guide:check": "npm --prefix guide run check",
     "guide:test:visual": "npm --prefix guide run test:visual",
     "guide:capture": "node scripts/capture-guide-screenshots.mjs",
-    "test:mermaid-long-document-ui": "node scripts/test-mermaid-long-document-ui.mjs"
+    "test:mermaid-long-document-ui": "node scripts/test-mermaid-long-document-ui.mjs",
+    "test:rich-dirty-indicator-ui": "node scripts/test-rich-dirty-indicator-ui.mjs",
+    "test:local-markdown-links": "node scripts/test-local-markdown-links.mjs && node scripts/test-local-markdown-links-ui.mjs",
+    "test:block-list-source": "node scripts/test-block-list-source.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

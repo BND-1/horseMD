@@ -35,6 +35,7 @@ import {
   getTextareaSourceValue,
   setTextareaSourceValue
 } from './source-text-fidelity.js'
+import { isTabDirty } from './lib/tab-state.js'
 import { applyCustomTheme, applyUserCss } from './customThemes.js'
 import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
@@ -476,6 +477,7 @@ export default function App() {
     openSettingsTab,
     reorderTabs,
     updateContent,
+    markRichEditPending,
     closeTab,
     closeOthers,
     renameTabFile,
@@ -816,6 +818,26 @@ export default function App() {
     tRef
   })
 
+  // A rich input can be visibly committed while Milkdown's 200ms Markdown
+  // listener is still pending. Before writing an unsaved scratch session during
+  // app close, settle only those pending editors so the final character is not
+  // omitted from the restored draft.
+  const flushPendingRichEdits = useCallback(() => {
+    const updates = new Map()
+    for (const tab of tabsRef.current) {
+      if (!tab.pendingRichEdit || sourceTextareas.current[tab.id]) continue
+      const markdown = editorApis.current[tab.id]?.flushMarkdown?.({ force: true })
+      if (typeof markdown === 'string') updates.set(tab.id, markdown)
+    }
+    if (!updates.size) return
+    const apply = (items) => items.map((tab) => {
+      if (!updates.has(tab.id)) return tab
+      return { ...tab, content: updates.get(tab.id), pendingRichEdit: false }
+    })
+    tabsRef.current = apply(tabsRef.current)
+    setTabs(apply)
+  }, [editorApis, setTabs, sourceTextareas, tabsRef])
+
   // Global menu IPC + keyboard shortcuts (US-6) — flushSession comes from
   // useAppLifecycle just above, so this call sits after it.
   useGlobalKeys({
@@ -827,6 +849,7 @@ export default function App() {
     setSidebarMode,
     setSidebarOpen,
     commitAllLive,
+    flushPendingRichEdits,
     flushSession,
     tabsRef,
     tRef,
@@ -1036,6 +1059,7 @@ export default function App() {
             setTabRichLoading={setTabRichLoading}
             startSplitDrag={startSplitDrag}
             updateContent={updateContent}
+            markRichEditPending={markRichEditPending}
             t={t}
           />
 
@@ -1152,7 +1176,7 @@ export default function App() {
       />
 
       <SaveFab
-        visible={!home && activeTab?.kind !== 'settings' && !!fabTab && fabTab.content !== fabTab.savedContent}
+        visible={!home && activeTab?.kind !== 'settings' && isTabDirty(fabTab)}
         effectiveKeybindings={effectiveKeybindings}
         onSave={() => handlers.current.save()}
       />

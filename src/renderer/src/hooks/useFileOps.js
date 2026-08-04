@@ -16,6 +16,7 @@
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen/initialFolderRoots — forwarded to useWorkspace
 import { useCallback, useEffect, useRef } from 'react'
+import { isTabDirty } from '../lib/tab-state.js'
 import {
   baseName,
   dirName,
@@ -185,18 +186,34 @@ export function useFileOps({
           // escapes/blank lines or normalize line endings before any user edit.
           return t
         }
-        if (t.content === md) return t
-        return { ...t, content: md }
+        // A delayed Milkdown serializer result is now authoritative. Clear the
+        // immediate UI hint whether the user changed content or changed it back
+        // to the saved source before the debounce elapsed.
+        if (t.content === md && !t.pendingRichEdit) return t
+        return { ...t, content: md, pendingRichEdit: false }
       })
     )
   }, [setTabs])
+
+  // Milkdown batches `markdownUpdated` for 200ms. Rich text must nevertheless
+  // show its unsaved indicator immediately after a real DOM input event. This
+  // hint never writes to disk and is cleared by the next serializer result.
+  const markRichEditPending = useCallback((id) => {
+    const current = tabsRef.current.find((tab) => tab.id === id)
+    if (!current || current.kind === 'settings' || current.pendingRichEdit) return
+    const next = { ...current, pendingRichEdit: true }
+    tabsRef.current = tabsRef.current.map((tab) => tab.id === id ? next : tab)
+    setTabs((prev) => prev.map((tab) =>
+      tab.id === id && !tab.pendingRichEdit ? { ...tab, pendingRichEdit: true } : tab
+    ))
+  }, [setTabs, tabsRef])
 
   const closeTab = useCallback(
     (id) => {
       commitAllLive() // flush textarea edits so the unsaved-check below is accurate
       setTabs((prev) => {
         const tab = prev.find((x) => x.id === id)
-        if (tab && tab.content !== tab.savedContent) {
+        if (isTabDirty(tab)) {
           if (!window.confirm(tRef.current('confirm.closeUnsaved', { name: tab.title }))) return prev
         }
         // Drop the closing tab's live-edit bookkeeping.
@@ -290,7 +307,7 @@ export function useFileOps({
     commitAllLive()
     setTabs((prev) => {
       const others = prev.filter((t) => t.id !== keepId)
-      const firstDirty = others.find((t) => t.content !== t.savedContent)
+      const firstDirty = others.find(isTabDirty)
       if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
         return prev
       }
@@ -328,9 +345,10 @@ export function useFileOps({
                   content: written,
                   savedContent: written,
                   mtimeMs,
+                  pendingRichEdit: false,
                   reloadNonce: t.reloadNonce + 1
                 }
-              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: t.content, mtimeMs }
+              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: t.content, mtimeMs, pendingRichEdit: false }
             : t
         )
       )
@@ -483,7 +501,7 @@ export function useFileOps({
           if (t.id !== id) return t
           // Bail if the user has started editing since the change fired —
           // never clobber unsaved work.
-          if (t.content !== t.savedContent) return t
+          if (isTabDirty(t)) return t
           if (t.content === content) return { ...t, mtimeMs }
           // Adopt the on-disk content: drop any stale live-edit entry so the
           // textarea (keyed by reloadNonce) remounts with the new defaultValue.
@@ -516,7 +534,7 @@ export function useFileOps({
       if (tab.mtimeMs && mtimeMs && mtimeMs <= tab.mtimeMs) return
       // Don't overwrite unsaved local edits. Make the conflict explicit rather
       // than silently leaving the user with an out-of-date on-disk version.
-      if (tab.content !== tab.savedContent) {
+      if (isTabDirty(tab)) {
         const warnedVersion = externalWarningRef.current.get(norm)
         if (warnedVersion === mtimeMs) return
         externalWarningRef.current.set(norm, mtimeMs)
@@ -534,6 +552,7 @@ export function useFileOps({
     openSettingsTab,
     reorderTabs,
     updateContent,
+    markRichEditPending,
     closeTab,
     closeOthers,
     renameTabFile,

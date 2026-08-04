@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-01。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-04。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.58`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49 修复 ≥10 张图导出时图片占位符前缀碰撞导致的静默丢图；0.12.50 新增导出保存位置按文件记忆和 PDF 排版密度；0.12.51 补齐导出参数/并发/IPC、文件右键导出子菜单和长代码块完整复制；0.12.52 修复列表转换与紧接输入的时序竞争；0.12.58 修复空白新文档中“嵌套有序列表退出后立即创建无序列表”被中间空有序项污染的源码竞态，覆盖立即切源码、保存、重开与真实 macOS 键盘输入。
+- 当前测试版本号：`package.json` 为 `0.12.63`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -22,6 +22,7 @@
   - 0.12.46：`npm run test:mermaid-paste-ui` 以隔离 profile 连续 10/10 通过；完整 UI 回归为 `7 sessions + 25 standalone`
   - 0.12.51：`npm run test:issue-98-ui` 使用 122 行 JSON 强制触发 CodeMirror 虚拟化，验证按钮全文复制、全选复制和 65 行部分选择；系统剪贴板每次先写 sentinel，避免旧内容造成假通过
   - 0.12.52：`npm run test:list-conversion-ui` 覆盖当前层级/任务/正文转换，并用混合松散-紧凑嵌套列表验证转换后立即逐字输入、源码逐字节、保存和新进程重开
+  - 0.12.63：`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:local-markdown-links`、`npm run test:block-list-source`、`npm run test:list-conversion-ui`、`npm run test:security` 与 `npm run guide:check` 均通过；已构建并安装 `/Applications/HorseMD.app`，`Info.plist` 与运行进程均为 0.12.63。
   - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
   - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
@@ -61,12 +62,13 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir
 
 APP_SRC="/Users/yangtingyi/vibe_everything/horseMD/dist/mac-arm64/HorseMD.app"
 APP_DST="/Applications/HorseMD.app"
-pkill -f "/Applications/HorseMD.app" 2>/dev/null || true
-pkill -f "HorseMD.app/Contents/MacOS/HorseMD" 2>/dev/null || true
-rm -rf "$APP_DST"
+BACKUP="/tmp/HorseMD.app.before-$(date +%Y%m%d-%H%M%S)"
+pkill -f "$APP_DST/Contents/MacOS/HorseMD" 2>/dev/null || true
+if [ -e "$APP_DST" ]; then mv "$APP_DST" "$BACKUP"; fi
 cp -R "$APP_SRC" "$APP_DST"
 xattr -dr com.apple.quarantine "$APP_DST" 2>/dev/null || true
 open -a "$APP_DST" --args --user-data-dir=/tmp/horsemd-latest --remote-debugging-port=9222
+plutil -extract CFBundleShortVersionString raw "$APP_DST/Contents/Info.plist"
 ps -ax | rg "HorseMD.app/Contents/MacOS/HorseMD"
 ```
 
@@ -100,15 +102,19 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 6. [development.md](./development.md)：构建、CDP、发布验证。
 7. [handoff-mode-switch.md](./handoff-mode-switch.md)：源码/富文本切换根因和修复历史。
 8. [markdown-source-preservation.md](./markdown-source-preservation.md)：原始 Markdown 保真合同、粘贴边界与 Live Preview 远期决策。
-9. [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md)：段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的联合根因报告。
-10. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
-11. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
-12. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
-13. [issue-101-pdf-images-table-density-report.md](./issue-101-pdf-images-table-density-report.md)：PDF 图片二次加载、路径双重编码与表格固定行高的根因。
-14. [soft-line-break-display-report.md](./soft-line-break-display-report.md)：普通源码单换行在富文本中显示为空格的根因、显示合同和防回归测试。
-15. [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)：PDF 表格列宽与行距两次修复的完整事故复盘。
-16. [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)：所有“编辑器正常、PDF 不一致”问题的工程化排查和验收流程。
-17. [long-code-copy-virtualization-regression.md](./long-code-copy-virtualization-regression.md)：长代码块复制截断的虚拟化根因、正确数据源和防回归停止条件。
+9. [rich-dirty-indicator-regression.md](./rich-dirty-indicator-regression.md)：富文本未保存提示的 200ms 防抖根因、即时反馈合同和回归命令。
+10. [local-markdown-links-regression.md](./local-markdown-links-regression.md)：富文本本地绝对/相对链接跳转、安全 IPC 边界与回归命令。
+11. [source-rich-split-view-prd.md](./source-rich-split-view-prd.md)：计划中的“左源码、右富文本”双栏实时预览用户范围、状态和验收标准。
+12. [source-rich-split-view-architecture.md](./source-rich-split-view-architecture.md)：双栏同步、滚动联动、保真与性能边界；实施前必须遵守。
+11. [editor-source-switch-regression-0.12.34.md](./editor-source-switch-regression-0.12.34.md)：段落合并、切换后即时输入、硬换行光标偏移和行内代码边界的联合根因报告。
+12. [editor-refactor-strategy.md](./editor-refactor-strategy.md)：编辑器重构边界。
+13. [performance-large-doc.md](./performance-large-doc.md)：大文档性能设计。
+14. [user-guide-maintenance.md](./user-guide-maintenance.md)：教程站和截图规范。
+15. [issue-101-pdf-images-table-density-report.md](./issue-101-pdf-images-table-density-report.md)：PDF 图片二次加载、路径双重编码与表格固定行高的根因。
+16. [soft-line-break-display-report.md](./soft-line-break-display-report.md)：普通源码单换行在富文本中显示为空格的根因、显示合同和防回归测试。
+17. [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)：PDF 表格列宽与行距两次修复的完整事故复盘。
+18. [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)：所有“编辑器正常、PDF 不一致”问题的工程化排查和验收流程。
+19. [long-code-copy-virtualization-regression.md](./long-code-copy-virtualization-regression.md)：长代码块复制截断的虚拟化根因、正确数据源和防回归停止条件。
 
 历史文档说明：
 
@@ -162,6 +168,9 @@ android/, ios/           Capacitor 原生壳
 - 获取 ProseMirror view 必须用 `crepe.editor.ctx.get(editorViewCtx)`。
 - `crepe.on(markdownUpdated)` 必须在 `crepe.create()` 前注册。
 - 只有真实用户编辑可以让 tab dirty。
+- 富文本 UI 的未保存提示不得等待 Milkdown 的 200ms `markdownUpdated`；使用 `pendingRichEdit` 即时提示、使用后续源码保真结果结算。所有消费方通过 `isTabDirty(tab)` 判断，不要直接比较 `content` 与 `savedContent`。
+- ProseMirror DOM 可见不等于可安全编辑：初始 canonical baseline、公开 API 与 `ready` 都完成前必须保持不可编辑；完成后才标记 `data-horsemd-ready="true"`。否则极早输入可能被吞入初始化基线而无法保存或切到源码。
+- Markdown 链接 Ctrl/Cmd+点击：网页链接只走 `openExternal`；本地 `file://`、POSIX 绝对路径、Windows 盘符/UNC 和相对路径都必须先规范为 file URL，再仅通过 `openFileUrl` IPC 打开。主进程必须校验发送者，不能让任意 renderer 调用系统 shell。
 - 程序化初始化、源码/富文本同步、恢复内容、PDF source 生成不能标脏。
 - ProseMirror 插件和 keymap 走 `prosePluginsCtx`。
 - Milkdown node view 追加到 `nodeViewCtx`，不要设置 `editorViewOptionsCtx.nodeViews` 覆盖内置组件。
@@ -182,6 +191,7 @@ android/, ios/           Capacitor 原生壳
 - Enter 创建的末尾空 paragraph 会被 Crepe canonical 暂时写成独立 `<br />` 块。`preserveTrailingEmptyBlock()` 必须在创建时只推进 canonical、不改 raw source，填入文字时再调用文档末尾块追加逻辑；否则真人慢速输入会把正文并入标题并残留 `<br />`。CDP 测试必须逐字输入且每行停顿到上一条 `markdownUpdated` 已提交，高速整句输入会掩盖该问题。
 - 在已有块之间按 Enter 还有两条独立路径：快速输入可能直接产生一个新 paragraph，停顿输入会先产生 `<br />` 占位。`preserveMiddleEmptyBlock()` 只可用前后未变化可见行的序号映射替换中间 raw 间隙，不能用零可见字符 affinity；并且必须把列表、表格、标题、引用和 fenced code 排除，让专用结构处理器保留原有语法风格。
 - ProseMirror 的 `bullet_list` 节点不保存用户触发输入规则时键入的 `-`、`*` 或 `+`。必须在空段落输入空格前记录 marker intent，再把它恢复到刚创建的列表层级；不能全局替换 serializer 的 `*`。松散列表可跨项目间空行，但顶层有序/无序类型变化必须截断；转换后 canonical 若把相邻同类型列表合并，`replaceMarkdownListBlock()` 必须按转换前项目内容缩小到原列表子区间。详见 [0.12.45 新输入源码保真报告](./new-input-source-fidelity-report.md)。
+- 正文转列表必须与“已有列表类型转换”分开：前者需要在 dispatch 前记录该普通段落的 raw offset，dispatch 后用 `serializerCtx(view.state.doc)` 取得实时 canonical，并且只向对应 authored 行写入 `- `、`1. ` 或 `- [ ] `。禁止读取 `crepe.getMarkdown()` 缓存或用全篇 canonical 覆盖；实现见 `editor-block-list-source.js`，回归为 `npm run test:block-list-source` 和 `npm run test:list-conversion-ui`。
 - 新建空列表项的 Crepe `<br />` 是内部占位，不是用户 Markdown：源码只能短暂表示为用户输入的 `- ` / `* ` / `+ ` / `1. ` / `1) `，首个列表文字必须按列表树顺序填回该项，绝不能落到上一段。物理键盘必须在 Space 的 `keydown` 记录 marker；连续 Enter、marker、Space 时若原始源码尚未发布空段落，禁止使用失真的 raw offset，改以 canonical 前/后快照在前后可见内容边界插入仅该列表（末尾与中间均覆盖）。若新文档的首次 `markdownUpdated` 已合并标题、正文和嵌套列表，source/canonical 都为空时必须保留完整 canonical，不能让当前内层 selection 的输入规则补丁覆盖外层；生成的全新列表采用紧凑间距。嵌套项退出后紧接无序项时，`markdownUpdated` 和立即源码切换的 `flushMarkdown()` 必须共用完整 canonical 生成路径并恢复未发布的 `-` marker，避免中间空 `3.` 或默认 `*` 固化；用户实际编辑源码后关闭该路径。输入规则意图在首次成功重建该列表后必须立即清除；不得在后续 Enter/Tab 的嵌套列表操作中重放旧 source snapshot。初始化与 `flushMarkdown()` 必须同用 `serializerCtx(view.state.doc)`；缓存 serializer 与实时 serializer 的尾换行差异也必须视为非用户编辑。修改此边界后运行 `npm run test:rich-list-source-ui`、`npm run test:new-document-list-source-ui`、`npm run test:new-source-fidelity-ui` 和 `npm run test:list-conversion-ui`。
 - 同时带 Markdown 和 HTML 的粘贴：Markdown 覆盖 HTML 语义时直接以 Markdown 插入并保留原文；网页 HTML 的纯文本回退不完整时必须保留 HTML。详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 - 光标映射不能用关键词匹配。主路径是 Markdown raw offset ↔ ProseMirror block-aware mapping。

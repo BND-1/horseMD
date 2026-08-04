@@ -2,6 +2,7 @@ import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/prose/state'
 import { copyToClipboard } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
+import { resolveLocalLinkToFileUrl } from './editor-local-links.js'
 import {
   copiedPlainText,
   inlineRichStyles,
@@ -31,16 +32,13 @@ export function mountEditorContentBindings({
       event.preventDefault()
       event.stopPropagation()
       window.api.openExternal(href)
-    } else if (/^file:/i.test(href) && window.api.openFileUrl) {
+      return
+    }
+    const fileUrl = resolveLocalLinkToFileUrl(href, docPath)
+    if (fileUrl && window.api.openFileUrl) {
       event.preventDefault()
       event.stopPropagation()
-      window.api.openFileUrl(href)
-    } else if (isRelativePath(href) && !href.startsWith('#') && window.api.openFileUrl) {
-      const baseDir = dirOf(docPath)
-      if (!baseDir) return
-      event.preventDefault()
-      event.stopPropagation()
-      window.api.openFileUrl(resolveToFileUrl(baseDir, href))
+      window.api.openFileUrl(fileUrl)
     }
   }
 

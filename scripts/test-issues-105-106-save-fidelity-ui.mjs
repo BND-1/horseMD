@@ -149,7 +149,7 @@ async function assertSavedAndSource({ evaluate, expectedSuffix, stage }) {
   assertImageLinksExactlyOnce(sourceValue, `${stage} source`)
   await toggleSource(evaluate)
   await waitFor(
-    () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
+    () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent && node.dataset.horsemdReady === 'true')`),
     `${stage}: rich mode did not return`
   )
 }
@@ -173,7 +173,7 @@ async function main() {
   try {
     const { evaluate, send } = app
     await waitFor(
-      () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
+      () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent && node.dataset.horsemdReady === 'true')`),
       'Rich editor did not become visible'
     )
 
@@ -207,7 +207,7 @@ async function main() {
   try {
     const { evaluate } = app
     await waitFor(
-      () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
+      () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent && node.dataset.horsemdReady === 'true')`),
       'Reopened rich editor did not become visible'
     )
     await toggleSource(evaluate)

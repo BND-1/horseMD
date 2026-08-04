@@ -22,6 +22,7 @@ import { createImagePersister } from './editor-image-persistence.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
+import { convertSourceParagraphLineToList } from './editor-block-list-source.js'
 import { convertListAtSelection, getListConversionContext } from './editor-list-conversion.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { REVIEW_KINDS } from './editor-review.js'
@@ -70,6 +71,7 @@ export default function Editor({
   readOnly = false,
   effectiveKeybindings,
   onChange,
+  onRichEditPending,
   onReady,
   onActiveBlock,
   onStructureChange,
@@ -95,6 +97,11 @@ export default function Editor({
   selectionToolbarRef.current = selectionToolbar !== false
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
+  // Crepe can paint its ProseMirror DOM a few synchronous steps before its
+  // source baseline and public API are ready. Never accept input in that
+  // window: an edit there used to be incorporated into the initial baseline
+  // without ever reaching `onChange`, so source mode and saves could lose it.
+  const interactionReadyRef = useRef(false)
   const effectiveKeybindingsRef = useRef(effectiveKeybindings)
   effectiveKeybindingsRef.current = effectiveKeybindings
   const hostRef = useRef(null)
@@ -114,8 +121,9 @@ export default function Editor({
   useEffect(() => {
     const view = viewRef.current
     if (!view?.dom) return
-    try { view.setProps({ editable: () => !readOnly }) } catch { /* view is tearing down */ }
-    view.dom.contentEditable = readOnly ? 'false' : 'true'
+    const editable = interactionReadyRef.current && !readOnly
+    try { view.setProps({ editable: () => editable }) } catch { /* view is tearing down */ }
+    view.dom.contentEditable = editable ? 'true' : 'false'
     view.dom.setAttribute('aria-readonly', readOnly ? 'true' : 'false')
   }, [readOnly])
   // Crepe does not re-position its tooltip until the next selection update.
@@ -176,6 +184,7 @@ export default function Editor({
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+    interactionReadyRef.current = false
     let ready = false
     let destroyed = false
     let hasSyntheticEmptyTitle = false
@@ -216,10 +225,26 @@ export default function Editor({
     // precise flag for that gap: it preserves the required immediate flush
     // without serializing a 400K+ document again for a reading-only toggle.
     let richFlushPending = false
+    let richDirtyReconcileTimer = 0
     const markUserEdit = (ttl = 8000) => {
       programmaticReplaceRef.current = null
       userEditUntil = Date.now() + ttl
       richFlushPending = true
+    }
+    // Milkdown's listener batches markdownUpdated for 200ms. A user can type
+    // and then revert within that window, leaving its final ProseMirror doc
+    // equal to the listener's previous doc; Milkdown correctly skips the
+    // callback, but HorseMD's immediate dirty hint must then be cleared. This
+    // one-shot reconciliation runs only after a real DOM mutation and only
+    // while the regular listener has not already settled the change.
+    const scheduleRichDirtyReconcile = () => {
+      if (richDirtyReconcileTimer) clearTimeout(richDirtyReconcileTimer)
+      richDirtyReconcileTimer = window.setTimeout(() => {
+        richDirtyReconcileTimer = 0
+        if (destroyed || !richFlushPending) return
+        const markdown = apiRef.current?.flushMarkdown?.()
+        if (typeof markdown === 'string') onChange?.(markdown, false)
+      }, 260)
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const clearRichFlushPending = () => { richFlushPending = false }
@@ -387,6 +412,23 @@ export default function Editor({
     }
     const convertBlockToList = (targetType, blockPos) => {
       if (readOnlyRef.current) return false
+      const sourceBeforeConversion = lastMarkdownRef.current
+      const canonicalBeforeConversion = canonicalMarkdownRef.current
+      let sourceOffset = null
+      try {
+        const view = viewRef.current
+        const remark = crepe.editor.ctx.get(remarkCtx)
+        const mappingPos = Number.isFinite(blockPos) ? blockPos : view?.state.selection.head
+        sourceOffset = pmPosToMarkdownOffset(
+          sourceBeforeConversion,
+          mappingPos,
+          view?.state.doc,
+          remark
+        )
+      } catch {
+        // The generic preservation path below remains available if the source
+        // mapping is temporarily unavailable during teardown.
+      }
       const converted = convertCurrentBlockToList(targetType, blockPos)
       if (converted) {
         markUserEdit()
@@ -395,16 +437,30 @@ export default function Editor({
         // snapshot now so an immediate source-mode switch or save cannot read
         // the paragraph from before it was wrapped as a list.
         try {
-          const canonical = canonicalForSource(crepe.getMarkdown())
+          // `crepe.getMarkdown()` is an asynchronously published cache and can
+          // still describe the paragraph immediately after ProseMirror has
+          // wrapped it as a list. Structural commands need the transaction
+          // document itself, otherwise a later conversion overwrites the
+          // previous one in source mode.
+          const view = viewRef.current
+          const serializer = crepe.editor.ctx.get(serializerCtx)
+          const canonical = canonicalForSource(serializer(view.state.doc))
           const preserved = preserveRichMarkdownSource(
-            lastMarkdownRef.current,
-            canonicalMarkdownRef.current,
+            sourceBeforeConversion,
+            canonicalBeforeConversion,
             canonical
           )
-          lastMarkdownRef.current = preserved.markdown
+          // Wrapping a paragraph has no visible-text delta. This transaction
+          // changes only the exact pre-transaction paragraph, so its authored
+          // source line is more precise than a whole-document structural diff.
+          const exactLineFallback = canonical !== canonicalBeforeConversion
+            ? convertSourceParagraphLineToList(sourceBeforeConversion, sourceOffset, targetType)
+            : null
+          const markdown = exactLineFallback || preserved.markdown
+          lastMarkdownRef.current = markdown
           canonicalMarkdownRef.current = canonical
           clearRichFlushPending()
-          onChange?.(preserved.markdown, false)
+          onChange?.(markdown, false)
         } catch {
           // markdownUpdated remains the authoritative fallback if a serializer
           // plugin is temporarily unavailable during editor teardown.
@@ -750,8 +806,11 @@ export default function Editor({
           // inputs) opt out individually via spellCheck={false}.
           view.dom.setAttribute('spellcheck', spellcheckRef.current ? 'true' : 'false')
           view.dom.setAttribute('aria-readonly', readOnlyRef.current ? 'true' : 'false')
-          try { view.setProps({ editable: () => !readOnlyRef.current }) } catch { /* */ }
-          view.dom.contentEditable = readOnlyRef.current ? 'false' : 'true'
+          // Keep the freshly-created DOM non-editable until its canonical
+          // source baseline has been captured below. See interactionReadyRef.
+          try { view.setProps({ editable: () => interactionReadyRef.current && !readOnlyRef.current }) } catch { /* */ }
+          view.dom.contentEditable = 'false'
+          view.dom.dataset.horsemdReady = 'false'
         }
 
         // Content is in the DOM now — remove the loading skeleton SYNCHRONOUSLY
@@ -771,6 +830,10 @@ export default function Editor({
           self,
           cleanups,
           markUserEdit,
+          onRichEditPending: () => {
+            onRichEditPending?.()
+            scheduleRichDirtyReconcile()
+          },
           insertUploadedImage,
           prepareRawMarkdownPaste: ({ markdown, from, to }) => {
             const source = lastMarkdownRef.current || ''
@@ -996,6 +1059,13 @@ export default function Editor({
             }
           }
           ready = true
+          interactionReadyRef.current = true
+          try { view.setProps({ editable: () => !readOnlyRef.current }) } catch { /* editor teardown */ }
+          if (view.dom) {
+            view.dom.contentEditable = readOnlyRef.current ? 'false' : 'true'
+            view.dom.setAttribute('aria-readonly', readOnlyRef.current ? 'true' : 'false')
+            view.dom.dataset.horsemdReady = 'true'
+          }
           reportActiveBlock()
         }
         if (chunks) {
@@ -1047,6 +1117,7 @@ export default function Editor({
     return () => {
       destroyed = true
       if (createRaf) cancelAnimationFrame(createRaf)
+      if (richDirtyReconcileTimer) clearTimeout(richDirtyReconcileTimer)
       cleanups.forEach((fn) => {
         try {
           fn()
