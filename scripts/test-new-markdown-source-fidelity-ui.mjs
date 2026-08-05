@@ -130,7 +130,7 @@ async function main() {
     await runScenario({
       name: `bullet-${index}`,
       scenarioPort: port + index,
-      expected: `${marker} 第一项\n${marker} 第二项\n\n`,
+      expected: `${marker} 第一项\n${marker} 第二项\n`,
       type: ({ send }) => typeBulletList(marker, send)
     })
   }

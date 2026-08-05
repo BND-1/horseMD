@@ -986,18 +986,31 @@ export const preserveEmptyListItemTextChange = ({
 
 const listStructure = (markdown, block) => {
   if (!block) return ''
-  return markdown
-    .slice(block.start, block.end)
-    .split('\n')
-    .map((line) => {
-      const match = line.match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))\s+(?:\[([ xX])\]\s+)?/)
-      if (!match) return ''
+  const lines = markdown.slice(block.start, block.end).split('\n')
+  const structure = []
+  let loose = false
+  let sawMarker = false
+  let pendingBlank = false
+  for (const line of lines) {
+    const match = line.match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))\s+(?:\[([ xX])\]\s+)?/)
+    if (match) {
+      if (sawMarker && pendingBlank) loose = true
+      sawMarker = true
+      pendingBlank = false
       const marker = /^\d/.test(match[2]) ? 'ordered' : 'bullet'
       const task = match[3] == null ? '' : `:${match[3].toLowerCase() === 'x' ? 'checked' : 'open'}`
-      return `${match[1].length}:${marker}${task}`
-    })
-    .filter(Boolean)
-    .join('\n')
+      structure.push(`${match[1].length}:${marker}${task}`)
+    } else if (!line.trim()) {
+      // A blank line between two members is what separates one Markdown list
+      // into two adjacent lists (or marks a loose list). Deleting it merges
+      // them in the rich view; that structural edit must reach the list
+      // preservation path instead of being mapped as a plain blank-line edit.
+      if (sawMarker) pendingBlank = true
+    } else {
+      pendingBlank = false
+    }
+  }
+  return structure.join('\n') + (loose ? '\nloose' : '')
 }
 
 export const hasListStructureChange = ({ previous, next, start, previousEnd, nextEnd }) => {

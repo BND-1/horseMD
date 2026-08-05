@@ -21,6 +21,7 @@ import {
   repairMergedListItems
 } from './lib/markdown-preservation/lists.js'
 import {
+  capOutputTrailingNewlines,
   preserveAppendedParagraph,
   preserveEmptiedParagraph,
   preserveMiddleEmptyBlock,
@@ -50,10 +51,16 @@ export {
   restoreTypedBulletMarker
 } from './lib/markdown-preservation/lists.js'
 
-export const generatedScratchMarkdown = (canonical) =>
-  compactGeneratedListSpacing(
+export const generatedScratchMarkdown = (canonical) => {
+  // A brand-new document is authored entirely by rich typing; its canonical is
+  // the only structural source. Milkdown may terminate the serialization with
+  // an extra blank line (or the skeleton's empty-paragraph `<br />`). Neither
+  // is authored content, so the generated source ends with exactly one final
+  // newline — never a phantom trailing blank line.
+  return compactGeneratedListSpacing(
     withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(canonical))
-  )
+  ).replace(/\r?\n+$/, '\n')
+}
 
 // Milkdown serializes the complete document after every rich-text transaction.
 // Preserve the user's untouched source spelling by applying only the serializer's
@@ -62,6 +69,16 @@ export const generatedScratchMarkdown = (canonical) =>
 // the complete document.
 export function preserveRichMarkdownSource(source, previousCanonical, nextCanonical) {
   const sourceMarkdown = String(source || '')
+  const result = preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextCanonical)
+  // Crepe may append a serializer blank line after the last edited block; the
+  // file's terminal line-ending run is authored formatting and must not grow.
+  if (result && result.markdown != null) {
+    result.markdown = capOutputTrailingNewlines(result.markdown, sourceMarkdown)
+  }
+  return result
+}
+
+function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextCanonical) {
   // Empty list items have a Crepe-only `<br />` placeholder. Normalize it on
   // both sides of the delta before source mapping so a normal rich-text flow
   // (paragraph → Enter → `- ` → text) never persists that implementation
@@ -99,6 +116,13 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   const withoutTrailingLineEndings = (value) => value.replace(/(?:\r\n|\r|\n)+$/, '')
   if (withoutTrailingLineEndings(previous) === withoutTrailingLineEndings(next)) {
     return { markdown: sourceMarkdown, preserved: true, reason: 'canonical-trailing-newline-drift' }
+  }
+  // When the canonical differs only in blank-line placement between list items
+  // (loose vs compact), no visible content changed: Crepe re-serialized the
+  // same authored document. The source's authored spacing must win, not the
+  // serializer's latest formatting choice.
+  if (compactGeneratedListSpacing(previous) === compactGeneratedListSpacing(next)) {
+    return { markdown: sourceMarkdown, preserved: true, reason: 'formatting-only-drift' }
   }
   const trailingEmptyPreserved = preserveTrailingEmptyBlock({
     source: sourceMarkdown,

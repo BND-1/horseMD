@@ -868,8 +868,8 @@ const emptiedTrailingParagraph = preserveRichMarkdownSource(
 )
 assert.equal(
   emptiedTrailingParagraph.markdown,
-  '# 测试\n\n\n',
-  'emptying the trailing paragraph must delete its authored text without persisting <br />'
+  '# 测试\n',
+  'emptying the trailing paragraph must delete its authored text, keep the source trailing newline, and never persist <br />'
 )
 
 const emptiedFormattedParagraph = preserveRichMarkdownSource(

@@ -30,7 +30,6 @@ const expected = [
     ? [`- ${asciiBulletText}`, ...(continueBulletList ? ['- bullet-continued'] : [])]
     : []),
   ...(deleteAndRecreateList ? ['1. 重新有序项', '   1. 继续嵌套项'] : []),
-  '',
   ''
 ].join('\n')
 

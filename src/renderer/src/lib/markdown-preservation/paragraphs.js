@@ -31,16 +31,21 @@ export const preserveEmptiedParagraph = ({
   if (!nextEmptyLines.length) return null
   const nextChangedText = withoutStandaloneEmptyBlockLines(next.slice(start, nextEnd)).trim()
   const previousChangedText = withoutStandaloneEmptyBlockLines(previous.slice(start, previousEnd)).trim()
+  // Inside a blockquote the emptied paragraph strips down to its `>` markers;
+  // that is an empty paragraph, not authored text.
+  const isEmptyParagraphResidue = (value) => !/[^\s>]/.test(value)
   // The delta must be exactly "real text became empty paragraph(s)". Inserting
   // a fresh empty block, or editing text, belongs to the other handlers.
-  if (nextChangedText || !previousChangedText) return null
+  if (!isEmptyParagraphResidue(nextChangedText) || isEmptyParagraphResidue(previousChangedText)) return null
   // The emptied paragraphs are the entire delta between otherwise identical
   // documents; the source must still represent the same visible content as the
   // previous canonical baseline (otherwise the visible-mismatch path owns the
   // edit and its authored spellings).
   if (previous.slice(0, start) !== next.slice(0, start)) return null
   if (previous.slice(previousEnd) !== next.slice(nextEnd)) return null
-  if (!nextEmptyLines.every((range) => range.start >= start && range.end <= nextEnd)) return null
+  // Inside a blockquote the shared `> ` marker sits outside the literal change
+  // span, so an emptied paragraph's `<br />` line only overlaps [start, nextEnd].
+  if (!nextEmptyLines.every((range) => range.end >= start && range.start <= nextEnd)) return null
   if (sourceVisibleIndex(source).text !== sourceVisibleIndex(previous).text) return null
   return preserveChangedLineRegion({
     source,
@@ -129,7 +134,7 @@ export const preserveTrailingExactLineChange = ({
 }
 
 const trailingEmptyBlock = (markdown) => {
-  const match = markdown.match(/(?:^|\n{2})<br\s*\/?>\n*$/i)
+  const match = markdown.match(/(?:^|\n{2})(?:[ \t]*>[ \t]*)*<br\s*\/?>\n*$/i)
   if (!match) return null
   const prefixLength = match[0].startsWith('\n\n') ? 2 : 0
   return {
@@ -138,11 +143,35 @@ const trailingEmptyBlock = (markdown) => {
   }
 }
 
+// Crepe represents an empty paragraph as a standalone `<br />` line. Inside a
+// blockquote that line is prefixed by the quote marker (`> <br />`); both
+// spellings are editor placeholders, never authored content.
 const standaloneEmptyBlockLines = (markdown) => markdownLines(markdown)
-  .filter((line) => /^\s*<br\s*\/?>\s*$/i.test(line.text))
+  .filter((line) => /^\s*(?:[ \t]*>[ \t]*)*<br\s*\/?>\s*$/i.test(line.text))
 
 export const withoutStandaloneEmptyBlockLines = (markdown) => String(markdown || '')
-  .replace(/(^|\n)[ \t]*<br\s*\/?>[ \t]*(?=\n|$)/gi, '$1')
+  .replace(
+    /^((?:[ \t]*>[ \t]*)*)[ \t]*<br\s*\/?>[ \t]*$/gim,
+    (match, prefix) => prefix.replace(/[ \t]+$/, '')
+  )
+
+// The file's terminal line-ending run (0, 1, or more trailing newlines) is
+// authored formatting. Crepe can append a serializer blank line after the last
+// block (`item\n\n`); only the block bytes belong to the edit, so the output's
+// trailing run must never GROW beyond the source's. The source's authored
+// trailing blank lines may legitimately become mid-document separators when a
+// paragraph is appended, so the output is clamped rather than force-equalized.
+export const capOutputTrailingNewlines = (markdown, source) => {
+  const output = String(markdown || '')
+  // A brand-new document generated from an empty source has no authored
+  // terminal convention yet; its own serializer newline is the structure.
+  if (!String(source || '').trim()) return output
+  const outputTrail = output.match(/(?:\r\n|\r|\n)*$/)?.[0] || ''
+  const sourceTrail = String(source || '').match(/(?:\r\n|\r|\n)*$/)?.[0] || ''
+  const countBreaks = (run) => (run.match(/\r\n|\n|\r/g) || []).length
+  if (countBreaks(outputTrail) <= countBreaks(sourceTrail)) return output
+  return output.slice(0, output.length - outputTrail.length) + sourceTrail
+}
 
 const rangeTouches = (range, start, end) =>
   range.start <= Math.max(start, end) && range.end >= Math.min(start, end)

@@ -28,6 +28,9 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 14. 富文本事务已经可见但 `markdownUpdated` 尚未发布时，立即保存、切源码和导出仍必须读取当前 ProseMirror `doc` 的序列化结果；不得写入滞后的 `tab.content`，也不得在下一次同步中重复追加现有图片链接。完整根因与回归见 [Issue #105/#106 富文本保存保真报告](./issues-105-106-save-fidelity-regression.md)。
 15. 保存和导出是数据持久化边界，必须强制序列化 live ProseMirror `doc`；不得因“尚未观察到 pending edit”而复用 Markdown 缓存。富文本删除后，源码、磁盘和重开结果必须同时删除，不能在重开后复活。仅阅读型的模式切换可复用已提交快照以保护长文档性能。
 16. 富文本把段落文字删光（或在空段落里输入再删光）时，Crepe 用独立 `<br />` 占位表示该空段落，它是编辑器内部状态而非作者内容：源码中只能把该段落变成空行、删除作者文字，两侧空行和其余字节保持不变，绝不允许把 `<br />` 写入源码或磁盘。
+17. 引用块内的空段落序列化为 `> <br />`，同样属于编辑器占位：清空后应留下空的 `>` 引用行，不得把 `<br />` 写进源码。独立 `<br />` 的识别必须同时接受裸行和带引用前缀两种形态。
+18. 相邻同种列表（`-` 与 `-`、`1.` 与 `1.`）之间的空行是作者排版：仅当 canonical 的空行位置变化（松散↔紧凑）而可见内容不变时，一律保留作者源码，不能因 Milkdown 重新序列化而改写 marker 或合并；只有当合并伴随真实文字变化时才在源码中产出紧凑列表。
+19. 新建文档（generated scratch 路径）的源码以单个 `\n` 结尾。Milkdown 可能在最后一块后追加序列化空行或骨架的空段落 `<br />`，它们不是作者内容，不能变成源码尾部的幻影空行；已有文档的结尾换行运行（0、1 或多行）是作者格式，输出绝不能超出它的长度。
 
 ## 当前实现
 
@@ -54,6 +57,14 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 富文本删除一个段落的所有文字后，ProseMirror 保留空 paragraph 节点，Milkdown 把它序列化为独立 `<br />` 行（与列表项、表格单元格里的 `<br>` 不同，后者是作者可见内容）。旧保真层只覆盖了“插入空段落”和“空段落填入文字”两个方向，缺少“文字被删光变回空段落”的反向映射：中间段落到 `exact-canonical-baseline` 或 `localized-change` 路径时会原样拼入 canonical 的 `<br />`；尾部段落则被 `trailing-empty-block-created` 保留旧文字，形成“富文本已删、源码仍留”的不一致。
 
 新增 `preserveEmptiedParagraph()`：当整段变化恰好是“作者文字 → 空段落占位”，且前后 canonical 其余字节完全一致、源码可见流与上一基线一致时，把该段落映射回源码的空行形式——删除作者段落行（含行内语法），保留两侧空行。例如 `# 测试\n\n你好\n\n再见\n` 清空中间段落后变为 `# 测试\n\n\n\n再见\n`；再次输入或删光都能稳定往返，不累积空行。此外给 `exact-canonical-baseline`、`localized-change` 和零宽结构替换三处兜底出口统一剥离独立 `<br />` 行，避免“一次清空多个段落”等组合路径漏出占位符。真实回归：`npm run test:empty-paragraph-source-ui`，纯函数回归见 `npm run test:markdown-preservation`。
+
+#### 相邻列表合并与格式漂移
+
+`- 甲\n\n- 乙\n` 按 CommonMark 是同一棵松散列表；Milkdown 重新序列化时可能在松散/紧凑之间漂移，也可能在真实编辑后把两棵相邻列表合并。`listStructure` 现在把「列表项之间的空行」纳入结构特征：仅空行位置变化的 canonical 差异（可见内容不变）走 `formatting-only-drift` 保留作者源码；伴随文字变化的合并才走列表保真分支，产出紧凑且保留作者 marker（`-`/`1.`）的结果。真实回归见 `npm run test:source-fidelity-probes`（35 组异构探针）与 `npm run test:list-conversion-ui`。
+
+#### 尾部空行钳制
+
+Milkdown 会在最后一块后追加序列化空行（`块\n\n`）或骨架空段落（`<br />`），二者都会让源码尾部多出幻影空行。两条修复：已有文档在 `preserveRichMarkdownSource` 出口统一执行 `capOutputTrailingNewlines()`——输出尾部换行数绝不超出源文件既有的尾部换行数（作者原有的尾部空行可被追加段落合法使用为分隔符，因此只钳制上限、不强求相等）；新建文档在 `generatedScratchMarkdown` 统一收敛为单个 `\n`。这同时修掉了新文档“立即切源码多一个空行”的旧问题。真实回归：`npm run test:paragraph-source-ui`、`npm run test:new-document-list-source-ui`、`npm run test:new-source-fidelity-ui`。
 
 当原始源码与上一份 canonical 基线逐字完全一致时，不存在需要保留的非 canonical 写法。完成空段落占位、列表和表格等专用分支后，可直接采用下一份 canonical 结果（同时规范化表格空单元格）。若全文不一致，但变更位于最后一个独立单行块，且该块在原始源码与 canonical 中逐字相同，则只替换这一行，保留之前的紧凑单换行、额外空行和其他原始写法。这两个确定性路径共同保护“新段落首个内容是行内代码”的时序：左反引号会先形成仅含 `\`` 的临时段落，它没有稳定可见字符；若继续走 visible offset，首个代码字符可能被错误映射到上一段行尾并吞掉段落分隔符，随后令模式切换光标整体偏移一行。
 
@@ -179,6 +190,9 @@ npm run test:source-fidelity-ui
 
 # 真实 Electron：清空段落、空段落内输入再删光、多次切换源码后不得出现 <br />
 npm run test:empty-paragraph-source-ui
+
+# 纯函数：35 组异构富文本增量探针（转义/列表/引用/图片/合并/空段落/CRLF/BOM）
+npm run test:source-fidelity-probes
 
 # 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本和源码编辑
 npm run test:large-source-fidelity-ui
