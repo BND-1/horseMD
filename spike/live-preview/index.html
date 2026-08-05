@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HorseMD Live Preview Spike</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>HorseMD Live Preview Spike (CodeMirror 6)</h1>
+    <div id="controls">
+      <button id="load-small">小文档 (CSP 讲义)</button>
+      <button id="load-large">大文档 (~120k 字)</button>
+      <label><input type="checkbox" id="toggle-preview" checked /> Live Preview</label>
+    </div>
+    <div id="metrics"></div>
+  </header>
+  <main id="editor-host"></main>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
