@@ -140,7 +140,8 @@
     "test:local-markdown-links": "node scripts/test-local-markdown-links.mjs && node scripts/test-local-markdown-links-ui.mjs",
     "test:block-list-source": "node scripts/test-block-list-source.mjs",
     "test:source-rich-split-ui": "node scripts/test-source-rich-split-ui.mjs",
-    "test:source-rich-split": "node scripts/test-split-source-rich-sync.mjs && node scripts/test-source-rich-split-ui.mjs"
+    "test:source-rich-split": "node scripts/test-split-source-rich-sync.mjs && node scripts/test-source-rich-split-ui.mjs",
+    "test:empty-paragraph-source-ui": "node scripts/test-empty-paragraph-source-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

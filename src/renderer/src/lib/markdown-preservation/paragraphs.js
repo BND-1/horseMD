@@ -10,8 +10,49 @@ import {
   markdownLines
 } from './core.js'
 import {
+  preserveChangedLineRegion,
   visibleLineEntries
 } from './regions.js'
+
+// A rich-text edit that removes every character of a paragraph replaces its
+// text with Crepe's internal standalone `<br />` placeholder. That placeholder
+// is not authored Markdown and must never enter the raw source: the emptied
+// paragraph maps to deleting its authored lines while the surrounding
+// blank-line separators (and every untouched byte) stay exactly as written.
+export const preserveEmptiedParagraph = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const nextEmptyLines = standaloneEmptyBlockLines(next)
+  if (!nextEmptyLines.length) return null
+  const nextChangedText = withoutStandaloneEmptyBlockLines(next.slice(start, nextEnd)).trim()
+  const previousChangedText = withoutStandaloneEmptyBlockLines(previous.slice(start, previousEnd)).trim()
+  // The delta must be exactly "real text became empty paragraph(s)". Inserting
+  // a fresh empty block, or editing text, belongs to the other handlers.
+  if (nextChangedText || !previousChangedText) return null
+  // The emptied paragraphs are the entire delta between otherwise identical
+  // documents; the source must still represent the same visible content as the
+  // previous canonical baseline (otherwise the visible-mismatch path owns the
+  // edit and its authored spellings).
+  if (previous.slice(0, start) !== next.slice(0, start)) return null
+  if (previous.slice(previousEnd) !== next.slice(nextEnd)) return null
+  if (!nextEmptyLines.every((range) => range.start >= start && range.end <= nextEnd)) return null
+  if (sourceVisibleIndex(source).text !== sourceVisibleIndex(previous).text) return null
+  return preserveChangedLineRegion({
+    source,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd,
+    reason: 'paragraph-emptied',
+    transformReplacement: withoutStandaloneEmptyBlockLines
+  })
+}
 
 const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
   const eol = lineEndingNear(source, source.length)

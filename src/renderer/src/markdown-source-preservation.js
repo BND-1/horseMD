@@ -22,6 +22,7 @@ import {
 } from './lib/markdown-preservation/lists.js'
 import {
   preserveAppendedParagraph,
+  preserveEmptiedParagraph,
   preserveMiddleEmptyBlock,
   preserveTrailingExactLineChange,
   preserveTrailingEmptyBlock,
@@ -82,6 +83,15 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
   const previousVisible = sourceVisibleIndex(previous)
   const { start, previousEnd, nextEnd } = commonChange(previous, next)
+  const emptiedParagraphPreserved = preserveEmptiedParagraph({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (emptiedParagraphPreserved) return emptiedParagraphPreserved
   // Crepe's cached Markdown and direct ProseMirror serialization can disagree
   // about *only* the number of terminal newlines. That is not a user edit.
   // In particular, treating it as a structural deletion on a list rewrites a
@@ -259,7 +269,7 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   if (trailingExactLine) return trailingExactLine
   if (sourceMarkdown === previous) {
     return {
-      markdown: normalizeEmptyTableCells(next),
+      markdown: withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(next)),
       preserved: true,
       reason: 'exact-canonical-baseline'
     }
@@ -292,7 +302,8 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
       start,
       previousEnd,
       nextEnd,
-      reason: 'structural-line-change'
+      reason: 'structural-line-change',
+      transformReplacement: withoutStandaloneEmptyBlockLines
     }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-structural-change' }
   }
 
@@ -328,9 +339,11 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   }
 
   return {
-    markdown: sourceMarkdown.slice(0, rawStart) +
-      adaptCanonicalRegionToSource(replacement, sourceMarkdown, { start: rawStart, end: rawEnd }) +
-      sourceMarkdown.slice(rawEnd),
+    markdown: withoutStandaloneEmptyBlockLines(
+      sourceMarkdown.slice(0, rawStart) +
+        adaptCanonicalRegionToSource(replacement, sourceMarkdown, { start: rawStart, end: rawEnd }) +
+        sourceMarkdown.slice(rawEnd)
+    ),
     preserved: true,
     reason: 'localized-change'
   }

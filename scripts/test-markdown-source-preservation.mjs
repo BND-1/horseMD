@@ -850,4 +850,59 @@ assert.equal(
   'an intentional empty paragraph must become blank source lines without persisting <br />'
 )
 
+const emptiedMiddleParagraph = preserveRichMarkdownSource(
+  '# 测试\n\n你好\n\n再见\n',
+  '# 测试\n\n你好\n\n再见\n',
+  '# 测试\n\n<br />\n\n再见\n'
+)
+assert.equal(
+  emptiedMiddleParagraph.markdown,
+  '# 测试\n\n\n\n再见\n',
+  'emptying a middle paragraph must delete its authored text without persisting <br />'
+)
+
+const emptiedTrailingParagraph = preserveRichMarkdownSource(
+  '# 测试\n\n你好\n',
+  '# 测试\n\n你好\n',
+  '# 测试\n\n<br />\n'
+)
+assert.equal(
+  emptiedTrailingParagraph.markdown,
+  '# 测试\n\n\n',
+  'emptying the trailing paragraph must delete its authored text without persisting <br />'
+)
+
+const emptiedFormattedParagraph = preserveRichMarkdownSource(
+  '# 测试\n\n**你好**\n\n再见\n',
+  '# 测试\n\n**你好**\n\n再见\n',
+  '# 测试\n\n<br />\n\n再见\n'
+)
+assert.equal(
+  emptiedFormattedParagraph.markdown,
+  '# 测试\n\n\n\n再见\n',
+  'emptying a formatted paragraph must remove its whole authored line (including inline syntax)'
+)
+
+const emptiedThenTyped = preserveRichMarkdownSource(
+  '# 测试\n\n\n\n再见\n',
+  '# 测试\n\n<br />\n\n再见\n',
+  '# 测试\n\n.\n\n再见\n'
+)
+assert.equal(
+  emptiedThenTyped.markdown,
+  '# 测试\n\n.\n\n再见\n',
+  'typing into an emptied paragraph must fill its blank line without persisting <br />'
+)
+
+const emptiedDotDance = preserveRichMarkdownSource(
+  '# 测试\n\n.\n\n再见\n',
+  '# 测试\n\n.\n\n再见\n',
+  '# 测试\n\n<br />\n\n再见\n'
+)
+assert.equal(
+  emptiedDotDance.markdown,
+  '# 测试\n\n\n\n再见\n',
+  'deleting the last character of a paragraph must return to the blank-line form without persisting <br />'
+)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

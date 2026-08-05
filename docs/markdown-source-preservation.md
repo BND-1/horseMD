@@ -27,6 +27,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 13. `Tab` 自动生成子列表时没有可捕获的字面 marker；若该子层尚无作者源码行，必须继承紧邻父级的 bullet marker。显式手打的子级 `-` / `+` 优先级更高，不能被父级风格覆盖。
 14. 富文本事务已经可见但 `markdownUpdated` 尚未发布时，立即保存、切源码和导出仍必须读取当前 ProseMirror `doc` 的序列化结果；不得写入滞后的 `tab.content`，也不得在下一次同步中重复追加现有图片链接。完整根因与回归见 [Issue #105/#106 富文本保存保真报告](./issues-105-106-save-fidelity-regression.md)。
 15. 保存和导出是数据持久化边界，必须强制序列化 live ProseMirror `doc`；不得因“尚未观察到 pending edit”而复用 Markdown 缓存。富文本删除后，源码、磁盘和重开结果必须同时删除，不能在重开后复活。仅阅读型的模式切换可复用已提交快照以保护长文档性能。
+16. 富文本把段落文字删光（或在空段落里输入再删光）时，Crepe 用独立 `<br />` 占位表示该空段落，它是编辑器内部状态而非作者内容：源码中只能把该段落变成空行、删除作者文字，两侧空行和其余字节保持不变，绝不允许把 `<br />` 写入源码或磁盘。
 
 ## 当前实现
 
@@ -47,6 +48,12 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 表格单元格的普通文字输入只映射真实 cell 文本 delta，不采用 serializer 重新对齐后的整张表；
 - 标题等级、分段等结构变化只替换受影响的原始行；
 - 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
+
+#### 段落被清空
+
+富文本删除一个段落的所有文字后，ProseMirror 保留空 paragraph 节点，Milkdown 把它序列化为独立 `<br />` 行（与列表项、表格单元格里的 `<br>` 不同，后者是作者可见内容）。旧保真层只覆盖了“插入空段落”和“空段落填入文字”两个方向，缺少“文字被删光变回空段落”的反向映射：中间段落到 `exact-canonical-baseline` 或 `localized-change` 路径时会原样拼入 canonical 的 `<br />`；尾部段落则被 `trailing-empty-block-created` 保留旧文字，形成“富文本已删、源码仍留”的不一致。
+
+新增 `preserveEmptiedParagraph()`：当整段变化恰好是“作者文字 → 空段落占位”，且前后 canonical 其余字节完全一致、源码可见流与上一基线一致时，把该段落映射回源码的空行形式——删除作者段落行（含行内语法），保留两侧空行。例如 `# 测试\n\n你好\n\n再见\n` 清空中间段落后变为 `# 测试\n\n\n\n再见\n`；再次输入或删光都能稳定往返，不累积空行。此外给 `exact-canonical-baseline`、`localized-change` 和零宽结构替换三处兜底出口统一剥离独立 `<br />` 行，避免“一次清空多个段落”等组合路径漏出占位符。真实回归：`npm run test:empty-paragraph-source-ui`，纯函数回归见 `npm run test:markdown-preservation`。
 
 当原始源码与上一份 canonical 基线逐字完全一致时，不存在需要保留的非 canonical 写法。完成空段落占位、列表和表格等专用分支后，可直接采用下一份 canonical 结果（同时规范化表格空单元格）。若全文不一致，但变更位于最后一个独立单行块，且该块在原始源码与 canonical 中逐字相同，则只替换这一行，保留之前的紧凑单换行、额外空行和其他原始写法。这两个确定性路径共同保护“新段落首个内容是行内代码”的时序：左反引号会先形成仅含 `\`` 的临时段落，它没有稳定可见字符；若继续走 visible offset，首个代码字符可能被错误映射到上一段行尾并吞掉段落分隔符，随后令模式切换光标整体偏移一行。
 
@@ -169,6 +176,9 @@ npm run test:issue-86-ui
 
 # 真实 Electron：异构 Markdown 多点编辑后全文与磁盘逐字节比较
 npm run test:source-fidelity-ui
+
+# 真实 Electron：清空段落、空段落内输入再删光、多次切换源码后不得出现 <br />
+npm run test:empty-paragraph-source-ui
 
 # 真实 Electron：120k+ BOM/CRLF 分块文档首次富文本和源码编辑
 npm run test:large-source-fidelity-ui
