@@ -921,4 +921,20 @@ assert.equal(
   'an unrelated empty paragraph elsewhere must not leak <br /> through the localized replacement'
 )
 
+const emptiedWithVisibleStreamMismatch = preserveRichMarkdownSource(
+  '# 甲\n\n.\n\n# 乙\n\n存取。* **输入设备：** 内容\n',
+  '# 甲\n\n.\n\n# 乙\n\n存取。\n\n* **输入设备：** 内容\n',
+  '# 甲\n\n<br />\n\n# 乙\n\n存取。\n\n* **输入设备：** 内容\n'
+)
+assert.equal(
+  emptiedWithVisibleStreamMismatch.reason,
+  'paragraph-emptied',
+  'an emptied paragraph must still map when a mid-line `* ` elsewhere makes remark split the visible stream differently'
+)
+assert.equal(
+  emptiedWithVisibleStreamMismatch.markdown,
+  '# 甲\n\n\n\n# 乙\n\n存取。* **输入设备：** 内容\n',
+  'a whole-document visible-stream mismatch must not veto the localized empty-paragraph mapping or leak <br />'
+)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

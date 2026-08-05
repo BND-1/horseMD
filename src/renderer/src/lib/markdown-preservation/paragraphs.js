@@ -38,9 +38,12 @@ export const preserveEmptiedParagraph = ({
   // a fresh empty block, or editing text, belongs to the other handlers.
   if (!isEmptyParagraphResidue(nextChangedText) || isEmptyParagraphResidue(previousChangedText)) return null
   // The emptied paragraphs are the entire delta between otherwise identical
-  // documents; the source must still represent the same visible content as the
-  // previous canonical baseline (otherwise the visible-mismatch path owns the
-  // edit and its authored spellings).
+  // documents. The source may legitimately disagree with the canonical's
+  // visible stream ELSEWHERE (for example a mid-line `* ` that remark parses
+  // as a list item while the authored line keeps it as paragraph text). Only
+  // the mapped region must align; preserveChangedLineRegion verifies that
+  // locally and fails closed, so a whole-document equality check here would
+  // veto valid empty-paragraph mappings and let <br /> leak.
   if (previous.slice(0, start) !== next.slice(0, start)) return null
   if (previous.slice(previousEnd) !== next.slice(nextEnd)) return null
   // At least one emptied paragraph's `<br />` line must sit inside the change
@@ -49,7 +52,6 @@ export const preserveEmptiedParagraph = ({
   // the document must not veto the mapping: they live in untouched source
   // bytes and cannot leak through this localized replacement.
   if (!nextEmptyLines.some((range) => range.end >= start && range.start <= nextEnd)) return null
-  if (sourceVisibleIndex(source).text !== sourceVisibleIndex(previous).text) return null
   return preserveChangedLineRegion({
     source,
     previous,
