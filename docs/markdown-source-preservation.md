@@ -68,6 +68,13 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 因此 `preserveRichMarkdownSource` 现在在**所有**路径之后执行硬性后置条件：统一剥离独立 `<br />` 占位行（保留引用前缀 `>`），再按源文件尾部换行风格钳制。无论未来哪条启发式路径出错，占位符都到不了源码；行内 `text<br>text` 与表格单元格 `<br>` 不是独立行，不受影响。这属于防御纵深：即使映射逻辑未来再次出现漏洞，边界也会兜住。长期来看，这类问题只能靠“源码即数据模型”的 Live Preview 架构（Obsidian/Typora 模式）从根本上消除——见“远期：源码优先 Live Preview”一节。
 
+### 新建文档列表：空列表项占位与过期输入意图
+
+新建文档的 generated 路径有两个独立缺口：
+
+1. `generatedScratchMarkdown` 只剥离**裸** `<br />` 行，带列表标记的空项（`- <br />`、`3. <br />`、`  * <br />`）会漏进源码。现在它同样经过 `normalizeEmptyListItems`。
+2. 列表输入规则意图有 30 秒 TTL。用户先打 `1. ` 有序列表、退出后又打 `- ` 无序列表并 Tab 缩进时，过期的 `1.` 意图仍在挂起；Tab 事件（光标在列表内）会触发 `preserveTypedBulletInputRule`，用**意图捕获时的旧快照**重建列表块，把 `1. 测试` 黏到标题行（`## 测试1. 测试`），覆盖掉正确的 `- 测试` 基线，后续 marker 全部丢失（`-` 变 `*`）。现在意图只有在**基线一致**时才会应用：`pendingMarkdownInputIntent.canonical` 必须等于当前已提交的 `canonicalMarkdownRef`，否则视为过期并清除。真实序列（标题/正文/二级标题/有序两项/退出/`- 测试`/空项/Tab 嵌套）已固化为 UI 回归：`npm run test:list-marker-empty-source-ui`。
+
 #### 相邻列表合并与格式漂移
 
 `- 甲\n\n- 乙\n` 按 CommonMark 是同一棵松散列表；Milkdown 重新序列化时可能在松散/紧凑之间漂移，也可能在真实编辑后把两棵相邻列表合并。`listStructure` 现在把「列表项之间的空行」纳入结构特征：仅空行位置变化的 canonical 差异（可见内容不变）走 `formatting-only-drift` 保留作者源码；伴随文字变化的合并才走列表保真分支，产出紧凑且保留作者 marker（`-`/`1.`）的结果。真实回归见 `npm run test:source-fidelity-probes`（35 组异构探针）与 `npm run test:list-conversion-ui`。

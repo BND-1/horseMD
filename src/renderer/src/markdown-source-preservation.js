@@ -58,7 +58,9 @@ export const generatedScratchMarkdown = (canonical) => {
   // is authored content, so the generated source ends with exactly one final
   // newline — never a phantom trailing blank line.
   return compactGeneratedListSpacing(
-    withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(canonical))
+    withoutStandaloneEmptyBlockLines(
+      normalizeEmptyListItems(normalizeEmptyTableCells(canonical))
+    )
   ).replace(/\r?\n+$/, '\n')
 }
 

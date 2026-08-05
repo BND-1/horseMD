@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.3",
+  "version": "0.13.4",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -142,7 +142,8 @@
     "test:source-rich-split-ui": "node scripts/test-source-rich-split-ui.mjs",
     "test:source-rich-split": "node scripts/test-split-source-rich-sync.mjs && node scripts/test-source-rich-split-ui.mjs",
     "test:empty-paragraph-source-ui": "node scripts/test-empty-paragraph-source-ui.mjs",
-    "test:source-fidelity-probes": "node scripts/test-source-fidelity-probes.mjs"
+    "test:source-fidelity-probes": "node scripts/test-source-fidelity-probes.mjs",
+    "test:list-marker-empty-source-ui": "node scripts/test-list-marker-empty-source-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

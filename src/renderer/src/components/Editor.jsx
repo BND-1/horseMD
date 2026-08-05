@@ -690,6 +690,18 @@ export default function Editor({
             selectionInList
           ) {
             try {
+              // An input-rule intent applies only while the document baseline
+              // is still the snapshot captured when the marker key was pressed.
+              // If an intermediate markdownUpdated already committed a newer
+              // canonical (for example the ordered-list `1.` intent is still
+              // pending, 30 s TTL, when a later bullet list is created and then
+              // indented), replaying the old snapshot rebuilds the wrong block
+              // and glues list rows onto the wrong line. Consume it as stale.
+              if (pendingMarkdownInputIntent.canonical !== canonicalMarkdownRef.current) {
+                pendingMarkdownInputIntent = null
+                pendingMarkdownInputIntents = []
+                return
+              }
               const remark = crepe.editor.ctx.get(remarkCtx)
               const canonicalOffset = pmPosToMarkdownOffset(
                 canonical,
