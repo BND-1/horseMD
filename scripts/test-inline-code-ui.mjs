@@ -157,6 +157,14 @@ async function main() {
       0,
       'inline-code delimiters should hide after ArrowRight exits the trailing boundary'
     )
+    assert.equal(
+      await evaluate(`(() => {
+        const selection = document.getSelection()
+        return Boolean(selection?.anchorNode?.parentElement?.closest?.('code'))
+      })()`),
+      false,
+      'ArrowRight left the logical mark but the visible DOM caret remained inside <code>'
+    )
     for (const character of 'outside') {
       await typeCharacter(character)
     }

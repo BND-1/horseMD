@@ -117,7 +117,9 @@ ProseMirror 的 textblock 位置长度不等于 `node.textContent.length`：
 
 ### 方向键退出
 
-行内 mark 边界左右两侧在 ProseMirror 中是同一个位置。当前在代码尾部按 `→`、首部按 `←` 时保持文档位置不动，只清除 `inlineCode` stored mark。这样下一次输入进入普通正文，不插入隐藏字符，也不跳过相邻文本。代码内部和带修饰键的导航继续交给 ProseMirror。
+行内 mark 边界左右两侧在 ProseMirror 中是同一个位置。仅清除 `inlineCode` stored mark 虽能让下一次输入进入普通正文，但不会改变等价的 ProseMirror selection；Chromium 因而可能仍把可见 DOM 光标留在 `<code>` 文本节点里，下一次同方向键又被插件误认为再次“退出边界”。
+
+当前在代码尾部按 `→`、首部按 `←` 时保持文档位置不动，只清除 stored mark，并使用 `view.domAtPos(pos, side)` 把 DOM selection 放到对应的正文侧；若该 DOM 光标已在正文侧，后续方向键完全交给浏览器/ProseMirror 原生导航。这样既不会插入隐藏字符、跳过相邻文本，也可以连续用左右键离开代码并继续移动。代码内部和带修饰键的导航继续交给 ProseMirror。
 
 ## 验证基线
 

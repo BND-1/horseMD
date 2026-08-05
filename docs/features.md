@@ -351,7 +351,7 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe 额外 padding，单元格内边距与行高使用 `em` 随文档字号等比变化，而不是保持固定像素高度；并对超列宽内容/行内代码自动换行（`word-break`），不再与相邻列重叠。PDF 打印表格采用同一套字号相对密度。
 
-短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；未手动调宽时使用浏览器 `table-layout: auto`，综合表头和所有单元格内容为每一列分配不同宽度，而不是按首行把各列等分。只有确实超过正文宽度的 Markdown/HTML 表格才在自身 `.table-wrapper` 内横向滚动，不能撑开编辑器或应用页面。**设置 → 外观 → 表格 → 宽表自动换行** 可改为把 Markdown 表格的所有列收进正文宽度并自动换行；该模式会暂时忽略手动列宽，避免历史列宽留下隐藏的横向滚动面。
+短表保持内容优先的自然宽度并带有主题感知的轻微表体底色；未手动调宽时使用浏览器 `table-layout: auto`，综合表头和所有单元格内容为每一列分配不同宽度，而不是按首行把各列等分。只有确实超过正文宽度的 Markdown/HTML 表格才在自身横向滚动容器内滑动，不能撑开编辑器或应用页面。**设置 → 外观 → 表格 → 宽表自动换行** 会把 Markdown 与原生 HTML 表格的所有列收进当前正文宽度并自动换行；该模式会暂时忽略 Markdown 的手动列宽，避免历史列宽留下隐藏的横向滚动面。
 
 列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。只有此时表格才切换为 `table-layout: fixed`，明确尊重用户指定的整组列宽。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
 

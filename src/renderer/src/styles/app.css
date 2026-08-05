@@ -2641,6 +2641,23 @@ body.hm-full-width .editor-skeleton {
   overflow-wrap: break-word;
   word-break: break-word;
 }
+/* Raw HTML tables use the same reading preference as GFM tables. The default
+   keeps an independently scrollable table so columns remain legible; opting
+   into wide-table wrapping must also constrain HTML <table> content rather
+   than leaving it at its intrinsic width in a narrow editor. */
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block {
+  overflow-x: hidden;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 100%;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block th,
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
+  min-width: 0;
+  max-width: none;
+}
 .hm-html-block th {
   background: var(--hover-elevated, var(--border-soft));
   font-weight: 700;

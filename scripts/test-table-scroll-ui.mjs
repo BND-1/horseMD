@@ -1,8 +1,11 @@
 // Real Electron regression for the fixed app viewport and wide-table scrolling.
-// Launch a built app with --remote-debugging-port first and open the fixture at
-// scripts/fixtures/table-scroll.md.
-import { connectCdp, sleep } from './lib/cdp.mjs'
+// Starts its own hidden built app with scripts/fixtures/table-scroll.md.
+import { sleep } from './lib/cdp.mjs'
+import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
+
+const fixture = new URL('./fixtures/table-scroll.md', import.meta.url).pathname
+const port = Number(process.env.CDP_PORT || 9222)
 
 function verifyLayout(result, label) {
   if (!result.rootLocked || result.documentScrollTop !== 0) {
@@ -261,9 +264,14 @@ async function verifyWideTableAutoWrap(evaluate, label) {
     const editor = rich?.closest('.editor-scroll')
     const wrapper = rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')
     const table = wrapper?.querySelector('table.children')
+    const htmlBlock = rich?.querySelector('.hm-html-block')
+    const htmlTable = htmlBlock?.querySelector('table')
     if (wrapper) wrapper.scrollLeft = 0
+    if (htmlBlock) htmlBlock.scrollLeft = 0
     const wrapperRect = wrapper?.getBoundingClientRect()
     const tableRect = table?.getBoundingClientRect()
+    const htmlBlockRect = htmlBlock?.getBoundingClientRect()
+    const htmlTableRect = htmlTable?.getBoundingClientRect()
     const parentWidths = [editor, rich, document.documentElement]
       .filter(Boolean)
       .map((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }))
@@ -272,10 +280,14 @@ async function verifyWideTableAutoWrap(evaluate, label) {
       wrapperScroll: wrapper ? wrapper.scrollWidth - wrapper.clientWidth : Infinity,
       scrollLeft: wrapper?.scrollLeft ?? -1,
       tableFits: !!wrapperRect && !!tableRect && tableRect.width <= wrapperRect.width + 1,
+      htmlScroll: htmlBlock ? htmlBlock.scrollWidth - htmlBlock.clientWidth : Infinity,
+      htmlScrollLeft: htmlBlock?.scrollLeft ?? -1,
+      htmlTableFits: !!htmlBlockRect && !!htmlTableRect && htmlTableRect.width <= htmlBlockRect.width + 1,
       parentsFit: parentWidths.every((item) => item.scroll <= item.client + 1)
     }
   })()`)
-  if (!result.enabled || result.wrapperScroll > 1 || result.scrollLeft !== 0 || !result.tableFits || !result.parentsFit) {
+  if (!result.enabled || result.wrapperScroll > 1 || result.scrollLeft !== 0 || !result.tableFits ||
+    result.htmlScroll > 1 || result.htmlScrollLeft !== 0 || !result.htmlTableFits || !result.parentsFit) {
     throw new Error(`${label}: wide-table auto-wrap did not keep every column in the writing area: ${JSON.stringify(result)}`)
   }
   await evaluate(`document.body.classList.remove('hm-table-auto-wrap')`)
@@ -910,69 +922,68 @@ async function verifyTableAddButtons(send, evaluate) {
 }
 
 async function main() {
-  const { ws, send, evaluate } = await connectCdp()
-  await send('Runtime.enable')
-  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
-  await send('Emulation.setDeviceMetricsOverride', {
-    width: 1280,
-    height: 820,
-    deviceScaleFactor: 1,
-    mobile: false
+  const app = await launchBuiltElectron({
+    profileDir: `/tmp/horsemd-table-scroll-ui-${process.pid}`,
+    port,
+    appArgs: [fixture]
   })
-  await sleep(1200)
+  const { send, evaluate } = app
+  try {
+    await send('Runtime.enable')
+    await send('Emulation.setTouchEmulationEnabled', { enabled: false })
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false
+    })
+    await sleep(1200)
 
-  if (process.env.TABLE_CONTROLS_ONLY === '1') {
+    if (process.env.TABLE_CONTROLS_ONLY === '1') {
+      await verifyTableAddButtons(send, evaluate)
+      await verifyTableControlBounds(send, evaluate)
+      console.log('table controls: visible and hit-testable inside the table block')
+      return
+    }
+
+    if (process.env.TABLE_ACTION_MENU_ONLY === '1') {
+      await verifyTableActionMenuGrace(send, evaluate)
+      console.log('table action menu: retained while moving to actions and dismissed after leave')
+      return
+    }
+
+    const desktop = await inspect(evaluate)
+    verifyLayout(desktop, 'desktop')
+    await verifyTableFontScaling(evaluate)
+    await verifyThemeTableSurface(evaluate, 'light')
+    await verifyThemeTableSurface(evaluate, 'dark')
+    await verifyContentDrivenColumnWidths(send, evaluate)
+    await verifyColumnResize(send, evaluate)
+    await verifyFarRightColumnResize(send, evaluate)
+    await verifyTableHandles(send, evaluate)
+    await verifyTableActionMenuGrace(send, evaluate)
+    await verifyContextMenuKeepsTableScroll(send, evaluate)
     await verifyTableAddButtons(send, evaluate)
     await verifyTableControlBounds(send, evaluate)
-    console.log('table controls: visible and hit-testable inside the table block')
-    ws.close()
-    return
+    await verifyHorizontalGesture(send, evaluate, 'desktop')
+    await verifyWideTableAutoWrap(evaluate, 'desktop')
+
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true
+    })
+    await sleep(300)
+    const mobile = await inspect(evaluate, true)
+    verifyLayout(mobile, 'mobile width')
+    await verifyHorizontalGesture(send, evaluate, 'mobile width', true)
+    await verifyWideTableAutoWrap(evaluate, 'mobile width')
+
+    console.log(JSON.stringify({ desktop, mobile }, null, 2))
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
   }
-
-  if (process.env.TABLE_ACTION_MENU_ONLY === '1') {
-    await verifyTableActionMenuGrace(send, evaluate)
-    console.log('table action menu: retained while moving to actions and dismissed after leave')
-    ws.close()
-    return
-  }
-
-  const desktop = await inspect(evaluate)
-  verifyLayout(desktop, 'desktop')
-  await verifyTableFontScaling(evaluate)
-  await verifyThemeTableSurface(evaluate, 'light')
-  await verifyThemeTableSurface(evaluate, 'dark')
-  await verifyContentDrivenColumnWidths(send, evaluate)
-  await verifyColumnResize(send, evaluate)
-  await verifyFarRightColumnResize(send, evaluate)
-  await verifyTableHandles(send, evaluate)
-  await verifyTableActionMenuGrace(send, evaluate)
-  await verifyContextMenuKeepsTableScroll(send, evaluate)
-  await verifyTableAddButtons(send, evaluate)
-  await verifyTableControlBounds(send, evaluate)
-  await verifyHorizontalGesture(send, evaluate, 'desktop')
-  await verifyWideTableAutoWrap(evaluate, 'desktop')
-
-  await send('Emulation.setDeviceMetricsOverride', {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 1,
-    mobile: true
-  })
-  await sleep(300)
-  const mobile = await inspect(evaluate, true)
-  verifyLayout(mobile, 'mobile width')
-  await verifyHorizontalGesture(send, evaluate, 'mobile width', true)
-  await verifyWideTableAutoWrap(evaluate, 'mobile width')
-
-  console.log(JSON.stringify({ desktop, mobile }, null, 2))
-  await evaluate(`(() => {
-    document.querySelector('.app')?.classList.remove('is-mobile')
-    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    rich?.querySelectorAll('.table-wrapper, .hm-html-block').forEach((node) => { node.scrollLeft = 0 })
-  })()`)
-  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
-  await send('Emulation.clearDeviceMetricsOverride')
-  ws.close()
 }
 
 main().catch((error) => {

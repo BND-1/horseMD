@@ -40,6 +40,40 @@ function marksWith(mark, marks = []) {
   return mark.addToSet(marks)
 }
 
+function placeDomSelectionOnInlineCodeBoundarySide(view, pos, side) {
+  // ProseMirror has one document position for both sides of a mark boundary.
+  // Its state selection therefore does not change when an arrow leaves inline
+  // code, and the view normally leaves Chromium's DOM caret in the old <code>
+  // text node. Choose the corresponding DOM side explicitly without creating
+  // a second document position or skipping a neighbouring character.
+  if (typeof view.domAtPos !== 'function') return
+  try {
+    const point = view.domAtPos(pos, side)
+    const selection = view.dom?.ownerDocument?.getSelection?.()
+    if (!point || !selection) return
+    const range = view.dom.ownerDocument.createRange()
+    range.setStart(point.node, point.offset)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    // Keep ProseMirror's DOM observer in sync with the intentionally moved
+    // visual side of this otherwise unchanged state selection.
+    view.domObserver?.setCurSelection?.()
+  } catch {
+    // DOM mapping is best-effort only. The stored-mark state below is still
+    // sufficient for correct typing when a browser cannot expose the boundary.
+  }
+}
+
+function domSelectionInsideInlineCode(view) {
+  const selection = view.dom?.ownerDocument?.getSelection?.()
+  const anchor = selection?.anchorNode
+  if (!anchor) return null
+  const element = anchor.nodeType === 1 ? anchor : anchor.parentElement
+  const code = element?.closest?.('code')
+  return Boolean(code && view.dom.contains(code))
+}
+
 export function inlineCodeRangeAtSelection(state) {
   const type = inlineCodeType(state)
   const { selection } = state
@@ -241,14 +275,24 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
         const exitsRight = event.key === 'ArrowRight' && state.selection.head === range?.to
         if (!exitsLeft && !exitsRight) return false
 
+        // Once this plugin has placed the DOM caret on the prose side of the
+        // shared mark boundary, the next arrow must be native navigation into
+        // the neighbouring text. Re-handling that same ProseMirror position
+        // would make the caret appear to leave <code> yet permanently block
+        // further left/right movement.
+        const domInsideCode = domSelectionInsideInlineCode(view)
+        if (!editingState(state).active && domInsideCode === false) return false
+
         // A mark boundary has one ProseMirror position for both visual sides.
-        // Keep that position and clear the stored inline-code mark so one arrow
-        // press moves across the rendered delimiter without skipping text.
+        // Keep that position and clear the stored inline-code mark so typing is
+        // outside the code, then place the DOM caret on the corresponding prose
+        // side without moving into or skipping an adjacent character.
         const type = inlineCodeType(state)
         const baseMarks = state.storedMarks || state.selection.$head.marks()
         const tr = state.tr.setSelection(TextSelection.create(state.doc, state.selection.head))
         tr.setStoredMarks(baseMarks.filter((mark) => mark.type !== type))
         view.dispatch(setActive(tr, false))
+        placeDomSelectionOnInlineCodeBoundarySide(view, state.selection.head, exitsRight ? 1 : -1)
         return true
       },
 

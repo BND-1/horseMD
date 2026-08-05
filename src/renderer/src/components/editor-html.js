@@ -64,7 +64,10 @@ export function renderHtmlNodeView(node) {
     return { dom: span, ignoreMutation: () => true }
   }
   const dom = document.createElement(isBlock ? 'div' : 'span')
-  dom.className = isBlock ? 'hm-html-block' : 'hm-html-inline'
+  const hasTable = isBlock && /<table\b/i.test(value)
+  dom.className = isBlock
+    ? `hm-html-block${hasTable ? ' hm-html-table-block' : ''}`
+    : 'hm-html-inline'
   dom.setAttribute('data-type', 'html')
   dom.contentEditable = 'false'
   dom.innerHTML = sanitizeHtml(value)

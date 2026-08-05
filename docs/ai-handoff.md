@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-04。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-05。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.68`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题；0.12.64 新增桌面端同一文档“左源码、右富文本”双栏实时预览，复用现有 textarea 与 Crepe 实例并保持统一保存边界；0.12.65 将入口收进富文本右键菜单，并让两侧按面板宽度工作，避免单栏阅读最大宽度造成空白条；0.12.66 将双栏收敛为左源码唯一编辑、右富文本只读预览，避免两个表面竞争内容真相；0.12.67 修正源码粗光标的字符边界、统一双栏尾部留白，并加入面板内直接关闭入口；0.12.68 再修 Chromium 将行首字符点击误判为 offset +1 的实际选区问题。
+- 当前测试版本号：`package.json` 为 `0.12.69`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题；0.12.64 新增桌面端同一文档“左源码、右富文本”双栏实时预览，复用现有 textarea 与 Crepe 实例并保持统一保存边界；0.12.65 将入口收进富文本右键菜单，并让两侧按面板宽度工作，避免单栏阅读最大宽度造成空白条；0.12.66 将双栏收敛为左源码唯一编辑、右富文本只读预览，避免两个表面竞争内容真相；0.12.67 修正源码粗光标的字符边界、统一双栏尾部留白，并加入面板内直接关闭入口；0.12.68 再修 Chromium 将行首字符点击误判为 offset +1 的实际选区问题；0.12.69 让“宽表自动换行”覆盖原生 HTML 表格，并修复行内代码首尾方向键的 DOM 光标边界和连续导航。
 - 最近关键提交：
   - `2b31d93 fix(editor): preserve authored H5 and H6 case`
   - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
@@ -25,6 +25,7 @@
   - 0.12.63：`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:local-markdown-links`、`npm run test:block-list-source`、`npm run test:list-conversion-ui`、`npm run test:security` 与 `npm run guide:check` 均通过；已构建并安装 `/Applications/HorseMD.app`，`Info.plist` 与运行进程均为 0.12.63。
   - 0.12.67（已安装、待人工验收）：`npm run test:source-rich-split`（含同步 revision 合同、源码立即保存、双栏/独占源码真实鼠标行首光标、匹配的尾部留白、十次交替滚动与面板内关闭）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui`、`npm run build`、`npm run build:mobile` 与 `npm run guide:check` 通过。已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`；`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.67。双栏尚需在当前构建包上进行含图片/表格/代码块的大文档和真实中文输入法人工回归。
   - 0.12.68（已安装、待人工验收）：补足 Chromium 对非空行首字符点击的实际选区校正，并修正 textarea mirror 对行首折叠 Range 的首字符右缘定位。`npm run build`、`npm run test:source-rich-split`（精确覆盖 `## 页面对应关系` 在独占源码与源码预览左栏的首个 `#` 点击）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui` 和 `git diff --check` 通过；已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`，`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.68。
+  - 0.12.69（已安装、待人工验收）：`npm run test:inline-code-ui` 以真实键盘事件验证代码尾部 `→` 后 DOM 光标不再留在 `<code>` 内；另以原生连续 `←` 验证离开首部后仍可进入前文，且不跳字。`npm run test:table-ui` 自行后台启动隔离 Electron，覆盖桌面和 390px 窄屏：HTML 表格默认独立横向滚动，开启 `hm-table-auto-wrap` 后 Markdown 与 HTML 表格均无内部溢出且不撑宽任一父容器。`npm run build`、`npm run build:mobile`、`npm run guide:check` 与 `git diff --check` 通过；已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`，`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.69。
   - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
   - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
   - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
