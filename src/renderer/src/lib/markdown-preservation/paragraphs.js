@@ -43,9 +43,12 @@ export const preserveEmptiedParagraph = ({
   // edit and its authored spellings).
   if (previous.slice(0, start) !== next.slice(0, start)) return null
   if (previous.slice(previousEnd) !== next.slice(nextEnd)) return null
-  // Inside a blockquote the shared `> ` marker sits outside the literal change
-  // span, so an emptied paragraph's `<br />` line only overlaps [start, nextEnd].
-  if (!nextEmptyLines.every((range) => range.end >= start && range.start <= nextEnd)) return null
+  // At least one emptied paragraph's `<br />` line must sit inside the change
+  // span (inside a blockquote the shared `> ` marker sits outside the literal
+  // change, so the line only overlaps it). OTHER empty paragraphs elsewhere in
+  // the document must not veto the mapping: they live in untouched source
+  // bytes and cannot leak through this localized replacement.
+  if (!nextEmptyLines.some((range) => range.end >= start && range.start <= nextEnd)) return null
   if (sourceVisibleIndex(source).text !== sourceVisibleIndex(previous).text) return null
   return preserveChangedLineRegion({
     source,

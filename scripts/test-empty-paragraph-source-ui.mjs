@@ -64,7 +64,7 @@ async function main() {
       port,
       appArgs: [file]
     })
-    const { evaluate, send } = app
+    let { evaluate, send } = app
     await waitFor(
       () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
       'rich editor did not open'
@@ -161,6 +161,93 @@ async function main() {
       !/<br\s*\/?>/.test(sourceValueC || ''),
       'emptying the trailing paragraph must not leak <br /> into source'
     )
+
+    // Scenario D: the exact user repro on a heading-based document. Press
+    // Enter inside a heading (empty paragraph after it), create ANOTHER empty
+    // paragraph elsewhere, then run the '.' '/' dance in the heading's empty
+    // paragraph. The unrelated empty paragraph used to veto the mapping and
+    // let <br /> leak through the localized replacement.
+    await toggleSource(evaluate)
+    await sleepMs(400)
+    await writeFile(file, '# 标题\n\n## 第一节\n\n正文甲\n\n## 第二节\n\n正文乙\n')
+    await stopBuiltElectron(app, { removeProfile: true })
+    app = await launchBuiltElectron({
+      profileDir: join(root, 'profile-d'),
+      port: port + 1,
+      appArgs: [file]
+    })
+    evaluate = app.evaluate
+    send = app.send
+    await waitFor(
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return !!editor?.textContent.includes('正文乙')
+      })()`),
+      'heading fixture did not reload'
+    )
+    await clickRichBlock(evaluate, send, 'h2')
+    await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const heading = [...editor.querySelectorAll('h2')].find((node) => node.textContent === '第一节')
+      const text = heading.firstChild
+      const range = document.createRange()
+      range.setStart(text, text.nodeValue.length)
+      range.collapse(true)
+      const selection = getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      editor.focus()
+      document.dispatchEvent(new Event('selectionchange'))
+      return true
+    })()`)
+    await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: 60 })
+    await sleepMs(400)
+    // unrelated empty paragraph at the end
+    await clickRichBlock(evaluate, send, 'p')
+    await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraph = [...editor.querySelectorAll('p')].find((node) => node.textContent === '正文乙')
+      const text = paragraph.firstChild
+      const range = document.createRange()
+      range.setStart(text, text.nodeValue.length)
+      range.collapse(true)
+      const selection = getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      editor.focus()
+      document.dispatchEvent(new Event('selectionchange'))
+      return true
+    })()`)
+    await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: 60 })
+    await sleepMs(400)
+    // dance in the heading's empty paragraph
+    await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraphs = [...editor.querySelectorAll('p')]
+      const empty = paragraphs.find((node) => !node.textContent.trim())
+      if (!empty) return false
+      const range = document.createRange()
+      range.setStart(empty, 0)
+      range.collapse(true)
+      const selection = getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      editor.focus()
+      document.dispatchEvent(new Event('selectionchange'))
+      return true
+    })()`)
+    await rawKey(send, '.', 'Period', 190)
+    await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 60 })
+    await rawKey(send, '/', 'Slash', 191)
+    await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 60 })
+    await sleepMs(700)
+    await toggleSource(evaluate)
+    const sourceValueD = await waitFor(() => visibleSource(evaluate), 'source D did not open')
+    assert.ok(
+      !/<br\s*\/?>/.test(sourceValueD || ''),
+      'a heading-created empty paragraph plus another unrelated empty paragraph must not leak <br /> into source'
+    )
+    assert.ok(sourceValueD.includes('正文乙'), 'the unrelated paragraph must survive the heading empty-line dance')
 
     console.log('PASS empty-paragraph source fidelity: emptied paragraphs never leak <br />, save/reopen stays clean')
   } finally {

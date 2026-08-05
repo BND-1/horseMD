@@ -905,4 +905,20 @@ assert.equal(
   'deleting the last character of a paragraph must return to the blank-line form without persisting <br />'
 )
 
+const emptiedWithUnrelatedEmptyParagraph = preserveRichMarkdownSource(
+  '# A\n\n.\n\n# B\n\n正文\n\n# C\n',
+  '# A\n\n.\n\n# B\n\n正文\n\n<br />\n\n# C\n',
+  '# A\n\n<br />\n\n# B\n\n正文\n\n<br />\n\n# C\n'
+)
+assert.equal(
+  emptiedWithUnrelatedEmptyParagraph.reason,
+  'paragraph-emptied',
+  'an emptied paragraph must still map when the document has another unrelated empty paragraph'
+)
+assert.equal(
+  emptiedWithUnrelatedEmptyParagraph.markdown,
+  '# A\n\n\n\n# B\n\n正文\n\n# C\n',
+  'an unrelated empty paragraph elsewhere must not leak <br /> through the localized replacement'
+)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

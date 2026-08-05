@@ -58,6 +58,8 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 新增 `preserveEmptiedParagraph()`：当整段变化恰好是“作者文字 → 空段落占位”，且前后 canonical 其余字节完全一致、源码可见流与上一基线一致时，把该段落映射回源码的空行形式——删除作者段落行（含行内语法），保留两侧空行。例如 `# 测试\n\n你好\n\n再见\n` 清空中间段落后变为 `# 测试\n\n\n\n再见\n`；再次输入或删光都能稳定往返，不累积空行。此外给 `exact-canonical-baseline`、`localized-change` 和零宽结构替换三处兜底出口统一剥离独立 `<br />` 行，避免“一次清空多个段落”等组合路径漏出占位符。真实回归：`npm run test:empty-paragraph-source-ui`，纯函数回归见 `npm run test:markdown-preservation`。
 
+一个隐蔽的边界：文档里同时存在**多个**空段落时，`preserveEmptiedParagraph` 早期版本要求“所有 `<br />` 行都在变更区间内”，另一个无关空段落会让映射整体失效并回退到 `locally-aligned-change`，把被编辑空段落的 `<br />` 漏进源码。正确语义是只要求变更区间内**至少一个**空段落行（`.some`）：其他空段落位于未被触碰的源码字节中，局部替换根本不会经过它们。真实用户场景（标题后按 Enter 建空段落 + 文档另有一处空段落 + 输入 `.`/`/` 再删除）已固化为 UI 回归。
+
 #### 相邻列表合并与格式漂移
 
 `- 甲\n\n- 乙\n` 按 CommonMark 是同一棵松散列表；Milkdown 重新序列化时可能在松散/紧凑之间漂移，也可能在真实编辑后把两棵相邻列表合并。`listStructure` 现在把「列表项之间的空行」纳入结构特征：仅空行位置变化的 canonical 差异（可见内容不变）走 `formatting-only-drift` 保留作者源码；伴随文字变化的合并才走列表保真分支，产出紧凑且保留作者 marker（`-`/`1.`）的结果。真实回归见 `npm run test:source-fidelity-probes`（35 组异构探针）与 `npm run test:list-conversion-ui`。
