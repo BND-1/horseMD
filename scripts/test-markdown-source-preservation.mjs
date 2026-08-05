@@ -937,4 +937,29 @@ assert.equal(
   'a whole-document visible-stream mismatch must not veto the localized empty-paragraph mapping or leak <br />'
 )
 
+// The hard boundary invariant: no matter which heuristic path produced the
+// result, an internal standalone `<br />` placeholder can never survive into
+// authored source. Inline `text<br>text` and table-cell breaks are not
+// standalone lines and must stay untouched.
+const boundaryInvariantLeak = preserveRichMarkdownSource(
+  '# 甲\n\n正文\n',
+  '# 甲\n\n正文\n',
+  '# 甲\n\n正文X\n\n<br />\n\n# 乙\n'
+)
+assert.equal(
+  /<br\s*\/?>/.test(boundaryInvariantLeak.markdown || ''),
+  false,
+  'a standalone <br /> placeholder must never reach authored source through any path'
+)
+const inlineBreakPreserved = preserveRichMarkdownSource(
+  '第一行<br>第二行\n',
+  '第一行<br>第二行\n',
+  '第一行<br>第二行X\n'
+)
+assert.equal(
+  inlineBreakPreserved.markdown,
+  '第一行<br>第二行X\n',
+  'an inline authored <br> hard break must survive the boundary invariant'
+)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

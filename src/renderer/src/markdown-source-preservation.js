@@ -70,10 +70,18 @@ export const generatedScratchMarkdown = (canonical) => {
 export function preserveRichMarkdownSource(source, previousCanonical, nextCanonical) {
   const sourceMarkdown = String(source || '')
   const result = preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextCanonical)
-  // Crepe may append a serializer blank line after the last edited block; the
-  // file's terminal line-ending run is authored formatting and must not grow.
+  // Hard boundary invariant: an internal empty-paragraph `<br />` placeholder
+  // must NEVER reach authored source, no matter which heuristic path produced
+  // the result. Enforce it here as a post-condition on every output, so a
+  // future path with a too-strict guard cannot leak the serializer's internal
+  // representation again (this is what the empty-paragraph/visible-stream
+  // bugs kept tripping over). Table-cell and inline `text<br>text` breaks are
+  // not standalone lines and stay untouched.
   if (result && result.markdown != null) {
-    result.markdown = capOutputTrailingNewlines(result.markdown, sourceMarkdown)
+    const withoutPlaceholders = withoutStandaloneEmptyBlockLines(result.markdown)
+    // Crepe may append a serializer blank line after the last edited block; the
+    // file's terminal line-ending run is authored formatting and must not grow.
+    result.markdown = capOutputTrailingNewlines(withoutPlaceholders, sourceMarkdown)
   }
   return result
 }
