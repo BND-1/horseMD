@@ -7,6 +7,7 @@ import {
   serializerCtx
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
+import './editor-table-click.js' // side effect: single click in a table cell places the caret
 import { TextSelection } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'

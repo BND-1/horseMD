@@ -67,6 +67,16 @@ const BASE_PDF_CSS = `
     background: none; padding: 0; color: #2a2620; font-size: 0.86em; line-height: 1.6;
     white-space: pre-wrap; word-break: break-word;
   }
+  .doc pre.hm-pdf-code { padding-left: 0; }
+  .doc pre.hm-pdf-code code { display: block; }
+  .hm-code-line { display: block; white-space: pre-wrap; min-height: 1.6em; }
+  .hm-code-line-num {
+    display: inline-block; width: 2.6em; margin-right: 1em; text-align: right;
+    color: #8a8478; font-size: 0.82em; user-select: none; -webkit-user-select: none;
+    border-right: 1px solid #e6e1d8; padding-right: 0.9em;
+    vertical-align: top;
+  }
+  .hm-code-line-text { white-space: pre-wrap; }
   .doc table {
     border-collapse: collapse; width: max-content; max-width: 100%; margin: 1em 0;
     font-size: 0.9em; table-layout: auto;

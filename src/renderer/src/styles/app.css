@@ -5765,7 +5765,25 @@ body.hm-preserve-soft-breaks
 .milkdown .cm-editor .cm-gutters {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(238, 233, 244, 0.4);
+  user-select: none;
+  -webkit-user-select: none;
+  margin-right: 12px;
+}
+.milkdown .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 2.4ch;
+  padding: 0 0.95em 0 0.5em;
+  text-align: right;
+  font-size: 0.8em;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  line-height: inherit;
+  color: rgba(238, 233, 244, 0.36);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+}
+.milkdown .cm-editor .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter {
+  color: rgba(238, 233, 244, 0.9);
+  background: rgba(255, 255, 255, 0.05);
 }
 /* The plain (non-CodeMirror) code block keeps its tinted look; only the
    editable highlighted blocks go dark. */

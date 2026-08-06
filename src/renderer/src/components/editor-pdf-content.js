@@ -238,8 +238,30 @@ const flattenCodeMirrorBlocks = (clone) => {
   clone.querySelectorAll('.cm-editor').forEach((cm) => {
     const lines = [...cm.querySelectorAll('.cm-line')].map((line) => line.textContent)
     const pre = doc.createElement('pre')
+    // Keep the line-number spans' classes through stripEditorAttributes, which
+    // removes every class unless the element sits inside [data-hm-pdf-preserve].
+    pre.setAttribute('data-hm-pdf-preserve', '')
     const code = doc.createElement('code')
-    code.textContent = (lines.length ? lines.join('\n') : cm.textContent).replace(/\n+$/, '')
+    if (lines.length) {
+      // Emit one row per line with a right-aligned line number, so the printed
+      // PDF shows a code gutter like the editor (see .hm-code-line in the print
+      // stylesheet).
+      lines.forEach((lineText, index) => {
+        const row = doc.createElement('span')
+        row.className = 'hm-code-line'
+        const num = doc.createElement('span')
+        num.className = 'hm-code-line-num'
+        num.textContent = String(index + 1)
+        const text = doc.createElement('span')
+        text.className = 'hm-code-line-text'
+        text.textContent = lineText
+        row.appendChild(num)
+        row.appendChild(text)
+        code.appendChild(row)
+      })
+    } else {
+      code.textContent = (cm.textContent || '').replace(/\n+$/, '')
+    }
     pre.appendChild(code)
     cm.replaceWith(pre)
   })

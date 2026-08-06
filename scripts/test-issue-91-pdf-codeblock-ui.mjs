@@ -58,14 +58,18 @@ try {
     const html = window.__horsemdLastPdfPreview?.source?.html || ''
     const code = document.createElement('template')
     code.innerHTML = html
+    const pre = code.content.querySelector('pre > code')
+    const lineTexts = [...(pre?.querySelectorAll('.hm-code-line-text') || [])].map((span) => span.textContent)
     return {
-      codeText: code.content.querySelector('pre > code')?.textContent || '',
-      hasPre: !!code.content.querySelector('pre > code'),
+      codeText: lineTexts.length ? lineTexts.join('\\n') : (pre?.textContent || ''),
+      lineCount: lineTexts.length,
+      numCount: (pre?.querySelectorAll('.hm-code-line-num') || []).length,
+      hasPre: !!pre,
       bytes: window.__horsemdLastPdfPreview?.result?.bytes || 0
     }
   })()`)
 
-  if (!snapshot.hasPre || snapshot.codeText !== sourceCode || snapshot.bytes <= 0) {
+  if (!snapshot.hasPre || snapshot.codeText !== sourceCode || snapshot.lineCount < 2 || snapshot.numCount !== snapshot.lineCount || snapshot.bytes <= 0) {
     throw new Error(`Issue #91 PDF code block changed: ${JSON.stringify(snapshot)}`)
   }
   console.log(`PASS issue #91 PDF code block: ${JSON.stringify(snapshot)}`)
