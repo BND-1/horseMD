@@ -5763,7 +5763,7 @@ body.hm-preserve-soft-breaks
   line-height: 1.6;
 }
 .milkdown .cm-editor .cm-gutters {
-  background: transparent;
+  background: var(--code-block-bg);
   border: none;
   color: rgba(238, 233, 244, 0.4);
   user-select: none;
