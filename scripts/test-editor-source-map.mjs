@@ -280,5 +280,30 @@ const cases = []
   cases.push('HTML atom')
 }
 
+{
+  // A PM-only empty paragraph (absent from the source) must map its caret to
+  // the blank-line gap after the previous block, not into the next block.
+  const markdown = '# 测试\n\n你好\n\n再见\n'
+  const pmDoc = doc(heading('测试'), paragraph('你好'), paragraph(), paragraph('再见'))
+  const emptyPos = (() => {
+    let found = null
+    pmDoc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent === '') { found = pos + 1; return false }
+      return true
+    })
+    return found
+  })()
+  assert.notEqual(emptyPos, null, 'empty paragraph not found in PM doc')
+  const gapOffset = pmPosToMarkdownOffset(markdown, emptyPos, pmDoc, remark)
+  assert.equal(
+    gapOffset,
+    markdown.indexOf('再见') - 1,
+    'empty paragraph caret must map to the blank line before the next block, not its start'
+  )
+  const back = markdownOffsetToPmPos(markdown, markdown.indexOf('再见') - 1, pmDoc, remark)
+  assert.equal(back?.pos, emptyPos, 'caret on the blank line must map back into the empty paragraph')
+  cases.push('empty paragraph gap')
+}
+
 console.log(`PASS editor source map: ${cases.length} groups`)
 cases.forEach((name) => console.log(`  - ${name}`))

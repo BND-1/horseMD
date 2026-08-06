@@ -305,6 +305,27 @@ const correspondingPmBlock = (mdBlocks, pmBlocks, mdIndex) => {
 const correspondingMdBlock = (mdBlocks, pmBlocks, pmIndex) => {
   if (!mdBlocks.length || pmIndex < 0) return null
   const pm = pmBlocks[pmIndex]
+  // An empty paragraph exists in ProseMirror but has no authored block in the
+  // source (empty paragraphs are blank-line separators, not markdown blocks).
+  // Map its caret to the blank-line gap after the previous authored block;
+  // ordinal alignment must NOT drift into the following block.
+  if (pm.textblock && !normText(pm.matchText ?? pm.text)) {
+    let prevMd = null
+    for (let i = pmIndex - 1; i >= 0 && !prevMd; i--) {
+      const candidate = correspondingMdBlock(mdBlocks, pmBlocks, i)
+      if (candidate && !candidate.gap) prevMd = candidate
+    }
+    let nextMdStart = null
+    for (let i = pmIndex + 1; i < pmBlocks.length && nextMdStart == null; i++) {
+      const candidate = correspondingMdBlock(mdBlocks, pmBlocks, i)
+      if (candidate && !candidate.gap) nextMdStart = candidate.start
+    }
+    const afterPrev = prevMd ? prevMd.end + 1 : 0
+    return {
+      gap: true,
+      gapOffset: nextMdStart != null ? Math.min(afterPrev, nextMdStart) : afterPrev
+    }
+  }
   const targetText = normText(pm.matchText ?? pm.text)
   if (targetText) {
     const sameTextBefore = pmBlocks
@@ -398,6 +419,7 @@ export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
   const pm = pmBlocks[pmIndex]
   const md = correspondingMdBlock(mdBlocks, pmBlocks, pmIndex)
   if (!md) return null
+  if (md.gap) return md.gapOffset
   if (pm.atom) return md.start
   const local = pmItemIndexAtPos(pm, pmPos)
   return rawOffsetFromBlockLocal(md, local)
@@ -418,6 +440,20 @@ export function markdownOffsetToPmPos(markdown, rawOffset, doc, remark) {
   const md = mdBlocks[mdIndex]
   const pm = correspondingPmBlock(mdBlocks, pmBlocks, mdIndex)
   if (!pm) return null
+  // A caret on the blank line between two authored blocks belongs to the empty
+  // paragraph that ProseMirror keeps there (absent from the source).
+  const inGapAfter = rawOffset > md.end &&
+    (mdIndex + 1 >= mdBlocks.length || rawOffset < mdBlocks[mdIndex + 1].start)
+  if (inGapAfter) {
+    const pmIndex = pmBlocks.indexOf(pm)
+    for (let i = pmIndex + 1; i < pmBlocks.length; i++) {
+      const candidate = pmBlocks[i]
+      if (candidate.textblock && !normText(candidate.matchText ?? candidate.text)) {
+        return { pos: candidate.contentPos, atom: false }
+      }
+      break
+    }
+  }
   if (pm.atom) return { pos: pm.pos, atom: true }
   const local = blockLocalIndex(md, rawOffset)
   return { pos: pmPosFromItemIndex(pm, local), atom: false }
