@@ -5759,8 +5759,15 @@ body.hm-preserve-soft-breaks
   font-size: 0.92em;
 }
 .milkdown .cm-editor .cm-scroller {
-  padding: 14px 16px;
+  /* The line-number gutter must sit flush against the block's left edge.
+     The old 16px left padding pushed the whole gutter column inward; the
+     same breathing room now lives on .cm-content itself so prose/code
+     spacing is unchanged. */
+  padding: 14px 0;
   line-height: 1.6;
+}
+.milkdown .cm-editor .cm-content {
+  padding: 0 16px;
 }
 .milkdown .cm-editor .cm-gutters {
   background: var(--code-block-bg);
@@ -5769,6 +5776,7 @@ body.hm-preserve-soft-breaks
   user-select: none;
   -webkit-user-select: none;
   margin-right: 12px;
+  padding: 0;
 }
 .milkdown .cm-editor .cm-lineNumbers .cm-gutterElement {
   min-width: 2.4ch;
