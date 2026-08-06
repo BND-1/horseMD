@@ -62,6 +62,26 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 另一个更隐蔽的否决条件：处理器曾要求**全文可见流相等**。真实文档里如果存在“源码是普通段落、remark 却把行中 `* ` 解析成列表项”的结构（例如 `…快速存取。* **输入设备：** …`，`。*` 无空格粘连），源码与 canonical 的可见流会在文档中部永久分叉。此时清空段落的映射（位置可能在分叉点之前）被这个全局守卫整体否决，`<br />` 照常泄漏。正确语义是只要求**变更区间局部对齐**：`preserveChangedLineRegion` 内部已校验映射区域可见文本一致并失败回退，全文相等检查纯属多余且有害。该场景（`CSP-J初赛讲义 第1单元 计算机通识.md` 第 111 行）已固化为纯函数回归。
 
+#### 可见流分叉时的单块删除回退
+
+上一节修掉了“清空段落”被分叉否决的问题，但**分叉文档中的普通文字删除**仍会被静默回滚：
+
+```
+源码（作者原文）：  前段。* **输入设备：** 内容
+canonical 基线：    前段。\* **输入设备：** 内容
+canonical 删除后：  前段。\*&#x20;
+```
+
+源码把行中 `* ` 当作普通段落文字（`*` 不转义）；Crepe 解析后序列化时把字面 `*` 转义为 `\*`、把删剩的尾部空格编码为 `&#x20;`。两条可见流从 `*` 处永久分叉：源码可见流是 `前段。 输入设备： 内容`，canonical 可见流是 `前段。* 输入设备： 内容`。此时 `preserveLocallyAlignedTextChange`（上下文可见字符在分叉点不一致）与 `preserveChangedLineRegion`（全文可见行逐项比较不一致）都失败，façade fail-closed 返回**原源码**——富文本里删掉的内容切到源码还在，保存后删除内容重新出现。用户真实场景：`CSP-J初赛讲义` 一类文档中删除正文后不保存、切源码，删除内容原样保留。
+
+修复：新增 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`），在分叉分支两个映射都失败、返回 fail-closed 之前执行：
+
+1. 用 `blockSpan` 定位 canonical 变更前后的**单个块**（以空行分界），要求 `start`/`previousEnd`/`nextEnd` 都落在各自块内——跨块删除、整块删除直接放弃；
+2. 把 canonical 块文本**反转义回作者拼写**（`\*` → `*`、`&#x20;` → ` `、`&amp;` → `&`，复用 `decode-named-character-reference`）后，在源码中查找**恰好出现一次**的块——重复文本（同一块出现两处）绝不猜测替换；
+3. 用反转义后的 canonical 下一块替换该源码区间，并拒绝把独立 `<br />` 占位行写进源码（那些归 `preserveEmptiedParagraph` 管）。
+
+上例结果：`# 测试\n\n前段。* \n\n第二段保留。\n`——删除生效、作者字面 `*` 拼写保留（不出现 `\*` 或 `&#x20;`），其余字节原样。任何一项安全约束不满足都保持 fail-closed 原源码不动。真实回归：`npm run test:diverged-delete-source-ui`（删除 → 切源码 → 保存 → 完整重开，磁盘逐字节校验）；纯函数回归 `npm run test:markdown-preservation` 覆盖唯一出现、重复文本拒绝、跨块拒绝、`\*`/`&#x20;` 反转义与 `<br />` 拒绝。
+
 ### 空段落的模式切换光标锚点
 
 修复 `<br />` 泄漏后暴露了一个潜伏缺口：空段落不再以 `<br />` 进入源码，而源码里空段落只是空白行——remark 解析源码时不会为它产生块。旧的源映射器（`editor-source-map.js`）依赖 md 块与 PM 块的**序数对齐**，遇到「PM 有 4 块、源码只有 3 块」时，空段落内的光标被对齐到**下一个**块的起点（例如「你好」与「再见」之间的空段落光标落到「再见」开头），模式切换时光标跳一行。
@@ -210,6 +230,9 @@ npm run test:issue-86-ui
 
 # 真实 Electron：异构 Markdown 多点编辑后全文与磁盘逐字节比较
 npm run test:source-fidelity-ui
+
+# 真实 Electron：可见流分叉文档中删除正文，切源码、保存、完整重开后删除内容不得复活
+npm run test:diverged-delete-source-ui
 
 # 真实 Electron：清空段落、空段落内输入再删光、多次切换源码后不得出现 <br />
 npm run test:empty-paragraph-source-ui

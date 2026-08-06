@@ -31,6 +31,7 @@ import {
 } from './lib/markdown-preservation/paragraphs.js'
 import {
   hasStructuralPrefixChange,
+  preserveDivergedBlockTextChange,
   preserveChangedLineRegion,
   preserveLocallyAlignedTextChange
 } from './lib/markdown-preservation/regions.js'
@@ -180,7 +181,7 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       nextEnd
     })
     if (locallyAligned) return locallyAligned
-    return preserveChangedLineRegion({
+    const linesPreserved = preserveChangedLineRegion({
       source: sourceMarkdown,
       previous,
       next,
@@ -188,7 +189,22 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       previousEnd,
       nextEnd,
       reason: 'visible-mismatch-line-change'
-    }) || { markdown: sourceMarkdown, preserved: false, reason: 'visible-stream-mismatch' }
+    })
+    if (linesPreserved) return linesPreserved
+    // A diverged visible stream defeats both mappings above. If the edit is a
+    // single-canonical-block text change whose block occurs exactly once in
+    // the authored source, apply the block delta so deletions are not
+    // silently rolled back. Anything ambiguous keeps the fail-closed source.
+    const divergedBlock = preserveDivergedBlockTextChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (divergedBlock) return divergedBlock
+    return { markdown: sourceMarkdown, preserved: false, reason: 'visible-stream-mismatch' }
   }
   const tableStructureChanged = hasTableStructureChange({
     previous,

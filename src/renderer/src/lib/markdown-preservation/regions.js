@@ -3,9 +3,11 @@ import {
   sourceVisibleIndex,
   sourceVisiblePositionAtRaw
 } from '../../mode-visible-map.js'
+import { decodeNamedCharacterReference } from 'decode-named-character-reference'
 import {
   adaptCanonicalRegionToSource,
   lineAt,
+  lineIndexAt,
   markdownLines,
   rawOffsetAtVisible
 } from './core.js'
@@ -76,6 +78,120 @@ export const preserveLocallyAlignedTextChange = ({
     reason: 'locally-aligned-change'
   }
 }
+
+// A canonical block is a run of non-blank lines bounded by blank lines. The
+// change [start, end) must stay inside one block; crossing a blank-line
+// boundary is a structural edit and belongs to the list/table/paragraph paths.
+const blockSpan = (markdown, start, end) => {
+  const lines = markdownLines(markdown)
+  const index = lineIndexAt(lines, start)
+  if (index < 0) return null
+  const blank = (line) => /^\s*$/.test(line.text)
+  let first = index
+  while (first > 0 && !blank(lines[first - 1])) first -= 1
+  let last = index
+  while (last < lines.length - 1 && !blank(lines[last + 1])) last += 1
+  // The change end must sit inside the same block (allowing `end === block
+  // end`). If it lands past the block, the edit spans multiple canonical
+  // blocks and must not use this fallback.
+  if (end > lines[last].end) return null
+  return { start: lines[first].start, end: lines[last].end }
+}
+
+// When the visible streams diverge (source and canonical disagree about how
+// the authored bytes map to blocks — a mid-line `* ` that remark parses as a
+// list item while the author kept it as paragraph text), both
+// preserveLocallyAlignedTextChange and preserveChangedLineRegion fail and the
+// façade would roll the edit back: a rich-text deletion never reaches the
+// source. If the user's edit is confined to a single canonical block and that
+// block's exact text occurs exactly once in the authored source, apply the
+// block-level delta directly to the source spelling. Repeated text is
+// ambiguous and stays untouched (fail closed).
+export const preserveDivergedBlockTextChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousBlock = blockSpan(previous, start, previousEnd)
+  const nextBlock = blockSpan(next, start, nextEnd)
+  if (!previousBlock || !nextBlock) return null
+  const previousText = previous.slice(previousBlock.start, previousBlock.end)
+  const nextText = next.slice(nextBlock.start, nextBlock.end)
+  if (!previousText || !nextText || previousText === nextText) return null
+  if (
+    start < previousBlock.start ||
+    previousEnd > previousBlock.end ||
+    start < nextBlock.start ||
+    nextEnd > nextBlock.end
+  ) {
+    return null
+  }
+
+  // The canonical block may spell punctuation with backslash escapes or HTML
+  // entities (`\*`, `&#x20;`) that the authored source keeps literal. Try the
+  // verbatim block first; if it does not occur, retry with the canonical
+  // spelling converted back to plain Markdown.
+  const candidates = [previousText]
+  const unescapedPrevious = unescapeCanonicalBlock(previousText)
+  if (unescapedPrevious && unescapedPrevious !== previousText) {
+    candidates.push(unescapedPrevious)
+  }
+  let first = -1
+  let matched = ''
+  for (const candidate of candidates) {
+    const found = source.indexOf(candidate)
+    if (found >= 0 && source.indexOf(candidate, found + 1) < 0) {
+      first = found
+      matched = candidate
+      break
+    }
+  }
+  if (first < 0 || !matched) return null
+
+  const replacement = unescapeCanonicalBlock(nextText)
+  if (!replacement) return null
+  // A Crepe-only empty-paragraph `<br />` placeholder must never enter
+  // authored source through this fallback; those edits belong to the
+  // paragraph-emptied handlers that run before the divergence path.
+  if (/^[ \t]*(?:[ \t]*>[ \t]*)*<br\s*\/?>[ \t]*$/im.test(replacement)) return null
+
+  return {
+    markdown: source.slice(0, first) +
+      adaptCanonicalRegionToSource(
+        replacement,
+        source,
+        { start: first, end: first + matched.length }
+      ) +
+      source.slice(first + matched.length),
+    preserved: true,
+    reason: 'diverged-block-change'
+  }
+}
+
+const escapePunctuation = /[\\`*{}\[\]()#+\-.!_>~|]/
+
+// Convert a canonical block's escaped spelling back to the plain Markdown the
+// author would have typed (`\*` → `*`, `&#x20;` → ` `, `&amp;` → `&`). This
+// is the source-spelling twin used only to locate the authored block and to
+// spell the replacement; unescapable text is left verbatim.
+const unescapeCanonicalBlock = (value) => String(value || '')
+  .replace(new RegExp(`\\\\(${escapePunctuation.source})`, 'g'), '$1')
+  .replace(/&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);/g, (match, name) => {
+    if (name.startsWith('#')) {
+      try {
+        const code = name[1].toLowerCase() === 'x'
+          ? Number.parseInt(name.slice(2), 16)
+          : Number.parseInt(name.slice(1), 10)
+        return String.fromCodePoint(code)
+      } catch {
+        return match
+      }
+    }
+    return decodeNamedCharacterReference(name) || match
+  })
 
 export const visibleLineEntries = (markdown) => markdownLines(markdown)
   .map((line) => ({

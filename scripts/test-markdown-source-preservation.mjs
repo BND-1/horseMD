@@ -82,6 +82,120 @@ assert.equal(
   'a later visible-stream mismatch must not normalize untouched syntax on the locally edited line'
 )
 
+// A visible-stream divergence (source keeps a mid-line `* ` as paragraph text
+// while remark parses it as a list item) defeats both locally-aligned and
+// line-region mapping. A single-canonical-block text change whose block text
+// occurs exactly once in the authored source must still reach the source, or
+// a rich-text deletion is silently rolled back and resurrects on save.
+const divergedDeleteSource = '# 测试\n\n前段。* **输入设备：** 内容\n\n第二段保留。\n'
+const divergedDeletePrevious = '# 测试\n\n前段。\n\n* **输入设备：** 内容\n\n第二段保留。\n'
+const divergedDeleteNext = '# 测试\n\n前段。\n\n* **内容**\n\n第二段保留。\n'
+const divergedDelete = preserveRichMarkdownSource(
+  divergedDeleteSource,
+  divergedDeletePrevious,
+  divergedDeleteNext
+)
+assert.equal(
+  divergedDelete.reason,
+  'diverged-block-change',
+  'a diverged-stream deletion must map through the unique-block fallback'
+)
+assert.equal(
+  divergedDelete.markdown,
+  '# 测试\n\n前段。* **内容**\n\n第二段保留。\n',
+  'the deleted text must vanish from source while the authored mid-line syntax survives'
+)
+
+// The real-app canonical spelling escapes the literal `*` as `\*` and the
+// surviving trailing space as `&#x20;`. The fallback must unescape the
+// canonical block to locate the authored occurrence and spell the replacement
+// in the author's plain-Markdown form.
+const divergedEscapedDeleteSource = '# 测试\n\n前段。* **输入设备：** 内容\n\n第二段保留。\n'
+const divergedEscapedDeletePrevious = '# 测试\n\n前段。\\* **输入设备：** 内容\n\n第二段保留。\n'
+const divergedEscapedDeleteNext = '# 测试\n\n前段。\\*&#x20;\n\n第二段保留。\n'
+const divergedEscapedDelete = preserveRichMarkdownSource(
+  divergedEscapedDeleteSource,
+  divergedEscapedDeletePrevious,
+  divergedEscapedDeleteNext
+)
+assert.equal(
+  divergedEscapedDelete.reason,
+  'diverged-block-change',
+  'a diverged-stream deletion must map through the unescaped unique-block fallback'
+)
+assert.equal(
+  divergedEscapedDelete.markdown,
+  '# 测试\n\n前段。* \n\n第二段保留。\n',
+  'the deleted text must vanish while the authored literal `*` spelling survives (no `\\*`, no `&#x20;`)'
+)
+
+// A canonical-only empty-paragraph `<br />` placeholder must never reach
+// authored source through the diverged-block fallback; those edits belong to
+// the paragraph-emptied handlers.
+const divergedBrBail = preserveRichMarkdownSource(
+  'A\n\nB * **C** D\n',
+  'A\n\nB \\* **C** D\n',
+  'A\n\n<br />\n'
+)
+assert.equal(
+  /<br\s*\/?>/.test(divergedBrBail.markdown || ''),
+  false,
+  'a standalone <br /> placeholder must not leak through the diverged-block fallback'
+)
+
+// Insertion direction through the same diverged block.
+const divergedInsert = preserveRichMarkdownSource(
+  divergedDeleteSource,
+  divergedDeletePrevious,
+  '# 测试\n\n前段。\n\n* **输入设备：** 新内容\n\n第二段保留。\n'
+)
+assert.equal(divergedInsert.preserved, true)
+assert.equal(
+  divergedInsert.markdown,
+  '# 测试\n\n前段。* **输入设备：** 新内容\n\n第二段保留。\n',
+  'a diverged-stream insertion must reach the source block'
+)
+
+// Repeated block text is ambiguous: the fallback must fail closed and keep
+// the authored source untouched instead of guessing which occurrence to edit.
+const divergedRepeatedSource =
+  '# A\n\n* **输入设备：** 内容\n\n前段。* **输入设备：** 内容\n'
+const divergedRepeatedPrevious =
+  '# A\n\n* **输入设备：** 内容\n\n前段。\n\n* **输入设备：** 内容\n'
+const divergedRepeatedNext =
+  '# A\n\n* **输入设备：** 内容\n\n前段。\n\n* **内容**\n'
+const divergedRepeated = preserveRichMarkdownSource(
+  divergedRepeatedSource,
+  divergedRepeatedPrevious,
+  divergedRepeatedNext
+)
+assert.equal(divergedRepeated.preserved, false)
+assert.equal(divergedRepeated.reason, 'visible-stream-mismatch')
+assert.equal(
+  divergedRepeated.markdown,
+  divergedRepeatedSource,
+  'a repeated block must not be replaced through the unique-block fallback'
+)
+
+// A change spanning multiple canonical blocks (deleting a paragraph plus the
+// following list item) must not use the block fallback; it keeps the existing
+// fail-closed behavior.
+const divergedMultiBlock = preserveRichMarkdownSource(
+  divergedDeleteSource,
+  divergedDeletePrevious,
+  '# 测试\n\n第二段保留。\n'
+)
+assert.equal(
+  divergedMultiBlock.preserved,
+  false,
+  'a multi-block diverged change must stay fail-closed'
+)
+assert.equal(
+  divergedMultiBlock.markdown,
+  divergedDeleteSource,
+  'a multi-block diverged change must not corrupt the authored source'
+)
+
 const crlfSource = '\uFEFF# Windows 标题\r\n\r\n正文 0~9。\r\n\r\n- 紧凑一\r\n- 紧凑二\r\n'
 const crlfCanonical = '# Windows 标题\n\n正文 0\\~9。\n\n* 紧凑一\n\n* 紧凑二\n'
 const crlfTextEdited = preserveRichMarkdownSource(
