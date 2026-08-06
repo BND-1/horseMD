@@ -5782,9 +5782,12 @@ body.hm-preserve-soft-breaks
   min-width: 2.4ch;
   padding: 0 0.95em 0 0.5em;
   text-align: right;
-  font-size: 0.8em;
+  /* Full-size line numbers: at 1em the 1.6 line box matches the code line's
+     own 23.55px, so the digit column extends the full row height instead of
+     floating as a small sliver in the middle of the gutter. */
+  font-size: 1em;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  line-height: inherit;
+  line-height: 1.6;
   color: rgba(238, 233, 244, 0.36);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background: transparent;
