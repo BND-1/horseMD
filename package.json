@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.12",
+  "version": "0.13.13",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -31,6 +31,7 @@
     "test:background-ui": "node scripts/test-background-cdp-ui.mjs",
     "test:source-fidelity-ui": "node scripts/test-source-fidelity-audit-ui.mjs",
     "test:diverged-delete-source-ui": "node scripts/test-diverged-delete-source-ui.mjs",
+    "test:doc-position-restore-ui": "node scripts/test-doc-position-restore-ui.mjs",
     "test:large-source-fidelity-ui": "node scripts/test-large-doc-source-preservation-ui.mjs",
     "test:issue-77-ui": "node scripts/test-issue-77-source-preservation-ui.mjs",
     "test:paragraph-source-ui": "node scripts/test-paragraph-source-preservation-ui.mjs",

@@ -25,6 +25,7 @@ import {
   isHeavyDoc
 } from '../paths.js'
 import { fireToast } from '../ui.js'
+import { getSavedDocPosition } from '../lib/doc-positions.js'
 import { useWorkspace } from './useWorkspace.js'
 
 export function useFileOps({
@@ -91,6 +92,11 @@ export function useFileOps({
         }
         const id = genId()
         lastId = id
+        // Restore the last caret/viewport (issue #111) only when the file's
+        // length still matches the saved snapshot — an externally changed file
+        // must never map a stale offset onto new text.
+        const savedPosition = getSavedDocPosition(norm)
+        const positionMatches = savedPosition && savedPosition.len === content.length
         const newTab = {
           id,
           kind: 'doc',
@@ -100,7 +106,9 @@ export function useFileOps({
           savedContent: content,
           mtimeMs,
           reloadNonce: 0,
-          heavy: isHeavyDoc(content)
+          heavy: isHeavyDoc(content),
+          restoreOffset: positionMatches ? savedPosition.offset : null,
+          restoreScrollTop: positionMatches ? savedPosition.scrollTop || null : null
         }
         tabsRef.current = [...tabsRef.current, newTab] // keep snapshot current for the next iteration
         setTabs((prev) => [...prev, newTab])

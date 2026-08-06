@@ -44,6 +44,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
+import { useDocPositions } from './hooks/useDocPositions.js'
 import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
 import { useSplitScrollSync } from './hooks/useSplitScrollSync.js'
 import { useAttachments } from './hooks/useAttachments.js'
@@ -264,6 +265,16 @@ export default function App() {
     commitAllLive,
     findStateRef,
     richLoadingRef
+  })
+
+  // Persist per-document caret/viewport so reopening a file (session restore or
+  // manual) returns to the last edit position instead of the top (issue #111).
+  useDocPositions({
+    tabsRef,
+    activeId,
+    editorApis,
+    sourceTextareas,
+    editorHosts
   })
 
   const {

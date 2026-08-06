@@ -312,6 +312,10 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 > 持久化**防抖 400ms**（并在关闭/刷新时兜底刷一次），避免大文档每敲一个字就整篇序列化写盘导致打字卡顿。
 
+**文档位置记忆（#111）**：恢复打开文档时，同时恢复上次的**光标与滚动位置**——长文档不必每次重开都重新滑到写作处。每个文档路径独立存一条 `{offset, len, scrollTop}`（`localStorage["horsemd.docpos.v1"]`，上限 300 条）：`offset` 是富文本光标或源码 textarea 光标的原始 Markdown 字符索引，`scrollTop` 是滚动容器的滚动位置；`len` 是保存时的文档长度，重开时**长度不一致（文件被外部改动）就不恢复**，避免把旧偏移映射到新内容上。
+
+**实现**：`hooks/useDocPositions.js` 在**切换标签**和**窗口关闭/刷新**时批量捕获所有已挂载文档的位置（切走的标签仍保留 ProseMirror 选区，可继续读取；纯滚动阅读用视口顶部偏移兜底），`lib/doc-positions.js` 防抖写入。打开文件时（`useFileOps`）读取记录并校验长度，富文本在 `onReady` 后用既有 `restoreMarkdownOffset(offset, false)` 恢复选区（不抢焦点），再同步设置滚动位置；重文档（源码 textarea）用 `setSelectionRange` + `scrollTop` 恢复。回归：`npm run test:doc-position-restore-ui`。
+
 ## 25. 可配置图床（类 Typora 自定义命令）
 
 **右上角图片按钮**配置一条上传命令(如 `picgo upload`)。之后**粘贴 / 拖入 / 上传**图片会:把图片写到临时文件 → 运行 `<命令> "<临时文件>"` → 取它打印到 stdout 的图片 URL 插入文档。命令留空 = 保持默认(图片为本地引用,不拦截粘贴/拖入,避免插入刷新即失效的 `blob:`)。

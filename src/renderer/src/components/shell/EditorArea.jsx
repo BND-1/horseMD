@@ -13,6 +13,7 @@ import { Icon } from '../icons.jsx'
 import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
 import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
+import { useRef } from 'react'
 
 export default function EditorArea({
   tabs,
@@ -67,6 +68,10 @@ export default function EditorArea({
   markRichEditPending,
   t
 }) {
+  // One-shot restore of the persisted caret/viewport per tab (issue #111). The
+  // Set survives reloads (keyed by tab.id) so an external-edit reload that
+  // remounts the editor does not re-apply a stale offset onto new content.
+  const restoredDocPosRef = useRef(new Set())
   return (
     <div
       ref={editorAreaRef}
@@ -141,6 +146,16 @@ export default function EditorArea({
                 el.__horsemdSourceSelectionBaseline = `${el.selectionStart || 0}:${el.selectionEnd || 0}`
               }
               if (el.__horsemdSourceViewportMoved == null) el.__horsemdSourceViewportMoved = false
+              if (tab.restoreOffset != null && !el.__horsemdDocPosRestored) {
+                el.__horsemdDocPosRestored = true
+                try {
+                  const off = Math.max(0, Math.min(tab.restoreOffset, el.value.length))
+                  el.setSelectionRange(off, off)
+                  if (tab.restoreScrollTop) el.scrollTop = tab.restoreScrollTop
+                } catch {
+                  // Selection/scroll restore must never break the editor.
+                }
+              }
               return
             }
             const existing = sourceTextareas.current[tab.id]
@@ -259,6 +274,23 @@ export default function EditorArea({
                 onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)
+                  if (tab.restoreOffset != null && !restoredDocPosRef.current.has(tab.id)) {
+                    restoredDocPosRef.current.add(tab.id)
+                    // Set the caret without scrolling/focusing (a reading open
+                    // must not steal focus), then restore the saved viewport.
+                    try {
+                      api.restoreMarkdownOffset?.(tab.restoreOffset, false)
+                    } catch {
+                      // A stale offset just leaves the caret at the default spot.
+                    }
+                    const restoreScroller = editorHosts.current[tab.id]
+                    if (tab.restoreScrollTop) {
+                      // Synchronous set: requestAnimationFrame is throttled in
+                      // background windows, and the editor host is already laid
+                      // out by the time onReady fires.
+                      if (restoreScroller) restoreScroller.scrollTop = tab.restoreScrollTop
+                    }
+                  }
                 }}
                 onActiveBlock={(id) => {
                   if (tab.id === activeIdRef.current) setActiveBlock(id)
