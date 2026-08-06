@@ -311,14 +311,20 @@ const correspondingMdBlock = (mdBlocks, pmBlocks, pmIndex) => {
   // ordinal alignment must NOT drift into the following block.
   if (pm.textblock && !normText(pm.matchText ?? pm.text)) {
     let prevMd = null
-    for (let i = pmIndex - 1; i >= 0 && !prevMd; i--) {
+    for (let i = pmIndex - 1; i >= 0; i--) {
+      const neighbor = pmBlocks[i]
+      if (!neighbor.textblock) continue
+      if (!normText(neighbor.matchText ?? neighbor.text)) continue // another empty: skip
       const candidate = correspondingMdBlock(mdBlocks, pmBlocks, i)
-      if (candidate && !candidate.gap) prevMd = candidate
+      if (candidate && !candidate.gap) { prevMd = candidate; break }
     }
     let nextMdStart = null
-    for (let i = pmIndex + 1; i < pmBlocks.length && nextMdStart == null; i++) {
+    for (let i = pmIndex + 1; i < pmBlocks.length; i++) {
+      const neighbor = pmBlocks[i]
+      if (!neighbor.textblock) continue
+      if (!normText(neighbor.matchText ?? neighbor.text)) continue // another empty: skip
       const candidate = correspondingMdBlock(mdBlocks, pmBlocks, i)
-      if (candidate && !candidate.gap) nextMdStart = candidate.start
+      if (candidate && !candidate.gap) { nextMdStart = candidate.start; break }
     }
     const afterPrev = prevMd ? prevMd.end + 1 : 0
     return {

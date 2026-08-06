@@ -305,5 +305,31 @@ const cases = []
   cases.push('empty paragraph gap')
 }
 
+{
+  // Consecutive empty paragraphs must not recurse infinitely and both map to
+  // the same blank-line gap (the source cannot distinguish two adjacent empty
+  // paragraphs from one).
+  const markdown = '# 测试\n\n你好\n\n再见\n'
+  const pmDoc = doc(heading('测试'), paragraph('你好'), paragraph(), paragraph(), paragraph('再见'))
+  const empties = []
+  pmDoc.descendants((node, pos) => {
+    if (node.isTextblock && node.textContent === '') { empties.push(pos + 1); return false }
+    return true
+  })
+  assert.equal(empties.length, 2, 'two empty paragraphs expected in PM doc')
+  const gapOffset = pmPosToMarkdownOffset(markdown, empties[0], pmDoc, remark)
+  assert.equal(
+    gapOffset,
+    markdown.indexOf('再见') - 1,
+    'consecutive empty paragraphs must map to the shared blank-line gap'
+  )
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, empties[1], pmDoc, remark),
+    gapOffset,
+    'both consecutive empties share the same gap offset without recursion'
+  )
+  cases.push('consecutive empty paragraphs gap')
+}
+
 console.log(`PASS editor source map: ${cases.length} groups`)
 cases.forEach((name) => console.log(`  - ${name}`))
