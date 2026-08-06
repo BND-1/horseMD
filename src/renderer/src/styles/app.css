@@ -2527,6 +2527,15 @@ body.hm-full-width .editor-skeleton {
   overscroll-behavior-x: contain;
   contain: inline-size layout paint;
   -webkit-overflow-scrolling: touch;
+  /* ProseMirror sets white-space: break-spaces on its root, and that inherits
+     into pasted raw HTML. break-spaces keeps CJK text from wrapping at
+     character boundaries, so a nested `<table width="950">` keeps its
+     intrinsic width and overflows a narrow writing area. Rendered HTML is
+     static content: reset to normal wrapping (pre blocks opt back in below). */
+  white-space: normal;
+}
+.hm-html-block pre {
+  white-space: pre;
 }
 /* YAML front matter card (--- block at the top of a doc). */
 .hm-frontmatter-wrap { margin: 0 0 1.25em; }
@@ -2628,10 +2637,24 @@ body.hm-full-width .editor-skeleton {
   table-layout: auto;
   width: max-content;
   min-width: 100%;
+  /* A raw-HTML table must never outgrow its block: `width: max-content` keeps
+     compact tables compact, while this cap shrinks pasted fixed-width tables
+     (e.g. gov.cn's `<table width="950">`) to the editor width instead of
+     pushing the column off-screen when the writing area is narrow. */
+  max-width: 100%;
+}
+/* Tables that carry an explicit `width` attribute (100% or a pixel value) get
+   their authored width back (the max-content default above would otherwise
+   replace "100%" with the intrinsic content width and stop following the
+   container); the max-width: 100% cap then absorbs any fixed pixel width. */
+.milkdown .ProseMirror .hm-html-block table[width] {
+  width: unset;
 }
 .milkdown .ProseMirror .hm-html-block th,
 .milkdown .ProseMirror .hm-html-block td {
-  min-width: 9rem;
+  /* Let columns shrink so a narrow editor can fit the whole table instead of
+     clipping it; wide editors still size columns from their content. */
+  min-width: 0;
   max-width: 24rem;
   border: 1px solid var(--border);
   padding: 6px 12px;
@@ -2663,6 +2686,18 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
   font-weight: 700;
 }
 .hm-html-block img { max-width: 100%; }
+/* Images inside raw-HTML tables must follow the cell width instead of their
+   intrinsic pixel width (e.g. gov.cn's `<img width="900">`). Table auto layout
+   sizes columns from min-content, and a replaced element's intrinsic width is
+   what feeds that calculation — max-width: 100% only clamps the rendered
+   image, so the column refuses to shrink below ~900px and the whole table
+   overflows a narrow writing area. width: 100% makes the image contribute the
+   cell width instead; the td max-width cap keeps wide-window images from
+   stretching beyond their original size. */
+.hm-html-table-block table img {
+  width: 100%;
+  height: auto;
+}
 
 /* Image lightbox: double-click an image in the editor to view it enlarged.
    (Single click stays native — selecting the image and editing its caption.) */

@@ -29,8 +29,8 @@ function verifyLayout(result, label) {
   if (!result.tableSurfaceVisible) {
     throw new Error(`${label}: table surface is transparent or indistinguishable from its header: ${JSON.stringify(result)}`)
   }
-  if (!result.rawHtmlScrollable) {
-    throw new Error(`${label}: raw HTML table is not independently scrollable: ${JSON.stringify(result)}`)
+  if (!result.rawHtmlFits) {
+    throw new Error(`${label}: raw HTML table does not fit the writing area: ${JSON.stringify(result)}`)
   }
   const widenedParent = result.parentWidths.find((item) => item.scroll > item.client + 1)
   if (widenedParent) {
@@ -76,7 +76,9 @@ async function inspect(evaluate, mobile = false) {
     const tableSurfaceVisible = (tableBackground.startsWith('rgb(') || tableBackground.startsWith('rgba(') || tableBackground.startsWith('color(')) &&
       tableBackground !== 'rgba(0, 0, 0, 0)' && tableBackground !== headerBackground
     const wideMarkdownScrollable = !!wideWrapper && wideWrapper.scrollWidth > wideWrapper.clientWidth + 1
-    const rawHtmlScrollable = !!rawBlock && rawBlock.scrollWidth > rawBlock.clientWidth + 1
+    // Raw HTML tables follow the writing-area width (max-width: 100% + shrinkable
+    // columns), so they must fit without an independent horizontal scrollbar.
+    const rawHtmlFits = !!rawBlock && rawBlock.scrollWidth <= rawBlock.clientWidth + 1
     document.scrollingElement.scrollTop = 100
     if (wideWrapper) wideWrapper.scrollLeft = wideWrapper.scrollWidth
     if (rawBlock) rawBlock.scrollLeft = rawBlock.scrollWidth
@@ -98,7 +100,8 @@ async function inspect(evaluate, mobile = false) {
       tableBackground,
       headerBackground,
       wideMarkdownScrollable: wideMarkdownScrollable && wideWrapper.scrollLeft > 0,
-      rawHtmlScrollable: rawHtmlScrollable && rawBlock.scrollLeft > 0,
+      rawHtmlFits,
+      rawHtmlScrollLeft: rawBlock?.scrollLeft ?? -1,
       parentWidths,
       wideClientWidth: wideWrapper?.clientWidth || 0,
       wideScrollWidth: wideWrapper?.scrollWidth || 0,

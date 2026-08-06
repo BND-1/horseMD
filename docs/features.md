@@ -210,6 +210,8 @@ WYSIWYG 由 Milkdown Crepe 提供。在它之上自研了**改标题层级**的�
 - 注册入口：`crepe.editor.config` 里 `ctx.update(nodeViewCtx, (v) => [...v, ['html', …]])`（在 `crepe.create()` 之前）—— **必须走 `nodeViewCtx`**（`$view` 的同款通道），不能用 `editorViewOptionsCtx.nodeViews`，否则会覆盖图片/代码块/表格等组件的节点视图。详见 [implementation-notes.md](./implementation-notes.md) 的"致命 bug 12"
 - 样式 `.hm-html-block`（`styles/app.css`），表格边框/表头用主题变量,跟随明暗与莫兰迪配色
 
+**宽度自适应**：渲染的 HTML 表格跟随排版编辑区宽度。带显式 `width` 属性的表格恢复作者语义（`width="100%"` 跟随容器、固定像素宽度如 gov.cn 的 `<table width="950">` 收缩到容器宽）；列允许收缩换行，表格内图片按单元格宽度显示，避免整表横向溢出、窄窗口下"显示不全"（`styles/app.css` 中 `.hm-html-block` 的 `max-width: 100%`、`table[width] { width: unset }`、`td/th { min-width: 0 }` 与 `table img { width: 100% }`）。Markdown（GFM）表格保持独立横向滚动，不受影响。
+
 ## 17. 导出为 PDF
 
 `文件 → 导出为 PDF…`（`Ctrl/Cmd+Shift+E`，或命令面板）打开浏览器式 PDF 导出中心：左侧调整页面与文档结构，右侧用 PDF.js 显示 `printToPDF` 生成的真实分页。最终保存当前预览对应的同一份 PDF，且**不带编辑器自身的控件**（代码块工具条、表格手柄、块手柄、加号按钮等）。
