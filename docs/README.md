@@ -52,6 +52,19 @@
 | [cloud-sync-prd.md](./cloud-sync-prd.md) | 文件夹级 WebDAV / S3 云同步的产品边界、数据模型、阶段计划与验收矩阵 |
 | [cloud-sync-v2-prd.md](./cloud-sync-v2-prd.md) | Sync v2 的方向选择、远端清空保护和可恢复变更产品规则 |
 | [cloud-sync-v2-architecture.md](./cloud-sync-v2-architecture.md) | Sync v2 的策略 API、计划层、执行顺序和兼容性设计 |
+| [mobile-cloud-sync-architecture.md](./mobile-cloud-sync-architecture.md) | 移动端云同步的原生安全凭据、文件 adapter 与网络桥接方案（桌面端先行，移动端未开放） |
+| [empty-paragraph-contract.md](./empty-paragraph-contract.md) | 空段落 `<br />` 占位与可见流分叉合同；0.13.x 原文保真硬不变式 |
+| [issues-105-106-save-fidelity-regression.md](./issues-105-106-save-fidelity-regression.md) | 0.12.63 保存/原文保真回归（与删除回退同族） |
+| [issue-104-long-document-mode-switch.md](./issue-104-long-document-mode-switch.md) | 长文档模式切换光标偏移（行内公式 atom）根因与真实文档验证 |
+| [issue-86-table-save-report.md](./issue-86-table-save-report.md) | 表格增删行列后的单元格归属、空单元格与保存重开回归 |
+| [issues-93-98-implementation-report.md](./issues-93-98-implementation-report.md) | issue 93/96/97/98 的实现与验收记录 |
+| [codeblock-fence-investigation.md](./codeblock-fence-investigation.md) | **进行中**：代码块围栏「吞正文」排查留底（解析机制已确认，正常路径未复现，待用户提供步骤） |
+| [live-preview-migration-plan.md](./live-preview-migration-plan.md) | 远期「源码即数据模型」Live Preview 独立架构迁移计划（不可作为 Crepe 模式切换小修） |
+| [macos-real-input-testing.md](./macos-real-input-testing.md) | macOS CGEvent 前台逐键输入的真实测试方法（疑难编辑问题的补充手段） |
+| [list-conversion-prd.md](./list-conversion-prd.md) | 有序/无序/待办列表相互转换的产品范围与验收标准 |
+| [floating-outline-design.md](./floating-outline-design.md) | 右侧悬浮大纲（Scroll Spy 圆点导航）设计与实现边界 |
+| [editor-feature-inventory.md](./editor-feature-inventory.md) | 编辑器功能清单（与 features.md 对应） |
+| [release-v0.12.60.md](./release-v0.12.60.md) | v0.12.60 发布说明与验证记录 |
 
 ## 一句话技术概览
 

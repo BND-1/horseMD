@@ -1,37 +1,33 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-05。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-07。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.12.69`。在 0.12.34 原文保真与模式切换基线之上，0.12.35–0.12.47 完善 PDF、源码单换行、设置架构、Mermaid/LaTeX、表格、任务清单、打印竞态和三通道剪贴板保真；0.12.48 新增带真实预览的 HTML 导出、受控 Pandoc 多格式转换，并落地无 UI/无网络的 AI Phase 0 契约；0.12.49–0.12.58 修复图片导出、列表转换、长代码复制和新文档列表竞态；0.12.63 新增富文本即时 dirty 提示并修复本地 Markdown 绝对路径跳转、编辑器初始基线竞态，以及连续“正文转列表”只在富文本生效的源码保真问题；0.12.64 新增桌面端同一文档“左源码、右富文本”双栏实时预览，复用现有 textarea 与 Crepe 实例并保持统一保存边界；0.12.65 将入口收进富文本右键菜单，并让两侧按面板宽度工作，避免单栏阅读最大宽度造成空白条；0.12.66 将双栏收敛为左源码唯一编辑、右富文本只读预览，避免两个表面竞争内容真相；0.12.67 修正源码粗光标的字符边界、统一双栏尾部留白，并加入面板内直接关闭入口；0.12.68 再修 Chromium 将行首字符点击误判为 offset +1 的实际选区问题；0.12.69 让“宽表自动换行”覆盖原生 HTML 表格，并修复行内代码首尾方向键的 DOM 光标边界和连续导航。
+- 当前测试版本号：`package.json` 为 `0.13.13`（已安装 `/Applications/HorseMD.app`，2026-08-07）。
+- **0.13.x 系列主线（自 0.12.69 之后）**：
+  - **原文保真与空段落硬不变式**：空段落 `<br />` 占位绝不允许进入作者源码（`withoutStandaloneEmptyBlockLines` 在 `preserveRichMarkdownSource` 出口强制剥离）；空段落映射不得要求全文可见流相等、不得被无关空段落否决；连续空段落映射不递归。系列提交 `bb5b9f4` → `cfae66a`。
+  - **可见流分叉删除回退**：源码与 canonical 可见流分叉（如行中 `* ` 使 remark 拆成列表项）时，局部对齐与行区域映射都会失败并 fail-closed，富文本删除会被静默撤销。新增 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）：单 canonical 块 + 块文本在源码中唯一出现 + 反转义 canonical 拼写（`\*`→`*`、`&#x20;`→空格）后替换。提交 `abb6d09`。
+  - **源码/富文本架构探索**：`live-preview-migration-plan.md`（远期「源码即数据模型」）、CodeMirror Live Preview 可行性 spike、step-to-source mapper 原型与真实引擎验证。
+  - **代码块体验**：编辑器代码块行号（不透明背景、贴左、全高、右侧分隔竖线）、**PDF 导出代码块带行号**、表格单元格单击直接编辑。提交 `5094e0b`、`7b2e50b`、`9bc9412`、`a45f958`。
+  - **原生 HTML 表格自适应**：带 `width` 属性的 HTML 表格恢复作者语义（`100%` 跟随容器、固定像素收缩），`td/th` 允许列收缩，表格内图片按单元格宽度显示，不再横向溢出。提交 `8a98b5f`。
+  - **文档位置记忆（#111）**：重开文档恢复上次光标与滚动位置；按路径存 `{offset, len, scrollTop}`，长度不匹配（外部修改）不恢复。提交 `5fe4af4`。
+  - **源码+预览双栏**：左源码唯一编辑、右富文本只读预览，双向滚动/光标同步（0.13.x 早期落地）。
 - 最近关键提交：
-  - `2b31d93 fix(editor): preserve authored H5 and H6 case`
-  - `4d76cd0 fix(outline): dismiss floating navigation on pointer leave`
-  - `97b6c40 feat: improve editor and sync workflows`
-  - `ab8f699 fix(pdf): render display latex in exports`
-  - `0c1b3f0 fix(editor): protect inline math deletion`
-  - `bdb73a5 fix(editor): refine outline and task list interactions`
-  - `3d0a1f8 feat(shortcuts): add customizable keybindings`
+  - `29fffe5 docs: record code-block fence "swallowing" investigation`
+  - `5fe4af4 feat(editor): restore the last caret/viewport when reopening a document`（#111）
+  - `8a98b5f fix(editor): raw-HTML tables follow the writing-area width`
+  - `a45f958 style(editor): full-height code-block line numbers`
+  - `9bc9412 style(editor): code-block line numbers flush against the block edge`
+  - `abb6d09 fix(editor): diverged-stream rich deletions must reach authored source`
+  - `5094e0b feat(editor): click-to-edit table cells and code block line numbers in PDF`
+  - `cfae66a fix(editor): enforce empty-paragraph <br /> invariant at the source boundary`
+  - `606bfc6 feat(editor): add source rich split preview`
 - 最近完整验证：
-  - `npm run build`
-  - `npm run build:mobile`
-  - `npm run guide:check`
-  - `npm run test:ui-regression`（完整 UI 回归入口；新增专项后以脚本当前输出为准）
-  - 0.12.46：`npm run test:mermaid-paste-ui` 以隔离 profile 连续 10/10 通过；完整 UI 回归为 `7 sessions + 25 standalone`
-  - 0.12.51：`npm run test:issue-98-ui` 使用 122 行 JSON 强制触发 CodeMirror 虚拟化，验证按钮全文复制、全选复制和 65 行部分选择；系统剪贴板每次先写 sentinel，避免旧内容造成假通过
-  - 0.12.52：`npm run test:list-conversion-ui` 覆盖当前层级/任务/正文转换，并用混合松散-紧凑嵌套列表验证转换后立即逐字输入、源码逐字节、保存和新进程重开
-  - 0.12.63：`npm run test:rich-dirty-indicator-ui`、`npm run test:issues-105-106-ui`、`npm run test:local-markdown-links`、`npm run test:block-list-source`、`npm run test:list-conversion-ui`、`npm run test:security` 与 `npm run guide:check` 均通过；已构建并安装 `/Applications/HorseMD.app`，`Info.plist` 与运行进程均为 0.12.63。
-  - 0.12.67（已安装、待人工验收）：`npm run test:source-rich-split`（含同步 revision 合同、源码立即保存、双栏/独占源码真实鼠标行首光标、匹配的尾部留白、十次交替滚动与面板内关闭）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui`、`npm run build`、`npm run build:mobile` 与 `npm run guide:check` 通过。已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`；`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.67。双栏尚需在当前构建包上进行含图片/表格/代码块的大文档和真实中文输入法人工回归。
-  - 0.12.68（已安装、待人工验收）：补足 Chromium 对非空行首字符点击的实际选区校正，并修正 textarea mirror 对行首折叠 Range 的首字符右缘定位。`npm run build`、`npm run test:source-rich-split`（精确覆盖 `## 页面对应关系` 在独占源码与源码预览左栏的首个 `#` 点击）、`npm run test:source-map`、`npm run test:rich-dirty-indicator-ui` 和 `git diff --check` 通过；已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`，`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.68。
-  - 0.12.69（已安装、待人工验收）：`npm run test:inline-code-ui` 以真实键盘事件验证代码尾部 `→` 后 DOM 光标不再留在 `<code>` 内；另以原生连续 `←` 验证离开首部后仍可进入前文，且不跳字。`npm run test:table-ui` 自行后台启动隔离 Electron，覆盖桌面和 390px 窄屏：HTML 表格默认独立横向滚动，开启 `hm-table-auto-wrap` 后 Markdown 与 HTML 表格均无内部溢出且不撑宽任一父容器。`npm run build`、`npm run build:mobile`、`npm run guide:check` 与 `git diff --check` 通过；已用 `dist:dir` 构建并替换 `/Applications/HorseMD.app`，`Info.plist`、asar 内 `package.json` 与运行进程均验证为 0.12.69。
-  - 0.12.47：`npm run test:settings-ui` 额外测量页宽预览几何变化，并验证滑杆尚未松手时已经实时反馈；详见 `docs/settings-page-width-preview-regression.md`
-  - 跨编辑器换行对照：Typora 0.11.18、Obsidian 1.12.7 与 HorseMD 0.12.47 对普通单换行均采用“一个段落、多条视觉行”；HorseMD 的 CSS 软换行必须在剪贴板克隆中物化，详见 `docs/cross-editor-line-break-comparison.md`
-  - `npm run test:markdown-preservation`、`npm run test:issue-77-ui`（后者在 10 个隔离 Electron 进程中通过，并在已安装 macOS 包复跑）
-  - `npm run test:outline-reorder`、`npm run test:issue-82-ui`（纯函数和真实 Electron 双向拖拽回归）
-  - 云同步专项：`npm run test:sync-workspaces-ui`、`npm run test:sync-engine`、`npm run test:webdav-electron-sync`、`npm run test:webdav-apache`、`npm run test:s3-electron-sync`
-  - 最近增量验证：`npm run test:mermaid-paste-ui`、`npm run test:floating-outline-ui`、`npm run test:heading-case-ui`、`node scripts/test-editor-inline-math.mjs`、`npm run test:math-ui`、`npm run test:display-math-scroll-ui`、`npm run test:tagged-display-math-ui`、`npm run test:pdf-latex-ui`、`npm run test:table-ui`、`npm run test:issue-86-ui`、`npm run test:issue-79-ui`、`npm run test:editor-style-settings-ui`、`npm run test:inline-html-block-handle-ui`
+  - **0.13.8–0.13.13（最近稳定区间，已安装）**：`npm run test:diverged-delete-source-ui`（新增，可见流分叉删除 → 切源码 → 保存 → 重开，磁盘逐字节）、`npm run test:doc-position-restore-ui`（新增，#111 富文本视口 + 重文档光标/滚动跨重启恢复）、`npm run test:markdown-preservation`、`test:source-fidelity-ui`、`test:empty-paragraph-source-ui`、`test:mode-switch-raw-offset-ui`、`test:rich-list-source-ui`、`test:new-document-list-source-ui`、`test:table-ui`（已更新断言：原生 HTML 表格默认贴合正文宽度）、`test:inline-html-block-handle-ui`、`test:issue-80-ui`、`test:issue-91-pdf-ui`、`test:codeblock-scroll-stability-ui`、`test:soft-break-ui`、`test:issue-77-ui`、`test:step-source-mapper`、`test:source-map`、`test:empty-paragraph-caret-ui` 全部通过；`npm run build` 通过。
+  - **注意**：`npm run test:rich-source-chaos-ui` 存在一个**基线即偶发失败**的子测试（鼠标点击坐标时序，单独跑 3/3 通过），与代码改动无关，已核实。
+  - 0.12.46–0.12.69 的历史验证（`test:mermaid-paste-ui`、`test:issue-98-ui`、`test:list-conversion-ui`、`test:source-rich-split`、`test:settings-ui`、云同步专项等）仍有效，命令见下文第 7 节。
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
   - `/Users/yangtingyi/vibe_everything/电脑档案.md`
@@ -118,6 +114,11 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 17. [pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md)：PDF 表格列宽与行距两次修复的完整事故复盘。
 18. [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)：所有“编辑器正常、PDF 不一致”问题的工程化排查和验收流程。
 19. [long-code-copy-virtualization-regression.md](./long-code-copy-virtualization-regression.md)：长代码块复制截断的虚拟化根因、正确数据源和防回归停止条件。
+20. [empty-paragraph-contract.md](./empty-paragraph-contract.md)：空段落 `<br />` 占位与可见流分叉的完整合同；0.13.x 空段落硬不变式的依据。
+21. [issues-105-106-save-fidelity-regression.md](./issues-105-106-save-fidelity-regression.md)：0.12.63 保存/原文保真回归（与近期删除回退同族）。
+22. [codeblock-fence-investigation.md](./codeblock-fence-investigation.md)：**当前进行中**——用户反馈「插两次代码块保存重开，最后一个代码块吞后面正文」的排查留底：解析机制已确认（` ```正文` 同行走正文会吞后续），但正常插入路径全部复现正常；需要用户提供精确步骤/文件才能定位。改代码前先读它。
+23. [issue-104-long-document-mode-switch.md](./issue-104-long-document-mode-switch.md)：长文档模式切换光标偏移（行内公式 atom）根因。
+24. [macos-real-input-testing.md](./macos-real-input-testing.md)：用 macOS 底层 CGEvent 在前台逐键输入的真实测试方法（疑难编辑问题的补充手段）。
 
 历史文档说明：
 
@@ -219,6 +220,20 @@ android/, ios/           Capacitor 原生壳
 - 修改代码块 node view、复制事件、DOM 映射或 clipboard IPC 后，先运行 `npm run build`，再运行 `npm run test:issue-98-ui` 和 `npm run test:clipboard-ipc-ui`。构建与 UI 测试不能并行，否则测试可能加载旧 `out/`。
 - 完整根因和验收数据见 [长代码块复制截断事故复盘](./long-code-copy-virtualization-regression.md)。
 
+### 5.2c 可见流分叉、空段落硬不变式与文档位置记忆（0.13.x）
+
+**空段落 `<br />` 硬不变式**：Crepe 的空段落序列化为独立 `<br />` 行，它只是编辑器内部占位、**永远不能进入作者源码**。`preserveRichMarkdownSource` 在所有启发式路径之后强制执行后置条件：统一剥离独立 `<br />` 占位行（保留块引用前缀 `>`），再按源文件尾部换行风格钳制（`capOutputTrailingNewlines`）。行内 `text<br>text` 与表格单元格 `<br>` 是作者内容，不受影响。任何新处理路径都不例外——不要在守卫上打补丁，边界兜底已经在 `markdown-source-preservation.js` 出口。空段落映射只要求变更区间局部对齐（`.some` 至少一个空段落行），**不得要求全文可见流相等**，也不得被无关空段落否决。
+
+**可见流分叉（visible-stream divergence）**：源码与 canonical 对同一批字节的块解析不同（典型：行中 `* ` 被 remark 拆成列表项，而作者把 `* ` 当普通文字，canonical 序列化时转义为 `\*`）时，两条可见流从分叉点永久不同。此时 `preserveLocallyAlignedTextChange`（上下文可见字符不一致）与 `preserveChangedLineRegion`（全文可见行不一致）都会失败。**fail-closed 返回原源码 = 富文本删除被静默撤销、保存后复活**——这是用户反复遇到「富文本删了内容切源码还在」的根因族。兜底 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）满足以下全部条件才替换：
+1. 变更限定在**单个 canonical 块**内（空行分界，跨块/整块删除放弃）；
+2. canonical 块文本**反转义**（`\*`→`*`、`&#x20;`→空格、命名实体）后在源码中**恰好出现一次**（重复文本绝不猜测）；
+3. 替换文本不得含独立 `<br />` 占位。
+任何约束不满足仍返回原源码。回归：`npm run test:diverged-delete-source-ui` + 纯函数 `test:markdown-preservation`。
+
+**文档位置记忆（#111）**：每个文档路径独立持久化 `{offset, len, scrollTop}`（`localStorage["horsemd.docpos.v1"]`，上限 300 条）。`hooks/useDocPositions.js` 在切换标签、窗口关闭/刷新时批量捕获所有已挂载文档位置（富文本 `markdownOffsetFromSelection` 优先、视口顶部兜底；textarea 用 `selectionStart`）。打开文件时（`useFileOps`）**必须校验 `len === content.length` 才挂载恢复参数**——外部改过文件（长度变化）绝不套用旧偏移。富文本恢复用 `restoreMarkdownOffset(offset, false)`（不抢焦点）+ 同步设 `scrollTop`（**不要用 `requestAnimationFrame`**，后台窗口会被节流）；textarea 用 `setSelectionRange` + `scrollTop`。回归：`npm run test:doc-position-restore-ui`。
+
+**原生 HTML 表格自适应**：`.hm-html-block` 必须重置 `white-space: normal`（ProseMirror 根的 `break-spaces` 会继承进来并阻止 CJK 按字断行）；表格 `max-width: 100%`；带 `width` 属性的表格 `width: unset` 恢复作者语义（`100%` 跟随容器、固定像素收缩）；`td/th` 的 `min-width: 0` 允许列收缩；**表格内图片必须 `width: 100%`**（否则 `<img width="900">` 的固有宽度参与列 min-content 计算，表格拒绝收缩，`max-width: 100%` 只约束渲染宽度救不了布局）。GFM（Markdown）表格保持独立横向滚动不受影响。回归：`npm run test:table-ui`（断言已更新为 HTML 表格贴合正文宽度）。
+
 ### 5.3 PDF 导出
 
 - PDF 导出读取 `getPdfSource()` 生成的结构化 `{ html, headings, title }`，不是直接打印 live editor DOM。
@@ -275,6 +290,15 @@ android/, ios/           Capacitor 原生壳
 - WebDAV PUT 可能不带 ETag，Provider 会 `PROPFIND` 补取；S3 要使用维护中的 SigV4 实现，且必须保持工作区 prefix 隔离。更改 provider 后同时跑 mock、真实服务和双 profile Electron 测试。
 
 ## 6. 近期功能与坑位
+
+### 0.13.x：代码块行号、HTML 表格自适应与文档位置记忆
+
+- **编辑器代码块行号**：CodeMirror gutter 背景不透明（`--code-block-bg`）、行号列贴住代码块左边缘（`.cm-scroller` 左右 padding 移到 `.cm-content`）、行号字号 `1em` + `line-height: 1.6` 使行号元素与代码行等高、行号右侧 1px 分隔竖线。改 gutter 样式后跑 `npm run test:issue-80-ui`、`test:codeblock-scroll-stability-ui`、`test:issue-91-pdf-ui`。注意 `.cm-gutterElement` 高度异常问题：CodeMirror 默认 `height: 100%` 在 flex 下可能解析为 0，行号内容靠 `overflow: visible` 显示——测量行号用 `getBoundingClientRect` 前先确认元素本身。
+- **PDF 导出代码块带行号**：`pdf-print-styles.js` 的 `.hm-code-line-num`；PDF 表格单元格单击直接编辑（`test:table-click-edit-ui`）。
+- **原生 HTML 表格自适应**：见第 5.2c 节。`代码测试` 类 gov.cn 嵌套 `<table width="950">` 不再横向溢出；`html表格无法自适应.md` 是复现文件。
+- **文档位置记忆（#111）**：见第 5.2c 节。已回复 issue #111 引导下载最新版。
+- **已知遗留（已留底、待用户提供步骤）**：代码块围栏「吞正文」——见 `codeblock-fence-investigation.md`。排查结论：正常插入路径（斜杠菜单/真粘贴/输入规则/相同内容/多行/空块/Mermaid/中间插入/编辑内容）保存重开全部正常；用户现场文件 `代码测试.md` 显示两段代码无围栏且 `register()/import bpy` 粘连。在拿到精确复现前**不要盲改**。
+- **相关已知问题（非本次根因）**：手打 ``` 输入规则有反引号转义/围栏不闭合问题（与用户反馈「手动输入多个 ` 有问题」同源）；粘贴无围栏纯文本代码时行首缩进转义为 `&#x20;` 实体。均另行跟踪。
 
 ### 自定义快捷键
 
@@ -407,9 +431,17 @@ npm run test:issue-82-ui
 npm run test:floating-outline-ui
 npm run test:issue-98-ui
 npm run test:clipboard-ipc-ui
+npm run test:diverged-delete-source-ui   # 可见流分叉删除回退（0.13.9）
+npm run test:doc-position-restore-ui     # 文档位置记忆 #111（0.13.13）
+npm run test:step-source-mapper          # 逐键/Enter/退格重建源码（0.13.x 原型）
 ```
 
 `test:math-ui`、`test:pdf-ui` 等部分脚本连接已有 CDP session。单独跑时先按 fixture 启动，或参考 `scripts/run-ui-regression.mjs`。
+
+**0.13.x 新增/变更的回归语义**：
+- `test:table-ui` 已从「HTML 表格默认独立横向滚动」改为「原生 HTML 表格贴合正文宽度不溢出」（GFM 宽表仍可滚动）。
+- 新增 `test:diverged-delete-source-ui`、`test:doc-position-restore-ui`；`test:markdown-preservation` 增加分叉删除/插入、重复文本拒绝、`\*`/`&#x20;` 反转义、`<br />` 拒绝等用例。
+- `test:mode-switch-raw-offset-ui`、`test:empty-paragraph-caret-ui`、`test:source-fidelity-ui` 是模式切换/空段落/保真的高频回归，改动 `markdown-source-preservation.js` 或 `mode-*.js` 后必跑。
 
 ## 8. CDP 实战注意
 
@@ -482,6 +514,8 @@ npm run guide:capture
 4. AI Phase 0 的合同、上下文快照和变更提案纯逻辑已落地；下一步仍先做只读 Provider，不急着开放自动写入或 Agent 权限。
 5. 插件市场难度高，先不急；优先可控的自定义快捷键、同步、AI provider 合同。
 6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；先维护已落地的原文保真层。
+7. **代码块围栏「吞正文」**：已留底待用户提供复现（`codeblock-fence-investigation.md`）；拿到精确步骤后定位保存路径的围栏/换行丢失点。
+8. **手打 ``` 输入规则**（反引号转义/围栏不闭合）与**粘贴无围栏代码行首缩进变 `&#x20;`**：两个已知输入路径问题，待排期。
 
 已在 Roadmap 中记录：
 
@@ -489,6 +523,7 @@ npm run guide:capture
 - AI 能力倾向原生体验 + provider 可插拔 + Review-first 修改；VMark 参考结论和具体分期见 [vmark-reference-review.md](./vmark-reference-review.md) 与 [ai-vmark-phase-plan.md](./ai-vmark-phase-plan.md)。
 - 云同步桌面端手动闭环已完成当前阶段；自动同步、移动端同步、历史恢复、E2EE、插件市场属于后续阶段。
 - 当前公开 Issue 的分流、前置条件和验收边界见 [ROADMAP.md](../ROADMAP.md#当前-issue-分流2026-07-21)。#62 已加 Windows 专属 compositor 降级，但仍必须 Windows 实机复现；#65 必须先定信息架构，#76/#23 都是原生平台项目；不要把它们当成可直接在 renderer 内完成的小修。
+- 近期已回复的 issue：#111（文档位置记忆，已实现）、#107（源码+预览分屏，已实现）、#109（PDF 代码块行号/分隔竖线已实现，代码块背景可配置性待确认）、#91/#92 等历史 issue 已在发布时引导下载。回复后保持 open 等用户验收关闭。
 
 ## 12. 新 AI 开始任务前的检查清单
 
@@ -508,16 +543,19 @@ npm run guide:capture
 - `src/renderer/src/components/Editor.jsx`：Crepe 生命周期拥有者。新功能尽量拆到 `editor-*.js`。
 - `src/renderer/src/hooks/useSourceModeSwitch.js`：源码/富文本状态机，非常敏感。
 - `src/renderer/src/scrollAnchor.js` 和 `mode-*.js`：光标/视口锚点 facade 和实现。
+- `src/renderer/src/markdown-source-preservation.js`：原文保真 façade（双快照 diff + 出口硬性 `<br />` 剥离 + 尾换行钳制）。`lib/markdown-preservation/` 下的 `core.js`（commonChange/lineAt/adapt）、`regions.js`（局部对齐/行区域/**分叉块回退**）、`lists.js`、`tables.js`、`paragraphs.js`、`frontmatter.js` 是它的纯函数分解。改这里必须跑 `test:markdown-preservation` + `test:source-fidelity-ui` + `test:mode-switch-raw-offset-ui`。
 - `src/renderer/src/components/editor-source-map.js`：raw offset ↔ PM 映射，不能退化成关键词匹配。
 - `src/renderer/src/components/editor-api.js`：PDF source、对外 editor API、source/rich restore。
+- `src/renderer/src/hooks/useDocPositions.js` + `lib/doc-positions.js`：文档位置记忆（#111），长度校验与防抖写盘边界。
 - `src/main/pdf-export.js` / `pdf-document.js` / `pdf-print-styles.js`：PDF 预览、生成、打印样式。
 - `src/main/filesystem.js` / `watchers.js` / `security.js`：本地文件和安全边界。
 - `src/renderer/src/styles/app.css`：全局样式。改 UI 时查多个主题和移动端。
 - 设置页排版预览是实际编辑器的缩尺模型。页宽不能直接套用低于真实预设的固定 `max-width`；测试必须测量可见宽度，不能只检查设置值和 CSS 变量。
+- `.hm-html-block`（HTML 表格）与 `.cm-lineNumbers`（代码块行号）的 CSS 都在 `app.css`；改动后分别跑 `test:table-ui` 与 `test:issue-80-ui`/`test:issue-91-pdf-ui`。
 
 ## 14. 最近一次稳定基线
 
-截至 2026-07-31，`0.12.50` 在原有 0.12.47 基线之外新增以下必测项（`npm run test:document-export` 已含子进程 / Pandoc 核心 / HTML 文档 / 导出保存目录 per-file 语义 / PDF 密度 no-op 基线共 5 个纯模块回归；0.12.50 紧凑密度实测同一文档从 43 页降到 35 页）：
+截至 **2026-08-07，`0.13.13`**（已安装 `/Applications/HorseMD.app`，旧包备份为 `HorseMD.app.backup-*`）。0.13.x 在 0.12.50 基线之上新增/更新的必测项：
 
 ```bash
 npm run build
@@ -536,9 +574,17 @@ npm run test:issue-79-ui
 npm run test:outline-reorder
 npm run test:issue-82-ui
 npm run test:floating-outline-ui
+npm run test:diverged-delete-source-ui
+npm run test:doc-position-restore-ui
+npm run test:step-source-mapper
+npm run test:source-fidelity-ui
+npm run test:empty-paragraph-source-ui
+npm run test:mode-switch-raw-offset-ui
+npm run test:table-ui
+npm run test:issue-91-pdf-ui
 ```
 
-其中 0.12.47 的 `npm run test:ui-regression` 最终结果为 `7 sessions + 25 standalone`；0.12.48 再次跑出同样的全绿结果。导出专项使用后台 Electron 验证 HTML 四主题/四宽度、结构化 Mermaid/LaTeX/表格/任务列表/图片、设置入口和模拟 Pandoc 异常；本机 Pandoc 3.10.1 还实际生成并检查了 docx、tex、epub。SVG 写入部分格式会按 Pandoc 规则要求额外的 `rsvg-convert`，不能由 HorseMD 静默伪装。
+`test:ui-regression` 全绿基线（7 sessions + 25 standalone）在 0.12.48 验证，0.12.5x–0.13.x 持续增量扩展。已知例外：`test:rich-source-chaos-ui` 第一子测试**基线即偶发**（点击坐标时序），单独跑可过，不代表回归。
 
 如果后续出现“之前明明是好的”，先回到这个基线和最近提交 diff 对照。
 

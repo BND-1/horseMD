@@ -361,6 +361,8 @@ Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe �
 
 列边界的交互分两段：普通悬停继续交给 Crepe 的加行/加列控件；在边界按住约 220ms 后由 `editor-dom-layout.js` 的 `mountTableHandleBounds()` 进入调整模式，直接更新当前连接 table 的 `colgroup` 作为实时预览，再在松手时以一次 ProseMirror transaction 写入 `data-colwidth`。只有此时表格才切换为 `table-layout: fixed`，明确尊重用户指定的整组列宽。其 1px `.hm-column-resize-guide` 独立于 Crepe node view，且每次写入会恢复 wrapper 的 `scrollLeft`，因此最右列不应再跳回起点。
 
+表格单元格支持**单击直接进入编辑**（不再要求双击）：点击单元格即定位光标，双击仍保留选中文本行为。回归：`npm run test:table-click-edit-ui`。
+
 **验证**：`npm run test:table-ui` 在真实 Electron 中检查内容较长列必须明显宽于短内容列，并覆盖 12/16/24px 字号下的等比紧凑行高、浅/深主题、移动窄屏、宽表内部滚动、行列按钮、长按实时调宽、手动宽度持久化，以及宽表最右侧连续 10 次悬浮/调整时横向位置不回退。
 
 ## 31. 设置页（一站式配置）
@@ -443,6 +445,30 @@ Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe �
 - 渲染层 `attachFiles()` 先要求当前文档已保存，再按当前源码/富文本模式插入链接；源码模式写 textarea selection，富文本模式用当前 Markdown offset 插入。
 - `window.api.capabilities.fileAttachments` 控制入口显示；移动端 shim 返回 unsupported，避免出现不可用 UI。
 
+## 39. 代码块行号（编辑器 + PDF）
+
+代码块左侧显示**行号**，与代码内容对齐：
+
+- **编辑器内**：行号列背景不透明（与代码块同色，明暗主题一致），贴住代码块左边缘，行号数字与代码行等高（字号 `1em`、`line-height: 1.6`），右侧 1px 分隔竖线。行号不可选中（`user-select: none`）。
+- **导出 PDF**：代码块每行带行号（浅色、右对齐），与编辑器内一致（issue #109）。
+- 长代码块行号随内容滚动，两位数/三位数行号列宽自动适配。
+
+**实现**（`styles/app.css`）：`.cm-gutters` / `.cm-lineNumbers .cm-gutterElement`（编辑器）；`pdf-print-styles.js` 的 `.hm-code-line-num`（PDF）。代码块行号必须贴左：`.cm-scroller` 左右 padding 归零、呼吸空间移到 `.cm-content`；行号全高靠 `font-size: 1em` + 显式 `line-height: 1.6`（CodeMirror 默认 `height: 100%` 在 flex 下可能解析为 0，不要依赖默认行盒）。
+
+回归：`npm run test:issue-91-pdf-ui`（PDF 行号）、`npm run test:issue-80-ui`（代码块间距）、`npm run test:codeblock-scroll-stability-ui`（滚动稳定）。
+
+## 40. 文档位置记忆（#111）
+
+重开文档时恢复到上次的**光标与滚动位置**，长文档不必每次重新滑到写作处：
+
+- 富文本：恢复上次光标所在段落，视口回到保存时的滚动位置（打开时不抢焦点，点击正文即可继续编辑）。
+- 重文档/源码模式（纯文本 textarea）：恢复光标字符位置 + 滚动位置。
+- **安全**：每条记录带文档长度指纹；文件被外部修改（长度变化）后不套用旧位置，从顶部打开。
+
+**实现**：`hooks/useDocPositions.js` 在切换标签、关窗/刷新时批量捕获位置（`lib/doc-positions.js`，`localStorage["horsemd.docpos.v1"]`，上限 300 条、防抖写盘）；`useFileOps` 打开文件时校验长度并挂载恢复参数；富文本用 `restoreMarkdownOffset(offset, false)` + 同步 `scrollTop`，textarea 用 `setSelectionRange` + `scrollTop`。
+
+回归：`npm run test:doc-position-restore-ui`（真实 app 同 profile 重启验证富文本视口 + 重文档光标/滚动均恢复）。
+
 ## 快捷键一览
 
 大部分应用快捷键可在 **设置 → 键盘快捷键** 中自定义。HorseMD 使用统一命令注册表生成设置页、命令面板 hint、工具提示和 Electron 菜单 accelerator；renderer 快捷键和菜单 IPC 都走同一份有效键位。无修饰单字母、`Enter`、`Tab`、`Esc`、复制/粘贴/撤销等保留键不能录制。
@@ -462,7 +488,7 @@ Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe �
 
 ---
 
-## 38. 文档 / 代码字体设置（#38）
+## 41. 文档 / 代码字体设置（#38）
 
 ### 怎么用
 
@@ -491,7 +517,7 @@ Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe �
 
 ---
 
-## 39. 文件夹级云同步（WebDAV / S3）
+## 42. 文件夹级云同步（WebDAV / S3）
 
 桌面端可以把用户明确选择的文件夹原地纳入云同步。文件不迁移、不转换格式；Markdown、图片和附件仍是普通磁盘文件。首次上传选择“上传本地到云端”，第二台设备选择“从云端下载到本地”；完成基线后才使用日常“双向同步”。远端 manifest 被清空或替换时会进入恢复选择，绝不自动删除本地文件。
 
