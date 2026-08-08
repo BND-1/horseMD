@@ -762,9 +762,23 @@ export default function Editor({
           } else if (pendingMarkdownInputIntent) {
             pendingMarkdownInputIntent = null
           }
+          if (preserved.preserved === false) {
+            // The visible ProseMirror transaction is still real, but its raw
+            // Markdown ownership is ambiguous. Keep every pending intent and
+            // the dirty/flush flag alive; publishing the old source here would
+            // falsely mark the edit committed and let save resurrect stale
+            // bytes. A later callback or forced flush retries the cumulative
+            // delta against the same canonical baseline.
+            userEditUntil = Date.now() + 1000
+            return
+          }
           // Source mapping must use the same markdown snapshot that App stores
           // and shows in the source textarea after this user edit.
           lastMarkdownRef.current = preserved.markdown
+          // A fail-closed source mapping did not consume the transaction.
+          // Keep the previous canonical baseline so the next callback retries
+          // the cumulative delta instead of silently declaring the lost edit
+          // synchronized and compounding offsets from a false baseline.
           canonicalMarkdownRef.current = canonical
           clearRichFlushPending()
           pendingRawMarkdownPasteRef.current = null

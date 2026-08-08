@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  generatedScratchMarkdown,
   preserveGeneratedBulletMarkers,
   preserveRichMarkdownSource,
   replaceMarkdownFrontmatterBlock,
@@ -542,6 +543,67 @@ assert.equal(mixedMarkerBatch.markdown, [
   '2) paren-two'
 ].join('\n'), 'batched independent list edits must retain per-list markers and omit transient empty blocks')
 
+const mixedMarkerFirstItemBatch = preserveRichMarkdownSource(
+  mixedMarkerSource,
+  mixedMarkerCanonical,
+  mixedMarkerCanonical
+    .replace('- plus-one', '- plus-one-X')
+    .replace('* star-two', '* star-two-X')
+)
+assert.equal(
+  mixedMarkerFirstItemBatch.markdown,
+  mixedMarkerSource
+    .replace('+ plus-one', '+ plus-one-X')
+    .replace('* star-two', '* star-two-X'),
+  'changing a neighbouring list first item must not absorb, duplicate, or rewrite later list blocks'
+)
+
+const equalCountCrossListMove = preserveRichMarkdownSource(
+  '- dash-one\n- dash-two\n\n+ plus-one\n+ plus-two',
+  '* dash-one\n\n* dash-two\n\n- plus-one\n\n- plus-two',
+  '* dash-one\n\n* dash-two\n\n* dash-three\n\n- plus-one'
+)
+assert.equal(
+  equalCountCrossListMove.markdown,
+  '- dash-one\n- dash-two\n- dash-three\n\n+ plus-one',
+  'equal total row counts must not make an insertion in one list inherit a deleted row identity from another list'
+)
+
+const equalCountDeleteNextFirst = preserveRichMarkdownSource(
+  '- dash-one\n- dash-two\n\n+ plus-one\n+ plus-two',
+  '* dash-one\n\n* dash-two\n\n- plus-one\n\n- plus-two',
+  '* dash-one\n\n* dash-two\n\n* dash-three\n\n- plus-two'
+)
+assert.equal(
+  equalCountDeleteNextFirst.markdown,
+  '- dash-one\n- dash-two\n- dash-three\n\n+ plus-two',
+  'deleting the next list first item must use a surviving fence instead of falling into generic offset mapping'
+)
+
+const equalCountDeleteNextFirstCrlf = preserveRichMarkdownSource(
+  '- dash-one\r\n- dash-two\r\n\r\n+ plus-one\r\n+ plus-two',
+  '* dash-one\n\n* dash-two\n\n- plus-one\n\n- plus-two',
+  '* dash-one\n\n* dash-two\n\n* dash-three\n\n- plus-two'
+)
+assert.equal(
+  equalCountDeleteNextFirstCrlf.markdown,
+  '- dash-one\r\n- dash-two\r\n- dash-three\r\n\r\n+ plus-two',
+  'the surviving-fence batch path must retain CRLF as well as per-list markers'
+)
+
+const unownedMultiListBatch = preserveRichMarkdownSource(
+  '- dash-one\n- dash-two\n\n+ plus-one\n+ plus-two',
+  '* dash-one\n\n* dash-two\n\n- plus-one\n\n- plus-two',
+  '* dash-one\n\n* dash-two\n\n* dash-three'
+)
+assert.equal(unownedMultiListBatch.preserved, false)
+assert.equal(unownedMultiListBatch.reason, 'unmapped-batched-list-change')
+assert.equal(
+  unownedMultiListBatch.markdown,
+  '- dash-one\n- dash-two\n\n+ plus-one\n+ plus-two',
+  'an unowned multi-list batch must fail closed before any generic mapper can corrupt list boundaries'
+)
+
 const typedListItemAppended = preserveRichMarkdownSource(
   '- 第一项\n\n',
   '* 第一项\n\n',
@@ -618,6 +680,24 @@ assert.equal(
   ),
   '- dash one\n- dash two\n',
   'a newly appended scratch-list row must inherit the authored dash instead of reverting to Crepe’s star'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '1. ordered\n\n- dash one\n- dash two\n',
+    '1. ordered\n\n* dash one edited\n* dash two\n'
+  ),
+  '1. ordered\n\n- dash one edited\n- dash two\n',
+  'editing the first item of a generated dash list must not expose Crepe’s default star'
+)
+
+assert.equal(
+  preserveGeneratedBulletMarkers(
+    '- first\n- second\n',
+    '* first edited\n* second edited\n'
+  ),
+  '- first edited\n- second edited\n',
+  'editing every item while the generated list shape is stable must retain its authored marker by structural row identity'
 )
 
 assert.equal(
@@ -1074,6 +1154,522 @@ assert.equal(
   inlineBreakPreserved.markdown,
   '第一行<br>第二行X\n',
   'an inline authored <br> hard break must survive the boundary invariant'
+)
+
+// Full-document deletion: the canonical becomes empty, which is unambiguous.
+// Every localized mapping below would fail closed on a diverged source and
+// resurrect the old content in source mode, in saves, and after a reopen.
+const emptiedDivergedSource = '# 测试\n\n价格是 * 优惠价\n\n- 项一\n- 项二\n\n结尾。\n'
+const emptiedDivergedCanonical = '# 测试\n\n价格是 \\* 优惠价\n\n* 项一\n* 项二\n\n结尾。\n'
+const emptiedDiverged = preserveRichMarkdownSource(
+  emptiedDivergedSource,
+  emptiedDivergedCanonical,
+  ''
+)
+assert.equal(emptiedDiverged.reason, 'document-emptied')
+assert.equal(
+  emptiedDiverged.markdown,
+  '',
+  'deleting every block in rich mode must empty the source even when the visible stream diverges'
+)
+
+const emptiedMarkerDiverged = preserveRichMarkdownSource(
+  '# 标题\n\n正文。\n\n- 项一\n- 项二\n\n结尾。',
+  '# 标题\n\n正文。\n\n* 项一\n* 项二\n\n结尾。',
+  ''
+)
+assert.equal(
+  emptiedMarkerDiverged.markdown,
+  '',
+  'a list-marker divergence must not leave a `# ` remnant behind after a full deletion'
+)
+
+const emptiedCrlfBom = preserveRichMarkdownSource(
+  '\uFEFF# Windows 标题\r\n\r\n正文。\r\n',
+  '# Windows 标题\n\n正文。\n',
+  ''
+)
+assert.equal(
+  emptiedCrlfBom.markdown,
+  '',
+  'a full deletion must empty the file regardless of BOM/CRLF conventions'
+)
+
+// Leading spaces typed in rich mode are serialized by remark-stringify as the
+// `&#x20;` entity (a literal space at line start would be parsed as indentation
+// or a list). That is a canonical spelling, never authored source: every
+// canonical→source translation must restore the real spaces.
+const LEADING_SPACE_SENTINEL = '\u200B'
+assert.equal(
+  generatedScratchMarkdown('# &#x20;       hello\n'),
+  `# ${LEADING_SPACE_SENTINEL}        hello\n`,
+  'a generated scratch document must spell leading spaces with an invisible Markdown-safe sentinel, not an entity'
+)
+assert.equal(
+  generatedScratchMarkdown('    &#x20;缩进正文\n'),
+  `    ${LEADING_SPACE_SENTINEL} 缩进正文\n`,
+  'canonical structural indentation must not hide a generated leading-space entity'
+)
+assert.equal(
+  generatedScratchMarkdown('* 父项\n\n    &#x20;列表续行\n'),
+  `* 父项\n\n    ${LEADING_SPACE_SENTINEL} 列表续行\n`,
+  'a list continuation with four structural spaces must still restore the authored leading space'
+)
+assert.equal(
+  generatedScratchMarkdown('\t&#x20;制表缩进正文\n'),
+  `\t${LEADING_SPACE_SENTINEL} 制表缩进正文\n`,
+  'canonical tab indentation must not hide a generated leading-space entity'
+)
+const leadingSpaceChange = preserveRichMarkdownSource(
+  '第一段正文。\n',
+  '第一段正文。\n',
+  '第一段正文。\n\n&#x20;     顶格文字\n'
+)
+assert.equal(
+  leadingSpaceChange.markdown,
+  `第一段正文。\n\n${LEADING_SPACE_SENTINEL}      顶格文字\n`,
+  'a canonical line-leading `&#x20;` must reach the authored source as a real space'
+)
+const leadingSpaceNewDocument = preserveRichMarkdownSource('', '', '# &#x20;     顶格文字\n')
+assert.equal(
+  leadingSpaceNewDocument.markdown,
+  `# ${LEADING_SPACE_SENTINEL}      顶格文字\n`,
+  'the empty-document canonical path must unescape leading-space entities too'
+)
+
+// A held Space key emits multiple whitespace-only canonical snapshots before
+// the first visible character. None of those intermediate states may write to
+// source or collapse the paragraph separator onto the previous paragraph.
+const heldSpaceSource = '# test\n\nanchor\n'
+const heldSpaceEmpty = '# test\n\nanchor\n\n<br />\n\n'
+const heldSpaceTwo = '# test\n\nanchor\n\n<br />\n\n  \n'
+const heldSpaceThree = '# test\n\nanchor\n\n<br />\n\n   \n'
+const heldSpaceAfterTwo = preserveRichMarkdownSource(
+  heldSpaceSource,
+  heldSpaceEmpty,
+  heldSpaceTwo
+)
+assert.equal(heldSpaceAfterTwo.reason, 'trailing-empty-block-whitespace')
+assert.equal(heldSpaceAfterTwo.markdown, heldSpaceSource)
+const heldSpaceAfterThree = preserveRichMarkdownSource(
+  heldSpaceSource,
+  heldSpaceTwo,
+  heldSpaceThree
+)
+assert.equal(heldSpaceAfterThree.reason, 'trailing-empty-block-whitespace')
+assert.equal(heldSpaceAfterThree.markdown, heldSpaceSource)
+const heldSpaceText = preserveRichMarkdownSource(
+  heldSpaceSource,
+  '# test\n\nanchor\n\n<br />\n\n       \n',
+  '# test\n\nanchor\n\n<br />\n\n&#x20;       abc\n'
+)
+assert.equal(
+  heldSpaceText.markdown,
+  `# test\n\nanchor\n\n${LEADING_SPACE_SENTINEL}        abc\n`,
+  'the first visible character after held spaces must append one intact paragraph using Typora-style source spelling'
+)
+
+// A typed `~` is serialized as `\~` (GFM strikethrough guard). The authored
+// source must keep the literal tilde: single `~` is never a strikethrough, so
+// unescaping is semantics-preserving.
+assert.equal(
+  generatedScratchMarkdown('# 审计 0\\~9\n'),
+  '# 审计 0~9\n',
+  'a generated scratch document must spell tildes literally, not as \\~ escapes'
+)
+assert.equal(
+  generatedScratchMarkdown([
+    '```text',
+    '&#x20;',
+    '\\~',
+    '```',
+    '',
+    '`&#x20; \\~`',
+    '',
+    '<span data-x="\\~">&#x20;</span>',
+    '',
+    '<div>',
+    '&#x20;',
+    '\\~',
+    '</div>',
+    '',
+    '# &#x20; hi 0\\~9',
+    ''
+  ].join('\n')),
+  [
+    '```text',
+    '&#x20;',
+    '\\~',
+    '```',
+    '',
+    '`&#x20; \\~`',
+    '',
+    '<span data-x="\\~">&#x20;</span>',
+    '',
+    '<div>',
+    '&#x20;',
+    '\\~',
+    '</div>',
+    '',
+    `# ${LEADING_SPACE_SENTINEL}  hi 0~9`,
+    ''
+  ].join('\n'),
+  'canonical escape translation must not alter fenced or inline-code literals'
+)
+assert.equal(
+  generatedScratchMarkdown('外部 0\\~9 <span data-x="\\~">&#x20;</span> 后续 1\\~2\n'),
+  '外部 0~9 <span data-x="\\~">&#x20;</span> 后续 1~2\n',
+  'inline HTML must protect only its own token range while surrounding Markdown escapes are restored'
+)
+assert.equal(
+  generatedScratchMarkdown('``code ` &#x20; \\~ literal`` 外部 0\\~9\n'),
+  '``code ` &#x20; \\~ literal`` 外部 0~9\n',
+  'double-backtick code spans containing a single backtick must remain literal while outside text is restored'
+)
+const tildeNewDocument = preserveRichMarkdownSource('', '', '# 审计 0\\~9\n')
+assert.equal(
+  tildeNewDocument.markdown,
+  '# 审计 0~9\n',
+  'the empty-document canonical path must unescape \\~ too'
+)
+// In an existing document the whole-paragraph replacement carries the escaped
+// canonical spelling; it must still land as the author's literal tilde.
+const tildeWholeParagraph = preserveRichMarkdownSource(
+  '审计起点：0~9。\n',
+  '审计起点：0\\~9。\n',
+  '审计起点：0\\~9X。\n'
+)
+assert.equal(
+  tildeWholeParagraph.markdown,
+  '审计起点：0~9X。\n',
+  'an escaped canonical tilde must reach the authored source literally'
+)
+
+const exactBaselineEscapes = preserveRichMarkdownSource(
+  '# 标题\n\n正文\n',
+  '# 标题\n\n正文\n',
+  '# 标题\n\n正文 0\\~9\n\n&#x20; 后续\n'
+)
+assert.equal(
+  exactBaselineEscapes.markdown,
+  `# 标题\n\n正文 0~9\n\n${LEADING_SPACE_SENTINEL}  后续\n`,
+  'the exact-canonical baseline must use the same context-aware translation as every other canonical write'
+)
+
+// remark parses `- 1. 甲乙` as a NESTED ORDERED LIST (`1. 甲`, `2. 乙`): the
+// `1. ` item text leaves the canonical visible stream while the authored
+// source keeps it, so the whole document diverges and every list-internal
+// text edit used to roll back to the OLD source (typed text silently lost).
+// The canonical below is the real Crepe serialization captured from the app.
+const nestedListSource = '- 1. 甲乙\n- 丙丁\n'
+const nestedListPrevious = '* <br />\n\n  1. 甲\n  2. 乙\n\n* 丙丁\n\n'
+const nestedListNext = '* <br />\n\n  1. 甲\n  2. 新乙\n\n* 丙丁\n\n'
+const nestedListEnterSplit = preserveRichMarkdownSource(
+  nestedListSource,
+  '* <br />\n\n  1. 甲乙\n\n* 丙丁\n',
+  '* <br />\n\n  1. 甲\n  2. 乙\n\n* 丙丁\n\n'
+)
+assert.equal(nestedListEnterSplit.preserved, true)
+assert.equal(
+  nestedListEnterSplit.markdown,
+  '- 1. 甲\n- 2. 乙\n- 丙丁\n',
+  'an Enter split plus canonical-only terminal newline drift must commit atomically'
+)
+const nestedListSplit = preserveRichMarkdownSource(
+  nestedListSource,
+  nestedListPrevious,
+  nestedListNext
+)
+assert.equal(
+  nestedListSplit.reason,
+  'diverged-nested-list-change',
+  'a list-internal text edit inside a nested-number-diverged document must map through item-sequence alignment'
+)
+assert.equal(
+  nestedListSplit.markdown,
+  '- 1. 甲新乙\n- 丙丁\n',
+  'the typed text must reach the authored `- 1. …` spelling instead of vanishing'
+)
+
+const nestedListPlainEdit = preserveRichMarkdownSource(
+  nestedListSource,
+  nestedListPrevious,
+  '* <br />\n\n  1. 甲X\n  2. 乙\n\n* 丙丁\n\n'
+)
+assert.equal(
+  nestedListPlainEdit.markdown,
+  '- 1. 甲X乙\n- 丙丁\n',
+  'a plain text edit on the first nested item must map back into the flat authored text'
+)
+
+const nestedListItemRemoved = preserveRichMarkdownSource(
+  nestedListSource,
+  nestedListPrevious,
+  '* <br />\n\n  1. 甲\n\n* 丙丁\n\n'
+)
+assert.equal(
+  nestedListItemRemoved.markdown,
+  '- 1. 甲\n- 丙丁\n',
+  'removing the nested `2. 乙` item must remove only 乙 from the authored row'
+)
+
+const nestedListZeroWidthAppend = preserveRichMarkdownSource(
+  nestedListSource,
+  nestedListPrevious,
+  '* <br />\n\n  1. 甲\n  2. 乙\n  3. 戊\n\n* 丙丁\n\n'
+)
+assert.equal(
+  nestedListZeroWidthAppend.reason,
+  'diverged-nested-list-change',
+  'a zero-width nested append must use the item-sequence path, not the corrupted line mapper'
+)
+assert.equal(
+  nestedListZeroWidthAppend.markdown,
+  '- 1. 甲乙\n- 3. 戊\n- 丙丁\n',
+  'a nested append must become its own authored top-level row'
+)
+
+// Enter at the end of the flat row creates an EMPTY canonical item (`2. `),
+// which the visible map would otherwise keep as literal `2. ` text and break
+// the anchor. Filling that item must reach the authored row.
+const nestedListEmptyItemFilled = preserveRichMarkdownSource(
+  '- 1. 甲乙\n- 丙丁\n',
+  '* <br />\n\n  1. 甲乙\n  2. <br />\n\n* 丙丁\n\n',
+  '* <br />\n\n  1. 甲乙\n  2. 后记\n\n* 丙丁\n\n'
+)
+assert.equal(
+  nestedListEmptyItemFilled.reason,
+  'diverged-nested-list-change',
+  'filling a canonical empty nested item must map through item-sequence alignment'
+)
+assert.equal(
+  nestedListEmptyItemFilled.markdown,
+  '- 1. 甲乙\n- 2. 后记\n- 丙丁\n',
+  'filling an Entered empty item must become its own authored top-level row'
+)
+
+// Backspace at the start of a nested ordered item removes only that inner
+// marker. Crepe keeps the outer bullet wrapper and serializes the lifted text
+// as an indented continuation line. This is a marker-only change, not an empty
+// item: the authored row must become `- text`, never `- 2. `.
+const nestedNumberMarkerRemoved = preserveRichMarkdownSource(
+  '- 1. 管理层（总经理）\n- 2. 综合行政部\n- 3. 人力资源部\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n* <br />\n\n  2. 综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n* <br />\n\n  综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n'
+)
+assert.equal(nestedNumberMarkerRemoved.reason, 'diverged-nested-list-change')
+assert.equal(
+  nestedNumberMarkerRemoved.markdown,
+  '- 1. 管理层（总经理）\n- 综合行政部\n- 3. 人力资源部\n',
+  'removing a nested ordered marker must retain the item text and outer authored bullet'
+)
+
+const nestedOuterMarkerRemoved = preserveRichMarkdownSource(
+  '- 1. 管理层（总经理）\n- 综合行政部\n- 3. 人力资源部\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n* 综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n  综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n'
+)
+assert.equal(nestedOuterMarkerRemoved.reason, 'diverged-nested-list-change')
+assert.equal(
+  nestedOuterMarkerRemoved.markdown,
+  '- 1. 管理层（总经理）\n  综合行政部\n- 3. 人力资源部\n',
+  'lifting the outer bullet must retain its text as the preceding item continuation'
+)
+
+const nestedWrapperCollapsedWithoutSourceChange = preserveRichMarkdownSource(
+  '- 1. 管理层（总经理）\n- 综合行政部\n- 3. 人力资源部\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n* <br />\n\n  综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n',
+  '* <br />\n\n  1. 管理层（总经理）\n\n* 综合行政部\n\n* <br />\n\n  3. 人力资源部\n\n'
+)
+assert.equal(nestedWrapperCollapsedWithoutSourceChange.preserved, true)
+assert.equal(
+  nestedWrapperCollapsedWithoutSourceChange.markdown,
+  '- 1. 管理层（总经理）\n- 综合行政部\n- 3. 人力资源部\n',
+  'a canonical-only wrapper collapse must advance the baseline without rewriting authored source'
+)
+
+const divergedOrdinaryContinuation = preserveRichMarkdownSource(
+  '- 1. 数字项\n\n- alphabeta\n',
+  '* <br />\n\n  1. 数字项\n\n* alphabeta\n\n',
+  '* <br />\n\n  1. 数字项\n\n* alpha\n  beta\n\n'
+)
+assert.equal(
+  divergedOrdinaryContinuation.markdown,
+  '- 1. 数字项\n\n- alpha\n  beta\n',
+  'a normal multiline continuation in a diverged document must keep indentation instead of becoming a new bullet'
+)
+
+const divergedCrLfEdit = preserveRichMarkdownSource(
+  '+ 1. AB\r\n+ tail\r\n',
+  '* <br />\n\n  1. AB\n\n* tail\n\n',
+  '* <br />\n\n  1. ABX\n\n* tail\n\n'
+)
+assert.equal(
+  divergedCrLfEdit.markdown,
+  '+ 1. ABX\r\n+ tail\r\n',
+  'diverged list edits must retain CRLF and the authored bullet marker'
+)
+
+const divergedAndLaterBatch = preserveRichMarkdownSource(
+  '- 1. A\n\n- normal\n',
+  '* <br />\n\n  1. A\n\n* normal\n\n',
+  '* <br />\n\n  1. AX\n\n* normalX\n\n'
+)
+assert.equal(
+  divergedAndLaterBatch.markdown,
+  '- 1. AX\n\n- normalX\n',
+  'one deferred callback must commit both a diverged numbered-text list and a later ordinary list'
+)
+
+const divergedAndHeadingBatch = preserveRichMarkdownSource(
+  '- 1. A\n\n## Heading\n',
+  '* <br />\n\n  1. A\n\n## Heading\n',
+  '* <br />\n\n  1. AX\n\n# Heading\n'
+)
+assert.equal(divergedAndHeadingBatch.preserved, false)
+assert.equal(
+  divergedAndHeadingBatch.markdown,
+  '- 1. A\n\n## Heading\n',
+  'a partially mapped callback must roll back atomically instead of reporting success while dropping heading structure'
+)
+
+const divergedConsecutiveInsertions = preserveRichMarkdownSource(
+  '- 1. A\n- B\n',
+  '* <br />\n\n  1. A\n\n* B\n\n',
+  '* <br />\n\n  1. A\n  2. X\n  3. Y\n\n* B\n\n'
+)
+assert.equal(
+  divergedConsecutiveInsertions.markdown,
+  '- 1. A\n- 2. X\n- 3. Y\n- B\n',
+  'multiple inserted nested siblings in one callback must retain their canonical order'
+)
+
+const divergedOnlyRowLift = preserveRichMarkdownSource(
+  '- 1. A\n',
+  '* <br />\n\n  1. A\n\n',
+  'A\n'
+)
+assert.equal(
+  divergedOnlyRowLift.markdown,
+  'A\n',
+  'fully lifting the first and only diverged row must remove its authored list prefixes'
+)
+
+const divergedOnlyRowLiftBeforeParagraph = preserveRichMarkdownSource(
+  '- 1. A\n\nparagraph\n',
+  '* <br />\n\n  1. A\n\nparagraph\n',
+  'A\n\nparagraph\n'
+)
+assert.equal(
+  divergedOnlyRowLiftBeforeParagraph.markdown,
+  'A\n\nparagraph\n',
+  'lifting an only item before a paragraph must not duplicate the separator newline'
+)
+
+const divergedFirstRowLift = preserveRichMarkdownSource(
+  '- 1. A\n- 2. B\n',
+  '* <br />\n\n  1. A\n\n* <br />\n\n  2. B\n\n',
+  'A\n\n* <br />\n\n  2. B\n\n'
+)
+assert.equal(
+  divergedFirstRowLift.markdown,
+  'A\n\n- 2. B\n',
+  'fully lifting the first diverged row must keep the remaining authored list intact'
+)
+
+// Canonical block enumeration contains one outer list tree PLUS one block for
+// every nested ordered row. Authored source has only the outer tree. A later,
+// unrelated list must therefore be matched by top-level block ordinal; counting
+// nested blocks makes this edit incorrectly target a non-existent source block.
+const laterListSource = [
+  '## 目录',
+  '',
+  '- 1. 管理层',
+  '- 2. 综合行政部',
+  '',
+  '## 使用说明',
+  '',
+  '- 适用标准：**ISO 9001:2015**。',
+  ''
+].join('\n')
+const laterListCanonical = [
+  '## 目录',
+  '',
+  '* <br />',
+  '',
+  '  1. 管理层',
+  '',
+  '* <br />',
+  '',
+  '  2. 综合行政部',
+  '',
+  '## 使用说明',
+  '',
+  '* 适用标准：**ISO 9001:2015**。',
+  ''
+].join('\n')
+const laterFormattedListEdit = preserveRichMarkdownSource(
+  laterListSource,
+  laterListCanonical,
+  laterListCanonical.replace('适用标准：', '适用标准X：')
+)
+assert.equal(laterFormattedListEdit.reason, 'diverged-nested-list-change')
+assert.equal(
+  laterFormattedListEdit.markdown,
+  laterListSource.replace('适用标准：', '适用标准X：'),
+  'nested canonical blocks must not shift the authored counterpart of a later top-level list'
+)
+
+// A deletion spanning SEVERAL canonical blocks (here: the 复核。 item and the
+// whole trailing `- ce` item) used to fail every localized mapper in a
+// diverged document and roll back to the OLD source — the deletion vanished,
+// saving resurrected the content. The canonical is the real Crepe
+// serialization captured from the app for this edit.
+const tailDeleteSource = [
+  '- 1. 甲乙',
+  '',
+  '- 本表为 AI 生成草稿，正式发布前需经体系负责人 / 质量部门复核。',
+  '- ce'
+].join('\n') + '\n'
+const tailDeletePrevious = [
+  '* <br />',
+  '',
+  '  1. 甲',
+  '  2. 乙',
+  '',
+  '* 本表为 AI 生成草稿，正式发布前需经体系负责人 / 质量部门复核。',
+  '',
+  '* ce',
+  ''
+].join('\n')
+const tailDeleteNext = [
+  '* <br />',
+  '',
+  '  1. 甲',
+  '  2. 乙',
+  '',
+  '* 本表为 AI 生成草稿，正式发布前需经体系负责人 / 质量部门',
+  ''
+].join('\n')
+const tailDeleted = preserveRichMarkdownSource(
+  tailDeleteSource,
+  tailDeletePrevious,
+  tailDeleteNext
+)
+assert.equal(
+  tailDeleted.reason,
+  'diverged-nested-list-change',
+  'a multi-block deletion in a diverged document must map through item-sequence alignment'
+)
+assert.equal(
+  tailDeleted.markdown,
+  [
+    '- 1. 甲乙',
+    '',
+    '- 本表为 AI 生成草稿，正式发布前需经体系负责人 / 质量部门',
+    ''
+  ].join('\n'),
+  'the deleted rows must vanish while the authored marker spelling survives'
 )
 
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

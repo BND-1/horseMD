@@ -391,6 +391,10 @@ export function useFileOps({
       // Resolve the editor's current document before writing so an immediate
       // save cannot persist the previous tab.content snapshot.
       const currentMarkdown = getMarkdownForTab(id)
+      if (currentMarkdown == null) {
+        fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+        return
+      }
       if (typeof currentMarkdown === 'string' && currentMarkdown !== tab.content) {
         tab = { ...tab, content: currentMarkdown }
         tabsRef.current = tabsRef.current.map((item) => item.id === id ? tab : item)

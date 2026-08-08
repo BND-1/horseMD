@@ -171,6 +171,82 @@ export const preserveDivergedBlockTextChange = ({
   }
 }
 
+// A deletion that spans several canonical blocks (a whole tail, or rows from
+// several list trees) inside a diverged document defeats every localized
+// mapper above and previously rolled back to the OLD source — the deletion
+// silently vanished and saving resurrected the content. When the edit is a
+// pure visible-text deletion, anchor the canonical's pre-deletion context in
+// the authored visible stream (unique occurrence required) and delete the
+// mapped raw range. The deleted raw text must match the canonical deletion
+// after list markers are stripped; anything else stays fail-closed.
+export const preserveDivergedVisibleDelete = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  // Pure deletion only: the replacement must carry no visible text.
+  const replacement = next.slice(start, nextEnd)
+  if (sourceVisibleIndex(replacement).text) return null
+
+  const prevVis = sourceVisibleIndex(previous).text
+  const srcVis = sourceVisibleIndex(source).text
+  if (!prevVis || prevVis === srcVis) return null
+
+  const vStart = sourceVisiblePositionAtRaw(previous, start).visibleIndex
+  const vEnd = sourceVisiblePositionAtRaw(previous, previousEnd).visibleIndex
+  if (vEnd <= vStart) return null
+  const delVis = prevVis.slice(vStart, vEnd)
+  if (!delVis) return null
+
+  const CTX = 24
+  const ctxBefore = prevVis.slice(Math.max(0, vStart - CTX), vStart)
+  if (!ctxBefore) return null
+  const anchorBefore = srcVis.indexOf(ctxBefore)
+  if (anchorBefore < 0) return null
+  if (srcVis.indexOf(ctxBefore, anchorBefore + 1) >= 0) return null
+
+  const deleteStartVis = anchorBefore + ctxBefore.length
+  let deleteEndVis
+  if (vEnd >= prevVis.length) {
+    deleteEndVis = srcVis.length
+  } else {
+    const ctxAfter = prevVis.slice(vEnd, Math.min(prevVis.length, vEnd + CTX))
+    if (!ctxAfter) return null
+    const anchorAfter = srcVis.indexOf(ctxAfter, deleteStartVis)
+    if (anchorAfter < 0) return null
+    deleteEndVis = anchorAfter
+  }
+
+  const rawStart = rawOffsetAtVisible(source, {
+    visibleIndex: deleteStartVis,
+    visibleAffinity: 'backward'
+  })
+  const rawEnd = rawOffsetAtVisible(source, {
+    visibleIndex: deleteEndVis,
+    visibleAffinity: 'forward'
+  })
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
+
+  // Verify the raw range actually deletes what the canonical deleted (after
+  // list markers are stripped — the canonical keeps them as syntax while the
+  // authored source keeps them as item text).
+  const stripMarkers = (text) => String(text || '')
+    .split('\n')
+    .map((line) => line.replace(/^[ \t]*(?:[-+*][ \t]+)?(?:\d{1,9}[.)][ \t]+)?/, ''))
+    .join('\n')
+  const deletedRawVis = sourceVisibleIndex(stripMarkers(source.slice(rawStart, rawEnd))).text
+  if (deletedRawVis !== delVis) return null
+
+  return {
+    markdown: source.slice(0, rawStart) + source.slice(rawEnd),
+    preserved: true,
+    reason: 'diverged-visible-delete'
+  }
+}
+
 const escapePunctuation = /[\\`*{}\[\]()#+\-.!_>~|]/
 
 // Convert a canonical block's escaped spelling back to the plain Markdown the

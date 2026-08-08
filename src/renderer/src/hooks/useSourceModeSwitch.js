@@ -117,7 +117,7 @@ export function useSourceModeSwitch({
     const tab = tabsRef.current.find((item) => item.id === id)
     if (!id || tab?.kind === 'settings') return
     if (sourceModeRef.current) commitAllLive()
-    else flushRichSource(id)
+    else if (!flushRichSource(id)) return
     const view = editorApis.current[id]?.getView?.()
 
     if (sourceModeRef.current) {
@@ -133,7 +133,13 @@ export function useSourceModeSwitch({
       const preserveRichCaret =
         !sourceTextChanged && !sourceSelectionChanged && !sourceSelectionUser && !sourceViewportMoved
       const hasSourceCaretIntent = sourceTextChanged || sourceSelectionChanged || sourceSelectionUser
-      const followSourceCaret = hasSourceCaretIntent && sourceSelectionUser && !sourceViewportMoved
+      // A caret move is an editing intent whenever the live selection differs
+      // from the last restore baseline and the viewport has not been scrolled
+      // away for reading. The synthetic selection-user flag is a fast signal
+      // but can be missed by keyboard caret moves, IME, or assistive input;
+      // the baseline comparison covers those paths so the rich editor still
+      // receives focus and follows the caret on the return trip.
+      const followSourceCaret = hasSourceCaretIntent && !sourceViewportMoved
 
       caretFollowRef.current = preserveRichCaret
         ? sourceEnteredWithCaretFollowRef.current
@@ -205,6 +211,7 @@ export function useSourceModeSwitch({
     preserveRichCaretFollowRef.current = false
 
     let supersededByUserFocus = false
+    let firstRestoreDone = false
     const apply = () => {
       // Mode switching retries caret/viewport restoration while rich content
       // settles. Once the user focuses the other split pane, those retries must
@@ -236,6 +243,21 @@ export function useSourceModeSwitch({
           supersededByUserFocus = true
           return false
         }
+        // The synthetic-event flag above can be missed (keyboard caret moves,
+        // IME composition, assistive technology). After the first restore wrote
+        // its baseline, any live selection drift means the user owns the caret
+        // now — the settle retries must yield instead of fighting it.
+        if (
+          firstRestoreDone &&
+          sourceEl &&
+          sourceEl.__horsemdSourceSelectionBaseline != null
+        ) {
+          const liveSelection = `${sourceEl.selectionStart}:${sourceEl.selectionEnd}`
+          if (liveSelection !== sourceEl.__horsemdSourceSelectionBaseline) {
+            supersededByUserFocus = true
+            return false
+          }
+        }
         if (caret) {
           restoreSourceCaret(sourceEl, caret, follow)
           if (sourceEl) {
@@ -248,6 +270,7 @@ export function useSourceModeSwitch({
           restoreSourceViewport(sourceEl, viewport)
           if (sourceEl) sourceEl.__horsemdSourceViewportMoved = false
         }
+        firstRestoreDone = true
       } else {
         if (caret) {
           const api = editorApis.current[restoreId]

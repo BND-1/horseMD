@@ -5,11 +5,14 @@ import {
 } from '../../mode-visible-map.js'
 import {
   adaptCanonicalRegionToSource,
+  canonicalTextToSource,
   commonChange,
   lineAt,
+  lineEndingNear,
   lineIndexAt,
   listMarker,
-  markdownLines
+  markdownLines,
+  rawOffsetAtVisible
 } from './core.js'
 
 // Find the syntactic list tree around an offset without parsing the entire
@@ -90,6 +93,106 @@ const listBlockNear = (markdown, ...offsets) => {
   return null
 }
 
+// The list tree that CONTAINS `offset` at the top level (indent 0). Crepe
+// serializes each authored top-level row as a `* ` wrapper plus nested rows;
+// an edit inside a nested row must be attributed to that whole wrapper block
+// so ordinal alignment against the authored top-level rows stays stable.
+const outerTopLevelListBlock = (markdown, offset) => {
+  const lines = markdownLines(markdown)
+  const index = lineIndexAt(lines, offset)
+  if (index < 0) return null
+  for (let current = index; current >= 0; current -= 1) {
+    const marker = lines[current].text.match(/^(\s*)([-+*]|\d{1,9}[.)])\s+/)
+    if (marker && marker[1].length === 0) return listBlockAt(markdown, lines[current].start)
+    if (lines[current].text.trim() && !/^\s+/.test(lines[current].text)) break
+  }
+  return listBlockAt(markdown, offset)
+}
+
+// Flatten a canonical list block into item rows (text + token). Besides marker
+// rows, this keeps the tokenless continuation produced while Backspace lifts a
+// nested item through its outer wrapper.
+// A wrapper row (`* <br />` whose following marker line is MORE indented) is a
+// Crepe container for the nested rows and has no authored counterpart, so it is
+// skipped; a genuinely empty nested item (`3. <br />` with no deeper follower)
+// IS a real item that corresponds to an authored row and is kept with empty
+// text. `<br />` placeholders count as empty text.
+const flatListItemRows = (blockText) => {
+  const lines = String(blockText || '').split('\n')
+  const parsed = lines.map((line) => {
+    const match = line.match(/^(\s*)([-+*]|\d{1,9}[.)])\s+(.*)$/)
+    if (match) {
+      return {
+        indent: match[1].length,
+        token: match[2],
+        text: String(match[3] || '').replace(/<br\s*\/?>\s*$/i, '').trim()
+      }
+    }
+    const continuation = line.match(/^(\s+)(\S.*)$/)
+    if (!continuation) return null
+    return {
+      indent: continuation[1].length,
+      token: '',
+      text: continuation[2].trim()
+    }
+  })
+  const rows = []
+  for (let i = 0; i < parsed.length; i += 1) {
+    const row = parsed[i]
+    if (!row) continue
+    if (!row.text) {
+      const follower = parsed.slice(i + 1).find((candidate) => candidate)
+      if (follower && follower.indent > row.indent) continue
+
+    }
+    rows.push({ token: row.token, text: row.text, indent: row.indent })
+  }
+  return rows
+}
+
+// Parse an authored top-level list block into rows with their raw offsets
+// relative to the block start. The marker (`- `) is dropped; the author's
+// literal numbering (`1. `) stays part of `text`.
+const sourceListItemRows = (blockText) => {
+  const rows = []
+  let lineStart = 0
+  let baseIndent = null
+  const rawLines = String(blockText || '').split('\n')
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const rawLine = rawLines[index]
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const breakEnd = lineStart + rawLine.length + (index < rawLines.length - 1 ? 1 : 0)
+    const match = line.match(/^(\s*)([-+*]|\d{1,9}[.)])\s+(.*)$/)
+    if (match) {
+      if (baseIndent == null) baseIndent = match[1].length
+      rows.push({
+        start: lineStart,
+        end: lineStart + line.length,
+        breakEnd,
+        contentStart: lineStart + match[1].length + match[2].length + 1,
+        indent: match[1].length,
+        token: match[2],
+        text: String(match[3] || '')
+      })
+    } else {
+      const continuation = line.match(/^(\s+)(\S.*)$/)
+      if (continuation && baseIndent != null && continuation[1].length > baseIndent) {
+        rows.push({
+          start: lineStart,
+          end: lineStart + line.length,
+          breakEnd,
+          contentStart: lineStart + continuation[1].length,
+          indent: continuation[1].length,
+          token: '',
+          text: continuation[2]
+        })
+      }
+    }
+    lineStart = breakEnd
+  }
+  return rows
+}
+
 const listBlocksInSourceOrder = (markdown) => {
   const blocks = new Map()
   markdownLines(markdown).forEach((line) => {
@@ -99,6 +202,14 @@ const listBlocksInSourceOrder = (markdown) => {
   })
   return [...blocks.values()].sort((left, right) => left.start - right.start || left.end - right.end)
 }
+
+// Nested marker rows also produce their own `listBlockAt` entries. They are
+// useful to local list converters, but they must not participate in document-
+// wide ordinal matching: `- 1. text` yields one authored top-level block and
+// several canonical nested blocks. Counting those nested blocks shifts every
+// later list's ordinal and makes edits in an unrelated list fail closed.
+const topLevelListBlocksInSourceOrder = (markdown) =>
+  listBlocksInSourceOrder(markdown).filter((block) => block.indent === 0)
 
 const bulletMarkerLines = (markdown) => markdownLines(markdown)
   .map((line) => ({
@@ -147,6 +258,7 @@ export const preserveGeneratedBulletMarkers = (source, markdown) => {
     matches.push(sourceLine)
     sourceByText.set(key, matches)
   }
+  const usedSourceLines = new Set()
 
   const compatibleMarker = (sourceMarker, nextMarker) => {
     const sourceIsOrdered = /^\d/.test(sourceMarker)
@@ -167,9 +279,30 @@ export const preserveGeneratedBulletMarkers = (source, markdown) => {
     const key = `${nextIndent}\u0000${listText(nextLine)}`
     const candidates = sourceByText.get(key)
     const sourceLine = candidates?.shift()
+    if (sourceLine) usedSourceLines.add(sourceLine)
     let preserveMarker = sourceLine
       ? compatibleMarker(sourceLine.match[2], nextMarker)
       : null
+
+    // Editing the text of an existing item changes the text key above.  In a
+    // generated scratch document that used to make the first changed `-` row
+    // fall back to Crepe's serializer default `*`, even though the list shape
+    // itself had not changed.  When the number of marker rows is stable, row
+    // ordinal + indent + list kind is the structural identity of that item.
+    // Use it only as a fallback after exact-text matching so reorders still
+    // follow their text anchor, and never carry a marker across a list-type
+    // conversion.
+    if (!preserveMarker && sourceLines.length === nextLines.length) {
+      const ordinalSource = sourceLines[index]
+      if (
+        ordinalSource &&
+        !usedSourceLines.has(ordinalSource) &&
+        ordinalSource.match[1].length === nextIndent
+      ) {
+        preserveMarker = compatibleMarker(ordinalSource.match[2], nextMarker)
+        if (preserveMarker) usedSourceLines.add(ordinalSource)
+      }
+    }
 
     const uninterruptedFromPrevious = previous &&
       previous.indent === nextIndent &&
@@ -336,7 +469,7 @@ export const preserveTypedBulletInputRule = ({
     // Adding the normal two-newline block separator here creates phantom blank
     // lines before the very first list item.
     const separator = sourceWithoutTrailingLines ? '\n\n' : ''
-    return `${sourceWithoutTrailingLines}${separator}${replacement}${normalizedCanonical.slice(canonicalList.end)}`
+    return `${sourceWithoutTrailingLines}${separator}${canonicalTextToSource(replacement)}${canonicalTextToSource(normalizedCanonical.slice(canonicalList.end))}`
   }
   return null
 }
@@ -615,28 +748,37 @@ const listTextIsSubsequence = (candidate, target) => {
 // item through the item before the next authored top-level list. This keeps
 // compactness and marker style local even when Crepe has merged adjacent bullet
 // lists into one canonical tree.
-const nextTopLevelListText = (markdown, block) => {
+const nextTopLevelListFences = (markdown, block) => {
   const lines = markdownLines(markdown)
   const after = lines.findIndex((line) => line.start >= block.end)
-  if (after < 0) return null
+  if (after < 0) return []
   for (let index = after; index < lines.length; index += 1) {
     const row = listMarkerRow(lines[index])
-    if (row && row.indent.length === block.indent) return comparableListLine(row.text)
+    if (row && row.indent.length === block.indent) {
+      const nextBlock = listBlockAt(markdown, row.start, { splitBulletMarkers: true })
+      if (!nextBlock) return [comparableListLine(row.text)].filter(Boolean)
+      return listMarkerRows(markdown, nextBlock)
+        .filter((candidate) => candidate.indent.length === block.indent)
+        .map((candidate) => comparableListLine(candidate.text))
+        .filter(Boolean)
+    }
     // Keep a following paragraph as a text fence too. It may itself have been
     // converted into a list in `next`; without this fence, that newly-listified
     // paragraph would be incorrectly absorbed into the preceding source list.
     if (lines[index].text.trim() && !/^\s/.test(lines[index].text) && !row) {
-      return comparableListLine(lines[index].text)
+      return [comparableListLine(lines[index].text)].filter(Boolean)
     }
   }
-  return null
+  return []
 }
 
 const canonicalListSegmentForSource = ({ source, sourceList, canonical, offset }) => {
   const sourceRows = listMarkerRows(source, sourceList)
-  const first = sourceRows[0] ? comparableListLine(sourceRows[0].text) : ''
-  if (!first) return null
-  const boundary = nextTopLevelListText(source, sourceList)
+  const anchors = sourceRows
+    .map((row, sourceIndex) => ({ text: comparableListLine(row.text), sourceIndex }))
+    .filter((anchor) => anchor.text)
+  if (!anchors.length) return null
+  const boundaries = nextTopLevelListFences(source, sourceList)
   // Do not constrain this lookup to `listBlockAt(canonical, changeOffset)`.
   // A just-added sibling can lie past that block's stale end boundary when a
   // deferred Crepe update includes the Enter transaction and its text together.
@@ -644,7 +786,9 @@ const canonicalListSegmentForSource = ({ source, sourceList, canonical, offset }
   const lines = markdownLines(canonical)
   const candidates = lines
     .map((line, index) => ({ line, index, comparable: comparableListLine(line.text) }))
-    .filter(({ comparable }) => comparable === first)
+    .flatMap((candidate) => anchors
+      .filter((anchor) => anchor.text === candidate.comparable)
+      .map((anchor) => ({ ...candidate, sourceIndex: anchor.sourceIndex })))
   if (!candidates.length) return null
   const candidate = candidates.reduce((best, current) => {
     const distance = Number.isFinite(offset)
@@ -653,12 +797,27 @@ const canonicalListSegmentForSource = ({ source, sourceList, canonical, offset }
     return !best || distance < best.distance ? { ...current, distance } : best
   }, null)
   let last = candidate.index
+  let boundaryFound = !boundaries.length
   for (let index = candidate.index + 1; index < lines.length; index += 1) {
     const row = listMarkerRow(lines[index])
-    if (row && row.indent.length === sourceList.indent && boundary && comparableListLine(row.text) === boundary) break
-    if (lines[index].text.trim() && !row && !/^\s/.test(lines[index].text)) break
+    if (
+      row &&
+      row.indent.length === sourceList.indent &&
+      boundaries.includes(comparableListLine(row.text))
+    ) {
+      boundaryFound = true
+      break
+    }
+    if (/^\s*<br\s*\/?>\s*$/i.test(lines[index].text)) {
+      continue
+    }
+    if (lines[index].text.trim() && !row && !/^\s/.test(lines[index].text)) {
+      if (boundaries.includes(comparableListLine(lines[index].text))) boundaryFound = true
+      break
+    }
     if (lines[index].text.trim()) last = index
   }
+  if (!boundaryFound) return null
   return {
     start: candidate.line.start,
     end: lines[last].end,
@@ -677,6 +836,121 @@ const authoredTopLevelListBlocks = (markdown) => {
   return [...blocks.values()].sort((left, right) => left.start - right.start)
 }
 
+const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultiple }) => {
+  const rows = (markdown) => markdownLines(markdown)
+    .map((line) => ({ ...line, marker: listMarkerRow(line) }))
+    .filter((line) => line.marker && line.marker.indent.length === 0)
+  const sourceRows = rows(source)
+  const previousRows = rows(previous)
+  const nextRows = rows(next)
+  if (!sourceRows.length || sourceRows.length !== previousRows.length || previousRows.length !== nextRows.length) {
+    return null
+  }
+  for (let index = 0; index < previousRows.length; index += 1) {
+    const previousRow = previousRows[index]
+    const nextRow = nextRows[index]
+    if (
+      previousRow.marker.token !== nextRow.marker.token ||
+      previousRow.marker.indent !== nextRow.marker.indent ||
+      previousRow.marker.task !== nextRow.marker.task
+    ) return null
+    if (index < previousRows.length - 1) {
+      const previousGap = previous.slice(previousRow.end, previousRows[index + 1].start)
+      const nextGap = next.slice(nextRow.end, nextRows[index + 1].start)
+      if (previousGap !== nextGap) return null
+    }
+  }
+  const replacements = []
+  for (let index = 0; index < sourceRows.length; index += 1) {
+    const sourceRow = sourceRows[index]
+    const previousRow = previousRows[index]
+    const nextRow = nextRows[index]
+    if (comparableListLine(sourceRow.text) !== comparableListLine(previousRow.text)) return null
+    if (previousRow.text === nextRow.text) continue
+    const replacement = formatCanonicalListLikeSource(sourceRow.text, previousRow.text, nextRow.text)
+    if (replacement === sourceRow.text) continue
+    replacements.push({ ...sourceRow, replacement })
+  }
+  if (!replacements.length || (requireMultiple && replacements.length < 2)) return null
+  return {
+    markdown: replacements
+      .sort((left, right) => right.start - left.start)
+      .reduce(
+        (markdown, replacement) =>
+          markdown.slice(0, replacement.start) +
+          adaptCanonicalRegionToSource(replacement.replacement, source, replacement) +
+          markdown.slice(replacement.end),
+        source
+      ),
+    preserved: true,
+    reason: 'batched-list-row-changes'
+  }
+}
+
+// Text typed into an already-created empty item is not a list-structure
+// change after `<br />` normalization. When several independently-authored
+// bullet lists are adjacent, the canonical tree can nevertheless merge them
+// into one marker style. Update only the stable row whose text changed while
+// requiring the complete row/gap skeleton to remain identical; this prevents
+// the broader empty-item helper from formatting neighbouring `+` / `*` lists
+// like the canonical `-` tree.
+export const preserveStableListRowChanges = ({ source, previous, next }) => {
+  const rows = (markdown) => markdownLines(markdown)
+    .map((line) => ({ ...line, marker: listMarkerRow(line) }))
+    .filter((line) => line.marker && line.marker.indent.length === 0)
+  const before = rows(previous)
+  const after = rows(next)
+  const fillsEmptyRow = before.length === after.length && before.some((row, index) =>
+    !comparableListLine(row.text) && Boolean(comparableListLine(after[index]?.text || ''))
+  )
+  if (!fillsEmptyRow) return null
+  return preserveOrdinalBatchedListRows({
+    source,
+    previous,
+    next,
+    requireMultiple: false
+  })
+}
+
+const likelyMultiListDelta = ({ source, previous, next }) => {
+  if (authoredTopLevelListBlocks(source).length < 2) return false
+  if (sourceVisibleIndex(source).text !== sourceVisibleIndex(previous).text) return false
+  const rows = (markdown) => markdownLines(markdown)
+    .map((line) => {
+      const marker = listMarkerRow(line)
+      if (!marker || marker.indent.length !== 0) return null
+      return {
+        signature: `${marker.token}|${marker.task ?? ''}|${comparableListLine(line.text)}`,
+        text: comparableListLine(line.text)
+      }
+    })
+    .filter(Boolean)
+  const beforeRows = rows(previous)
+  const afterRows = rows(next)
+  if (
+    beforeRows.length === afterRows.length &&
+    beforeRows.every((row, index) => row.text === afterRows[index].text)
+  ) return false
+  const before = beforeRows.map((row) => row.signature)
+  const after = afterRows.map((row) => row.signature)
+  let prefix = 0
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1
+  let suffix = 0
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) suffix += 1
+  return Math.max(before.length - prefix - suffix, after.length - prefix - suffix) >= 2
+}
+
+const blockedBatchedListResult = (source) => ({
+  markdown: source,
+  preserved: false,
+  reason: 'unmapped-batched-list-change',
+  blocked: true
+})
+
 // A markdownUpdated callback is sometimes deferred until several ordinary
 // list edits have already happened (for example: add an item to `-`, add one
 // to a following `+` list, then delete an item from a `*` list). The document
@@ -685,7 +959,15 @@ const authoredTopLevelListBlocks = (markdown) => {
 // its stable text fences instead. This remains fail-closed: each source block
 // must align exactly with its previous canonical counterpart; otherwise the
 // caller keeps the authored source untouched.
-export const preserveBatchedListBlockChanges = ({ source, previous, next }) => {
+export const preserveBatchedListBlockChanges = ({
+  source,
+  previous,
+  next,
+  requireMultiple = false
+}) => {
+  const ordinalRows = preserveOrdinalBatchedListRows({ source, previous, next, requireMultiple })
+  if (ordinalRows) return ordinalRows
+  const stickyBlocked = requireMultiple && likelyMultiListDelta({ source, previous, next })
   const replacements = []
   for (const sourceList of authoredTopLevelListBlocks(source)) {
     const sourcePosition = sourceVisiblePositionAtRaw(source, sourceList.start)
@@ -702,11 +984,17 @@ export const preserveBatchedListBlockChanges = ({ source, previous, next }) => {
       canonical: next,
       offset: previousOffset
     })
-    if (!previousList || !nextList) continue
+    if (!previousList || !nextList) {
+      if (requireMultiple) return stickyBlocked ? blockedBatchedListResult(source) : null
+      continue
+    }
 
     const sourceText = comparableListText(source.slice(sourceList.start, sourceList.end))
     const previousText = comparableListText(previous.slice(previousList.start, previousList.end))
-    if (!sourceText || sourceText !== previousText) continue
+    if (!sourceText || sourceText !== previousText) {
+      if (requireMultiple) return stickyBlocked ? blockedBatchedListResult(source) : null
+      continue
+    }
 
     const replacement = formatCanonicalListLikeSource(
       source.slice(sourceList.start, sourceList.end),
@@ -714,9 +1002,22 @@ export const preserveBatchedListBlockChanges = ({ source, previous, next }) => {
       next.slice(nextList.start, nextList.end)
     )
     if (replacement === source.slice(sourceList.start, sourceList.end)) continue
-    replacements.push({ ...sourceList, replacement })
+    replacements.push({
+      ...sourceList,
+      replacement,
+      nextStart: nextList.start,
+      nextEnd: nextList.end
+    })
   }
-  if (!replacements.length) return null
+  if (!replacements.length || (requireMultiple && replacements.length < 2)) {
+    return stickyBlocked ? blockedBatchedListResult(source) : null
+  }
+  const nextRanges = replacements
+    .map(({ nextStart, nextEnd }) => ({ start: nextStart, end: nextEnd }))
+    .sort((left, right) => left.start - right.start)
+  if (nextRanges.some((range, index) => index > 0 && range.start < nextRanges[index - 1].end)) {
+    return stickyBlocked ? blockedBatchedListResult(source) : null
+  }
 
   return {
     markdown: replacements
@@ -981,6 +1282,294 @@ export const preserveEmptyListItemTextChange = ({
       source.slice(sourceList.end),
     preserved: true,
     reason: 'empty-list-item-filled'
+  }
+}
+
+// remark parses `- 1. 甲乙` as a nested ordered list (`1. 甲`, `2. 乙`): the
+// list markers leave the canonical visible stream, while the authored source
+// keeps `1. ` as literal item text — the two visible streams diverge from that
+// line onward. Every localized mapper then fails and any list-internal edit
+// (text change, Enter split that adds an item, item removal) is rolled back to
+// the OLD source or glued onto the wrong row. Fix: align the canonical top-level
+// list block's FLATTENED item-text sequence (every nested marker row, skipping
+// the empty outer `* ` wrappers) against the authored top-level item rows by
+// ordinal, then apply the item-level diff (text edit / insert / delete) back
+// onto the authored rows. The author's numbering is literal text in the source
+// (`- 1. xxx`) but syntax in the canonical, so matching strips a leading
+// `\d+[.)] ` prefix from authored item text before comparing.
+export const preserveDivergedNestedListChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousList = outerTopLevelListBlock(previous, start)
+  if (!previousList) return null
+
+  // Locate the authored counterpart by ordinal: Crepe serializes each authored
+  // top-level row as one `* ` wrapper + nested rows, so block order is stable.
+  const previousBlocks = topLevelListBlocksInSourceOrder(previous)
+  const previousIndex = previousBlocks.findIndex((block) =>
+    block.start === previousList.start && block.end === previousList.end
+  )
+  if (previousIndex < 0) return null
+  const sourceBlocks = topLevelListBlocksInSourceOrder(source)
+  const sourceList = sourceBlocks[previousIndex]
+  if (!sourceList) return null
+
+  const previousItems = flatListItemRows(previous.slice(previousList.start, previousList.end))
+  const sourceItems = sourceListItemRows(source.slice(sourceList.start, sourceList.end))
+  if (!sourceItems.length) return null
+  const authoredCanonicalText = (row) => row.text.replace(/^\d{1,9}[.)]\s+/, '')
+  const numberPrefixLength = (row) => row.text.match(/^\d{1,9}[.)]\s+/)?.[0]?.length || 0
+  const nextList = outerTopLevelListBlock(next, start)
+  if (!nextList) {
+    // Backspace can fully lift the first list row into a plain paragraph. The
+    // next canonical then starts with no list marker, so a marker-based lookup
+    // cannot discover it. Accept only the exact leading-item transform and
+    // require every remaining item to stay unchanged.
+    const nextLine = lineAt(next, start)
+    const liftedText = next.slice(nextLine.start, nextLine.end).replace(/\r$/, '').trim()
+    if (!liftedText || previousItems[0]?.text !== liftedText) return null
+    if (authoredCanonicalText(sourceItems[0] || { text: '' }) !== previousItems[0].text) return null
+    const remainingPrevious = previousItems.slice(1)
+    const remainingSource = sourceItems.slice(1)
+    if (remainingPrevious.length !== remainingSource.length) return null
+    if (remainingPrevious.some((item, index) => authoredCanonicalText(remainingSource[index]) !== item.text)) return null
+    const followingList = topLevelListBlocksInSourceOrder(next)
+      .find((block) => block.start > nextLine.end)
+    if (remainingPrevious.length) {
+      if (!followingList) return null
+      const followingItems = flatListItemRows(next.slice(followingList.start, followingList.end))
+      if (followingItems.length !== remainingPrevious.length) return null
+      if (followingItems.some((item, index) =>
+        item.token !== remainingPrevious[index].token || item.text !== remainingPrevious[index].text
+      )) return null
+    } else if (followingList && followingList.start <= nextLine.end + 2) {
+      return null
+    }
+
+    const eol = lineEndingNear(source, sourceList.start)
+    const sourceBlock = source.slice(sourceList.start, sourceList.end)
+    const remainingRaw = remainingSource.length
+      ? sourceBlock.slice(remainingSource[0].start)
+      : ''
+    const replacement = canonicalTextToSource(liftedText) +
+      (remainingRaw ? eol + eol + remainingRaw : '')
+    const output = source.slice(0, sourceList.start) + replacement + source.slice(sourceList.end)
+    const nextReplacementEnd = remainingPrevious.length ? followingList.end : nextLine.end
+    const nextBaseline = !remainingPrevious.length &&
+      !previous.slice(previousList.end).trim() &&
+      !next.slice(nextLine.end).trim()
+      ? next
+      : previous.slice(0, previousList.start) +
+        next.slice(nextLine.start, nextReplacementEnd) +
+        previous.slice(previousList.end)
+    return {
+      markdown: output,
+      preserved: true,
+      reason: 'diverged-nested-list-change',
+      nextBaseline
+    }
+  }
+  const nextItems = flatListItemRows(next.slice(nextList.start, nextList.end))
+
+  // Align every non-empty previous canonical item with an authored row (loose
+  // match strips the author's literal numbering prefix `1. `). Enter inside an
+  // item splits one authored row into several canonical items, so a row whose
+  // text equals the CONCATENATION of consecutive canonical items also aligns
+  // (each item records its in-row offset). An empty canonical item is a
+  // freshly-Entered row with no authored counterpart yet. Anything unalignable
+  // fails closed.
+  const aligned = []
+  let sourceIndex = 0
+  let itemIndex = 0
+  while (itemIndex < previousItems.length) {
+    const item = previousItems[itemIndex]
+    if (!item.text) {
+      // An empty canonical item corresponds to an authored EMPTY row
+      // (`- 3. `, the Enter step's output) when one is available; otherwise it
+      // is a freshly-Entered row with no authored counterpart yet.
+      let matchedRow = null
+      for (let scan = sourceIndex; scan < sourceItems.length; scan += 1) {
+        if (authoredCanonicalText(sourceItems[scan]) === '') {
+          matchedRow = scan
+          break
+        }
+      }
+      if (matchedRow != null) {
+        aligned.push({
+          row: matchedRow,
+          at: numberPrefixLength(sourceItems[matchedRow]),
+          span: false
+        })
+        sourceIndex = matchedRow + 1
+      } else {
+        aligned.push({ row: null, at: 0, span: false })
+      }
+      itemIndex += 1
+      continue
+    }
+    if (sourceIndex >= sourceItems.length) return null
+    const sourceRow = sourceItems[sourceIndex]
+    const target = authoredCanonicalText(sourceRow)
+    const prefixLength = numberPrefixLength(sourceRow)
+    if (target === item.text) {
+      aligned.push({ row: sourceIndex, at: prefixLength, span: false })
+      sourceIndex += 1
+      itemIndex += 1
+      continue
+    }
+    let concatenated = item.text
+    let span = 1
+    while (span < previousItems.length - itemIndex && concatenated.length < target.length) {
+      const follower = previousItems[itemIndex + span]
+      if (!follower.text) break
+      concatenated += follower.text
+      span += 1
+    }
+    if (concatenated !== target) return null
+    let at = prefixLength
+    for (let k = 0; k < span; k += 1) {
+      const text = previousItems[itemIndex + k].text
+      aligned.push({ row: sourceIndex, at, text, span: true })
+      at += text.length
+    }
+    sourceIndex += 1
+    itemIndex += span
+  }
+
+  // Item-level diff via common prefix/suffix.
+  let prefix = 0
+  const sameItem = (left, right) => left?.token === right?.token && left?.text === right?.text
+  while (prefix < previousItems.length && prefix < nextItems.length &&
+    sameItem(previousItems[prefix], nextItems[prefix])) prefix += 1
+  let suffix = 0
+  while (suffix < previousItems.length - prefix && suffix < nextItems.length - prefix &&
+    sameItem(previousItems[previousItems.length - 1 - suffix], nextItems[nextItems.length - 1 - suffix])) {
+    suffix += 1
+  }
+  const previousChanged = previousItems.length - prefix - suffix
+  const nextChanged = nextItems.length - prefix - suffix
+  if (!previousChanged && !nextChanged) return null
+
+  // Map the diff onto authored rows: prefix rows align 1:1 by ordinal.
+  let output = source
+  const sourceRows = sourceItems
+  let applyOffset = 0
+  let insertionCursor = null
+  const eol = lineEndingNear(source, sourceList.start)
+  const authoredBullet = sourceRows.find((candidate) => /^[-+*]$/.test(candidate.token || ''))?.token || '-'
+  const changedCount = Math.max(previousChanged, nextChanged)
+  for (let i = 0; i < changedCount; i += 1) {
+    const prevIndex = prefix + i
+    const nextIndex = prefix + i
+    const prevItem = prevIndex < previousItems.length - suffix ? previousItems[prevIndex] : null
+    const nextItem = nextIndex < nextItems.length - suffix ? nextItems[nextIndex] : null
+    const alignedItem = prevIndex < aligned.length ? aligned[prevIndex] : null
+    const row = alignedItem && alignedItem.row != null ? sourceRows[alignedItem.row] : null
+    if (prevItem && nextItem && (prevItem.text !== '' || (row != null && alignedItem.row != null))) {
+      insertionCursor = null
+      // Text change inside the same item.
+      if (!row) return null
+      const previousNumber = /^\d{1,9}[.)]$/.test(prevItem.token || '') ? prevItem.token : ''
+      const nextNumber = /^\d{1,9}[.)]$/.test(nextItem.token || '') ? nextItem.token : ''
+      if (!alignedItem.span && previousNumber !== nextNumber) {
+        const sourceNumber = row.text.match(/^(\d{1,9}[.)])\s+/)
+        if (previousNumber && sourceNumber?.[1] !== previousNumber) return null
+        if (!previousNumber && sourceNumber) return null
+        const oldPrefixLength = sourceNumber?.[0]?.length || 0
+        const newPrefix = nextNumber ? `${nextNumber} ` : ''
+        const rawStart = sourceList.start + row.contentStart + applyOffset
+        const rawEnd = rawStart + oldPrefixLength
+        output = output.slice(0, rawStart) + newPrefix + output.slice(rawEnd)
+        applyOffset += newPrefix.length - oldPrefixLength
+      }
+      if (
+        !alignedItem.span &&
+        /^[-+*]$/.test(prevItem.token || '') &&
+        !nextItem.token &&
+        /^[-+*]$/.test(row.token || '')
+      ) {
+        // A final Backspace lifts the outer bullet item into an indented
+        // continuation of the preceding item. Keep the text and replace only
+        // the authored marker prefix with the canonical continuation indent.
+        const rawStart = sourceList.start + row.start + applyOffset
+        const rawEnd = sourceList.start + row.contentStart + applyOffset
+        const continuationIndent = ' '.repeat(Math.max(1, Number(nextItem.indent) || row.indent + 2))
+        output = output.slice(0, rawStart) + continuationIndent + output.slice(rawEnd)
+        applyOffset += continuationIndent.length - (rawEnd - rawStart)
+      }
+      if (prevItem.text !== nextItem.text) {
+        const rowText = row.text
+        // Splitting alignment recorded the canonical text's in-row offset
+        // (after the author's literal numbering `1. `); fall back to a loose
+        // search for 1:1 rows.
+        const at = alignedItem.at != null
+          ? alignedItem.at
+          : rowText.indexOf(prevItem.text, rowText.match(/^\d{1,9}[.)]\s+/)?.[0]?.length || 0)
+        if (at < 0 || at + (prevItem.text || '').length > rowText.length) return null
+        const rawStart = sourceList.start + row.contentStart + at + applyOffset
+        const rawEnd = rawStart + prevItem.text.length
+        output = output.slice(0, rawStart) + nextItem.text + output.slice(rawEnd)
+        applyOffset += nextItem.text.length - prevItem.text.length
+      }
+    } else if ((!prevItem || prevItem.text === '') && nextItem) {
+      // New item: insert an authored row after the previous aligned row.
+      let anchorRow = null
+      for (let back = prevIndex - 1; back >= 0; back -= 1) {
+        const candidate = aligned[back]
+        if (candidate && candidate.row != null) {
+          anchorRow = sourceRows[candidate.row]
+          break
+        }
+      }
+      const insertAt = insertionCursor != null
+        ? insertionCursor
+        : anchorRow
+          ? sourceList.start + anchorRow.breakEnd + applyOffset
+          : sourceList.start + applyOffset
+      const anchorHasEol = Boolean(anchorRow && anchorRow.breakEnd > anchorRow.end)
+      const leading = insertionCursor == null && anchorRow && !anchorHasEol ? eol : ''
+      const prefix = !nextItem.token
+        ? ' '.repeat(Math.max(1, Number(nextItem.indent) || 2))
+        : /^\d/.test(nextItem.token)
+          ? `${authoredBullet} ${nextItem.token} `
+          : `${' '.repeat(Math.max(0, Number(nextItem.indent) || 0))}${authoredBullet} `
+      const inserted = leading + prefix + nextItem.text + eol
+      output = output.slice(0, insertAt) + inserted + output.slice(insertAt)
+      insertionCursor = insertAt + inserted.length
+      applyOffset += inserted.length
+    } else if (prevItem && prevItem.text !== '' && !nextItem) {
+      insertionCursor = null
+      // Item removed: drop its text (span row) or the whole authored row.
+      if (!row) return null
+      if (alignedItem.span) {
+        const rawStart = sourceList.start + row.contentStart + alignedItem.at + applyOffset
+        const rawEnd = rawStart + prevItem.text.length
+        output = output.slice(0, rawStart) + output.slice(rawEnd)
+        applyOffset -= rawEnd - rawStart
+      } else {
+        const rawStart = sourceList.start + row.start + applyOffset
+        const rawEnd = sourceList.start + row.breakEnd + applyOffset
+        output = output.slice(0, rawStart) + output.slice(rawEnd)
+        applyOffset -= rawEnd - rawStart
+      }
+    }
+  }
+
+  const nextBaseline = previous.slice(0, previousList.start) +
+    next.slice(nextList.start, nextList.end) +
+    previous.slice(previousList.end)
+  return {
+    markdown: output,
+    preserved: true,
+    reason: output === source
+      ? 'diverged-nested-list-canonical-only'
+      : 'diverged-nested-list-change',
+    nextBaseline
   }
 }
 

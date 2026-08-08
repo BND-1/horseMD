@@ -521,8 +521,13 @@ export default function App() {
     // Save/export is a durability boundary. Unlike a reading-only source-mode
     // toggle, it must serialize the live ProseMirror doc even when a custom
     // node view has not yet delivered its edit-intent callback.
-    const flushed = editorApis.current[id]?.flushMarkdown?.({ force: true })
+    const editorApi = editorApis.current[id]
+    const flushed = editorApi?.flushMarkdown?.({ force: true })
     if (typeof flushed === 'string') return flushed
+    // A mounted rich editor returning null means source preservation could not
+    // safely map the visible transaction. Never fall back to stale tab.content
+    // at a durability boundary; callers must abort rather than resurrect data.
+    if (editorApi) return null
     return tabsRef.current.find((tab) => tab.id === id)?.content || ''
   }, [editorApis, sourceTextareas, tabsRef])
 

@@ -25,7 +25,6 @@ const expected = [
   '   1. nested-rebuilt',
   '- final-one',
   '- final-two',
-  '',
   ''
 ].join('\n')
 

@@ -20,7 +20,10 @@ const root = `/tmp/horsemd-rich-source-continuous-${process.pid}`
 const file = join(root, 'doc.md')
 const port = Number(process.env.CDP_PORT || 9850)
 
-const expected = ['# 测试文本', '', '这shi', '', '1. 第一项', '2. 第二项', '   1. 嵌套项', '', ''].join('\n')
+// A brand-new rich-authored document has no pre-existing terminal convention;
+// generatedScratchMarkdown deliberately emits one final newline, never a
+// serializer-created phantom blank line.
+const expected = ['# 测试文本', '', '这shi', '', '1. 第一项', '2. 第二项', '   1. 嵌套项', ''].join('\n')
 
 async function waitFor(check, message, attempts = 80) {
   for (let i = 0; i < attempts; i += 1) {

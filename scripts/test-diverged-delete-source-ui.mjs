@@ -58,7 +58,7 @@ const selectRichRange = (evaluate, start, end) => evaluate(`(() => {
   return sel.toString()
 })()`)
 
-async function openApp(profile, appPort) {
+async function openApp(profile, appPort, expectedText = '输入设备') {
   const app = await launchBuiltElectron({
     profileDir: join(root, profile),
     port: appPort,
@@ -67,6 +67,13 @@ async function openApp(profile, appPort) {
   await waitFor(
     () => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
     'editor did not open'
+  )
+  await waitFor(
+    () => app.evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      return editor?.textContent.includes(${JSON.stringify(expectedText)}) || false
+    })()`),
+    'document content did not finish rendering'
   )
   await sleepMs(800)
   return app
@@ -119,7 +126,7 @@ async function main() {
 
     // Full reopen: the file must stay byte-identical and render the deletion.
     await stopBuiltElectron(app, { removeProfile: true })
-    app = await openApp('reopen', port + 1)
+    app = await openApp('reopen', port + 1, '第二段保留')
     const rich = await app.evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       return editor?.textContent.includes('输入设备') ? 'STILL-THERE' : 'DELETED'

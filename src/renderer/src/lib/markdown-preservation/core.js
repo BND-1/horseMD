@@ -1,6 +1,7 @@
 import {
   sourceRawFromVisibleIndex
 } from '../../mode-visible-map.js'
+import { LEADING_SPACE_SENTINEL } from '../markdown-leading-space.js'
 
 export const commonChange = (previous, next) => {
   let start = 0
@@ -62,9 +63,216 @@ export const lineEndingNear = (markdown, offset = 0) => {
   return markdown.includes('\r\n') ? '\r\n' : '\n'
 }
 
+// remark-stringify 为保住 round-trip 语义会对部分字符做序列化转义：
+//   - `&#x20;`：行首第一个空格（直接输出会被解析成缩进/列表语义）；
+//   - `\~`：波浪线（防止被解析成 GFM 删除线 `~~…~~`）。
+// ProseMirror 文本节点里存的是解码后的真实字符，这些只是 canonical 的序列化
+// 拼写。所有 canonical 片段写入作者源码前必须还原为作者会打的字面字符，否则
+// 用户的源文件会出现 HTML 实体或多余反斜杠（`       文字` 变成 `&#x20;     文字`、
+// `0~9` 变成 `0\~9`）。
+// 注意：`\\`（反斜杠）刻意不在其中——行尾 `\` 是硬换行语法，反转义会改变语义；
+// 反斜杠形态需要独立的输入法级方案，见 docs/canonical-escape-audit.md。
+const inlineLiteralRanges = (line) => {
+  const ranges = []
+  let index = 0
+  while (index < line.length) {
+    if (line[index] === '`') {
+      let openEnd = index + 1
+      while (line[openEnd] === '`') openEnd += 1
+      const length = openEnd - index
+      let cursor = openEnd
+      while (cursor < line.length) {
+        const candidate = line.indexOf('`', cursor)
+        if (candidate < 0) break
+        let closeEnd = candidate + 1
+        while (line[closeEnd] === '`') closeEnd += 1
+        if (closeEnd - candidate === length) {
+          ranges.push({ start: index, end: closeEnd })
+          index = closeEnd
+          break
+        }
+        cursor = closeEnd
+      }
+      if (index === openEnd - length) index = openEnd
+      continue
+    }
+    if (line.startsWith('<!--', index)) {
+      const close = line.indexOf('-->', index + 4)
+      const end = close < 0 ? line.length : close + 3
+      ranges.push({ start: index, end })
+      index = end
+      continue
+    }
+    if (line[index] === '<') {
+      const tag = line.slice(index).match(/^<(\/)?([A-Za-z][\w:-]*)(?:\s[^<>]*?)?\s*(\/?)>/)
+      if (tag) {
+        const tagEnd = index + tag[0].length
+        let end = tagEnd
+        if (!tag[1] && !tag[3]) {
+          const closePattern = new RegExp(`<\/${tag[2]}\\s*>`, 'ig')
+          closePattern.lastIndex = tagEnd
+          const close = closePattern.exec(line)
+          if (close) end = close.index + close[0].length
+        }
+        ranges.push({ start: index, end })
+        index = end
+        continue
+      }
+    }
+    index += 1
+  }
+  return ranges
+}
+
+const translateInlineCanonicalEscapes = (line) => {
+  const literals = inlineLiteralRanges(line)
+  const hasVisibleTextBefore = (offset) => {
+    let prefix = line.slice(0, offset).replace(/^[ \t]*/, '')
+    // Block syntax is not visible paragraph text. Repeat because quote, list,
+    // and heading prefixes can be nested (`> - `, `> ## `, etc.).
+    for (;;) {
+      const previous = prefix
+      prefix = prefix.replace(/^>[ \t]*/, '')
+      prefix = prefix.replace(/^(?:#{1,6}|[-+*]|\d{1,9}[.)])[ \t]+/, '')
+      prefix = prefix.replace(/^[ \t]*/, '')
+      if (prefix === previous) break
+    }
+    return /\S/.test(prefix)
+  }
+  let output = ''
+  let index = 0
+  while (index < line.length) {
+    const literal = literals.find((range) => range.start === index)
+    if (literal) {
+      output += line.slice(literal.start, literal.end)
+      index = literal.end
+      continue
+    }
+    if (line.startsWith('&#x20;', index)) {
+      // A real leading space cannot be written as plain ASCII Markdown:
+      // 1–3 spaces are parser indentation and 4+ become an indented code
+      // block. Typora solves the same problem by placing an invisible U+200B
+      // before the authored spaces. Keep mid-line/trailing entities as normal
+      // spaces, but use the sentinel when no visible text precedes the entity.
+      output += hasVisibleTextBefore(index) ? ' ' : `${LEADING_SPACE_SENTINEL} `
+      index += 6
+      continue
+    }
+    if (line.startsWith('\\~', index)) {
+      output += '~'
+      index += 2
+      continue
+    }
+    output += line[index]
+    index += 1
+  }
+  return output
+}
+
+const htmlBlockStart = (line) => line.match(
+  /^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)/i
+)?.[1]?.toLowerCase() || null
+
+const genericHtmlBlockStart = (line) => /^ {0,3}<\/?[A-Za-z][\w:-]*(?:\s|\/?>|$)/.test(line)
+
+// Canonical escapes are serializer spelling only in Markdown text. Literal
+// regions are different: `&#x20;` and `\~` inside code/HTML are user data and
+// must stay byte-for-byte. Keep the translator Markdown-context-aware rather
+// than applying global string replacements to the whole document.
+export const canonicalTextToSource = (text) => {
+  const input = String(text || '')
+  const chunks = input.match(/[^\n]*(?:\n|$)/g)?.filter(Boolean) || []
+  let fence = null
+  let htmlTag = null
+  let htmlComment = false
+  let htmlUntilBlank = false
+  return chunks.map((chunk) => {
+    const hasNewline = chunk.endsWith('\n')
+    const line = hasNewline ? chunk.slice(0, -1) : chunk
+    const newline = hasNewline ? '\n' : ''
+    const trimmed = line.trim()
+
+    if (fence) {
+      const close = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/)
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null
+      return line + newline
+    }
+    const open = line.match(/^ {0,3}(`{3,}|~{3,}).*$/)
+    if (open) {
+      fence = { char: open[1][0], length: open[1].length }
+      return line + newline
+    }
+    if (htmlComment) {
+      if (line.includes('-->')) htmlComment = false
+      return line + newline
+    }
+    if (htmlUntilBlank) {
+      if (!trimmed) htmlUntilBlank = false
+      return line + newline
+    }
+    if (line.includes('<!--')) {
+      htmlComment = !line.includes('-->', line.indexOf('<!--') + 4)
+      return line + newline
+    }
+    if (htmlTag) {
+      if (new RegExp(`</${htmlTag}\\s*>`, 'i').test(line)) htmlTag = null
+      return line + newline
+    }
+    const rawTag = htmlBlockStart(line)
+    if (rawTag) {
+      if (!new RegExp(`</${rawTag}\\s*>`, 'i').test(line)) htmlTag = rawTag
+      return line + newline
+    }
+    if (genericHtmlBlockStart(line)) {
+      htmlUntilBlank = true
+      return line + newline
+    }
+    // Do not classify canonical lines as literal code from indentation alone.
+    // Four spaces (or a tab) can be structural indentation for a list
+    // continuation, and remark may still emit `&#x20;` immediately after that
+    // prefix for a real leading space typed by the author. Treating the whole
+    // line as literal leaked the serializer entity back into source. Real code
+    // blocks produced by the rich serializer are fenced and are handled above;
+    // localized edits inside authored literal regions are protected by
+    // `literalSourceRegion` in `adaptCanonicalRegionToSource`.
+    if (/^ {0,3}(?:<\?|<!\[CDATA\[|<![A-Z])/.test(line)) {
+      return line + newline
+    }
+    if (!trimmed) return line + newline
+    return translateInlineCanonicalEscapes(line) + newline
+  }).join('')
+}
+
+const fencedCodeAt = (markdown, offset) => {
+  let fence = null
+  for (const line of markdownLines(String(markdown || ''))) {
+    if (line.start > offset) break
+    if (fence) {
+      const close = line.text.match(/^ {0,3}(`{3,}|~{3,})\s*\r?$/)
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null
+      continue
+    }
+    const open = line.text.match(/^ {0,3}(`{3,}|~{3,}).*\r?$/)
+    if (open) fence = { char: open[1][0], length: open[1].length }
+  }
+  return Boolean(fence)
+}
+
+const literalSourceRegion = (source, region) => {
+  if (fencedCodeAt(source, region.start)) return true
+  const line = lineAt(source, region.start)
+  if (region.end > line.end) return false
+  const start = Math.max(0, region.start - line.start)
+  const end = Math.max(start, region.end - line.start)
+  return inlineLiteralRanges(source.slice(line.start, line.end))
+    .some((range) => start >= range.start && end <= range.end)
+}
+
 export const adaptCanonicalRegionToSource = (replacement, source, region) => {
   const eol = lineEndingNear(source, region.start)
-  let adapted = String(replacement || '').replace(/\r\n?|\n/g, eol)
+  let adapted = (literalSourceRegion(source, region)
+    ? String(replacement || '')
+    : canonicalTextToSource(replacement)).replace(/\r\n?|\n/g, eol)
   const sourceRegion = source.slice(region.start, region.end)
   if (region.start === 0 && source.startsWith('\uFEFF') && !adapted.startsWith('\uFEFF')) {
     adapted = '\uFEFF' + adapted

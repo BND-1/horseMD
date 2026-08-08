@@ -1,5 +1,6 @@
 import { codeMirrorSelectionInfo } from './components/editor-codemirror-selection.js'
 import { decodeNamedCharacterReference } from 'decode-named-character-reference'
+import { LEADING_SPACE_SENTINEL } from './lib/markdown-leading-space.js'
 const SNIPPET_LEN = 24
 
 // --------------------------- shared snippet matching ---------------------------
@@ -9,6 +10,7 @@ const SNIPPET_LEN = 24
 // structural markers (heading/blockquote/list) BEFORE emphasis — otherwise the
 // emphasis `\*` eats a bullet-list `*` first and leaves the trailing space.
 const stripMdForSnippet = (s) => s
+  .replaceAll(LEADING_SPACE_SENTINEL, '')
   .replace(/^\s{0,3}#{1,6}\s*/gm, '')         // heading markers
   .replace(/^\s{0,3}>\s?/gm, '')              // blockquote markers
   .replace(/^\s{0,3}[-*+]\s+/gm, '')          // bullet list markers
@@ -105,6 +107,10 @@ const appendInlineVisible = (out, raw, base = 0, referenceLabels = new Set()) =>
     out.map.push(rawIndex)
   }
   while (i < raw.length) {
+    if (raw[i] === LEADING_SPACE_SENTINEL && raw[i + 1] === ' ') {
+      i += LEADING_SPACE_SENTINEL.length
+      continue
+    }
     // Escaped Markdown punctuation is visible text; only its leading backslash
     // is syntax. Keep `\\~` aligned with the literal `~` rendered by Crepe.
     if (raw[i] === '\\' && i + 1 < raw.length && /[\\`*{}\[\]()#+\-.!_>~|]/.test(raw[i + 1])) {

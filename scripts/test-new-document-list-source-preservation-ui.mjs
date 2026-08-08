@@ -15,9 +15,14 @@ const immediateSourceSwitch = process.env.NEW_DOCUMENT_LIST_IMMEDIATE === '1'
 const asciiBulletText = process.env.NEW_DOCUMENT_LIST_ASCII_BULLET === '1' ? 'bullet-item' : '无序项'
 const deleteAndRecreateList = process.env.NEW_DOCUMENT_LIST_DELETE_RECREATE === '1'
 const continueBulletList = process.env.NEW_DOCUMENT_LIST_BULLET_CONTINUATION === '1'
-const inputDelay = rapid ? 35 : 100
-const settleDelay = rapid ? 40 : 600
-const listSettleDelay = rapid ? 40 : 500
+const editFirstBullet = process.env.NEW_DOCUMENT_LIST_EDIT_FIRST_BULLET === '1'
+// 35 ms is faster than ordinary human typing and can outrun ProseMirror's own
+// input-rule transaction, producing a false test failure in the rich document
+// before source preservation even runs. 55 ms still exercises the deferred
+// callback window while keeping the keyboard sequence physically plausible.
+const inputDelay = rapid ? 55 : 100
+const settleDelay = rapid ? 70 : 600
+const listSettleDelay = rapid ? 70 : 500
 const expected = [
   '# 测试文本',
   '',
@@ -27,7 +32,7 @@ const expected = [
   '2. 第二项',
   '   1. 嵌套项',
   ...(appendBulletAfterNestedList && !deleteAndRecreateList
-    ? [`- ${asciiBulletText}`, ...(continueBulletList ? ['- bullet-continued'] : [])]
+    ? [`- ${asciiBulletText}${editFirstBullet ? 'X' : ''}`, ...(continueBulletList ? ['- bullet-continued'] : [])]
     : []),
   ...(deleteAndRecreateList ? ['1. 重新有序项', '   1. 继续嵌套项'] : []),
   ''
@@ -169,6 +174,25 @@ async function main() {
         await typeTextLikeUser(send, '继续嵌套项', { delayMs: inputDelay })
       }
     }
+    if (editFirstBullet && appendBulletAfterNestedList && !deleteAndRecreateList) {
+      const placed = await evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const paragraph = [...(editor?.querySelectorAll('li p') || [])]
+          .find((node) => node.textContent === ${JSON.stringify(asciiBulletText)})
+        const text = paragraph?.firstChild
+        if (!paragraph || !text) return false
+        const range = document.createRange()
+        range.setStart(text, text.nodeValue.length)
+        range.collapse(true)
+        const selection = getSelection()
+        selection.removeAllRanges()
+        selection.addRange(range)
+        paragraph.focus()
+        return true
+      })()`)
+      assert.equal(placed, true, 'could not revisit the first generated bullet item')
+      await typeTextLikeUser(send, 'X', { delayMs: inputDelay })
+    }
     // A real person can switch modes immediately after typing the first
     // unordered-list text. Do not wait for a deferred markdownUpdated event in
     // this branch: flushMarkdown must serialize the live ProseMirror document.
@@ -194,7 +218,7 @@ async function main() {
       })()`)
       assert.deepEqual(
         bulletShape,
-        deleteAndRecreateList ? [] : [asciiBulletText, ...(continueBulletList ? ['bullet-continued'] : [])],
+        deleteAndRecreateList ? [] : [`${asciiBulletText}${editFirstBullet ? 'X' : ''}`, ...(continueBulletList ? ['bullet-continued'] : [])],
         'rich unordered list after nested ordered list was not created or deleted'
       )
     }
@@ -237,7 +261,7 @@ async function main() {
       'full reopen changed the newly written ordered-then-bullet source'
     )
 
-    console.log(`PASS new-document list source fidelity (${rapid ? 'continuous' : 'settled'}${bodyFromTitleEnter ? ', title-enter' : ''}${appendBulletAfterNestedList ? ', ordered-then-bullet' : ''}${deleteAndRecreateList ? ', delete-recreate-ordered' : ''}${immediateSourceSwitch ? ', immediate-switch' : ''}): H1, body, ordered list, nested list, source switch, save, and reopen`)
+    console.log(`PASS new-document list source fidelity (${rapid ? 'continuous' : 'settled'}${bodyFromTitleEnter ? ', title-enter' : ''}${appendBulletAfterNestedList ? ', ordered-then-bullet' : ''}${editFirstBullet ? ', edit-first-bullet' : ''}${deleteAndRecreateList ? ', delete-recreate-ordered' : ''}${immediateSourceSwitch ? ', immediate-switch' : ''}): H1, body, ordered list, nested list, source switch, save, and reopen`)
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     try { await rm(root, { recursive: true, force: true }) } catch { /* Chromium may release profile files shortly after shutdown */ }

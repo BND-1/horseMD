@@ -201,6 +201,12 @@ export function createEditorApi({
             canonicalMarkdownRef.current,
             canonical
           )
+      // Ambiguous mapping is an explicit failed transaction, not a committed
+      // snapshot. Keep both the authored source and canonical baseline intact,
+      // and leave the pending flag raised so a later callback/flush can retry
+      // the cumulative delta. Returning null prevents source mode or save from
+      // presenting the stale authored bytes as if the visible edit had synced.
+      if (preserved.preserved === false) return null
       lastMarkdownRef.current = preserved.markdown
       canonicalMarkdownRef.current = canonical
       clearPendingRichFlush?.()

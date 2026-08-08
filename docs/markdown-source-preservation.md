@@ -2,6 +2,9 @@
 
 > 状态：当前实现已落地；源码优先 Live Preview 为远期独立方案。更新时间：2026-07-30。
 
+> 本主题的统一问题清单、代码归属、必测矩阵和后续追加模板见
+> [富文本 ↔ 源码保真 Bug 家族总账](./rich-source-fidelity-bug-family.md)。本文件保留架构决策与实现细节，总账作为接手入口。
+
 0.12.34 对“切换后立即输入”“复杂文档中间段落合并”“硬换行/行内图片后的光标偏移”和“新段落以行内代码起笔”进行了一次联合根因排查。具体症状、失败方案、证据和复现步骤见 [0.12.34 编辑器源码保真与模式切换疑难问题报告](./editor-source-switch-regression-0.12.34.md)。
 
 ## 为什么需要这份文档
@@ -101,6 +104,14 @@ canonical 删除后：  前段。\*&#x20;
 1. `generatedScratchMarkdown` 只剥离**裸** `<br />` 行，带列表标记的空项（`- <br />`、`3. <br />`、`  * <br />`）会漏进源码。现在它同样经过 `normalizeEmptyListItems`。
 2. 列表输入规则意图有 30 秒 TTL。用户先打 `1. ` 有序列表、退出后又打 `- ` 无序列表并 Tab 缩进时，过期的 `1.` 意图仍在挂起；Tab 事件（光标在列表内）会触发 `preserveTypedBulletInputRule`，用**意图捕获时的旧快照**重建列表块，把 `1. 测试` 黏到标题行（`## 测试1. 测试`），覆盖掉正确的 `- 测试` 基线，后续 marker 全部丢失（`-` 变 `*`）。现在意图只有在**基线一致**时才会应用：`pendingMarkdownInputIntent.canonical` 必须等于当前已提交的 `canonicalMarkdownRef`，否则视为过期并清除。真实序列（标题/正文/二级标题/有序两项/退出/`- 测试`/空项/Tab 嵌套）已固化为 UI 回归：`npm run test:list-marker-empty-source-ui`。
 
+3. 新建文档在第一次源码编辑前持续使用 generated-scratch 路径。旧版
+`preserveGeneratedBulletMarkers()` 只按“缩进 + 完整项目文字”匹配上一份源码行；回头修改
+无序列表第一项后，该行文字不再相等，又没有前一条同级 bullet 可继承，Crepe 的默认
+`*` 因而泄漏进源码。同一列表会短暂出现 `*` / `-` 混用，保存或后续序列化后可能全部
+变成 `*`。现在先保留精确文字锚点；marker 行总数稳定时，再用“行序号 + 缩进 + 列表
+类型”作为结构身份回退。该回退不会跨越有序/无序转换，也不会覆盖显式输入的 `*` / `+`。
+回归同时覆盖第一项修改、全部项目修改，以及逐字输入 → 立即切源码 → 保存 → 新进程重开。
+
 #### 相邻列表合并与格式漂移
 
 `- 甲\n\n- 乙\n` 按 CommonMark 是同一棵松散列表；Milkdown 重新序列化时可能在松散/紧凑之间漂移，也可能在真实编辑后把两棵相邻列表合并。`listStructure` 现在把「列表项之间的空行」纳入结构特征：仅空行位置变化的 canonical 差异（可见内容不变）走 `formatting-only-drift` 保留作者源码；伴随文字变化的合并才走列表保真分支，产出紧凑且保留作者 marker（`-`/`1.`）的结果。真实回归见 `npm run test:source-fidelity-probes`（35 组异构探针）与 `npm run test:list-conversion-ui`。
@@ -108,6 +119,19 @@ canonical 删除后：  前段。\*&#x20;
 #### 尾部空行钳制
 
 Milkdown 会在最后一块后追加序列化空行（`块\n\n`）或骨架空段落（`<br />`），二者都会让源码尾部多出幻影空行。两条修复：已有文档在 `preserveRichMarkdownSource` 出口统一执行 `capOutputTrailingNewlines()`——输出尾部换行数绝不超出源文件既有的尾部换行数（作者原有的尾部空行可被追加段落合法使用为分隔符，因此只钳制上限、不强求相等）；新建文档在 `generatedScratchMarkdown` 统一收敛为单个 `\n`。这同时修掉了新文档“立即切源码多一个空行”的旧问题。真实回归：`npm run test:paragraph-source-ui`、`npm run test:new-document-list-source-ui`、`npm run test:new-source-fidelity-ui`。
+
+#### `&#x20;`、纯空格中间态与零宽哨兵（0.13.21–0.13.22）
+
+不能用 canonical 行首的四空格或 Tab 直接判断“这是代码，整行不反转义”。列表续行、
+嵌套列表和其他嵌套块同样使用结构缩进，而作者在该位置输入的第一个真实空格仍可能被
+serializer 写成 `&#x20;`。旧判断让顶层段落测试全绿，却在真实嵌套文档里重新泄漏实体。
+现在完整代码块只通过 fence 状态保护，行内 code/HTML 按 token 范围保护，局部已有源码
+的字面区域由 `adaptCanonicalRegionToSource()` 判断；结构缩进行仍执行 canonical escape
+翻译。但行首实体也不能直接变成 ASCII spaces：四空格会重新解析成代码块。0.13.22 按
+Typora 实测写入不可见 `U+200B` 再跟作者空格；remark parse 时剥离哨兵，visible/caret map
+忽略哨兵。连续按空格产生的 whitespace-only canonical snapshots 只推进 baseline，不写
+源码，首个可见字符才一次性追加段落。完整时序和 CGEvent 证据见
+`leading-space-mode-switch-regression.md`。
 
 当原始源码与上一份 canonical 基线逐字完全一致时，不存在需要保留的非 canonical 写法。完成空段落占位、列表和表格等专用分支后，可直接采用下一份 canonical 结果（同时规范化表格空单元格）。若全文不一致，但变更位于最后一个独立单行块，且该块在原始源码与 canonical 中逐字相同，则只替换这一行，保留之前的紧凑单换行、额外空行和其他原始写法。这两个确定性路径共同保护“新段落首个内容是行内代码”的时序：左反引号会先形成仅含 `\`` 的临时段落，它没有稳定可见字符；若继续走 visible offset，首个代码字符可能被错误映射到上一段行尾并吞掉段落分隔符，随后令模式切换光标整体偏移一行。
 
@@ -219,7 +243,7 @@ npm run test:rich-list-source-ui
 # 真实 Electron：八次“富文本逐字编辑 → 立即保存 → 源码往返”并完整重开；正文不得回退，图片链接各一份
 npm run test:issues-105-106-ui
 
-# 真实 Electron：默认 H1 + 正文的新文档，逐字创建 1. 有序列表和 Tab 嵌套项；未保存连续切源码
+# 真实 Electron：默认 H1 + 正文的新文档，逐字创建有序/无序/嵌套列表；回访修改第一条 `-` 项后立即切源码、保存并重开
 npm run test:new-document-list-source-ui
 
 # 真实 Electron：普通单换行视觉显示、显式硬换行和源码/磁盘字节保真

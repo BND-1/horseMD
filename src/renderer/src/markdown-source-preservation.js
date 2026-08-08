@@ -4,6 +4,7 @@ import {
 } from './mode-visible-map.js'
 import {
   adaptCanonicalRegionToSource,
+  canonicalTextToSource,
   commonChange,
   rawInsertionAtCanonicalLineEnd,
   rawOffsetAtVisible
@@ -15,8 +16,10 @@ import {
   compactGeneratedListSpacing,
   normalizeEmptyListItems,
   preserveBatchedListBlockChanges,
+  preserveDivergedNestedListChange,
   preserveEmptyListItemTextChange,
   preserveListBlockChange,
+  preserveStableListRowChanges,
   preserveTypedBulletInputRule,
   repairMergedListItems
 } from './lib/markdown-preservation/lists.js'
@@ -32,6 +35,7 @@ import {
 import {
   hasStructuralPrefixChange,
   preserveDivergedBlockTextChange,
+  preserveDivergedVisibleDelete,
   preserveChangedLineRegion,
   preserveLocallyAlignedTextChange
 } from './lib/markdown-preservation/regions.js'
@@ -58,9 +62,11 @@ export const generatedScratchMarkdown = (canonical) => {
   // an extra blank line (or the skeleton's empty-paragraph `<br />`). Neither
   // is authored content, so the generated source ends with exactly one final
   // newline — never a phantom trailing blank line.
-  return compactGeneratedListSpacing(
-    withoutStandaloneEmptyBlockLines(
-      normalizeEmptyListItems(normalizeEmptyTableCells(canonical))
+  return canonicalTextToSource(
+    compactGeneratedListSpacing(
+      withoutStandaloneEmptyBlockLines(
+        normalizeEmptyListItems(normalizeEmptyTableCells(canonical))
+      )
     )
   ).replace(/\r?\n+$/, '\n')
 }
@@ -89,6 +95,62 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   return result
 }
 
+const preserveAllDivergedListChanges = ({ source, previous, next }) => {
+  let currentSource = source
+  let currentPrevious = previous
+  let applied = false
+  const limit = Math.max(2, String(previous || '').split('\n').length)
+  for (let attempt = 0; attempt < limit && currentPrevious !== next; attempt += 1) {
+    const change = commonChange(currentPrevious, next)
+    const result = preserveDivergedNestedListChange({
+      source: currentSource,
+      previous: currentPrevious,
+      next,
+      ...change
+    })
+    if (!result?.nextBaseline || result.nextBaseline === currentPrevious) {
+      // A list transaction may be followed only by Crepe changing the number
+      // of terminal serializer newlines. The structural delta was already
+      // consumed above; terminal canonical padding has no authored-source
+      // ownership and must not turn a successful Enter split into a blocked
+      // transaction. Keep this exception byte-strict apart from trailing EOLs
+      // so heading/list/task changes can never pass on visible-text equality.
+      const withoutTrailingBreaks = (value) => String(value || '').replace(/(?:\r?\n)+$/, '')
+      if (
+        applied &&
+        withoutTrailingBreaks(currentPrevious) === withoutTrailingBreaks(next)
+      ) {
+        currentPrevious = next
+        continue
+      }
+      if (!applied) return null
+      return {
+        markdown: source,
+        preserved: false,
+        reason: 'unmapped-diverged-list-batch',
+        blocked: true
+      }
+    }
+    currentSource = result.markdown
+    currentPrevious = result.nextBaseline
+    applied = true
+  }
+  if (!applied) return null
+  if (currentPrevious !== next) {
+    return {
+      markdown: source,
+      preserved: false,
+      reason: 'unmapped-diverged-list-batch',
+      blocked: true
+    }
+  }
+  return {
+    markdown: currentSource,
+    preserved: true,
+    reason: 'diverged-nested-list-change'
+  }
+}
+
 function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextCanonical) {
   // Empty list items have a Crepe-only `<br />` placeholder. Normalize it on
   // both sides of the delta before source mapping so a normal rich-text flow
@@ -100,12 +162,23 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   if (!previous) {
     if (!sourceMarkdown) {
       return {
-        markdown: normalizeEmptyTableCells(compactGeneratedListSpacing(withoutStandaloneEmptyBlockLines(next))),
+        markdown: canonicalTextToSource(
+          normalizeEmptyTableCells(compactGeneratedListSpacing(withoutStandaloneEmptyBlockLines(next)))
+        ),
         preserved: true,
         reason: 'new-document'
       }
     }
     return { markdown: sourceMarkdown, preserved: false, reason: 'missing-baseline' }
+  }
+  // Full-document deletion in the rich editor: the canonical became empty.
+  // This is unambiguous — everything the user saw was removed — so no
+  // localized mapping is needed. Without this branch a diverged source
+  // (authored `-` vs canonical `*`, mid-line `* `, HTML entities, ...) fails
+  // every mapping closed and resurrects the old content in source mode, in
+  // saves, and after a reopen. An emptied document must serialize as empty.
+  if (!next) {
+    return { markdown: '', preserved: true, reason: 'document-emptied' }
   }
 
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
@@ -153,6 +226,24 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (middleEmptyPreserved) return middleEmptyPreserved
+  // A deferred callback can fill an empty item in one list while also changing
+  // another independently-authored list. The single empty-item helper below
+  // sees only the first list and can merge neighbouring `-`, `+`, and `*`
+  // blocks into one canonical style. Reconcile proven multi-list batches before
+  // any one-list shortcut is allowed to return.
+  const earlyMultiListPreserved = preserveBatchedListBlockChanges({
+    source: sourceMarkdown,
+    previous,
+    next,
+    requireMultiple: true
+  })
+  if (earlyMultiListPreserved) return earlyMultiListPreserved
+  const stableListRowsPreserved = preserveStableListRowChanges({
+    source: sourceMarkdown,
+    previous,
+    next
+  })
+  if (stableListRowsPreserved) return stableListRowsPreserved
   const emptyListItemTextPreserved = preserveEmptyListItemTextChange({
     source: sourceMarkdown,
     previous,
@@ -172,6 +263,24 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   })
   if (tableTextPreserved) return tableTextPreserved
   if (sourceVisible.text !== previousVisible.text) {
+    // remark parses `- 1. 甲乙` as a nested ordered list, so the canonical
+    // visible stream drops the `1. ` item text while the authored source
+    // keeps it — the whole document's visible stream diverges and any
+    // list-internal text edit fails every localized mapper below, falling
+    // back to the OLD source (the user's typing silently vanishes). Anchor
+    // the canonical list tree's visible text in the source and map the
+    // tree-local diff back to the authored raw range. This must run BEFORE
+    // the generic locally-aligned/line-region mappers: on a diverged document
+    // those can map a zero-width insertion onto the wrong visible position and
+    // persist corrupted rows (`- 1.  3. 戊\n 甲乙`) into the authored list.
+    // The strict preconditions here (list tree + unique visible anchor) make
+    // this a no-op for every non-list divergence (e.g. mid-line `* `).
+    const divergedList = preserveAllDivergedListChanges({
+      source: sourceMarkdown,
+      previous,
+      next
+    })
+    if (divergedList) return divergedList
     const locallyAligned = preserveLocallyAlignedTextChange({
       source: sourceMarkdown,
       previous,
@@ -204,6 +313,20 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       nextEnd
     })
     if (divergedBlock) return divergedBlock
+    // A deletion spanning several canonical blocks (whole tail, rows from
+    // several list trees) still fails every mapper above. Anchor the
+    // canonical's pre-deletion visible context in the authored source and
+    // delete the mapped raw range; the deleted raw text is verified to match
+    // the canonical deletion after marker stripping.
+    const visibleDelete = preserveDivergedVisibleDelete({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (visibleDelete) return visibleDelete
     return { markdown: sourceMarkdown, preserved: false, reason: 'visible-stream-mismatch' }
   }
   const tableStructureChanged = hasTableStructureChange({
@@ -245,6 +368,20 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (listStructureChanged) {
+    // A deferred markdownUpdated can batch edits across several independently
+    // authored lists (fill the previous empty item, create an empty item in the
+    // next list, delete from a third). A single-list mapper can validly update
+    // only one of those blocks and return early, silently dropping the others.
+    // Reconcile all changed top-level list blocks first only when at least two
+    // replacements are proven; ordinary one-list edits keep their specialized
+    // path below.
+    const multiListPreserved = preserveBatchedListBlockChanges({
+      source: sourceMarkdown,
+      previous,
+      next,
+      requireMultiple: true
+    })
+    if (multiListPreserved) return multiListPreserved
     const listPreserved = preserveListBlockChange({
       source: sourceMarkdown,
       previous,
@@ -319,7 +456,9 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   if (trailingExactLine) return trailingExactLine
   if (sourceMarkdown === previous) {
     return {
-      markdown: withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(next)),
+      markdown: canonicalTextToSource(
+        withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(next))
+      ),
       preserved: true,
       reason: 'exact-canonical-baseline'
     }

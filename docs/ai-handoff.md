@@ -1,14 +1,21 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-07。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-08。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.13.13`（已安装 `/Applications/HorseMD.app`，2026-08-07）。
+- 当前测试版本号：`package.json` 为 `0.13.22`。0.13.22 根治“连续空格后源码乱码/段落合并/模式切换失真”：whitespace-only canonical 中间态不再写源码；行首可见空格采用 Typora 同款 `U+200B + ASCII spaces`；解析与 visible/caret map 把哨兵当作源码语法。整套问题、实现归属和回归矩阵统一收录于 `rich-source-fidelity-bug-family.md`，空格专项证据见 `leading-space-mode-switch-regression.md`。
 - **0.13.x 系列主线（自 0.12.69 之后）**：
   - **原文保真与空段落硬不变式**：空段落 `<br />` 占位绝不允许进入作者源码（`withoutStandaloneEmptyBlockLines` 在 `preserveRichMarkdownSource` 出口强制剥离）；空段落映射不得要求全文可见流相等、不得被无关空段落否决；连续空段落映射不递归。系列提交 `bb5b9f4` → `cfae66a`。
   - **可见流分叉删除回退**：源码与 canonical 可见流分叉（如行中 `* ` 使 remark 拆成列表项）时，局部对齐与行区域映射都会失败并 fail-closed，富文本删除会被静默撤销。新增 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）：单 canonical 块 + 块文本在源码中唯一出现 + 反转义 canonical 拼写（`\*`→`*`、`&#x20;`→空格）后替换。提交 `abb6d09`。
+  - **整文档清空不再复活（0.13.14）**：富文本删除全部内容（canonical 为空）时，`preserveRichMarkdownSourceCore` 新增 `document-emptied` 分支直接清空源码，杜绝分歧源码 fail-closed 复活旧内容。详见 `full-doc-delete-caret-settle-regression.md`。
+  - **模式切换光标守卫（0.13.14）**：settle 重试只重复自己上次写入的选区，选区漂移即用户接管；`followSourceCaret` 不再依赖合成事件标志（键盘/IME 路径同样聚焦跟随）。详见 `full-doc-delete-caret-settle-regression.md`。
+  - **序列化转义反转义（0.13.15–0.13.16）**：remark-stringify 把行首第一个空格序列化为 `&#x20;` 实体、波浪线转义为 `\~`。所有 canonical → 源码翻译点（`adaptCanonicalRegionToSource`、scratch/new-document、列表 direct-join）统一经 `canonicalTextToSource` 还原为作者字面拼写（`&#x20;`→空格、`\~`→`~`）。**全量转义形态清单见 `canonical-escape-audit.md`——新增转义处理前必须先读它**；`\\` 因行尾硬换行语义刻意不动。
+  - **缩进上下文的空格实体回归（0.13.21）**：旧版 `canonicalTextToSource` 把任何四空格或 Tab 开头的 canonical 行都当作 indented code，导致普通顶格测试通过、但列表续行/嵌套块中的 `&#x20;` 仍直接进入源码。现在只依靠 fenced code、inline code、HTML 和 source-aware literal region 判定字面区，结构缩进不再短路反转义；纯函数覆盖四空格、Tab、列表续行，UI 覆盖已有文档、清空重写、真正空文件、保存和完整重开。
+  - **连续空格与模式切换共同根因（0.13.22）**：真实 CGEvent 证明第 3 个 whitespace-only canonical callback 会误走 `structural-line-change`，删除段落边界并污染后续增量。现在纯空格阶段只推进 baseline，首个可见文字才一次提交；不能直接写四个以上 ASCII 空格（会变代码块），故按本机 Typora 实测采用不可见 `U+200B` 哨兵。解析插件剥离、visible map 忽略、caret map 同步处理，保存/重开仍恢复。详见 `leading-space-mode-switch-regression.md`。
+  - **数字点列表与多列表同步（0.13.17–0.13.18）**：`- 1. 甲乙` 被 remark 解析为嵌套有序列表，canonical 与 source 可见流永久分歧，列表内编辑曾 fail-closed 丢失。`preserveDivergedNestedListChange` 现在以 canonical/source 的**顶层列表块**做 ordinal 对齐，再以 `token + text + indent` 项序列执行结构级 diff；覆盖删除数字 marker、Backspace 多级提升、后续含内联加粗列表以及 Enter 拆分。延迟 `markdownUpdated` 同时包含多个 `- / + / *` 列表操作时，`preserveBatchedListBlockChanges(requireMultiple: true)` 会先做多块原子对账，避免单列表处理器提前返回、marker 被统一或编辑丢失。完整根因、事故记录和回归矩阵见 `nested-list-sync-bug-handoff.md`。
+  - **跨块删除兜底（0.13.18）**：分歧文档里**跨多个 canonical 块的纯删除**（拖选删尾部、一次删多个列表树）此前 fail-closed 回退，删除静默消失、保存后重开复活。新增 `preserveDivergedVisibleDelete`（`regions.js`，diverged 分支最后）：删除区间前 24 可见字符唯一锚定 + 删除内容逐行去标记校验。详见 `canonical-escape-audit.md`。
   - **源码/富文本架构探索**：`live-preview-migration-plan.md`（远期「源码即数据模型」）、CodeMirror Live Preview 可行性 spike、step-to-source mapper 原型与真实引擎验证。
   - **代码块体验**：编辑器代码块行号（不透明背景、贴左、全高、右侧分隔竖线）、**PDF 导出代码块带行号**、表格单元格单击直接编辑。提交 `5094e0b`、`7b2e50b`、`9bc9412`、`a45f958`。
   - **原生 HTML 表格自适应**：带 `width` 属性的 HTML 表格恢复作者语义（`100%` 跟随容器、固定像素收缩），`td/th` 允许列收缩，表格内图片按单元格宽度显示，不再横向溢出。提交 `8a98b5f`。
@@ -25,8 +32,7 @@
   - `cfae66a fix(editor): enforce empty-paragraph <br /> invariant at the source boundary`
   - `606bfc6 feat(editor): add source rich split preview`
 - 最近完整验证：
-  - **0.13.8–0.13.13（最近稳定区间，已安装）**：`npm run test:diverged-delete-source-ui`（新增，可见流分叉删除 → 切源码 → 保存 → 重开，磁盘逐字节）、`npm run test:doc-position-restore-ui`（新增，#111 富文本视口 + 重文档光标/滚动跨重启恢复）、`npm run test:markdown-preservation`、`test:source-fidelity-ui`、`test:empty-paragraph-source-ui`、`test:mode-switch-raw-offset-ui`、`test:rich-list-source-ui`、`test:new-document-list-source-ui`、`test:table-ui`（已更新断言：原生 HTML 表格默认贴合正文宽度）、`test:inline-html-block-handle-ui`、`test:issue-80-ui`、`test:issue-91-pdf-ui`、`test:codeblock-scroll-stability-ui`、`test:soft-break-ui`、`test:issue-77-ui`、`test:step-source-mapper`、`test:source-map`、`test:empty-paragraph-caret-ui` 全部通过；`npm run build` 通过。
-  - **注意**：`npm run test:rich-source-chaos-ui` 存在一个**基线即偶发失败**的子测试（鼠标点击坐标时序，单独跑 3/3 通过），与代码改动无关，已核实。
+  - **0.13.22 当前工作区（未提交，已安装 `/Applications/HorseMD.app`）**：上述完整 15 组源码保真矩阵全部通过；空格专项新增“两次 Enter + 八个延迟空格 + 逐字 abc”、双向往返、光标、磁盘和完整重开。最终 macOS CGEvent 复核得到第一次/第二次源码均为 `anchor\n\nU+200B + 8 spaces + abc`，caret 均位于 `c` 后，磁盘逐字节一致；安装包自身再次通过同一专项。
   - 0.12.46–0.12.69 的历史验证（`test:mermaid-paste-ui`、`test:issue-98-ui`、`test:list-conversion-ui`、`test:source-rich-split`、`test:settings-ui`、云同步专项等）仍有效，命令见下文第 7 节。
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
@@ -119,6 +125,11 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 22. [codeblock-fence-investigation.md](./codeblock-fence-investigation.md)：**当前进行中**——用户反馈「插两次代码块保存重开，最后一个代码块吞后面正文」的排查留底：解析机制已确认（` ```正文` 同行走正文会吞后续），但正常插入路径全部复现正常；需要用户提供精确步骤/文件才能定位。改代码前先读它。
 23. [issue-104-long-document-mode-switch.md](./issue-104-long-document-mode-switch.md)：长文档模式切换光标偏移（行内公式 atom）根因。
 24. [macos-real-input-testing.md](./macos-real-input-testing.md)：用 macOS 底层 CGEvent 在前台逐键输入的真实测试方法（疑难编辑问题的补充手段）。
+25. [full-doc-delete-caret-settle-regression.md](./full-doc-delete-caret-settle-regression.md)：富文本「删除全部内容」复活 + 模式切换光标被 settle 重试覆盖 的联合根因报告（0.13.14 修复集）。
+26. [canonical-escape-audit.md](./canonical-escape-audit.md)：remark 序列化转义全清单（`&#x20;`、`\~`、`\*`、`\\`、实体、`<br />`）在各保真路径的处理状态与安全边界；新增转义处理前必须先读。
+27. [leading-space-mode-switch-regression.md](./leading-space-mode-switch-regression.md)：连续空格中间态如何破坏段落边界、为何 0.13.21 的普通空格方案语义不成立、Typora `U+200B` 对照、解析/映射/保存的完整修复与 CGEvent 证据。
+28. [nested-list-sync-bug-handoff.md](./nested-list-sync-bug-handoff.md)：数字点列表（`- 1. xxx`）、Backspace 列表提升、后续列表 ordinal 偏移和延迟多列表批次丢失的完整根因、实现边界与回归矩阵。继续修改源码保真管道前必须先读。
+29. [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md)：富文本 ↔ 源码保真 Bug 家族总账；集中记录产品合同、22 类问题、代码归属、自动化/人工回归、已知边界和后续追加模板。接手任何源码保真问题时先读这篇总索引。
 
 历史文档说明：
 
@@ -223,6 +234,14 @@ android/, ios/           Capacitor 原生壳
 ### 5.2c 可见流分叉、空段落硬不变式与文档位置记忆（0.13.x）
 
 **空段落 `<br />` 硬不变式**：Crepe 的空段落序列化为独立 `<br />` 行，它只是编辑器内部占位、**永远不能进入作者源码**。`preserveRichMarkdownSource` 在所有启发式路径之后强制执行后置条件：统一剥离独立 `<br />` 占位行（保留块引用前缀 `>`），再按源文件尾部换行风格钳制（`capOutputTrailingNewlines`）。行内 `text<br>text` 与表格单元格 `<br>` 是作者内容，不受影响。任何新处理路径都不例外——不要在守卫上打补丁，边界兜底已经在 `markdown-source-preservation.js` 出口。空段落映射只要求变更区间局部对齐（`.some` 至少一个空段落行），**不得要求全文可见流相等**，也不得被无关空段落否决。
+
+**整文档清空（document-emptied）硬不变式**：富文本删除全部内容后 canonical 为空串，这是无歧义事实，**必须清空源码**。此前所有启发式在分歧源码上 fail-closed 返回旧源码（reason `visible-stream-mismatch` / 残留 `"# "`），导致「富文本删了全部 → 切源码内容还在 → 保存写入旧内容 → 重开内容复活」。`preserveRichMarkdownSourceCore` 顶部 `if (!next) return { markdown: '', reason: 'document-emptied' }` 分支锁定该行为；任何新路径不得对空 canonical 返回旧源码。回归：`npm run test:full-doc-delete-source-ui`（Cmd+A 清空 → 切源码为空 → 保存磁盘为空 → 重开为空）+ 纯函数用例。
+
+**模式切换 settle 重试光标守卫**：`useSourceModeSwitch` 的布局效应在切换后最长 ~3s 内重复 `apply()` 直到布局稳定，源码分支每次都会重放 `restoreSourceCaret`。重试**只能重复自己上次写入的状态**：首次恢复后若 textarea 实时选区 ≠ `__horsemdSourceSelectionBaseline`，立即停手（不依赖 React 合成事件标志——键盘/IME/辅助输入可能漏置位）。同时 `followSourceCaret = hasSourceCaretIntent && !sourceViewportMoved`（选区相对基线移动且视口未滚 = 编辑意图，回程聚焦跟随；不再要求 `sourceSelectionUser`）。回归：`npm run test:mode-switch-caret-settle-ui`（无事件程序化移动光标 → 等 2.6s 不被覆盖 → 往返映射正确）。
+
+**数字点列表嵌套解析分歧（0.13.17–0.13.18）**：`- 1. 甲乙` 会被 remark 解析为**嵌套有序列表**，canonical 的 `1. ` 是结构 marker，源码里的 `1. ` 却是作者正文，两条可见流从该行起永久分歧。当前 `preserveDivergedNestedListChange` 不再依赖全文可见偏移，而是：只用 `indent === 0` 的顶层列表块做 document ordinal 对齐；把 canonical 列表树投影成 `token + text + indent` 项序列；把源码投影成带 raw offset 的 marker/续行序列；最后执行项级 diff。该路径覆盖数字 marker 删除、无 marker 续行、外层 bullet 提升、Enter 拆项、空项填字、后续含 `**加粗**` 的普通列表。一个延迟 `markdownUpdated` 同时含多个列表操作时，先用 `preserveBatchedListBlockChanges(requireMultiple: true)` 原子对账至少两个顶层块，禁止单列表处理器只提交批次的一部分。完整清单与安全边界见 `nested-list-sync-bug-handoff.md` 和 `canonical-escape-audit.md`；回归至少运行 `test:nested-number-list-source-ui`、`test:diverged-list-structure-ui` 与 `test:rich-source-chaos-ui`。
+
+**跨块纯删除兜底（0.13.18）**：分歧文档里**跨多个 canonical 块的纯删除**（拖选删除文档尾部、一次删除多个列表树）会越过单块映射（nested-list、diverged-block）直接 fail-closed——删除静默消失、tab 不脏、保存写旧内容、重开复活。`preserveDivergedVisibleDelete`（`regions.js`，diverged 分支**最后**、fail-closed 之前）：canonical 删除区间**前 24 个可见字符**在 source 可见流中唯一锚定（删除起点 = 锚点后；终点 = 区间后锚点或可见流末尾），并要求**被删 raw 文本逐行去列表标记后的可见文本 == canonical 删除区间可见文本**（不一致 fail-closed）。仅纯删除（replacement 无可见文本）；替换/插入不适用。回归：纯函数 1 例（真实 canonical）+ `npm run test:diverged-partial-delete-ui`（反馈.md 形态整段删除 → 切源码 → 保存 → 重开不复活）。
 
 **可见流分叉（visible-stream divergence）**：源码与 canonical 对同一批字节的块解析不同（典型：行中 `* ` 被 remark 拆成列表项，而作者把 `* ` 当普通文字，canonical 序列化时转义为 `\*`）时，两条可见流从分叉点永久不同。此时 `preserveLocallyAlignedTextChange`（上下文可见字符不一致）与 `preserveChangedLineRegion`（全文可见行不一致）都会失败。**fail-closed 返回原源码 = 富文本删除被静默撤销、保存后复活**——这是用户反复遇到「富文本删了内容切源码还在」的根因族。兜底 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）满足以下全部条件才替换：
 1. 变更限定在**单个 canonical 块**内（空行分界，跨块/整块删除放弃）；
@@ -434,6 +453,11 @@ npm run test:clipboard-ipc-ui
 npm run test:diverged-delete-source-ui   # 可见流分叉删除回退（0.13.9）
 npm run test:doc-position-restore-ui     # 文档位置记忆 #111（0.13.13）
 npm run test:step-source-mapper          # 逐键/Enter/退格重建源码（0.13.x 原型）
+npm run test:full-doc-delete-source-ui   # 整文档清空不再复活（0.13.14，新增）
+npm run test:mode-switch-caret-settle-ui # 模式切换光标不被重试覆盖（0.13.14，新增）
+npm run test:leading-space-entity-ui     # 行首空格不再变 &#x20; 实体（0.13.14，新增）
+npm run test:nested-number-list-source-ui # `- 1. …` 行内编辑不丢失（0.13.17，新增）
+npm run test:diverged-partial-delete-ui   # 分歧文档整段删除不复活（0.13.18，新增）
 ```
 
 `test:math-ui`、`test:pdf-ui` 等部分脚本连接已有 CDP session。单独跑时先按 fixture 启动，或参考 `scripts/run-ui-regression.mjs`。
@@ -555,7 +579,11 @@ npm run guide:capture
 
 ## 14. 最近一次稳定基线
 
-截至 **2026-08-07，`0.13.13`**（已安装 `/Applications/HorseMD.app`，旧包备份为 `HorseMD.app.backup-*`）。0.13.x 在 0.12.50 基线之上新增/更新的必测项：
+截至 **2026-08-08，已构建并安装验证 `0.13.22`**（`/Applications/HorseMD.app`，
+运行进程确认来自该路径）。除 generated-scratch 首个 `-` 列表项 marker 保真外，
+本轮还覆盖连续空格中间态、`&#x20;`、模式切换和保存重开的共同回归；完整现状见
+`rich-source-fidelity-bug-family.md` 与 `leading-space-mode-switch-regression.md`。
+0.13.x 在 0.12.50 基线之上新增/更新的必测项：
 
 ```bash
 npm run build
@@ -568,6 +596,7 @@ npm run test:ui-regression
 node scripts/test-pdf-document.mjs
 npm run test:pdf-latex-ui
 npm run test:markdown-preservation
+npm run test:new-document-list-source-ui
 npm run test:issue-77-ui
 npm run test:paragraph-source-ui
 npm run test:issue-79-ui

@@ -52,6 +52,36 @@ export const preserveEmptiedParagraph = ({
   // the document must not veto the mapping: they live in untouched source
   // bytes and cannot leak through this localized replacement.
   if (!nextEmptyLines.some((range) => range.end >= start && range.start <= nextEnd)) return null
+  // Backspace can empty a list item and Enter can immediately lift that empty
+  // item into a standalone ProseMirror paragraph. Canonical then replaces the
+  // list row with a bare `<br />`; generic line replacement removes the token
+  // but leaves one extra blank line. Delete the uniquely matching authored row
+  // including its own EOL instead, preserving the existing separator before
+  // the following block byte-for-byte.
+  const previousLine = lineAt(previous, start)
+  const previousLineText = previous.slice(previousLine.start, previousLine.end)
+  const bareEmptyParagraph = nextEmptyLines.some((range) =>
+    range.end >= start &&
+    range.start <= nextEnd &&
+    /^\s*<br\s*\/?>\s*$/i.test(next.slice(range.start, range.end))
+  )
+  if (bareEmptyParagraph && listMarker(previousLineText)) {
+    const previousVisible = sourceVisibleIndex(previousLineText).text.trim()
+    const sourceRows = markdownLines(source).filter((line) =>
+      listMarker(line.text) && sourceVisibleIndex(line.text).text.trim() === previousVisible
+    )
+    if (previousVisible && sourceRows.length === 1) {
+      const [row] = sourceRows
+      const rowEnd = row.end < source.length && source[row.end] === '\n'
+        ? row.end + 1
+        : row.end
+      return {
+        markdown: source.slice(0, row.start) + source.slice(rowEnd),
+        preserved: true,
+        reason: 'empty-list-item-removed'
+      }
+    }
+  }
   return preserveChangedLineRegion({
     source,
     previous,
@@ -145,6 +175,26 @@ const trailingEmptyBlock = (markdown) => {
   return {
     start: match.index + prefixLength,
     end: markdown.length
+  }
+}
+
+// While a user holds Space in a new rich paragraph, Crepe serializes a
+// sequence of whitespace-only paragraphs before the first visible character
+// arrives (`  `, `   `, `    `, then `&#x20; ...text`). Those intermediate
+// snapshots are still empty from the authored-source perspective. Treat them
+// like the normal `<br />` placeholder so they cannot enter generic structural
+// line mapping and collapse the paragraph boundary onto the previous line.
+const trailingCanonicalEmptyBlock = (markdown) => {
+  const placeholder = trailingEmptyBlock(markdown)
+  if (placeholder) return placeholder
+  const match = String(markdown || '').match(
+    /(?:^|\n{2})(?:[ \t]*>[ \t]*)*[ \t]+\n*$/
+  )
+  if (!match) return null
+  const prefixLength = match[0].startsWith('\n\n') ? 2 : 0
+  return {
+    start: match.index + prefixLength,
+    end: String(markdown || '').length
   }
 }
 
@@ -314,14 +364,30 @@ export const preserveTrailingEmptyBlock = ({
   nextEnd
 }) => {
   const sourceEmpty = trailingEmptyBlock(source)
-  const previousEmpty = trailingEmptyBlock(previous)
-  const nextEmpty = trailingEmptyBlock(next)
+  const previousEmpty = trailingCanonicalEmptyBlock(previous)
+  const nextEmpty = trailingCanonicalEmptyBlock(next)
 
   if (!sourceEmpty && !previousEmpty && nextEmpty) {
     return {
       markdown: source,
       preserved: true,
       reason: 'trailing-empty-block-created'
+    }
+  }
+
+  if (previousEmpty && nextEmpty) {
+    const previousChanged = withoutStandaloneEmptyBlockLines(
+      previous.slice(start, previousEnd)
+    )
+    const nextChanged = withoutStandaloneEmptyBlockLines(
+      next.slice(start, nextEnd)
+    )
+    if (!previousChanged.trim() && !nextChanged.trim()) {
+      return {
+        markdown: source,
+        preserved: true,
+        reason: 'trailing-empty-block-whitespace'
+      }
     }
   }
 
