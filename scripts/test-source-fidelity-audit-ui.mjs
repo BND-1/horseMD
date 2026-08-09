@@ -150,6 +150,7 @@ async function main() {
     assert.equal(await toggleSource(evaluate), true)
     assert.equal(await waitFor(() => visibleSource(evaluate), 'source mode did not open'), original)
     assert.equal(await toggleSource(evaluate), true)
+    await evaluate(`window.__hmPreserveLog = []`)
 
     let expected = original
     for (const needle of edits) {
@@ -164,11 +165,15 @@ async function main() {
       expected = expected.replace(needle, needle + inserted)
 
       assert.equal(await toggleSource(evaluate), true, `could not inspect source after ${needle}`)
-      assert.equal(
-        await waitFor(() => visibleSource(evaluate), `source did not open after ${needle}`),
-        expected,
-        `editing ${needle} changed bytes outside the selected rich-text position`
-      )
+      const source = await waitFor(() => visibleSource(evaluate), `source did not open after ${needle}`)
+      if (source !== expected) {
+        console.error('source-fidelity preservation log:', JSON.stringify(
+          await evaluate(`window.__hmPreserveLog || []`),
+          null,
+          2
+        ))
+      }
+      assert.equal(source, expected, `editing ${needle} changed bytes outside the selected rich-text position`)
       assert.equal(await toggleSource(evaluate), true, `could not return to rich mode after ${needle}`)
     }
 

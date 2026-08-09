@@ -719,10 +719,43 @@ const formatCanonicalListLikeSource = (sourceList, previousList, nextList) => {
   }).join('\n')
 }
 
-const comparableListLine = (line) => line
-  .replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '')
-  .trim()
-  .replace(/^<br\s*\/?>$/i, '')
+const markdownEscapePunctuation = /[\\`*{}\[\]()#+\-.!_>~|]/
+
+// remark-stringify escapes Markdown-looking text inside a list item so it is
+// not reparsed as a nested list or another block (`- \- text`, `3. 2\. text`,
+// `4. 2\) text`). Build the visible punctuation spelling plus a raw-boundary
+// map. Applying a semantic delta through this map removes only serializer
+// escapes introduced by the current rich-text edit while retaining authored
+// escapes already present in the source row.
+const unescapedPunctuationView = (value) => {
+  const input = String(value || '')
+  let text = ''
+  const boundaries = [0]
+  for (let index = 0; index < input.length;) {
+    if (
+      input[index] === '\\' &&
+      index + 1 < input.length &&
+      markdownEscapePunctuation.test(input[index + 1])
+    ) {
+      text += input[index + 1]
+      index += 2
+      boundaries.push(index)
+      continue
+    }
+    text += input[index]
+    index += 1
+    boundaries.push(index)
+  }
+  return { text, boundaries }
+}
+
+const comparableListLine = (line) => {
+  const content = String(line || '')
+    .replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '')
+    .trim()
+    .replace(/^<br\s*\/?>$/i, '')
+  return unescapedPunctuationView(content).text
+}
 
 const comparableListText = (markdown) => markdown
   .split('\n')
@@ -836,6 +869,25 @@ const authoredTopLevelListBlocks = (markdown) => {
   return [...blocks.values()].sort((left, right) => left.start - right.start)
 }
 
+const applyStableListRowTextDelta = ({ sourceRow, previousRow, nextRow }) => {
+  const sourceContent = sourceRow.text.slice(sourceRow.marker.prefixEnd)
+  const previousContent = previousRow.text.slice(previousRow.marker.prefixEnd)
+  const nextContent = nextRow.text.slice(nextRow.marker.prefixEnd)
+  const sourceView = unescapedPunctuationView(sourceContent)
+  const previousView = unescapedPunctuationView(previousContent)
+  const nextView = unescapedPunctuationView(nextContent)
+  if (sourceView.text !== previousView.text) return null
+
+  const { start, previousEnd, nextEnd } = commonChange(previousView.text, nextView.text)
+  const rawStart = sourceView.boundaries[start]
+  const rawEnd = sourceView.boundaries[previousEnd]
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd)) return null
+  const content = sourceContent.slice(0, rawStart) +
+    nextView.text.slice(start, nextEnd) +
+    sourceContent.slice(rawEnd)
+  return sourceRow.text.slice(0, sourceRow.marker.prefixEnd) + content
+}
+
 const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultiple }) => {
   const rows = (markdown) => markdownLines(markdown)
     .map((line) => ({ ...line, marker: listMarkerRow(line) }))
@@ -867,7 +919,8 @@ const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultipl
     const nextRow = nextRows[index]
     if (comparableListLine(sourceRow.text) !== comparableListLine(previousRow.text)) return null
     if (previousRow.text === nextRow.text) continue
-    const replacement = formatCanonicalListLikeSource(sourceRow.text, previousRow.text, nextRow.text)
+    const replacement = applyStableListRowTextDelta({ sourceRow, previousRow, nextRow })
+    if (replacement == null) return null
     if (replacement === sourceRow.text) continue
     replacements.push({ ...sourceRow, replacement })
   }
@@ -887,23 +940,22 @@ const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultipl
   }
 }
 
-// Text typed into an already-created empty item is not a list-structure
-// change after `<br />` normalization. When several independently-authored
-// bullet lists are adjacent, the canonical tree can nevertheless merge them
-// into one marker style. Update only the stable row whose text changed while
-// requiring the complete row/gap skeleton to remain identical; this prevents
-// the broader empty-item helper from formatting neighbouring `+` / `*` lists
-// like the canonical `-` tree.
+// Text replacement inside an existing item is not a list-structure change.
+// When several independently-authored lists coexist, canonical Markdown can
+// nevertheless use different markers and loose spacing. Update only stable
+// rows whose text changed while requiring the complete canonical row/gap
+// skeleton to remain identical; this prevents a local edit from formatting
+// untouched neighbouring `-` / `+` / `*` lists like the serializer output.
 export const preserveStableListRowChanges = ({ source, previous, next }) => {
   const rows = (markdown) => markdownLines(markdown)
     .map((line) => ({ ...line, marker: listMarkerRow(line) }))
     .filter((line) => line.marker && line.marker.indent.length === 0)
   const before = rows(previous)
   const after = rows(next)
-  const fillsEmptyRow = before.length === after.length && before.some((row, index) =>
-    !comparableListLine(row.text) && Boolean(comparableListLine(after[index]?.text || ''))
+  const hasStableRowTextChange = before.length === after.length && before.some((row, index) =>
+    row.text !== after[index]?.text
   )
-  if (!fillsEmptyRow) return null
+  if (!hasStableRowTextChange) return null
   return preserveOrdinalBatchedListRows({
     source,
     previous,
@@ -989,8 +1041,17 @@ export const preserveBatchedListBlockChanges = ({
       continue
     }
 
+    const previousCanonicalList = previous.slice(previousList.start, previousList.end)
+    const nextCanonicalList = next.slice(nextList.start, nextList.end)
+    // A non-list edit (heading/body text) can run while authored list spelling
+    // already differs from canonical (`-` vs `*`, compact vs loose, literal
+    // underscores). Such an unchanged list is not part of this transaction.
+    // Reformatting it here both normalizes untouched bytes and returns before
+    // the real non-list delta is applied.
+    if (previousCanonicalList === nextCanonicalList) continue
+
     const sourceText = comparableListText(source.slice(sourceList.start, sourceList.end))
-    const previousText = comparableListText(previous.slice(previousList.start, previousList.end))
+    const previousText = comparableListText(previousCanonicalList)
     if (!sourceText || sourceText !== previousText) {
       if (requireMultiple) return stickyBlocked ? blockedBatchedListResult(source) : null
       continue
@@ -998,8 +1059,8 @@ export const preserveBatchedListBlockChanges = ({
 
     const replacement = formatCanonicalListLikeSource(
       source.slice(sourceList.start, sourceList.end),
-      previous.slice(previousList.start, previousList.end),
-      next.slice(nextList.start, nextList.end)
+      previousCanonicalList,
+      nextCanonicalList
     )
     if (replacement === source.slice(sourceList.start, sourceList.end)) continue
     replacements.push({

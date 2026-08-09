@@ -227,11 +227,47 @@ export default function Editor({
     // precise flag for that gap: it preserves the required immediate flush
     // without serializing a 400K+ document again for a reading-only toggle.
     let richFlushPending = false
+    let pendingRichBlockKey = null
     let richDirtyReconcileTimer = 0
+    const currentRichBlockKey = () => {
+      const selection = viewRef.current?.state.selection
+      const $from = selection?.$from
+      if (!$from?.parent?.isTextblock || $from.depth < 1) return null
+      try {
+        // Use the owning top-level block position, not the textblock's own
+        // position. A Markdown input rule can wrap the same paragraph in a
+        // bullet/ordered list between two keystrokes; its textblock position
+        // then shifts even though the user never moved, which would make a
+        // boundary flush persist the intermediate `* <br />` list skeleton.
+        // The wrapper starts at the former paragraph position, so depth 1 is
+        // stable for that structural transition while still separating a
+        // heading, a later list, and other unrelated top-level blocks.
+        return `top:${$from.before(1)}`
+      } catch {
+        return null
+      }
+    }
     const markUserEdit = (ttl = 8000) => {
+      const blockKey = currentRichBlockKey()
+      // Milkdown batches markdownUpdated for about 200 ms. If the user edits
+      // one block, immediately moves to another, then edits again, a single
+      // callback can contain unrelated heading/list/quote deltas that no
+      // bounded source mapper can safely own. Commit the completed block while
+      // the next block has not mutated yet. Continuous typing in one block
+      // remains batched, so this does not serialize the document per keypress.
+      if (
+        richFlushPending &&
+        pendingRichBlockKey &&
+        blockKey &&
+        blockKey !== pendingRichBlockKey
+      ) {
+        const markdown = apiRef.current?.flushMarkdown?.()
+        if (typeof markdown === 'string') onChange?.(markdown, false)
+      }
       programmaticReplaceRef.current = null
       userEditUntil = Date.now() + ttl
       richFlushPending = true
+      pendingRichBlockKey = blockKey || pendingRichBlockKey
     }
     // Milkdown's listener batches markdownUpdated for 200ms. A user can type
     // and then revert within that window, leaving its final ProseMirror doc
@@ -249,7 +285,10 @@ export default function Editor({
       }, 260)
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
-    const clearRichFlushPending = () => { richFlushPending = false }
+    const clearRichFlushPending = () => {
+      richFlushPending = false
+      pendingRichBlockKey = null
+    }
     const pendingRawMarkdownPasteRef = { current: null }
     let pendingListConversion = null
     let pendingMarkdownInputIntent = null
@@ -309,13 +348,28 @@ export default function Editor({
 
     const handleInlineCodeValueChange = () => {
       try {
-        const canonical = canonicalForSource(crepe.getMarkdown())
+        // Inline-code transactions are plugin-owned and can run before
+        // Crepe's cached getMarkdown() snapshot catches up. Serialize the live
+        // ProseMirror document, matching save/source-switch durability rules.
+        const view = viewRef.current
+        const markdown = view
+          ? crepe.editor.ctx.get(serializerCtx)(view.state.doc)
+          : crepe.getMarkdown()
+        const canonical = canonicalForSource(markdown)
         if (canonical === canonicalMarkdownRef.current) return
         const preserved = preserveRichMarkdownSource(
           lastMarkdownRef.current,
           canonicalMarkdownRef.current,
           canonical
         )
+        // Never confirm a canonical baseline for an edit whose authored source
+        // ownership was not proven. Advancing here used to hide the failed
+        // inline-code transaction until a later save/source switch became
+        // permanently fail-closed.
+        if (preserved.preserved === false) {
+          userEditUntil = Date.now() + 1000
+          return
+        }
         lastMarkdownRef.current = preserved.markdown
         canonicalMarkdownRef.current = canonical
         clearRichFlushPending()

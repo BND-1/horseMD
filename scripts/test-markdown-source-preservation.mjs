@@ -8,6 +8,8 @@ import {
   restoreTypedBulletMarker
 } from '../src/renderer/src/markdown-source-preservation.js'
 import { sourceVisibleIndex } from '../src/renderer/src/mode-visible-map.js'
+import { commonChange } from '../src/renderer/src/lib/markdown-preservation/core.js'
+import { preserveUniquelyAnchoredTextChange } from '../src/renderer/src/lib/markdown-preservation/regions.js'
 
 const source = [
   '# 一级标题',
@@ -81,6 +83,17 @@ assert.equal(
   mismatchAfterEditedLine.markdown,
   mismatchAfterEditedLineSource.replace('审计起点', '审计起点X'),
   'a later visible-stream mismatch must not normalize untouched syntax on the locally edited line'
+)
+
+const headingEditMustNotRewriteUnchangedLists = preserveRichMarkdownSource(
+  'SETEXT_TARGET\n=============\n\n- LIST_CHILD\n\n- [ ] TASK_TARGET\n',
+  '# SETEXT\\_TARGET\n\n* LIST\\_CHILD\n\n* [ ] TASK\\_TARGET\n',
+  '# SETEXT\\_TARGETX\n\n* LIST\\_CHILD\n\n* [ ] TASK\\_TARGET\n'
+)
+assert.equal(
+  headingEditMustNotRewriteUnchangedLists.markdown,
+  'SETEXT_TARGETX\n=============\n\n- LIST_CHILD\n\n- [ ] TASK_TARGET\n',
+  'an unchanged canonical list must not consume or normalize an unrelated heading edit'
 )
 
 // A visible-stream divergence (source keeps a mid-line `* ` as paragraph text
@@ -291,7 +304,7 @@ const listTextEdited = preserveRichMarkdownSource(
   canonical.replace('第一项末尾', '第一项末尾（已修改）')
 )
 assert.equal(listTextEdited.preserved, true)
-assert.equal(listTextEdited.reason, 'localized-change')
+assert.equal(listTextEdited.reason, 'batched-list-row-changes')
 assert.equal(
   listTextEdited.markdown,
   source.replace('第一项末尾', '第一项末尾（已修改）'),
@@ -1670,6 +1683,336 @@ assert.equal(
     ''
   ].join('\n'),
   'the deleted rows must vanish while the authored marker spelling survives'
+)
+
+// Clearing a quote's text first leaves an authored empty quote line (`>`).
+// Pressing Backspace again removes the blockquote node itself. Both source and
+// canonical have the same visible stream, so a visible-text mapper sees a
+// zero-width change; the syntax-only `>` row still has to be removed or save
+// and reopen resurrect the deleted quote.
+const removedEmptyQuote = preserveRichMarkdownSource(
+  'before\n\n>\n\nafter\n',
+  'before\n\n> <br />\n\nafter\n',
+  'before\n\nafter\n'
+)
+assert.equal(
+  removedEmptyQuote.markdown,
+  'before\n\nafter\n',
+  'removing an empty blockquote must remove its syntax-only authored `>` row'
+)
+assert.equal(
+  removedEmptyQuote.reason,
+  'empty-blockquote-removed',
+  'empty blockquote deletion must use the dedicated syntax-only mapping path'
+)
+
+const divergedQuoteSource = [
+  '前文。* **输入设备：** 内容足够长，使分叉点远离后面的引用边界。',
+  '',
+  'before',
+  '',
+  '>',
+  '',
+  'after',
+  ''
+].join('\n')
+const divergedQuotePrevious = divergedQuoteSource
+  .replace('。* ', '。\\* ')
+  .replace('\n>\n', '\n> <br />\n')
+const divergedQuoteNext = divergedQuotePrevious.replace('\n> <br />\n\n', '\n')
+const removedDivergedEmptyQuote = preserveRichMarkdownSource(
+  divergedQuoteSource,
+  divergedQuotePrevious,
+  divergedQuoteNext
+)
+assert.equal(
+  removedDivergedEmptyQuote.markdown,
+  divergedQuoteSource.replace('\nbefore\n\n>\n\nafter\n', '\nbefore\n\nafter\n'),
+  'empty quote removal must use local anchors even when source and canonical diverge elsewhere'
+)
+
+const removedOneOfTwoEmptyQuotes = preserveRichMarkdownSource(
+  '# 标题\n\n>\n\n>\n\n## 后文\n',
+  '# 标题\n\n> <br />\n\n> <br />\n\n## 后文\n',
+  '# 标题\n\n> <br />\n\n## 后文\n'
+)
+assert.equal(
+  removedOneOfTwoEmptyQuotes.markdown,
+  '# 标题\n\n>\n\n## 后文\n',
+  'removing one of consecutive empty quotes must retain exactly one authored quote row'
+)
+assert.equal(
+  removedOneOfTwoEmptyQuotes.reason,
+  'empty-blockquote-removed',
+  'consecutive empty quotes must use the same syntax-only quote mapping path'
+)
+
+// A serializer escape near the beginning can permanently shift the canonical
+// visible stream. A later, uniquely anchored one-line edit must still update
+// only its authored source range rather than falling back to stale bytes.
+const uniqueAnchorPadding =
+  '这是足够长的中间内容，用于隔离前面的可见流分叉并保持局部上下文一致。'.repeat(2)
+const uniqueAnchorSource =
+  `前文。* **输入设备：** ${uniqueAnchorPadding}\n\n尾部原文\n`
+const uniqueAnchorPrevious =
+  `前文。\\* **输入设备：** ${uniqueAnchorPadding}\n\n尾部原文\n`
+const uniqueAnchorNext =
+  `前文。\\* **输入设备：** ${uniqueAnchorPadding}\n\n尾部原文新增\n`
+const uniqueAnchorChange = commonChange(uniqueAnchorPrevious, uniqueAnchorNext)
+const uniquelyAnchoredText = preserveUniquelyAnchoredTextChange({
+  source: uniqueAnchorSource,
+  previous: uniqueAnchorPrevious,
+  next: uniqueAnchorNext,
+  ...uniqueAnchorChange
+})
+assert.equal(
+  uniquelyAnchoredText?.markdown,
+  uniqueAnchorSource.replace('尾部原文', '尾部原文新增'),
+  'a unique later text edit must survive an earlier source/canonical visible-stream divergence'
+)
+assert.equal(
+  uniquelyAnchoredText?.reason,
+  'uniquely-anchored-text-change',
+  'the divergent one-line edit must be proven by its unique local visible context'
+)
+
+const typedLiteralNumberInOrderedItem = preserveRichMarkdownSource(
+  '1. 第一\n2. 第二\n3. \n',
+  '1. 第一\n2. 第二\n3. <br />\n',
+  '1. 第一\n2. 第二\n3. 2\\. 测试\n'
+)
+assert.equal(
+  typedLiteralNumberInOrderedItem.markdown,
+  '1. 第一\n2. 第二\n3. 2. 测试\n',
+  'literal numbering typed inside an ordered item must not gain a serializer backslash'
+)
+
+const mixedListLiteralNumberEdit = preserveRichMarkdownSource(
+  '1. 第一项\n2. 有序占位\n\n- 普通项\n- 无序占位\n',
+  '1. 第一项\n2. 有序占位\n\n* 普通项\n\n* 无序占位\n',
+  '1. 第一项\n2. 2\\. 测试\n\n* 普通项\n\n* 无序占位\n\n'
+)
+assert.equal(
+  mixedListLiteralNumberEdit.markdown,
+  '1. 第一项\n2. 2. 测试\n\n- 普通项\n- 无序占位\n',
+  'editing one ordered row must not escape its literal number or normalize a later bullet list'
+)
+
+const typedLiteralNumberInBulletItem = preserveRichMarkdownSource(
+  '- 第一\n- \n',
+  '* 第一\n* <br />\n',
+  '* 第一\n* 1\\. 测试\n'
+)
+assert.equal(
+  typedLiteralNumberInBulletItem.markdown,
+  '- 第一\n- 1. 测试\n',
+  'literal numbering typed inside a bullet item must not gain a serializer backslash'
+)
+
+const authoredEscapedNumberStillPreserved = preserveRichMarkdownSource(
+  '- 2\\. 作者原文\n',
+  '* 2\\. 作者原文\n',
+  '* 2\\. 作者原文新增\n'
+)
+assert.equal(
+  authoredEscapedNumberStillPreserved.markdown,
+  '- 2\\. 作者原文新增\n',
+  'an existing authored number escape must remain when later text is edited'
+)
+
+const literalListMarkersInsideItems = preserveRichMarkdownSource(
+  [
+    '1. 有序短横占位',
+    '2. 有序加号占位',
+    '3. 有序星号占位',
+    '4. 有序括号占位',
+    '',
+    '- 无序短横占位',
+    '- 无序加号占位',
+    '- 无序星号占位',
+    '- 无序括号占位',
+    ''
+  ].join('\n'),
+  [
+    '1. 有序短横占位',
+    '2. 有序加号占位',
+    '3. 有序星号占位',
+    '4. 有序括号占位',
+    '',
+    '* 无序短横占位',
+    '',
+    '* 无序加号占位',
+    '',
+    '* 无序星号占位',
+    '',
+    '* 无序括号占位',
+    ''
+  ].join('\n'),
+  [
+    '1. \\- 测试',
+    '2. \\+ 测试',
+    '3. \\* 测试',
+    '4. 2\\) 测试',
+    '',
+    '* \\- 测试',
+    '',
+    '* \\+ 测试',
+    '',
+    '* \\* 测试',
+    '',
+    '* 1\\) 测试',
+    ''
+  ].join('\n')
+)
+assert.equal(
+  literalListMarkersInsideItems.markdown,
+  [
+    '1. - 测试',
+    '2. + 测试',
+    '3. * 测试',
+    '4. 2) 测试',
+    '',
+    '- - 测试',
+    '- + 测试',
+    '- * 测试',
+    '- 1) 测试',
+    ''
+  ].join('\n'),
+  'all list-marker-shaped item text must lose only serializer-owned backslashes'
+)
+
+const laterLiteralMarkerEdit = preserveRichMarkdownSource(
+  '- - 测试\n',
+  '* \\- 测试\n',
+  '* \\- 测试新增\n'
+)
+assert.equal(
+  laterLiteralMarkerEdit.markdown,
+  '- - 测试新增\n',
+  'a later edit must not reintroduce the canonical backslash removed on the first edit'
+)
+
+const authoredEscapedMarkerStillPreserved = preserveRichMarkdownSource(
+  '- \\- 作者原文\n',
+  '* \\- 作者原文\n',
+  '* \\- 作者原文新增\n'
+)
+assert.equal(
+  authoredEscapedMarkerStillPreserved.markdown,
+  '- \\- 作者原文新增\n',
+  'an authored list-marker escape must remain when later text is edited'
+)
+
+const filledEmptyWithRawBacktick = preserveRichMarkdownSource(
+  'before\n\n\nafter\n',
+  'before\n\n<br />\n\nafter\n',
+  'before\n\n\\`\n\nafter\n'
+)
+assert.equal(
+  filledEmptyWithRawBacktick.markdown,
+  'before\n\n`\n\nafter\n',
+  'a newly typed unmatched backtick must keep the raw character the user entered'
+)
+
+const editedAfterCanonicalEmptyRows = preserveRichMarkdownSource(
+  '# heading\n\n\n\nplaceholder\n\nafter\n',
+  '# heading\n\n<br />\n\nplaceholder\n\nafter\n',
+  '# heading\n\n<br />\n\nchanged\n\nafter\n'
+)
+assert.equal(
+  editedAfterCanonicalEmptyRows.markdown,
+  '# heading\n\n\n\nchanged\n\nafter\n',
+  'an empty rich paragraph before the edited row must not map the edit onto the heading boundary'
+)
+
+const typedRawBacktickAfterCanonicalEmptyRows = preserveRichMarkdownSource(
+  '# heading\n\n\n\nplaceholder\n\nafter\n',
+  '# heading\n\n<br />\n\nplaceholder\n\nafter\n',
+  '# heading\n\n<br />\n\n\\`\n\nafter\n'
+)
+assert.equal(
+  typedRawBacktickAfterCanonicalEmptyRows.markdown,
+  '# heading\n\n\n\n`\n\nafter\n',
+  'fresh escaped punctuation after an empty rich paragraph must map by row and keep raw source spelling'
+)
+
+const replacedTextWithRawBacktick = preserveRichMarkdownSource(
+  'before\n\nplaceholder\n\nafter\n',
+  'before\n\nplaceholder\n\nafter\n',
+  'before\n\n\\`\n\nafter\n'
+)
+assert.equal(
+  replacedTextWithRawBacktick.markdown,
+  'before\n\n`\n\nafter\n',
+  'replacing a normal line with one raw backtick must not leak serializer escaping'
+)
+
+const deletedRawBacktickLine = preserveRichMarkdownSource(
+  'before\n\n`\n\nafter\n',
+  'before\n\n\\`\n\nafter\n',
+  'before\n\n<br />\n\nafter\n'
+)
+assert.equal(
+  deletedRawBacktickLine.markdown,
+  'before\n\n\n\nafter\n',
+  'deleting an unmatched raw backtick must not fail closed or resurrect it'
+)
+assert.equal(deletedRawBacktickLine.reason, 'escaped-literal-line-emptied')
+
+const partiallyDeletedRawBacktickLine = preserveRichMarkdownSource(
+  'before\n\n```\n\nafter\n',
+  'before\n\n\\`\\`\\`\n\nafter\n',
+  'before\n\n\\`\n\nafter\n'
+)
+assert.equal(
+  partiallyDeletedRawBacktickLine.markdown,
+  'before\n\n`\n\nafter\n',
+  'deleting two of three unmatched backticks must retain the remaining raw backtick'
+)
+assert.equal(partiallyDeletedRawBacktickLine.reason, 'escaped-literal-line-changed')
+
+const changedSecondRepeatedRawBacktickLine = preserveRichMarkdownSource(
+  'before\n\n`\n\n`\n\nafter\n',
+  'before\n\n\\`\n\n\\`\n\nafter\n',
+  'before\n\n\\`\n\n\\`\\`\n\nafter\n'
+)
+assert.equal(
+  changedSecondRepeatedRawBacktickLine.markdown,
+  'before\n\n`\n\n``\n\nafter\n',
+  'repeated punctuation-only rows must map by row identity rather than global text uniqueness'
+)
+
+const replacedSecondRepeatedRawBacktickLine = preserveRichMarkdownSource(
+  'before\n\n`\n\n`\n\nafter\n',
+  'before\n\n\\`\n\n\\`\n\nafter\n',
+  'before\n\n\\`\n\n删除围栏后继续写作\n\nafter\n'
+)
+assert.equal(
+  replacedSecondRepeatedRawBacktickLine.markdown,
+  'before\n\n`\n\n删除围栏后继续写作\n\nafter\n',
+  'replacing the second repeated raw backtick row with normal text must not lock later source sync'
+)
+
+const filledEmptyWithRawTripleBacktick = preserveRichMarkdownSource(
+  'before\n\n\nafter\n',
+  'before\n\n<br />\n\nafter\n',
+  'before\n\n\\`\\`\\`\n\nafter\n'
+)
+assert.equal(
+  filledEmptyWithRawTripleBacktick.markdown,
+  'before\n\n```\n\nafter\n',
+  'literal triple backticks retained by the editor must remain exactly user-typed source'
+)
+
+const exactBaselineKeepsUntouchedAuthoredEscape = preserveRichMarkdownSource(
+  'authored \\* stays\n\nplaceholder\n',
+  'authored \\* stays\n\nplaceholder\n',
+  'authored \\* stays\n\nchanged\n'
+)
+assert.equal(
+  exactBaselineKeepsUntouchedAuthoredEscape.markdown,
+  'authored \\* stays\n\nchanged\n',
+  'fresh escape restoration must remain local and leave untouched authored escapes byte-exact'
 )
 
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

@@ -6,6 +6,7 @@ import {
 import { decodeNamedCharacterReference } from 'decode-named-character-reference'
 import {
   adaptCanonicalRegionToSource,
+  canonicalFreshTextToSource,
   lineAt,
   lineIndexAt,
   markdownLines,
@@ -76,6 +77,128 @@ export const preserveLocallyAlignedTextChange = ({
       source.slice(rawEnd),
     preserved: true,
     reason: 'locally-aligned-change'
+  }
+}
+
+// A document can have a permanent visible-stream divergence before the block
+// being edited (nested `- 4. text`, a literal mid-line `*`, serializer-only
+// entities, etc.). Ordinal visible offsets then point at the wrong source
+// location even though the changed text and its immediate context are unique.
+// For a single-line text delta, locate that bounded context in the authored
+// visible stream and apply only the corresponding raw range. Structural and
+// multi-line changes stay with their dedicated handlers.
+export const preserveUniquelyAnchoredTextChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousStartLine = lineAt(previous, start)
+  const previousEndLine = lineAt(previous, Math.max(start, previousEnd - 1))
+  const nextStartLine = lineAt(next, start)
+  const nextEndLine = lineAt(next, Math.max(start, nextEnd - 1))
+  if (
+    previousStartLine.start !== previousEndLine.start ||
+    nextStartLine.start !== nextEndLine.start
+  ) return null
+
+  const previousVisible = sourceVisibleIndex(previous)
+  const sourceVisible = sourceVisibleIndex(source)
+  const startPosition = sourceVisiblePositionAtRaw(previous, start)
+  const endPosition = sourceVisiblePositionAtRaw(previous, previousEnd)
+  const visibleStart = startPosition.visibleIndex
+  const visibleEnd = endPosition.visibleIndex
+  const changedVisible = previousVisible.text.slice(visibleStart, visibleEnd)
+  const replacement = next.slice(start, nextEnd)
+  const replacementVisible = sourceVisibleIndex(replacement).text
+  if ((!changedVisible && !replacementVisible) || /\r|\n/.test(replacement)) return null
+
+  const before = previousVisible.text.slice(Math.max(0, visibleStart - 32), visibleStart)
+  const after = previousVisible.text.slice(visibleEnd, visibleEnd + 32)
+  const context = before + changedVisible + after
+  if (!context) return null
+  const contextAt = sourceVisible.text.indexOf(context)
+  if (contextAt < 0 || sourceVisible.text.indexOf(context, contextAt + 1) >= 0) return null
+
+  const mappedStart = contextAt + before.length
+  const mappedEnd = mappedStart + changedVisible.length
+  const rawStart = sourceRawFromVisibleIndex(source, mappedStart, startPosition.visibleAffinity)
+  const rawEnd = sourceRawFromVisibleIndex(source, mappedEnd, endPosition.visibleAffinity)
+  if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
+  if (sourceVisibleIndex(source.slice(rawStart, rawEnd)).text !== changedVisible) return null
+
+  return {
+    markdown: source.slice(0, rawStart) +
+      adaptCanonicalRegionToSource(replacement, source, { start: rawStart, end: rawEnd }) +
+      source.slice(rawEnd),
+    preserved: true,
+    reason: 'uniquely-anchored-text-change'
+  }
+}
+
+// Source represents an empty rich paragraph as an empty authored row while
+// canonical uses `<br />`. Their visible streams are equal, but every offset
+// at that zero-width row has two valid raw affinities. A later ordinary edit
+// can therefore map to the heading/paragraph before the empty row and glue
+// blocks together. When source/previous/next retain the same row skeleton and
+// the edit stays inside one row, row ordinal is the stronger identity.
+export const preserveOrdinalLineTextChange = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const sourceLines = markdownLines(source)
+  const previousLines = markdownLines(previous)
+  const nextLines = markdownLines(next)
+  if (
+    sourceLines.length !== previousLines.length ||
+    previousLines.length !== nextLines.length
+  ) {
+    return null
+  }
+  const hasEmptyPlaceholderDivergence = previousLines.some((line, index) => (
+    /^\s*(?:>\s*)*<br\s*\/?>\s*$/i.test(line.text) &&
+    !sourceLines[index]?.text.trim()
+  ))
+  if (!hasEmptyPlaceholderDivergence) return null
+
+  const previousStartLine = lineAt(previous, start)
+  const previousEndLine = lineAt(previous, Math.max(start, previousEnd - 1))
+  const nextStartLine = lineAt(next, start)
+  const nextEndLine = lineAt(next, Math.max(start, nextEnd - 1))
+  if (
+    previousStartLine.start !== previousEndLine.start ||
+    nextStartLine.start !== nextEndLine.start
+  ) {
+    return null
+  }
+
+  const row = previousLines.findIndex((line) => (
+    line.start === previousStartLine.start && line.end === previousStartLine.end
+  ))
+  if (row < 0 || nextLines[row]?.start !== nextStartLine.start) return null
+  const sourceLine = sourceLines[row]
+  const previousLine = previousLines[row]
+  const nextLine = nextLines[row]
+  if (
+    sourceVisibleIndex(sourceLine.text).text !==
+    sourceVisibleIndex(previousLine.text).text
+  ) {
+    return null
+  }
+
+  const replacement = sourceLine.text === previousLine.text
+    ? canonicalFreshTextToSource(nextLine.text)
+    : adaptCanonicalRegionToSource(nextLine.text, source, sourceLine)
+  return {
+    markdown: source.slice(0, sourceLine.start) + replacement + source.slice(sourceLine.end),
+    preserved: true,
+    reason: 'ordinal-line-text-change'
   }
 }
 

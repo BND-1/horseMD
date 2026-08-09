@@ -4,6 +4,7 @@ import {
 } from './mode-visible-map.js'
 import {
   adaptCanonicalRegionToSource,
+  canonicalFreshTextToSource,
   canonicalTextToSource,
   commonChange,
   rawInsertionAtCanonicalLineEnd,
@@ -26,8 +27,10 @@ import {
 import {
   capOutputTrailingNewlines,
   preserveAppendedParagraph,
+  preserveEmptiedEscapedLiteralLine,
   preserveEmptiedParagraph,
   preserveMiddleEmptyBlock,
+  preserveRemovedEmptyBlockquote,
   preserveTrailingExactLineChange,
   preserveTrailingEmptyBlock,
   withoutStandaloneEmptyBlockLines
@@ -37,7 +40,9 @@ import {
   preserveDivergedBlockTextChange,
   preserveDivergedVisibleDelete,
   preserveChangedLineRegion,
-  preserveLocallyAlignedTextChange
+  preserveLocallyAlignedTextChange,
+  preserveOrdinalLineTextChange,
+  preserveUniquelyAnchoredTextChange
 } from './lib/markdown-preservation/regions.js'
 import {
   hasTableStructureChange,
@@ -91,6 +96,20 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     // Crepe may append a serializer blank line after the last edited block; the
     // file's terminal line-ending run is authored formatting and must not grow.
     result.markdown = capOutputTrailingNewlines(withoutPlaceholders, sourceMarkdown)
+  }
+  // Test-only opt-in diagnostics. Production never creates this array; CDP
+  // regressions can enable it before typing to capture the first fail-closed
+  // transaction without logging document content during normal use.
+  if (Array.isArray(globalThis.__hmPreserveLog)) {
+    globalThis.__hmPreserveLog.push({
+      source: sourceMarkdown,
+      previous: String(previousCanonical || ''),
+      next: String(nextCanonical || ''),
+      markdown: String(result?.markdown || ''),
+      preserved: result?.preserved !== false,
+      reason: result?.reason || 'unknown'
+    })
+    if (globalThis.__hmPreserveLog.length > 200) globalThis.__hmPreserveLog.shift()
   }
   return result
 }
@@ -184,6 +203,24 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
   const previousVisible = sourceVisibleIndex(previous)
   const { start, previousEnd, nextEnd } = commonChange(previous, next)
+  const removedEmptyBlockquote = preserveRemovedEmptyBlockquote({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (removedEmptyBlockquote) return removedEmptyBlockquote
+  const emptiedEscapedLiteralLine = preserveEmptiedEscapedLiteralLine({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (emptiedEscapedLiteralLine) return emptiedEscapedLiteralLine
   const emptiedParagraphPreserved = preserveEmptiedParagraph({
     source: sourceMarkdown,
     previous,
@@ -226,11 +263,19 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (middleEmptyPreserved) return middleEmptyPreserved
-  // A deferred callback can fill an empty item in one list while also changing
-  // another independently-authored list. The single empty-item helper below
-  // sees only the first list and can merge neighbouring `-`, `+`, and `*`
-  // blocks into one canonical style. Reconcile proven multi-list batches before
-  // any one-list shortcut is allowed to return.
+  // Exact same-count row/gap skeletons are the strongest list proof: apply
+  // their item-text delta before broad multi-list reconciliation. This keeps
+  // serializer-only escapes (`1\.`) and untouched marker/spacing differences
+  // local instead of replacing canonical list blocks wholesale.
+  const stableListRowsPreserved = preserveStableListRowChanges({
+    source: sourceMarkdown,
+    previous,
+    next
+  })
+  if (stableListRowsPreserved) return stableListRowsPreserved
+  // A deferred callback can structurally change more than one independently-
+  // authored list. Reconcile those proven multi-list batches before any
+  // one-list shortcut is allowed to return.
   const earlyMultiListPreserved = preserveBatchedListBlockChanges({
     source: sourceMarkdown,
     previous,
@@ -238,12 +283,6 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     requireMultiple: true
   })
   if (earlyMultiListPreserved) return earlyMultiListPreserved
-  const stableListRowsPreserved = preserveStableListRowChanges({
-    source: sourceMarkdown,
-    previous,
-    next
-  })
-  if (stableListRowsPreserved) return stableListRowsPreserved
   const emptyListItemTextPreserved = preserveEmptyListItemTextChange({
     source: sourceMarkdown,
     previous,
@@ -290,6 +329,15 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       nextEnd
     })
     if (locallyAligned) return locallyAligned
+    const uniquelyAnchored = preserveUniquelyAnchoredTextChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (uniquelyAnchored) return uniquelyAnchored
     const linesPreserved = preserveChangedLineRegion({
       source: sourceMarkdown,
       previous,
@@ -455,14 +503,27 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   })
   if (trailingExactLine) return trailingExactLine
   if (sourceMarkdown === previous) {
+    const translatedReplacement = canonicalFreshTextToSource(next.slice(start, nextEnd))
     return {
-      markdown: canonicalTextToSource(
-        withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(next))
-      ),
+      markdown: withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(
+        sourceMarkdown.slice(0, start) +
+          translatedReplacement +
+          sourceMarkdown.slice(previousEnd)
+      )),
       preserved: true,
       reason: 'exact-canonical-baseline'
     }
   }
+
+  const ordinalLinePreserved = preserveOrdinalLineTextChange({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (ordinalLinePreserved) return ordinalLinePreserved
 
   // Enter in a list is emitted as an empty-item transaction followed by text.
   // Reapply the bounded list tree instead of mapping that zero-width span past

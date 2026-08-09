@@ -34,6 +34,9 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 17. 引用块内的空段落序列化为 `> <br />`，同样属于编辑器占位：清空后应留下空的 `>` 引用行，不得把 `<br />` 写进源码。独立 `<br />` 的识别必须同时接受裸行和带引用前缀两种形态。
 18. 相邻同种列表（`-` 与 `-`、`1.` 与 `1.`）之间的空行是作者排版：仅当 canonical 的空行位置变化（松散↔紧凑）而可见内容不变时，一律保留作者源码，不能因 Milkdown 重新序列化而改写 marker 或合并；只有当合并伴随真实文字变化时才在源码中产出紧凑列表。
 19. 新建文档（generated scratch 路径）的源码以单个 `\n` 结尾。Milkdown 可能在最后一块后追加序列化空行或骨架的空段落 `<br />`，它们不是作者内容，不能变成源码尾部的幻影空行；已有文档的结尾换行运行（0、1 或多行）是作者格式，输出绝不能超出它的长度。
+20. 清空引用文字后，空引用暂时保留为作者源码中的 `>` 行；如果用户再按 Backspace 删除整个空引用块，`>` 必须随结构一起从源码和磁盘消失。这个变化没有可见字符 delta，必须映射相邻可见文本之间的完整 raw gap，不能由通用 visible-stream 路径假装成功。根因与回归见 [空引用删除后复活回归报告](./empty-blockquote-removal-regression.md)。
+21. 在列表项正文中输入字面 `1. 文本`、`1) 文本`、`- 文本`、`+ 文本` 或 `* 文本` 时，remark 为防止二次解析成嵌套列表而生成的反斜杠只是 canonical serializer 拼写，不是作者输入。只能把本次文字 delta 通过语义视图映射回作者源码；作者原有转义必须保留，未编辑列表的 marker 与紧凑/松散空行也不得被 canonical 覆盖。详见 [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)。
+22. 逐字输入、部分删除或全部删除一个/三个反引号后，作者源码、canonical 与 live ProseMirror doc 必须保持同步。不能从零宽 diff 推断整行已删除；重复字面行优先按同行 ordinal 定位；独立 `<br />` 空段落两侧的零宽编辑按行映射；行内代码事务从 live `view.state.doc` 序列化。映射失败仍须 fail closed，不能推进双快照或写盘旧源码。详见 [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)。
 
 ## 当前实现
 
@@ -54,6 +57,14 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 表格单元格的普通文字输入只映射真实 cell 文本 delta，不采用 serializer 重新对齐后的整张表；
 - 标题等级、分段等结构变化只替换受影响的原始行；
 - 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
+
+#### 反引号字面行、空段落邻接行与 live 行内代码事务
+
+字面反引号的 canonical 可能带 serializer 反斜杠，但作者源码仍是原始反引号。`preserveEmptiedEscapedLiteralLine()` 不再只看 `commonChange()` 的局部 replacement，而是读取完整 next canonical 行：部分删除写回剩余反引号，真正清空才删除整行；source/previous 行骨架稳定时用同行 ordinal 处理重复内容，不依赖全文唯一匹配。
+
+源码空白行与 canonical 独立 `<br />` 的可见字符都为空，通用全局 visible offset 无法区分零宽位置。`preserveOrdinalLineTextChange()` 在行数稳定、空段落对应关系明确且事务局限于单行时按行 ordinal 回写，防止空段落后的反引号或普通文字粘到前一个标题。批量列表处理器还会跳过 previous/next canonical 完全相同的列表，避免未编辑列表抢先消费无关事务。
+
+行内代码插件拥有独立事务时序；`Editor.jsx` 的回调必须使用 `serializerCtx(view.state.doc)`，不能用可能滞后的 `crepe.getMarkdown()`。映射失败时保留 pending 和旧双快照，让保存/源码切换在重新读取 live doc 后重试。专项回归：`npm run test:code-fence-delete-source-ui`。
 
 #### 段落被清空
 
@@ -257,6 +268,15 @@ npm run test:source-fidelity-ui
 
 # 真实 Electron：可见流分叉文档中删除正文，切源码、保存、完整重开后删除内容不得复活
 npm run test:diverged-delete-source-ui
+
+# 真实 Electron：跨块快速新增/删除/再新增后立即切源码、保存和完整重开
+npm run test:mixed-rich-source-transaction-ui
+
+# 真实 Electron：有序/无序列表项正文中的字面 `1. text` 不泄漏 serializer 反斜杠
+npm run test:list-item-literal-marker-source-ui
+
+# 真实 Electron：逐字输入/部分删除/全部删除反引号后立即切源码和保存，不得锁死
+npm run test:code-fence-delete-source-ui
 
 # 真实 Electron：清空段落、空段落内输入再删光、多次切换源码后不得出现 <br />
 npm run test:empty-paragraph-source-ui

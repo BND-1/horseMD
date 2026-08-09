@@ -1,6 +1,6 @@
 # canonical 序列化转义清单（保真管道泄漏面审计）
 
-> 状态：2026-08-08 全量审计。目的：把「富文本 ↔ 源码」保真管道所有序列化转义
+> 状态：2026-08-09（HorseMD 0.13.26）全量审计。目的：把「富文本 ↔ 源码」保真管道所有序列化转义
 > 形态、触发条件、处理路径一次列全，杜绝「用户踩一个、补一个」的零散打补丁。
 > 更新：新增转义形态时必须先改这份清单，再改 `canonicalTextToSource`。
 
@@ -20,7 +20,7 @@ round-trip 语义不变，会对部分字符做转义。**canonical 是序列化
 | --- | --- | --- | --- | --- | --- | --- |
 | `&#x20;` | 行首或需保语义的空格 | 解码为 1 可见字符 → **走主路径** | 行首用 `U+200B + space`，行中/行尾用 space | 同左 | 同左 | ✅ 0.13.22（Typora 语义） |
 | `\~` | 波浪线（防 GFM 删除线 `~~`） | 按 2 字符 → **走分歧路径** | 不出现（分歧） | 已反转义 | 曾泄漏 → 已反转义 | ✅ 0.13.15 |
-| `\*`、`\_`、`` \` ``、`\[`、`\]`、`\(`、`\)`、`\!`、`\+`、`\-`、`\#`、`\.`、`\>`、`\|`、`\{`、`\}` | 强调/代码/链接/列表边界字面量 | 按 2 字符 → 走分歧路径 | 不出现（分歧） | `unescapeCanonicalBlock` 已反转义 | 输入规则路径（`restoreTypedBulletMarker` 等）恢复作者 marker | ✅ 有既有测试 |
+| `\*`、`\_`、`` \` ``、`\[`、`\]`、`\(`、`\)`、`\!`、`\+`、`\-`、`\#`、`\.`、`\>`、`\|`、`\{`、`\}` | 强调/代码/链接/列表边界字面量 | 按 2 字符 → 走分歧路径 | 不出现（分歧） | `unescapeCanonicalBlock` 已反转义 | 输入规则恢复作者 marker；稳定列表正文用语义视图 + raw 边界表；独立字面反引号行按完整 next line 与 ordinal 回写 | ✅ 0.13.26 扩展专项测试 |
 | `\\` | 反斜杠本身 | 按 2 字符 → 走分歧路径 | 不出现 | 已反转义 | **泄漏**（`a\b` → `a\\b`） | ⚠️ 见下 |
 | `&amp;` `&lt;` `&gt;` `&quot;` `&#39;` 等实体 | 实测 Crepe 默认**不转义** `&<>"'`（段中/行首均原样） | 解码为 1 可见字符 | 不出现（序列化不产生） | 已反转义 | 不出现 | ✅ 实测无泄漏 |
 | `<br />` | 空段落占位（Crepe 内部） | — | 出口后置条件统一剥离 | 拒绝 | `withoutStandaloneEmptyBlockLines` 剥离 | ✅ 硬不变式 |
@@ -52,6 +52,15 @@ round-trip 语义不变，会对部分字符做转义。**canonical 是序列化
    列表 `-`/`*`/`+` 触发路径恢复作者 marker。generated-scratch 修改首个列表项时不能
    只按项目全文匹配；前后 marker 行数量稳定时，用 ordinal + indent + list kind 回退，
    防止 Crepe 默认 `*` 泄漏，同时禁止跨列表类型恢复。
+5. **稳定列表正文中的歧义标记**（`lib/markdown-preservation/lists.js`）：
+   `1.`、`1)`、`-`、`+`、`*` 出现在列表项正文时，serializer 可能为防止二次解析
+   增加反斜杠。处理器构造去转义语义视图及 raw boundary map，只应用本次文字 delta；
+   作者已经写入的转义不在 delta 内，不能被全局清理。专项见
+   `list-item-literal-marker-escape-regression.md`。
+6. **独立字面反引号行**（`lib/markdown-preservation/paragraphs.js`）：部分删除必须读取
+   完整 next canonical line，不能把 zero-width `commonChange()` replacement 当成整行清空；
+   重复行优先用同行 ordinal。空段落后零宽输入另由 `preserveOrdinalLineTextChange()`
+   限定映射。专项见 `backtick-source-sync-lock-regression.md`。
 
 ## 结构性解析分歧：`- 1. 甲乙` → 嵌套有序列表（0.13.17–0.13.18 修复）
 
@@ -131,5 +140,8 @@ fail-closed 之前）：canonical 删除区间**前 24 个可见字符**在 sour
 
 1. 用户在真实文档发现新的转义泄漏 → 先复现并确认触发条件，**更新本清单**。
 2. 判断形态安全边界（是否行首/行尾上下文敏感、是否可能改变重解析语义）。
-3. 修改 `canonicalTextToSource` 或对应路径，补纯函数用例 + UI 回归。
-4. 跑 `npm run test:markdown-preservation` + 相关 UI 回归全矩阵。
+3. 修改 `canonicalTextToSource` 或对应的上下文处理器，补纯函数用例 + UI 回归；列表正文、
+   代码/反引号、HTML、LaTeX 不允许共用无上下文的全局替换。
+4. 跑 `npm run test:markdown-preservation` + 相关 UI 回归全矩阵。列表字面标记追加
+   `npm run test:list-item-literal-marker-source-ui`；反引号删除追加
+   `npm run test:code-fence-delete-source-ui`。

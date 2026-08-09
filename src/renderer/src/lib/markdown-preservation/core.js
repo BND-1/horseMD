@@ -124,7 +124,9 @@ const inlineLiteralRanges = (line) => {
   return ranges
 }
 
-const translateInlineCanonicalEscapes = (line) => {
+const markdownEscapePunctuation = /[\\`*{}\[\]()#+\-.!_>~|]/
+
+const translateInlineCanonicalEscapes = (line, restoreFreshPunctuation = false) => {
   const literals = inlineLiteralRanges(line)
   const hasVisibleTextBefore = (offset) => {
     let prefix = line.slice(0, offset).replace(/^[ \t]*/, '')
@@ -163,6 +165,16 @@ const translateInlineCanonicalEscapes = (line) => {
       index += 2
       continue
     }
+    if (
+      restoreFreshPunctuation &&
+      line[index] === '\\' &&
+      index + 1 < line.length &&
+      markdownEscapePunctuation.test(line[index + 1])
+    ) {
+      output += line[index + 1]
+      index += 2
+      continue
+    }
     output += line[index]
     index += 1
   }
@@ -179,7 +191,7 @@ const genericHtmlBlockStart = (line) => /^ {0,3}<\/?[A-Za-z][\w:-]*(?:\s|\/?>|$)
 // regions are different: `&#x20;` and `\~` inside code/HTML are user data and
 // must stay byte-for-byte. Keep the translator Markdown-context-aware rather
 // than applying global string replacements to the whole document.
-export const canonicalTextToSource = (text) => {
+export const canonicalTextToSource = (text, { restoreFreshPunctuation = false } = {}) => {
   const input = String(text || '')
   const chunks = input.match(/[^\n]*(?:\n|$)/g)?.filter(Boolean) || []
   let fence = null
@@ -239,9 +251,17 @@ export const canonicalTextToSource = (text) => {
       return line + newline
     }
     if (!trimmed) return line + newline
-    return translateInlineCanonicalEscapes(line) + newline
+    return translateInlineCanonicalEscapes(line, restoreFreshPunctuation) + newline
   }).join('')
 }
+
+// Use only for a region proven to be newly typed ProseMirror text. In that
+// context canonical `\X` is serializer spelling for the character the user
+// entered. Fenced/inline code and HTML ranges remain byte-exact through the
+// context scanner above.
+export const canonicalFreshTextToSource = (text) => canonicalTextToSource(text, {
+  restoreFreshPunctuation: true
+})
 
 const fencedCodeAt = (markdown, offset) => {
   let fence = null

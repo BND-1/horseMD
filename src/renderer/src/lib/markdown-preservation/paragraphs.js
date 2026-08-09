@@ -1,8 +1,11 @@
 import {
+  sourceRawFromVisibleIndex,
+  sourceVisiblePositionAtRaw,
   sourceVisibleIndex
 } from '../../mode-visible-map.js'
 import {
   adaptCanonicalRegionToSource,
+  canonicalFreshTextToSource,
   isTableLine,
   lineAt,
   lineEndingNear,
@@ -13,6 +16,115 @@ import {
   preserveChangedLineRegion,
   visibleLineEntries
 } from './regions.js'
+
+const emptyCanonicalQuoteLine = /^\s*(?:>\s*)+(?:<br\s*\/?>\s*)?$/i
+const emptyAuthoredQuoteLine = /^\s*(?:>\s*)+$/
+
+// After the user clears a blockquote's text, Crepe keeps an empty blockquote
+// (`> <br />`) and the authored source keeps a syntax-only `>` row. Pressing
+// Backspace once more removes the blockquote node. Because `>` and `<br />`
+// contribute no visible characters, the generic visible-stream mapper sees a
+// zero-width structural change and cannot find the raw source row; it used to
+// report success while leaving `>` behind, so save/reopen resurrected the
+// quote. Map the complete zero-visible gap between the same neighbouring text
+// anchors and replace it with the gap from the next canonical document.
+export const preserveRemovedEmptyBlockquote = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousChanged = previous.slice(start, previousEnd)
+  const nextChanged = next.slice(start, nextEnd)
+  const previousRows = previousChanged.split(/\r\n|\n|\r/).filter((line) => line.trim())
+  if (
+    !previousRows.length ||
+    !previousRows.every((line) => emptyCanonicalQuoteLine.test(line)) ||
+    sourceVisibleIndex(previousChanged).text ||
+    sourceVisibleIndex(nextChanged).text
+  ) {
+    return null
+  }
+
+  const previousVisible = sourceVisibleIndex(previous)
+  const sourceVisible = sourceVisibleIndex(source)
+  const nextVisible = sourceVisibleIndex(next)
+  if (nextVisible.text !== previousVisible.text) return null
+
+  const startVisible = sourceVisiblePositionAtRaw(previous, start).visibleIndex
+  const endVisible = sourceVisiblePositionAtRaw(previous, previousEnd).visibleIndex
+  if (startVisible !== endVisible) return null
+
+  // The authored source may already diverge from canonical elsewhere (for
+  // example a mid-line literal `*`). Do not repeat the old whole-document
+  // equality mistake: uniquely anchor up to 24 visible characters on both
+  // sides of this zero-width boundary and map only that local source gap.
+  const contextBefore = previousVisible.text.slice(Math.max(0, startVisible - 24), startVisible)
+  const contextAfter = previousVisible.text.slice(startVisible, startVisible + 24)
+  const context = contextBefore + contextAfter
+  if (!context) return null
+  const contextAt = sourceVisible.text.indexOf(context)
+  if (contextAt < 0 || sourceVisible.text.indexOf(context, contextAt + 1) >= 0) return null
+  const sourceBoundary = contextAt + contextBefore.length
+
+  const sourceStart = sourceRawFromVisibleIndex(source, sourceBoundary, 'backward')
+  const sourceEnd = sourceRawFromVisibleIndex(source, sourceBoundary, 'forward')
+  const previousStart = sourceRawFromVisibleIndex(previous, startVisible, 'backward')
+  const previousEndRaw = sourceRawFromVisibleIndex(previous, endVisible, 'forward')
+  const nextStart = sourceRawFromVisibleIndex(next, startVisible, 'backward')
+  const nextEndRaw = sourceRawFromVisibleIndex(next, endVisible, 'forward')
+  if (
+    !Number.isFinite(sourceStart) ||
+    !Number.isFinite(sourceEnd) ||
+    !Number.isFinite(previousStart) ||
+    !Number.isFinite(previousEndRaw) ||
+    !Number.isFinite(nextStart) ||
+    !Number.isFinite(nextEndRaw) ||
+    sourceStart > sourceEnd ||
+    previousStart > previousEndRaw ||
+    nextStart > nextEndRaw
+  ) {
+    return null
+  }
+
+  const sourceGap = source.slice(sourceStart, sourceEnd)
+  const sourceRows = sourceGap.split(/\r\n|\n|\r/).filter((line) => line.trim())
+  const previousGap = previous.slice(previousStart, previousEndRaw)
+  const previousGapRows = previousGap.split(/\r\n|\n|\r/).filter((line) => line.trim())
+  const nextGap = next.slice(nextStart, nextEndRaw)
+  const nextRows = nextGap.split(/\r\n|\n|\r/).filter((line) => line.trim())
+  const sourceQuoteRows = sourceRows.filter((line) => emptyAuthoredQuoteLine.test(line))
+  const previousQuoteRows = previousGapRows.filter((line) => emptyCanonicalQuoteLine.test(line))
+  const nextQuoteRows = nextRows.filter((line) => emptyCanonicalQuoteLine.test(line))
+  const otherRows = (rows, isQuote) => rows
+    .filter((line) => !isQuote.test(line))
+    .map((line) => line.trim())
+  if (
+    !sourceQuoteRows.length ||
+    sourceQuoteRows.length !== previousQuoteRows.length ||
+    nextQuoteRows.length >= previousQuoteRows.length ||
+    JSON.stringify(otherRows(sourceRows, emptyAuthoredQuoteLine)) !==
+      JSON.stringify(otherRows(previousGapRows, emptyCanonicalQuoteLine)) ||
+    JSON.stringify(otherRows(nextRows, emptyCanonicalQuoteLine)) !==
+      JSON.stringify(otherRows(previousGapRows, emptyCanonicalQuoteLine))
+  ) {
+    return null
+  }
+
+  return {
+    markdown: source.slice(0, sourceStart) +
+      adaptCanonicalRegionToSource(
+        withoutStandaloneEmptyBlockLines(nextGap),
+        source,
+        { start: sourceStart, end: sourceEnd }
+      ) +
+      source.slice(sourceEnd),
+    preserved: true,
+    reason: 'empty-blockquote-removed'
+  }
+}
 
 // A rich-text edit that removes every character of a paragraph replaces its
 // text with Crepe's internal standalone `<br />` placeholder. That placeholder
@@ -98,9 +210,12 @@ const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
   const eol = lineEndingNear(source, source.length)
   const sourceTrailingBreaks = source.match(/(?:(?:\r\n)|\n|\r)*$/)?.[0] || ''
   const sourceTrailingNewlines = sourceTrailingBreaks.match(/\r\n|\n|\r/g)?.length || 0
-  const block = withoutStandaloneEmptyBlockLines(canonicalBlock)
+  const canonical = withoutStandaloneEmptyBlockLines(canonicalBlock)
     .replace(/^(?:(?:\r\n)|\n|\r)+/, '')
     .replace(/(?:(?:\r\n)|\n|\r)+$/, '')
+  const block = hasDedicatedBlockSyntax(canonical)
+    ? canonical
+    : canonicalFreshTextToSource(canonical)
   if (!block) return null
   const separator = eol.repeat(Math.max(0, 2 - sourceTrailingNewlines))
   const finalNewline = sourceTrailingNewlines > 0 ? eol : ''
@@ -322,9 +437,9 @@ export const preserveMiddleEmptyBlock = ({
   if (directBlockInsertion) {
     const previousGap = previous.slice(previousBefore.end, previousAfter.start)
     if (!nextGap.endsWith(previousGap)) return null
-    const insertedGap = withoutStandaloneEmptyBlockLines(
+    const insertedGap = canonicalFreshTextToSource(withoutStandaloneEmptyBlockLines(
       nextGap.slice(0, nextGap.length - previousGap.length)
-    )
+    ))
     if (!insertedGap) return null
     return {
       markdown: source.slice(0, sourceBefore.end) +
@@ -343,7 +458,7 @@ export const preserveMiddleEmptyBlock = ({
   return {
     markdown: source.slice(0, sourceBefore.end) +
       adaptCanonicalRegionToSource(
-        withoutStandaloneEmptyBlockLines(nextGap),
+        canonicalFreshTextToSource(withoutStandaloneEmptyBlockLines(nextGap)),
         source,
         sourceGapRegion
       ) +
@@ -352,6 +467,92 @@ export const preserveMiddleEmptyBlock = ({
     reason: previousChangedEmpty
       ? 'middle-empty-block-filled'
       : 'middle-block-inserted'
+  }
+}
+
+// An unmatched backtick or another punctuation-only line is serialized with
+// a protective backslash (`\\``) even though the user typed the raw character.
+// Once that authored spelling is committed, changing/deleting it leaves the
+// source/canonical visible streams temporarily different and generic mapping
+// fails closed. Replace only the unique matching authored line with the next
+// spelling of that same line. This matters for multi-key deletion: ProseMirror
+// may publish `\`\`\`` -> `\`` in one transaction; deleting the whole source
+// row there would make the following keystroke permanently unmappable.
+export const preserveEmptiedEscapedLiteralLine = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  const previousLine = lineAt(previous, start)
+  if (previousEnd > previousLine.end) return null
+  const canonicalLine = previous.slice(previousLine.start, previousLine.end)
+  const authoredLine = canonicalFreshTextToSource(canonicalLine)
+  const punctuationOnly = /^[\\`*{}\[\]()#+\-.!_>~|]+$/
+  if (
+    authoredLine === canonicalLine ||
+    !authoredLine.trim() ||
+    !punctuationOnly.test(authoredLine.trim())
+  ) {
+    return null
+  }
+
+  const nextLine = lineAt(next, Math.min(start, next.length))
+  if (nextEnd > nextLine.end) return null
+  const nextCanonicalLine = next.slice(nextLine.start, nextLine.end)
+  const nextAuthoredLine = withoutStandaloneEmptyBlockLines(
+    canonicalFreshTextToSource(nextCanonicalLine)
+  )
+  const nextHasDedicatedBlockSyntax = /^\s{0,3}(?:#{1,6}(?:\s|$)|>|[-+*](?:\s|$)|\d+[.)](?:\s|$)|`{3,}|~{3,}|\|)/.test(
+    nextAuthoredLine
+  )
+  // This branch owns only serializer-escaped punctuation lines and their
+  // empty/plain-text transition, never a new block structure. Replacing the
+  // punctuation placeholder with ordinary text is a common final step after
+  // deleting a fence experiment; rejecting it would leave the canonical
+  // baseline on `` ` `` and make all later edits fail closed.
+  if (
+    nextAuthoredLine.trim() &&
+    (
+      nextHasDedicatedBlockSyntax ||
+      (
+        canonicalFreshTextToSource(nextCanonicalLine) === nextCanonicalLine &&
+        punctuationOnly.test(nextAuthoredLine.trim())
+      )
+    )
+  ) {
+    return null
+  }
+
+  const sourceLines = markdownLines(source)
+  const previousLines = markdownLines(previous)
+  const previousLineIndex = previousLines.findIndex((line) => (
+    line.start === previousLine.start && line.end === previousLine.end
+  ))
+  // Source and canonical normally retain the same row skeleton even when the
+  // serializer escapes punctuation. Prefer that structural identity so two
+  // separate raw `` ` `` rows can be edited independently. If earlier edits
+  // changed row counts, retain the stricter unique-content fallback.
+  const ordinalSourceLine = sourceLines.length === previousLines.length && previousLineIndex >= 0
+    ? sourceLines[previousLineIndex]
+    : null
+  const candidates = sourceLines.filter((line) => line.text === authoredLine)
+  const sourceLine = ordinalSourceLine?.text === authoredLine
+    ? ordinalSourceLine
+    : candidates.length === 1
+      ? candidates[0]
+      : null
+  if (!sourceLine) return null
+  return {
+    markdown: source.slice(0, sourceLine.start) + nextAuthoredLine + source.slice(sourceLine.end),
+    preserved: true,
+    reason: nextAuthoredLine.trim()
+      ? punctuationOnly.test(nextAuthoredLine.trim())
+        ? 'escaped-literal-line-changed'
+        : 'escaped-literal-line-replaced'
+      : 'escaped-literal-line-emptied'
   }
 }
 

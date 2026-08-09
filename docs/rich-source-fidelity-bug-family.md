@@ -2,7 +2,7 @@
 
 > 状态：持续维护（Living Document）
 >
-> 当前基线：HorseMD 0.13.22，2026-08-08
+> 当前基线：HorseMD 0.13.26，2026-08-09
 >
 > 适用范围：富文本编辑、源码模式、模式切换、保存/重开、列表、空段落、光标映射和 Markdown 原文保真。
 
@@ -86,6 +86,10 @@ HorseMD 同时维护两种表示：
 | RS-20 | 表格单元格换行误清理 | 表格中的 `<br>` 丢失，GFM 表格损坏 | 表格 cell 的 `<br>` 是合法作者内容，与独立空 paragraph 占位不同；清理逻辑必须感知表格范围 | 已覆盖：source fidelity、table/source map 测试 |
 | RS-21 | 任务列表勾选不持久化 | 点击 checkbox 后保存重开仍未勾选 | Crepe checkbox 在 `pointerdown` 修改并抑制兼容 mouse event；根 capture listener 必须把事务识别为真实用户编辑 | 已覆盖：`test:task-list-persistence-ui` |
 | RS-22 | 歧义映射后状态被错误确认 | 模式切换偶发卡住，下一次编辑覆盖前一次 | fail-closed 只保护源码还不够；映射失败时不能推进 canonical 基线、不能清 pending，强制边界要重新读取 live doc | 持续防回归：连续编辑、chaos、保存/切换组合矩阵 |
+| RS-23 | 空引用结构删除后复活 | 清空引用文字后再删掉空引用，富文本已无引用但源码仍有 `>`，保存重开后引用回来 | `>` / `<br />` 都没有可见字符，通用映射得到零宽区间却留下 raw marker；用相邻可见锚点之间的完整 gap 删除 syntax-only quote row | 已覆盖：`test:empty-blockquote-removal-ui`、纯函数矩阵 |
+| RS-24 | 跨块连续编辑后双快照分叉 | 富文本删除的旧内容仍在源码，新增内容缺失，立即切源码偶尔卡住 | Milkdown 延迟回调把多个不相邻块合成一个不可安全映射的 delta；跨顶层块输入前先提交上一块，并用稳定顶层起点避开 paragraph→list input-rule 中间态；分叉文档只允许唯一上下文局部回写 | 已覆盖：`test:mixed-rich-source-transaction-ui`、`test:rich-list-source-ui`、continuous/chaos/list 矩阵；详见 `mixed-rich-source-transaction-regression.md` |
+| RS-25 | 列表项正文字面标记被 serializer 转义 | 在有序/无序项正文输入 `1. 测试`、`1) 测试`、`- 测试`、`+ 测试` 或 `* 测试`，源码多出 `\`；还可能格式化后续未编辑列表 | remark 为防嵌套列表歧义输出 serializer escape；用去转义语义视图与 raw 边界表只映射本次行文字 delta，保留作者已有转义、marker 与间距 | 已覆盖：`test:list-item-literal-marker-source-ui`、纯函数/列表/chaos 矩阵；详见 `list-item-literal-marker-escape-regression.md` |
+| RS-26 | 反引号删除后保存暂停、源码切换锁死 | 逐字输入/删除一个或三个反引号后，保存提示无法安全映射，源码按钮无响应；后续文字可能留在富文本却无法写盘 | 部分删除被误判为整行删除，重复反引号行依赖全文唯一匹配，独立 `<br />` 空段落让零宽 offset 锚错，未变化列表还会抢先消费无关事务；按完整 next line、同行 ordinal、空段落邻接行和 live doc 修复，保留 fail-closed 数据保护 | 已覆盖：`test:code-fence-delete-source-ui`、`test:inline-code-ui`、`test:source-fidelity-ui`、纯函数/continuous/chaos 矩阵；详见 `backtick-source-sync-lock-regression.md` |
 
 ## 5. 代码归属
 
@@ -140,6 +144,10 @@ npm run test:diverged-list-structure-ui
 npm run test:diverged-delete-source-ui
 npm run test:diverged-partial-delete-ui
 npm run test:full-doc-delete-source-ui
+npm run test:empty-blockquote-removal-ui
+npm run test:mixed-rich-source-transaction-ui
+npm run test:list-item-literal-marker-source-ui
+npm run test:code-fence-delete-source-ui
 npm run test:empty-paragraph-source-ui
 npm run test:empty-paragraph-caret-ui
 npm run test:mode-switch-caret-settle-ui
@@ -172,13 +180,16 @@ npm run test:task-list-persistence-ui
 - 删除列表 marker、删除列表项文字、删除整项，再继续新增有序/无序列表。
 - 在第一层转换列表类型，二三级不变；在第二层转换，一级和三级不变。
 - 覆盖 `- 1. 文本`、空列表项、任务列表勾选、相邻不同 marker 列表。
+- 在有序和无序列表项正文逐字输入 `1. 测试`、`1) 测试`、`- 测试`、`+ 测试`、`* 测试`；源码不得增加反斜杠，后续未编辑列表的 marker 和空行不得变化。自动化：`npm run test:list-item-literal-marker-source-ui`。
 - 每一步都立即切源码，并在最后保存重开。
+- 在同一已有文件中快速执行“改标题 → 删除中间列表文字 → 修改后文列表”，不等待回调立即切源码；旧文字必须消失，新文字必须齐全。自动化：`npm run test:mixed-rich-source-transaction-ui`。
 
 ### 7.3 特殊拼写
 
 - `0~9`、字面 `*`、反斜杠、HTML entity、行内代码、LaTeX、中文标点。
 - 按住 Space 输入多个前导空格后再打字：源码不得出现 `&#x20;`，切换不能卡住。
 - 既有文件中的空格和转义不得被 HorseMD 主动改写。
+- 逐字输入一个/三个反引号，分别做部分删除、全部删除、继续输入正文，并在最后一个按键后立即切源码和立即保存；不得出现保存暂停或源码切换锁死。文档含两条相同反引号行、独立空段落、Setext 标题和未编辑列表时也必须通过。自动化：`npm run test:code-fence-delete-source-ui`。
 
 ### 7.4 光标
 
@@ -249,7 +260,15 @@ npm run test:task-list-persistence-ui
 - [源码优先 Live Preview 迁移计划](./live-preview-migration-plan.md)
 - [macOS 真实输入测试方法](./macos-real-input-testing.md)
 - [人工测试清单](./manual-test-checklist.md)
+- [空引用删除后复活回归报告](./empty-blockquote-removal-regression.md)
+- [跨块连续编辑事务回归报告](./mixed-rich-source-transaction-regression.md)
+- [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)
+- [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)
 
 ## 12. 维护记录
 
 - 2026-08-08 / 0.13.22：建立家族总账；汇总删除复活、空段落 `<br />`、列表 marker、数字点列表、分叉映射、前导空格 `&#x20;`、模式切换与光标等问题。
+- 2026-08-08 / 0.13.23：增加 RS-23；空引用块第二次 Backspace 后，syntax-only `>` 必须同步从源码、磁盘和重开结果中删除。
+- 2026-08-08 / 0.13.24：增加 RS-24；跨顶层块快速编辑在下一块输入前提交上一块，避免一个延迟 callback 同时携带多处不相邻变化；顶层 key 特别保护 paragraph→list input rule，不得让 `-` 回退为 `*` 或黏回上一行。
+- 2026-08-09 / 0.13.25：增加 RS-25；列表项正文中的 `数字. 文本` 不再泄漏 serializer `\.`，稳定行文字编辑也不得格式化未编辑列表的 marker 与紧凑间距。
+- 2026-08-09 / 0.13.26：扩展 RS-25 到 `数字)`、`-`、`+`、`*` 字面标记；增加 RS-26，修复反引号部分/重复删除造成的双快照分叉、保存暂停和源码切换锁死，并保护空段落后的零宽编辑与未变化列表。
