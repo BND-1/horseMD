@@ -750,8 +750,9 @@ const unescapedPunctuationView = (value) => {
 }
 
 const comparableListLine = (line) => {
-  const content = String(line || '')
+  const content = canonicalTextToSource(String(line || '')
     .replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?/, '')
+  )
     .trim()
     .replace(/^<br\s*\/?>$/i, '')
   return unescapedPunctuationView(content).text

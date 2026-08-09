@@ -5,7 +5,7 @@ description: 下载、安装并第一次打开 HorseMD。
 
 # 快速开始
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29（桌面版）</span>
 
 从下载到创建第一篇文档，通常只需要几分钟。由于当前桌面安装包尚未购买代码签名，Windows 和 macOS 第一次打开时会显示系统安全提示；Linux 用户应确认 `.deb` 来自 HorseMD 官方 GitHub Release。请按照对应教程操作。
 
@@ -13,13 +13,13 @@ description: 下载、安装并第一次打开 HorseMD。
 
 | 平台 | 安装文件 | 安装教程 |
 | --- | --- | --- |
-| Windows 10/11 x64 | `HorseMD-Setup-0.12.10.exe` | [Windows 安装](/getting-started/install-windows) |
-| Apple 芯片 Mac | `HorseMD-0.12.10-arm64.dmg` | [macOS 安装](/getting-started/install-macos) |
-| Intel Mac | `HorseMD-0.12.10.dmg` | [macOS 安装](/getting-started/install-macos) |
-| Linux（Ubuntu/Debian） | `horse_0.12.10_amd64.deb` | [Linux 安装](/getting-started/install-linux) |
+| Windows 10/11 x64 | `HorseMD-Setup-0.13.29.exe` | [Windows 安装](/getting-started/install-windows) |
+| Apple 芯片 Mac | `HorseMD-0.13.29-arm64.dmg` | [macOS 安装](/getting-started/install-macos) |
+| Intel Mac | `HorseMD-0.13.29.dmg` | [macOS 安装](/getting-started/install-macos) |
+| Linux（Ubuntu/Debian） | `horse_0.13.29_amd64.deb` | [Linux 安装](/getting-started/install-linux) |
 | Android | `HorseMD-0.12.10.apk` | [Android 安装](/getting-started/install-android) |
 
-如果不确定 Mac 使用哪种芯片，请先阅读[下载正确的版本](/getting-started/download)。iPhone 和 iPad 当前需要通过 Xcode 安装开发版本，不提供面向普通用户的公开安装包。
+如果不确定 Mac 使用哪种芯片，请先阅读[下载正确的版本](/getting-started/download)。Android 公开 APK 目前仍是 `0.12.10`，不包含桌面 `0.13.29` 的源码 + 预览、拖入文件夹等能力；iPhone 和 iPad 当前需要通过 Xcode 安装开发版本，不提供面向普通用户的公开安装包。
 
 ## 安装之后
 

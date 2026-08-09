@@ -14,6 +14,7 @@ import ActivityBar from './components/shell/ActivityBar.jsx'
 import Topbar from './components/shell/Topbar.jsx'
 import FindBar from './components/shell/FindBar.jsx'
 import EditorArea from './components/shell/EditorArea.jsx'
+import DropOpenOverlay from './components/shell/DropOpenOverlay.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import RenameModal from './components/RenameModal.jsx'
 import {
@@ -54,6 +55,7 @@ import { useHtmlExport } from './hooks/useHtmlExport.js'
 import { usePandocExport } from './hooks/usePandocExport.js'
 import { useKeybindings } from './hooks/useKeybindings.js'
 import { useSystemColorScheme } from './hooks/useSystemColorScheme.js'
+import { useDropOpen } from './hooks/useDropOpen.js'
 import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
@@ -591,6 +593,17 @@ export default function App() {
   })
 
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
+  const addDroppedFolder = useCallback((path) => {
+    addFolder(path)
+    // A dropped directory is a workspace action. Reveal the file tree even on
+    // a first-run session that currently shows the welcome document outline.
+    setSidebarMode('files')
+  }, [addFolder])
+  const dropOpenActive = useDropOpen({
+    enabled: !isMobile && window.api.capabilities?.nativeDropOpen !== false,
+    openPaths,
+    addFolder: addDroppedFolder
+  })
   const enableSyncFolder = useCallback(async (rootPath) => {
     try {
       const entry = await syncWorkspaces.enableFolder(rootPath)
@@ -1020,6 +1033,7 @@ export default function App() {
   return (
     <I18nProvider lang={lang} setLang={setLang}>
     <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}`} style={appFontStyle}>
+      {dropOpenActive && <DropOpenOverlay t={t} />}
       <ActivityBar
         home={home}
         sidebarMode={sidebarMode}

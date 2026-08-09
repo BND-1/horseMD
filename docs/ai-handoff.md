@@ -5,7 +5,7 @@
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前测试版本号：`package.json` 为 `0.13.26`。0.13.23 修复空引用删除后复活，0.13.24 修复跨顶层块连续编辑造成的双快照分叉，0.13.25–0.13.26 修复列表项正文字面 `1.` / `1)` / `-` / `+` / `*` 被 serializer 增加反斜杠，以及反引号部分/重复删除后双快照分叉、保存暂停和源码切换锁死。专项见 `empty-blockquote-removal-regression.md`、`mixed-rich-source-transaction-regression.md`、`list-item-literal-marker-escape-regression.md`、`backtick-source-sync-lock-regression.md`；整套问题统一收录于 `rich-source-fidelity-bug-family.md`。
+- 当前发布候选版本号：`package.json` 为 `0.13.29`。该版本在 0.13.28 原文保真基线上新增桌面文件/文件夹拖入打开，并重新执行完整富文本 ↔ 源码家族矩阵。`dist/mac-arm64/HorseMD.app` 已构建为 0.13.29；用户当前正在运行的 `/Applications/HorseMD.app` 仍是 0.13.28，因有未保存内容没有强制退出覆盖。发布前必须先安全结束旧进程、安装 0.13.29 并复跑安装包专项，不能把 `dist/` 版本当成已安装版本。
 - **0.13.x 系列主线（自 0.12.69 之后）**：
   - **原文保真与空段落硬不变式**：空段落 `<br />` 占位绝不允许进入作者源码（`withoutStandaloneEmptyBlockLines` 在 `preserveRichMarkdownSource` 出口强制剥离）；空段落映射不得要求全文可见流相等、不得被无关空段落否决；连续空段落映射不递归。系列提交 `bb5b9f4` → `cfae66a`。
   - **可见流分叉删除回退**：源码与 canonical 可见流分叉（如行中 `* ` 使 remark 拆成列表项）时，局部对齐与行区域映射都会失败并 fail-closed，富文本删除会被静默撤销。新增 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）：单 canonical 块 + 块文本在源码中唯一出现 + 反转义 canonical 拼写（`\*`→`*`、`&#x20;`→空格）后替换。提交 `abb6d09`。
@@ -17,6 +17,9 @@
   - **数字点列表与多列表同步（0.13.17–0.13.18）**：`- 1. 甲乙` 被 remark 解析为嵌套有序列表，canonical 与 source 可见流永久分歧，列表内编辑曾 fail-closed 丢失。`preserveDivergedNestedListChange` 现在以 canonical/source 的**顶层列表块**做 ordinal 对齐，再以 `token + text + indent` 项序列执行结构级 diff；覆盖删除数字 marker、Backspace 多级提升、后续含内联加粗列表以及 Enter 拆分。延迟 `markdownUpdated` 同时包含多个 `- / + / *` 列表操作时，`preserveBatchedListBlockChanges(requireMultiple: true)` 会先做多块原子对账，避免单列表处理器提前返回、marker 被统一或编辑丢失。完整根因、事故记录和回归矩阵见 `nested-list-sync-bug-handoff.md`。
   - **跨块删除兜底（0.13.18）**：分歧文档里**跨多个 canonical 块的纯删除**（拖选删尾部、一次删多个列表树）此前 fail-closed 回退，删除静默消失、保存后重开复活。新增 `preserveDivergedVisibleDelete`（`regions.js`，diverged 分支最后）：删除区间前 24 可见字符唯一锚定 + 删除内容逐行去标记校验。详见 `canonical-escape-audit.md`。
   - **字面列表标记与反引号强制边界（0.13.25–0.13.26）**：稳定列表行用去转义语义视图 + raw boundary map 回写 `1.` / `1)` / `-` / `+` / `*` 字面正文；反引号部分删除改为读取完整 next canonical line，重复行按 ordinal，独立 `<br />` 空段落两侧按同行映射。行内代码事务从 live `view.state.doc` 序列化，失败不推进双快照。详见 `list-item-literal-marker-escape-regression.md` 与 `backtick-source-sync-lock-regression.md`。
+  - **列表转换与行内代码闭合交互（0.13.27）**：列表 marker 转换的正文比较先统一 `U+200B + spaces` 与 `&#x20; + spaces` 的 canonical/source 语义，但只输出 marker 变化；行内代码不再在首个中文字符时提前激活，只在最终闭合反引号输入后创建 mark，并支持首尾方向键退出。``` + Space 恢复代码块输入规则，空代码块 Backspace 后立即对账 live doc。真实 IME、逐键 fence 删除、保存和新进程重开均有专项回归。
+  - **新文档三反引号原文保真（0.13.28）**：generated scratch 与空文件首次编辑全部属于本次用户输入，改由 `canonicalFreshTextToSource` 还原 Markdown 正文 serializer punctuation；真正的 fenced/inline code 与 HTML literal 仍保持字节不动。新增 `test:literal-triple-backtick-source-ui`，逐键输入 delimiter、真实中文 IME、切源码、保存和完整进程重开。
+  - **桌面外部拖入打开（0.13.29）**：Finder / 文件资源管理器拖入一个或多个文件时复用标签打开链路，拖入目录时加入多根工作区；图片落在富文本正文仍由编辑器插图链路处理。Renderer 只通过 preload 的 `webUtils.getPathForFile()` 取得路径，目录判定留在主进程，移动端 capability 明确关闭。详见 `desktop-drop-open.md`。
   - **源码/富文本架构探索**：`live-preview-migration-plan.md`（远期「源码即数据模型」）、CodeMirror Live Preview 可行性 spike、step-to-source mapper 原型与真实引擎验证。
   - **代码块体验**：编辑器代码块行号（不透明背景、贴左、全高、右侧分隔竖线）、**PDF 导出代码块带行号**、表格单元格单击直接编辑。提交 `5094e0b`、`7b2e50b`、`9bc9412`、`a45f958`。
   - **原生 HTML 表格自适应**：带 `width` 属性的 HTML 表格恢复作者语义（`100%` 跟随容器、固定像素收缩），`td/th` 允许列收缩，表格内图片按单元格宽度显示，不再横向溢出。提交 `8a98b5f`。
@@ -33,7 +36,9 @@
   - `cfae66a fix(editor): enforce empty-paragraph <br /> invariant at the source boundary`
   - `606bfc6 feat(editor): add source rich split preview`
 - 最近完整验证：
-  - **0.13.26 当前工作区（未提交）**：RS-23–26 专项、源码保真纯函数、逐字列表新建/转换/删除 marker/嵌套、字面列表标记、单/三反引号部分与全部删除、立即切源码/保存、continuous/chaos、空段落/空引用、分叉删除、前导空格实体、任务列表、源码字节、raw-offset/caret、保存与完整重开矩阵全部通过；桌面与移动构建通过。`/Applications/HorseMD.app` 已由当前源码重新打包覆盖，plist 与运行进程均核验为 0.13.26，安装后的 app 再跑字面列表标记和反引号删除两条专项 UI 回归通过。
+  - **0.13.29 发布候选（当前工作区，未提交/未发布）**：完整富文本 ↔ 源码家族矩阵全部通过，包括纯函数映射、逐字段落/列表/反引号、空段落/空引用、模式切换光标、保存与完整重开、混合事务、长文档、源码 + 预览、连续/嵌套写作和四组 chaos；发现并修正了仍按旧“首字符自动激活行内代码”合同编写的 `test:paragraph-source-ui`。桌面拖入专项、主进程文件系统、图片拖放边界、侧栏创建、桌面/移动构建、guide 检查和打包产物专项均通过。`dist/mac-arm64/HorseMD.app` 为 0.13.29；安装目录仍为 0.13.28，发布前尚需安全覆盖安装后的最终复跑。
+  - **0.13.28 当前工作区（未提交）**：新增 generated scratch / empty-file 字面三反引号回归。纯函数、真实 IME 行内代码、逐键三反引号源码/保存/完整重开、fence 删除、new source/new document list、source fidelity、raw-offset、source-map、35/35 probes、leading-space、IME、列表转换/字面 marker、continuous 与四组 chaos 全部通过；桌面、移动和 guide 构建通过。`dist/mac-arm64/HorseMD.app` 与 `/Applications/HorseMD.app` plist 均核验为 0.13.28，安装后的 app 再跑字面三反引号和行内代码 UI 回归通过，运行进程来自 `/Applications/HorseMD.app`。旧 0.13.27 备份位于 `/tmp/HorseMD-0.13.27-backup-20260809-072510.app`。
+  - **0.13.27 已安装基线**：`test:markdown-preservation`、列表转换（含 `U+200B + 5 spaces`）、真实中文 IME 行内代码闭合、方向键退出、单/三反引号删除、``` + Space→Backspace→快速正文、source fidelity、raw-offset、source-map、35/35 probes、leading-space、IME、continuous 与四组 chaos 全部通过；桌面、移动和 guide 构建通过。旧 0.13.26 备份位于 `/tmp/HorseMD-0.13.26-backup-20260809-070148.app`。
   - 0.12.46–0.12.69 的历史验证（`test:mermaid-paste-ui`、`test:issue-98-ui`、`test:list-conversion-ui`、`test:source-rich-split`、`test:settings-ui`、云同步专项等）仍有效，命令见下文第 7 节。
 - 真实大文档回归依赖本机文件：
   - `/Users/yangtingyi/vibe_everything/置身钉内/MinerU_markdown_置身钉内_14.34.50_2064164636132720640.md`
@@ -135,6 +140,8 @@ HorseMD 是一个 Typora 风格的 Markdown 编辑器：
 31. [mixed-rich-source-transaction-regression.md](./mixed-rich-source-transaction-regression.md)：跨顶层块快速编辑时延迟 `markdownUpdated` 合并多处变化、源码保留已删内容或漏掉新增内容的事务边界根因与回归。
 32. [list-item-literal-marker-escape-regression.md](./list-item-literal-marker-escape-regression.md)：列表项正文输入 `1.` / `1)` / `-` / `+` / `*` 字面文本后源码多出反斜杠，并连带格式化未编辑列表 marker/空行的根因、修复边界与验收合同。
 33. [backtick-source-sync-lock-regression.md](./backtick-source-sync-lock-regression.md)：逐字输入/部分删除/全部删除反引号后，双快照分叉、保存暂停和源码切换锁死的完整事务证据、四个根因与回归合同。
+34. [desktop-drop-open.md](./desktop-drop-open.md)：桌面文件/文件夹拖入打开的产品边界、preload/IPC 安全边界、图片插入冲突处理与专项测试。
+35. [release-v0.13.29.md](./release-v0.13.29.md)：从上一正式版 `v0.12.62` 到当前发布候选的用户更新说明、安装文件、关联 Issue 和验证证据。
 
 历史文档说明：
 
@@ -322,7 +329,7 @@ android/, ios/           Capacitor 原生壳
 - **原生 HTML 表格自适应**：见第 5.2c 节。`代码测试` 类 gov.cn 嵌套 `<table width="950">` 不再横向溢出；`html表格无法自适应.md` 是复现文件。
 - **文档位置记忆（#111）**：见第 5.2c 节。已回复 issue #111 引导下载最新版。
 - **已知遗留（已留底、待用户提供步骤）**：代码块围栏「吞正文」——见 `codeblock-fence-investigation.md`。排查结论：正常插入路径（斜杠菜单/真粘贴/输入规则/相同内容/多行/空块/Mermaid/中间插入/编辑内容）保存重开全部正常；用户现场文件 `代码测试.md` 显示两段代码无围栏且 `register()/import bpy` 粘连。在拿到精确复现前**不要盲改**。
-- **相关边界（与 0.13.26 已修复路径分开）**：单/三反引号输入、部分/全部删除后保存暂停和源码锁死已修复；真正“把三个反引号转换成 fenced code block”以及「结束围栏损坏后吞后文」仍按 `codeblock-fence-investigation.md` 独立跟踪，不能把两个问题混为一个。粘贴无围栏纯文本代码的行首缩进语义也属于独立路径。
+- **相关边界（与 0.13.26–0.13.27 已修复路径分开）**：单/三反引号输入、部分/全部删除后保存暂停和源码锁死已修复；0.13.27 已验证 ``` + Space 可创建 fenced code block，空块一次 Backspace 后快速输入也安全。「已有结束围栏损坏后吞后文」仍按 `codeblock-fence-investigation.md` 独立跟踪，不能与正常输入规则混为一个问题。粘贴无围栏纯文本代码的行首缩进语义也属于独立路径。
 
 ### 自定义快捷键
 
@@ -544,7 +551,7 @@ npm run guide:capture
 5. 插件市场难度高，先不急；优先可控的自定义快捷键、同步、AI provider 合同。
 6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；先维护已落地的原文保真层。
 7. **代码块围栏「吞正文」**：已留底待用户提供复现（`codeblock-fence-investigation.md`）；拿到精确步骤后定位保存路径的围栏/换行丢失点。
-8. **fenced code block 创建与损坏围栏吞后文**：0.13.26 已修复反引号删除导致的保存/源码锁死，但真正的三个反引号输入规则与已损坏围栏仍按 `codeblock-fence-investigation.md` 独立排查；不要退回到整篇 canonical 覆盖。
+8. **损坏围栏吞后文**：0.13.26 修复反引号删除导致的保存/源码锁死，0.13.27 验证 ``` + Space 创建代码块和空块 Backspace 快速退出；但既有文件的结束围栏已损坏后吞正文仍按 `codeblock-fence-investigation.md` 独立排查，不要退回到整篇 canonical 覆盖。
 
 已在 Roadmap 中记录：
 
@@ -584,14 +591,23 @@ npm run guide:capture
 
 ## 14. 最近一次稳定基线
 
-截至 **2026-08-09，仓库修复基线为 `0.13.26`**；`/Applications/HorseMD.app`
+截至 **2026-08-09，当前功能基线为 `0.13.29`**；`/Applications/HorseMD.app`
 是否已替换必须在每次手测前重新核验，不能只看 `dist/` 产物。除 generated-scratch
 首个 `-` 列表项 marker、连续空格中间态、`&#x20;`、空引用结构删除外，本轮新增
 跨块“编辑 → 删除 → 再编辑 → 立即切源码”的事务边界回归，防止源码保留已删内容或
 遗漏新增内容；列表项正文中新输入的 `1.` / `1)` / `-` / `+` / `*` 字面文本不得泄漏
 serializer 反斜杠或格式化未编辑列表；反引号部分/全部删除后不得保存暂停或锁住源码模式。
+generated scratch 与空文件首次编辑中，同一行三反引号正文不得泄漏 serializer `\``；
 完整现状见 `rich-source-fidelity-bug-family.md`、`list-item-literal-marker-escape-regression.md`、
 `backtick-source-sync-lock-regression.md` 与 `leading-space-mode-switch-regression.md`。
+0.13.29 新增桌面端外部文件/文件夹拖入：文件复用标签打开链路，目录加入多根工作区，
+富文本正文图片仍由编辑器插入；实现与测试边界见 `desktop-drop-open.md`，专项命令为
+`npm run test:drop-open-ui`。
+同日已重新执行 `rich-source-fidelity-bug-family.md` 与
+`nested-list-sync-bug-handoff.md` 所列完整家族矩阵：纯函数映射、逐键段落/列表/反引号、
+空段落/空引用、源码光标、保存重开、混合事务、长文档、源码+预览与四档 chaos
+全部通过。期间发现 `test:paragraph-source-ui` 仍按旧“首字符自动激活行内代码”合同编写，
+已改为真实闭合反引号触发；这是测试合同过时，不是产品数据流失败。
 0.13.x 在 0.12.50 基线之上新增/更新的必测项：
 
 ```bash
@@ -623,6 +639,7 @@ npm run test:empty-paragraph-source-ui
 npm run test:mode-switch-raw-offset-ui
 npm run test:table-ui
 npm run test:issue-91-pdf-ui
+npm run test:drop-open-ui
 ```
 
 `test:ui-regression` 全绿基线（7 sessions + 25 standalone）在 0.12.48 验证，0.12.5x–0.13.x 持续增量扩展。已知例外：`test:rich-source-chaos-ui` 第一子测试**基线即偶发**（点击坐标时序），单独跑可过，不代表回归。

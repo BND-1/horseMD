@@ -19,7 +19,8 @@ const DESKTOP_CAPABILITIES = {
   nativeMenus: true,
   externalShell: true,
   revealInFolder: true,
-  splitView: true
+  splitView: true,
+  nativeDropOpen: true
 }
 
 if (typeof window !== 'undefined') {

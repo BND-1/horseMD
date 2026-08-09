@@ -822,6 +822,21 @@ assert.equal(
   'an ambiguous combined conversion/text delta must fail closed instead of replacing the canonical list tree'
 )
 
+const leadingSpaceListSource = '- 是的v\n- 色粉色\n- \u200B     色粉色分\n'
+const leadingSpaceListCanonical = '* 是的v\n* 色粉色\n* &#x20;    色粉色分\n'
+assert.equal(
+  replaceMarkdownListBlock({
+    source: leadingSpaceListSource,
+    previous: leadingSpaceListCanonical,
+    next: '1. 是的v\n2. 色粉色\n3. &#x20;    色粉色分\n',
+    sourceOffset: 2,
+    previousOffset: 2,
+    nextOffset: 3
+  }),
+  '1. 是的v\n2. 色粉色\n3. \u200B     色粉色分\n',
+  'list conversion must treat U+200B authored leading spaces and canonical &#x20; as the same item text'
+)
+
 const listChanged = preserveRichMarkdownSource(listSource, listCanonical, listNext)
 assert.equal(listChanged.preserved, true)
 assert.equal(listChanged.reason, 'list-type-change')
@@ -1338,6 +1353,22 @@ assert.equal(
   generatedScratchMarkdown('``code ` &#x20; \\~ literal`` 外部 0\\~9\n'),
   '``code ` &#x20; \\~ literal`` 外部 0~9\n',
   'double-backtick code spans containing a single backtick must remain literal while outside text is restored'
+)
+assert.equal(
+  generatedScratchMarkdown('\\`\\`\\`你好\\`\\`\\`\n'),
+  '```你好```\n',
+  'same-line triple-backtick text typed in a scratch document must not expose serializer escapes'
+)
+const literalTripleBacktickNewDocument = preserveRichMarkdownSource(
+  '',
+  '',
+  '\\`\\`\\`你好\\`\\`\\`\n'
+)
+assert.equal(literalTripleBacktickNewDocument.reason, 'new-document')
+assert.equal(
+  literalTripleBacktickNewDocument.markdown,
+  '```你好```\n',
+  'an empty-file first edit must restore typed triple backticks before source mode or save'
 )
 const tildeNewDocument = preserveRichMarkdownSource('', '', '# 审计 0\\~9\n')
 assert.equal(

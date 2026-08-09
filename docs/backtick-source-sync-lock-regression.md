@@ -1,6 +1,6 @@
 # 反引号删除后保存暂停与源码模式锁死回归报告
 
-> 状态：HorseMD 0.13.26 已修复并纳入自动化回归
+> 状态：HorseMD 0.13.26 修复同步锁死；0.13.27 补齐闭合触发与代码块快速退出边界；0.13.28 修复新文档三反引号 canonical 转义泄漏；0.13.29 发布候选完成整套家族复跑
 >
 > 家族编号：RS-26
 >
@@ -50,6 +50,40 @@ next canonical：\`
 
 行内代码插件拥有自己的事务时序。`Editor.jsx` 的回调现在通过 `serializerCtx(view.state.doc)` 读取当前 ProseMirror 文档，不再使用可能滞后的 `crepe.getMarkdown()`。若保真映射失败，不推进 source/canonical 基线、不清 pending，等待后续强制边界重新读取 live doc。
 
+### 2.6 行内代码不能在首个正文字符时提前激活（0.13.27）
+
+旧插件在用户输入左反引号后，只要 IME 提交第一个中文字符，就立即删除作者输入的
+反引号并创建 inline-code mark。用户尚未表达闭合意图，却已经进入 code 编辑态；
+这也让连续方向键和三个反引号的代码块输入规则互相影响。
+
+现在左反引号与中间正文保持普通字面文本。只有最后输入一个未转义、单个运行的右
+反引号，且同一 textblock 中间内容非空时，才删除两个 delimiter 并给中间正文加
+inline-code mark。`` 与 ``` 运行保持字面输入。闭合后清除 stored inline-code mark，
+并把 DOM caret 放在 code 右侧；点击既有 code 后仍可编辑，首尾方向键可直接退出。
+
+真实 IME 回归使用 `Input.imeSetComposition` 完成拼音 composition，再提交中文，明确
+断言闭合前不存在 `<code>`，而不是用 `insertText` 冒充中文输入法。
+
+### 2.7 ``` + Space 与快速 Backspace 的同步边界（0.13.27）
+
+取消“首个字符提前变行内代码”后，``` + Space 会正确恢复 Crepe 的 fenced code-block
+输入规则。空代码块按一次 Backspace 会回到空段落；若用户立刻继续输入，旧的 260ms
+批处理可能把新正文与 fenced canonical 合在同一个 delta。DOM 交互层现在识别来自
+CodeMirror/代码块的 Backspace，在结构命令完成后的下一任务立即从 live doc 对账，
+后续快速输入不会粘到上一段，保存和重开保持一致。
+
+### 2.8 同一行三反引号在新文档中泄漏反斜杠（0.13.28）
+
+真实输入 ```` ```你好``` ```` 是普通正文，不是 fenced code block，也不应成为行内代码。
+remark 为避免重新解析歧义，会把该段 canonical 写成六个带反斜杠的反引号。已有文件的
+局部增量会走 fresh replacement 翻译，因此没有暴露；但 generated scratch 和空文件首次
+编辑仍调用普通 `canonicalTextToSource`，误把 serializer 拼写当成作者原文。
+
+新建文档的全部内容都来自本次富文本输入，不存在旧作者转义需要逐字保留。因此这两条
+边界改用 `canonicalFreshTextToSource`：只在 Markdown 正文还原 serializer punctuation，
+而 fenced code、真正的 inline code、HTML comment/raw block 仍由上下文扫描保持字节不动。
+这不是全局删除反斜杠，也不会扫描或格式化已有文件。
+
 ## 3. 为什么不能删除“保存暂停”保护
 
 保存暂停和源码模式拒绝切换是最后一道数据安全边界。它们阻止旧源码覆盖用户仍可见的富文本编辑。正确修复是消除更早的错误分叉，而不是：
@@ -72,7 +106,7 @@ next canonical：\`
 - `src/renderer/src/components/Editor.jsx`
   - 行内代码事务从 live `view.state.doc` 序列化；映射失败不确认快照。
 - `src/renderer/src/markdown-source-preservation.js`
-  - 接入 ordinal line 路径；提供测试按需启用、最多 200 条的 `window.__hmPreserveLog` 诊断记录。
+  - 接入 ordinal line 路径；generated scratch / empty-file 首次编辑使用 fresh canonical 翻译；提供测试按需启用、最多 200 条的 `window.__hmPreserveLog` 诊断记录。
 
 ## 5. 自动化验收
 
@@ -80,6 +114,7 @@ next canonical：\`
 npm run test:markdown-preservation
 npm run test:code-fence-delete-source-ui
 npm run test:inline-code-ui
+npm run test:literal-triple-backtick-source-ui
 npm run test:empty-paragraph-source-ui
 npm run test:source-fidelity-ui
 npm run test:new-source-fidelity-ui
@@ -90,7 +125,7 @@ npm run build
 npm run build:mobile
 ```
 
-`test:code-fence-delete-source-ui` 必须逐键覆盖：单反引号输入/删除、三反引号输入/部分删除/全部删除、重复两轮、反引号后 Space 触发行内代码交互、删除后立即切源码、删除后立即保存、二次往返、完整进程重开及磁盘逐字节比较。
+`test:code-fence-delete-source-ui` 必须逐键覆盖：单反引号输入/删除、三反引号输入/部分删除/全部删除、重复两轮、``` + Space 触发代码块并按一次 Backspace 后快速输入、删除后立即切源码、删除后立即保存、二次往返、完整进程重开及磁盘逐字节比较。
 
 ## 6. 人工验收
 
@@ -100,6 +135,7 @@ npm run build:mobile
 4. 在空段落前后各保留标题/正文，再做上述操作；其他块不得粘连或被格式化。
 5. 文档包含两条相同反引号行时，分别修改第二条；不得因全文重复而锁死。
 6. 同一文件保留 `-`、`+`、`*` 列表和 Setext 标题；反引号操作后这些未编辑内容逐字符不变。
+7. 真正空白文件逐键输入 ```` ```你好``` ````（中文使用真实 IME），切源码后每个反引号前都不得多出 serializer 反斜杠；保存、关闭进程、重开后源码完全一致。
 
 ## 7. 防回归禁区
 
@@ -109,3 +145,4 @@ npm run build:mobile
 - previous/next canonical 未变化的列表不能消费无关事务。
 - 映射失败不能推进双快照、清 pending 或绕过保存/源码 fail closed。
 - 不能用整篇 canonical 覆盖作者源码来“让切换恢复”。
+- 不能把 generated scratch 的 canonical serializer escape 当作作者源码；也不能用全局 `replace('\\`', '`')` 破坏代码/HTML literal。

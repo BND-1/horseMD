@@ -5,7 +5,7 @@ description: 插入带语言高亮的代码块，使用 CodeMirror 编辑和复�
 
 # 代码块
 
-<span class="version-badge">适用于 HorseMD v0.13.13</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 ## 插入代码块
 

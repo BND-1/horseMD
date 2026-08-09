@@ -1,5 +1,34 @@
 # Changelog
 
+All notable changes to this project are documented here.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [0.13.29] - 2026-08-09
+
+`0.13.29` 汇总 `v0.12.62` 之后的桌面开发测试版本，重点收敛源码 / 富文本一致性，并补齐长文档写作与常用编辑操作。
+
+### Added
+- **源码 + 预览双栏**（[#107](https://github.com/BND-1/horseMD/issues/107)）— 桌面 Markdown 可在左侧编辑源码、右侧查看只读富文本，支持按内容锚点联动滚动、分隔线调宽和一键关闭预览。
+- **桌面拖入打开** — 从 Finder / 文件资源管理器拖入一个或多个文件会分别打开为标签；拖入文件夹会加入多根工作区；富文本正文中的图片拖放仍保持插图语义。
+- **文档位置记忆**（[#111](https://github.com/BND-1/horseMD/issues/111)）— 重开文档恢复上次光标与滚动位置；外部修改导致长度变化时不套用旧位置。
+
+### Changed
+- **表格和代码块操作** — Markdown 表格单击单元格即可编辑；代码块使用贴左、全高、不透明的行号栏，PDF 导出同步保留行号（[#109](https://github.com/BND-1/horseMD/issues/109) 第 1、2 点；PDF 背景可配置未纳入本次）。
+- **原生 HTML 表格布局** — 固定宽度和 `width="100%"` 表格跟随正文宽度收缩，窄排版下不再裁切或撑宽页面。
+- **本地链接与保存反馈** — 支持 POSIX / Windows / UNC / `file://` / 相对 Markdown 链接；富文本真实编辑后立即显示未保存状态。
+- **行内代码输入** — 只有完整输入 `` `内容` `` 后才渲染，闭合后光标默认在代码外；已有代码可用方向键自然移出首尾边界。
+
+### Fixed
+- **富文本 / 源码原文保真** — 修复删除内容复活、新增内容遗漏、无序列表 `-` / `+` 被改成 `*`、空块泄漏 `<br />`、行首空格变 `&#x20;`、列表正文增加 `\.` / `\-`、空引用和多列表连续编辑不同步等问题。未编辑区域的空行、列表写法、CRLF/BOM 和紧凑/松散结构保持原样。
+- **列表结构分歧** — `- 1. 内容` 等会被解析成嵌套列表的源码，在编辑、删除、拆分和列表转换后可安全写回，不再触发旧源码回退。
+- **反引号与代码围栏** — 单/双/三反引号逐字输入与删除不再吞字符、泄漏 serializer 反斜杠、暂停保存或锁住源码模式；新文档同一行 ```` ```你好``` ```` 保存重开保持作者输入。
+- **模式切换定位** — 源码非空行首可准确定位；空段落、列表、表格、代码块和重复文字附近切换时不再被延迟恢复任务拉到其他位置。
+
+完整发布说明与验证记录见 [`docs/release-v0.13.29.md`](./docs/release-v0.13.29.md)。
+
 ## [0.12.69] - 2026-08-05
 
 ### Fixed
@@ -52,12 +81,6 @@
 ### Fixed
 - **Mermaid 手动编辑刷新与保存** — 修复在富文本中修改 Mermaid 源码后，预览停留在旧图或输入中间态的语法错误、保存或重开后又回到旧内容的问题。每个 Mermaid 代码块现在以自身最新源码为准，异步渲染的旧结果不会覆盖新图；保存、源码模式和重开均写入当前图表源码。
 - **富文本删除持久化** — 保存和导出改为强制序列化当前 ProseMirror 文档，不再只依赖异步 Markdown 缓存。富文本中已删除的内容不会在源码模式、磁盘或关闭重开后重新出现。
-
-All notable changes to this project are documented here.
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/).
-
-## [Unreleased]
 
 ## [0.12.60] - 2026-08-02
 
@@ -871,7 +894,8 @@ page width, in-cell line breaks, an Intel macOS build, and a nicer update prompt
 - Dark/light themes, session restore, single-instance file association.
 - Windows NSIS installer and macOS dmg/zip packaging.
 
-[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.12.46...HEAD
+[Unreleased]: https://github.com/BND-1/horseMD/compare/v0.13.29...HEAD
+[0.13.29]: https://github.com/BND-1/horseMD/compare/v0.12.62...v0.13.29
 [0.12.46]: https://github.com/BND-1/horseMD/compare/v0.12.10...v0.12.46
 [0.12.10]: https://github.com/BND-1/horseMD/compare/v0.10.4...v0.12.10
 [0.7.2]: https://github.com/BND-1/horseMD/compare/v0.6.5...v0.7.2

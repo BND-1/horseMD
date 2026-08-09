@@ -14,6 +14,12 @@
 | [implementation-notes.md](./implementation-notes.md) | 开发过程中踩的坑、关键 bug 的根因与修法、设计决策 |
 | [development.md](./development.md) | 本地开发、构建、打包（Windows / macOS）、自动化测试方法 |
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
+| [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
+| [canonical-escape-audit.md](./canonical-escape-audit.md) | canonical Markdown 中实体、反斜杠、列表标记与 `<br />` 的完整泄漏面审计 |
+| [nested-list-sync-bug-handoff.md](./nested-list-sync-bug-handoff.md) | `- 1. 内容`、多列表批次、marker 保留与列表结构分歧的根因和回归矩阵 |
+| [backtick-source-sync-lock-regression.md](./backtick-source-sync-lock-regression.md) | 反引号输入/删除、行内代码闭合、代码围栏退出、保存暂停与源码锁死的联合回归 |
+| [list-item-literal-marker-escape-regression.md](./list-item-literal-marker-escape-regression.md) | 列表正文中 `1.`、`1)`、`-`、`+`、`*` 字面文本被错误转义的根因与修复 |
+| [desktop-drop-open.md](./desktop-drop-open.md) | 桌面端从 Finder / 文件资源管理器拖入文件或文件夹的产品边界、IPC 与测试合同 |
 | [source-rich-split-view-prd.md](./source-rich-split-view-prd.md) | 桌面端左源码、右富文本双栏实时预览：产品范围、交互、性能策略与验收标准 |
 | [source-rich-split-view-architecture.md](./source-rich-split-view-architecture.md) | 双栏同步协调器、滚动联动、内容保真、现有接口复用与分阶段实施架构 |
 | [new-input-source-fidelity-report.md](./new-input-source-fidelity-report.md) | 0.12.45 新输入列表 marker 与连续空段落 `<br />` 泄漏的根因、修复和回归证据 |
@@ -38,6 +44,7 @@
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
 | [user-guide-feature-coverage.md](./user-guide-feature-coverage.md) | 用户可见功能、代码所有者、教程页面与发布前核对状态矩阵 |
+| [release-v0.13.29.md](./release-v0.13.29.md) | v0.13.29 发布说明、安装产物、完整原文保真验证与关联 Issue |
 | [release-v0.12.46.md](./release-v0.12.46.md) | v0.12.46 发布说明、安装产物、验证记录与关联 Issue |
 | [release-v0.12.47.md](./release-v0.12.47.md) | v0.12.47 紧急修复发布说明、跨编辑器核验与安装产物 |
 | [release-v0.12.10.md](./release-v0.12.10.md) | v0.12.10 发布说明、安装产物、验证记录与关联 Issue |

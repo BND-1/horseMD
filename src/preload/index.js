@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // Subscribe to a main→renderer channel; returns an unsubscribe function.
 const on = (channel) => (cb) => {
@@ -39,6 +39,8 @@ const api = {
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
   listFiles: (root) => ipcRenderer.invoke('fs:listFiles', root),
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
+  getPathForDroppedFile: (file) => webUtils.getPathForFile(file),
+  classifyDroppedPaths: (paths) => ipcRenderer.invoke('fs:classifyPaths', paths),
   setShowHidden: (val) => ipcRenderer.invoke('settings:setShowHidden', val),
 
   // Sync workspaces: the renderer can register an explicitly selected root,
@@ -148,7 +150,8 @@ const api = {
     revealInFolder: true,
     splitView: true,
     fileAttachments: true,
-    cloudSync: true
+    cloudSync: true,
+    nativeDropOpen: true
   }
 }
 

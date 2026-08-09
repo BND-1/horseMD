@@ -5,7 +5,7 @@ description: 在 HorseMD 富文本和 Markdown 源码之间切换，并保持光
 
 # 富文本与源码模式
 
-<span class="version-badge">适用于：HorseMD v0.12.68（测试版本）</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 点击状态栏中的“富文本/源码”，或按 `Ctrl/Cmd+/` 切换模式。
 

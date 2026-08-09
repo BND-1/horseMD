@@ -63,11 +63,15 @@ export {
 
 export const generatedScratchMarkdown = (canonical) => {
   // A brand-new document is authored entirely by rich typing; its canonical is
-  // the only structural source. Milkdown may terminate the serialization with
-  // an extra blank line (or the skeleton's empty-paragraph `<br />`). Neither
-  // is authored content, so the generated source ends with exactly one final
-  // newline — never a phantom trailing blank line.
-  return canonicalTextToSource(
+  // the only structural source. Serializer punctuation escapes outside proven
+  // code/HTML literals therefore have no author-owned spelling to preserve:
+  // restore the physical characters the user typed (for example
+  // `\`\`\`你好\`\`\`` -> ```你好```) instead of leaking canonical escapes into
+  // source mode. Milkdown may terminate the serialization with an extra blank
+  // line (or the skeleton's empty-paragraph `<br />`). Neither is authored
+  // content, so the generated source ends with exactly one final newline —
+  // never a phantom trailing blank line.
+  return canonicalFreshTextToSource(
     compactGeneratedListSpacing(
       withoutStandaloneEmptyBlockLines(
         normalizeEmptyListItems(normalizeEmptyTableCells(canonical))
@@ -181,7 +185,9 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   if (!previous) {
     if (!sourceMarkdown) {
       return {
-        markdown: canonicalTextToSource(
+        // An empty source has no pre-existing escape spelling to protect. This
+        // is the same all-new authoring boundary as generatedScratchMarkdown.
+        markdown: canonicalFreshTextToSource(
           normalizeEmptyTableCells(compactGeneratedListSpacing(withoutStandaloneEmptyBlockLines(next)))
         ),
         preserved: true,

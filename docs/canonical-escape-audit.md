@@ -1,6 +1,6 @@
 # canonical 序列化转义清单（保真管道泄漏面审计）
 
-> 状态：2026-08-09（HorseMD 0.13.26）全量审计。目的：把「富文本 ↔ 源码」保真管道所有序列化转义
+> 状态：2026-08-09（HorseMD 0.13.29 发布候选）复核。目的：把「富文本 ↔ 源码」保真管道所有序列化转义
 > 形态、触发条件、处理路径一次列全，杜绝「用户踩一个、补一个」的零散打补丁。
 > 更新：新增转义形态时必须先改这份清单，再改 `canonicalTextToSource`。
 
@@ -20,7 +20,7 @@ round-trip 语义不变，会对部分字符做转义。**canonical 是序列化
 | --- | --- | --- | --- | --- | --- | --- |
 | `&#x20;` | 行首或需保语义的空格 | 解码为 1 可见字符 → **走主路径** | 行首用 `U+200B + space`，行中/行尾用 space | 同左 | 同左 | ✅ 0.13.22（Typora 语义） |
 | `\~` | 波浪线（防 GFM 删除线 `~~`） | 按 2 字符 → **走分歧路径** | 不出现（分歧） | 已反转义 | 曾泄漏 → 已反转义 | ✅ 0.13.15 |
-| `\*`、`\_`、`` \` ``、`\[`、`\]`、`\(`、`\)`、`\!`、`\+`、`\-`、`\#`、`\.`、`\>`、`\|`、`\{`、`\}` | 强调/代码/链接/列表边界字面量 | 按 2 字符 → 走分歧路径 | 不出现（分歧） | `unescapeCanonicalBlock` 已反转义 | 输入规则恢复作者 marker；稳定列表正文用语义视图 + raw 边界表；独立字面反引号行按完整 next line 与 ordinal 回写 | ✅ 0.13.26 扩展专项测试 |
+| `\*`、`\_`、`` \` ``、`\[`、`\]`、`\(`、`\)`、`\!`、`\+`、`\-`、`\#`、`\.`、`\>`、`\|`、`\{`、`\}` | 强调/代码/链接/列表边界字面量 | 按 2 字符 → 走分歧路径 | fresh replacement 还原；旧作者区域保持 | `unescapeCanonicalBlock` 已反转义 | 输入规则恢复作者 marker；稳定列表正文用语义视图 + raw 边界表；generated scratch / empty-file 首次编辑走 fresh 翻译；代码/HTML literal 不动 | ✅ 0.13.28，含三反引号 IME 保存重开 |
 | `\\` | 反斜杠本身 | 按 2 字符 → 走分歧路径 | 不出现 | 已反转义 | **泄漏**（`a\b` → `a\\b`） | ⚠️ 见下 |
 | `&amp;` `&lt;` `&gt;` `&quot;` `&#39;` 等实体 | 实测 Crepe 默认**不转义** `&<>"'`（段中/行首均原样） | 解码为 1 可见字符 | 不出现（序列化不产生） | 已反转义 | 不出现 | ✅ 实测无泄漏 |
 | `<br />` | 空段落占位（Crepe 内部） | — | 出口后置条件统一剥离 | 拒绝 | `withoutStandaloneEmptyBlockLines` 剥离 | ✅ 硬不变式 |
@@ -61,6 +61,11 @@ round-trip 语义不变，会对部分字符做转义。**canonical 是序列化
    完整 next canonical line，不能把 zero-width `commonChange()` replacement 当成整行清空；
    重复行优先用同行 ordinal。空段落后零宽输入另由 `preserveOrdinalLineTextChange()`
    限定映射。专项见 `backtick-source-sync-lock-regression.md`。
+7. **generated scratch / empty-file 首次编辑**（`markdown-source-preservation.js`）：
+   该文档没有任何既有作者拼写，canonical 全部来自本次富文本输入，因此必须经
+   `canonicalFreshTextToSource` 还原 serializer punctuation。典型回归是同一行
+   ```` ```你好``` ```` 的 canonical 在六个反引号前各带一个反斜杠，源码必须恢复用户逐键输入的原字节。
+   上下文扫描仍保护 fenced code、inline code 与 HTML literal；禁止全局删除反斜杠。
 
 ## 结构性解析分歧：`- 1. 甲乙` → 嵌套有序列表（0.13.17–0.13.18 修复）
 

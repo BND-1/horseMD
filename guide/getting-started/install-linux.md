@@ -5,9 +5,9 @@ description: 在 Ubuntu / Debian 等 Linux 发行版上安装 HorseMD .deb 包�
 
 # Linux 安装
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
-Linux 版目前提供 **.deb** 安装包（amd64），适用于 Ubuntu、Debian、Linux Mint 等 Debian 系发行版。先从[下载正确的版本](/getting-started/download)获取 `horse_0.12.10_amd64.deb`。
+Linux 版目前提供 **.deb** 安装包（amd64），适用于 Ubuntu、Debian、Linux Mint 等 Debian 系发行版。先从[下载正确的版本](/getting-started/download)获取 `horse_0.13.29_amd64.deb`。
 
 ## 安装应用
 
@@ -20,7 +20,7 @@ Linux 版目前提供 **.deb** 安装包（amd64），适用于 Ubuntu、Debian�
 打开终端，进入下载目录执行：
 
 ```bash
-sudo apt install ./horse_0.12.10_amd64.deb
+sudo apt install ./horse_0.13.29_amd64.deb
 ```
 
 `apt install ./文件名.deb` 会同时安装 HorseMD 和缺少的系统依赖。若已经用

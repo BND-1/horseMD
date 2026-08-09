@@ -5,7 +5,7 @@ description: 在 Apple 芯片或 Intel Mac 上安装 HorseMD，并处理未签�
 
 # macOS 安装
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 先根据[下载正确的版本](/getting-started/download)选择 Apple 芯片或 Intel 安装包。
 

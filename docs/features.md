@@ -8,6 +8,7 @@
 
 - 打开多个 `.md` 在同一窗口，`Ctrl+Tab` / `Ctrl+Shift+Tab` 循环切换
 - 在资源管理器双击 `.md` → 不新开程序，而是在已有窗口加一个标签
+- 从 Finder / 文件资源管理器把一个或多个文件拖入桌面窗口 → 分别打开为标签；正文内图片拖入仍由编辑器插图逻辑处理
 - 新建：标签条末尾的 **+**、顶栏右侧独立的 **+** 按钮、`Ctrl+N`，都调同一个 `newTab`（新建未命名草稿，首次 `Ctrl+S` 选位置保存）
 
 **实现**：
@@ -17,13 +18,14 @@
 ## 2. 文件夹工作区（侧边栏文件树）
 
 - `Ctrl+Shift+O` 打开文件夹，左侧树状浏览；右键可新建 / 重命名 / **复制一份** / 删除 / **导出为 PDF** / 在资源管理器中显示
+- 从 Finder / 文件资源管理器把文件夹拖入窗口即可加入多根工作区；首次启动正在显示大纲时会自动切到文件树
 - **拖拽移动**：把文件/文件夹拖到另一个文件夹（或根目录）即可移动，落点文件夹高亮提示
 - 顶部 **展开全部 / 折叠全部** 按钮一键切换（图标随状态翻转，展开会递归展开所有子目录）
 - 活动栏有**常驻的折叠 / 展开侧边栏**按钮（收起后图标翻转成"展开"样式）
 - 在资源管理器右键文件夹 **"用 HorseMD 打开"** → 作为工作区打开（启动参数支持文件夹路径）
 - 外部增删文件会自动刷新树
 
-**实现**：`useWorkspace.js` 管理多根工作区和目录 watcher，`useSidebarTree.js` 管理树加载/展开，`Sidebar.jsx` 与 `SidebarContextMenu.jsx` 负责交互；主进程由 `filesystem.js`、`watchers.js` 提供 IPC。文件夹启动参数见 `main/index.js` 的 `extractArgs()`（区分文件 vs 目录，目录走 `open-folder`）。
+**实现**：`useWorkspace.js` 管理多根工作区和目录 watcher，`useSidebarTree.js` 管理树加载/展开，`Sidebar.jsx` 与 `SidebarContextMenu.jsx` 负责交互；桌面外部拖入由 `useDropOpen.js` 接管，preload 通过 Electron `webUtils.getPathForFile()` 解析真实磁盘路径，主进程 `filesystem.js` 用 `stat()` 分类文件/目录；移动端明确关闭该 capability。文件夹启动参数见 `main/index.js` 的 `extractArgs()`（区分文件 vs 目录，目录走 `open-folder`）。
 
 > - 新建 / 重命名输入框带**行内确认（✓）/ 取消（✗）**按钮；**失焦即提交**（点别处不会丢掉已输入的名字）。
 > - 重命名时输入框默认选中**文件名（不含扩展名）**，和新建一致（`onFocus` 里 `setSelectionRange(0, dotIndex)`）。

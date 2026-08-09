@@ -5,6 +5,7 @@ import { sleep } from './lib/cdp.mjs'
 
 const port = Number(process.env.CDP_PORT || 9697)
 const fixture = join(process.cwd(), 'scripts', 'fixtures', 'inline-code-input.md')
+let compositionId = 1
 
 async function waitFor(check, message, attempts = 40) {
   for (let index = 0; index < attempts; index += 1) {
@@ -109,6 +110,34 @@ async function main() {
       await sleep(35)
     }
 
+    const imeType = async (pinyin, text) => {
+      const replacementId = `inline-code-${compositionId++}`
+      for (let index = 0; index < pinyin.length; index += 1) {
+        const character = pinyin[index]
+        const code = `Key${character.toUpperCase()}`
+        const virtualKeyCode = character.toUpperCase().charCodeAt(0)
+        await send('Input.dispatchKeyEvent', {
+          type: 'rawKeyDown', key: character, code,
+          windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode
+        })
+        await send('Input.dispatchKeyEvent', {
+          type: 'keyUp', key: character, code,
+          windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode
+        })
+        const composing = pinyin.slice(0, index + 1)
+        await send('Input.imeSetComposition', {
+          text: composing,
+          selectionStart: composing.length,
+          selectionEnd: composing.length,
+          replacementId,
+          location: 0
+        })
+        await sleep(45)
+      }
+      await send('Input.insertText', { text })
+      await sleep(100)
+    }
+
     const pressArrowRight = async () => {
       await send('Input.dispatchKeyEvent', {
         type: 'rawKeyDown',
@@ -127,30 +156,48 @@ async function main() {
       await sleep(80)
     }
 
-    // Use native key events rather than Input.insertText: the latter bypasses
-    // ProseMirror's handleTextInput hook and therefore cannot validate the
-    // keyboard path users actually take.
+    // The opening delimiter and a real Chinese IME composition remain literal
+    // until the user types the final delimiter. This is the product contract:
+    // no hidden inline-code state may activate on the first committed CJK text.
     await typeBacktick()
-    for (const character of 'awdawdwa') {
-      await typeCharacter(character)
-    }
+    await imeType('zhongwen', '中文')
     await waitFor(
       () => evaluate(`(() => {
         const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-        const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'awdawdwa')
-        return Boolean(code && editor.querySelectorAll('.hm-inline-code-delimiter').length === 2)
+        const paragraph = [...(editor?.querySelectorAll('p') || [])]
+          .find((node) => node.textContent.includes('Type target'))
+        return Boolean(
+          paragraph?.textContent.endsWith('\`中文') &&
+          !paragraph.querySelector('code') &&
+          !editor.querySelector('.hm-inline-code-delimiter')
+        )
       })()`),
-      'inline-code edit decorations did not settle after native typing'
+      'opening backtick plus Chinese IME text activated inline code before closure'
     )
-    const editing = await evaluate(`(() => {
+    await typeBacktick()
+    await waitFor(
+      () => evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === '中文')
+        return Boolean(code && !editor.querySelector('.hm-inline-code-delimiter'))
+      })()`),
+      'closing backtick did not create inline code'
+    )
+
+    const codeEdge = await evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-      const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === 'awdawdwa')
-      return {
-        code: code?.textContent || '',
-        delimiters: [...(editor?.querySelectorAll('.hm-inline-code-delimiter') || [])].map((node) => node.textContent).join('')
-      }
+      const code = [...(editor?.querySelectorAll('code') || [])].find((node) => node.textContent === '中文')
+      const rect = code?.getBoundingClientRect()
+      return rect ? { x: rect.right - 1, y: rect.top + rect.height / 2 } : null
     })()`)
-    assert.deepEqual(editing, { code: 'awdawdwa', delimiters: '``' })
+    assert.ok(codeEdge, 'could not locate rendered inline code')
+    await send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', ...codeEdge, button: 'left', clickCount: 1
+    })
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', ...codeEdge, button: 'left', clickCount: 1
+    })
+    await sleep(100)
     await pressArrowRight()
     assert.equal(
       await evaluate(`document.querySelectorAll('.hm-inline-code-delimiter').length`),
@@ -173,15 +220,15 @@ async function main() {
       const paragraph = [...(editor?.querySelectorAll('p') || [])]
         .find((node) => node.textContent.includes('Type target'))
       const code = [...(paragraph?.querySelectorAll('code') || [])]
-        .find((node) => node.textContent.includes('awdawdwa'))
+        .find((node) => node.textContent.includes('中文'))
       return {
         code: code?.textContent || '',
         paragraph: paragraph?.textContent || ''
       }
     })()`)
     assert.deepEqual(afterExit, {
-      code: 'awdawdwa',
-      paragraph: 'Type targetawdawdwaoutside'
+      code: '中文',
+      paragraph: 'Type target中文outside'
     })
     await send('Input.dispatchKeyEvent', {
       type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13
@@ -196,7 +243,7 @@ async function main() {
     for (const character of 'feaef') {
       await typeCharacter(character)
     }
-    await pressArrowRight()
+    await typeBacktick()
     for (const character of '212afea') {
       await typeCharacter(character)
     }
@@ -209,6 +256,23 @@ async function main() {
     for (let index = 0; index < 3; index += 1) {
       await typeBacktick()
     }
+    await imeType('nihao', '你好')
+    for (let index = 0; index < 3; index += 1) {
+      await typeBacktick()
+    }
+    const literalTripleRun = await evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const paragraph = [...(editor?.querySelectorAll('p') || [])]
+        .find((node) => node.textContent === '\`\`\`你好\`\`\`')
+      return {
+        text: paragraph?.textContent || '',
+        codeCount: paragraph?.querySelectorAll('code').length ?? -1
+      }
+    })()`)
+    assert.deepEqual(literalTripleRun, {
+      text: '```你好```',
+      codeCount: 0
+    }, 'same-line triple-backtick text should remain a literal paragraph before source switch')
     const richTextBeforeSource = await evaluate(`[...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)?.textContent || ''`)
 
     assert.equal(await evaluate(`(() => {
@@ -222,11 +286,12 @@ async function main() {
       'source editor did not open'
     )
     assert.ok(
-      source.includes('`awdawdwa`outside\n\n`feaef`212afea') &&
-        source.replaceAll('\\', '').includes('```'),
+      source.includes('`中文`outside\n\n`feaef`212afea') &&
+        source.split(/\r?\n/).includes('```你好```') &&
+        !source.includes('\\`\\`\\`你好\\`\\`\\`'),
       `inline-code exit or triple backticks changed in Markdown: ${JSON.stringify(source)}; rich text was: ${richTextBeforeSource}`
     )
-    console.log('PASS inline code UI: standard one-by-one input, arrow-boundary exit, and manual triple-backtick input')
+    console.log('PASS inline code UI: closing-delimiter activation, real Chinese IME, arrow-boundary exit, and exact literal triple-backtick source')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }

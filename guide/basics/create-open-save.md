@@ -5,7 +5,7 @@ description: 在 HorseMD 中创建文档、打开文件并理解保存状态。
 
 # 新建、打开与保存
 
-<span class="version-badge">适用于 HorseMD v0.13.13</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 ## 新建文档
 
@@ -18,9 +18,14 @@ description: 在 HorseMD 中创建文档、打开文件并理解保存状态。
 - 按 `Ctrl/Cmd+O` 选择一个或多个文件。
 - 从工作区文件树点击 Markdown 文件。
 - 从访达或资源管理器双击已关联的 `.md` 文件。
+- 在桌面端把一个或多个文件直接拖到 HorseMD 窗口；看到“拖入 HorseMD 打开”提示后松开，文件会分别打开为标签。
 - 将启动文件交给 HorseMD 打开。
 
 `.md`、`.markdown` 和 `.mdx` 默认使用富文本编辑器。`.txt` 等普通文本文件使用快速源码编辑器。特别大的 Markdown 会先以快速源码模式打开，避免整篇解析造成长时间卡顿；需要时可以主动进入富文本。
+
+::: tip 拖入图片
+把图片拖到富文本正文中时，HorseMD 仍会把它作为图片插入当前文档，而不是打开成新标签。把文件夹拖到窗口则会加入左侧工作区，详见[工作区与文件夹](./workspace.md)。
+:::
 
 ## 恢复上次位置
 

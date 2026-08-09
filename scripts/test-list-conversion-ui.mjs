@@ -342,6 +342,25 @@ async function main() {
     })()`), 'paragraph conversion must create an unchecked task-list item')
     assert.equal(taskParagraphConversion, true, 'paragraph conversion must create an unchecked task-list item')
 
+    // HorseMD stores rich-authored leading spaces as U+200B + ASCII spaces so
+    // CommonMark does not reinterpret them as structural indentation. The
+    // canonical serializer spells the same text as `&#x20;`; list conversion
+    // must treat those spellings as equivalent and still patch only markers.
+    assert.equal(await openListMenu(app, 'Leading root'), true, 'could not open leading-space list menu')
+    assert.equal(await clickMenuActionWithMouse(app, 'ordered_list'), true, 'could not convert a list containing HorseMD leading spaces')
+    await sleep(280)
+    assert.equal(
+      await evaluate(`(() => {
+        const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const item = [...(editor?.querySelectorAll('li') || [])]
+          .find((node) => [...node.querySelectorAll('p')]
+            .some((paragraph) => paragraph.closest('li') === node && paragraph.textContent.trim() === 'Leading root'))
+        return item?.closest('ol')?.tagName || null
+      })()`),
+      'OL',
+      'leading-space list conversion was rejected or rendered with the wrong list type'
+    )
+
     assert.equal(await toggleSource(evaluate), true, 'could not inspect converted Markdown in source mode')
     const afterBulletConversion = await waitFor(() => sourceValue(evaluate), 'source mode did not open after list conversion')
     assert.match(afterBulletConversion, /[-*] Parent\s+[-*] \[ \] Child A\s+[-*] \[ \] Child B\s+[-*] Sibling/)
@@ -353,6 +372,10 @@ async function main() {
     assert.ok(
       /[-*] \[ \] Task one\s+[-*] \[ \] Task two/.test(afterBulletConversion),
       'task list must convert back to an unchecked task list: ' + afterBulletConversion
+    )
+    assert.ok(
+      afterBulletConversion.includes('1. Leading root\n2. \u200B     Leading spaced item'),
+      'list conversion must preserve the U+200B leading-space source spelling: ' + afterBulletConversion
     )
 
     console.log('PASS list conversion UI: current-level conversion, task conversion, caret preservation, and source preservation')

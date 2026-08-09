@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  classifyFileSystemPaths,
   listMarkdownFiles,
   nextDuplicatePath,
   readDirectoryTree
@@ -58,8 +59,21 @@ try {
     nextDuplicatePath(join(root, 'z.md'), (path) => occupied.has(path)),
     join(root, 'z copy 3.md')
   )
+
+  const droppedPaths = await classifyFileSystemPaths([
+    join(root, 'z.md'),
+    join(root, 'notes'),
+    join(root, 'z.md'),
+    join(root, 'missing.md'),
+    '',
+    null
+  ])
+  assert.deepEqual(droppedPaths, [
+    { path: join(root, 'z.md'), type: 'file' },
+    { path: join(root, 'notes'), type: 'dir' }
+  ])
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS main filesystem: tree, hidden files, recursion and duplicate naming')
+console.log('PASS main filesystem: tree, hidden files, recursion, duplicate naming and dropped path classification')

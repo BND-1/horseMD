@@ -75,6 +75,30 @@ export function nextDuplicatePath(path, pathExists = existsSync) {
   return target
 }
 
+// Classify paths supplied by Electron's native drag-and-drop bridge. Keep the
+// filesystem check in the main process: the isolated renderer receives only a
+// bounded `{ path, type }` result and never guesses directories from a missing
+// MIME type or filename suffix. Missing/special paths are ignored so one bad
+// item cannot prevent the remaining dropped files from opening.
+export async function classifyFileSystemPaths(paths, { stat = fs.stat } = {}) {
+  if (!Array.isArray(paths)) return []
+  const seen = new Set()
+  const classified = []
+  for (const path of paths.slice(0, 200)) {
+    if (typeof path !== 'string' || !path || seen.has(path)) continue
+    seen.add(path)
+    try {
+      const entry = await stat(path)
+      if (entry.isDirectory()) classified.push({ path, type: 'dir' })
+      else if (entry.isFile()) classified.push({ path, type: 'file' })
+    } catch {
+      // The item may have moved between drag start and drop. Ignore it and keep
+      // processing the rest of the payload.
+    }
+  }
+  return classified
+}
+
 export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
   let showHidden = false
 
@@ -130,6 +154,10 @@ export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
     root: { name: basename(dir), path: dir, type: 'dir' },
     children: await readDirectoryTree(dir, { showHidden, markdownPattern })
   }))
+
+  ipcMain.handle('fs:classifyPaths', async (_event, paths) =>
+    classifyFileSystemPaths(paths)
+  )
 
   ipcMain.handle('fs:duplicate', async (_event, path) => {
     const target = nextDuplicatePath(path)

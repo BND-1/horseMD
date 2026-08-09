@@ -5,7 +5,7 @@ description: 使用 HorseMD 标签页管理多个文件，并左右分屏编辑�
 
 # 标签页与分屏
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 ## 使用标签页
 
@@ -33,3 +33,7 @@ description: 使用 HorseMD 标签页管理多个文件，并左右分屏编辑�
 :::
 
 源码模式只作用于左侧主编辑栏，避免两套全局查找、状态栏和模式切换互相冲突。
+
+::: tip 两篇文档分屏与“源码 + 预览”不是同一功能
+这里的分屏用于同时编辑两篇文档；如果要左侧写同一篇文档的 Markdown、右侧查看只读渲染，请先退出双文档分屏，再在富文本编辑区右键选择“源码 + 预览”。详见[富文本与源码模式](./rich-and-source.md)。
+:::

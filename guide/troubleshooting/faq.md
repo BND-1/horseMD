@@ -5,7 +5,7 @@ description: HorseMD 价格、隐私、平台、格式兼容和功能范围常�
 
 # 常见问题
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29（桌面版）</span>
 
 ## HorseMD 收费吗
 
@@ -17,7 +17,7 @@ description: HorseMD 价格、隐私、平台、格式兼容和功能范围常�
 
 ## 支持哪些平台
 
-v0.12.10 正式提供 Windows x64、macOS Apple Silicon、macOS Intel、Linux amd64 和 Android 安装包。iOS 当前需要 Xcode 开发安装。Linux 用户应从官方 Release 下载经过 Ubuntu Runner 校验的 `.deb`。
+桌面 `v0.13.29` 提供 Windows x64、macOS Apple Silicon、macOS Intel 和 Linux amd64 安装包；Android 公开 APK 当前仍为 `v0.12.10`。iOS 需要 Xcode 开发安装。Linux 用户应从官方 Release 下载经过 Ubuntu Runner 校验的 `.deb`。
 
 ## 能直接替代 Typora 吗
 

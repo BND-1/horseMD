@@ -296,7 +296,8 @@ const capabilities = {
   splitView: false, // not enough width on a phone
   canShare: true, // system share sheet (export a file out)
   fileAttachments: false,
-  cloudSync: false
+  cloudSync: false,
+  nativeDropOpen: false
 }
 
 export function makeCapacitorApi() {
@@ -324,6 +325,8 @@ export function makeCapacitorApi() {
     readDir: readTree,
     listFiles,
     openFolderTree,
+    getPathForDroppedFile: () => '',
+    classifyDroppedPaths: async () => [],
     syncListWorkspaces: async () => [],
     syncAdoptWorkspace: async () => { throw new Error('unsupported') },
     syncRemoveWorkspace: async () => false,

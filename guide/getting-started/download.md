@@ -5,17 +5,19 @@ description: 根据平台（Windows、macOS、Linux、Android）选择 HorseMD �
 
 # 下载正确的版本
 
-<span class="version-badge">适用于 HorseMD v0.12.10</span>
+<span class="version-badge">适用于 HorseMD v0.13.29（桌面版）</span>
 
 打开 [HorseMD 官网](https://horsemd.yangsir.net/) 或 [GitHub Releases](https://github.com/BND-1/horseMD/releases/latest)。Release 页面中还会出现校验文件、源码压缩包和更新描述文件，普通用户只需要下载下表中的安装文件。
 
 | 你的设备 | 下载文件 | 不要选错 |
 | --- | --- | --- |
-| Windows 10/11，64 位 | `HorseMD-Setup-0.12.10.exe` | 不要下载 `.blockmap` |
-| Apple M1/M2/M3/M4 等芯片 | `HorseMD-0.12.10-arm64.dmg` | 文件名必须包含 `arm64` |
-| Intel 芯片 Mac | `HorseMD-0.12.10.dmg` | 文件名不包含 `arm64` |
-| Linux（Ubuntu/Debian，64 位） | `horse_0.12.10_amd64.deb` | 其他发行版见 Linux 安装页 |
+| Windows 10/11，64 位 | `HorseMD-Setup-0.13.29.exe` | 不要下载 `.blockmap` |
+| Apple M1/M2/M3/M4 等芯片 | `HorseMD-0.13.29-arm64.dmg` | 文件名必须包含 `arm64` |
+| Intel 芯片 Mac | `HorseMD-0.13.29.dmg` | 文件名不包含 `arm64` |
+| Linux（Ubuntu/Debian，64 位） | `horse_0.13.29_amd64.deb` | 其他发行版见 Linux 安装页 |
 | Android 手机或平板 | `HorseMD-0.12.10.apk` | 不要下载桌面安装包 |
+
+`0.13.29` 本次提供桌面安装包；Android 公开 APK 暂时维持 `0.12.10`。不要因为版本号较小就把 Windows 或 macOS 安装包下载到手机上。
 
 ## 查看 Mac 芯片
 

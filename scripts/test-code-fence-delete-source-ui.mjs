@@ -143,9 +143,11 @@ async function typeUndoAndDeleteFence(evaluate, send) {
   for (let index = 0; index < 3; index += 1) await typeBacktick(send)
   await typeSpace(send)
   await sleep(250)
-  for (let index = 0; index < 2; index += 1) {
-    await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: keyDelay })
-  }
+  // With closure-driven inline code, ``` + Space is no longer intercepted as
+  // a premature inline mark and correctly activates Crepe's code-block input
+  // rule. One Backspace converts that empty code block back to a paragraph;
+  // a second Backspace would intentionally join it with the previous block.
+  await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: keyDelay })
   await typeTextLikeUser(send, '围栏输入规则删除完成', { delayMs: keyDelay })
 }
 

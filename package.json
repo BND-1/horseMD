@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.26",
+  "version": "0.13.29",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -93,6 +93,7 @@
     "test:editor-input": "node scripts/test-editor-inline-code.mjs && node scripts/test-editor-inline-math.mjs && node scripts/test-editor-frontmatter.mjs",
     "test:frontmatter": "node scripts/test-editor-frontmatter.mjs",
     "test:inline-code-ui": "node scripts/test-inline-code-ui.mjs",
+    "test:literal-triple-backtick-source-ui": "node scripts/test-literal-triple-backtick-source-ui.mjs",
     "test:issue-98-ui": "node scripts/test-issue-98-copy-undo-ui.mjs && node scripts/test-session-restore-setting-ui.mjs",
     "test:frontmatter-ui": "node scripts/test-frontmatter-edit-ui.mjs",
     "test:mobile-read-only": "node scripts/test-mobile-read-only.mjs",
@@ -159,7 +160,8 @@
     "test:list-marker-empty-source-ui": "node scripts/test-list-marker-empty-source-ui.mjs",
     "test:step-source-mapper": "node scripts/test-step-source-mapper.mjs",
     "test:empty-paragraph-caret-ui": "node scripts/test-empty-paragraph-caret-ui.mjs",
-    "test:table-click-edit-ui": "node scripts/test-table-click-edit-ui.mjs"
+    "test:table-click-edit-ui": "node scripts/test-table-click-edit-ui.mjs",
+    "test:drop-open-ui": "node scripts/test-drop-open-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

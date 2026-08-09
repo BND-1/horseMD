@@ -5,7 +5,7 @@ description: 插入和编辑 GFM 表格，并在单元格内安全换行。
 
 # 表格
 
-<span class="version-badge">适用于 HorseMD v0.13.13</span>
+<span class="version-badge">适用于 HorseMD v0.13.29</span>
 
 ## 插入表格
 

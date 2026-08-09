@@ -275,14 +275,14 @@ export default function Editor({
     // callback, but HorseMD's immediate dirty hint must then be cleared. This
     // one-shot reconciliation runs only after a real DOM mutation and only
     // while the regular listener has not already settled the change.
-    const scheduleRichDirtyReconcile = () => {
+    const scheduleRichDirtyReconcile = (delayMs = 260) => {
       if (richDirtyReconcileTimer) clearTimeout(richDirtyReconcileTimer)
       richDirtyReconcileTimer = window.setTimeout(() => {
         richDirtyReconcileTimer = 0
         if (destroyed || !richFlushPending) return
         const markdown = apiRef.current?.flushMarkdown?.()
         if (typeof markdown === 'string') onChange?.(markdown, false)
-      }, 260)
+      }, delayMs)
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const clearRichFlushPending = () => {
@@ -912,9 +912,9 @@ export default function Editor({
           self,
           cleanups,
           markUserEdit,
-          onRichEditPending: () => {
+          onRichEditPending: (delayMs) => {
             onRichEditPending?.()
-            scheduleRichDirtyReconcile()
+            scheduleRichDirtyReconcile(delayMs)
           },
           insertUploadedImage,
           prepareRawMarkdownPaste: ({ markdown, from, to }) => {

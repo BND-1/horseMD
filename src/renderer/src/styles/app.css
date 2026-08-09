@@ -397,6 +397,52 @@ button:focus-visible,
   height: 100%;
 }
 
+/* Native desktop file/folder drop target. Kept outside the editor surface so
+   image drops inside ProseMirror retain their existing insert-image behavior. */
+.hm-drop-open-overlay {
+  position: fixed;
+  inset: 10px;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-editor) 82%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  backdrop-filter: blur(10px);
+  animation: hm-drop-open-in 140ms var(--ease-out);
+}
+.hm-drop-open-card {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  max-width: min(440px, calc(100vw - 64px));
+  padding: 24px 30px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 16px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+.hm-drop-open-card strong { font-size: 15px; font-weight: 650; }
+.hm-drop-open-card > span:last-child { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.hm-drop-open-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 2px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+@keyframes hm-drop-open-in {
+  from { opacity: 0; transform: scale(0.992); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* Activity Bar — VSCode style */
 .activity-bar {
   grid-row: 1 / -1;

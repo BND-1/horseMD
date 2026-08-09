@@ -76,13 +76,14 @@
 - selection toolbar 注入标题、高亮、review 按钮；关闭时不卸载 Crepe，只由右键回退入口承接选区操作。
 - 状态栏通过 `setBlock` 改块类型。
 - slash menu 本地化。
-- inline code 保持 `inclusive:false`，关闭反引号后继续输入应退出 code；`editor-inline-code.js` 只为成对反引号进入、点击 code 末端追加和首尾方向键退出维护短暂 stored-mark，不改变 schema/序列化。尾部 `→` 与首部 `←` 在同一文档位置清除 mark，不插入占位字符。
+- inline code 保持 `inclusive:false`。首个反引号和中间正文保持字面文本，只有输入最后一个闭合反引号才创建 inline-code mark；闭合事务把光标放在 mark 外。`editor-inline-code.js` 还负责点击既有 code 后的编辑态，以及首尾方向键在同一文档位置切换 DOM 边界侧，不插入占位字符。
+- ``` + Space 恢复 Crepe 标准代码块输入规则；空代码块按 Backspace 退出时，DOM 交互层在下一任务立即提交 live doc，避免快速后续文字与旧 fenced canonical 合并。
 
 验证：
 
 - 快捷键、右键菜单子菜单、toolbar、StatusBar 四条路径改块类型一致；右键菜单内的选区格式和审阅操作必须恢复打开菜单前的精确选区。
 - 多标签时 toolbar 按钮作用于当前有选区的可见 editor。
-- 行内代码闭合后继续输入是正文；尾部按 `→` 或首部按 `←` 后继续输入也必须是正文。
+- 行内代码闭合前保持字面反引号和正文，闭合后继续输入是正文；点击既有 code 后，尾部按 `→` 或首部按 `←` 后继续输入也必须是正文。
 
 ## 6. 复制、粘贴、链接和代码块按钮
 

@@ -167,24 +167,6 @@ const typeBacktick = async (send) => {
   await sleep(80)
 }
 
-const pressArrowRight = async (send) => {
-  await send('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39,
-    nativeVirtualKeyCode: 39
-  })
-  await send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39,
-    nativeVirtualKeyCode: 39
-  })
-  await sleep(80)
-}
-
 const visibleSourceCaret = (evaluate) => evaluate(`(() => {
   const textarea = [...document.querySelectorAll('textarea.source-editor')]
     .find((node) => node.offsetParent)
@@ -407,7 +389,9 @@ async function editAndSave() {
     await pressEnter(send)
     await typeBacktick(send)
     for (const character of 'feaef') await typeNativeCharacter(send, character)
-    await pressArrowRight(send)
+    // Inline code now follows the explicit closing-delimiter contract: the
+    // first backtick stays literal and only the final backtick creates the mark.
+    await typeBacktick(send)
     for (const character of '212afea') await typeNativeCharacter(send, character)
 
     const expectedWithInlineCode = expected + '\n\n`feaef`212afea'
