@@ -645,7 +645,11 @@ export const preserveTrailingEmptyBlock = ({
       sourceTailLine &&
       previousTailLine &&
       /^\s*(?:\u200B|&#x20;)/.test(previousTailLine.text) &&
-      stripSentinel(sourceTailLine.text) === stripSentinel(previousTailLine.text)
+      stripSentinel(sourceTailLine.text) === stripSentinel(previousTailLine.text) &&
+      // Only a change that actually touches the segment is a deletion. Pressing
+      // Enter after the segment (canonical grows a `<br />` empty block, which
+      // makes `nextEmpty` true) must NOT drop the authored leading-space row.
+      start <= previousTailLine.end
     ) {
       return {
         markdown: source.slice(0, sourceTailLine.start) + source.slice(sourceTailLine.end),
