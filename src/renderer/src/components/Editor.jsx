@@ -42,6 +42,10 @@ import {
   restoreTypedBulletMarker
 } from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
+import {
+  areSourceDocumentsEquivalent,
+  mapPlainTextTransactionsToSource
+} from '../lib/source-transaction-sync.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -229,6 +233,10 @@ export default function Editor({
     let richFlushPending = false
     let pendingRichBlockKey = null
     let richDirtyReconcileTimer = 0
+    let transactionSourcePendingPublish = false
+    let transactionSourcePendingDoc = null
+    let transactionSourceBlockHints = []
+    let transactionSourceQuarantined = false
     const currentRichBlockKey = () => {
       const selection = viewRef.current?.state.selection
       const $from = selection?.$from
@@ -297,6 +305,7 @@ export default function Editor({
     // marker intent until that callback serializes the generated document;
     // retaining only the latest intent loses the outer marker (`1.` -> `1)`).
     let pendingMarkdownInputIntents = []
+    let appending = false
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
     // the file first, then drops an inline image node with the resulting src.
@@ -380,7 +389,114 @@ export default function Editor({
       }
     }
 
-    const crepe = createConfiguredCrepe({
+    let crepe
+    const handleSourceTransactions = (transactions, oldState, newState) => {
+      // Phase 1 of the transaction-first source model: take ownership only of
+      // plain text ReplaceStep batches whose raw range is byte-for-byte proven.
+      // Every structural/input-rule/marked edit remains on the established
+      // fail-closed canonical preservation path until its own transaction
+      // contract and regression matrix are implemented.
+      const transactionPrimaryEnabled =
+        globalThis.__hmTransactionSourcePrimary === true ||
+        import.meta.env?.VITE_HM_TRANSACTION_PRIMARY === '1'
+      const transactionShadowEnabled =
+        transactionPrimaryEnabled ||
+        globalThis.__hmTransactionSourceShadow === true ||
+        import.meta.env?.VITE_HM_TRANSACTION_SHADOW === '1'
+      // Release builds do not pay a per-keystroke source-map cost while this
+      // architecture is still being qualified. Dev/test can enable shadow
+      // evidence; the explicit primary flag additionally permits publication.
+      if (!transactionShadowEnabled) return
+      if (
+        !ready ||
+        appending ||
+        programmaticReplaceRef.current ||
+        generatedScratchRef.current ||
+        viewRef.current?.composing ||
+        pendingRawMarkdownPasteRef.current ||
+        pendingListConversion ||
+        pendingMarkdownInputIntent ||
+        transactionSourceQuarantined ||
+        !hasRecentUserEdit()
+      ) {
+        transactionSourcePendingPublish = false
+        transactionSourcePendingDoc = null
+        transactionSourceBlockHints = []
+        return
+      }
+      try {
+        const remark = crepe.editor.ctx.get(remarkCtx)
+        const parser = crepe.editor.ctx.get(parserCtx)
+        const mapped = mapPlainTextTransactionsToSource({
+          source: lastMarkdownRef.current,
+          transactions,
+          oldState,
+          newState,
+          blockHints: transactionSourceBlockHints,
+          mapPosition: (source, position, doc) =>
+            pmPosToMarkdownOffset(source, position, doc, remark),
+          validateMarkdown: (markdown, expectedDoc) => {
+            const parsed = parser(markdown)
+            const equal = areSourceDocumentsEquivalent(parsed, expectedDoc)
+            if (!equal && Array.isArray(globalThis.__hmSourceTransactionTrace)) {
+              globalThis.__hmSourceTransactionSemantic = {
+                parsed: parsed?.toJSON?.() || null,
+                expected: expectedDoc?.toJSON?.() || null
+              }
+            }
+            return equal
+          }
+        })
+        if (!mapped.ok) {
+          if (!transactionPrimaryEnabled) return
+          transactionSourcePendingPublish = false
+          transactionSourcePendingDoc = null
+          const retainOwnedSyntaxSlot =
+            transactionSourceBlockHints.length > 0 &&
+            (mapped.reason === 'block-prefix-sensitive-insert' ||
+              mapped.reason === 'syntax-sensitive-insert')
+          if (!retainOwnedSyntaxSlot) transactionSourceBlockHints = []
+          transactionSourceQuarantined = true
+          return
+        }
+        // Run as a non-authoritative shadow in production until this edit
+        // category passes the complete family matrix. Targeted integration
+        // tests opt into primary mode and prove that eligible transactions can
+        // bypass canonical diff without silently widening production scope.
+        if (!transactionPrimaryEnabled) return
+
+        // The source bytes come only from the transaction mapper. Serialization
+        // is retained temporarily as a baseline fingerprint so delayed
+        // markdownUpdated callbacks and unsupported follow-up transactions can
+        // continue from the exact matching PM document without replaying the
+        // already-consumed text edit.
+        const serializer = crepe.editor.ctx.get(serializerCtx)
+        const canonical = canonicalForSource(serializer(newState.doc))
+        lastMarkdownRef.current = mapped.markdown
+        canonicalMarkdownRef.current = canonical
+        transactionSourceBlockHints = mapped.blockHints || []
+        transactionSourceQuarantined = false
+        transactionSourcePendingPublish = true
+        transactionSourcePendingDoc = newState.doc
+      } catch (error) {
+        // No partial state is committed by the mapper. Preserve a structural
+        // diagnostic without retaining document content, then quarantine the
+        // primary path until markdownUpdated establishes a safe checkpoint.
+        if (Array.isArray(globalThis.__hmSourceTransactionLog)) {
+          globalThis.__hmSourceTransactionLog.push({
+            ok: false,
+            reason: 'transaction-controller-threw',
+            error: error?.name || 'Error'
+          })
+        }
+        transactionSourcePendingPublish = false
+        transactionSourcePendingDoc = null
+        transactionSourceBlockHints = []
+        if (transactionPrimaryEnabled) transactionSourceQuarantined = true
+      }
+    }
+
+    crepe = createConfiguredCrepe({
       host,
       defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent)),
       getT: (key) => tRef.current(key),
@@ -391,7 +507,8 @@ export default function Editor({
       markUserEdit,
       isReadOnly: () => readOnlyRef.current,
       onFrontmatterValueChange: handleFrontmatterValueChange,
-      onInlineCodeValueChange: handleInlineCodeValueChange
+      onInlineCodeValueChange: handleInlineCodeValueChange,
+      onSourceTransactions: handleSourceTransactions
     })
     crepeRef.current = crepe
 
@@ -441,6 +558,13 @@ export default function Editor({
         pendingMarkdownInputIntents = pendingMarkdownInputIntents
           .filter((intent) => !consumedInputIntents.has(intent))
         if (pendingMarkdownInputIntent && consumedInputIntents.has(pendingMarkdownInputIntent)) {
+          if (Array.isArray(globalThis.__hmListIntentTrace)) {
+            globalThis.__hmListIntentTrace.push({
+              phase: 'consumed-by-generated-marker-restore',
+              marker: pendingMarkdownInputIntent.marker,
+              sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart
+            })
+          }
           pendingMarkdownInputIntent = pendingMarkdownInputIntents.at(-1) || null
         }
       }
@@ -645,7 +769,6 @@ export default function Editor({
     // parsed+inserted in the background — those dispatches fire markdownUpdated
     // too, and we must ignore them so tab.content isn't spammed with partial
     // docs. Only real user edits propagate.
-    let appending = false
     crepe.on((api) => {
       api.markdownUpdated((_ctx, md) => {
         const canonical = canonicalForSource(md)
@@ -667,11 +790,53 @@ export default function Editor({
         const pendingPaste = pendingRawMarkdownPasteRef.current
         const pendingList = pendingListConversion
         if (ready && !appending && (pendingPaste || hasRecentUserEdit())) {
-          if (!pendingPaste && !pendingList && canonical === canonicalMarkdownRef.current) {
+          const hasPendingListIntent = !!pendingMarkdownInputIntent &&
+            (pendingMarkdownInputIntent.type === 'bullet-list' ||
+              pendingMarkdownInputIntent.type === 'ordered-list') &&
+            Date.now() - pendingMarkdownInputIntent.at < 30000
+          // A pending list intent still needs its marker/slot reconstruction
+          // even when the mapper already owned a later transaction (for
+          // example typing in another block before the deferred list callback
+          // landed). Skip the fast confirm path so the intent branch below
+          // can fix up the list on top of the current source snapshot.
+          if (!pendingPaste && !pendingList && transactionSourcePendingPublish && !hasPendingListIntent) {
+            try {
+              const parser = crepe.editor.ctx.get(parserCtx)
+              const currentDoc = viewRef.current?.state.doc
+              const callbackDoc = parser(canonical)
+              if (
+                transactionSourcePendingDoc?.eq?.(currentDoc) === true &&
+                areSourceDocumentsEquivalent(callbackDoc, transactionSourcePendingDoc)
+              ) {
+                canonicalMarkdownRef.current = canonical
+                clearRichFlushPending()
+                transactionSourcePendingPublish = false
+                transactionSourcePendingDoc = null
+                transactionSourceQuarantined = false
+                onChange?.(lastMarkdownRef.current, false)
+                return
+              }
+            } catch {
+              // The callback was not proven to represent the owned PM state;
+              // continue into the established fail-closed preservation path.
+            }
+          }
+          if (
+            !pendingPaste &&
+            !pendingList &&
+            canonical === canonicalMarkdownRef.current &&
+            !hasPendingListIntent
+          ) {
             // The matching source snapshot has already been committed. Clear
             // the synchronous edit guard so a later reading-only mode switch
             // does not reserialize the same large document.
             clearRichFlushPending()
+            transactionSourceQuarantined = false
+            if (transactionSourcePendingPublish) {
+              transactionSourcePendingPublish = false
+              transactionSourcePendingDoc = null
+              onChange?.(lastMarkdownRef.current, false)
+            }
             return
           }
           let preserved
@@ -742,7 +907,7 @@ export default function Editor({
             (pendingMarkdownInputIntent?.type === 'bullet-list' ||
               pendingMarkdownInputIntent?.type === 'ordered-list') &&
             Date.now() - pendingMarkdownInputIntent.at < 30000 &&
-            selectionInList
+            (selectionInList || Number.isFinite(pendingMarkdownInputIntent.sourceSlotRawStart))
           ) {
             try {
               // An input-rule intent applies only while the document baseline
@@ -752,7 +917,17 @@ export default function Editor({
               // pending, 30 s TTL, when a later bullet list is created and then
               // indented), replaying the old snapshot rebuilds the wrong block
               // and glues list rows onto the wrong line. Consume it as stale.
-              if (pendingMarkdownInputIntent.canonical !== canonicalMarkdownRef.current) {
+              if (
+                pendingMarkdownInputIntent.canonical !== canonicalMarkdownRef.current &&
+                !Number.isFinite(pendingMarkdownInputIntent.sourceSlotRawStart)
+              ) {
+                if (Array.isArray(globalThis.__hmListIntentTrace)) {
+                  globalThis.__hmListIntentTrace.push({
+                    phase: 'stale',
+                    capturedCanonical: pendingMarkdownInputIntent.canonical,
+                    currentCanonical: canonicalMarkdownRef.current
+                  })
+                }
                 pendingMarkdownInputIntent = null
                 pendingMarkdownInputIntents = []
                 return
@@ -777,12 +952,29 @@ export default function Editor({
                 ? null
                 : preserveTypedBulletInputRule({
                     source: pendingMarkdownInputIntent.source,
+                    // The list intent contributes only its own block. The
+                    // current preserved source already includes any edits made
+                    // in other blocks while this input rule was pending;
+                    // rebuilding from the old snapshot would silently drop
+                    // them.
+                    insertionSource: preserved.markdown,
                     canonical,
                     previousCanonical: pendingMarkdownInputIntent.canonical,
                     sourceOffset: pendingMarkdownInputIntent.sourceOffset,
+                    sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart,
                     canonicalOffset,
                     marker: pendingMarkdownInputIntent.marker
                   })
+              if (Array.isArray(globalThis.__hmListIntentTrace)) {
+                globalThis.__hmListIntentTrace.push({
+                  phase: 'apply',
+                  marker: pendingMarkdownInputIntent.marker,
+                  sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart,
+                  inputRuleApplied: typeof inputRuleMarkdown === 'string',
+                  canonicalMatched: pendingMarkdownInputIntent.canonical === canonicalMarkdownRef.current,
+                  selectionInList
+                })
+              }
               if (inputRuleMarkdown) {
                 preserved = {
                   ...preserved,
@@ -814,6 +1006,15 @@ export default function Editor({
               // transient selection cannot be mapped during editor teardown.
             }
           } else if (pendingMarkdownInputIntent) {
+            if (Array.isArray(globalThis.__hmListIntentTrace)) {
+              globalThis.__hmListIntentTrace.push({
+                phase: 'cleared-without-list',
+                selectionInList,
+                sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart,
+                age: Date.now() - pendingMarkdownInputIntent.at,
+                type: pendingMarkdownInputIntent.type
+              })
+            }
             pendingMarkdownInputIntent = null
           }
           if (preserved.preserved === false) {
@@ -834,6 +1035,10 @@ export default function Editor({
           // the cumulative delta instead of silently declaring the lost edit
           // synchronized and compounding offsets from a false baseline.
           canonicalMarkdownRef.current = canonical
+          transactionSourcePendingPublish = false
+          transactionSourcePendingDoc = null
+          transactionSourceBlockHints = []
+          transactionSourceQuarantined = false
           clearRichFlushPending()
           pendingRawMarkdownPasteRef.current = null
           pendingListConversion = null
@@ -954,6 +1159,7 @@ export default function Editor({
           onMarkdownInputIntent: (intent) => {
             const currentView = viewRef.current
             let sourceOffset = null
+            let sourceSlotRawStart = null
             try {
               const remark = crepe.editor.ctx.get(remarkCtx)
               sourceOffset = pmPosToMarkdownOffset(
@@ -962,6 +1168,11 @@ export default function Editor({
                 currentView?.state.doc,
                 remark
               )
+              const $from = currentView?.state.selection.$from
+              const topStart = $from?.depth >= 1 ? $from.before(1) : null
+              const slot = transactionSourceBlockHints
+                .find((candidate) => candidate.pmBlockStart === topStart)
+              if (slot) sourceSlotRawStart = slot.rawStart
             } catch {
               // The input rule will still take the generic preservation path.
             }
@@ -971,7 +1182,17 @@ export default function Editor({
               pmPos: currentView?.state.selection.head,
               canonical: canonicalMarkdownRef.current,
               source: lastMarkdownRef.current,
-              sourceOffset
+              sourceOffset,
+              sourceSlotRawStart
+            }
+            if (Array.isArray(globalThis.__hmListIntentTrace)) {
+              globalThis.__hmListIntentTrace.push({
+                marker: intent.marker,
+                sourceOffset,
+                sourceSlotRawStart,
+                sourceLength: lastMarkdownRef.current.length,
+                canonical: canonicalMarkdownRef.current
+              })
             }
             pendingMarkdownInputIntents = [
               ...pendingMarkdownInputIntents.filter((pending) => Date.now() - pending.at < 30000),
@@ -1038,6 +1259,8 @@ export default function Editor({
           applyReviewMarkup,
           replaceMarkdown,
           flushMarkdown,
+          flushMarkdownSettled,
+          getRecoveryMarkdown,
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
           markdownOffsetFromViewportTop
@@ -1110,6 +1333,8 @@ export default function Editor({
           applyReviewMarkup,
           replaceMarkdown,
           flushMarkdown,
+          flushMarkdownSettled,
+          getRecoveryMarkdown,
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
           markdownOffsetFromViewportTop

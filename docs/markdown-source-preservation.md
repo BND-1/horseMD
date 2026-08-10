@@ -37,6 +37,7 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 20. 清空引用文字后，空引用暂时保留为作者源码中的 `>` 行；如果用户再按 Backspace 删除整个空引用块，`>` 必须随结构一起从源码和磁盘消失。这个变化没有可见字符 delta，必须映射相邻可见文本之间的完整 raw gap，不能由通用 visible-stream 路径假装成功。根因与回归见 [空引用删除后复活回归报告](./empty-blockquote-removal-regression.md)。
 21. 在列表项正文中输入字面 `1. 文本`、`1) 文本`、`- 文本`、`+ 文本` 或 `* 文本` 时，remark 为防止二次解析成嵌套列表而生成的反斜杠只是 canonical serializer 拼写，不是作者输入。只能把本次文字 delta 通过语义视图映射回作者源码；作者原有转义必须保留，未编辑列表的 marker 与紧凑/松散空行也不得被 canonical 覆盖。详见 [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)。
 22. 逐字输入、部分删除或全部删除一个/三个反引号后，作者源码、canonical 与 live ProseMirror doc 必须保持同步。不能从零宽 diff 推断整行已删除；重复字面行优先按同行 ordinal 定位；独立 `<br />` 空段落两侧的零宽编辑按行映射；行内代码事务从 live `view.state.doc` 序列化。映射失败仍须 fail closed，不能推进双快照或写盘旧源码。详见 [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)。
+23. 作者源码中的 `- - 内容`、`- + 内容`、`- * 内容` 与 `- 1. 内容` 都可能被 remark 解释为外层列表中的嵌套列表。分叉列表映射必须把作者行正文最前面**恰好一层**列表 marker 当作 canonical 的嵌套语法前缀，只在比较与 raw offset 定位时跳过；输出仍保留作者原 marker。测试 fixture 不能只“包含”这类行，必须真实编辑嵌套项和它后面的兄弟项并直接保存。详见 [复杂文档普通编辑保存被暂停回归报告](./diverged-ordinary-save-regression.md)。
 
 ## 当前实现
 
@@ -76,6 +77,10 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 
 另一个更隐蔽的否决条件：处理器曾要求**全文可见流相等**。真实文档里如果存在“源码是普通段落、remark 却把行中 `* ` 解析成列表项”的结构（例如 `…快速存取。* **输入设备：** …`，`。*` 无空格粘连），源码与 canonical 的可见流会在文档中部永久分叉。此时清空段落的映射（位置可能在分叉点之前）被这个全局守卫整体否决，`<br />` 照常泄漏。正确语义是只要求**变更区间局部对齐**：`preserveChangedLineRegion` 内部已校验映射区域可见文本一致并失败回退，全文相等检查纯属多余且有害。该场景（`CSP-J初赛讲义 第1单元 计算机通识.md` 第 111 行）已固化为纯函数回归。
 
+反过来也不能在可见流已分叉时，把 canonical 的**全文可见行序号**直接套到 source。前部一个 `- - 文本` 就可能使后续所有行的 ordinal 偏移；若文档中又有大量相同引用文本，错误 raw 位置仍可能通过文字比较。0.13.32 起，中间空段落/新块映射仅在两条可见行流完全一致时直接按索引；分叉时必须用相邻可见文本、结构类型和等数量 pair ordinal 做局部一一证明。禁止用整篇 parse/stringify 循环替代这个证明，因为字面列表标记和反引号本就不保证 parse-idempotent。
+
+末尾还有一个不同边界：引用后可点击的 trailing empty paragraph 可能只序列化成 canonical 末尾空行，而不是 `<br />`。用户直接点击它输入时，事务是 `previous.length` 处的纯追加；在分叉 visible stream 中绝不能再按零宽 visible ordinal 寻址，否则会落到较早的空引用 marker。0.13.33 起，只有不含专用块语法的 plain replacement 才能提前走 `appended-paragraph`；结构块继续走列表、引用、标题、表格或 fence 处理器。
+
 #### 可见流分叉时的单块删除回退
 
 上一节修掉了“清空段落”被分叉否决的问题，但**分叉文档中的普通文字删除**仍会被静默回滚：
@@ -91,10 +96,11 @@ canonical 删除后：  前段。\*&#x20;
 修复：新增 `preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`），在分叉分支两个映射都失败、返回 fail-closed 之前执行：
 
 1. 用 `blockSpan` 定位 canonical 变更前后的**单个块**（以空行分界），要求 `start`/`previousEnd`/`nextEnd` 都落在各自块内——跨块删除、整块删除直接放弃；
-2. 把 canonical 块文本**反转义回作者拼写**（`\*` → `*`、`&#x20;` → ` `、`&amp;` → `&`，复用 `decode-named-character-reference`）后，在源码中查找**恰好出现一次**的块——重复文本（同一块出现两处）绝不猜测替换；
-3. 用反转义后的 canonical 下一块替换该源码区间，并拒绝把独立 `<br />` 占位行写进源码（那些归 `preserveEmptiedParagraph` 管）。
+2. 把 canonical 块文本**反转义回作者拼写**（`\*` → `*`、`&#x20;` → ` `、`&amp;` → `&`，复用 `decode-named-character-reference`）后，先按 source / canonical 的非空块序列做等数量 ordinal 对齐；短文本即使作为标题、列表或引用子串重复，只要独立块身份明确仍可局部写回；多个完全相同独立块也按同 key ordinal 对齐；
+3. 若 source / canonical 候选块数量不一致，说明 remark 可能合并或拆分了候选，只允许旧的全文唯一子串路径，任何重复歧义继续 fail closed；
+4. 用反转义后的 canonical 下一块替换该源码区间，并拒绝把独立 `<br />` 占位行写进源码（那些归 `preserveEmptiedParagraph` 管）。
 
-上例结果：`# 测试\n\n前段。* \n\n第二段保留。\n`——删除生效、作者字面 `*` 拼写保留（不出现 `\*` 或 `&#x20;`），其余字节原样。任何一项安全约束不满足都保持 fail-closed 原源码不动。真实回归：`npm run test:diverged-delete-source-ui`（删除 → 切源码 → 保存 → 完整重开，磁盘逐字节校验）；纯函数回归 `npm run test:markdown-preservation` 覆盖唯一出现、重复文本拒绝、跨块拒绝、`\*`/`&#x20;` 反转义与 `<br />` 拒绝。
+上例结果：`# 测试\n\n前段。* \n\n第二段保留。\n`——删除生效、作者字面 `*` 拼写保留（不出现 `\*` 或 `&#x20;`），其余字节原样。任何一项安全约束不满足都保持 fail-closed 原源码不动。真实回归：`npm run test:diverged-delete-source-ui`（删除 → 切源码 → 保存 → 完整重开，磁盘逐字节校验）与 `npm run test:diverged-ordinary-save-ui`（重复短文本普通编辑 → 直接保存 → 源码/磁盘/冷重开）；纯函数覆盖唯一子串、等数量重复块 ordinal、候选数量不等拒绝、跨块拒绝、`\*`/`&#x20;` 反转义与 `<br />` 拒绝。完整复盘见 [复杂文档普通编辑保存被暂停](./diverged-ordinary-save-regression.md)。
 
 ### 空段落的模式切换光标锚点
 
@@ -167,6 +173,8 @@ Typora 实测写入不可见 `U+200B` 再跟作者空格；remark parse 时剥�
 正文右键“转为有序/无序/待办列表”是不同的结构操作：它把一个普通段落包进新列表，Crepe 的 `getMarkdown()` 在 dispatch 后可能仍是旧缓存，且通用差分面对“仅增加 marker、可见文本不变”时会保守拒绝覆盖。该路径必须序列化当前 `view.state.doc`；再用转换前记录的 raw offset，仅给被操作的 authored 段落行添加 `- `、`1. ` 或 `- [ ] `。实现位于 `editor-block-list-source.js`，只接受普通非空段落，拒绝标题、引用、已有列表和空行。它不可退化为重写整篇 canonical Markdown。回归：`npm run test:block-list-source` 与 `npm run test:list-conversion-ui`。
 
 强制保存/切换的 `flushMarkdown()` 必须序列化当前 `view.state.doc`，不能把 `crepe.getMarkdown()` 的 listener 缓存当作实时文档；后者在输入 transaction 已提交但 `markdownUpdated` 尚未发布时可能落后一拍。初始化 canonical baseline 也必须使用同一 `serializerCtx(view.state.doc)` 路径；缓存与直接序列化在列表末尾换行上可能不同，把它们混用会把纯模式切换误判为编辑并删除用户的尾部空行。
+
+保存/切源码还不能把第一次 `flushMarkdown() === null` 立即认定为永久歧义。列表输入规则、结构转换和 node view 事务可能已经显示在 ProseMirror 中，但配套 `markdownUpdated` / pending intent 尚未完成。0.13.34 通过 `editor-flush-settle.js` 有界让出事件循环后重试**同一个 fail-closed flush**；任何重试都不得推进失败 baseline 或采用整篇 canonical。持续失败时原文件保持不变，用户只可把 live ProseMirror 文档另存为独立 `.horsemd-recovered.md`，详见 [保存暂停与恢复副本合同](./source-sync-save-recovery.md)。
 
 这里的“强制”只用于保存与导出：`getMarkdownForTab()` 调用 `flushMarkdown({ force: true })`，确保
 自定义节点视图的 transaction 即使漏过 edit-intent 回调也会持久化。只读的富文本→源码阅读切换仍只在
@@ -315,3 +323,9 @@ Obsidian 的 Live Preview 和 Source mode 都运行在 CodeMirror 编辑态，�
 若未来要达到架构上的字符级源码稳定性，应另立项目，把 CodeMirror 6 Markdown 文本编辑器作为唯一数据模型，在非活动行/块上通过 decorations、widgets 和 node views 展示标题、公式、图片、表格等 Live Preview。此时“源码”和“富文本”不再是两个互相同步的文档。
 
 这不是当前 #77 的后续小修：它会影响 Crepe 表格、代码块、Mermaid、图片粘贴、Review、查找替换、光标/视口、PDF source 和移动端共享 renderer。只有完成独立设计、功能盘点、迁移试验和完整回归矩阵后才可启动；在此之前，继续维护当前保真层，不要仓促替换编辑器内核。
+
+## 0.13.36 维护记录：零宽行边界粘行根因修复
+
+`preserveChangedLineRegion` 在“源末尾空行 + 新增结构块”场景会把新块粘到上一行：零宽变化（`previousRegion.start === end`）落在 previous 末尾空行/行边界时，可见字符映射（`sourceVisiblePositionAtRaw` + `sourceRawFromVisibleIndex`）把源区域拉进上一行（`sourceRegion = {0,8}`），随后 `sourceLineRegionFromCanonical` 的 before 分支又用上一行行尾作为区域起点（`{8,10}`），最终 `已有正文追加正文\n\n` + 列表创建输出 `已有正文追加正文* \n\n`。
+
+修复：零宽变化且位于行边界（previous 末尾或行首）时，源区域直接是映射边界本身（该空行位置），不扩展到上一行。输出恢复为 `已有正文追加正文\n\n* \n\n`。该修复不依赖方案一主路径，默认构建同样生效；`已有正文追加正文\n\n` 的 Enter→`- item` 端到端场景由 `test:rich-list-source-ui`（end 与 middle 变体）在两种构建下回归。

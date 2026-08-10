@@ -321,6 +321,13 @@ async function editAndSave() {
       })()`),
       'rich editor did not open'
     )
+    if (process.env.TRANSACTION_TRACE === '1') {
+      await evaluate(`(() => {
+        window.__hmSourceTransactionTrace = []
+        window.__hmSourceTransactionLog = []
+        window.__hmPreserveLog = []
+      })()`)
+    }
 
     assert.equal(await placeCaretAfter(evaluate, '紧凑第二行'), true)
     await send('Input.insertText', { text: 'X' })
@@ -348,8 +355,20 @@ async function editAndSave() {
       .replace('紧凑第二行', '紧凑第二行X')
       .replace('标准段落 A', '标准段落 A\n\n中间新段落\n\n\n\n中间间隔段落')
     assert.equal(await toggleSource(evaluate), true)
+    const middleSource = await waitFor(
+      () => visibleSource(evaluate),
+      'source mode did not open after middle paragraph insert'
+    )
+    if (process.env.TRANSACTION_TRACE === '1' && middleSource !== expectedMiddle) {
+      const trace = await evaluate(`({
+        transactions: window.__hmSourceTransactionTrace || [],
+        mapped: window.__hmSourceTransactionLog || [],
+        preserved: window.__hmPreserveLog || []
+      })`)
+      console.error('TRANSACTION_TRACE', JSON.stringify(trace, null, 2))
+    }
     assert.equal(
-      await waitFor(() => visibleSource(evaluate), 'source mode did not open after middle paragraph insert'),
+      middleSource,
       expectedMiddle,
       'paragraphs inserted before an existing block merged or leaked a <br /> placeholder'
     )

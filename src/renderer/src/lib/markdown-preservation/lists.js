@@ -357,6 +357,14 @@ export const normalizeEmptyListItems = (markdown) => String(markdown || '')
     /^([ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)[ \t]*<br\s*\/?>[ \t]*$/gim,
     '$1'
   )
+  // A deleted list row leaves a standalone `<br />` placeholder in canonical
+  // (Crepe keeps an empty item until the next Backspace). Its indentation can
+  // shift (`   <br />` -> `      <br />`), so both sides of the delta must
+  // normalize the indentation before visible-stream comparison — otherwise
+  // deleting a typed row fails closed and "resurrects" in source mode. Keep
+  // the `<br />` token itself so the dedicated empty-block mappers still
+  // recognize the placeholder.
+  .replace(/^[ \t]*<br\s*\/?>[ \t]*$/gim, '<br />')
 
 // Rich-text-created documents have no authored list spacing to preserve yet.
 // Crepe can transiently serialize a newly indented item as a loose list
@@ -378,9 +386,11 @@ export const compactGeneratedListSpacing = (markdown) => String(markdown || '')
 // pre-input source position, or an exact newly-created canonical list.
 export const preserveTypedBulletInputRule = ({
   source,
+  insertionSource = source,
   canonical,
   previousCanonical,
   sourceOffset,
+  sourceSlotRawStart,
   canonicalOffset,
   marker
 }) => {
@@ -413,6 +423,7 @@ export const preserveTypedBulletInputRule = ({
     .slice(canonicalList.start, canonicalList.end)
     .replace(/^(\s*)(?:[-+*]|\d{1,9}[.)])(?=\s)/m, `$1${marker}`))
   if (!replacement) return null
+  const listWasCreatedInChange = canonicalList.start >= change.start && canonicalList.end <= change.nextEnd
 
   // Usual path: the dash transaction has already published its escaped
   // literal source line (`\\-`) before Space turns it into a list.
@@ -430,6 +441,60 @@ export const preserveTypedBulletInputRule = ({
     }
   }
 
+  // The transaction-first mapper may already own a newly-created empty block
+  // between two authored blocks. Its raw slot sits exactly between the two
+  // paragraph separators. Insert the list into that proven slot instead of
+  // asking visible-text fallback logic to guess which blank boundary changed.
+  // The insertion happens on `insertionSource` (the caller's current source
+  // snapshot, which already contains any unrelated edits made while the input
+  // rule was pending) so a late list intent can never overwrite other blocks.
+  if (
+    Number.isFinite(sourceSlotRawStart) &&
+    sourceSlotRawStart > 0 &&
+    sourceSlotRawStart < insertionSource.length &&
+    listWasCreatedInChange
+  ) {
+    // The slot is a blank-line boundary. Verify its surrounding bytes are
+    // unchanged since capture; a drift means an earlier block was edited and
+    // the raw offset no longer owns the same gap.
+    const capturedBytes = source.slice(sourceSlotRawStart - 2, sourceSlotRawStart + 2)
+    const currentBytes = insertionSource.slice(sourceSlotRawStart - 2, sourceSlotRawStart + 2)
+    if (capturedBytes !== currentBytes) return null
+    const cleanReplacement = String(replacement || '').replace(/\n+$/, '')
+    const afterSlot = insertionSource.slice(sourceSlotRawStart)
+    const leadingBreaks = afterSlot.match(/^(?:\r?\n)+/)?.[0].length || 0
+    const rest = afterSlot.slice(leadingBreaks)
+    if (/^[ \t]*(?:[-+*]|\d{1,9}[.)])\s/.test(rest)) {
+      // The canonical list was already written into the source by another
+      // preservation path while the input rule was pending. Replace the slot,
+      // that list block, and any surplus blank lines with the authored-marker
+      // compact block, keeping exactly one paragraph separator after it.
+      let blockEndInRest = 0
+      let cursor = 0
+      let remaining = rest
+      for (let count = 0; count < 50; count += 1) {
+        const lineEnd = remaining.indexOf('\n')
+        const line = lineEnd === -1 ? remaining : remaining.slice(0, lineEnd).replace(/\r$/, '')
+        if (!/^[ \t]*(?:[-+*]|\d{1,9}[.)])\s/.test(line)) break
+        cursor += lineEnd === -1 ? line.length : lineEnd + 1
+        remaining = rest.slice(cursor)
+        if (lineEnd === -1) break
+      }
+      blockEndInRest = cursor
+      const trailing = rest.slice(blockEndInRest)
+      const breaksAfter = trailing.match(/^(?:\r?\n)+/)?.[0].length || 0
+      if (breaksAfter < 2) return null
+      const end = sourceSlotRawStart + leadingBreaks + blockEndInRest + (breaksAfter - 2)
+      return insertionSource.slice(0, sourceSlotRawStart) + cleanReplacement + insertionSource.slice(end)
+    }
+    return insertionSource.slice(0, sourceSlotRawStart) +
+      adaptCanonicalRegionToSource(cleanReplacement, insertionSource, {
+        start: sourceSlotRawStart,
+        end: sourceSlotRawStart
+      }) +
+      insertionSource.slice(sourceSlotRawStart)
+  }
+
   // A fast real keyboard sequence can dispatch Enter, the marker, and Space
   // before `markdownUpdated` has published the transient empty paragraph and
   // escaped marker. In that window the authored source has no raw line for the
@@ -440,7 +505,6 @@ export const preserveTypedBulletInputRule = ({
   const previousWithoutTrailingLines = previous.replace(/(?:\r\n|\r|\n)+$/, '')
   const sourceVisible = sourceVisibleIndex(source)
   const previousVisible = sourceVisibleIndex(previous)
-  const listWasCreatedInChange = canonicalList.start >= change.start && canonicalList.end <= change.nextEnd
   if (sourceVisible.text === previousVisible.text && listWasCreatedInChange) {
     const atList = sourceVisiblePositionAtRaw(previous, canonicalList.start)
     const sourceInsertAt = sourceRawFromVisibleIndex(source, atList.visibleIndex, 'forward')
@@ -1356,9 +1420,9 @@ export const preserveEmptyListItemTextChange = ({
 // list block's FLATTENED item-text sequence (every nested marker row, skipping
 // the empty outer `* ` wrappers) against the authored top-level item rows by
 // ordinal, then apply the item-level diff (text edit / insert / delete) back
-// onto the authored rows. The author's numbering is literal text in the source
-// (`- 1. xxx`) but syntax in the canonical, so matching strips a leading
-// `\d+[.)] ` prefix from authored item text before comparing.
+// onto the authored rows. A second marker is literal row text in the source
+// (`- 1. xxx`, `- - xxx`) but nested-list syntax in the canonical, so matching
+// strips exactly one leading ordered/bullet marker from authored item text.
 export const preserveDivergedNestedListChange = ({
   source,
   previous,
@@ -1384,8 +1448,9 @@ export const preserveDivergedNestedListChange = ({
   const previousItems = flatListItemRows(previous.slice(previousList.start, previousList.end))
   const sourceItems = sourceListItemRows(source.slice(sourceList.start, sourceList.end))
   if (!sourceItems.length) return null
-  const authoredCanonicalText = (row) => row.text.replace(/^\d{1,9}[.)]\s+/, '')
-  const numberPrefixLength = (row) => row.text.match(/^\d{1,9}[.)]\s+/)?.[0]?.length || 0
+  const nestedMarkerPrefixLength = (row) =>
+    row.text.match(/^(?:[-+*]|\d{1,9}[.)])\s+/)?.[0]?.length || 0
+  const authoredCanonicalText = (row) => row.text.slice(nestedMarkerPrefixLength(row))
   const nextList = outerTopLevelListBlock(next, start)
   if (!nextList) {
     // Backspace can fully lift the first list row into a plain paragraph. The
@@ -1464,7 +1529,7 @@ export const preserveDivergedNestedListChange = ({
       if (matchedRow != null) {
         aligned.push({
           row: matchedRow,
-          at: numberPrefixLength(sourceItems[matchedRow]),
+          at: nestedMarkerPrefixLength(sourceItems[matchedRow]),
           span: false
         })
         sourceIndex = matchedRow + 1
@@ -1477,7 +1542,7 @@ export const preserveDivergedNestedListChange = ({
     if (sourceIndex >= sourceItems.length) return null
     const sourceRow = sourceItems[sourceIndex]
     const target = authoredCanonicalText(sourceRow)
-    const prefixLength = numberPrefixLength(sourceRow)
+    const prefixLength = nestedMarkerPrefixLength(sourceRow)
     if (target === item.text) {
       aligned.push({ row: sourceIndex, at: prefixLength, span: false })
       sourceIndex += 1
@@ -1575,8 +1640,9 @@ export const preserveDivergedNestedListChange = ({
         if (at < 0 || at + (prevItem.text || '').length > rowText.length) return null
         const rawStart = sourceList.start + row.contentStart + at + applyOffset
         const rawEnd = rawStart + prevItem.text.length
-        output = output.slice(0, rawStart) + nextItem.text + output.slice(rawEnd)
-        applyOffset += nextItem.text.length - prevItem.text.length
+        const authoredText = canonicalTextToSource(nextItem.text)
+        output = output.slice(0, rawStart) + authoredText + output.slice(rawEnd)
+        applyOffset += authoredText.length - prevItem.text.length
       }
     } else if ((!prevItem || prevItem.text === '') && nextItem) {
       // New item: insert an authored row after the previous aligned row.
@@ -1600,7 +1666,7 @@ export const preserveDivergedNestedListChange = ({
         : /^\d/.test(nextItem.token)
           ? `${authoredBullet} ${nextItem.token} `
           : `${' '.repeat(Math.max(0, Number(nextItem.indent) || 0))}${authoredBullet} `
-      const inserted = leading + prefix + nextItem.text + eol
+      const inserted = leading + prefix + canonicalTextToSource(nextItem.text) + eol
       output = output.slice(0, insertAt) + inserted + output.slice(insertAt)
       insertionCursor = insertAt + inserted.length
       applyOffset += inserted.length

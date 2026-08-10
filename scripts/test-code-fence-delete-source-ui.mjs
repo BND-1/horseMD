@@ -236,7 +236,13 @@ async function main() {
   let app
   try {
     app = await openApp('edit', port)
-    await app.evaluate(`window.__hmPreserveLog = []`)
+    await app.evaluate(`(() => {
+      window.__hmPreserveLog = []
+      if (${JSON.stringify(process.env.TRANSACTION_TRACE === '1')}) {
+        window.__hmSourceTransactionTrace = []
+        window.__hmSourceTransactionLog = []
+      }
+    })()`)
 
     // Boundary A: delete the committed lone raw backtick and switch source
     // immediately, before a forced save can mask a non-forced flush failure.
@@ -286,8 +292,15 @@ async function main() {
       })
     const firstSaved = await readFile(file, 'utf8')
     if (firstSaved !== expected) {
-      const log = await app.evaluate(`window.__hmPreserveLog || []`)
-      console.error('first-save preservation tail:', JSON.stringify(log.slice(-40), null, 2))
+      const evidence = await app.evaluate(`({
+        preservation: window.__hmPreserveLog || [],
+        mapped: window.__hmSourceTransactionLog || [],
+        transactions: window.__hmSourceTransactionTrace || []
+      })`)
+      console.error('first-save preservation tail:', JSON.stringify(evidence.preservation.slice(-40), null, 2))
+      if (process.env.TRANSACTION_TRACE === '1') {
+        console.error('TRANSACTION_TRACE', JSON.stringify(evidence, null, 2))
+      }
     }
     assert.equal(firstSaved, expected, 'first save retained deleted backticks or stale rich text')
     const syncWarning = await app.evaluate(`([...document.querySelectorAll('[class*="toast"]')]

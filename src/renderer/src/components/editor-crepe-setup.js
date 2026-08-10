@@ -34,6 +34,7 @@ import {
 import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
+import { createSourceTransactionDispatch } from './editor-source-transactions.js'
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
@@ -89,7 +90,8 @@ export function createConfiguredCrepe({
   markUserEdit,
   isReadOnly,
   onFrontmatterValueChange,
-  onInlineCodeValueChange
+  onInlineCodeValueChange,
+  onSourceTransactions
 }) {
   const t = getT
   const platform = window.api?.platform
@@ -143,6 +145,7 @@ export function createConfiguredCrepe({
     disableCrepeSlash(ctx)
     ctx.update(editorViewOptionsCtx, (options) => ({
       ...options,
+      dispatchTransaction: createSourceTransactionDispatch(onSourceTransactions),
       transformPastedHTML: (html, view) => {
         const transformed = options.transformPastedHTML
           ? options.transformPastedHTML(html, view)

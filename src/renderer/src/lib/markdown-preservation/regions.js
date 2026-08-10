@@ -7,8 +7,10 @@ import { decodeNamedCharacterReference } from 'decode-named-character-reference'
 import {
   adaptCanonicalRegionToSource,
   canonicalFreshTextToSource,
+  canonicalTextToSource,
   lineAt,
   lineIndexAt,
+  lineEndingNear,
   markdownLines,
   rawOffsetAtVisible
 } from './core.js'
@@ -221,15 +223,36 @@ const blockSpan = (markdown, start, end) => {
   return { start: lines[first].start, end: lines[last].end }
 }
 
+const nonBlankBlockSpans = (markdown) => {
+  const lines = markdownLines(markdown)
+  const spans = []
+  let first = -1
+  const push = (last) => {
+    if (first < 0 || last < first) return
+    spans.push({ start: lines[first].start, end: lines[last].end })
+    first = -1
+  }
+  lines.forEach((line, index) => {
+    if (/^\s*$/.test(line.text)) {
+      push(index - 1)
+      return
+    }
+    if (first < 0) first = index
+  })
+  push(lines.length - 1)
+  return spans
+}
+
 // When the visible streams diverge (source and canonical disagree about how
 // the authored bytes map to blocks — a mid-line `* ` that remark parses as a
 // list item while the author kept it as paragraph text), both
 // preserveLocallyAlignedTextChange and preserveChangedLineRegion fail and the
 // façade would roll the edit back: a rich-text deletion never reaches the
 // source. If the user's edit is confined to a single canonical block and that
-// block's exact text occurs exactly once in the authored source, apply the
-// block-level delta directly to the source spelling. Repeated text is
-// ambiguous and stays untouched (fail closed).
+// block can be mapped one-to-one to an authored source block, apply the
+// block-level delta directly to the source spelling. Equal-count repeated
+// blocks map by ordinal; merged/split or otherwise ambiguous blocks stay
+// untouched (fail closed).
 export const preserveDivergedBlockTextChange = ({
   source,
   previous,
@@ -264,7 +287,37 @@ export const preserveDivergedBlockTextChange = ({
   }
   let first = -1
   let matched = ''
+
+  // Prefer a one-to-one block occurrence mapping over a whole-document
+  // substring search. Short paragraph text such as “测试” can occur inside
+  // headings, list items, and quotes many times while the standalone block is
+  // still unambiguous. Repeated standalone blocks are also safe when source
+  // and canonical contain the same number of equivalent blocks: their ordinal
+  // identity survives unrelated serializer divergence elsewhere. If remark
+  // merged/split one of those blocks, the counts differ and this path refuses
+  // to guess; the stricter legacy unique-substring fallback remains below.
+  const blockKey = (value) => unescapeCanonicalBlock(value)
+    .replace(/\r\n|\r/g, '\n')
+  const targetKey = blockKey(previousText)
+  const previousMatches = nonBlankBlockSpans(previous)
+    .filter((block) => blockKey(previous.slice(block.start, block.end)) === targetKey)
+  const targetOrdinal = previousMatches.findIndex((block) => (
+    block.start === previousBlock.start && block.end === previousBlock.end
+  ))
+  const sourceMatches = nonBlankBlockSpans(source)
+    .filter((block) => blockKey(source.slice(block.start, block.end)) === targetKey)
+  if (
+    targetOrdinal >= 0 &&
+    previousMatches.length > 0 &&
+    sourceMatches.length === previousMatches.length
+  ) {
+    const sourceBlock = sourceMatches[targetOrdinal]
+    first = sourceBlock.start
+    matched = source.slice(sourceBlock.start, sourceBlock.end)
+  }
+
   for (const candidate of candidates) {
+    if (first >= 0) break
     const found = source.indexOf(candidate)
     if (found >= 0 && source.indexOf(candidate, found + 1) < 0) {
       first = found
@@ -467,6 +520,22 @@ export const preserveChangedLineRegion = ({
   if (!sourceRegion || sourceText !== previousText) {
     sourceRegion = sourceLineRegionFromCanonical(source, previous, previousRegion)
   }
+  // A zero-width change on a line boundary (an empty trailing line or a blank
+  // separator between blocks) maps ambiguously: the visible-index fallback
+  // pulls the region into the previous line and glues a newly inserted block
+  // (list/quote/heading) onto it. When the change is a pure insertion at an
+  // authored empty line, the source region is exactly that empty line.
+  if (
+    sourceRegion &&
+    previousRegion.start === previousRegion.end &&
+    (previousRegion.start === previous.length ||
+      lineAt(previous, previousRegion.start).start === previousRegion.start)
+  ) {
+    const boundary = lineAt(source, Math.min(previousRegion.start, source.length))
+    if (boundary.start === previousRegion.start || previousRegion.start >= source.length) {
+      sourceRegion = { start: previousRegion.start, end: previousRegion.start }
+    }
+  }
   if (!sourceRegion) return null
 
   return {
@@ -479,5 +548,488 @@ export const preserveChangedLineRegion = ({
       source.slice(sourceRegion.end),
     preserved: true,
     reason
+  }
+}
+
+// Deeply diverged documents (unclosed backticks, escaped markers, zero-width
+// sentinels) fail every full-document visible-stream mapper. Typing at the
+// document end in such a file frequently folds the typed block into the
+// canonical final line (an input rule merges a typed `1. ` with a trailing
+// authored `2` paragraph into `21. …`, then list rows continue), while the
+// authored source still ends with that plain line.
+//
+// When the whole change lives in the final canonical block, the authored
+// source's final line has the same inline text as the canonical pre-edit line
+// (spelling may differ in backtick runs), and the canonical post-edit final
+// line starts with that pre-edit line, splice the typed continuation onto the
+// authored line and append the remaining canonical rows verbatim. The user's
+// bytes survive and a reopen renders the same content.
+export const preserveDivergedTailBlockAppend = ({
+  source,
+  previous,
+  next,
+  start,
+  nextEnd
+}) => {
+  // No hard `nextEnd`-to-end guard here: commonChange's shared suffix can
+  // legitimately include a closing fence row (a ` ``` ` -> ` ```` ` extension
+  // shares the trailing three ticks), so `nextEnd` may sit well before the end
+  // of a genuinely tail edit. The anchor checks below (start must fall on or
+  // after the last visible line) are the strict tail-only gate.
+  if (previous.slice(0, start) !== next.slice(0, start)) return null
+  const stripBacktickSpans = (value) => value.replace(/`+([^`]+)`+/g, '$1')
+  // Compare the final non-empty line of the canonical pre-edit document with
+  // the authored source's final non-empty line (spelling may differ in
+  // backtick runs). Canonical often carries a trailing blank line that the
+  // authored source does not.
+  const lastVisibleLine = (value, offset = 0) => {
+    const body = value.replace(/\r?\n$/, '')
+    const lines = body.split('\n')
+    let skipped = 0
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const text = lines[index]
+      // Empty list items (`23. <br />` in canonical, `- ` in authored source)
+      // carry no visible text but are still the anchor a continuation fills.
+      // Only pure blank lines and standalone `<br />` placeholders are skipped.
+      const content = text.replace(/^\s*(?:[-+*]|\d{1,9}[.)])\s*(?:\[[ xX]\]\s*)?/, '')
+      const isBrPlaceholder = !/^\s*(?:[-+*]|\d{1,9}[.)])\s/.test(text) &&
+        /^<br\s*\/?>\s*$/.test(content.trim())
+      if (
+        (content.trim() && !isBrPlaceholder) ||
+        /^\s*(?:[-+*]|\d{1,9}[.)])\s*$/.test(text)
+      ) {
+        if (skipped < offset) {
+          skipped += 1
+          continue
+        }
+        let start = 0
+        for (let before = 0; before < index; before += 1) start += lines[before].length + 1
+        return { text, start }
+      }
+    }
+    return null
+  }
+  // A complete paired fence block: the first non-empty line opens a fence
+  // (optionally with an info string), the last non-empty line is a bare
+  // closing fence of the same character run, and no inner line can close it
+  // early. Blank lines inside the fence are legal content.
+  const isCompleteFenceBlock = (value) => {
+    const body = String(value || '').replace(/\r?\n$/, '')
+    const lines = body.split('\n').filter((line) => line.trim() !== '')
+    if (lines.length < 2) return false
+    const open = lines[0].match(/^\s*(`{3,}|~{3,})/)
+    if (!open) return false
+    const close = lines[lines.length - 1].match(/^\s*(`{3,}|~{3,})\s*$/)
+    if (!close || close[1][0] !== open[1][0] || close[1].length < open[1].length) return false
+    for (let index = 1; index < lines.length - 1; index += 1) {
+      const inner = lines[index].match(/^\s*(`{3,}|~{3,})\s*$/)
+      if (inner && inner[1][0] === open[1][0] && inner[1].length >= open[1].length) return false
+    }
+    return true
+  }
+  let previousAnchor = lastVisibleLine(previous)
+  let sourceAnchor = lastVisibleLine(source)
+  let previousLine = previousAnchor?.text
+  let sourceLine = sourceAnchor?.text
+  if (!previousLine || !sourceLine || !previousAnchor || !sourceAnchor) return null
+  // List markers are semantically interchangeable (`-`/`+`/`*` bullets,
+  // `1.`/`1)` ordered). Diverged documents frequently spell the same row
+  // differently in source vs canonical; the tail anchor must treat those as
+  // equal or the precise tail mapper gives up and a line-region mapper glues
+  // the typed row onto the previous authored line.
+  const markerNormalized = (line) => String(line || '')
+    .replace(/^(\s*)[-+*](?=\s)/, (match, ws) => `${ws}*`)
+    .replace(/^(\s*)(\d{1,9})[.)](?=\s)/, (match, ws, num) => `${ws}${num}.`)
+    .replace(/&#x20;/g, ' ')
+    .replace(/\u200B/g, '')
+  const equivalentLine = (left, right) =>
+    markerNormalized(stripBacktickSpans(left.trimEnd())) ===
+    markerNormalized(stripBacktickSpans(right.trimEnd()))
+  // A file whose authored tail is a lone fence line (` ``` `) keeps that line
+  // as literal text in canonical (`\`\`\``). Hand-typing a code block after
+  // it makes the input rule absorb the canonical literal into a real fenced
+  // block, so the canonical tail anchor (`\`\`\``) no longer exists. The
+  // authored lone fence line becomes the block's opening fence; fall back to
+  // the previous visible line and let the fresh-row path reuse the authored
+  // fence line below.
+  // Canonical escapes a lone literal fence line per backtick (`\`` + `\`` +
+  // `\``), so the literal is `\`\`\``, not one backslash before three ticks.
+  const escapedFenceLiteral = (line) => /^\s*(?:\\`){3}\s*$/.test(String(line || ''))
+  const loneFenceLine = (line) => /^\s*(?:`{3,}|~{3,})\s*$/.test(String(line || ''))
+  const nextTailStartsFence = (() => {
+    const tail = String(next || '').replace(/\r?\n$/, '')
+    const tailLines = tail.split('\n')
+    for (let index = tailLines.length - 1; index >= 0; index -= 1) {
+      const text = tailLines[index].trim()
+      if (text) return /^(?:`{3,}|~{3,})/.test(text)
+    }
+    return false
+  })()
+  if (
+    !equivalentLine(sourceLine, previousLine) &&
+    escapedFenceLiteral(previousLine) &&
+    loneFenceLine(sourceLine) &&
+    nextTailStartsFence
+  ) {
+    const fallbackPrevious = lastVisibleLine(previous, 1)
+    const fallbackSource = lastVisibleLine(source, 1)
+    if (
+      fallbackPrevious &&
+      fallbackSource &&
+      equivalentLine(fallbackSource.text, fallbackPrevious.text)
+    ) {
+      previousAnchor = fallbackPrevious
+      sourceAnchor = fallbackSource
+      previousLine = fallbackPrevious.text
+      sourceLine = fallbackSource.text
+    }
+  }
+  if (!equivalentLine(sourceLine, previousLine)) return null
+  const previousLineStart = previousAnchor.start
+  // The canonical line at the change start continues the pre-edit line
+  // (an input rule may fold the typed marker into it: `2` + `1. …` = `21. …`).
+  const nextLineStart = next.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+  const nextLineEnd = next.indexOf('\n', start)
+  const nextLineAtStart = nextLineEnd < 0
+    ? next.slice(nextLineStart)
+    : next.slice(nextLineStart, nextLineEnd)
+  const foldCase = start >= previousLineStart &&
+    markerNormalized(nextLineAtStart).startsWith(markerNormalized(previousLine)) &&
+    nextLineAtStart.length > previousLine.length
+  const freshRowCase = start > previousLineStart + previousLine.length &&
+    !nextLineAtStart.startsWith(previousLine)
+  // The canonical final line itself was deleted (a trailing list row or a
+  // typed paragraph). The authored source must drop its matching final line.
+  const previousLineCount = previous.split('\n').filter((line) => line === previousLine).length
+  const nextLineCount = next.split('\n').filter((line) => line === previousLine).length
+  const nextTailLine = lastVisibleLine(next)?.text
+  const deleteCase = start >= previousLineStart &&
+    nextLineCount < previousLineCount &&
+    nextLineCount === 0 &&
+    // A deleted trailing row leaves the previous authored row as canonical's
+    // new final line. A *replaced* row (`\`` -> `` `f` ``) changes spelling
+    // instead, and must go through the fold path, not deletion.
+    !!nextTailLine &&
+    (
+      nextTailLine.trim() === '' ||
+      previous.split('\n').some((line) => equivalentLine(line, nextTailLine))
+    )
+  // Fence extension: the user types a fence row inside a tail fenced block, so
+  // Crepe re-fences the whole block with a longer run (` ``` ` -> ` ```` `) and
+  // the typed row becomes content. previous and next share the opening fence
+  // position; only the fence lengths and content rows differ. Replacing the
+  // authored tail fence segment with canonical's is byte-safe here because the
+  // content rows are proven visible-equal and canonicalFreshTextToSource keeps
+  // fence-interior rows verbatim.
+  const lastFenceSegment = (value) => {
+    const body = String(value || '').replace(/\r?\n$/, '')
+    const lines = body.split('\n')
+    let fence = null
+    let openIndex = -1
+    let openStart = -1
+    let openLen = 0
+    let last = null
+    for (let index = 0; index < lines.length; index += 1) {
+      const text = lines[index]
+      if (fence) {
+        const close = text.match(/^\s*(`{3,}|~{3,})\s*$/)
+        if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
+          let closeStart = 0
+          for (let before = 0; before < index; before += 1) closeStart += lines[before].length + 1
+          last = {
+            openStart,
+            openLen,
+            openEnd: openStart + lines[openIndex].length,
+            closeStart,
+            closeEnd: closeStart + text.length
+          }
+          fence = null
+          openIndex = -1
+        }
+      } else {
+        const open = text.match(/^\s*(`{3,}|~{3,})/)
+        if (open) {
+          fence = { char: open[1][0], length: open[1].length }
+          openIndex = index
+          let startOffset = 0
+          for (let before = 0; before < index; before += 1) startOffset += lines[before].length + 1
+          openStart = startOffset
+          openLen = open[1].length
+        }
+      }
+    }
+    return last
+  }
+  const prevSeg = lastFenceSegment(previous)
+  const nextSeg = lastFenceSegment(next)
+  if (
+    prevSeg &&
+    nextSeg &&
+    start >= prevSeg.openStart &&
+    start <= prevSeg.openEnd &&
+    nextSeg.openLen > prevSeg.openLen &&
+    nextSeg.openStart === prevSeg.openStart
+  ) {
+    const srcSeg = lastFenceSegment(source)
+    if (srcSeg) {
+      const prevContent = previous.slice(prevSeg.openEnd, prevSeg.closeStart)
+      const srcContent = source.slice(srcSeg.openEnd, srcSeg.closeStart)
+      if (sourceVisibleIndex(srcContent).text === sourceVisibleIndex(prevContent).text) {
+        const nextSegment = next.slice(nextSeg.openStart, nextSeg.closeEnd)
+        return {
+          markdown: source.slice(0, srcSeg.openStart) +
+            canonicalFreshTextToSource(nextSegment) +
+            source.slice(srcSeg.closeEnd),
+          preserved: true,
+          reason: 'diverged-tail-fence-extend'
+        }
+      }
+    }
+  }
+  let continuation = ''
+  let remaining = ''
+  let keepTailBreaks = false
+  let fenceBlockCase = false
+  if (foldCase) {
+    continuation = nextLineAtStart.slice(previousLine.length)
+    if (!continuation || /[\r\n]/.test(continuation)) return null
+    remaining = nextLineEnd < 0 ? '' : next.slice(nextLineEnd)
+  } else if (freshRowCase) {
+    // Typing inside an existing tail fenced block: canonical grows content
+    // rows between a paired open/close fence. The last visible line is the
+    // CLOSING fence, so anchoring there would drop the new content rows.
+    // Anchor on the opening fence (previous second-to-last visible line),
+    // reuse the authored open AND close fence lines and insert only the new
+    // canonical content rows between them.
+    const prevLastLine = lastVisibleLine(previous)
+    const prevSecondLastLine = lastVisibleLine(previous, 1)
+    // A tail EMPTY fence pair (opening line directly followed by the closing
+    // line) is the only safe "typing inside a new tail code block" anchor. A
+    // non-empty block whose content happens to end with a fence-like row must
+    // not be treated as an empty pair, so validate with a fence state machine
+    // instead of pattern-matching the last two visible lines.
+    const tailEmptyFencePair = (value) => {
+      const body = String(value || '').replace(/\r?\n$/, '')
+      const lines = body.split('\n')
+      let fence = null
+      let openIndex = -1
+      let pairOpen = -1
+      let pairClose = -1
+      for (let index = 0; index < lines.length; index += 1) {
+        const text = lines[index]
+        if (fence) {
+          const close = text.match(/^\s*(`{3,}|~{3,})\s*$/)
+          if (close && close[1][0] === fence.char && close[1].length >= fence.length) {
+            if (openIndex === index - 1) {
+              pairOpen = openIndex
+              pairClose = index
+            }
+            fence = null
+            openIndex = -1
+          }
+        } else {
+          const open = text.match(/^\s*(`{3,}|~{3,})/)
+          if (open) {
+            fence = { char: open[1][0], length: open[1].length }
+            openIndex = index
+          }
+        }
+      }
+      return pairOpen >= 0 ? { openIndex: pairOpen, closeIndex: pairClose } : null
+    }
+    const prevTailPair = tailEmptyFencePair(previous)
+    const prevTailIsPairedFence = !!prevTailPair && !!prevLastLine && !!prevSecondLastLine &&
+      /^\s*(?:`{3,}|~{3,})\s*$/.test(prevLastLine.text) &&
+      /^\s*(?:`{3,}|~{3,})\s*$/.test(prevSecondLastLine.text)
+    if (prevTailIsPairedFence) {
+      const srcLastLine = lastVisibleLine(source)
+      const srcSecondLastLine = lastVisibleLine(source, 1)
+      const srcTailPair = tailEmptyFencePair(source)
+      if (
+        !srcTailPair || !srcLastLine || !srcSecondLastLine ||
+        !/^\s*(?:`{3,}|~{3,})\s*$/.test(srcLastLine.text) ||
+        !/^\s*(?:`{3,}|~{3,})\s*$/.test(srcSecondLastLine.text)
+      ) {
+        return null
+      }
+      const sourceFenceOpenStart = srcSecondLastLine.start
+      const sourceFenceOpenText = srcSecondLastLine.text
+      // The canonical opening fence shares the previous raw offset (the common
+      // prefix includes it; the delta starts after it).
+      let fenceOpenEnd = next.indexOf('\n', prevSecondLastLine.start)
+      if (fenceOpenEnd < 0) fenceOpenEnd = next.length
+      remaining = next.slice(fenceOpenEnd)
+      // Keep the authored closing fence; strip canonical's closing fence line
+      // and its terminal padding from the appended content rows.
+      const parts = remaining.split('\n')
+      let lastNonEmpty = -1
+      for (let index = parts.length - 1; index >= 0; index -= 1) {
+        if (parts[index].trim()) {
+          lastNonEmpty = index
+          break
+        }
+      }
+      if (lastNonEmpty < 0) return null
+      let closeStart = 0
+      for (let before = 0; before < lastNonEmpty; before += 1) {
+        closeStart += parts[before].length + 1
+      }
+      const contentRows = remaining.slice(0, closeStart).replace(/^\n+/, '')
+      if (!/\S/.test(String(contentRows).replace(/<br\s*\/?>/gi, ''))) return null
+      if (/^\s*<br\s*\/?>\s*$/m.test(contentRows)) return null
+      const sourceTail = source.slice(sourceFenceOpenStart + sourceFenceOpenText.length)
+      return {
+        markdown: source.slice(0, sourceFenceOpenStart) + sourceFenceOpenText +
+          '\n' + canonicalFreshTextToSource(contentRows) +
+          sourceTail.replace(/^\n/, ''),
+        preserved: true,
+        reason: 'diverged-tail-fence-content'
+      }
+    }
+    // Everything after the anchor line in canonical (empty items, blanks and
+    // the newly typed rows) is appended verbatim after the authored anchor.
+    const nextLines = next.split('\n')
+    let anchorInNext = -1
+    for (let index = nextLines.length - 1; index >= 0; index -= 1) {
+      if (equivalentLine(nextLines[index], previousLine)) {
+        let offset = 0
+        for (let before = 0; before < index; before += 1) offset += nextLines[before].length + 1
+        anchorInNext = offset + nextLines[index].length
+        break
+      }
+    }
+    if (anchorInNext < 0) return null
+    remaining = next.slice(anchorInNext)
+    // A hand-typed fenced code block serializes as an opening fence, content
+    // rows and a closing fence. Complete paired fences are self-contained tail
+    // blocks; the structural guard below must not refuse them. When the
+    // authored tail already ends with a lone fence line (a leftover unclosed
+    // fence), that line becomes the block's opening fence and canonical's
+    // opening line is skipped so the authored file does not gain a duplicate.
+    fenceBlockCase = isCompleteFenceBlock(remaining)
+    if (fenceBlockCase) {
+      const sourceTrailFirstLine = source.slice(sourceAnchor.start + sourceLine.length)
+        .split('\n').find((line) => line.trim() !== '')
+      if (sourceTrailFirstLine && /^\s*(?:`{3,}|~{3,})/.test(sourceTrailFirstLine)) {
+        const parts = remaining.split('\n')
+        const firstNonEmpty = parts.findIndex((line) => line.trim() !== '')
+        if (firstNonEmpty >= 0 && /^\s*(?:`{3,}|~{3,})/.test(parts[firstNonEmpty])) {
+          parts.splice(firstNonEmpty, 1)
+          remaining = parts.join('\n')
+        }
+      }
+    }
+    // Enter inside an authored list continues the same list. Canonical may
+    // serialize the new row with Crepe's default marker and a loose blank
+    // line (`* 第二项` after `- 第一项`). On diverged documents the list
+    // mappers cannot align the continuation, so this tail mapper restores
+    // the authored marker and compact spacing itself. Genuinely new
+    // nested/outer blocks (different indentation or list type) keep their
+    // canonical spelling.
+    const authoredMarker = sourceLine.match(/^(\s*)([-+*]|\d{1,9}[.)])(?=\s)/)
+    const firstRemaining = remaining.split('\n').find((line) => line.trim())
+    // A brand-new list created from a plain paragraph/heading is owned by the
+    // input-rule intent mapper, which restores the typed marker (`-` instead
+    // of Crepe's `*`). The tail mapper only owns continuations and genuinely
+    // new blocks that follow an existing authored list row.
+    if (
+      !/^\s*(?:[-+*]|\d{1,9}[.)])\s/.test(previousLine) &&
+      /^\s*(?:[-+*]|\d{1,9}[.)])\s/.test(firstRemaining || '')
+    ) {
+      return null
+    }
+    const firstIndent = firstRemaining?.match(/^\s*/)?.[0] || ''
+    const firstMarker = firstRemaining?.trim().match(/^(?:[-+*]|\d{1,9}[.)])/)?.[0] || ''
+    const sameListType = /^\d/.test(authoredMarker?.[2] || '') === /^\d/.test(firstMarker)
+    const continuedSameList = !!(authoredMarker &&
+      firstRemaining &&
+      firstIndent === authoredMarker[1] &&
+      sameListType &&
+      /^[-+*]|\d{1,9}[.)]/.test(firstRemaining.trim()))
+    if (continuedSameList) {
+      keepTailBreaks = true
+      const authoredToken = authoredMarker[2]
+      // On diverged documents the list/input-rule mappers cannot align a
+      // same-list continuation, so restore the authored marker and compact
+      // spacing here. (Clean documents never reach this branch — it only runs
+      // inside the diverged visible-stream path.)
+      remaining = remaining.replace(/^\n+/, '\n')
+      if (/^\d/.test(authoredToken)) {
+        remaining = remaining.replace(/^(\s*\d{1,9})[.)](?=\s)/, `$1${authoredToken.slice(-1)}`)
+      } else {
+        remaining = remaining.replace(/^(\s*)[-+*](?=\s)/, `$1${authoredToken}`)
+      }
+    } else {
+      // The authored final line may carry trailing blank lines (authored
+      // spacing between blocks). Preserve them before the appended rows; a
+      // Markdown block boundary needs at least two line endings, so top up
+      // when the authored tail has fewer (without inventing trailing blank
+      // lines after the appended content — the facade caps that separately).
+      const sourceTailBreaks = source.slice(sourceAnchor.start + sourceLine.length)
+      const breakCount = (sourceTailBreaks.match(/\n/g) || []).length
+      remaining = sourceTailBreaks +
+        '\n'.repeat(Math.max(0, 2 - breakCount)) +
+        remaining.replace(/^\n+/, '')
+    }
+    // A canonical tail that only grew blank lines (Enter inside an empty
+    // trailing block) has no authored content to append; the empty-block
+    // mappers own that transition and must not be bypassed.
+    // A canonical tail that only grew blank lines or `<br />` placeholders
+    // (held Space, Enter inside an empty trailing block) has no authored
+    // content to append; the empty-block mappers own those transitions.
+    if (!/\S/.test(String(remaining).replace(/<br\s*\/?>/gi, ''))) return null
+    // A `<br />` placeholder embedded in the appended rows (held-space and
+    // empty-block transitions) belongs to the dedicated empty/leading-space
+    // mappers, which know how to collapse it; never append it verbatim.
+    if (/^\s*<br\s*\/?>\s*$/m.test(remaining)) return null
+  } else if (deleteCase) {
+    const tailBreaks = source.slice(sourceAnchor.start + sourceLine.length)
+    // Deleting a leading-space paragraph down to its bare whitespace leaves a
+    // blank canonical row (` `); the authored row must shrink to that blank
+    // rather than keep the deleted content.
+    const blankTail = nextTailLine.trim() === '' ? nextTailLine : ''
+    return {
+      markdown: source.slice(0, sourceAnchor.start) + blankTail + tailBreaks,
+      preserved: true,
+      reason: 'diverged-tail-line-delete'
+    }
+  } else {
+    return null
+  }
+  // Remaining canonical rows must stay plain/list rows; headings and quotes
+  // change block structure and are refused. Complete paired fenced blocks
+  // were structurally validated above and are the only structural exception.
+  if (!fenceBlockCase) {
+    // A foldCase fence extension (typing `` ` `` after a ` ``` ` closing row
+    // re-fences the block: ` ``` ` -> ` ```` `) leaves the remaining rows as a
+    // complete paired fence too. Validate the spliced result structurally
+    // instead of refusing the fence rows outright.
+    const fenceFoldCase = foldCase && continuation &&
+      isCompleteFenceBlock(sourceLine + continuation + remaining)
+    if (!fenceFoldCase) {
+      for (const line of remaining.split('\n')) {
+        if (/^\s*(```|~~~|#{1,6}\s|>)/.test(line)) return null
+      }
+    }
+  }
+  // Splice the continuation onto the authored final line, then append the
+  // remaining canonical rows.
+  const prefix = source.slice(0, sourceAnchor.start)
+  // Canonical rows are appended verbatim structurally, but serializer escapes
+  // (`\~`, `&#x20;`, leading-space entities) must be translated back to the
+  // authored spelling through the same context-aware path every other
+  // canonical write uses.
+  const normalizedRemaining = keepTailBreaks
+    ? remaining
+    : remaining.replace(
+        /(?:\r?\n)+$/,
+        /(?:\r?\n)$/.test(source) ? '\n' : ''
+      )
+  return {
+    markdown: prefix + sourceLine +
+      canonicalFreshTextToSource(continuation) +
+      canonicalFreshTextToSource(normalizedRemaining),
+    preserved: true,
+    reason: 'diverged-tail-block-append'
   }
 }

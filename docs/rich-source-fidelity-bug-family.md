@@ -2,7 +2,7 @@
 
 > 状态：持续维护（Living Document）
 >
-> 当前基线：HorseMD 0.13.29 发布候选，2026-08-09
+> 当前基线：HorseMD 0.13.33 已完成源码保真家族矩阵和安装包专项，待用户手动验收，2026-08-10
 >
 > 适用范围：富文本编辑、源码模式、模式切换、保存/重开、列表、空段落、光标映射和 Markdown 原文保真。
 
@@ -93,6 +93,12 @@ HorseMD 同时维护两种表示：
 | RS-27 | 前导空格列表无法转换类型 | 含 `U+200B + 多空格` 的无序列表转换为有序列表时提示“无法安全转换”，如 `11111.md` | 作者源码的 `U+200B + 5 spaces` 与 canonical 的 `&#x20; + 4 spaces` 是同一语义；只在列表正文比较视图执行 `canonicalTextToSource`，输出仍只替换目标 marker | 已覆盖：`test:markdown-preservation`、`test:list-conversion-ui`；原始空格字节和其他层级保持不动 |
 | RS-28 | 行内代码提前激活与代码块退出竞态 | 输入左反引号后第一个中文字符立即变 code，方向键难以退出；恢复闭合触发后，``` + Space→Backspace→快速正文可能与上一段合并 | 未闭合 delimiter 不应创建 mark；只在最后单反引号闭合时转换。空 fenced block 退出属于异步结构边界，下一任务必须立即从 live doc 对账，不能等 260ms 批处理 | 已覆盖：真实 IME `test:inline-code-ui`、`test:code-fence-delete-source-ui`、unit；详见 `backtick-source-sync-lock-regression.md` |
 | RS-29 | 新文档字面三反引号泄漏 canonical 转义 | 富文本逐键输入同一行 ```` ```你好``` ````，切源码变成 ```` \`\`\`你好\`\`\` ```` | generated scratch / empty-file 首次编辑全部来自本次富文本输入，没有既有作者转义需要保护；必须使用 `canonicalFreshTextToSource` 只还原 Markdown 文本中的 serializer punctuation，fenced code、inline code 与 HTML literal 保持字节不动 | 已覆盖：`test:literal-triple-backtick-source-ui` 逐键 delimiter + 真实中文 IME + 源码/保存/完整重开，另有纯函数和 `test:inline-code-ui`；详见 `backtick-source-sync-lock-regression.md` |
+| RS-30 | 复杂分叉文档的普通编辑被错误暂停保存 | 文档其他位置有嵌套列表、字面三反引号、空引用和重复“测试”时，只给独立正文追加文字也提示“保存已暂停” | 旧块级回退要求目标文字在全文只出现一次，把标题/列表/引用中的同名子串误当作当前块歧义；现在先按非空 Markdown 块和 source/canonical 等数量 ordinal 对齐，只替换当前块，候选数量不等仍 fail closed | 已覆盖：`test:diverged-ordinary-save-ui`、纯函数唯一块/重复块/数量不等三组合同，以及 diverged delete、mixed transaction、code fence、continuous 家族；详见 `diverged-ordinary-save-regression.md` |
+| RS-31 | `- - 内容` 嵌套项及后续兄弟项仍暂停保存 | 0.13.30 的同一复现文档中，独立正文可保存，但编辑第二个 `-` 形成的嵌套项或其后兄弟项仍提示暂停 | 分叉列表序列只从作者行正文剥离 `1. ` / `1) ` 数字前缀，没有剥离被 canonical 消费的第二个 `- ` / `+ ` / `* `；整棵列表对齐提前失败。现在比较和 raw offset 同时识别恰好一层任意列表 marker，输出 marker 不变 | 已覆盖：纯函数嵌套项/后续兄弟项；`test:diverged-ordinary-save-ui` 三处逐字编辑、直接保存、源码、磁盘、冷重开；27 组家族矩阵 |
+| RS-32 | 重复引用后的新文字写进前面旧引用 | 富文本末尾退出引用后输入的新段落仍显示正确，但保存/源码把它拼进前面某个同名引用；重开后以错误源码为准 | `preserveMiddleEmptyBlock()` 在 source/canonical 已分叉时仍复用 canonical 的全文可见行序号。前部 `- - 内容` 等结构令后续索引整体偏移，大量重复“测试”引用又掩盖了错误定位。现在仅在可见行完全一致时直接按索引；分叉时必须按相邻可见文本、结构类型和同类 pair ordinal 一一映射，候选数量不等即拒绝 | 已覆盖：`test:diverged-ordinary-save-ui` 增加同一引用内批量编辑、退出第三个重复引用后逐字输入唯一末段；直接保存、首次源码、磁盘、冷重开严格相等 |
+| RS-33 | 直接点击引用后的空正文，新增文字写入前面空引用 | 富文本在引用下方显示新正文；保存后源码没有该正文，反而出现较早的 `>新增文字`，重开后新增文字丢失 | 引用后的可点击空 paragraph 在 canonical 中只表现为终端空行；填入文字是 `previous.length` 的零宽追加。分叉分支先执行 `locally-aligned-change`，重复的零可见宽度引用行碰巧通过局部比较，把末尾 raw offset 映到前面。现在纯正文物理末尾追加在分叉映射前处理，并拒绝标题/列表/引用/fence/table 等结构语法 | 已覆盖：纯函数分叉引用末尾追加；`test:diverged-ordinary-save-ui` 直接点击 trailing empty paragraph 逐字输入，验证直接保存、源码、磁盘、冷重开 |
+| RS-34 | 第一次保存提示暂停，稍后重试又成功；持续失败时编辑只留在内存 | 富文本 transaction 已显示，但立即保存/切源码触发 fail-closed；等待后重试可能成功。真正歧义时用户无法正常保存 | durability boundary 早于延迟 `markdownUpdated` / pending input intent 协调运行，把暂时未稳定与永久歧义混为一类。0.13.34 先有界 settle；持续歧义仍不覆盖原文件，改为用户选择路径保存规范化恢复副本 | 已覆盖：`test:editor-flush-settle`、`test:source-sync-recovery`，并重跑全部家族矩阵；详见 `source-sync-save-recovery.md` |
+| RS-35 | 事务接管后空块首字错写相邻段落 | 简单正文/列表测试通过，但在已有块前连续 Enter 后输入，源码把新字写进前一段或合并多个段落 | 空 PM paragraph 没有可见字符，普通 raw offset 会回退到相邻块；transaction batch 必须原子，结构 split 后要保存独立 block hint，任何未覆盖结构必须 quarantine 并等待旧路径建立新 checkpoint。首轮默认接管被完整段落回归否决，生产恢复影子/关闭 | 迁移进行中：`test:source-transaction-sync`、显式 primary `test:source-transaction-sync-ui`；生产基线继续由 `test:paragraph-source-ui` 等全家族门禁保护。详见 `transaction-source-sync-architecture.md` |
 
 ## 5. 代码归属
 
@@ -103,6 +109,8 @@ HorseMD 同时维护两种表示：
 - `src/renderer/src/lib/markdown-preservation/paragraphs.js`：段落创建、填充、清空和 `<br />` 占位处理。
 - `src/renderer/src/lib/markdown-preservation/lists.js`：marker、层级、列表转换、数字点列表与列表项序列映射。
 - `src/renderer/src/lib/markdown-preservation/regions.js`：局部对齐、行区域、分叉块和跨块删除回退。
+- `src/renderer/src/components/editor-source-transactions.js`：统一真实 transaction batch 观察器与显式测试 trace。
+- `src/renderer/src/lib/source-transaction-sync.js`：方案一的原子 transaction→raw source 映射器；当前生产不默认接管。
 - `src/renderer/src/lib/markdown-preservation/tables.js`：表格局部编辑与 cell `<br>` 边界。
 - `src/renderer/src/lib/markdown-preservation/frontmatter.js`：YAML 文档头边界，避免正文 `---` / `Q3:` 误判。
 - `src/renderer/src/lib/markdown-leading-space.js`：新增前导空格 sentinel 的写法和 parse-side 清除。
@@ -151,6 +159,7 @@ npm run test:empty-blockquote-removal-ui
 npm run test:mixed-rich-source-transaction-ui
 npm run test:list-item-literal-marker-source-ui
 npm run test:code-fence-delete-source-ui
+npm run test:diverged-ordinary-save-ui
 npm run test:literal-triple-backtick-source-ui
 npm run test:empty-paragraph-source-ui
 npm run test:empty-paragraph-caret-ui
@@ -194,6 +203,7 @@ npm run test:task-list-persistence-ui
 - 按住 Space 输入多个前导空格后再打字：源码不得出现 `&#x20;`，切换不能卡住。
 - 既有文件中的空格和转义不得被 HorseMD 主动改写。
 - 逐字输入一个/三个反引号，分别做部分删除、全部删除、继续输入正文，并在最后一个按键后立即切源码和立即保存；不得出现保存暂停或源码切换锁死。文档含两条相同反引号行、独立空段落、Setext 标题和未编辑列表时也必须通过。自动化：`npm run test:code-fence-delete-source-ui`。
+- 在同时含嵌套 `- -`、字面三反引号、空引用以及多处重复短文本的既有文件中，编辑独立重复正文后不切源码直接保存；保存不得暂停，源码、磁盘和完整重开必须一致。自动化：`npm run test:diverged-ordinary-save-ui`。
 - 行内代码必须按完整 `` `正文` `` 才创建：只输入左反引号和正文时，方向键不得凭空补出右反引号；输入真实闭合反引号后，左右方向键应能从已渲染 code 边界退出。段落追加回归与专项行内代码回归必须使用同一合同，不能让旧测试继续模拟“首字符自动激活”。自动化：`npm run test:paragraph-source-ui`、`npm run test:inline-code-ui`。
 - 在真正空白的新文件中逐键输入三个反引号，以真实中文 IME 提交“你好”，再逐键输入三个反引号；富文本保持普通正文，源码必须逐字为 ```` ```你好``` ````，每个反引号前不得出现 serializer 反斜杠，保存并完整重开仍一致。自动化：`npm run test:literal-triple-backtick-source-ui`。
 
@@ -211,6 +221,7 @@ npm run test:task-list-persistence-ui
 4. **`U+200B` 只用于富文本中新写的前导空格**：它是为了让 CommonMark 往返保留可见空格；不得扫描并修改既有文件。
 5. **测试通过不等于所有组合已穷尽**：必须持续把真实用户操作序列加入 chaos/continuous 回归，而不是只测单次输入。
 6. **长期终局仍是源码即数据模型的 Live Preview**：它可从架构上消除双表示同步家族，但属于独立迁移项目，见 `live-preview-migration-plan.md`；当前版本仍须维护现有保真层。
+7. **禁止用全局“重新解析后语义相等”作为通行证**：作者正文里的 `- - 文本`、`1. 2. 文本` 和字面反引号本就可能被 parser 重解释；整篇循环 parse/stringify 会把合法作者拼写误判为错误并引入列表、反引号和空行回归。修复必须证明本次局部 raw 映射。
 
 ## 9. 新问题追加模板
 
@@ -258,6 +269,7 @@ npm run test:task-list-persistence-ui
 - [全文删除与光标 settle 回归](./full-doc-delete-caret-settle-regression.md)
 - [Canonical 转义审计](./canonical-escape-audit.md)
 - [数字点嵌套列表同步交接](./nested-list-sync-bug-handoff.md)
+- [复杂文档普通编辑保存被暂停](./diverged-ordinary-save-regression.md)
 - [前导空格、实体编码与模式切换回归](./leading-space-mode-switch-regression.md)
 - [源码单换行显示问题报告](./soft-line-break-display-report.md)
 - [Issue #105/#106 富文本保存保真报告](./issues-105-106-save-fidelity-regression.md)
@@ -270,6 +282,7 @@ npm run test:task-list-persistence-ui
 - [跨块连续编辑事务回归报告](./mixed-rich-source-transaction-regression.md)
 - [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)
 - [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)
+- [事务优先源码同步架构（方案一）](./transaction-source-sync-architecture.md)
 
 ## 12. 维护记录
 
@@ -281,3 +294,17 @@ npm run test:task-list-persistence-ui
 - 2026-08-09 / 0.13.27：增加 RS-27、RS-28；列表转换比较统一反转义 `U+200B / &#x20;` 语义，行内代码改为闭合反引号触发，恢复标准 fenced code-block 输入并补快速退出同步边界。
 - 2026-08-09 / 0.13.28：增加 RS-29；generated scratch 与空文件首次编辑改走 fresh canonical 翻译，修复同一行 ```` ```你好``` ```` 切源码后出现六个 serializer 反斜杠；增加逐键 delimiter、真实中文 IME、保存和完整重开回归。
 - 2026-08-09 / 0.13.29：未新增家族分支；在加入桌面拖入打开后重新执行纯函数、逐字段落/列表/反引号、空段落/空引用、模式切换光标、保存重开、源码 + 预览、连续/嵌套写作与四组 chaos 的完整矩阵，全部通过。同步把 `test:paragraph-source-ui` 从旧“首字符自动激活”改为当前“闭合反引号触发”合同。
+- 2026-08-09 / 0.13.30：增加 RS-30；复杂分叉文档中的普通重复短文本不再因全文子串重复而暂停保存。单块回退改为 source/canonical 等数量块的 ordinal 映射，候选数量不等仍 fail closed；新增富文本直接保存、源码、磁盘和冷重开专项。完整家族矩阵 26 组、桌面/移动/教程构建通过；覆盖安装后又通过六组高风险安装包回归。
+- 2026-08-09 / 0.13.31：增加 RS-31。用户手测证明 0.13.30 的 fixture 虽包含 `- -`，自动化却只编辑独立段落，属于场景存在但断言未触达的低级覆盖缺口。分叉列表现识别作者正文开头的一层 ordered/bullet marker；专项扩为独立段落、嵌套项、后续兄弟项三次独立直接保存，完整家族矩阵增至 27 组并加入真实 IME composition。桌面/移动/guide 构建通过，覆盖安装后再通过三目标复杂保存、IME、字面 marker 和反引号四组安装包专项。
+- 2026-08-09 / 0.13.32：增加 RS-32。0.13.31 用户长时间编辑证明，前部结构分叉会让 `preserveMiddleEmptyBlock` 的 canonical 全文可见行序号错套到 source；重复引用文本使末尾新段落被写入较早引用。改为“完全对齐才直取索引，分叉则相邻 pair + 结构类型 + 等数量 ordinal”映射；专项增至五个真实编辑位置，并明确拒绝整篇 parse/stringify 语义循环方案。
+- 2026-08-10 / 0.13.33：增加 RS-33。用户直接点击引用后由 Crepe 提供的 trailing empty paragraph 输入，与“在引用内按两次 Enter 退出”不是同一事务；旧测试只覆盖后者。新增真实鼠标点击空段落逐字输入后稳定复现文字被写进前面空引用，修复为文档末尾 plain append 优先；专项增至六个场景，保存、源码、磁盘与冷重开逐字一致。
+- 2026-08-10 / 0.13.34：增加 RS-34。现场证明保存暂停可在同一文档稍后重试时消失，定位为 durability boundary 与延迟 `markdownUpdated` / pending intent 的稳定窗口差异；保存和源码切换改为有界 settle。持续歧义继续 fail closed，但新增用户选址的 `.horsemd-recovered.md` 恢复副本，原文件绝不覆盖。完整家族矩阵重新执行通过。
+- 2026-08-10 / 0.13.35：增加 RS-35，正式启动方案一。统一 transaction observer、原子 plain-text mapper、真实 step trace 和显式 primary UI 已落地；一次默认接管被 `test:paragraph-source-ui` 捕获空块首字错写，随即恢复生产影子/关闭，并把“结构失败后 quarantine 到下一 checkpoint”写进状态机。专项 primary 证明正文/引用/列表项文字可完全绕过 canonical diff；生产家族回归继续通过。
+- 2026-08-10 / 0.13.36：增加 RS-36。方案一第二阶段，四个根因修复落地：
+
+  1. **BOM/CRLF 映射错位**：remark 剥 BOM 使全部坐标差 1；旧回退还会把新文字插进 `\r\n` 中间（`正文\r追加\n`），随后“保存已暂停”。mapper 改为字节归一化视图（BOM 剥离 + 行尾归一化）做全部字节证明，编辑同步应用回原始副本，出口保留作者 BOM/CRLF/lone-CR 拼写；mixed EOL 结构拆分原子拒绝。
+  2. **源末尾空行 + 新块粘行**（旧路径，非 primary 同样触发）：`preserveChangedLineRegion` 零宽变化在行边界被可见映射拉进上一行，`已有正文\n\n` + 列表创建输出 `已有正文* \n\n`。修复：零宽且位于行边界的变化，源区域就是该空行本身。
+  3. **延迟列表意图覆盖跨块编辑（静默丢字）**：列表输入规则回调延迟期间另一块已被 mapper 接管，旧意图用捕获快照整体重建会丢掉该编辑。改为意图只在当前源快照上插入/替换自己的列表块，槽字节验证 + 已存在 canonical 列表的替换/压缩分支。
+  4. **嵌套空 textblock 错写**：列表项/引用内的空段带 hint 时会把首字符写到容器 marker 之前。嵌套空块一律拒绝，交给列表/引用 preservation。
+
+  回归：LF/CRLF/BOM+CRLF 的正文/引用/列表/undo-redo 立即切源码、保存、冷重开逐字节；列表意图跨块丢字专项（primary 构建验证、默认构建 SKIP）；家族全矩阵在 primary 实验构建与默认构建均通过。仍默认关闭，未放行 mark/atom、代码块、表格与性能门禁。

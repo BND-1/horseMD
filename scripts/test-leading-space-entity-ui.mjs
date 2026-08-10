@@ -107,6 +107,13 @@ async function main() {
   let app
   try {
     app = await openApp('edit', port)
+    if (process.env.TRANSACTION_TRACE === '1') {
+      await app.evaluate(`(() => {
+        window.__hmSourceTransactionTrace = []
+        window.__hmSourceTransactionLog = []
+        window.__hmPreserveLog = []
+      })()`)
+    }
 
     // Scenario A: EXISTING document, new paragraph, leading spaces then text.
     assert.equal(await caretDocEnd(app.evaluate), true, 'could not focus the document end')
@@ -118,6 +125,14 @@ async function main() {
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch to source mode (A)')
     await waitFor(() => app.evaluate(`!![...document.querySelectorAll('textarea.source-editor')].find((n) => n.offsetParent)`), 'source textarea did not appear (A)')
     const sourceA = await visibleSource(app.evaluate)
+    if (process.env.TRANSACTION_TRACE === '1' && sourceA !== '第一段正文。\n\n\u200B      顶格文字\n') {
+      console.error('TRANSACTION_TRACE', JSON.stringify(await app.evaluate(`({
+        transactions: window.__hmSourceTransactionTrace || [],
+        mapped: window.__hmSourceTransactionLog || [],
+        preserved: window.__hmPreserveLog || [],
+        semantic: window.__hmSourceTransactionSemantic || null
+      })`), null, 2))
+    }
     assert.ok(
       !sourceA.includes('&#x20;'),
       `leading spaces must not leak as the &#x20; entity (got ${JSON.stringify(sourceA)})`
@@ -254,6 +269,13 @@ async function main() {
     app = null
     await writeFile(file, '# test\n\nanchor\n')
     app = await openApp('held-space-sequence', port + 3)
+    if (process.env.TRANSACTION_TRACE === '1') {
+      await app.evaluate(`(() => {
+        window.__hmSourceTransactionTrace = []
+        window.__hmSourceTransactionLog = []
+        window.__hmPreserveLog = []
+      })()`)
+    }
     assert.equal(await app.evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)
       if (!editor) return false
@@ -277,9 +299,19 @@ async function main() {
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch held-space fixture to source')
     await waitFor(() => app.evaluate(`!![...document.querySelectorAll('textarea.source-editor')].find((n) => n.offsetParent)`), 'held-space source textarea did not appear')
     const sourceE = await visibleSource(app.evaluate)
+    const expectedHeldSpaceSource = process.env.EXPECT_TRANSACTION_PRIMARY === '1'
+      ? '# test\n\nanchor\n\n\n\n\u200B        abc\n'
+      : '# test\n\nanchor\n\n\u200B        abc\n'
+    if (process.env.TRANSACTION_TRACE === '1' && sourceE !== expectedHeldSpaceSource) {
+      console.error('HELD_SPACE_TRACE', JSON.stringify(await app.evaluate(`({
+        transactions: window.__hmSourceTransactionTrace || [],
+        mapped: window.__hmSourceTransactionLog || [],
+        preserved: window.__hmPreserveLog || []
+      })`), null, 2))
+    }
     assert.equal(
       sourceE,
-      '# test\n\nanchor\n\n\u200B        abc\n',
+      expectedHeldSpaceSource,
       `held spaces must not merge into the previous paragraph or leave trailing garbage (got ${JSON.stringify(sourceE)})`
     )
     assert.ok(!sourceE.includes('&#x20;'), 'held spaces must not expose a serializer entity')

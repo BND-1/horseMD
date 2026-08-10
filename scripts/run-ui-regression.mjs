@@ -97,12 +97,36 @@ const sessions = [
 
 const standalone = [
   {
+    name: 'Transaction-first source sync: atomic plain-text mapper',
+    script: 'scripts/test-source-transaction-sync.mjs'
+  },
+  {
+    name: 'Transaction-first source sync: plain paragraph, quote, and list edits',
+    script: 'scripts/test-transaction-source-sync-ui.mjs'
+  },
+  {
     name: 'Background CDP: no native focus and per-character input',
     script: 'scripts/test-background-cdp-ui.mjs'
   },
   {
     name: 'Source textarea fidelity: CRLF, BOM, mixed EOL and offset mapping',
     script: 'scripts/test-source-text-fidelity.mjs'
+  },
+  {
+    name: 'Durability boundary: delayed rich transactions settle before fail-closed recovery',
+    script: 'scripts/test-editor-flush-settle.mjs'
+  },
+  {
+    name: 'Source-sync recovery: persistent ambiguity writes only a separate recovery copy',
+    script: 'scripts/test-source-sync-recovery.mjs'
+  },
+  {
+    name: 'Real IME composition: committed CJK survives source switching',
+    script: 'scripts/test-ime-source-fidelity-ui.mjs'
+  },
+  {
+    name: 'Diverged Markdown: paragraph and nested-list edits save directly without normalization',
+    script: 'scripts/test-diverged-ordinary-save-ui.mjs'
   },
   {
     name: 'Issue 93: inline code editing boundaries and literal backticks',

@@ -39,6 +39,7 @@ import {
   hasStructuralPrefixChange,
   preserveDivergedBlockTextChange,
   preserveDivergedVisibleDelete,
+  preserveDivergedTailBlockAppend,
   preserveChangedLineRegion,
   preserveLocallyAlignedTextChange,
   preserveOrdinalLineTextChange,
@@ -209,6 +210,10 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   const sourceVisible = sourceVisibleIndex(sourceMarkdown)
   const previousVisible = sourceVisibleIndex(previous)
   const { start, previousEnd, nextEnd } = commonChange(previous, next)
+  const startVisible = sourceVisiblePositionAtRaw(previous, start)
+  const endVisible = sourceVisiblePositionAtRaw(previous, previousEnd)
+  const replacement = next.slice(start, nextEnd)
+  const replacementVisible = sourceVisibleIndex(replacement).text
   const removedEmptyBlockquote = preserveRemovedEmptyBlockquote({
     source: sourceMarkdown,
     previous,
@@ -269,6 +274,22 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (middleEmptyPreserved) return middleEmptyPreserved
+  // A trailing empty ProseMirror paragraph can serialize as canonical terminal
+  // padding rather than `<br />`. Typing into it is therefore a pure append at
+  // `previous.length`, even when an earlier `- - text` or escaped literal has
+  // already made source/canonical visible streams diverge. Prove and append it
+  // before ordinal visible-offset fallbacks can mistake a repeated empty quote
+  // row for the insertion point.
+  const appendedParagraph = preserveAppendedParagraph({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd,
+    replacementVisible
+  })
+  if (appendedParagraph) return appendedParagraph
   // Exact same-count row/gap skeletons are the strongest list proof: apply
   // their item-text delta before broad multi-list reconciliation. This keeps
   // serializer-only escapes (`1\.`) and untouched marker/spacing differences
@@ -308,6 +329,14 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   })
   if (tableTextPreserved) return tableTextPreserved
   if (sourceVisible.text !== previousVisible.text) {
+    const tailBlockAppend = preserveDivergedTailBlockAppend({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      nextEnd
+    })
+    if (tailBlockAppend) return tailBlockAppend
     // remark parses `- 1. 甲乙` as a nested ordered list, so the canonical
     // visible stream drops the `1. ` item text while the authored source
     // keeps it — the whole document's visible stream diverges and any
@@ -485,20 +514,6 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       reason: 'structural-line-change'
     }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-structural-change' }
   }
-  const startVisible = sourceVisiblePositionAtRaw(previous, start)
-  const endVisible = sourceVisiblePositionAtRaw(previous, previousEnd)
-  const replacement = next.slice(start, nextEnd)
-  const replacementVisible = sourceVisibleIndex(replacement).text
-  const appendedParagraph = preserveAppendedParagraph({
-    source: sourceMarkdown,
-    previous,
-    next,
-    start,
-    previousEnd,
-    nextEnd,
-    replacementVisible
-  })
-  if (appendedParagraph) return appendedParagraph
   const trailingExactLine = preserveTrailingExactLineChange({
     source: sourceMarkdown,
     previous,

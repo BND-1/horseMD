@@ -12,6 +12,8 @@ import {
   restoreSourceViewport
 } from '../scrollAnchor.js'
 import { getTextareaSourceValue } from '../source-text-fidelity.js'
+import { fireToast } from '../ui.js'
+import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 
 // Owns rich/source view state and the caret-vs-reading-position transition.
 // Textarea editing remains uncontrolled in EditorArea; this hook only consumes
@@ -27,7 +29,8 @@ export function useSourceModeSwitch({
   focusedTabRef,
   commitAllLive,
   findStateRef,
-  richLoadingRef
+  richLoadingRef,
+  tRef
 }) {
   const [sourceModeIds, setSourceModeIds] = useState(() => new Set())
   const sourceMode = !!activeId && sourceModeIds.has(activeId)
@@ -92,8 +95,11 @@ export function useSourceModeSwitch({
     return true
   }, [editorApis, setTabs])
 
-  const flushRichSource = useCallback((id) => {
-    const markdown = editorApis.current[id]?.flushMarkdown?.()
+  const flushRichSource = useCallback(async (id) => {
+    const api = editorApis.current[id]
+    const markdown = typeof api?.flushMarkdownSettled === 'function'
+      ? await api.flushMarkdownSettled()
+      : api?.flushMarkdown?.()
     if (typeof markdown !== 'string') return false
     const current = tabsRef.current.find((tab) => tab.id === id)
     if (!current) return false
@@ -112,12 +118,34 @@ export function useSourceModeSwitch({
     return true
   }, [editorApis, setTabs, tabsRef])
 
-  const toggleSource = useCallback(() => {
+  const toggleSource = useCallback(async () => {
     const id = activeIdRef.current
     const tab = tabsRef.current.find((item) => item.id === id)
-    if (!id || tab?.kind === 'settings') return
+    if (!id || tab?.kind === 'settings') return false
     if (sourceModeRef.current) commitAllLive()
-    else if (!flushRichSource(id)) return
+    else if (!await flushRichSource(id)) {
+      // The visible edit cannot be mapped byte-safely. Do not trap it in
+      // renderer memory: offer the same recovery copy the save path uses.
+      const tab = tabsRef.current.find((item) => item.id === id)
+      const recoveryMarkdown = editorApis.current[id]?.getRecoveryMarkdown?.()
+      if (tab && typeof recoveryMarkdown === 'string') {
+        try {
+          const recovery = await saveSourceSyncRecovery({
+            api: window.api,
+            title: tab.title,
+            markdown: recoveryMarkdown
+          })
+          if (recovery.ok) {
+            fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true })
+            return false
+          }
+        } catch {
+          // Fall through to the paused-source message.
+        }
+      }
+      fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+      return false
+    }
     const view = editorApis.current[id]?.getView?.()
 
     if (sourceModeRef.current) {
@@ -195,7 +223,8 @@ export function useSourceModeSwitch({
       else next.add(id)
       return next
     })
-  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, flushRichSource, syncSourceToRich, tabsRef])
+    return true
+  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, flushRichSource, syncSourceToRich, tabsRef, tRef])
 
   useLayoutEffect(() => {
     const caret = caretAnchorRef.current

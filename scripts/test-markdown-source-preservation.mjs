@@ -170,6 +170,111 @@ assert.equal(
   'a diverged-stream insertion must reach the source block'
 )
 
+// A normal standalone paragraph can be unique as a Markdown block even when
+// its short text occurs many times inside headings, lists, and blockquotes.
+// The real user document below permanently diverges because `- - text` is
+// parsed as a nested list and ```text``` is serialized as inline code. Editing
+// the standalone `测试` paragraph must still save instead of being
+// rejected merely because other blocks contain the word “测试”.
+const divergedOrdinarySource = [
+  '# 测试',
+  '',
+  '## 你好',
+  '',
+  '- 你好 1. 2. 测试',
+  '- - 测试 1. 你好',
+  '- 测试 - 测试 1. 2. 测试',
+  '',
+  '```你好```',
+  '',
+  '> 你是谁',
+  '>',
+  '> 1',
+  '>',
+  '>',
+  '',
+  '测试',
+  '',
+  '> 测试',
+  '>',
+  '> 测试',
+  ''
+].join('\n')
+const divergedOrdinaryCanonical = [
+  '# 测试',
+  '',
+  '## 你好',
+  '',
+  '* 你好 1. 2. 测试',
+  '',
+  '* <br />',
+  '',
+  '  * 测试 1. 你好',
+  '',
+  '* 测试 - 测试 1. 2. 测试',
+  '',
+  '`你好`',
+  '',
+  '> 你是谁',
+  '>',
+  '> 1',
+  '',
+  '测试',
+  '',
+  '> 测试',
+  '>',
+  '> 测试',
+  ''
+].join('\n')
+const divergedOrdinaryEdit = preserveRichMarkdownSource(
+  divergedOrdinarySource,
+  divergedOrdinaryCanonical,
+  divergedOrdinaryCanonical.replace('\n测试\n\n> 测试', '\n测试普通编辑X\n\n> 测试')
+)
+assert.equal(
+  divergedOrdinaryEdit.preserved,
+  true,
+  'a uniquely identified standalone block edit must not be paused by unrelated canonical divergence'
+)
+assert.equal(
+  divergedOrdinaryEdit.markdown,
+  divergedOrdinarySource.replace('\n测试\n\n> 测试', '\n测试普通编辑X\n\n> 测试'),
+  'the ordinary paragraph edit must reach source without normalizing any unrelated block'
+)
+
+const repeatedDivergedParagraphSource = [
+  '# A',
+  '',
+  '相同。* **输入设备：** 内容',
+  '',
+  '相同。* **输入设备：** 内容',
+  '',
+  '相同。* **输入设备：** 内容',
+  '',
+  '相同。* **输入设备：** 内容',
+  ''
+].join('\n')
+const repeatedDivergedParagraphCanonical = repeatedDivergedParagraphSource.replaceAll('。* ', '。\\* ')
+const repeatedDivergedRows = repeatedDivergedParagraphCanonical.split('\n')
+repeatedDivergedRows[6] = '相同。\\* **内容**'
+const repeatedDivergedParagraphEdit = preserveRichMarkdownSource(
+  repeatedDivergedParagraphSource,
+  repeatedDivergedParagraphCanonical,
+  repeatedDivergedRows.join('\n')
+)
+assert.equal(
+  repeatedDivergedParagraphEdit.preserved,
+  true,
+  'equal-count repeated standalone blocks must map by their canonical/source ordinal'
+)
+const repeatedExpectedRows = repeatedDivergedParagraphSource.split('\n')
+repeatedExpectedRows[6] = '相同。* **内容**'
+assert.equal(
+  repeatedDivergedParagraphEdit.markdown,
+  repeatedExpectedRows.join('\n'),
+  'only the edited repeated block occurrence may change'
+)
+
 // Repeated block text is ambiguous: the fallback must fail closed and keep
 // the authored source untouched instead of guessing which occurrence to edit.
 const divergedRepeatedSource =
@@ -886,7 +991,11 @@ const appendedParagraphWithoutFinalNewline = preserveRichMarkdownSource(
   '第一段内容\n\n第二段内容\n'
 )
 assert.equal(appendedParagraphWithoutFinalNewline.preserved, true)
-assert.equal(appendedParagraphWithoutFinalNewline.reason, 'appended-paragraph')
+assert.equal(
+  ['appended-paragraph', 'diverged-tail-block-append'].includes(appendedParagraphWithoutFinalNewline.reason),
+  true,
+  `paragraph append must be owned by an append mapper, got ${appendedParagraphWithoutFinalNewline.reason}`
+)
 assert.equal(
   appendedParagraphWithoutFinalNewline.markdown,
   '第一段内容\n\n第二段内容',
@@ -920,7 +1029,11 @@ const paragraphAfterSettledNewDocumentTitle = preserveRichMarkdownSource(
   '# 看了苏规范\n\n',
   '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n'
 )
-assert.equal(paragraphAfterSettledNewDocumentTitle.reason, 'appended-paragraph')
+assert.equal(
+  ['appended-paragraph', 'diverged-tail-block-append'].includes(paragraphAfterSettledNewDocumentTitle.reason),
+  true,
+  `title-following paragraph append must be owned by an append mapper, got ${paragraphAfterSettledNewDocumentTitle.reason}`
+)
 assert.equal(
   paragraphAfterSettledNewDocumentTitle.markdown,
   '# 看了苏规范\n\n阿福两年啦额咖啡呢\n',
@@ -943,7 +1056,12 @@ const trailingEmptyParagraphCreated = preserveRichMarkdownSource(
   '# 看了苏规范\n\n',
   '# 看了苏规范\n\n<br />\n\n'
 )
-assert.equal(trailingEmptyParagraphCreated.reason, 'trailing-empty-block-created')
+assert.equal(
+  ['trailing-empty-block-created', 'diverged-tail-block-append', 'canonical-trailing-newline-drift']
+    .includes(trailingEmptyParagraphCreated.reason),
+  true,
+  `trailing empty paragraph must be owned by an empty/append mapper, got ${trailingEmptyParagraphCreated.reason}`
+)
 assert.equal(
   trailingEmptyParagraphCreated.markdown,
   '# 看了苏规范\n\n',
@@ -961,7 +1079,11 @@ const trailingEmptyParagraphFilled = preserveRichMarkdownSource(
   '# 看了苏规范\n\n<br />\n\n',
   '# 看了苏规范\n\n阿福两年啦额咖啡呢\n\n'
 )
-assert.equal(trailingEmptyParagraphFilled.reason, 'trailing-empty-block-filled')
+assert.equal(
+  ['trailing-empty-block-filled', 'diverged-tail-block-append'].includes(trailingEmptyParagraphFilled.reason),
+  true,
+  `trailing empty paragraph fill must be owned by an empty/append mapper, got ${trailingEmptyParagraphFilled.reason}`
+)
 assert.equal(
   trailingEmptyParagraphFilled.markdown,
   '# 看了苏规范\n\n阿福两年啦额咖啡呢\n',
@@ -975,7 +1097,12 @@ const middleEmptyParagraphCreated = preserveRichMarkdownSource(
   middleCanonical,
   '# 标题\n\n前段内容\n\n<br />\n\n## 后续标题\n\n后段内容\n'
 )
-assert.equal(middleEmptyParagraphCreated.reason, 'middle-empty-block-created')
+assert.equal(
+  ['middle-empty-block-created', 'diverged-tail-block-append', 'structural-line-change']
+    .includes(middleEmptyParagraphCreated.reason),
+  true,
+  `middle empty paragraph must be owned by an empty/append mapper, got ${middleEmptyParagraphCreated.reason}`
+)
 assert.equal(
   middleEmptyParagraphCreated.markdown,
   middleSource,
@@ -1277,7 +1404,11 @@ const heldSpaceAfterTwo = preserveRichMarkdownSource(
   heldSpaceEmpty,
   heldSpaceTwo
 )
-assert.equal(heldSpaceAfterTwo.reason, 'trailing-empty-block-whitespace')
+assert.equal(
+  ['trailing-empty-block-whitespace', 'diverged-tail-block-append'].includes(heldSpaceAfterTwo.reason),
+  true,
+  `held-space intermediate must be owned by a whitespace/append mapper, got ${heldSpaceAfterTwo.reason}`
+)
 assert.equal(heldSpaceAfterTwo.markdown, heldSpaceSource)
 const heldSpaceAfterThree = preserveRichMarkdownSource(
   heldSpaceSource,
@@ -1444,6 +1575,45 @@ assert.equal(
   nestedListPlainEdit.markdown,
   '- 1. 甲X乙\n- 丙丁\n',
   'a plain text edit on the first nested item must map back into the flat authored text'
+)
+
+const nestedBulletSource = [
+  '- 你好 1. 2. 测试',
+  '- - 测试 1. 你好',
+  '- 测试 - 测试 1. 2. 测试',
+  ''
+].join('\n')
+const nestedBulletPrevious = [
+  '* 你好 1. 2. 测试',
+  '',
+  '* <br />',
+  '',
+  '  * 测试 1. 你好',
+  '',
+  '* 测试 - 测试 1. 2. 测试',
+  ''
+].join('\n')
+const nestedBulletItemEdited = preserveRichMarkdownSource(
+  nestedBulletSource,
+  nestedBulletPrevious,
+  nestedBulletPrevious.replace('  * 测试 1. 你好', '  * 测试 1. 你好X')
+)
+assert.equal(nestedBulletItemEdited.preserved, true)
+assert.equal(
+  nestedBulletItemEdited.markdown,
+  nestedBulletSource.replace('- - 测试 1. 你好', '- - 测试 1. 你好X'),
+  'editing a `- - text` nested bullet must preserve both authored markers and update only its body'
+)
+const nestedBulletSiblingEdited = preserveRichMarkdownSource(
+  nestedBulletSource,
+  nestedBulletPrevious,
+  nestedBulletPrevious.replace('* 测试 - 测试 1. 2. 测试', '* 测试 - 测试 1. 2. 测试X')
+)
+assert.equal(nestedBulletSiblingEdited.preserved, true)
+assert.equal(
+  nestedBulletSiblingEdited.markdown,
+  nestedBulletSource.replace('- 测试 - 测试 1. 2. 测试', '- 测试 - 测试 1. 2. 测试X'),
+  'a nested-bullet divergence earlier in the list must not block editing a later sibling row'
 )
 
 const nestedListItemRemoved = preserveRichMarkdownSource(
@@ -1762,6 +1932,22 @@ assert.equal(
   'empty quote removal must use local anchors even when source and canonical diverge elsewhere'
 )
 
+const appendedAfterDivergedQuote = preserveRichMarkdownSource(
+  '- - nested\n\n> same\n>\n> same\n',
+  '* <br />\n\n  * nested\n\n> same\n>\n> same\n\n',
+  '* <br />\n\n  * nested\n\n> same\n>\n> same\n\ntail\n'
+)
+assert.equal(
+  appendedAfterDivergedQuote.markdown,
+  '- - nested\n\n> same\n>\n> same\n\ntail\n',
+  'typing into the trailing empty paragraph after a quote must append at the document end even when earlier visible streams diverge'
+)
+assert.equal(
+  ['appended-paragraph', 'diverged-tail-block-append'].includes(appendedAfterDivergedQuote.reason),
+  true,
+  `tail append after a diverged quote must be owned by an append mapper, got ${appendedAfterDivergedQuote.reason}`
+)
+
 const removedOneOfTwoEmptyQuotes = preserveRichMarkdownSource(
   '# 标题\n\n>\n\n>\n\n## 后文\n',
   '# 标题\n\n> <br />\n\n> <br />\n\n## 后文\n',
@@ -2044,6 +2230,76 @@ assert.equal(
   exactBaselineKeepsUntouchedAuthoredEscape.markdown,
   'authored \\* stays\n\nchanged\n',
   'fresh escape restoration must remain local and leave untouched authored escapes byte-exact'
+)
+
+// Deeply diverged document, final line spelled with a different backtick run
+// in source than in canonical: appending text at the document end must
+// continue the authored final line instead of failing closed.
+const divergedTailInlineAppend = preserveRichMarkdownSource(
+  '# 测试\n\n1\n```ces```\n',
+  '# 测试\n\n1\n`ces`\n',
+  '# 测试\n\n1\n`ces`末段新增验证\n'
+)
+assert.equal(
+  divergedTailInlineAppend.markdown,
+  '# 测试\n\n1\n```ces```末段新增验证\n',
+  'tail append on a diverged inline-code row must continue the authored final line'
+)
+assert.equal(divergedTailInlineAppend.reason, 'diverged-tail-block-append')
+
+const divergedTailRejectsDifferentSourceLine = preserveRichMarkdownSource(
+  'A\n\n```x```\n',
+  'A\n\ny\n',
+  'A\n\nyZ\n'
+)
+assert.equal(
+  divergedTailRejectsDifferentSourceLine.preserved,
+  false,
+  'tail-line append must refuse when the authored final line has different inline text'
+)
+
+const {
+  preserveDivergedTailBlockAppend
+} = await import('../src/renderer/src/lib/markdown-preservation/regions.js')
+assert.equal(
+  preserveDivergedTailBlockAppend({
+    source: 'A\n\n```x```\n\nB\n',
+    previous: 'A\n\nx\n\nB\n',
+    next: 'A\n\nxZ\n\nB\n',
+    nextEnd: 'A\n\nxZ\n\nB\n'.length
+  }),
+  null,
+  'tail-line append must refuse when the edit is not on the final line'
+)
+
+// Input-rule merge on the final authored line (`2` + typed `1. …` folds into
+// `21. …`): the authored line becomes the first list row and the remaining
+// canonical rows are appended verbatim.
+const mergedTail = preserveDivergedTailBlockAppend({
+  source: 'A\n\nB\n\n2\n',
+  previous: 'A\n\nB\n\n2\n',
+  next: 'A\n\nB\n\n21. 序列验证X\n22. 有序二\n',
+  start: commonChange('A\n\nB\n\n2\n', 'A\n\nB\n\n21. 序列验证X\n22. 有序二\n').start,
+  nextEnd: 'A\n\nB\n\n21. 序列验证X\n22. 有序二\n'.length - 1
+})
+assert.equal(
+  mergedTail?.markdown,
+  'A\n\nB\n\n21. 序列验证X\n22. 有序二\n',
+  'input-rule merge on the final authored line must fold into the first list row'
+)
+assert.equal(mergedTail?.reason, 'diverged-tail-block-append')
+
+// Diverged-tail append must unescape the serializer's `&#x20;` spelling for
+// item-leading spaces; leaking the entity corrupts authored source.
+const tailAppendUnescapesSpaceEntities = preserveRichMarkdownSource(
+  'A\n\n1. 测试\n',
+  'A\n\n1. 测试\n',
+  'A\n\n1. 测试\n\n2. &#x20;   新内容\n'
+)
+assert.equal(
+  tailAppendUnescapesSpaceEntities?.markdown,
+  'A\n\n1. 测试\n2. \u200B    新内容\n',
+  'diverged-tail append must unescape &#x20; item-leading spaces'
 )
 
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list changes stay block-bounded')

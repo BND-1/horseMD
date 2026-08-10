@@ -16,6 +16,7 @@ import { pressKey } from './lib/human-input.mjs'
 const root = `/tmp/horsemd-ime-${process.pid}`
 const file = join(root, 'doc.md')
 const port = Number(process.env.CDP_PORT || 9900)
+const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
 // Cadence of the composition lifecycle (ms). Humans vary; sweep a couple.
 const step = Number(process.env.IME_STEP || 60)
 
@@ -77,7 +78,13 @@ async function run() {
   await rm(root, { recursive: true, force: true })
   await mkdir(root, { recursive: true })
   await writeFile(file, '')
-  const app = await launchBuiltElectron({ profileDir: join(root, 'profile'), port, appArgs: [file] })
+  const app = await launchBuiltElectron({
+    profileDir: join(root, 'profile'),
+    port,
+    appArgs: [file],
+    executable: packagedAppPath || undefined,
+    entrypoint: packagedAppPath ? null : undefined
+  })
   try {
     const { evaluate, send } = app
     await waitFor(() => evaluate(`(() => {

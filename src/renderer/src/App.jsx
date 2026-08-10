@@ -249,6 +249,12 @@ export default function App() {
     for (const id of [...liveContentRef.current.keys()]) commitLive(id)
   }, [commitLive])
 
+  const t = useCallback((key, vars) => translate(lang, key, vars), [lang])
+  // Always-current translator for stable callbacks (for example source/save
+  // boundaries and openPaths) that must not be recreated on language changes.
+  const tRef = useRef(t)
+  tRef.current = t
+
   const {
     sourceMode,
     sourceRef,
@@ -266,7 +272,8 @@ export default function App() {
     focusedTabRef,
     commitAllLive,
     findStateRef,
-    richLoadingRef
+    richLoadingRef,
+    tRef
   })
 
   // Persist per-document caret/viewport so reopening a file (session restore or
@@ -463,11 +470,6 @@ export default function App() {
     updateSettings({ themeMode: 'manual' })
   }, [updateSettings])
 
-  const t = useCallback((key, vars) => translate(lang, key, vars), [lang])
-  // Always-current translator for stable callbacks (e.g. openPaths) that must
-  // not be recreated on every language change.
-  const tRef = useRef(t)
-  tRef.current = t
   const cycleTheme = useCallback(() => {
     setTheme((cur) => {
       const i = THEMES.findIndex((x) => x.id === cur)
@@ -533,6 +535,21 @@ export default function App() {
     return tabsRef.current.find((tab) => tab.id === id)?.content || ''
   }, [editorApis, sourceTextareas, tabsRef])
 
+  const getSettledMarkdownForTab = useCallback(async (id) => {
+    const sourceElement = sourceTextareas.current[id]
+    if (sourceElement) return getTextareaSourceValue(sourceElement)
+    const editorApi = editorApis.current[id]
+    if (!editorApi) return tabsRef.current.find((tab) => tab.id === id)?.content || ''
+    if (typeof editorApi.flushMarkdownSettled === 'function') {
+      return await editorApi.flushMarkdownSettled({ force: true })
+    }
+    return editorApi.flushMarkdown?.({ force: true }) ?? null
+  }, [editorApis, sourceTextareas, tabsRef])
+
+  const getRecoveryMarkdownForTab = useCallback((id) => (
+    editorApis.current[id]?.getRecoveryMarkdown?.() ?? null
+  ), [editorApis])
+
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
   // File operations (open/new/update/close/save/rename/dup/delete/export) +
@@ -579,6 +596,8 @@ export default function App() {
     liveTimersRef,
     getPdfSourceForTab,
     getMarkdownForTab,
+    getSettledMarkdownForTab,
+    getRecoveryMarkdownForTab,
     waitForPdfSourceForTab,
     isMobile,
     t,
@@ -670,7 +689,7 @@ export default function App() {
     setHome(false)
   }, [])
 
-  const toggleSourceRichSplit = useCallback(() => {
+  const toggleSourceRichSplit = useCallback(async () => {
     const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
     if (isMobile || !tab || tab.kind === 'settings') return
     if (split) {
@@ -688,7 +707,7 @@ export default function App() {
     // Existing source mode owns a sensitive caret/viewport restoration path.
     // Close it through its public toggle before exposing both panes; the rich
     // editor stays mounted throughout, so this is not a re-parse.
-    if (sourceMode) toggleSource()
+    if (sourceMode && !await toggleSource()) return
     setSourceRichFocusedPane('source')
     setSourceRichSplitId(tab.id)
   }, [isMobile, richForced, sourceMode, sourceRichSplitId, split, tRef, toggleSource])

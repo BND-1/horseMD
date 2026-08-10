@@ -1,6 +1,6 @@
 # 源码优先 Live Preview 架构迁移计划
 
-> 状态：方向已定（2026-08），待 Phase 1 可行性试验批准后启动。
+> 状态：2026-08-10 已选择“方案一”——保留 Milkdown/ProseMirror，优先完成 transaction→source 迁移；CodeMirror Live Preview 保留为长期备选，不在当前阶段大爆炸替换。
 > 目标：把 HorseMD 从「ProseMirror 文档 + 启发式源码对账」迁移到
 > Obsidian/Typora 式「源码即数据模型」的 CodeMirror 6 Live Preview 架构，
 > 从根本上消除 canonical/source 保真 bug 家族。
@@ -176,3 +176,28 @@ ProseMirror 原始事务（steps），把每一步直接映射成源码文本编
 真实引擎上逐字节验证。下一步是按上表补齐缺口（新文档引导、输入规则、内联
 atom），每项沿用「纯单测 + 真实引擎探针对比」的验证方式；在全部缺口收敛前，
 不替换现有同步层，0.13.x 边界硬化继续作为保命网。
+
+## 9. 0.13.34 迁移期保存合同
+
+用户再次捕获到“第一次保存暂停、稍后重试成功”，证明 canonical-diff 除了真正
+歧义外，还存在可见 transaction 与延迟 `markdownUpdated` / pending intent 之间的
+稳定窗口。迁移完成前：
+
+- 保存和源码切换先有界 settle，且每次仍通过 fail-closed 保真层；
+- 不能以等待超时为理由覆盖作者原文件；
+- 持续歧义必须允许另存 live rich recovery copy，避免编辑只存在内存；
+- recovery 是生产安全网，不是事务→源码或 Live Preview 已完成的证据。
+
+完整合同见 [`source-sync-save-recovery.md`](./source-sync-save-recovery.md)。
+
+## 10. 方案一正式启动（0.13.35）
+
+已新增统一 transaction observer、原子 plain-text mapper、真实 step trace 和
+显式 primary 集成测试。正文、引用、列表项普通文字可在测试模式下完全绕开
+canonical diff，并通过源码切换、保存和冷重开逐字节验证。
+
+一次默认接管尝试被完整段落回归捕获：结构 Enter 后的新空块没有 raw 可见锚点，
+后续文字可能被映射到相邻段落。因此当前发布构建保持旧路径并默认关闭事务实验，
+开发/测试可启用影子或显式主路径；只有每个结构分类完成全部家族门禁后才逐项放行。详细状态机、已证明范围、
+失败复盘和回归矩阵见
+[`transaction-source-sync-architecture.md`](./transaction-source-sync-architecture.md)。

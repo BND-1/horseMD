@@ -98,6 +98,12 @@ async function main() {
       appArgs: [file]
     })
     const { evaluate, send } = app
+    await evaluate(`(() => {
+      window.__hmSourceTransactionTrace = []
+      window.__hmSourceTransactionLog = []
+      window.__hmPreserveLog = []
+      window.__hmListIntentTrace = []
+    })()`)
     await waitFor(
       () => evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`),
       'rich editor did not open'
@@ -120,6 +126,14 @@ async function main() {
 
     assert.equal(await toggleSource(evaluate), true, 'could not switch to source mode')
     const source = await waitFor(() => visibleSource(evaluate), 'source textarea did not open')
+    if (source !== expected) {
+      console.error('TRANSACTION_TRACE', JSON.stringify(await evaluate(`({
+        transactions: window.__hmSourceTransactionTrace || [],
+        mapped: window.__hmSourceTransactionLog || [],
+        preserved: window.__hmPreserveLog || [],
+        intents: window.__hmListIntentTrace || []
+      })`), null, 2))
+    }
     assert.equal(source, expected, 'paragraph-to-list typing changed the authored list boundary or marker')
     assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'empty-list editor placeholder leaked into source')
     assert.doesNotMatch(source, /\* 新列表项/, 'author-entered dash marker fell back to Crepe default')

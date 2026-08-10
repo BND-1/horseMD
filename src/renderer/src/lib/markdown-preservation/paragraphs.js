@@ -14,6 +14,7 @@ import {
 } from './core.js'
 import {
   preserveChangedLineRegion,
+  sameVisibleLines,
   visibleLineEntries
 } from './regions.js'
 
@@ -411,8 +412,49 @@ export const preserveMiddleEmptyBlock = ({
 
   const previousBefore = previousLines[beforeIndex]
   const previousAfter = previousLines[afterIndex]
-  const sourceBefore = sourceLines[beforeIndex]
-  const sourceAfter = sourceLines[afterIndex]
+  let sourceBefore
+  let sourceAfter
+  if (sameVisibleLines(sourceLines, previousLines)) {
+    sourceBefore = sourceLines[beforeIndex]
+    sourceAfter = sourceLines[afterIndex]
+  } else {
+    // A divergence near the document start (`- - text`, escaped punctuation,
+    // etc.) shifts every later visible-line index. Using beforeIndex directly
+    // then inserts a newly filled paragraph into an unrelated earlier quote —
+    // especially when many quote rows contain the same “测试” text. Identify
+    // the neighbouring visible-line pair by its own ordinal among equivalent
+    // pairs instead of borrowing the document-global index.
+    const lineKind = (line) => {
+      const text = line?.text || ''
+      if (/^\s*>/.test(text)) return 'quote'
+      if (/^\s*(?:[-+*]|\d{1,9}[.)])\s+/.test(text)) return 'list'
+      if (/^\s*#{1,6}\s+/.test(text)) return 'heading'
+      if (/^\s*\|/.test(text)) return 'table'
+      return 'plain'
+    }
+    const pairMatches = (lines, before, after) => {
+      const matches = []
+      for (let index = 0; index < lines.length - 1; index += 1) {
+        if (
+          lines[index].visible === before.visible &&
+          lines[index + 1].visible === after.visible &&
+          lineKind(lines[index]) === lineKind(before) &&
+          lineKind(lines[index + 1]) === lineKind(after)
+        ) matches.push(index)
+      }
+      return matches
+    }
+    const previousPairs = pairMatches(previousLines, previousBefore, previousAfter)
+    const pairOrdinal = previousPairs.indexOf(beforeIndex)
+    const sourcePairs = pairMatches(sourceLines, previousBefore, previousAfter)
+    if (
+      pairOrdinal < 0 ||
+      sourcePairs.length !== previousPairs.length ||
+      !Number.isInteger(sourcePairs[pairOrdinal])
+    ) return null
+    sourceBefore = sourceLines[sourcePairs[pairOrdinal]]
+    sourceAfter = sourceLines[sourcePairs[pairOrdinal] + 1]
+  }
   if (
     !sourceBefore ||
     !sourceAfter ||
@@ -622,6 +664,11 @@ export const preserveAppendedParagraph = ({
   replacementVisible
 }) => {
   const replacement = next.slice(start, nextEnd)
+  // This shortcut owns only a new plain paragraph at the physical document
+  // end. Headings, lists, quotes, fences, tables, and other block syntax must
+  // continue through their structural handlers; otherwise moving this proof
+  // ahead of the diverged-visible branch could flatten a real structure.
+  if (hasDedicatedBlockSyntax(replacement)) return null
   const previousTrailingNewlines = previous.match(/\n*$/)?.[0].length || 0
   const replacementLeadingNewlines = replacement.match(/^\n*/)?.[0].length || 0
   if (

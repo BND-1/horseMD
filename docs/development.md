@@ -163,6 +163,12 @@ npm run test:mermaid-paste-ui
 # 真实 Electron：正文单换行保真；Enter 新段落保存并重开
 npm run test:paragraph-source-ui
 
+# 方案一纯事务：原子 plain-text patch、尾段 split、CRLF、失败整批回滚
+npm run test:source-transaction-sync
+
+# 方案一真实 Electron：显式打开 transaction primary，逐字编辑正文/引用/列表项；断言不调用 canonical diff，并保存冷重开
+npm run test:source-transaction-sync-ui
+
 # 真实 Electron：富文本输入的即时未保存提示、显式保存与撤销对账
 npm run test:rich-dirty-indicator-ui
 
