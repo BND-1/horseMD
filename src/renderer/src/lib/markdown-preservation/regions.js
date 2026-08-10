@@ -538,10 +538,28 @@ export const preserveChangedLineRegion = ({
   }
   if (!sourceRegion) return null
 
+  let replacementText = transformReplacement(next.slice(nextRegion.start, nextRegion.end))
+  // Tail zero-width insertion: canonical ends with a blank separator before a
+  // new block (`\n\n`), but the authored file may end with a single line
+  // ending (user style). Splicing the replacement directly would glue the new
+  // block onto the previous authored line (`测试\n1. `), which then breaks
+  // every later list skeleton comparison and fail-closes saves. Restore the
+  // blank separator when the canonical insertion point sits after a blank
+  // separator at the document end and the authored tail lacks it.
+  if (
+    sourceRegion.start === sourceRegion.end &&
+    sourceRegion.start >= source.length &&
+    !source.endsWith('\n\n') &&
+    !replacementText.startsWith('\n') &&
+    /\n\n$/.test(previous.slice(0, previousRegion.start))
+  ) {
+    replacementText = '\n' + replacementText
+  }
+
   return {
     markdown: source.slice(0, sourceRegion.start) +
       adaptCanonicalRegionToSource(
-        transformReplacement(next.slice(nextRegion.start, nextRegion.end)),
+        replacementText,
         source,
         sourceRegion
       ) +
@@ -791,7 +809,60 @@ export const preserveDivergedTailBlockAppend = ({
   let keepTailBreaks = false
   let fenceBlockCase = false
   if (foldCase) {
-    continuation = nextLineAtStart.slice(previousLine.length)
+    // The canonical row spells leading content spaces as `&#x20;` (one char
+    // each) while the authored row keeps them literal, and wraps inline code
+    // in backtick spans, so a byte slice at `previousLine.length` can cut
+    // through an entity or a span and leak `0;`-style fragments. Split both
+    // rows into normalized single-character units (an `&#x20;` entity is one
+    // space unit, a backtick span contributes its inner characters) and
+    // locate the end of the equivalent prefix by raw offset.
+    const normUnits = (line) => {
+      const units = []
+      let index = 0
+      while (index < line.length) {
+        if (line.startsWith('&#x20;', index)) {
+          units.push({ rawStart: index, rawLen: 6, ch: ' ' })
+          index += 6
+          continue
+        }
+        if (line[index] === '`') {
+          const span = line.slice(index).match(/^`+([^`]+)`+/)
+          if (span) {
+            const innerStart = index + span[0].length - span[1].length
+            let pos = 0
+            for (const ch of span[1]) {
+              units.push({ rawStart: innerStart + pos, rawLen: 1, ch })
+              pos += 1
+            }
+            index += span[0].length
+            continue
+          }
+          units.push({ rawStart: index, rawLen: 1, ch: line[index] })
+          index += 1
+          continue
+        }
+        units.push({ rawStart: index, rawLen: 1, ch: line[index] })
+        index += 1
+      }
+      return units
+    }
+    const prevUnits = normUnits(previousLine)
+    const nextUnits = normUnits(nextLineAtStart)
+    const unitEqual = (left, right) => left === right ||
+      (/^[-+*]$/.test(left) && /^[-+*]$/.test(right)) ||
+      (/^[.)]$/.test(left) && /^[.)]$/.test(right))
+    let matchLen = 0
+    while (
+      matchLen < prevUnits.length &&
+      matchLen < nextUnits.length &&
+      unitEqual(prevUnits[matchLen].ch, nextUnits[matchLen].ch)
+    ) {
+      matchLen += 1
+    }
+    const continuationStart = matchLen >= prevUnits.length
+      ? (nextUnits[prevUnits.length]?.rawStart ?? nextLineAtStart.length)
+      : previousLine.length
+    continuation = nextLineAtStart.slice(continuationStart)
     if (!continuation || /[\r\n]/.test(continuation)) return null
     remaining = nextLineEnd < 0 ? '' : next.slice(nextLineEnd)
   } else if (freshRowCase) {
@@ -928,16 +999,13 @@ export const preserveDivergedTailBlockAppend = ({
     // canonical spelling.
     const authoredMarker = sourceLine.match(/^(\s*)([-+*]|\d{1,9}[.)])(?=\s)/)
     const firstRemaining = remaining.split('\n').find((line) => line.trim())
-    // A brand-new list created from a plain paragraph/heading is owned by the
-    // input-rule intent mapper, which restores the typed marker (`-` instead
-    // of Crepe's `*`). The tail mapper only owns continuations and genuinely
-    // new blocks that follow an existing authored list row.
-    if (
-      !/^\s*(?:[-+*]|\d{1,9}[.)])\s/.test(previousLine) &&
-      /^\s*(?:[-+*]|\d{1,9}[.)])\s/.test(firstRemaining || '')
-    ) {
-      return null
-    }
+    // A brand-new list created after a plain paragraph/heading is normally
+    // owned by the input-rule intent mapper (it restores the typed marker,
+    // `-` instead of Crepe's `*`). On deeply diverged documents that mapper
+    // can fail closed (no source slot hint), and every fallback below glues
+    // the new row onto the authored paragraph. Append the canonical block
+    // structurally here; the intent mapper still runs afterwards on the flush
+    // chain and restores the marker when it can, so this is a safe floor.
     const firstIndent = firstRemaining?.match(/^\s*/)?.[0] || ''
     const firstMarker = firstRemaining?.trim().match(/^(?:[-+*]|\d{1,9}[.)])/)?.[0] || ''
     const sameListType = /^\d/.test(authoredMarker?.[2] || '') === /^\d/.test(firstMarker)

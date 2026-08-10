@@ -92,14 +92,20 @@ async function runCell(file, op, marker) {
     const { evaluate, send } = app
     await evaluate(`(() => { window.__hmPreserveLog = [] })()`)
 
-    // Append.
+    // Append. A real user starts a new line before typing a list marker:
+    // Markdown list input rules fire only at line start, so typing `- ` right
+    // after a paragraph's last character legitimately glues as plain text
+    // (canonical and source agree). Start every cell from a fresh line to
+    // exercise the actual list/paragraph-append mapping.
     await focusEnd(evaluate, send)
+    await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: delay })
+    await sleep(delay)
     if (op === 'ordered') {
       for (const ch of ['1', '.', ' ']) await send('Input.insertText', { text: ch })
       await sleep(delay)
       await typeTextLikeUser(send, marker, { delayMs: delay })
     } else if (op === 'unordered') {
-      await send('Input.insertText', { text: '- ' })
+      for (const ch of ['-', ' ']) await send('Input.insertText', { text: ch })
       await sleep(delay)
       await typeTextLikeUser(send, marker, { delayMs: delay })
     } else if (op === 'spaces') {

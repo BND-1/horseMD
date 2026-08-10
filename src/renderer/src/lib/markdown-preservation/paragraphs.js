@@ -6,6 +6,7 @@ import {
 import {
   adaptCanonicalRegionToSource,
   canonicalFreshTextToSource,
+  canonicalTextToSource,
   isTableLine,
   lineAt,
   lineEndingNear,
@@ -214,8 +215,13 @@ const appendBlockAtDocumentEnd = (source, canonicalBlock) => {
   const canonical = withoutStandaloneEmptyBlockLines(canonicalBlock)
     .replace(/^(?:(?:\r\n)|\n|\r)+/, '')
     .replace(/(?:(?:\r\n)|\n|\r)+$/, '')
+  // Dedicated-syntax rows (list markers, tables, headings, quotes, fences)
+  // must not be spell-checked by the fresh-punctuation restore (that would
+  // unescape an authored `\*`), but canonical entity spelling (`&#x20;` for a
+  // leading content space) still has to be translated back to authored text.
+  // canonicalTextToSource without the fresh flag does exactly that.
   const block = hasDedicatedBlockSyntax(canonical)
-    ? canonical
+    ? canonicalTextToSource(canonical)
     : canonicalFreshTextToSource(canonical)
   if (!block) return null
   const separator = eol.repeat(Math.max(0, 2 - sourceTrailingNewlines))
@@ -611,6 +617,42 @@ export const preserveTrailingEmptyBlock = ({
   const nextEmpty = trailingCanonicalEmptyBlock(next)
 
   if (!sourceEmpty && !previousEmpty && nextEmpty) {
+    // A leading-space segment (`&#x20;   文本`, U+200B-sentineled in source)
+    // deleted down to a blank canonical row makes `nextEmpty` true — this is
+    // a deletion, not a newly created empty block. When the canonical tail
+    // segment is a leading-space segment and the authored tail segment shows
+    // the same visible text, drop the authored segment instead of keeping it
+    // (which resurrected deleted content in source mode and after reopen).
+    const trailingVisibleLine = (value) => {
+      const body = String(value || '').replace(/\r?\n$/, '')
+      const lines = body.split('\n')
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        if (lines[index].trim()) {
+          let start = 0
+          for (let before = 0; before < index; before += 1) start += lines[before].length + 1
+          return { text: lines[index], start, end: start + lines[index].length }
+        }
+      }
+      return null
+    }
+    const sourceTailLine = trailingVisibleLine(source)
+    const previousTailLine = trailingVisibleLine(previous)
+    const stripSentinel = (line) => String(line || '')
+      .replace(/\u200B/g, '')
+      .replace(/&#x20;/g, ' ')
+      .replace(/^\s+/, '')
+    if (
+      sourceTailLine &&
+      previousTailLine &&
+      /^\s*(?:\u200B|&#x20;)/.test(previousTailLine.text) &&
+      stripSentinel(sourceTailLine.text) === stripSentinel(previousTailLine.text)
+    ) {
+      return {
+        markdown: source.slice(0, sourceTailLine.start) + source.slice(sourceTailLine.end),
+        preserved: true,
+        reason: 'trailing-leading-space-deleted'
+      }
+    }
     return {
       markdown: source,
       preserved: true,

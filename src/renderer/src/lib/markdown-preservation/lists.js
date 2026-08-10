@@ -1038,7 +1038,9 @@ const likelyMultiListDelta = ({ source, previous, next }) => {
       if (!marker || marker.indent.length !== 0) return null
       return {
         signature: `${marker.token}|${marker.task ?? ''}|${comparableListLine(line.text)}`,
-        text: comparableListLine(line.text)
+        text: comparableListLine(line.text),
+        start: line.start,
+        end: line.end
       }
     })
     .filter(Boolean)
@@ -1058,7 +1060,23 @@ const likelyMultiListDelta = ({ source, previous, next }) => {
     suffix < after.length - prefix &&
     before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
   ) suffix += 1
-  return Math.max(before.length - prefix - suffix, after.length - prefix - suffix) >= 2
+  if (Math.max(before.length - prefix - suffix, after.length - prefix - suffix) < 2) return false
+  // A single list growing by several rows (fill an empty item, then Enter to
+  // create the next item) changes just as many rows but is ONE list's
+  // structural edit and must stay with the single-list mapper. A blank line
+  // between changed rows marks the user-visible boundary of an independent
+  // list (CommonMark merges adjacent `-`/`+`/`*` runs into one block, so a
+  // canonical block check cannot see that boundary). Check both sides:
+  // deleted rows live in the `previous` range, inserted rows in `next`.
+  const blankBetweenChangedRows = (rowsArr, markdown, length) => {
+    for (let index = prefix + 1; index < length - suffix; index += 1) {
+      const gap = markdown.slice(rowsArr[index - 1].end, rowsArr[index].start)
+      if (/\n[ \t]*\n/.test(gap)) return true
+    }
+    return false
+  }
+  return blankBetweenChangedRows(beforeRows, previous, before.length) ||
+    blankBetweenChangedRows(afterRows, next, after.length)
 }
 
 const blockedBatchedListResult = (source) => ({
