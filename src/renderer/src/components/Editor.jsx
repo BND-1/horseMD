@@ -24,6 +24,10 @@ import { normalizeDisplayMath } from './editor-math.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
 import { convertSourceParagraphLineToList } from './editor-block-list-source.js'
+import {
+  applySlashBlockSourceIntent,
+  captureSlashBlockSourceIntent
+} from './editor-slash-source.js'
 import { convertListAtSelection, getListConversionContext } from './editor-list-conversion.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { REVIEW_KINDS } from './editor-review.js'
@@ -305,6 +309,7 @@ export default function Editor({
     // marker intent until that callback serializes the generated document;
     // retaining only the latest intent loses the outer marker (`1.` -> `1)`).
     let pendingMarkdownInputIntents = []
+    let pendingSlashBlockIntent = null
     let appending = false
 
     // Insert an image at the caret (used by paste / drop of image files). Persists
@@ -390,7 +395,105 @@ export default function Editor({
     }
 
     let crepe
+    const handleSlashCommand = ({ phase, id, view, token }) => {
+      if (phase === 'before') {
+        if (!(id === 'code' || id === 'math' || id?.startsWith('code:'))) return null
+        try {
+          const serializer = crepe.editor.ctx.get(serializerCtx)
+          const remark = crepe.editor.ctx.get(remarkCtx)
+          const canonical = canonicalForSource(serializer(view.state.doc))
+          let source = lastMarkdownRef.current
+          let previousCanonical = canonicalMarkdownRef.current
+          if (canonical !== previousCanonical) {
+            const staged = preserveRichMarkdownSource(source, previousCanonical, canonical)
+            if (staged.preserved === false) return null
+            source = staged.markdown
+            previousCanonical = canonical
+          }
+          const sourceOffset = pmPosToMarkdownOffset(
+            source,
+            view.state.selection.head,
+            view.state.doc,
+            remark
+          )
+          const intent = captureSlashBlockSourceIntent({
+            source,
+            queryText: view.state.selection.$from.parent.textContent,
+            sourceOffset,
+            id
+          })
+          if (!intent) return null
+          pendingSlashBlockIntent = { ...intent, previousCanonical }
+          markUserEdit()
+          return pendingSlashBlockIntent
+        } catch {
+          pendingSlashBlockIntent = null
+          return null
+        }
+      }
+      if (phase !== 'after' || !token || pendingSlashBlockIntent !== token) return null
+      try {
+        const serializer = crepe.editor.ctx.get(serializerCtx)
+        const canonical = canonicalForSource(serializer(view.state.doc))
+        const $from = view.state.selection.$from
+        let codeBlock = null
+        for (let depth = $from.depth; depth >= 0; depth -= 1) {
+          const candidate = $from.node(depth)
+          if (candidate?.type?.name === 'code_block') {
+            codeBlock = candidate
+            break
+          }
+        }
+        if (!codeBlock) return null
+        const singleBlockDoc = view.state.schema.topNodeType.create(null, [codeBlock])
+        const blockMarkdown = canonicalForSource(serializer(singleBlockDoc))
+        const markdown = applySlashBlockSourceIntent({ intent: token, blockMarkdown })
+        if (typeof markdown !== 'string') return null
+        lastMarkdownRef.current = markdown
+        canonicalMarkdownRef.current = canonical
+        transactionSourcePendingPublish = false
+        transactionSourcePendingDoc = null
+        transactionSourceBlockHints = []
+        transactionSourceQuarantined = false
+        clearRichFlushPending()
+        onChange?.(markdown, false)
+        if (Array.isArray(globalThis.__hmPreserveLog)) {
+          globalThis.__hmPreserveLog.push({
+            source: token.source,
+            previous: token.previousCanonical,
+            next: canonical,
+            markdown,
+            preserved: true,
+            reason: 'slash-code-block-atomic'
+          })
+        }
+        return markdown
+      } catch {
+        return null
+      } finally {
+        if (pendingSlashBlockIntent === token) pendingSlashBlockIntent = null
+      }
+    }
+
     const handleSourceTransactions = (transactions, oldState, newState) => {
+      // Keep a captured list-input anchor attached to its ProseMirror block
+      // even when markdownUpdated is deferred and the user has already moved
+      // on to another block. Looking only at the *current* selection loses the
+      // authored `-` / `+` / `1.` intent and lets the serializer's default
+      // marker enter source. Every transaction mapping is ordered from the
+      // previous document to the next, so map the anchor through the complete
+      // batch before any source-sync path returns.
+      const intents = new Set([
+        ...pendingMarkdownInputIntents,
+        ...(pendingMarkdownInputIntent ? [pendingMarkdownInputIntent] : [])
+      ])
+      for (const transaction of transactions || []) {
+        if (!transaction?.mapping?.map) continue
+        for (const intent of intents) {
+          if (!Number.isFinite(intent?.pmPos)) continue
+          intent.pmPos = transaction.mapping.map(intent.pmPos, 1)
+        }
+      }
       // Phase 1 of the transaction-first source model: take ownership only of
       // plain text ReplaceStep batches whose raw range is byte-for-byte proven.
       // Every structural/input-rule/marked edit remains on the established
@@ -508,6 +611,7 @@ export default function Editor({
       isReadOnly: () => readOnlyRef.current,
       onFrontmatterValueChange: handleFrontmatterValueChange,
       onInlineCodeValueChange: handleInlineCodeValueChange,
+      onSlashCommand: handleSlashCommand,
       onSourceTransactions: handleSourceTransactions
     })
     crepeRef.current = crepe
@@ -903,39 +1007,47 @@ export default function Editor({
             }
             return false
           })()
+          const intentAnchorInList = (() => {
+            if (!Number.isFinite(pendingMarkdownInputIntent?.pmPos)) return false
+            const doc = currentView?.state.doc
+            if (!doc) return false
+            try {
+              const safe = Math.max(1, Math.min(pendingMarkdownInputIntent.pmPos, doc.content.size))
+              const $anchor = doc.resolve(safe)
+              for (let depth = $anchor.depth; depth > 0; depth -= 1) {
+                const name = $anchor.node(depth).type.name
+                if (name === 'bullet_list' || name === 'ordered_list') return true
+              }
+            } catch {
+              return false
+            }
+            return false
+          })()
           if (
             (pendingMarkdownInputIntent?.type === 'bullet-list' ||
               pendingMarkdownInputIntent?.type === 'ordered-list') &&
-            Date.now() - pendingMarkdownInputIntent.at < 30000 &&
-            (selectionInList || Number.isFinite(pendingMarkdownInputIntent.sourceSlotRawStart))
+            Date.now() - pendingMarkdownInputIntent.at < 30000
           ) {
             try {
-              // An input-rule intent applies only while the document baseline
-              // is still the snapshot captured when the marker key was pressed.
-              // If an intermediate markdownUpdated already committed a newer
-              // canonical (for example the ordered-list `1.` intent is still
-              // pending, 30 s TTL, when a later bullet list is created and then
-              // indented), replaying the old snapshot rebuilds the wrong block
-              // and glues list rows onto the wrong line. Consume it as stale.
-              if (
-                pendingMarkdownInputIntent.canonical !== canonicalMarkdownRef.current &&
-                !Number.isFinite(pendingMarkdownInputIntent.sourceSlotRawStart)
-              ) {
-                if (Array.isArray(globalThis.__hmListIntentTrace)) {
-                  globalThis.__hmListIntentTrace.push({
-                    phase: 'stale',
-                    capturedCanonical: pendingMarkdownInputIntent.canonical,
-                    currentCanonical: canonicalMarkdownRef.current
-                  })
-                }
-                pendingMarkdownInputIntent = null
-                pendingMarkdownInputIntents = []
-                return
-              }
+              // Do not gate the input-rule intent on the *current* selection
+              // or on a mapped point still resolving inside the new list. An
+              // input rule replaces the marker paragraph structurally, and a
+              // deferred markdownUpdated may run after the user has exited the
+              // list (or after later transactions mapped the captured point to
+              // its boundary). The reconstruction helper already proves that
+              // this exact canonical delta created a new list, so selection is
+              // diagnostic evidence rather than ownership authority.
+              // A literal marker callback may advance the canonical baseline
+              // just before Space applies the list input rule. That does not
+              // make the physical-key intent stale. Let the narrow helper
+              // prove an exactly-new list in the captured delta; it returns
+              // null instead of touching unrelated or older list trees.
               const remark = crepe.editor.ctx.get(remarkCtx)
               const canonicalOffset = pmPosToMarkdownOffset(
                 canonical,
-                currentView.state.selection.head,
+                Number.isFinite(pendingMarkdownInputIntent.pmPos)
+                  ? pendingMarkdownInputIntent.pmPos
+                  : currentView.state.selection.head,
                 currentView.state.doc,
                 remark
               )
@@ -965,14 +1077,18 @@ export default function Editor({
                     canonicalOffset,
                     marker: pendingMarkdownInputIntent.marker
                   })
+              const mappedMiddleListSlot = preserved.reason === 'middle-empty-block-list-filled'
               if (Array.isArray(globalThis.__hmListIntentTrace)) {
                 globalThis.__hmListIntentTrace.push({
                   phase: 'apply',
                   marker: pendingMarkdownInputIntent.marker,
                   sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart,
                   inputRuleApplied: typeof inputRuleMarkdown === 'string',
+                  mappedMiddleListSlot,
                   canonicalMatched: pendingMarkdownInputIntent.canonical === canonicalMarkdownRef.current,
-                  selectionInList
+                  selectionInList,
+                  intentAnchorInList,
+                  pmPos: pendingMarkdownInputIntent.pmPos
                 })
               }
               if (inputRuleMarkdown) {
@@ -982,6 +1098,7 @@ export default function Editor({
                   reason: 'typed-bullet-input-rule'
                 }
               }
+              let markerRestored = false
               if (pendingMarkdownInputIntent.type === 'bullet-list') {
                 const markdown = restoreTypedBulletMarker({
                   markdown: preserved.markdown,
@@ -991,6 +1108,7 @@ export default function Editor({
                   marker: pendingMarkdownInputIntent.marker
                 })
                 if (markdown !== preserved.markdown) {
+                  markerRestored = true
                   preserved = { ...preserved, markdown, reason: 'typed-bullet-marker' }
                 }
               }
@@ -1000,7 +1118,17 @@ export default function Editor({
               // like the original list creation and can replace the outer list
               // with only its nested child. Subsequent typing is now handled by
               // normal list-tree preservation against the new source baseline.
-              if (inputRuleMarkdown || inputStartedFromEmptyDocument) pendingMarkdownInputIntent = null
+              if (
+                inputRuleMarkdown ||
+                markerRestored ||
+                inputStartedFromEmptyDocument ||
+                mappedMiddleListSlot
+              ) {
+                const consumedIntent = pendingMarkdownInputIntent
+                pendingMarkdownInputIntents = pendingMarkdownInputIntents
+                  .filter((intent) => intent !== consumedIntent)
+                pendingMarkdownInputIntent = pendingMarkdownInputIntents.at(-1) || null
+              }
             } catch {
               // The normal source-preservation result remains valid if the
               // transient selection cannot be mapped during editor teardown.
@@ -1010,6 +1138,7 @@ export default function Editor({
               globalThis.__hmListIntentTrace.push({
                 phase: 'cleared-without-list',
                 selectionInList,
+                intentAnchorInList,
                 sourceSlotRawStart: pendingMarkdownInputIntent.sourceSlotRawStart,
                 age: Date.now() - pendingMarkdownInputIntent.at,
                 type: pendingMarkdownInputIntent.type
@@ -1042,6 +1171,13 @@ export default function Editor({
           clearRichFlushPending()
           pendingRawMarkdownPasteRef.current = null
           pendingListConversion = null
+          if (Array.isArray(globalThis.__hmListIntentTrace)) {
+            globalThis.__hmListIntentTrace.push({
+              phase: 'publish',
+              reason: preserved.reason,
+              markdown: preserved.markdown
+            })
+          }
           onChange?.(preserved.markdown, false)
           userEditUntil = Date.now() + 1000
         }
@@ -1173,6 +1309,28 @@ export default function Editor({
               const slot = transactionSourceBlockHints
                 .find((candidate) => candidate.pmBlockStart === topStart)
               if (slot) sourceSlotRawStart = slot.rawStart
+              // In release mode transaction block hints are intentionally not
+              // collected. A list marker typed in the final top-level empty
+              // paragraph still has one exact raw owner: the document tail.
+              // Record that boundary instead of trusting a visible-text
+              // lookup, which can select an earlier duplicate sentence in a
+              // long document (123321.md repeatedly contains “测试”).
+              const topIndex = $from?.index?.(0)
+              const ownsTopLevelPlaceholder =
+                $from?.depth === 1 &&
+                $from?.parent?.type?.name === 'paragraph'
+              const followingTopBlocksAreEmpty = Number.isFinite(topIndex) &&
+                Array.from(
+                  { length: Math.max(0, currentView.state.doc.childCount - topIndex - 1) },
+                  (_, offset) => currentView.state.doc.child(topIndex + offset + 1)
+                ).every((node) => !node.textContent)
+              if (
+                !Number.isFinite(sourceSlotRawStart) &&
+                ownsTopLevelPlaceholder &&
+                followingTopBlocksAreEmpty
+              ) {
+                sourceSlotRawStart = lastMarkdownRef.current.length
+              }
             } catch {
               // The input rule will still take the generic preservation path.
             }
@@ -1190,6 +1348,11 @@ export default function Editor({
                 marker: intent.marker,
                 sourceOffset,
                 sourceSlotRawStart,
+                pmPos: currentView?.state.selection.head,
+                topIndex,
+                ownsTopLevelPlaceholder,
+                topChildCount: currentView?.state.doc.childCount,
+                followingTopBlocksAreEmpty,
                 sourceLength: lastMarkdownRef.current.length,
                 canonical: canonicalMarkdownRef.current
               })

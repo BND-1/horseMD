@@ -15,7 +15,9 @@
 | [development.md](./development.md) | 本地开发、构建、打包（Windows / macOS）、自动化测试方法 |
 | [markdown-source-preservation.md](./markdown-source-preservation.md) | 富文本/源码原文保真合同、双 MIME 粘贴边界、回归矩阵与未来 Live Preview 决策 |
 | [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
+| [family-root-cause-matrix.md](./family-root-cause-matrix.md) | 真实文件 4×5 家族矩阵、多轮保存重开根因、CRLF/尾换行/列表原子提交证据 |
 | [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | 方案一：保留 ProseMirror，以事务直接更新作者源码；含影子/接管状态机、空块事故与放行门槛 |
+| [slash-code-source-sync-regression.md](./slash-code-source-sync-regression.md) | `/code` 两阶段结构命令缺失 fence 的根因、命令级原子 source intent 与连续编辑回归 |
 | [canonical-escape-audit.md](./canonical-escape-audit.md) | canonical Markdown 中实体、反斜杠、列表标记与 `<br />` 的完整泄漏面审计 |
 | [nested-list-sync-bug-handoff.md](./nested-list-sync-bug-handoff.md) | `- 1. 内容`、多列表批次、marker 保留与列表结构分歧的根因和回归矩阵 |
 | [backtick-source-sync-lock-regression.md](./backtick-source-sync-lock-regression.md) | 反引号输入/删除、行内代码闭合、代码围栏退出、保存暂停与源码锁死的联合回归 |

@@ -188,6 +188,19 @@ export function useFileOps({
   }, [setTabs, tabsRef])
 
   const updateContent = useCallback((id, md, isInitial) => {
+    if (!isInitial) {
+      // `markdownUpdated` is also the source-mode handoff boundary. Mirror the
+      // committed source synchronously before React renders the textarea;
+      // otherwise a rapid structural input-rule callback can leave `tabsRef`
+      // one snapshot behind and source mode mounts that older Markdown even
+      // though Editor's byte-preserving mapper already produced the right
+      // result.
+      tabsRef.current = tabsRef.current.map((tab) =>
+        tab.id === id && (tab.content !== md || tab.pendingRichEdit)
+          ? { ...tab, content: md, pendingRichEdit: false }
+          : tab
+      )
+    }
     setTabs((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t
@@ -204,7 +217,7 @@ export function useFileOps({
         return { ...t, content: md, pendingRichEdit: false }
       })
     )
-  }, [setTabs])
+  }, [setTabs, tabsRef])
 
   // Milkdown batches `markdownUpdated` for 200ms. Rich text must nevertheless
   // show its unsaved indicator immediately after a real DOM input event. This

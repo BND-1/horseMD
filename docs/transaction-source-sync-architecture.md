@@ -1,6 +1,6 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-10 已完成第二阶段：BOM/CRLF/lone-CR/mixed EOL 归一化映射、空段落槽坐标、延迟列表意图交叉保护与旧路径末尾空行粘行根因修复；主路径在完整家族矩阵（含 chaos、保存重开、冷重开）全绿。发布构建默认仍关闭，尚未宣布替换旧保真层。
+> 状态：2026-08-10 已完成第二阶段：BOM/CRLF/lone-CR/mixed EOL 归一化映射、空段落槽坐标、延迟列表意图交叉保护，以及默认/primary 双路径的多轮保存重开回归；发布构建默认仍关闭，尚未宣布替换旧保真层。
 
 ## 1. 目标与不变量
 
@@ -63,6 +63,8 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 槽字节验证：插入前比较捕获时与当前的槽周边字节，漂移则拒绝；
 - 槽后已存在 canonical 列表（旧保真层先写入了 `* item`）时，把槽、该列表块与多余空行整体替换为作者 marker 的紧凑块；
 - 列表意图未落定时，`canonical === canonicalMarkdownRef` 的快确认分支与 pending-publish 分支都让路，确保意图先完成 marker/空行修复。
+- 完整 slot 重建或 marker 恢复任一成功后，意图立即从单值和队列同时消费。旧实现只在完整重建时消费，导致列表正文下一回调再次使用旧 slot，把正确空行边界覆盖掉。
+- EOF slot 只属于 `depth === 1` 的顶层末尾 paragraph placeholder。最终顶层列表内部的嵌套/中间 item 即使后面没有其他顶层块，也不能把文档 EOF 当作自己的 raw slot；缺少精确 block hint 时继续 fail closed。
 
 ### `Editor.jsx` 迁移控制器
 
@@ -72,6 +74,13 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 完整家族试跑可用 `VITE_HM_TRANSACTION_PRIMARY=1 npm run build` 生成临时实验构建；验收后必须重新普通构建，不能把实验开关误带进发布包；
 - 主路径成功时，源码来自 transaction patch，serializer 只临时生成 canonical baseline 指纹，不能反向覆盖源码；
 - 主路径失败会 quarantine 当前结构阶段，直到旧保真层成功建立新 checkpoint；后续字符不能在一个尚未同步的空块上继续猜 raw offset。
+
+### 斜杠菜单结构命令的原子边界
+
+- `/code` 的用户意图由“删除临时 query”和“paragraph → code_block”两条命令共同表达，不能作为两个互不相关的 canonical diff 提交；
+- `editor-slash-source.js` 在命令前捕获精确 authored 行，命令后只序列化当前 code block，验证完整 fence 后一次替换并推进双基线；
+- 该处理器只覆盖已验收的代码类 slash 命令，不代表 transaction-primary 已放行任意代码块编辑；代码内容后续仍走现有保真链；
+- 重复 query 无精确 PM 映射、目标不是完整 fence 或行槽无法证明时继续 fail closed。完整事故记录见 `slash-code-source-sync-regression.md`。
 
 ## 3. 为什么没有立即全量打开
 
@@ -114,6 +123,13 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 段落 Enter → 快速 `- item` → 列表回调未落定时立即编辑另一个块；
 - 延迟列表意图不得覆盖跨块编辑（丢字回归），marker 保持 `-`，空行不重复，保存与冷重开逐字节一致。
 
+`npm run test:family-multicycle-ui`：
+
+- 默认使用脚本内生成的 BOM + mixed-EOL + 重复文本 + 分叉列表 fixture，不依赖个人文件；
+- 连续 4 轮编辑/保存和 5 次全新 profile 打开，覆盖已有列表文字修改/删除、续项、退出、手打 sibling list、fence、再次续写和后续正文；第四轮在正文与后续 fence 之间从空段创建有序列表并再次退出，专门验证 middle-slot 原子映射；
+- 默认发布路径与显式 transaction-primary 各跑一遍；每轮严格比较源码、磁盘字节和富文本列表/代码块结构；
+- 可用 `FILE=/absolute/file.md node scripts/test-family-multicycle-ui.mjs` 对真实文件做同序列验证，原文件只读，操作发生在 `/tmp` 副本。
+
 ## 5. 放行顺序
 
 1. 普通已有 textblock：插入、删除、选区替换、undo/redo；
@@ -131,6 +147,7 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 npm run test:source-transaction-sync
 npm run test:source-transaction-sync-ui
 npm run test:list-intent-cross-block-ui
+npm run test:family-multicycle-ui
 npm run test:paragraph-source-ui
 npm run test:empty-paragraph-source-ui
 npm run test:leading-space-entity-ui

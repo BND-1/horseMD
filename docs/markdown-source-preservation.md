@@ -38,6 +38,11 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 21. 在列表项正文中输入字面 `1. 文本`、`1) 文本`、`- 文本`、`+ 文本` 或 `* 文本` 时，remark 为防止二次解析成嵌套列表而生成的反斜杠只是 canonical serializer 拼写，不是作者输入。只能把本次文字 delta 通过语义视图映射回作者源码；作者原有转义必须保留，未编辑列表的 marker 与紧凑/松散空行也不得被 canonical 覆盖。详见 [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)。
 22. 逐字输入、部分删除或全部删除一个/三个反引号后，作者源码、canonical 与 live ProseMirror doc 必须保持同步。不能从零宽 diff 推断整行已删除；重复字面行优先按同行 ordinal 定位；独立 `<br />` 空段落两侧的零宽编辑按行映射；行内代码事务从 live `view.state.doc` 序列化。映射失败仍须 fail closed，不能推进双快照或写盘旧源码。详见 [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)。
 23. 作者源码中的 `- - 内容`、`- + 内容`、`- * 内容` 与 `- 1. 内容` 都可能被 remark 解释为外层列表中的嵌套列表。分叉列表映射必须把作者行正文最前面**恰好一层**列表 marker 当作 canonical 的嵌套语法前缀，只在比较与 raw offset 定位时跳过；输出仍保留作者原 marker。测试 fixture 不能只“包含”这类行，必须真实编辑嵌套项和它后面的兄弟项并直接保存。详见 [复杂文档普通编辑保存被暂停回归报告](./diverged-ordinary-save-regression.md)。
+24. 列表输入意图是一次性事务所有权：输入规则完整重建、marker 恢复或 generated scratch 生成任一完成后必须立即消费，不能让下一次列表正文回调用旧 source slot 重建同一个列表。
+25. 多行结构 delta 不能交给通用 visible-text mapper。列表、标题、引用、围栏和跨块正文必须由能证明完整 raw 边界的专用 mapper 接管；无法映射完整 remainder 时整批 fail closed，禁止返回“部分成功”。
+26. CRLF、无 final-EOL 和尾部空行都是作者字节合同。插入点必须位于 CRLF 的 `\r` 之前；退出末尾列表所需的换行增长必须由目标块边界计算，不能固定加/减一行。
+27. 一次保存重开通过不代表双快照健康。高风险修改必须至少覆盖“编辑 → 保存 → 冷重开 → 再编辑 → 再保存 → 再冷重开”，并在每轮比较富文本结构、源码 textarea 和磁盘字节。
+28. UI 结构命令必须声明原子 source 意图。`/code` 这类“先删查询文字、再替换节点”的多事务命令，不能让通用 canonical diff 分别猜测；命令前应捕获精确 authored 槽，命令后只序列化目标节点并原子提交。详见 [斜杠菜单代码块连续编辑回归](./slash-code-source-sync-regression.md)。
 
 ## 当前实现
 
@@ -58,6 +63,30 @@ HorseMD 的富文本编辑器是 Milkdown Crepe（ProseMirror + remark）。它�
 - 表格单元格的普通文字输入只映射真实 cell 文本 delta，不采用 serializer 重新对齐后的整张表；
 - 标题等级、分段等结构变化只替换受影响的原始行；
 - 映射无法证明安全时返回原文和失败原因，不允许用整篇 canonical Markdown 兜底。
+
+#### 多轮列表输入的所有权与原子提交
+
+列表输入规则会先发布“marker 被结构消费”的回调，再发布“列表正文已填入”的回调。
+物理 `-` / `+` / `1.` 意图只能归属第一次真正完成结构转换的回调：完整 slot 重建或
+marker 恢复成功后必须从 pending 队列移除。否则第二次正文回调会基于旧快照重复重建，
+覆盖上一轮已经正确写入的段落/列表空行。`Editor.jsx` 在发布 source snapshot 时同步
+更新 `tabsRef`，源码 textarea 与保存边界读取同一份已提交 Markdown。
+
+在已保存并冷重开的分叉文档中，一次延迟 callback 可能同时包含“修改已有列表项、
+新增同级项、退出列表、输入正文”。`preserveDivergedListContinuation()` 只接受完整列表
+行唯一、顶层缩进一致、右侧 suffix 未变的零宽插入；`preserveBatchedListBlockChanges()`
+只有在 canonical baseline 已完整推进到 `next` 时才可直接发布。剩余段落不能证明时，
+整个事务返回 fail-closed，绝不能先保存列表再丢正文。
+
+中间位置的新列表不能依赖 tail slot。若 previous 明确是一个独立空 paragraph，且
+前后可见行、结构类型、source 空白 gap 都一一对应，则该 gap 可原子承接“新列表 +
+退出列表后输入的普通正文”。这个证明只对列表开放；标题、引用、表格、fence 和
+分隔线仍走专用 mapper。完成该写回即代表 input intent 已消费，不能留给下一次回调。
+CRLF 槽必须从左锚内容末尾（`\r` 前）替换完整行尾，禁止生成 `\r\r\n` 或 lone `\r`。
+
+字节边界同样属于结构证明：CRLF 行的 content end 位于 `\r` 之前；0 个 final-EOL 的
+文件退出列表需要两个换行（终止上一行 + 空块边界），已有一个 final-EOL 时只增长一个。
+专项回归：`npm run test:family-multicycle-ui` 与 `npm run test:markdown-preservation`。
 
 #### 反引号字面行、空段落邻接行与 live 行内代码事务
 

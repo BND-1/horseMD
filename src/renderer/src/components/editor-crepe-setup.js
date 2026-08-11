@@ -91,6 +91,7 @@ export function createConfiguredCrepe({
   isReadOnly,
   onFrontmatterValueChange,
   onInlineCodeValueChange,
+  onSlashCommand,
   onSourceTransactions
 }) {
   const t = getT
@@ -203,7 +204,7 @@ export function createConfiguredCrepe({
       createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
       createKatexDomPrunePlugin(),
       mathPreviewPlugin(getT),
-      createSlashPlugin(ctx, getT),
+      createSlashPlugin(ctx, getT, onSlashCommand),
       toolbarAutohidePlugin(),
       createReviewDecorationPlugin({
         getT: (key, fallback) => {

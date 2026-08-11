@@ -2,7 +2,7 @@
 
 > 状态：持续维护（Living Document）
 >
-> 当前基线：HorseMD 0.13.33 已完成源码保真家族矩阵和安装包专项，待用户手动验收，2026-08-10
+> 当前基线：HorseMD 0.13.47 候选已完成源码保真家族矩阵、多轮持久化和代码块连续编辑专项，待用户手动验收，2026-08-11
 >
 > 适用范围：富文本编辑、源码模式、模式切换、保存/重开、列表、空段落、光标映射和 Markdown 原文保真。
 
@@ -99,6 +99,10 @@ HorseMD 同时维护两种表示：
 | RS-33 | 直接点击引用后的空正文，新增文字写入前面空引用 | 富文本在引用下方显示新正文；保存后源码没有该正文，反而出现较早的 `>新增文字`，重开后新增文字丢失 | 引用后的可点击空 paragraph 在 canonical 中只表现为终端空行；填入文字是 `previous.length` 的零宽追加。分叉分支先执行 `locally-aligned-change`，重复的零可见宽度引用行碰巧通过局部比较，把末尾 raw offset 映到前面。现在纯正文物理末尾追加在分叉映射前处理，并拒绝标题/列表/引用/fence/table 等结构语法 | 已覆盖：纯函数分叉引用末尾追加；`test:diverged-ordinary-save-ui` 直接点击 trailing empty paragraph 逐字输入，验证直接保存、源码、磁盘、冷重开 |
 | RS-34 | 第一次保存提示暂停，稍后重试又成功；持续失败时编辑只留在内存 | 富文本 transaction 已显示，但立即保存/切源码触发 fail-closed；等待后重试可能成功。真正歧义时用户无法正常保存 | durability boundary 早于延迟 `markdownUpdated` / pending input intent 协调运行，把暂时未稳定与永久歧义混为一类。0.13.34 先有界 settle；持续歧义仍不覆盖原文件，改为用户选择路径保存规范化恢复副本 | 已覆盖：`test:editor-flush-settle`、`test:source-sync-recovery`，并重跑全部家族矩阵；详见 `source-sync-save-recovery.md` |
 | RS-35 | 事务接管后空块首字错写相邻段落 | 简单正文/列表测试通过，但在已有块前连续 Enter 后输入，源码把新字写进前一段或合并多个段落 | 空 PM paragraph 没有可见字符，普通 raw offset 会回退到相邻块；transaction batch 必须原子，结构 split 后要保存独立 block hint，任何未覆盖结构必须 quarantine 并等待旧路径建立新 checkpoint。首轮默认接管被完整段落回归否决，生产恢复影子/关闭 | 迁移进行中：`test:source-transaction-sync`、显式 primary `test:source-transaction-sync-ui`；生产基线继续由 `test:paragraph-source-ui` 等全家族门禁保护。详见 `transaction-source-sync-architecture.md` |
+| RS-37 | 多轮保存后列表/正文再次分叉 | 第一次保存重开正常；继续编辑已有列表、退出列表、再建无序列表或正文后，源码少空行、丢正文，或只提交列表的一部分 | 已完成的列表 input intent 未被消费，后续正文回调拿旧槽重建；批量列表 mapper 还可能在 remainder 未映射时错误返回成功。现在 intent 只消费一次，批量事务必须完整推进到 `next`；重复文本用完整列表行 + suffix fence，通用 mapper 禁止接管多行结构 | 已覆盖：`test:family-multicycle-ui`（4 轮编辑/保存、5 次冷打开，默认与 primary 双路径）、真实 `123321.md` override、20/20 家族矩阵 |
+| RS-38 | CRLF / 无末尾换行的列表边界损坏 | CRLF 续写出现 `\r文字\n`；无 final-EOL 文件退出列表后新建列表会粘回上一列表 | 行区间把 CR 当正文；terminal newline growth 固定为 1，无法表示“终止行 + 独立块”。现在在 CR 前插入并使用局部 EOL；0-EOL 退出需要 2 个换行，1-EOL 只增长 1 个 | 已覆盖：纯函数字节级 CRLF、0/1 final-EOL 链式回归，transaction CRLF/BOM+CRLF UI，多轮混合 EOL fixture |
+| RS-39 | 冷重开后在中间空段输入列表，富文本有内容但源码仍停在列表前 | 在正文与后续代码块之间的空段输入正文、有序列表两项、退出列表再输入正文；富文本完整，切源码缺列表和尾文，继续保存会形成双快照分叉 | 中间空段 mapper 一律拒绝 list syntax，而中间位置的 input intent 没有 raw tail slot，两个专用路径都不拥有该事务。现在仅在前后锚、空槽和语法边界全部证明时原子写回“列表 + 后续正文”，完成后消费 intent；CRLF 从 `\r` 前替换完整 EOL | 已覆盖：纯函数 LF/CRLF（含 lone-CR 禁止断言）；`test:family-multicycle-ui` 第四轮 + 第五次冷打开；默认/primary 与真实 `123321.md` 临时副本 |
+| RS-40 | `/code` 创建代码块后继续编辑，源码与富文本再次分叉 | 文档末尾输入 `/code` 选择代码块，立即编辑代码、代码块后正文和前文列表；首次切源码即锁定，或源码缺 fence/后续文字 | slash code 是“删除临时 `/code` + paragraph→code_block”两条命令。旧 mapper 把 `/code`→空 fence 误判为只删除尾行，源码没有代码块槽。现在命令前捕获精确 authored 行，命令后只序列化当前 code_block，并验证完整 fence 后原子替换；重复 query 无精确映射时拒绝，CRLF 原样保留 | 已覆盖：`test:tail-fence-ui` 的 40ms `/code`、代码/尾文/前文连续编辑、源码、保存和冷重开；纯函数 CRLF、重复 query、歧义拒绝；literal/input-rule fence 变体 |
 
 ## 5. 代码归属
 
@@ -140,6 +144,7 @@ node scripts/test-markdown-source-preservation.mjs
 npm run test:source-map
 npm run test:source-text-fidelity
 npm run test:source-fidelity-ui
+npm run test:family-multicycle-ui
 npm run test:mode-switch-raw-offset-ui
 npm run test:new-source-fidelity-ui
 npm run build
@@ -308,3 +313,5 @@ npm run test:task-list-persistence-ui
   4. **嵌套空 textblock 错写**：列表项/引用内的空段带 hint 时会把首字符写到容器 marker 之前。嵌套空块一律拒绝，交给列表/引用 preservation。
 
   回归：LF/CRLF/BOM+CRLF 的正文/引用/列表/undo-redo 立即切源码、保存、冷重开逐字节；列表意图跨块丢字专项（primary 构建验证、默认构建 SKIP）；家族全矩阵在 primary 实验构建与默认构建均通过。仍默认关闭，未放行 mark/atom、代码块、表格与性能门禁。
+- 2026-08-10 / 0.13.46 候选：增加 RS-37～RS-39。真实 `123321.md` 继续编辑证明“一次保存重开通过”仍不足：列表 marker 已恢复后 pending intent 没有消费，下一次正文回调会用旧槽覆盖正确空行；批量列表 mapper 还可能只提交列表、丢掉同 callback 的正文；再次冷重开后在正文与代码块之间从空段创建有序列表时，列表和退出后的正文没有任何 mapper 拥有。修复 intent 一次性所有权、完整 canonical baseline 原子提交、唯一列表行 + suffix fence、严格中间空槽原子列表写回，并补 CRLF 的 CR 前插入、lone-CR 禁止断言与 0/1 final-EOL 退出列表边界。新增默认/primary 双路径的 4 轮编辑保存、5 次冷打开专项；真实文件 override、20/20 家族矩阵、continuous/chaos/列表转换/反引号/空段落/空引用/光标矩阵全过。
+- 2026-08-11 / 0.13.47 候选：增加 RS-40。稳定复现 `/code` 的两阶段结构命令先删除查询行、却没有把空 fence 原子写入 authored source；后续代码、尾文和前文编辑因此全部建立在错误基线上。新增 slash code 命令级 source intent、精确 raw 行槽与单 code_block 序列化，禁止通用尾部删除分支抢走该结构事务。`test:tail-fence-ui` 固化 40ms/350ms 两种菜单时序，连续完成代码、尾文和前文列表三块编辑，并断言源码/磁盘中完整且唯一 fence、冷重开后仍为 `.milkdown-code-block`；真实 `123321.md` 临时副本与隔离安装包均通过。

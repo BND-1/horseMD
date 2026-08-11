@@ -18,6 +18,7 @@ import {
   normalizeEmptyListItems,
   preserveBatchedListBlockChanges,
   preserveDivergedNestedListChange,
+  preserveDivergedListContinuation,
   preserveEmptyListItemTextChange,
   preserveListBlockChange,
   preserveStableListRowChanges,
@@ -100,7 +101,11 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
     const withoutPlaceholders = withoutStandaloneEmptyBlockLines(result.markdown)
     // Crepe may append a serializer blank line after the last edited block; the
     // file's terminal line-ending run is authored formatting and must not grow.
-    result.markdown = capOutputTrailingNewlines(withoutPlaceholders, sourceMarkdown)
+    result.markdown = capOutputTrailingNewlines(
+      withoutPlaceholders,
+      sourceMarkdown,
+      result.trailingNewlineGrowth
+    )
   }
   // Test-only opt-in diagnostics. Production never creates this array; CDP
   // regressions can enable it before typing to capture the first fail-closed
@@ -290,6 +295,19 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     replacementVisible
   })
   if (appendedParagraph) return appendedParagraph
+  // A real block appended at the document tail must keep its raw paragraph
+  // boundary before generic list reconciliation. This is equally true when
+  // source/canonical visible streams still match: a trailing empty paragraph
+  // (`<br />`) can otherwise make the list batch mapper collapse
+  // `ordered-list + blank line + bullet-list` into adjacent rows.
+  const tailBlockAppend = preserveDivergedTailBlockAppend({
+    source: sourceMarkdown,
+    previous,
+    next,
+    start,
+    nextEnd
+  })
+  if (tailBlockAppend) return tailBlockAppend
   // Exact same-count row/gap skeletons are the strongest list proof: apply
   // their item-text delta before broad multi-list reconciliation. This keeps
   // serializer-only escapes (`1\.`) and untouched marker/spacing differences
@@ -329,14 +347,6 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   })
   if (tableTextPreserved) return tableTextPreserved
   if (sourceVisible.text !== previousVisible.text) {
-    const tailBlockAppend = preserveDivergedTailBlockAppend({
-      source: sourceMarkdown,
-      previous,
-      next,
-      start,
-      nextEnd
-    })
-    if (tailBlockAppend) return tailBlockAppend
     // remark parses `- 1. 甲乙` as a nested ordered list, so the canonical
     // visible stream drops the `1. ` item text while the authored source
     // keeps it — the whole document's visible stream diverges and any
@@ -349,6 +359,65 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     // persist corrupted rows (`- 1.  3. 戊\n 甲乙`) into the authored list.
     // The strict preconditions here (list tree + unique visible anchor) make
     // this a no-op for every non-list divergence (e.g. mid-line `* `).
+    // One deferred callback may contain both a list edit and a second edit in
+    // the adjacent paragraph (continue a persisted list, exit it, then type
+    // prose). Map the proven list tree first, then recursively map the
+    // remaining canonical delta against that updated baseline. Publication is
+    // atomic: if the remainder is not independently proven, discard the
+    // partial result and keep the original authored source.
+    const divergedContinuation = preserveDivergedListContinuation({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (divergedContinuation) return divergedContinuation
+    const firstListChange = preserveDivergedNestedListChange({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    }) || preserveBatchedListBlockChanges({
+      source: sourceMarkdown,
+      previous,
+      next,
+      allowPartial: true
+    })
+    if (firstListChange?.nextBaseline === next) return firstListChange
+    if (
+      firstListChange?.nextBaseline &&
+      firstListChange.nextBaseline !== previous &&
+      firstListChange.nextBaseline !== next
+    ) {
+      const remainderChange = commonChange(firstListChange.nextBaseline, next)
+      const remainderReplacement = next.slice(remainderChange.start, remainderChange.nextEnd)
+      const remainderArgs = {
+        source: firstListChange.markdown,
+        previous: firstListChange.nextBaseline,
+        next,
+        ...remainderChange
+      }
+      // Deliberately compose only an adjacent empty-paragraph fill/append.
+      // Broader recursion would also accept an unrelated heading/list
+      // structure change after mapping only the first list, violating the
+      // atomic fail-closed contract.
+      const remainder = preserveMiddleEmptyBlock(remainderArgs) ||
+        preserveTrailingEmptyBlock(remainderArgs) ||
+        preserveAppendedParagraph({
+          ...remainderArgs,
+          replacementVisible: sourceVisibleIndex(remainderReplacement).text
+        })
+      if (remainder && remainder.preserved !== false) {
+        return {
+          ...remainder,
+          reason: `composite-${firstListChange.reason}+${remainder.reason}`
+        }
+      }
+    }
     const divergedList = preserveAllDivergedListChanges({
       source: sourceMarkdown,
       previous,

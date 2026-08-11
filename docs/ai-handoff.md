@@ -1,11 +1,11 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-10。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-11。
 
 ## 0. 当前状态快照
 
 - 当前主分支：`main`
-- 当前开发版本号：`package.json` 为 `0.13.35`（未发布，工作区含大量未提交改动）；`v0.13.29` 已于 2026-08-09 正式发布。方案一（保留 ProseMirror，迁移 transaction→source）第二阶段已完成：BOM/CRLF/lone-CR/mixed EOL 归一化映射、空段落槽坐标、延迟列表意图交叉保护、嵌套空块拒绝，并修复旧路径“源末尾空行 + 新块粘行”根因（非 primary 同样生效）。主路径在完整家族矩阵（primary 实验构建）与默认构建全部通过。**生产仍未默认接管**：mark/atom、代码块、表格与性能门禁未放行。详见 `transaction-source-sync-architecture.md` 与家族总账 RS-36；0.13.34 的 settle/recovery 仍是迁移期安全网。
+- 当前源码候选：`0.13.47`；`dist/mac-arm64/HorseMD.app` 与隔离安装 `/Applications/HorseMD-0.13.47-test.app` 已完成打包和安装包专项，日常 `/Applications/HorseMD.app` 仍是正在运行的 `0.13.46`，不得在可能有未保存内容时强退覆盖；`v0.13.29` 已于 2026-08-09 正式发布。方案一（保留 ProseMirror，迁移 transaction→source）第二阶段已完成，但**生产仍未默认接管**：mark/atom、通用代码块事务、表格与性能门禁未放行。本轮在 RS-37～RS-39 的多轮列表修复上新增 RS-40：`/code` 的“删除临时 query + 创建 code_block”改为命令级原子 source intent，防止 fence 槽缺失后源码与富文本持续分叉。详见 `slash-code-source-sync-regression.md`、`transaction-source-sync-architecture.md`、`family-root-cause-matrix.md`；0.13.34 的 settle/recovery 仍是迁移期安全网。
 - **0.13.x 系列主线（自 0.12.69 之后）**：
   - **原文保真与空段落硬不变式**：空段落 `<br />` 占位绝不允许进入作者源码（`withoutStandaloneEmptyBlockLines` 在 `preserveRichMarkdownSource` 出口强制剥离）；空段落映射不得要求全文可见流相等、不得被无关空段落否决；连续空段落映射不递归。系列提交 `bb5b9f4` → `cfae66a`。
   - **可见流分叉单块回退**：源码与 canonical 可见流分叉（如行中 `* ` 使 remark 拆成列表项）时，局部对齐与行区域映射都会失败并 fail-closed。`preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）只处理单 canonical 块：先反转义 canonical 拼写（`\*`→`*`、`&#x20;`→空格），0.13.30 起优先用 source/canonical 等数量非空块的 ordinal 定位；候选数量不等才退回全文唯一子串，仍歧义则拒绝写回。初始提交 `abb6d09`，最新复盘见 `diverged-ordinary-save-regression.md`。
@@ -27,6 +27,8 @@
   - **保存事务 settle 与恢复副本（0.13.34）**：可见 ProseMirror transaction 可能早于 Milkdown 的 `markdownUpdated` / pending input intent 对账。保存和富文本→源码先调用同一 fail-closed flush 并有界让出事件循环重试，不用 canonical 覆盖作者源码；持续歧义时原文件不写，用户可把 live rich doc 另存为 `.horsemd-recovered.md`。专项：`test:editor-flush-settle`、`test:source-sync-recovery`，文档 `source-sync-save-recovery.md`。
   - **事务优先源码同步（0.13.35，方案一）**：新增统一 PM transaction observer、原子 plain-text mapper、真实 step trace、LF/CRLF split 和空块 block hint。专项测试可用 `window.__hmTransactionSourcePrimary = true` 证明正文/引用/列表项普通文字不经过 canonical diff；生产默认仍不接管。默认接管试验曾被完整段落测试抓到“结构 Enter 后空块首字写错相邻块”，因此新增 quarantine/checkpoint 合同并撤回放行。详见 `transaction-source-sync-architecture.md`。
   - **事务优先源码同步第二阶段（0.13.36，方案一）**：mapper 改为 BOM/CRLF/lone-CR 归一化双视图（字节证明在 LF 视图，输出保留作者拼写）；hint 槽坐标指向完整段落分隔之后；嵌套空 textblock（列表项/引用）拒绝接管；列表输入意图只在当前源快照上重建自己的块，不再覆盖延迟窗口内的跨块编辑；`preserveChangedLineRegion` 零宽行边界粘行根因修复。回归含 LF/CRLF/BOM+CRLF + undo/redo 逐字节、列表意图跨块专项（primary 构建验证、默认构建 SKIP）、全家族矩阵双构建。`test:list-intent-cross-block-ui` 与 `test:source-transaction-sync-ui`（三行尾变体）为方案一专项。
+  - **多轮持久化与列表原子提交（0.13.46 候选）**：列表 input intent 在完整 slot 重建、marker 恢复或严格中间空槽列表写回后立即消费，禁止下一次正文回调复用旧快照；批量列表写回必须完整覆盖同一 callback 的后续正文，CRLF 在 `\r` 前插入，0/1 final-EOL 分别保留正确退出列表边界。新增 `test:family-multicycle-ui`（4 轮编辑保存、5 次冷打开，默认/primary 双路径）；第四轮专门在正文与 fence 之间输入“正文 → 有序列表 → 正文”。真实 `123321.md` override 与 20/20 家族矩阵均通过。
+  - **斜杠菜单代码块原子同步（0.13.47 候选）**：稳定复现 `/code` 已写入源码后，slash 菜单先删 query、再创建空 code_block；旧尾部 mapper 只删除 `/code`，没有写入 fence，后续代码/尾文/前文编辑全部从错误基线继续。现于命令前捕获精确 authored 行，命令后只序列化当前 code_block 并验证成对 fence 后原子替换。`test:tail-fence-ui` 在 40ms 菜单选择后不做 checkpoint，连续编辑三块，再验证源码、保存和冷重开；详见 `slash-code-source-sync-regression.md`。
   - **源码/富文本架构探索**：`live-preview-migration-plan.md` 当前以 transaction→source 为主线；CodeMirror Live Preview 仅保留长期备选。
   - **代码块体验**：编辑器代码块行号（不透明背景、贴左、全高、右侧分隔竖线）、**PDF 导出代码块带行号**、表格单元格单击直接编辑。提交 `5094e0b`、`7b2e50b`、`9bc9412`、`a45f958`。
   - **原生 HTML 表格自适应**：带 `width` 属性的 HTML 表格恢复作者语义（`100%` 跟随容器、固定像素收缩），`td/th` 允许列收缩，表格内图片按单元格宽度显示，不再横向溢出。提交 `8a98b5f`。
@@ -43,6 +45,8 @@
   - `cfae66a fix(editor): enforce empty-paragraph <br /> invariant at the source boundary`
   - `606bfc6 feat(editor): add source rich split preview`
 - 最近完整验证：
+  - **0.13.47 代码块连续编辑候选**：在真实 `123321.md` 的临时副本上分别验证 `/code` 40ms 快速选择、350ms 等待选择、三反引号 input-rule 与字面 fence。创建代码块后不做中间 checkpoint，继续修改代码、代码块后的正文和前面的列表项；源码、保存文件、冷重开均保持完整且唯一 fence，三类块结构与内容一致。`test:tail-fence-ui` 还在 `/Applications/HorseMD-0.13.47-test.app` 安装包上通过。纯函数、两时序 slash 门禁、family multicycle、transaction LF/CRLF/BOM、列表、代码围栏删除、字面反引号、空段落/空引用、raw-offset/source-map、桌面与移动构建均通过；独立 code-reviewer 复审放行。
+  - **0.13.46 已安装工作区**：默认生成 fixture 和真实 `123321.md` 临时副本均完成 4 轮继续编辑/保存、5 次冷打开；release-default 与 transaction-primary 两条路径逐字一致。第四轮曾真实抓到 middle empty slot 创建有序列表时连续 `visible-stream-mismatch`，修复后加入 LF/CRLF（禁止 lone `\r`）纯函数门禁。4 个真实文件 × 5 操作的追加/保存/删除/重开矩阵 20/20；列表新建/转换、continuous、四档 chaos、反引号删除、空段落/空引用、全文删除、前导空格、source probes、LF/CRLF/BOM+CRLF transaction、raw-offset/caret/source-map 全过。桌面、移动与 `dist:dir` 构建通过；`/Applications/HorseMD.app` 已核验为 0.13.46，app.asar 含 `middle-empty-block-list-filled`，运行进程来自该路径。旧 0.13.45 备份：`/Applications/HorseMD-0.13.45-backup-1786416290.app`。
   - **0.13.33 当前工作区（未提交）**：用户真实文件稳定复现“引用后直接点击空正文 → 富文本有字 → 保存后前面出现 `>新增文字`、末尾丢字”。新增第六个复杂分叉直接保存场景后，0.13.32 先红、修复后绿；纯函数增加 diverged quote + trailing plain append 合同，并在用户当前已编辑文件副本上用真实鼠标点击、逐字输入、直接保存、切源码再次通过。源码保真、段落、空段落/空引用、全文/局部删除、所有列表输入/转换/任务、反引号/代码围栏、前导空格、真实 IME、raw-offset、continuous、mixed transaction、长文档与四组 chaos 均通过；桌面/移动/guide/dist 通过。覆盖安装 0.13.33 后，安装包再通过引用后空白直接起笔、字面 marker、反引号、前导空格、mixed transaction 与全文删除。`test:source-rich-split-ui` 的首字符自定义光标像素断言独立失败（三次一致），本轮未改 CSS/双栏逻辑，须作为单独视觉回归排查，不能为追求全绿混入本次保存修复。
   - **0.13.32 当前工作区（未提交）**：保存了 0.13.31 长会话的 live ProseMirror 与损坏磁盘证据，确认唯一末段 `ceeavvß/` 被写进较早的重复引用。修复 `preserveMiddleEmptyBlock` 在 visible stream 分叉时复用全文 ordinal 的错误；专项扩为五个独立场景，尤其包含同引用三段批量编辑和从第三个重复引用按两次 Enter 退出后逐字输入唯一末段。纯函数、source map/text、source fidelity、空段落/空引用、全文/局部删除、全部列表输入与转换、任务列表、反引号/代码围栏、前导空格、真实 IME、raw-offset、长文档、continuous、mixed transaction 和四组 chaos 均通过；桌面、移动、guide 与 dist 通过。覆盖安装 0.13.32 后，安装包可执行文件再次通过复杂分叉直接保存、字面列表 marker、反引号删除、前导空格和 raw-offset 五组高风险回归；运行进程来自 `/Applications/HorseMD.app`，app.asar 含本轮 `sourcePairs` 修复标记。
   - **0.13.31 当前工作区（未提交）**：0.13.30 的自动化 fixture 含 `- -`，但只实际编辑独立段落，用户手测继续触发保存暂停。现已稳定证明 source 第二个 `- ` 被 canonical 消费为嵌套 marker，而旧项序列只剥离数字 marker。`lists.js` 统一识别一层 ordered/bullet 嵌套前缀；纯函数覆盖嵌套项和后续兄弟项，UI 专项对独立段落/嵌套项/兄弟项分别执行直接保存、源码、磁盘和冷重开。27 组家族矩阵（含真实 IME composition）、桌面/移动/guide、dist 通过；覆盖安装 0.13.31 后，三目标复杂保存、IME、字面 marker、代码围栏四组安装包回归通过。首次 `open` 复用了安装前旧 PID，已强制结束并确认新进程路径、启动时间及 app.asar 版本/修复标记；以后仍不得只看 Info.plist。
@@ -604,7 +608,7 @@ npm run guide:capture
 
 ## 14. 最近一次稳定基线
 
-截至 **2026-08-09，当前功能基线为 `0.13.29`**；`/Applications/HorseMD.app`
+截至 **2026-08-11，当前源码保真候选基线为 `0.13.47`**；`/Applications/HorseMD.app`
 是否已替换必须在每次手测前重新核验，不能只看 `dist/` 产物。除 generated-scratch
 首个 `-` 列表项 marker、连续空格中间态、`&#x20;`、空引用结构删除外，本轮新增
 跨块“编辑 → 删除 → 再编辑 → 立即切源码”的事务边界回归，防止源码保留已删内容或
@@ -616,6 +620,19 @@ generated scratch 与空文件首次编辑中，同一行三反引号正文不�
 0.13.29 新增桌面端外部文件/文件夹拖入：文件复用标签打开链路，目录加入多根工作区，
 富文本正文图片仍由编辑器插入；实现与测试边界见 `desktop-drop-open.md`，专项命令为
 `npm run test:drop-open-ui`。
+0.13.46 候选继续修复了只在第二、第三、第四轮持久化后出现的根因：列表 input intent
+在 marker 已恢复后仍残留，下一次正文回调会用旧槽重建列表；批量列表 mapper 还可能
+只提交列表而丢掉同一 callback 的后续正文。现在意图只消费一次、结构事务必须完整提交，
+CRLF/无末尾换行的块边界按字节处理。再次冷重开后，在已有正文与 fence 之间从空段
+创建有序列表时，严格中间槽 mapper 会原子写回列表与退出后的正文，并立即消费 intent。
+`test:family-multicycle-ui` 使用仓库内生成 fixture，在默认与 primary 两条路径连续执行
+4 轮编辑/保存、5 次冷打开；真实 `123321.md` override 与 4×5 家族矩阵也已通过。
+0.13.47 继续修复 `/code` 两阶段结构命令只删除临时 query、却没有原子写入 fence 的
+RS-40。专项现在要求 40ms/350ms 两种菜单时序、完整且唯一 fence、冷重开后仍是
+`.milkdown-code-block`，并在代码块创建后连续修改代码、后文和前文列表；真实
+`123321.md` 临时副本与隔离安装包均通过。详见 `family-root-cause-matrix.md` 的根因 9–14
+和 `slash-code-source-sync-regression.md`。
+
 同日已重新执行 `rich-source-fidelity-bug-family.md` 与
 `nested-list-sync-bug-handoff.md` 所列完整家族矩阵：纯函数映射、逐键段落/列表/反引号、
 空段落/空引用、源码光标、保存重开、混合事务、长文档、源码+预览与四档 chaos
@@ -634,6 +651,7 @@ npm run test:ui-regression
 node scripts/test-pdf-document.mjs
 npm run test:pdf-latex-ui
 npm run test:markdown-preservation
+npm run test:family-multicycle-ui
 npm run test:new-document-list-source-ui
 npm run test:issue-77-ui
 npm run test:paragraph-source-ui

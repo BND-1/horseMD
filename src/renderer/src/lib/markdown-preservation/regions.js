@@ -44,6 +44,20 @@ export const preserveLocallyAlignedTextChange = ({
   previousEnd,
   nextEnd
 }) => {
+  // This fallback owns text inside one existing source line only. Markdown
+  // block separators carry no visible characters, so accepting a multiline
+  // insertion here can map a sibling list/heading/fence to the byte before the
+  // source's final newline (`3. item* sibling`). Dedicated block/line mappers
+  // run before and after this function and retain the structural context.
+  const previousStartLine = lineAt(previous, start)
+  const previousEndLine = lineAt(previous, Math.max(start, previousEnd - 1))
+  const nextStartLine = lineAt(next, start)
+  const nextEndLine = lineAt(next, Math.max(start, nextEnd - 1))
+  if (
+    previousStartLine.start !== previousEndLine.start ||
+    nextStartLine.start !== nextEndLine.start ||
+    /\r|\n/.test(next.slice(start, nextEnd))
+  ) return null
   const previousVisible = sourceVisibleIndex(previous)
   const sourceVisible = sourceVisibleIndex(source)
   const startVisible = sourceVisiblePositionAtRaw(previous, start)
@@ -659,6 +673,10 @@ export const preserveDivergedTailBlockAppend = ({
     .replace(/^(\s*)[-+*](?=\s)/, (match, ws) => `${ws}*`)
     .replace(/^(\s*)(\d{1,9})[.)](?=\s)/, (match, ws, num) => `${ws}${num}.`)
     .replace(/&#x20;/g, ' ')
+    // remark escapes a literal pipe in list text so it cannot be reparsed as
+    // table syntax. The authored source may keep the literal `|`; normalize
+    // only this serializer escape for tail-anchor comparison.
+    .replace(/\\\|/g, '|')
     .replace(/\u200B/g, '')
   const equivalentLine = (left, right) =>
     markerNormalized(stripBacktickSpans(left.trimEnd())) ===
@@ -1009,8 +1027,14 @@ export const preserveDivergedTailBlockAppend = ({
     const firstIndent = firstRemaining?.match(/^\s*/)?.[0] || ''
     const firstMarker = firstRemaining?.trim().match(/^(?:[-+*]|\d{1,9}[.)])/)?.[0] || ''
     const sameListType = /^\d/.test(authoredMarker?.[2] || '') === /^\d/.test(firstMarker)
+    const sourceTailBreaks = source.slice(sourceAnchor.start + sourceLine.length)
+    const sourceTailBreakCount = (sourceTailBreaks.match(/\n/g) || []).length
+    const tailEol = lineEndingNear(source, source.length)
+    const previousEndsInEmptyParagraph =
+      /(?:^|\r?\n)[ \t]*<br\s*\/?>[ \t]*(?:(?:\r?\n)+)?$/i.test(previous)
     const continuedSameList = !!(authoredMarker &&
       firstRemaining &&
+      (sourceTailBreakCount < 2 || !previousEndsInEmptyParagraph) &&
       firstIndent === authoredMarker[1] &&
       sameListType &&
       /^[-+*]|\d{1,9}[.)]/.test(firstRemaining.trim()))
@@ -1033,10 +1057,8 @@ export const preserveDivergedTailBlockAppend = ({
       // Markdown block boundary needs at least two line endings, so top up
       // when the authored tail has fewer (without inventing trailing blank
       // lines after the appended content — the facade caps that separately).
-      const sourceTailBreaks = source.slice(sourceAnchor.start + sourceLine.length)
-      const breakCount = (sourceTailBreaks.match(/\n/g) || []).length
       remaining = sourceTailBreaks +
-        '\n'.repeat(Math.max(0, 2 - breakCount)) +
+        tailEol.repeat(Math.max(0, 2 - sourceTailBreakCount)) +
         remaining.replace(/^\n+/, '')
     }
     // A canonical tail that only grew blank lines (Enter inside an empty
@@ -1045,6 +1067,15 @@ export const preserveDivergedTailBlockAppend = ({
     // A canonical tail that only grew blank lines or `<br />` placeholders
     // (held Space, Enter inside an empty trailing block) has no authored
     // content to append; the empty-block mappers own those transitions.
+    // The final empty ProseMirror paragraph is serialized as a standalone
+    // `<br />` after the real appended block. It is not part of the authored
+    // block and must not make this structural mapper reject the whole change.
+    // Strip only a terminal placeholder suffix; an embedded placeholder still
+    // belongs to the dedicated empty-block mapper and remains rejected below.
+    remaining = remaining.replace(
+      /(?:\r?\n)+[ \t]*<br\s*\/?>[ \t]*(?:(?:\r?\n)+)?$/i,
+      '\n'
+    )
     if (!/\S/.test(String(remaining).replace(/<br\s*\/?>/gi, ''))) return null
     // A `<br />` placeholder embedded in the appended rows (held-space and
     // empty-block transitions) belongs to the dedicated empty/leading-space
@@ -1091,12 +1122,25 @@ export const preserveDivergedTailBlockAppend = ({
     ? remaining
     : remaining.replace(
         /(?:\r?\n)+$/,
-        /(?:\r?\n)$/.test(source) ? '\n' : ''
+        /(?:\r?\n)$/.test(source) ? lineEndingNear(source, source.length) : ''
       )
+  const localEol = lineEndingNear(source, source.length)
+  const localizeAddedLineEndings = (value) => {
+    const text = canonicalFreshTextToSource(value)
+    // `lastVisibleLine()` includes the `\r` byte of a CRLF anchor but not its
+    // `\n`. Keep that first `\n` paired with the already-copied `\r`; only
+    // canonical bytes after the anchor are converted to the local convention.
+    if (sourceLine.endsWith('\r') && text.startsWith('\n')) {
+      return '\n' + text.slice(1).replace(/\r\n|\r|\n/g, localEol)
+    }
+    return text.replace(/\r\n|\r|\n/g, localEol)
+  }
+  const localContinuation = localizeAddedLineEndings(continuation)
+  const localRemaining = localizeAddedLineEndings(normalizedRemaining)
   return {
     markdown: prefix + sourceLine +
-      canonicalFreshTextToSource(continuation) +
-      canonicalFreshTextToSource(normalizedRemaining),
+      localContinuation +
+      localRemaining,
     preserved: true,
     reason: 'diverged-tail-block-append'
   }

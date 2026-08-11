@@ -277,10 +277,11 @@ function atEndOfBlock(sel) {
 
 // ---- the menu controller. One per editor (pluginView lifetime). ----
 class SlashMenu {
-  constructor(ctx, view, getT) {
+  constructor(ctx, view, getT, onCommand) {
     this.ctx = ctx
     this.view = view
     this.getT = getT
+    this.onCommand = onCommand
     this.items = buildItems(getT, '')
     this.filtered = []
     this.selectedIndex = 0
@@ -395,7 +396,9 @@ class SlashMenu {
     const item = this.filtered[this.selectedIndex]
     if (!item) return
     this.provider.hide()
+    const token = this.onCommand?.({ phase: 'before', id: item.id, view: this.view })
     item.run(this.ctx, this.view)
+    this.onCommand?.({ phase: 'after', id: item.id, view: this.view, token })
     this.view.focus()
   }
 
@@ -471,12 +474,12 @@ function esc(s) {
 }
 
 // ---- public: build the raw ProseMirror plugin. Add via prosePluginsCtx. ----
-export function createSlashPlugin(ctx, getT) {
+export function createSlashPlugin(ctx, getT, onCommand) {
   let menu = null
   return new Plugin({
     key: KEY,
     view: (view) => {
-      menu = new SlashMenu(ctx, view, getT)
+      menu = new SlashMenu(ctx, view, getT, onCommand)
       return {
         update: (v, prev) => menu && menu.update(v, prev),
         destroy: () => {

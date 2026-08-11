@@ -131,7 +131,17 @@ async function main() {
         transactions: window.__hmSourceTransactionTrace || [],
         mapped: window.__hmSourceTransactionLog || [],
         preserved: window.__hmPreserveLog || [],
-        intents: window.__hmListIntentTrace || []
+        intents: window.__hmListIntentTrace || [],
+        sourceTextarea: (() => {
+          const node = [...document.querySelectorAll('textarea.source-editor')]
+            .find((candidate) => candidate.offsetParent)
+          return node ? {
+            value: node.value,
+            defaultValue: node.defaultValue,
+            rawValue: node.__horsemdSourceRawValue,
+            baseline: node.__horsemdSourceBaseline
+          } : null
+        })()
       })`), null, 2))
     }
     assert.equal(source, expected, 'paragraph-to-list typing changed the authored list boundary or marker')

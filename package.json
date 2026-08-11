@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.44",
+  "version": "0.13.47",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -166,6 +166,8 @@
     "test:list-intent-cross-block-ui": "node scripts/test-list-intent-cross-block-ui.mjs",
     "test:save-reopen-smoke-ui": "node scripts/test-save-reopen-smoke-ui.mjs",
     "test:family-matrix-ui": "FAMILY_FILES=\"/Users/yangtingyi/vibe_everything/置身钉内/123321.md,/Users/yangtingyi/Desktop/HorseMD-0.13.33-引用后输入手测.md,/Users/yangtingyi/vibe_everything/置身钉内/反馈.md,/Users/yangtingyi/vibe_everything/置身钉内/11111.md\" node scripts/test-family-matrix-ui.mjs",
+    "test:family-multicycle-ui": "node scripts/test-family-multicycle-ui.mjs && TRANSACTION_PRIMARY=1 CDP_PORT=10180 node scripts/test-family-multicycle-ui.mjs",
+    "test:tail-fence-ui": "TAIL_FENCE_SLASH=1 TAIL_FENCE_SLASH_SETTLE_MS=40 TAIL_FENCE_CONTINUOUS=1 CDP_PORT=9910 node scripts/test-tail-fence-ui.mjs && TAIL_FENCE_SLASH=1 TAIL_FENCE_SLASH_SETTLE_MS=350 TAIL_FENCE_CONTINUOUS=1 CDP_PORT=9912 node scripts/test-tail-fence-ui.mjs",
     "test:literal-marker-reopen-structure-ui": "node scripts/test-literal-marker-reopen-structure-ui.mjs",
     "test:editor-flush-settle": "node scripts/test-editor-flush-settle.mjs",
     "test:source-sync-recovery": "node scripts/test-source-sync-recovery.mjs",

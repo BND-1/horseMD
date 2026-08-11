@@ -451,15 +451,26 @@ export const preserveTypedBulletInputRule = ({
   if (
     Number.isFinite(sourceSlotRawStart) &&
     sourceSlotRawStart > 0 &&
-    sourceSlotRawStart < insertionSource.length &&
+    sourceSlotRawStart <= source.length &&
+    sourceSlotRawStart <= insertionSource.length &&
     listWasCreatedInChange
   ) {
     // The slot is a blank-line boundary. Verify its surrounding bytes are
     // unchanged since capture; a drift means an earlier block was edited and
     // the raw offset no longer owns the same gap.
-    const capturedBytes = source.slice(sourceSlotRawStart - 2, sourceSlotRawStart + 2)
-    const currentBytes = insertionSource.slice(sourceSlotRawStart - 2, sourceSlotRawStart + 2)
-    if (capturedBytes !== currentBytes) return null
+    const contextStart = Math.max(0, sourceSlotRawStart - 24)
+    const capturedBefore = source.slice(contextStart, sourceSlotRawStart)
+    const currentBefore = insertionSource.slice(
+      sourceSlotRawStart - capturedBefore.length,
+      sourceSlotRawStart
+    )
+    if (capturedBefore !== currentBefore) return null
+    const isTailSlot = sourceSlotRawStart === source.length
+    if (!isTailSlot) {
+      const capturedAfter = source.slice(sourceSlotRawStart, sourceSlotRawStart + 24)
+      const currentAfter = insertionSource.slice(sourceSlotRawStart, sourceSlotRawStart + capturedAfter.length)
+      if (capturedAfter !== currentAfter) return null
+    }
     const cleanReplacement = String(replacement || '').replace(/\n+$/, '')
     const afterSlot = insertionSource.slice(sourceSlotRawStart)
     const leadingBreaks = afterSlot.match(/^(?:\r?\n)+/)?.[0].length || 0
@@ -482,10 +493,21 @@ export const preserveTypedBulletInputRule = ({
       }
       blockEndInRest = cursor
       const trailing = rest.slice(blockEndInRest)
-      const breaksAfter = trailing.match(/^(?:\r?\n)+/)?.[0].length || 0
-      if (breaksAfter < 2) return null
-      const end = sourceSlotRawStart + leadingBreaks + blockEndInRest + (breaksAfter - 2)
-      return insertionSource.slice(0, sourceSlotRawStart) + cleanReplacement + insertionSource.slice(end)
+      const trailingBreaks = trailing.match(/^(?:\r?\n)+/)?.[0] || ''
+      const breaksAfter = (trailingBreaks.match(/\r\n|\n/g) || []).length
+      // `blockEndInRest` already consumed the line break terminating the last
+      // list row. One further break is therefore the normal blank-line block
+      // separator (`item\n\nnext`). Requiring two here rejected the ordinary
+      // case and let the serializer's `*` survive.
+      if (breaksAfter < 1) return null
+      const end = sourceSlotRawStart + leadingBreaks + blockEndInRest + trailingBreaks.length
+      const eol = lineEndingNear(insertionSource, sourceSlotRawStart)
+      const adaptedReplacement = adaptCanonicalRegionToSource(cleanReplacement, insertionSource, {
+        start: sourceSlotRawStart,
+        end: sourceSlotRawStart
+      })
+      return insertionSource.slice(0, sourceSlotRawStart) +
+        adaptedReplacement + eol + eol + insertionSource.slice(end)
     }
     return insertionSource.slice(0, sourceSlotRawStart) +
       adaptCanonicalRegionToSource(cleanReplacement, insertionSource, {
@@ -990,18 +1012,30 @@ const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultipl
     replacements.push({ ...sourceRow, replacement })
   }
   if (!replacements.length || (requireMultiple && replacements.length < 2)) return null
+  const filledTrailingEmptyItem = /(?:^|\r?\n)[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]*\r?\n?$/.test(source) &&
+    /(?:\r?\n){2,}$/.test(next)
+  let markdown = replacements
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (updated, replacement) =>
+        updated.slice(0, replacement.start) +
+        adaptCanonicalRegionToSource(replacement.replacement, source, replacement) +
+        updated.slice(replacement.end),
+      source
+    )
+  if (filledTrailingEmptyItem) {
+    markdown += lineEndingNear(source, source.length)
+  }
   return {
-    markdown: replacements
-      .sort((left, right) => right.start - left.start)
-      .reduce(
-        (markdown, replacement) =>
-          markdown.slice(0, replacement.start) +
-          adaptCanonicalRegionToSource(replacement.replacement, source, replacement) +
-          markdown.slice(replacement.end),
-        source
-      ),
+    markdown,
     preserved: true,
-    reason: 'batched-list-row-changes'
+    reason: 'batched-list-row-changes',
+    // The first characters typed into a newly-created final list item replace
+    // `- ` while ProseMirror retains the following empty paragraph. That
+    // paragraph owns one additional terminal newline. Ordinary edits to an
+    // already-authored non-empty final item do not satisfy this guard and keep
+    // their exact trailing-EOL count.
+    trailingNewlineGrowth: filledTrailingEmptyItem ? 1 : 0
   }
 }
 
@@ -1027,6 +1061,85 @@ export const preserveStableListRowChanges = ({ source, previous, next }) => {
     next,
     requireMultiple: false
   })
+}
+
+// A fast continuation can arrive as one canonical insertion that starts at
+// the end of an existing list row, adds one or more sibling rows, exits the
+// list, and fills the adjacent paragraph. On a globally diverged document the
+// normal visible offset can point at an earlier duplicate. Anchor the exact
+// unchanged row by its complete comparable line instead, require that anchor
+// to be unique, and splice only the insertion before an unchanged suffix.
+export const preserveDivergedListContinuation = ({
+  source,
+  previous,
+  next,
+  start,
+  previousEnd,
+  nextEnd
+}) => {
+  if (previousEnd !== start || nextEnd <= start) return null
+  const previousRange = lineAt(previous, start)
+  const previousLine = {
+    ...previousRange,
+    text: previous.slice(previousRange.start, previousRange.end)
+  }
+  if (start !== previousLine.end) return null
+  const previousMarker = listMarkerRow(previousLine)
+  if (!previousMarker || previousMarker.indent.length !== 0) return null
+  const replacement = next.slice(start, nextEnd)
+  if (!replacement.includes('\n')) return null
+
+  const target = comparableListLine(previousLine.text)
+  if (!target) return null
+  const candidates = markdownLines(source)
+    .map((line) => ({ ...line, marker: listMarkerRow(line) }))
+    .filter((line) =>
+      line.marker &&
+      line.marker.indent.length === previousMarker.indent.length &&
+      comparableListLine(line.text) === target
+    )
+  if (candidates.length !== 1) return null
+  const sourceLine = candidates[0]
+  const sourceKind = /^\d/.test(sourceLine.marker.token) ? 'ordered' : 'bullet'
+  const previousKind = /^\d/.test(previousMarker.token) ? 'ordered' : 'bullet'
+  if (sourceKind !== previousKind) return null
+
+  // The untouched following region is the right fence. Visible equivalence is
+  // sufficient here because only the zero-width insertion is replaced; no
+  // suffix byte is copied from canonical Markdown.
+  if (
+    sourceVisibleIndex(source.slice(sourceLine.end)).text !==
+    sourceVisibleIndex(previous.slice(previousLine.end)).text
+  ) return null
+
+  const eol = lineEndingNear(source, sourceLine.end)
+  const sourceToken = sourceLine.marker.token
+  const adaptedRows = replacement
+    .replace(/\r?\n(?:[ \t]*\r?\n)+(?=[ \t]*(?:[-+*]|\d{1,9}[.)])\s)/g, eol)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*)([-+*]|\d{1,9})([.)]?)(?=\s)/, (whole, indent, token, punctuation) => {
+      if (indent.length !== sourceLine.marker.indent.length) return whole
+      const rowKind = /^\d/.test(token) ? 'ordered' : 'bullet'
+      if (rowKind !== sourceKind) return whole
+      return sourceKind === 'bullet'
+        ? `${indent}${sourceToken}`
+        : `${indent}${token}${sourceToken.slice(-1)}`
+    }))
+    .join(eol)
+  // `markdownLines()` keeps the `\r` in a CRLF row's text range. The edit
+  // belongs before that line ending, never between `\r` and `\n`.
+  const sourceContentEnd = sourceLine.text.endsWith('\r')
+    ? sourceLine.end - 1
+    : sourceLine.end
+  const insertion = adaptCanonicalRegionToSource(adaptedRows, source, {
+    start: sourceContentEnd,
+    end: sourceContentEnd
+  })
+  return {
+    markdown: source.slice(0, sourceContentEnd) + insertion + source.slice(sourceContentEnd),
+    preserved: true,
+    reason: 'diverged-list-continuation'
+  }
 }
 
 const likelyMultiListDelta = ({ source, previous, next }) => {
@@ -1098,7 +1211,8 @@ export const preserveBatchedListBlockChanges = ({
   source,
   previous,
   next,
-  requireMultiple = false
+  requireMultiple = false,
+  allowPartial = false
 }) => {
   const ordinalRows = preserveOrdinalBatchedListRows({ source, previous, next, requireMultiple })
   if (ordinalRows) return ordinalRows
@@ -1149,6 +1263,9 @@ export const preserveBatchedListBlockChanges = ({
     replacements.push({
       ...sourceList,
       replacement,
+      previousStart: previousList.start,
+      previousEnd: previousList.end,
+      nextCanonicalList,
       nextStart: nextList.start,
       nextEnd: nextList.end
     })
@@ -1163,8 +1280,7 @@ export const preserveBatchedListBlockChanges = ({
     return stickyBlocked ? blockedBatchedListResult(source) : null
   }
 
-  return {
-    markdown: replacements
+  const markdown = [...replacements]
       .sort((left, right) => right.start - left.start)
       .reduce(
         (markdown, replacement) =>
@@ -1172,9 +1288,39 @@ export const preserveBatchedListBlockChanges = ({
           adaptCanonicalRegionToSource(replacement.replacement, source, replacement) +
           markdown.slice(replacement.end),
         source
-      ),
+      )
+  const nextBaseline = [...replacements]
+    .sort((left, right) => right.previousStart - left.previousStart)
+    .reduce(
+      (canonical, replacement) =>
+        canonical.slice(0, replacement.previousStart) +
+        replacement.nextCanonicalList +
+        canonical.slice(replacement.previousEnd),
+      previous
+    )
+  const onlyTerminalPaddingRemains =
+    nextBaseline.replace(/(?:\r\n|\r|\n)+$/, '') ===
+    next.replace(/(?:\r\n|\r|\n)+$/, '')
+  const withoutGeneratedEmptyBlocks = (value) => String(value || '')
+    .replace(/^\s*(?:[ \t]*>[ \t]*)*<br\s*\/?>\s*$/gim, '')
+    .replace(/(?:\r\n|\r|\n){3,}/g, '\n\n')
+  const onlyGeneratedEmptyBlockRemains =
+    withoutGeneratedEmptyBlocks(nextBaseline) === withoutGeneratedEmptyBlocks(next)
+  if (
+    !allowPartial &&
+    nextBaseline !== next &&
+    !onlyTerminalPaddingRemains &&
+    !onlyGeneratedEmptyBlockRemains
+  ) {
+    return stickyBlocked ? blockedBatchedListResult(source) : null
+  }
+  return {
+    markdown,
     preserved: true,
-    reason: 'batched-list-block-changes'
+    reason: 'batched-list-block-changes',
+    nextBaseline: onlyTerminalPaddingRemains || onlyGeneratedEmptyBlockRemains
+      ? next
+      : nextBaseline
   }
 }
 
