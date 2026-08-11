@@ -1,6 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-10 已完成第二阶段：BOM/CRLF/lone-CR/mixed EOL 归一化映射、空段落槽坐标、延迟列表意图交叉保护，以及默认/primary 双路径的多轮保存重开回归；发布构建默认仍关闭，尚未宣布替换旧保真层。
+> 状态：2026-08-11 第二阶段基础设施与默认/primary 回归仍在，但 0.13.47 安装包人工
+> 验收出现 RS-41：真实长会话在代码块及后续编辑后仍发生富文本/源码分叉。发布构建
+> 默认关闭 transaction-primary；现有 canonical preservation 也没有通过产品验收。
+> 方案一仍是主线，但下一步必须先抓到第一次状态分叉的统一 trace，不能继续按最终症状
+> 增加 mapper。见 `rich-source-divergence-incident-0.13.47.md`。
 
 ## 1. 目标与不变量
 
@@ -81,6 +85,10 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - `editor-slash-source.js` 在命令前捕获精确 authored 行，命令后只序列化当前 code block，验证完整 fence 后一次替换并推进双基线；
 - 该处理器只覆盖已验收的代码类 slash 命令，不代表 transaction-primary 已放行任意代码块编辑；代码内容后续仍走现有保真链；
 - 重复 query 无精确 PM 映射、目标不是完整 fence 或行槽无法证明时继续 fail closed。完整事故记录见 `slash-code-source-sync-regression.md`。
+- **验收边界更正**：上述处理器只证明 `/code` 创建瞬间的 authored slot。0.13.47
+  正式安装包在同一真实文档继续编辑代码、后文和其他结构后仍会再次分叉。接手者必须
+  同时跟踪 live doc、authored、canonical、tab mirror、textarea live value 和 disk，
+  找出首次失去共同所有权的 transaction；不得将 RS-40 的专项绿色结果扩张为架构完成。
 
 ## 3. 为什么没有立即全量打开
 

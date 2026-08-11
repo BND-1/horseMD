@@ -2,7 +2,7 @@
 
 > 状态：持续维护（Living Document）
 >
-> 当前基线：HorseMD 0.13.47 候选已完成源码保真家族矩阵、多轮持久化和代码块连续编辑专项，待用户手动验收，2026-08-11
+> 当前基线：HorseMD 0.13.47 自动化矩阵通过，但安装包人工验收仍复现富文本/源码分叉；RS-41 为 P0 未解决，2026-08-11
 >
 > 适用范围：富文本编辑、源码模式、模式切换、保存/重开、列表、空段落、光标映射和 Markdown 原文保真。
 
@@ -103,6 +103,7 @@ HorseMD 同时维护两种表示：
 | RS-38 | CRLF / 无末尾换行的列表边界损坏 | CRLF 续写出现 `\r文字\n`；无 final-EOL 文件退出列表后新建列表会粘回上一列表 | 行区间把 CR 当正文；terminal newline growth 固定为 1，无法表示“终止行 + 独立块”。现在在 CR 前插入并使用局部 EOL；0-EOL 退出需要 2 个换行，1-EOL 只增长 1 个 | 已覆盖：纯函数字节级 CRLF、0/1 final-EOL 链式回归，transaction CRLF/BOM+CRLF UI，多轮混合 EOL fixture |
 | RS-39 | 冷重开后在中间空段输入列表，富文本有内容但源码仍停在列表前 | 在正文与后续代码块之间的空段输入正文、有序列表两项、退出列表再输入正文；富文本完整，切源码缺列表和尾文，继续保存会形成双快照分叉 | 中间空段 mapper 一律拒绝 list syntax，而中间位置的 input intent 没有 raw tail slot，两个专用路径都不拥有该事务。现在仅在前后锚、空槽和语法边界全部证明时原子写回“列表 + 后续正文”，完成后消费 intent；CRLF 从 `\r` 前替换完整 EOL | 已覆盖：纯函数 LF/CRLF（含 lone-CR 禁止断言）；`test:family-multicycle-ui` 第四轮 + 第五次冷打开；默认/primary 与真实 `123321.md` 临时副本 |
 | RS-40 | `/code` 创建代码块后继续编辑，源码与富文本再次分叉 | 文档末尾输入 `/code` 选择代码块，立即编辑代码、代码块后正文和前文列表；首次切源码即锁定，或源码缺 fence/后续文字 | slash code 是“删除临时 `/code` + paragraph→code_block”两条命令。旧 mapper 把 `/code`→空 fence 误判为只删除尾行，源码没有代码块槽。现在命令前捕获精确 authored 行，命令后只序列化当前 code_block，并验证完整 fence 后原子替换；重复 query 无精确映射时拒绝，CRLF 原样保留 | 已覆盖：`test:tail-fence-ui` 的 40ms `/code`、代码/尾文/前文连续编辑、源码、保存和冷重开；纯函数 CRLF、重复 query、歧义拒绝；literal/input-rule fence 变体 |
+| RS-41 | 真实长会话在 RS-40 后仍再次分叉 | 0.13.47 安装包中，真实长文档末尾建立代码块并继续多轮编辑后，富文本有新增内容但源码缺失/结构不同；保存可能暂停，也可能成功但磁盘仍与富文本不一致 | **根因尚未确认。** RS-40 只拥有 `/code` 创建瞬间；后续 transaction 仍可能在 live doc、作者源码、canonical、`tabsRef`、textarea live value 与保存边界之间失去同一所有权。必须捕获第一次分叉，不得再按最终症状补字符串 mapper | **P0 未解决，人工验收失败。** 自动化绿色不能关闭；专项见 `rich-source-divergence-incident-0.13.47.md` |
 
 ## 5. 代码归属
 
@@ -211,6 +212,11 @@ npm run test:task-list-persistence-ui
 - 在同时含嵌套 `- -`、字面三反引号、空引用以及多处重复短文本的既有文件中，编辑独立重复正文后不切源码直接保存；保存不得暂停，源码、磁盘和完整重开必须一致。自动化：`npm run test:diverged-ordinary-save-ui`。
 - 行内代码必须按完整 `` `正文` `` 才创建：只输入左反引号和正文时，方向键不得凭空补出右反引号；输入真实闭合反引号后，左右方向键应能从已渲染 code 边界退出。段落追加回归与专项行内代码回归必须使用同一合同，不能让旧测试继续模拟“首字符自动激活”。自动化：`npm run test:paragraph-source-ui`、`npm run test:inline-code-ui`。
 - 在真正空白的新文件中逐键输入三个反引号，以真实中文 IME 提交“你好”，再逐键输入三个反引号；富文本保持普通正文，源码必须逐字为 ```` ```你好``` ````，每个反引号前不得出现 serializer 反斜杠，保存并完整重开仍一致。自动化：`npm run test:literal-triple-backtick-source-ui`。
+- **RS-41 安装包长会话**：使用真实长文档临时副本，在末尾通过 `/code` 建立代码块，
+  逐字编辑代码，退出后输入正文，再回到邻近列表/正文做新增、删除和改写；至少连续 10 轮，
+  交替覆盖“先保存后切源码”和“先切源码后保存”。每轮必须比较 live 富文本、首次源码、
+  第二次往返、磁盘和冷重开；任何一份缺内容都算失败。详见
+  `rich-source-divergence-incident-0.13.47.md`。
 
 ### 7.4 光标
 
@@ -227,6 +233,9 @@ npm run test:task-list-persistence-ui
 5. **测试通过不等于所有组合已穷尽**：必须持续把真实用户操作序列加入 chaos/continuous 回归，而不是只测单次输入。
 6. **长期终局仍是源码即数据模型的 Live Preview**：它可从架构上消除双表示同步家族，但属于独立迁移项目，见 `live-preview-migration-plan.md`；当前版本仍须维护现有保真层。
 7. **禁止用全局“重新解析后语义相等”作为通行证**：作者正文里的 `- - 文本`、`1. 2. 文本` 和字面反引号本就可能被 parser 重解释；整篇循环 parse/stringify 会把合法作者拼写误判为错误并引入列表、反引号和空行回归。修复必须证明本次局部 raw 映射。
+8. **当前自动化存在已证实的假阴性**：4×5、multicycle 和 tail-fence 都通过，但
+   0.13.47 安装包真实长会话仍失败。后续必须把安装包人工结果作为最高门禁，并补统一
+   transaction trace；不能继续增加固定 sleep 来提高脚本通过率。
 
 ## 9. 新问题追加模板
 
@@ -288,6 +297,7 @@ npm run test:task-list-persistence-ui
 - [列表项正文字面标记自动转义回归报告](./list-item-literal-marker-escape-regression.md)
 - [反引号删除后保存暂停与源码模式锁死回归报告](./backtick-source-sync-lock-regression.md)
 - [事务优先源码同步架构（方案一）](./transaction-source-sync-architecture.md)
+- [0.13.47 富文本 / 源码持续分叉事故（P0 未解决）](./rich-source-divergence-incident-0.13.47.md)
 
 ## 12. 维护记录
 
@@ -315,3 +325,8 @@ npm run test:task-list-persistence-ui
   回归：LF/CRLF/BOM+CRLF 的正文/引用/列表/undo-redo 立即切源码、保存、冷重开逐字节；列表意图跨块丢字专项（primary 构建验证、默认构建 SKIP）；家族全矩阵在 primary 实验构建与默认构建均通过。仍默认关闭，未放行 mark/atom、代码块、表格与性能门禁。
 - 2026-08-10 / 0.13.46 候选：增加 RS-37～RS-39。真实 `123321.md` 继续编辑证明“一次保存重开通过”仍不足：列表 marker 已恢复后 pending intent 没有消费，下一次正文回调会用旧槽覆盖正确空行；批量列表 mapper 还可能只提交列表、丢掉同 callback 的正文；再次冷重开后在正文与代码块之间从空段创建有序列表时，列表和退出后的正文没有任何 mapper 拥有。修复 intent 一次性所有权、完整 canonical baseline 原子提交、唯一列表行 + suffix fence、严格中间空槽原子列表写回，并补 CRLF 的 CR 前插入、lone-CR 禁止断言与 0/1 final-EOL 退出列表边界。新增默认/primary 双路径的 4 轮编辑保存、5 次冷打开专项；真实文件 override、20/20 家族矩阵、continuous/chaos/列表转换/反引号/空段落/空引用/光标矩阵全过。
 - 2026-08-11 / 0.13.47 候选：增加 RS-40。稳定复现 `/code` 的两阶段结构命令先删除查询行、却没有把空 fence 原子写入 authored source；后续代码、尾文和前文编辑因此全部建立在错误基线上。新增 slash code 命令级 source intent、精确 raw 行槽与单 code_block 序列化，禁止通用尾部删除分支抢走该结构事务。`test:tail-fence-ui` 固化 40ms/350ms 两种菜单时序，连续完成代码、尾文和前文列表三块编辑，并断言源码/磁盘中完整且唯一 fence、冷重开后仍为 `.milkdown-code-block`；真实 `123321.md` 临时副本与隔离安装包均通过。
+- 2026-08-11 / 0.13.47 人工否决：增加 RS-41。用户在正式路径安装包上继续编辑真实
+  `123321.md`，确认代码块后的长会话仍会让富文本与源码不一致；保存暂停与“保存成功但
+  内容不同”都存在。此前所有绿色矩阵只保留为已覆盖路径证据，不再作为家族关闭结论。
+  新增 P0 事故文档，要求捕获 live doc / authored / canonical / tab / textarea / disk
+  第一次分叉的统一 trace，并以安装包 10 轮长会话作为最终验收。

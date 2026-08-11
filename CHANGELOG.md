@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Known Issues
+- **富文本 / 源码长会话仍可能分叉（P0）** — 0.13.47 的 `/code` 原子同步修复通过了家族矩阵、多轮持久化和代码块专项，但安装包人工验收仍能在真实长文档中复现：建立代码块后继续多轮编辑，富文本新增内容可能没有完整进入源码或磁盘；保存既可能暂停，也可能执行成功但内容仍不一致。该问题尚未关闭，禁止把当前候选描述为稳定修复。接手记录见 [`docs/rich-source-divergence-incident-0.13.47.md`](./docs/rich-source-divergence-incident-0.13.47.md)。
+
 ### Changed
 - **源码同步架构开始迁移** — 已加入统一 ProseMirror transaction 观察器、原子 raw-source patch 原型和真实逐字事务回归。当前发布构建仍只使用原有 fail-closed 保真链路，事务实验默认关闭；新路径只在开发/专项测试中运行，待每类结构通过完整家族门禁后再逐项放行，避免用未成熟架构修改用户文件或拖慢输入。
 
