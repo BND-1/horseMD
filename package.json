@@ -18,7 +18,7 @@
     "dev": "cross-env ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
     "preview": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
-    "start": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
+    "start": "node scripts/start-desktop.mjs",
     "dist": "electron-vite build && electron-builder",
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
