@@ -211,13 +211,13 @@ export function mountEditorInteractionBindings({
     // The view update and its node-view DOM work can span two animation frames.
     // Restore twice rather than using a fixed timeout, and only for the table
     // that received this context menu.
-    requestAnimationFrame(() => {
+    let restoreFrames = 0
+    const restoreAcrossLayout = () => {
       restoreTableScroll()
-      requestAnimationFrame(() => {
-        restoreTableScroll()
-        requestAnimationFrame(restoreTableScroll)
-      })
-    })
+      restoreFrames += 1
+      if (restoreFrames < 8) requestAnimationFrame(restoreAcrossLayout)
+    }
+    requestAnimationFrame(restoreAcrossLayout)
   }
   const onSelectionChange = () => {
     const currentView = viewRef.current

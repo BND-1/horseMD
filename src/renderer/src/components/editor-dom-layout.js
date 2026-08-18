@@ -45,7 +45,10 @@ const readRenderedColumnWidths = (table) => {
 
 const applyColumnGroupWidths = (table, widths) => {
   const wrapper = table.closest('.table-wrapper')
-  const scrollLeft = wrapper?.scrollLeft ?? 0
+  const pendingScrollLeft = wrapper?.__horsemdTableScrollLeft
+  const scrollLeft = Number.isFinite(pendingScrollLeft)
+    ? pendingScrollLeft
+    : wrapper?.scrollLeft ?? 0
   let colgroup = table.querySelector('colgroup.hm-column-widths')
   if (!colgroup) {
     colgroup = document.createElement('colgroup')
@@ -265,6 +268,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
   const resizeMoveTolerance = 8
   let raf = 0
   let resizeIntent = null
+  let tableControlScrollGuard = null
   let needsColumnWidthSync = true
 
   const setTranslate = (element, x, y) => {
@@ -475,6 +479,102 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     if (raf) return
     raf = requestAnimationFrame(fix)
   }
+
+  // Selecting a column, clicking one of its floating actions, or clicking a
+  // cell can update the table node view. The new `.table-wrapper` starts at
+  // scrollLeft=0 even when the old wrapper was at the far right, which makes
+  // the interaction appear to jump the table back to its first columns.
+  // Capture the table's ordinal
+  // before Milkdown handles pointerdown. The scroll listener below restores the
+  // position synchronously when the browser performs its automatic selection
+  // scroll, while the following layout frames cover a wrapper replacement.
+  const getTableWrapper = (tableIndex) =>
+    host.querySelectorAll('.milkdown-table-block')[tableIndex]?.querySelector('.table-wrapper')
+
+  const restoreTableControlScroll = (guard) => {
+    const wrapper = getTableWrapper(guard.tableIndex)
+    if (!wrapper) return
+    wrapper.__horsemdTableScrollLeft = guard.scrollLeft
+    wrapper.scrollLeft = Math.min(
+      guard.scrollLeft,
+      Math.max(0, wrapper.scrollWidth - wrapper.clientWidth)
+    )
+  }
+
+  // ProseMirror's selection transaction can call scrollToSelection directly,
+  // before a browser scroll event is emitted. Intercept that path while a table
+  // control click is active, otherwise the scroll listener below is too late to
+  // prevent a one-frame flash at scrollLeft=0.
+  const previousHandleScrollToSelection = view.props.handleScrollToSelection
+  const handleTableScrollToSelection = (currentView) => {
+    const guard = currentView.dom.__horsemdTableScrollGuard
+    if (!guard) return typeof previousHandleScrollToSelection === 'function'
+      ? previousHandleScrollToSelection(currentView)
+      : false
+    restoreTableControlScroll(guard)
+    return true
+  }
+  view.setProps({ handleScrollToSelection: handleTableScrollToSelection })
+  const originalScrollToSelection = view.scrollToSelection
+  view.scrollToSelection = function horsemdScrollToSelection() {
+    const guard = this.dom.__horsemdTableScrollGuard
+    if (guard) {
+      restoreTableControlScroll(guard)
+      return
+    }
+    return originalScrollToSelection.call(this)
+  }
+
+  const preserveTableControlScroll = (event) => {
+    const interaction = event.target.closest?.(
+      '.milkdown-table-block .cell-handle, .milkdown-table-block .line-handle, ' +
+      '.milkdown-table-block th, .milkdown-table-block td'
+    )
+    if (!interaction || !host.contains(interaction)) return
+    const block = interaction.closest('.milkdown-table-block')
+    const wrapper = block?.querySelector('.table-wrapper')
+    if (!block || !wrapper) return
+    const tableIndex = [...host.querySelectorAll('.milkdown-table-block')].indexOf(block)
+    const scrollLeft = wrapper.scrollLeft
+    if (tableIndex < 0 || !Number.isFinite(scrollLeft)) return
+
+    const guard = { tableIndex, scrollLeft, frames: 0 }
+    tableControlScrollGuard = guard
+    view.dom.__horsemdTableScrollGuard = guard
+    let frames = 0
+    const restoreAcrossLayout = () => {
+      if (tableControlScrollGuard !== guard) return
+      restoreTableControlScroll(guard)
+      frames += 1
+      guard.frames = frames
+      if (frames < 16) requestAnimationFrame(restoreAcrossLayout)
+      else if (tableControlScrollGuard === guard) {
+        tableControlScrollGuard = null
+        if (view.dom.__horsemdTableScrollGuard === guard) {
+          delete view.dom.__horsemdTableScrollGuard
+        }
+        const wrapper = getTableWrapper(guard.tableIndex)
+        if (wrapper?.__horsemdTableScrollLeft === guard.scrollLeft) {
+          delete wrapper.__horsemdTableScrollLeft
+        }
+      }
+    }
+    requestAnimationFrame(restoreAcrossLayout)
+  }
+
+  const onTableScroll = (event) => {
+    if (
+      tableControlScrollGuard &&
+      event.target?.matches?.('.table-wrapper')
+    ) {
+      // This runs during the native scroll event, before the next paint. Do not
+      // wait for requestAnimationFrame: the user must never see the temporary
+      // scrollLeft=0 produced by ProseMirror's selection transaction.
+      restoreTableControlScroll(tableControlScrollGuard)
+    }
+    schedule()
+  }
+
   const onTablePointer = (event) => {
     if (event.target.closest?.('.milkdown-table-block')) schedule()
   }
@@ -602,6 +702,15 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
       mutation.attributeName === 'data-colwidth' ||
       mutation.attributeName === 'colspan'
     ))
+    if (tableControlScrollGuard) {
+      const guardedWrapper = getTableWrapper(tableControlScrollGuard.tableIndex)
+      if (guardedWrapper) guardedWrapper.__horsemdTableScrollLeft = tableControlScrollGuard.scrollLeft
+      if (syncColumnWidths) {
+        syncRenderedTableColumnWidths(host)
+        needsColumnWidthSync = false
+      }
+      restoreTableControlScroll(tableControlScrollGuard)
+    }
     schedule({ syncColumnWidths })
   })
   observer.observe(host, {
@@ -611,9 +720,13 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
     attributeFilter: ['data-show', 'data-colwidth', 'colspan']
   })
   host.addEventListener('pointermove', onTablePointer, { passive: true })
+  host.addEventListener('pointerdown', preserveTableControlScroll, true)
+  host.addEventListener('click', preserveTableControlScroll, true)
   host.addEventListener('click', onTablePointer, true)
+  host.addEventListener('mousedown', preserveTableControlScroll, true)
   host.addEventListener('mousedown', onColumnResizeMouseDown, true)
-  host.addEventListener('scroll', schedule, true)
+  host.addEventListener('scroll', onTableScroll, true)
+
   document.addEventListener('selectionchange', schedule)
   window.addEventListener('resize', schedule)
   schedule()
@@ -626,13 +739,28 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
       removeResizeGuide(intent)
     }
     observer.disconnect()
+    if (tableControlScrollGuard) {
+      if (view.dom.__horsemdTableScrollGuard === tableControlScrollGuard) {
+        delete view.dom.__horsemdTableScrollGuard
+      }
+      const wrapper = getTableWrapper(tableControlScrollGuard.tableIndex)
+      if (wrapper?.__horsemdTableScrollLeft === tableControlScrollGuard.scrollLeft) {
+        delete wrapper.__horsemdTableScrollLeft
+      }
+      tableControlScrollGuard = null
+    }
+    view.setProps({ handleScrollToSelection: previousHandleScrollToSelection })
+    view.scrollToSelection = originalScrollToSelection
     host.querySelectorAll('.hm-table-controls-open').forEach((block) => {
       block.classList.remove('hm-table-controls-open')
     })
     host.removeEventListener('pointermove', onTablePointer)
+    host.removeEventListener('pointerdown', preserveTableControlScroll, true)
+    host.removeEventListener('click', preserveTableControlScroll, true)
     host.removeEventListener('click', onTablePointer, true)
+    host.removeEventListener('mousedown', preserveTableControlScroll, true)
     host.removeEventListener('mousedown', onColumnResizeMouseDown, true)
-    host.removeEventListener('scroll', schedule, true)
+    host.removeEventListener('scroll', onTableScroll, true)
     document.removeEventListener('selectionchange', schedule)
     window.removeEventListener('resize', schedule)
   })
