@@ -843,7 +843,7 @@ export default function App() {
   const findSourceActive = sourceMode ||
     (sourceRichSplitMode && sourceRichFocusedPane === 'source') ||
     isPlainTextDoc(activeTab) || (activeTab?.heavy && !richForced.has(activeTab.id))
-  const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind } =
+  const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind, setFindOption } =
     useFindReplace({
       editorHostRef,
       sourceRef,
@@ -1158,6 +1158,7 @@ export default function App() {
               t={t}
               onQuery={(q) => { setFind((f) => ({ ...f, query: q })); runFind(q) }}
               onReplaceText={(text) => { replaceRef.current = text; setFind((f) => ({ ...f, replace: text })) }}
+              onToggleOption={setFindOption}
               onPrev={stepFind}
               onNext={stepFind}
               onClose={closeFind}

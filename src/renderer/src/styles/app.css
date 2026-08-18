@@ -3410,7 +3410,8 @@ body.hm-full-width .source-editor {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.findbar input {
+.findbar input,
+.findbar textarea {
   background: color-mix(in srgb, var(--bg-editor) 70%, transparent);
   border: 1px solid transparent;
   border-radius: var(--control-radius-sm);
@@ -3419,15 +3420,47 @@ body.hm-full-width .source-editor {
   font-size: 13px;
   width: 180px;
   padding: 4px 8px;
+  font-family: inherit;
+  line-height: 1.4;
   transition:
     border-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out),
     background var(--dur-fast) var(--ease-out);
 }
-.findbar input:focus {
+.findbar textarea {
+  resize: none;
+  overflow-y: auto;
+  min-height: 26px;
+  max-height: 96px;
+}
+.findbar input:focus,
+.findbar textarea:focus {
   background: var(--bg-editor);
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
+}
+/* Invalid regex query: red border instead of a silent zero-match search. */
+.findbar textarea.findbar-input-invalid,
+.findbar textarea.findbar-input-invalid:focus {
+  border-color: var(--danger);
+}
+/* Match-option toggles (Aa / ab / .* / selection), VSCode-style. */
+.findbar-toggle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 5px;
+  min-width: 24px;
+  min-height: 24px;
+  text-transform: none;
+}
+.findbar-toggle[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 62%, transparent);
+}
+.findbar-toggle[aria-pressed="true"]:hover {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 /* Find matches, painted via the CSS Custom Highlight API (no DOM mutation). */
 ::highlight(hm-find) {

@@ -29,10 +29,10 @@ async function main() {
 
   const setQuery = async (query) => {
     await evaluate(`(() => {
-      const input = document.querySelector('.findbar input')
+      const input = document.querySelector('.findbar textarea')
       if (!input) return false
       input.focus()
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(query)})
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, ${JSON.stringify(query)})
       input.dispatchEvent(new Event('input', { bubbles: true }))
       return true
     })()`)
