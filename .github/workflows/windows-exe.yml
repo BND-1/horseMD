@@ -4,6 +4,12 @@ name: Windows EXE
 # a workflow artifact only; it never creates or updates a GitHub Release.
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to build'
+        required: true
+        default: 'fix/rs-41-rich-source-divergence'
+        type: string
 
 permissions:
   contents: read
@@ -13,8 +19,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout selected ref
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
