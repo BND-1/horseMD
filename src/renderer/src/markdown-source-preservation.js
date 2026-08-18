@@ -346,6 +346,42 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (tableTextPreserved) return tableTextPreserved
+  // A table row/column operation is structurally local even when an earlier
+  // list, quote, or table has different authored spacing from the canonical
+  // serializer. Handle it before the document-wide visible-stream divergence
+  // gate; otherwise a perfectly identifiable column deletion is rejected by a
+  // mismatch elsewhere in the document and the old authored column survives
+  // save/source switching.
+  const tableStructureChanged = hasTableStructureChange({
+    previous,
+    next,
+    start,
+    previousEnd,
+    nextEnd
+  })
+  if (tableStructureChanged) {
+    const tablePreserved = replaceChangedTableBlock({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd
+    })
+    if (tablePreserved) return tablePreserved
+    const linesPreserved = preserveChangedLineRegion({
+      source: sourceMarkdown,
+      previous,
+      next,
+      start,
+      previousEnd,
+      nextEnd,
+      reason: 'table-line-change',
+      transformReplacement: normalizeEmptyTableCells
+    })
+    if (linesPreserved) return linesPreserved
+    return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-table-change' }
+  }
   if (sourceVisible.text !== previousVisible.text) {
     // remark parses `- 1. 甲乙` as a nested ordered list, so the canonical
     // visible stream drops the `1. ` item text while the authored source
@@ -481,37 +517,6 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     if (visibleDelete) return visibleDelete
     return { markdown: sourceMarkdown, preserved: false, reason: 'visible-stream-mismatch' }
   }
-  const tableStructureChanged = hasTableStructureChange({
-    previous,
-    next,
-    start,
-    previousEnd,
-    nextEnd
-  })
-  if (tableStructureChanged) {
-    const tablePreserved = replaceChangedTableBlock({
-      source: sourceMarkdown,
-      previous,
-      next,
-      start,
-      previousEnd,
-      nextEnd
-    })
-    if (tablePreserved) return tablePreserved
-    const linesPreserved = preserveChangedLineRegion({
-      source: sourceMarkdown,
-      previous,
-      next,
-      start,
-      previousEnd,
-      nextEnd,
-      reason: 'table-line-change',
-      transformReplacement: normalizeEmptyTableCells
-    })
-    if (linesPreserved) return linesPreserved
-    return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-table-change' }
-  }
-
   const listStructureChanged = hasListStructureChange({
     previous,
     next,

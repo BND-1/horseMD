@@ -53,6 +53,7 @@ export function mountEditorDomBindings({
     host,
     cleanups,
     markUserEdit,
+    onRichEditPending,
     reportActiveBlock
   })
 

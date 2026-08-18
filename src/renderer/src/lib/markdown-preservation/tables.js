@@ -12,7 +12,10 @@ import {
 
 const isTableSeparatorLine = (line) => {
   const cells = line.trim().replace(/^\||\|$/g, '').split('|')
-  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))
+  // Milkdown may serialize a table alignment separator with a single dash
+  // (`:-:`), even though authored GFM commonly uses three or more. Both forms
+  // identify the separator row for source-preservation purposes.
+  return cells.length > 1 && cells.every((cell) => /^:?-{1,}:?$/.test(cell.trim()))
 }
 
 const tableBlockAt = (markdown, offset) => {

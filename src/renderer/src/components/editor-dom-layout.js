@@ -261,7 +261,7 @@ const mountSlashMenuBounds = ({ host, scrollEl, cleanups }) => {
   })
 }
 
-const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }) => {
+const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, onRichEditPending }) => {
   if (!scrollEl) return
   const margin = 8
   const resizeHoldMs = 220
@@ -552,6 +552,27 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
   }
 
   const preserveTableControlScroll = (event) => {
+    const documentAction = event.target.closest?.(
+      '.milkdown-table-block .button-group button, ' +
+      '.milkdown-table-block .line-handle .add-button'
+    )
+    if (documentAction && host.contains(documentAction)) {
+      if (Array.isArray(globalThis.__hmTableActionTrace)) {
+        globalThis.__hmTableActionTrace.push({
+          type: event.type,
+          className: documentAction.className || '',
+          tagName: documentAction.tagName || ''
+        })
+      }
+      // TableBlock stops pointerdown propagation on its internal handles, so
+      // the editor-root edit-intent listener cannot see these structural
+      // commands. Mark the real action here before Milkdown dispatches the
+      // delete/align/add transaction, otherwise rich DOM and authored source
+      // diverge without a dirty state or a save entry point.
+      markUserEdit()
+      onRichEditPending?.()
+    }
+
     const interaction = event.target.closest?.(
       '.milkdown-table-block .cell-handle, .milkdown-table-block .line-handle, ' +
       '.milkdown-table-block th, .milkdown-table-block td'
@@ -792,10 +813,10 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
   })
 }
 
-export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, reportActiveBlock }) {
+export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, onRichEditPending, reportActiveBlock }) {
   const scrollEl = host.closest('.editor-scroll')
   mountSlashMenuBounds({ host, scrollEl, cleanups })
-  mountTableHandleBounds({ view, host, scrollEl, cleanups, markUserEdit })
+  mountTableHandleBounds({ view, host, scrollEl, cleanups, markUserEdit, onRichEditPending })
   mountTableActionMenuRetention({ host, cleanups })
 
   const onBlankAreaMouseDown = (event) => {

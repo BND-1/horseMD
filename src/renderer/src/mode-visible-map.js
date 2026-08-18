@@ -259,7 +259,7 @@ const sourceVisibleIndex = (md) => {
   let rawPos = 0
   let inFence = false
   let inTable = false
-  const isTableSeparator = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line || '')
+  const isTableSeparator = (line) => /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(line || '')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (line === '\n') {
