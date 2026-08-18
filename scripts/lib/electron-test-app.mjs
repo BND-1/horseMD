@@ -61,6 +61,17 @@ export async function stopBuiltElectron(app, { removeProfile = false } = {}) {
     ])
   }
   if (removeProfile && app?.profileDir) {
-    await rm(app.profileDir, { recursive: true, force: true })
+    // Windows can report EBUSY right after the exit event while the OS still
+    // releases the profile's SQLite journal handles. Retry briefly instead of
+    // failing an otherwise-green test during cleanup.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await rm(app.profileDir, { recursive: true, force: true })
+        break
+      } catch (error) {
+        if (error?.code !== 'EBUSY' && error?.code !== 'EPERM' || attempt === 4) throw error
+        await sleep(300)
+      }
+    }
   }
 }
