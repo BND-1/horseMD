@@ -20,6 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
 const backgroundTestMode = process.argv.includes('--horsemd-test-background')
+const inputTraceEnabled = process.argv.includes('--horsemd-input-trace')
 
 let mainWindow = null
 // When true, the window is allowed to close without re-prompting (the renderer
@@ -31,6 +32,37 @@ let allowClose = false
 let isQuitting = false
 let localFontGrant = null
 let rendererReady = false
+
+const inputTracePath = () => join(app.getPath('temp'), `horsemd-input-trace-${process.pid}.jsonl`)
+let inputTraceQueue = Promise.resolve()
+
+// Preload asks synchronously so normal builds do not install per-event input
+// listeners or send IPC traffic. The actual trace writer is also gated here,
+// making the feature unavailable unless the process was explicitly launched
+// with --horsemd-input-trace.
+ipcMain.on('debug:inputTraceEnabled', (event) => {
+  event.returnValue = inputTraceEnabled
+})
+ipcMain.handle('debug:inputTraceInfo', () => ({
+  enabled: inputTraceEnabled,
+  path: inputTraceEnabled ? inputTracePath() : null
+}))
+ipcMain.handle('debug:inputTrace', (event, entry) => {
+  if (!inputTraceEnabled || !mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  let line
+  try {
+    const payload = entry && typeof entry === 'object' ? entry : { value: String(entry ?? '') }
+    line = JSON.stringify({ pid: process.pid, ...payload }) + '\n'
+  } catch {
+    return false
+  }
+  // Avoid turning a malformed renderer payload into an unbounded log file.
+  if (line.length > 2 * 1024 * 1024) return false
+  inputTraceQueue = inputTraceQueue
+    .catch(() => {})
+    .then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
+  return inputTraceQueue.then(() => true).catch(() => false)
+})
 
 // ---- Safety net: never let a stray async error abort the whole app ----
 // chokidar (and other fs/network async work) can reject with EACCES/EPERM when
@@ -271,6 +303,9 @@ app.whenReady().then(() => {
     allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
   )
   createWindow()
+  if (inputTraceEnabled) {
+    console.log(`HorseMD input trace: ${inputTracePath()}`)
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) focusMainWindow()
   })

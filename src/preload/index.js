@@ -7,6 +7,11 @@ const on = (channel) => (cb) => {
   return () => ipcRenderer.removeListener(channel, fn)
 }
 
+// Manual rich/source bug reproduction is opt-in at process launch. The main
+// process keeps the switch authoritative; the renderer only pays the tracing
+// cost when the switch is present.
+const inputTraceEnabled = ipcRenderer.sendSync('debug:inputTraceEnabled') === true
+
 const api = {
   // dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -111,6 +116,12 @@ const api = {
   setMenuKeybindings: (accelerators) => ipcRenderer.invoke('menu:setKeybindings', accelerators),
   getMenuKeybindings: () => ipcRenderer.invoke('menu:getKeybindings'),
   getMenuSnapshot: () => ipcRenderer.invoke('menu:getSnapshot'),
+
+  // Development-only manual input tracing. The main process ignores these
+  // calls unless HorseMD was launched with --horsemd-input-trace.
+  inputTraceEnabled,
+  getInputTraceInfo: () => ipcRenderer.invoke('debug:inputTraceInfo'),
+  writeInputTrace: (entry) => ipcRenderer.invoke('debug:inputTrace', entry),
 
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.

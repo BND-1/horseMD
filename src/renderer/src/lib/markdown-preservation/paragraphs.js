@@ -541,19 +541,34 @@ export const preserveMiddleEmptyBlock = ({
   const nextGap = next.slice(nextBefore.end, nextAfter.start)
   if (directBlockInsertion) {
     const previousGap = previous.slice(previousBefore.end, previousAfter.start)
-    if (!nextGap.endsWith(previousGap)) return null
+    const insertionAfterGap = nextGap.startsWith(previousGap)
+    const insertionBeforeGap = nextGap.endsWith(previousGap)
+    if (!insertionAfterGap && !insertionBeforeGap) return null
+
+    // Enter at the start of the following paragraph leaves the canonical
+    // `<br />` placeholder in the shared gap, while the next typed block is
+    // inserted *after* that placeholder and immediately before the following
+    // authored paragraph. The old branch only accepted the opposite ordering
+    // (new block before the existing gap), so the first character after a
+    // middle Enter fell back to `visible-stream-mismatch`; every later
+    // character then accumulated against the stale authored source.
     const insertedGap = canonicalFreshTextToSource(withoutStandaloneEmptyBlockLines(
-      nextGap.slice(0, nextGap.length - previousGap.length)
+      insertionAfterGap
+        ? nextGap.slice(previousGap.length)
+        : nextGap.slice(0, nextGap.length - previousGap.length)
     ))
     if (!insertedGap) return null
+    const insertionPoint = insertionAfterGap
+      ? sourceAfter.start
+      : sourceBeforeContentEnd
     return {
-      markdown: source.slice(0, sourceBeforeContentEnd) +
+      markdown: source.slice(0, insertionPoint) +
         adaptCanonicalRegionToSource(
           insertedGap,
           source,
-          { start: sourceBeforeContentEnd, end: sourceBeforeContentEnd }
+          { start: insertionPoint, end: insertionPoint }
         ) +
-        source.slice(sourceBeforeContentEnd),
+        source.slice(insertionPoint),
       preserved: true,
       reason: 'middle-block-inserted'
     }

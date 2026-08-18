@@ -789,6 +789,66 @@ assert.equal(
   'a newly typed compact list must keep its authored marker when Enter adds another item'
 )
 
+// A pre-existing diverged list can precede a newly-created ordered list. The
+// diverged nested-list mapper must preserve the target list's actual authored
+// kind: only a source row written as `- 1. text` may receive `- 2. text`.
+const divergedOrderedContinuation = preserveRichMarkdownSource(
+  [
+    '- 1. source nested',
+    '- source sibling',
+    '',
+    '###### target',
+    '',
+    '1. first',
+    '',
+    'after'
+  ].join('\n'),
+  [
+    '* <br />',
+    '',
+    '  1. source nested',
+    '',
+    '* source sibling',
+    '',
+    '###### target',
+    '',
+    '1. first',
+    '',
+    'after'
+  ].join('\n'),
+  [
+    '* <br />',
+    '',
+    '  1. source nested',
+    '',
+    '* source sibling',
+    '',
+    '###### target',
+    '',
+    '1. first',
+    '2. <br />',
+    '',
+    'after'
+  ].join('\n')
+)
+assert.equal(divergedOrderedContinuation.preserved, true)
+assert.equal(
+  divergedOrderedContinuation.markdown,
+  [
+    '- 1. source nested',
+    '- source sibling',
+    '',
+    '###### target',
+    '',
+    '1. first',
+    '2. ',
+    '',
+    '',
+    'after'
+  ].join('\n'),
+  'a newly-created ordered item must not inherit the diverged mapper’s bullet wrapper'
+)
+
 assert.equal(
   preserveRichMarkdownSource(
     '已有正文追加正文\n\n- \n',

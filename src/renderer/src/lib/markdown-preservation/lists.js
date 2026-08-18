@@ -1825,11 +1825,20 @@ export const preserveDivergedNestedListChange = ({
           : sourceList.start + applyOffset
       const anchorHasEol = Boolean(anchorRow && anchorRow.breakEnd > anchorRow.end)
       const leading = insertionCursor == null && anchorRow && !anchorHasEol ? eol : ''
+      const sourceBullet = anchorRow && /^[-+*]$/.test(anchorRow.token)
+        ? anchorRow.token
+        : authoredBullet
+      const sourceOrdered = anchorRow && /^\d/.test(anchorRow.token)
+      const orderedToken = sourceOrdered
+        ? `${nextItem.token.slice(0, -1)}${anchorRow.token.slice(-1)}`
+        : nextItem.token
       const prefix = !nextItem.token
         ? ' '.repeat(Math.max(1, Number(nextItem.indent) || 2))
         : /^\d/.test(nextItem.token)
-          ? `${authoredBullet} ${nextItem.token} `
-          : `${' '.repeat(Math.max(0, Number(nextItem.indent) || 0))}${authoredBullet} `
+          ? sourceOrdered
+            ? `${orderedToken} `
+            : `${sourceBullet} ${nextItem.token} `
+          : `${' '.repeat(Math.max(0, Number(nextItem.indent) || 0))}${sourceBullet} `
       const inserted = leading + prefix + canonicalTextToSource(nextItem.text) + eol
       output = output.slice(0, insertAt) + inserted + output.slice(insertAt)
       insertionCursor = insertAt + inserted.length

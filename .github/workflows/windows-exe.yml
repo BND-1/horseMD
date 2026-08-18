@@ -1,0 +1,51 @@
+name: Windows EXE
+
+# Manual Windows installer build for testing. This workflow uploads the EXE as
+# a workflow artifact only; it never creates or updates a GitHub Release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build bundles
+        run: npm run build
+
+      - name: Build Windows NSIS installer
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Verify EXE artifact
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path dist -Filter '*.exe' -File
+          if ($files.Count -eq 0) {
+            Write-Error 'No Windows EXE was produced.'
+          }
+          $files | ForEach-Object {
+            Write-Host "Found: $($_.FullName) ($($_.Length) bytes)"
+          }
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorseMD-windows-exe-${{ github.run_number }}
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 7

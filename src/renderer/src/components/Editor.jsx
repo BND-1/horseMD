@@ -35,6 +35,7 @@ import { createEditorApi } from './editor-api.js'
 import { useEditorLightboxControls } from './editor-lightbox.js'
 import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
+import { mountEditorInputTrace, traceEditorEvent } from './editor-input-trace.js'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 import {
   generatedScratchMarkdown,
@@ -476,6 +477,22 @@ export default function Editor({
     }
 
     const handleSourceTransactions = (transactions, oldState, newState) => {
+      traceEditorEvent('prosemirror-transactions', {
+        transactions: (transactions || []).map((transaction) => ({
+          docChanged: transaction?.docChanged || false,
+          selection: {
+            anchor: transaction?.selection?.anchor ?? null,
+            head: transaction?.selection?.head ?? null,
+            from: transaction?.selection?.from ?? null,
+            to: transaction?.selection?.to ?? null
+          },
+          steps: (transaction?.steps || []).map((step) => step?.toJSON?.() || {
+            type: step?.constructor?.name || 'unknown'
+          })
+        })),
+        oldDoc: oldState?.doc?.toJSON?.() || null,
+        newDoc: newState?.doc?.toJSON?.() || null
+      })
       // Keep a captured list-input anchor attached to its ProseMirror block
       // even when markdownUpdated is deferred and the user has already moved
       // on to another block. Looking only at the *current* selection loses the
@@ -997,6 +1014,14 @@ export default function Editor({
               canonical
             )
           }
+          traceEditorEvent('markdown-sync', {
+            canonical,
+            previousCanonical: canonicalMarkdownRef.current,
+            source: lastMarkdownRef.current,
+            preserved: preserved?.preserved !== false,
+            reason: preserved?.reason || null,
+            markdown: preserved?.markdown ?? null
+          })
           const currentView = viewRef.current
           const selectionInList = (() => {
             const $head = currentView?.state.selection.$head
@@ -1361,9 +1386,16 @@ export default function Editor({
               ...pendingMarkdownInputIntents.filter((pending) => Date.now() - pending.at < 30000),
               pendingMarkdownInputIntent
             ]
+            traceEditorEvent('markdown-input-intent', pendingMarkdownInputIntent)
           },
           isReadOnly: () => readOnlyRef.current,
           isDestroyed: () => destroyed
+        })
+
+        mountEditorInputTrace({
+          host,
+          view,
+          cleanups
         })
 
         // Typora-style new document: first line is an empty Heading 1 (title),
