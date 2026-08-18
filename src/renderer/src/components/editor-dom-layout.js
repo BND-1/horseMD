@@ -391,7 +391,10 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
         left: Math.max(safe.left, (blockRect?.left ?? safe.left) + margin),
         right: Math.min(safe.right, (blockRect?.right ?? safe.right) - margin)
       }
-      if (horizontalSafe.right <= horizontalSafe.left) return
+      const handleHorizontalSafe = handle.dataset.role === 'row-drag-handle'
+        ? safe
+        : horizontalSafe
+      if (handleHorizontalSafe.right <= handleHorizontalSafe.left) return
 
       let handleRect = handle.getBoundingClientRect()
       const [previousShiftX, previousShiftY] = getTranslate(handle)
@@ -426,15 +429,38 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit }
         setTranslate(handle, shiftX, shiftY)
         handleRect = handle.getBoundingClientRect()
       } else {
-        const handleSafeLeft = Math.max(horizontalSafe.left, (wrapperRect?.left ?? horizontalSafe.left) + 2)
-        const handleSafeRight = Math.min(horizontalSafe.right, wrapperRect?.right ?? horizontalSafe.right)
+        // Keep the row handle in the editor gutter instead of over the first
+        // table column. Crepe's `placement: left` puts half of the handle over
+        // the row boundary; the old wrapper-based clamp then moved the whole
+        // control into the table. Prefer the narrow external strip immediately
+        // left of the wrapper, but fall back to the viewport when a narrow
+        // window leaves no room for that strip.
+        const wrapperLeft = wrapperRect?.left
+        const externalRight = Number.isFinite(wrapperLeft)
+          ? wrapperLeft - margin
+          : horizontalSafe.right
+        const externalLeft = externalRight - handleRect.width
+        const hasExternalSpace = externalLeft >= handleHorizontalSafe.left
+        const handleSafeLeft = hasExternalSpace ? externalLeft : handleHorizontalSafe.left
+        const handleSafeRight = hasExternalSpace ? externalRight : handleHorizontalSafe.right
         const shiftX = fitShift(rawRect.left, rawRect.right, handleSafeLeft, handleSafeRight)
         setTranslate(handle, shiftX, 0)
         handleRect = handle.getBoundingClientRect()
       }
 
       if (!group || group.dataset.show !== 'true' || group.offsetParent === null) return
-      const menuHorizontalSafe = block?.classList.contains('hm-table-controls-open') ? safe : horizontalSafe
+      let menuHorizontalSafe = block?.classList.contains('hm-table-controls-open') ? safe : handleHorizontalSafe
+      if (handle.dataset.role === 'row-drag-handle' && wrapperRect) {
+        // Keep the row action menu beside the row handle as well. Without this
+        // separate interval, the menu's general viewport clamp can move it back
+        // over the first column when the delete action is shown.
+        const externalRight = wrapperRect.left - margin
+        const externalLeft = externalRight - group.offsetWidth
+        const viewportSafe = menuHorizontalSafe
+        if (externalLeft >= viewportSafe.left) {
+          menuHorizontalSafe = { left: externalLeft, right: externalRight }
+        }
+      }
       const groupHeight = group.offsetHeight
       const verticalSafe = block?.classList.contains('hm-table-controls-open')
         ? { top: safe.top, bottom: safe.bottom }

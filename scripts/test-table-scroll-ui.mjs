@@ -846,7 +846,30 @@ async function verifyTableHandles(send, evaluate) {
       }))
     }
   })()`)
-    if (visible.count && visible.anyVisible) return
+    if (visible.count && visible.anyVisible) {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+      await sleep(250)
+      const retained = await evaluate(`(() => {
+        const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+        const handles = [...(block?.querySelectorAll(':scope > div > .cell-handle') || [])]
+        return handles.map((handle) => ({ role: handle.dataset.role, show: handle.dataset.show }))
+      })()`)
+      if (!retained.length || retained.some((handle) => handle.show !== 'true')) {
+        throw new Error(`desktop: table hover controls disappeared immediately after leaving: ${JSON.stringify(retained)}`)
+      }
+      await sleep(1900)
+      const dismissed = await evaluate(`(() => {
+        const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        const block = rich?.querySelectorAll('.milkdown-table-block')[1]
+        return [...(block?.querySelectorAll(':scope > div > .cell-handle') || [])]
+          .map((handle) => ({ role: handle.dataset.role, show: handle.dataset.show }))
+      })()`)
+      if (dismissed.some((handle) => handle.show === 'true')) {
+        throw new Error(`desktop: table hover controls did not dismiss after the two-second grace period: ${JSON.stringify(dismissed)}`)
+      }
+      return
+    }
   }
   if (!visible.count || !visible.anyVisible) {
     throw new Error(`desktop: table handles do not reappear on hover: ${JSON.stringify(visible)}`)
@@ -919,7 +942,7 @@ async function verifyTableActionMenuGrace(send, evaluate) {
   }
 
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
-  await sleep(1550)
+  await sleep(2200)
   const dismissed = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const handle = rich?.querySelector('.milkdown-table-block [data-role="col-drag-handle"]')
@@ -1029,22 +1052,30 @@ async function verifyTableControlBounds(send, evaluate) {
     const editor = rich?.closest('.editor-scroll')
     const block = [...(rich?.querySelectorAll('.milkdown-table-block') || [])].at(-1)
     const group = block?.querySelector('[data-role="row-drag-handle"] .button-group[data-show="true"]')
+    const handle = block?.querySelector('[data-role="row-drag-handle"][data-show="true"]')
+    const wrapper = block?.querySelector('.table-wrapper')
     const bounds = editor?.getBoundingClientRect()
     const blockBounds = block?.getBoundingClientRect()
+    const handleRect = handle?.getBoundingClientRect()
+    const wrapperRect = wrapper?.getBoundingClientRect()
     const rect = group?.getBoundingClientRect()
     const button = group?.querySelector('button')
     const buttonRect = button?.getBoundingClientRect()
     return {
       bounds: bounds?.toJSON(),
       blockBounds: blockBounds?.toJSON(),
+      handle: handleRect?.toJSON(),
+      wrapper: wrapperRect?.toJSON(),
       group: rect?.toJSON(),
       paintRelaxed: block?.classList.contains('hm-table-controls-open'),
       buttonHit: !!button && button.contains(document.elementFromPoint(buttonRect.left + buttonRect.width / 2, buttonRect.top + buttonRect.height / 2))
     }
   })()`)
   if (!row.group || row.group.top < row.bounds.top + 7 || row.group.left < row.bounds.left + 7 ||
-      row.group.right > row.bounds.right - 7 || !row.paintRelaxed || !row.buttonHit) {
-    throw new Error(`desktop: row controls escaped the editor viewport: ${JSON.stringify(row)}`)
+      row.group.right > row.bounds.right - 7 || !row.paintRelaxed || !row.buttonHit ||
+      !row.handle || !row.wrapper || row.handle.right > row.wrapper.left - 1 ||
+      row.group.right > row.wrapper.left - 1) {
+    throw new Error(`desktop: row controls are not outside the table: ${JSON.stringify(row)}`)
   }
 }
 
