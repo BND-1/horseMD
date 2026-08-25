@@ -252,18 +252,37 @@ Only after the `Editor.jsx` dirty baseline is safely checkpointed:
 - `Editor.jsx` authority wiring in its own commit only after the existing dirty baseline is safe,
 - never stage unrelated RS changes to make the migration commit convenient.
 
+## Phase 1 progress ledger
+
+### 2026-08-25 — ownership contract
+
+- plan: `612dab7 docs(editor): plan plain paragraph authority`,
+- classifier/core implementation: `fd1116f refactor(editor): classify plain paragraph authority`,
+- family: `plain-paragraph-inline-replace`,
+- paragraph split is proven to be a real `ReplaceStep` lookalike and is rejected as `phase1-structural-slice` before mapping.
+
+### 2026-08-25 — deferred callback chain prerequisite
+
+Live qualification proved that one scalar pending checkpoint loses A -> B -> C transaction evidence before deferred `markdownUpdated`. The dedicated follow-up plan and implementation are recorded in `docs/transaction-first-source-sync-phase1-shadow-chain-plan.md`:
+
+- plan: `5aa6f9d`,
+- core accumulator: `c688d5b`,
+- rapid live qualification: `d66bedf`.
+
+This prerequisite is now satisfied in core and in the current shadow-only working-tree wiring. Normal application publication remains legacy-owned.
+
 ## Exit criteria
 
 Phase 1 is complete only when:
 
-- [ ] the authoritative family is explicitly classified,
-- [ ] structural `ReplaceStep` lookalikes are rejected before mapping,
-- [ ] byte/semantic proof remains fail-closed,
-- [ ] shadow evidence covers insertion/deletion/replacement and key negative families,
-- [ ] exact BOM/CRLF behavior is covered,
+- [x] the authoritative family is explicitly classified,
+- [x] structural `ReplaceStep` lookalikes are rejected before mapping,
+- [x] byte/semantic proof remains fail-closed,
+- [x] shadow evidence covers insertion/deletion/replacement and key negative families,
+- [x] exact BOM/CRLF behavior is covered,
 - [ ] authoritative coordinator tests prove transaction publication and fallback,
 - [ ] live authority is committed from a clean Editor baseline,
-- [ ] source/integrity/UI regressions remain green,
+- [x] current shadow source/integrity/UI regressions remain green,
 - [ ] manual long-document qualification shows no first-divergence integrity failure.
 
 Until every live-promotion criterion is met, Phase 1 remains a migration branch capability rather than normal application behavior.

@@ -299,15 +299,60 @@ Therefore chain support is a **promotion prerequisite**, not an optional optimiz
 
 Because `Editor.jsx` has a large pre-existing dirty diff, its live chain wiring remains subject to the same isolation rule as Phase 0: do not stage unrelated RS work merely to make a migration commit convenient.
 
+## Migration ledger
+
+### 2026-08-25 — discovery and plan
+
+- live two-character selection replacement (`ZZ`) failed to produce byte-equal shadow evidence,
+- the identical case reduced to one committed character (`Z`) passed the full live matrix,
+- this isolated the failure to deferred-callback transaction evidence loss rather than Phase 1 family classification,
+- plan commit: `5aa6f9d docs(editor): plan shadow transaction chains`.
+
+### 2026-08-25 — pure chain accumulator
+
+- added `advanceTransactionFirstSourceSync()`,
+- preserved immutable authored `baselineSource` / `baselineDoc`,
+- mapped each later owned transaction against the previous transaction candidate,
+- made unsupported members, document gaps, changed baselines, and source-map failures reject the pending chain,
+- added bounded `chainLength` / `chainReasons` telemetry without full Markdown bytes,
+- core commit: `c688d5b refactor(editor): accumulate shadow transaction chains`,
+- dedicated core regression: `scripts/test-transaction-first-shadow-chain.mjs`.
+
+### 2026-08-25 — live qualification
+
+The shadow-only `Editor.jsx` working-tree wiring now calls `advanceTransactionFirstSourceSync()` instead of overwriting a scalar capture. It remains intentionally uncommitted because the file still contains substantial pre-existing RS/integrity work that cannot be staged as an independent compiling migration commit.
+
+The original two-character live failure is restored in the committed UI test and now passes with `chainLength >= 2`:
+
+- live test commit: `d66bedf test(editor): qualify rapid transaction shadow chains`,
+- ordinary insertion: owned + byte-equal,
+- ordinary deletion: owned + byte-equal,
+- two-character selection replacement: owned + byte-equal + accumulated chain,
+- Markdown-sensitive `*`: transaction rejected, legacy fallback,
+- paragraph Enter/split: `phase1-structural-slice`, legacy fallback,
+- list-item Backspace: structural rejection, legacy fallback,
+- no source-sync warning toast in expected fallback cases,
+- legacy remains the only live publisher.
+
+Validation after live chain wiring:
+
+- `node scripts/test-editor-source-map.mjs` — PASS, 11 groups,
+- `npm run test:source-transaction-sync` — PASS,
+- `node scripts/test-transaction-first-source-sync.mjs` — PASS,
+- `node scripts/test-transaction-first-shadow-chain.mjs` — PASS,
+- `npm run test:source-fidelity-probes` — PASS, 35/35,
+- `npm run build` — PASS,
+- `node scripts/test-transaction-first-shadow-ui.mjs` — PASS.
+
 ## Exit criteria
 
 This slice is complete when:
 
-- [ ] consecutive owned transactions use the prior shadow candidate as their source baseline,
-- [ ] the original authored baseline remains available for callback ownership,
-- [ ] two-character selection replacement is byte-equal in live Electron shadow mode,
-- [ ] unsupported middle transactions reject the complete chain,
-- [ ] stale/gapped chains fail closed without a warning toast,
-- [ ] legacy remains the only live publisher,
-- [ ] source map, transaction mapper, fidelity probes, build, and shadow UI regressions remain green,
-- [ ] implementation and evidence are committed separately from unrelated dirty-tree work.
+- [x] consecutive owned transactions use the prior shadow candidate as their source baseline,
+- [x] the original authored baseline remains available for callback ownership,
+- [x] two-character selection replacement is byte-equal in live Electron shadow mode,
+- [x] unsupported middle transactions reject the complete chain,
+- [x] stale/gapped chains fail closed in core policy; expected live fallback remains toast-free,
+- [x] legacy remains the only live publisher,
+- [x] source map, transaction mapper, fidelity probes, build, and shadow UI regressions remain green,
+- [ ] implementation and evidence are committed separately from unrelated dirty-tree work — core/docs/UI evidence is isolated; the live `Editor.jsx` wiring remains deliberately uncommitted until its pre-existing dirty baseline is safe.
