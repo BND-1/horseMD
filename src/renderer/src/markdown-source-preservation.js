@@ -41,6 +41,7 @@ import {
   preserveDivergedBlockTextChange,
   preserveDivergedVisibleDelete,
   preserveDivergedTailBlockAppend,
+  preserveDivergedTailImageDelete,
   preserveChangedLineRegion,
   preserveLocallyAlignedTextChange,
   preserveOrdinalLineTextChange,
@@ -383,6 +384,17 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     return { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-table-change' }
   }
   if (sourceVisible.text !== previousVisible.text) {
+    // RS-73: the rich editor can delete a final image atom that canonical has
+    // attached to a nested list even though the authored image row remains
+    // top-level. The image has no visible characters, so own this exact row
+    // deletion before any visible-stream mapper is allowed to guess.
+    const divergedTailImageDelete = preserveDivergedTailImageDelete({
+      source: sourceMarkdown,
+      previous,
+      next
+    })
+    if (divergedTailImageDelete) return divergedTailImageDelete
+
     // remark parses `- 1. 甲乙` as a nested ordered list, so the canonical
     // visible stream drops the `1. ` item text while the authored source
     // keeps it — the whole document's visible stream diverges and any

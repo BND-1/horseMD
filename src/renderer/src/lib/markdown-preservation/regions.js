@@ -361,6 +361,76 @@ export const preserveDivergedBlockTextChange = ({
   }
 }
 
+// RS-73: a source-authored standalone tail image can be parsed by remark as an
+// inline atom continuing the deepest preceding ordered-list paragraph. The
+// serializer then indents that image under the list, so a later rich Backspace
+// deletes the canonical image row while the authored source/canonical streams
+// are already permanently diverged. Generic visible mapping cannot own this:
+// image atoms contribute zero visible characters and a long document can have
+// unrelated earlier divergence. Claim only the exact final-image deletion.
+export const preserveDivergedTailImageDelete = ({ source, previous, next }) => {
+  const sourceText = String(source || '')
+  const previousText = String(previous || '')
+  const nextText = String(next || '')
+  if (!sourceText || !previousText || previousText === nextText) return null
+
+  const stripTrailingLineEndings = (value) => String(value || '').replace(/(?:\r\n|\r|\n)+$/, '')
+  const lastNonBlankIndex = (lines) => {
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      if (lines[index].text.trim()) return index
+    }
+    return -1
+  }
+  const previousLines = markdownLines(previousText)
+  const previousImageIndex = lastNonBlankIndex(previousLines)
+  if (previousImageIndex < 1) return null
+  const previousImageLine = previousLines[previousImageIndex]
+  const imageToken = previousImageLine.text.trim()
+  if (!imageToken.startsWith('![') || !imageToken.includes('](') || !imageToken.endsWith(')')) {
+    return null
+  }
+
+  // Removing this one final row must explain the complete canonical change.
+  // Do not ignore blank-line edits in the middle of the document; only terminal
+  // line-ending count is serializer-owned formatting here.
+  if (
+    stripTrailingLineEndings(previousText.slice(0, previousImageLine.start)) !==
+    stripTrailingLineEndings(nextText)
+  ) return null
+
+  let previousAnchorIndex = previousImageIndex - 1
+  while (previousAnchorIndex >= 0 && !previousLines[previousAnchorIndex].text.trim()) {
+    previousAnchorIndex -= 1
+  }
+  if (previousAnchorIndex < 0) return null
+  const previousAnchorVisible = sourceVisibleIndex(previousLines[previousAnchorIndex].text).text.trim()
+  if (!previousAnchorVisible) return null
+
+  const sourceLines = markdownLines(sourceText)
+  const sourceMatches = sourceLines.filter((line) => line.text.trim() === imageToken)
+  if (sourceMatches.length !== 1) return null
+  const sourceImageLine = sourceMatches[0]
+  if (sourceLines[lastNonBlankIndex(sourceLines)]?.start !== sourceImageLine.start) return null
+
+  const sourceImageIndex = sourceLines.findIndex((line) => line.start === sourceImageLine.start)
+  let sourceAnchorIndex = sourceImageIndex - 1
+  while (sourceAnchorIndex >= 0 && !sourceLines[sourceAnchorIndex].text.trim()) {
+    sourceAnchorIndex -= 1
+  }
+  if (sourceAnchorIndex < 0) return null
+  if (
+    sourceVisibleIndex(sourceLines[sourceAnchorIndex].text).text.trim() !== previousAnchorVisible
+  ) return null
+
+  const followingEol = sourceText.slice(sourceImageLine.end).match(/^(?:\r\n|\r|\n)/)?.[0] || ''
+  const removeEnd = sourceImageLine.end + followingEol.length
+  return {
+    markdown: sourceText.slice(0, sourceImageLine.start) + sourceText.slice(removeEnd),
+    preserved: true,
+    reason: 'diverged-tail-image-delete'
+  }
+}
+
 // A deletion that spans several canonical blocks (a whole tail, or rows from
 // several list trees) inside a diverged document defeats every localized
 // mapper above and previously rolled back to the OLD source — the deletion

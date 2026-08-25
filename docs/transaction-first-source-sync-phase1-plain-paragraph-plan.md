@@ -291,6 +291,25 @@ Validation after the policy gate:
 - build — PASS,
 - live shadow UI — PASS; normal application publication remains legacy-owned.
 
+### 2026-08-25 — clean-baseline A/B and RS-73
+
+Before committing live authority, the current dirty `Editor.jsx` shadow wiring was temporarily removed and the legacy source-fidelity baseline was rebuilt and exercised independently. The same family failures reproduced with shadow wiring absent and after it was restored, so transaction-first observation is not the cause of those divergences.
+
+The first actionable baseline divergence was `123321.md + plain` (RS-73): after deleting the appended marker, structural Backspace moved into the previous deeply nested ordered item and the next Backspace deleted an inline image atom. Authored source kept that image as a standalone tail row while canonical attached it to the nested list; because the atom has no visible characters, the legacy generic mapper returned `visible-stream-mismatch`. This was fixed in the legacy preservation path with a strict `diverged-tail-image-delete` owner rather than by widening transaction-first eligibility or visible mapping.
+
+Post-fix evidence:
+
+- RS-73 dedicated core regression — PASS,
+- markdown-preservation regression — PASS,
+- build — PASS,
+- focused real `123321.md` first-divergence trace — `ok=true`, no warning toast,
+- all five `123321.md` family cells — PASS,
+- complete 4×5 family matrix — **still not all green**; independent failures remain in `HorseMD-0.13.33-引用后输入手测.md` and `反馈.md`.
+
+Therefore Phase 1 live authority remains blocked. The migration gate is doing its intended job: baseline failures are being separated from shadow behavior before publication ownership changes. Do not mark the clean-baseline or long-document criteria complete until the remaining first divergences are independently resolved or explicitly quarantined by a proven contract.
+
+See `docs/diverged-tail-image-delete-regression.md` and RS-73 in `docs/rich-source-fidelity-bug-family.md`.
+
 ## Exit criteria
 
 Phase 1 is complete only when:
