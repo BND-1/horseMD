@@ -8,8 +8,8 @@ import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 const root = `/tmp/horsemd-transaction-first-shadow-${process.pid}`
 const file = join(root, 'shadow.md')
 const port = Number(process.env.CDP_PORT || 10172)
-const authored = '# Shadow\n\nalpha\n\nbeta\n'
-const expected = '# Shadow\n\nalphaX\n\nbeta\\*\n'
+const authored = '# Shadow\n\nalpha\n\nbeta\n\n- item\n'
+const expected = '# Shadow\n\nalphaX\n\nbeta\\*\n\nitem\n'
 
 async function waitFor(check, message, attempts = 100) {
   for (let index = 0; index < attempts; index += 1) {
@@ -132,6 +132,29 @@ async function main() {
     assert.equal(rejectedTrace.promotionEligible, false)
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'unsupported shadow edit must not show a sync warning')
 
+    await evaluate(`window.__hmTransactionFirstTrace = []`)
+    await clickTextEnd(evaluate, send, 'item')
+    await pressKey(send, { key: 'Home', code: 'Home', delayMs: 25 })
+    await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 40 })
+
+    const structuralTrace = await waitFor(async () => {
+      const trace = await shadowTrace(evaluate)
+      return trace.find((entry) =>
+        entry.phase === 'reconcile' &&
+        entry.ownership === 'rejected' &&
+        entry.comparison === 'transaction-rejected'
+      ) || null
+    }, 'list Backspace was not rejected by the plain-paragraph transaction owner')
+
+    assert.notEqual(
+      structuralTrace.transactionReason,
+      'plain-text-transactions',
+      'structural list Backspace must never be claimed as a plain-text transaction'
+    )
+    assert.equal(structuralTrace.publicationOwner, 'legacy', 'structural edit must remain on legacy publication')
+    assert.equal(structuralTrace.promotionEligible, false)
+    assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'structural shadow rejection must not show a sync warning')
+
     assert.equal(await toggleSource(evaluate), true, 'could not switch to source mode')
     const source = await waitFor(
       () => evaluate(`([...document.querySelectorAll('textarea.source-editor')]
@@ -140,7 +163,7 @@ async function main() {
     )
     assert.equal(source, expected, 'shadow rollout changed or lost the legacy-published source')
 
-    console.log('PASS transaction-first shadow UI: plain ReplaceStep is byte-equal, Markdown syntax rejects, legacy remains publisher')
+    console.log('PASS transaction-first shadow UI: plain ReplaceStep is byte-equal; Markdown syntax and list structure reject; legacy remains publisher')
   } finally {
     if (app) await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })
