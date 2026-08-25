@@ -271,6 +271,26 @@ Live qualification proved that one scalar pending checkpoint loses A -> B -> C t
 
 This prerequisite is now satisfied in core and in the current shadow-only working-tree wiring. Normal application publication remains legacy-owned.
 
+### 2026-08-25 — authoritative publication policy
+
+- implementation: `ba30242 refactor(editor): gate transaction-first authority`,
+- exported family allowlist contract: `TRANSACTION_FIRST_FAMILIES.PLAIN_PARAGRAPH_INLINE_REPLACE`,
+- exported pure selector: `selectTransactionFirstPublication()`,
+- `AUTHORITATIVE` mode alone no longer grants publication ownership,
+- transaction publication requires: matching snapshot, successful mapped transaction, complete chain family, and explicit family allowlist,
+- shadow/observe, stale snapshot, rejected transaction, missing/mismatched/unallowed family all fall back to legacy (or the source checkpoint when no legacy candidate exists),
+- immediate and deferred reconcile coordinators now share the same selector,
+- dedicated policy regression: `scripts/test-transaction-first-authority-policy.mjs`.
+
+Validation after the policy gate:
+
+- authority policy/core/chain tests — PASS,
+- source map — PASS, 11 groups,
+- legacy source transaction mapper — PASS,
+- source fidelity probes — PASS, 35/35,
+- build — PASS,
+- live shadow UI — PASS; normal application publication remains legacy-owned.
+
 ## Exit criteria
 
 Phase 1 is complete only when:
@@ -280,7 +300,7 @@ Phase 1 is complete only when:
 - [x] byte/semantic proof remains fail-closed,
 - [x] shadow evidence covers insertion/deletion/replacement and key negative families,
 - [x] exact BOM/CRLF behavior is covered,
-- [ ] authoritative coordinator tests prove transaction publication and fallback,
+- [x] authoritative coordinator tests prove transaction publication and fallback behind an explicit family allowlist,
 - [ ] live authority is committed from a clean Editor baseline,
 - [x] current shadow source/integrity/UI regressions remain green,
 - [ ] manual long-document qualification shows no first-divergence integrity failure.
