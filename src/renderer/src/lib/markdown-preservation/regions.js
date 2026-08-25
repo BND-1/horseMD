@@ -653,6 +653,44 @@ export const preserveChangedLineRegion = ({
   }
 }
 
+// RS-75: two adjacent empty list items have no visible body text, so a
+// visible-line comparator can mistake "final body became empty" for "final row
+// disappeared". Raw tail identity decides ownership before the broad tail
+// delete proof runs. Exact marker token/spacing is intentional: `1.` and `1)`
+// are distinct authored slots even when their visible bodies are both empty.
+const sameTailListSlotBodyEmptied = (previous, next) => {
+  const rawTailSlot = (value) => {
+    const body = String(value || '').replace(/(?:\r?\n)+$/, '')
+    const lineStart = body.lastIndexOf('\n') + 1
+    let line = body.slice(lineStart)
+    if (line.endsWith('\r')) line = line.slice(0, -1)
+    return { prefix: body.slice(0, lineStart), line }
+  }
+  const listTailSlot = (line) => String(line || '').match(
+    /^(\s*)([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/
+  )
+  const emptyListBody = (body) => {
+    const text = String(body || '').trim()
+    return text === '' || /^<br\s*\/?>$/i.test(text)
+  }
+
+  const previousTail = rawTailSlot(previous)
+  const nextTail = rawTailSlot(next)
+  if (previousTail.prefix !== nextTail.prefix || previousTail.line === nextTail.line) return false
+
+  const previousSlot = listTailSlot(previousTail.line)
+  const nextSlot = listTailSlot(nextTail.line)
+  return Boolean(
+    previousSlot &&
+    nextSlot &&
+    previousSlot[1] === nextSlot[1] &&
+    previousSlot[2] === nextSlot[2] &&
+    previousSlot[3] === nextSlot[3] &&
+    !emptyListBody(previousSlot[4]) &&
+    emptyListBody(nextSlot[4])
+  )
+}
+
 // Deeply diverged documents (unclosed backticks, escaped markers, zero-width
 // sentinels) fail every full-document visible-stream mapper. Typing at the
 // document end in such a file frequently folds the typed block into the
@@ -809,7 +847,8 @@ export const preserveDivergedTailBlockAppend = ({
   const previousLineCount = previous.split('\n').filter((line) => line === previousLine).length
   const nextLineCount = next.split('\n').filter((line) => line === previousLine).length
   const nextTailLine = lastVisibleLine(next)?.text
-  const deleteCase = start >= previousLineStart &&
+  const deleteCase = !sameTailListSlotBodyEmptied(previous, next) &&
+    start >= previousLineStart &&
     nextLineCount < previousLineCount &&
     nextLineCount === 0 &&
     // A deleted trailing row leaves the previous authored row as canonical's
