@@ -192,15 +192,15 @@ A plain-text family is promotable only after representative sessions show owned 
 
 Phase 0 shadow wiring is complete only when:
 
-- [ ] a live PM transaction produces a staged transaction-first checkpoint,
-- [ ] the checkpoint is compared with the final legacy candidate in `markdownUpdated`,
-- [ ] normal shadow mode cannot publish transaction bytes,
-- [ ] stale source/doc checkpoints fail closed without a toast,
-- [ ] unsupported structural edits remain rejected,
-- [ ] telemetry is bounded and does not log full documents by default,
-- [ ] existing source/integrity regressions remain green,
-- [ ] targeted diff checks pass for the new migration files/hunks,
-- [ ] migration work is committed separately from unrelated dirty-tree changes.
+- [x] a live PM transaction produces a staged transaction-first checkpoint,
+- [x] the checkpoint is compared with the final legacy candidate in `markdownUpdated`,
+- [x] normal shadow mode cannot publish transaction bytes,
+- [x] stale source/doc checkpoints fail closed without a toast,
+- [x] unsupported structural edits remain rejected,
+- [x] telemetry is bounded and does not log full documents by default,
+- [x] existing source/integrity regressions remain green,
+- [x] targeted diff checks pass for the new migration files/hunks,
+- [ ] migration work is committed separately from unrelated dirty-tree changes — clean core/docs/UI commits are isolated; the live `Editor.jsx` wiring remains intentionally uncommitted until its pre-existing dirty baseline can be checkpointed safely.
 
 ## Commit / audit strategy
 
@@ -258,12 +258,23 @@ Validation after live wiring:
 - `npm run test:source-transaction-sync` — PASS,
 - `node scripts/test-transaction-first-source-sync.mjs` — PASS,
 - `npm run test:source-fidelity-probes` — PASS, 35/35,
-- `npm run build` — PASS.
+- `npm run build` — PASS,
+- `git diff --check -- src/renderer/src/components/Editor.jsx` — PASS.
+
+Live shadow qualification:
+
+- `9340d33 test(editor): qualify transaction-first shadow UI` added a real Electron/CDP check for an owned plain `ReplaceStep` and a Markdown-sensitive `*` rejection,
+- `37f2b6f test(editor): guard shadow structural fallback` added a real list-item Backspace rejection boundary,
+- plain paragraph insertion produced `owned + byte-equal + publicationOwner=legacy`,
+- literal `*` produced `transaction-rejected` with `syntax-sensitive-insert`; legacy safely published `\\*`,
+- list-item Backspace stayed `rejected`; legacy converted `- item` to the ordinary paragraph `item`,
+- all three live paths completed without a source-sync warning toast.
 
 Audit note: `Editor.jsx` already contained a large pre-existing uncommitted RS/integrity diff. The new shadow import/state/capture/reconcile lines share hunk bases with that work, so staging the file against HEAD would also stage unrelated changes. Per this plan's isolation rule, the live wiring is intentionally left uncommitted rather than mixing histories. It should be committed only after the existing Editor baseline is safely checkpointed or when the migration hunks can be isolated without importing unrelated RS work.
 
 Next qualification step:
 
-- exercise real edits with `__hmTransactionSourceShadow` enabled,
-- inspect `__hmTransactionFirstTrace` for owned/rejected/equal/diverged/stale distributions,
-- do not promote plain paragraph edits until representative live evidence is byte-equal and unsupported structural families remain rejected.
+- add duplicate-paragraph and rapid/coalesced-edit live cases so stale/snapshot behavior is exercised under real callback timing,
+- inspect `__hmTransactionFirstTrace` distributions across a longer editing session,
+- resolve the pre-existing `Editor.jsx` dirty-baseline checkpoint before any authoritative wiring is committed,
+- do not promote plain paragraph edits merely because one happy path is byte-equal; promotion requires the Phase 1 plan and its explicit ownership matrix.
