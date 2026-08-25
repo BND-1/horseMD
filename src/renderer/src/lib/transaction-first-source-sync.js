@@ -331,13 +331,195 @@ export function captureTransactionFirstSourceSync({
   return {
     mode: rolloutMode,
     source: original,
+    baselineSource: original,
     oldDoc: oldState?.doc || null,
+    baselineDoc: oldState?.doc || null,
     newDoc: newState?.doc || null,
     ownership: transaction.ok ? 'owned' : 'rejected',
     transaction,
     family: transaction.family || null,
+    chainLength: 1,
+    chainReasons: [transaction.reason],
     sourceMapEntries: sourceRangeMap?.entries?.length || 0,
     stepNames: stepNamesFor(transactions)
+  }
+}
+
+const rejectedChainCheckpoint = ({
+  checkpoint,
+  mode,
+  baselineSource,
+  oldState,
+  newState,
+  transactions,
+  reason
+}) => {
+  const originalBaseline = String(
+    checkpoint?.baselineSource ?? checkpoint?.source ?? baselineSource ?? ''
+  )
+  const rolloutMode = validModes.has(checkpoint?.mode)
+    ? checkpoint.mode
+    : (validModes.has(mode) ? mode : TRANSACTION_FIRST_MODES.SHADOW)
+  const chainLength = (checkpoint?.chainLength || 0) + 1
+  const stepNames = [
+    ...(checkpoint?.stepNames || []),
+    ...stepNamesFor(transactions)
+  ]
+  const chainReasons = [
+    ...(checkpoint?.chainReasons || []),
+    reason
+  ].slice(-20)
+  return {
+    mode: rolloutMode,
+    source: originalBaseline,
+    baselineSource: originalBaseline,
+    oldDoc: checkpoint?.oldDoc || oldState?.doc || null,
+    baselineDoc: checkpoint?.baselineDoc || checkpoint?.oldDoc || oldState?.doc || null,
+    newDoc: newState?.doc || checkpoint?.newDoc || null,
+    ownership: 'rejected',
+    transaction: {
+      ok: false,
+      markdown: originalBaseline,
+      reason,
+      family: null,
+      classificationReason: reason
+    },
+    family: null,
+    chainLength,
+    chainReasons,
+    sourceMapEntries: checkpoint?.sourceMapEntries || 0,
+    stepNames
+  }
+}
+
+/**
+ * Extend one pending shadow checkpoint across multiple PM dispatches that may
+ * arrive before a deferred markdownUpdated callback. The authored baseline is
+ * immutable for callback ownership, while each owned transaction maps against
+ * the exact source candidate produced by the previous transaction.
+ *
+ * A rejected member makes the whole pending chain non-promotable. We never
+ * restart from a stale authored baseline inside the same deferred callback
+ * window because that would recreate the A -> D intent-collapse problem this
+ * migration is designed to remove.
+ */
+export function advanceTransactionFirstSourceSync({
+  checkpoint = null,
+  mode = TRANSACTION_FIRST_MODES.SHADOW,
+  baselineSource,
+  transactions,
+  oldState,
+  newState,
+  buildSourceRangeMap,
+  sourceRangeMap = null,
+  blockHints = [],
+  validateMarkdown
+}) {
+  const requestedBaseline = String(baselineSource || '')
+  if (!checkpoint) {
+    const initialMap = sourceRangeMap || (
+      typeof buildSourceRangeMap === 'function'
+        ? buildSourceRangeMap({ source: requestedBaseline, doc: oldState?.doc })
+        : null
+    )
+    return captureTransactionFirstSourceSync({
+      mode,
+      source: requestedBaseline,
+      transactions,
+      oldState,
+      newState,
+      sourceRangeMap: initialMap,
+      blockHints,
+      validateMarkdown
+    })
+  }
+
+  const originalBaseline = String(checkpoint.baselineSource ?? checkpoint.source ?? '')
+  if (requestedBaseline !== originalBaseline) {
+    return rejectedChainCheckpoint({
+      checkpoint,
+      mode,
+      baselineSource: requestedBaseline,
+      oldState,
+      newState,
+      transactions,
+      reason: 'shadow-chain-baseline-changed'
+    })
+  }
+  if (!sameDocument(checkpoint.newDoc, oldState?.doc)) {
+    return rejectedChainCheckpoint({
+      checkpoint,
+      mode,
+      baselineSource: originalBaseline,
+      oldState,
+      newState,
+      transactions,
+      reason: 'shadow-chain-document-gap'
+    })
+  }
+  if (!checkpoint.transaction?.ok) {
+    return rejectedChainCheckpoint({
+      checkpoint,
+      mode,
+      baselineSource: originalBaseline,
+      oldState,
+      newState,
+      transactions,
+      reason: 'shadow-chain-prior-rejected'
+    })
+  }
+
+  const workingSource = checkpoint.transaction.markdown
+  const nextMap = typeof buildSourceRangeMap === 'function'
+    ? buildSourceRangeMap({ source: workingSource, doc: oldState?.doc })
+    : sourceRangeMap
+  if (!nextMap?.ok) {
+    return rejectedChainCheckpoint({
+      checkpoint,
+      mode,
+      baselineSource: originalBaseline,
+      oldState,
+      newState,
+      transactions,
+      reason: 'shadow-chain-source-map-failed'
+    })
+  }
+
+  const transaction = computeTransactionCandidate({
+    source: workingSource,
+    transactions,
+    oldState,
+    newState,
+    sourceRangeMap: nextMap,
+    blockHints,
+    validateMarkdown
+  })
+  const chainLength = (checkpoint.chainLength || 1) + 1
+  const stepNames = [
+    ...(checkpoint.stepNames || []),
+    ...stepNamesFor(transactions)
+  ]
+  const chainReasons = [
+    ...(checkpoint.chainReasons || []),
+    transaction.reason
+  ].slice(-20)
+
+  return {
+    mode: checkpoint.mode,
+    source: originalBaseline,
+    baselineSource: originalBaseline,
+    oldDoc: checkpoint.oldDoc || checkpoint.baselineDoc || null,
+    baselineDoc: checkpoint.baselineDoc || checkpoint.oldDoc || null,
+    newDoc: newState?.doc || null,
+    ownership: transaction.ok ? 'owned' : 'rejected',
+    transaction,
+    family: transaction.ok && checkpoint.family === transaction.family
+      ? transaction.family
+      : null,
+    chainLength,
+    chainReasons,
+    sourceMapEntries: nextMap.entries?.length || 0,
+    stepNames
   }
 }
 
@@ -360,7 +542,8 @@ export function reconcileTransactionFirstSourceSync({
   let reconcileReason
   let snapshotMatched = true
 
-  if (source !== checkpoint.source) {
+  const checkpointSource = String(checkpoint.baselineSource ?? checkpoint.source ?? '')
+  if (source !== checkpointSource) {
     comparison = 'shadow-stale-source'
     reconcileReason = 'source-checkpoint-changed'
     snapshotMatched = false
@@ -411,6 +594,8 @@ export function reconcileTransactionFirstSourceSync({
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,
+    chainLength: checkpoint.chainLength || 1,
+    chainReasons: checkpoint.chainReasons || [],
     sourceMapEntries: checkpoint.sourceMapEntries || 0,
     stepNames: checkpoint.stepNames || [],
     reconcileReason
