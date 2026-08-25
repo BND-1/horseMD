@@ -6,6 +6,8 @@ import { unified } from 'unified'
 import {
   TRANSACTION_FIRST_MODES,
   buildPlainParagraphSourceRangeMap,
+  captureTransactionFirstSourceSync,
+  reconcileTransactionFirstSourceSync,
   runTransactionFirstSourceSync
 } from '../src/renderer/src/lib/transaction-first-source-sync.js'
 
@@ -80,6 +82,66 @@ assert.equal(shadow.comparison, 'byte-equal')
 assert.equal(shadow.promotionEligible, true)
 assert.equal(shadow.publication.owner, 'legacy', 'shadow mode must never publish the transaction candidate')
 
+const stagedCheckpoint = captureTransactionFirstSourceSync({
+  mode: TRANSACTION_FIRST_MODES.SHADOW,
+  source,
+  transactions: [transaction],
+  oldState,
+  newState,
+  sourceRangeMap: sourceMap,
+  validateMarkdown: validateExpected
+})
+assert.equal(stagedCheckpoint.ownership, 'owned')
+assert.deepEqual(stagedCheckpoint.stepNames, ['ReplaceStep'])
+assert.equal(stagedCheckpoint.sourceMapEntries, 4)
+
+globalThis.__hmTransactionFirstTrace = []
+const stagedEqual = reconcileTransactionFirstSourceSync({
+  checkpoint: stagedCheckpoint,
+  currentSource: source,
+  currentDoc: newState.doc,
+  legacyResult: { markdown: expected, reason: 'legacy-fixture' }
+})
+assert.equal(stagedEqual.comparison, 'byte-equal')
+assert.equal(stagedEqual.promotionEligible, true)
+assert.equal(stagedEqual.publication.owner, 'legacy', 'staged shadow reconcile must remain behavior-neutral')
+assert.equal(stagedEqual.reconcileReason, 'matched-snapshot')
+assert.deepEqual(globalThis.__hmTransactionFirstTrace.at(-1)?.stepNames, ['ReplaceStep'])
+assert.equal(globalThis.__hmTransactionFirstTrace.at(-1)?.sourceMapEntries, 4)
+assert.equal('markdown' in globalThis.__hmTransactionFirstTrace.at(-1), false, 'trace must not include full source bytes')
+
+const stagedDiverged = reconcileTransactionFirstSourceSync({
+  checkpoint: stagedCheckpoint,
+  currentSource: source,
+  currentDoc: newState.doc,
+  legacyResult: { markdown: `${expected}legacy-only`, reason: 'legacy-fixture' }
+})
+assert.equal(stagedDiverged.comparison, 'byte-diverged')
+assert.equal(stagedDiverged.promotionEligible, false)
+assert.equal(stagedDiverged.publication.owner, 'legacy')
+
+const stagedStaleSource = reconcileTransactionFirstSourceSync({
+  checkpoint: stagedCheckpoint,
+  currentSource: `${source}external-change`,
+  currentDoc: newState.doc,
+  legacyResult: { markdown: 'legacy-safe', reason: 'legacy-fixture' }
+})
+assert.equal(stagedStaleSource.comparison, 'shadow-stale-source')
+assert.equal(stagedStaleSource.reconcileReason, 'source-checkpoint-changed')
+assert.equal(stagedStaleSource.publication.owner, 'legacy')
+
+const laterTransaction = newState.tr.insertText('Y', contentStartOf(newState.doc, 'repXeat', 0) + 1)
+const laterState = newState.apply(laterTransaction)
+const stagedStaleDoc = reconcileTransactionFirstSourceSync({
+  checkpoint: stagedCheckpoint,
+  currentSource: source,
+  currentDoc: laterState.doc,
+  legacyResult: { markdown: 'legacy-safe', reason: 'legacy-fixture' }
+})
+assert.equal(stagedStaleDoc.comparison, 'shadow-stale-document')
+assert.equal(stagedStaleDoc.reconcileReason, 'callback-document-changed')
+assert.equal(stagedStaleDoc.publication.owner, 'legacy')
+
 const observeDivergence = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.OBSERVE,
   source,
@@ -136,6 +198,26 @@ const syntaxRejected = runTransactionFirstSourceSync({
 assert.equal(syntaxRejected.ownership, 'rejected')
 assert.equal(syntaxRejected.transaction.reason, 'syntax-sensitive-insert')
 assert.equal(syntaxRejected.publication.owner, 'legacy', 'Markdown-sensitive text stays on fallback')
+
+const rejectedCheckpoint = captureTransactionFirstSourceSync({
+  mode: TRANSACTION_FIRST_MODES.SHADOW,
+  source,
+  transactions: [syntaxTransaction],
+  oldState,
+  newState: syntaxState,
+  sourceRangeMap: sourceMap,
+  validateMarkdown: () => true
+})
+const stagedRejected = reconcileTransactionFirstSourceSync({
+  checkpoint: rejectedCheckpoint,
+  currentSource: source,
+  currentDoc: syntaxState.doc,
+  legacyResult: { markdown: source, reason: 'legacy-fixture' }
+})
+assert.equal(stagedRejected.comparison, 'transaction-rejected')
+assert.equal(stagedRejected.transaction.reason, 'syntax-sensitive-insert')
+assert.equal(stagedRejected.publication.owner, 'legacy')
+delete globalThis.__hmTransactionFirstTrace
 
 const marked = schema.mark('em')
 const markedSource = '*styled*\n\nplain\n'

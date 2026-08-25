@@ -150,6 +150,44 @@ const phaseOneBatchOwned = (transactions) => {
   return changed[0].steps?.length === 1 && changed[0].steps[0]?.constructor?.name === 'ReplaceStep'
 }
 
+const stepNamesFor = (transactions) =>
+  (transactions || []).flatMap((transaction) =>
+    (transaction?.steps || []).map((step) => step?.constructor?.name || 'UnknownStep'))
+
+const computeTransactionCandidate = ({
+  source,
+  transactions,
+  oldState,
+  newState,
+  sourceRangeMap,
+  blockHints = [],
+  validateMarkdown
+}) => {
+  const original = String(source || '')
+  if (!sourceRangeMap?.ok) {
+    return {
+      ok: false,
+      markdown: original,
+      reason: sourceRangeMap?.reason || 'missing-source-range-map'
+    }
+  }
+  if (sourceRangeMap.source !== original || !sameDocument(sourceRangeMap.doc, oldState?.doc)) {
+    return { ok: false, markdown: original, reason: 'stale-source-range-map' }
+  }
+  if (!phaseOneBatchOwned(transactions)) {
+    return { ok: false, markdown: original, reason: 'phase1-batch-not-owned' }
+  }
+  return mapPlainTextTransactionsToSource({
+    source: original,
+    transactions,
+    oldState,
+    newState,
+    mapPosition: sourceRangeMap.mapPosition,
+    blockHints,
+    validateMarkdown
+  })
+}
+
 const compareCandidates = (transactionResult, legacy) => {
   if (!transactionResult?.ok) return 'transaction-rejected'
   if (!legacy) return 'legacy-unavailable'
@@ -162,6 +200,121 @@ const trace = (event) => {
   if (globalThis.__hmTransactionFirstTrace.length > 200) {
     globalThis.__hmTransactionFirstTrace.shift()
   }
+}
+
+/**
+ * Capture transaction-side evidence at dispatch time. This checkpoint is not
+ * publishable on its own; the live editor reconciles it later with the final
+ * legacy candidate produced by markdownUpdated.
+ */
+export function captureTransactionFirstSourceSync({
+  mode = TRANSACTION_FIRST_MODES.SHADOW,
+  source,
+  transactions,
+  oldState,
+  newState,
+  sourceRangeMap,
+  blockHints = [],
+  validateMarkdown
+}) {
+  const original = String(source || '')
+  const rolloutMode = validModes.has(mode) ? mode : TRANSACTION_FIRST_MODES.SHADOW
+  const transaction = computeTransactionCandidate({
+    source: original,
+    transactions,
+    oldState,
+    newState,
+    sourceRangeMap,
+    blockHints,
+    validateMarkdown
+  })
+  return {
+    mode: rolloutMode,
+    source: original,
+    oldDoc: oldState?.doc || null,
+    newDoc: newState?.doc || null,
+    ownership: transaction.ok ? 'owned' : 'rejected',
+    transaction,
+    sourceMapEntries: sourceRangeMap?.entries?.length || 0,
+    stepNames: stepNamesFor(transactions)
+  }
+}
+
+/**
+ * Compare a dispatch-time checkpoint with the exact legacy candidate that the
+ * editor is about to publish. Deferred/coalesced callbacks can make a
+ * checkpoint stale; that is telemetry, not a user-visible integrity failure.
+ */
+export function reconcileTransactionFirstSourceSync({
+  checkpoint,
+  currentSource,
+  currentDoc,
+  legacyResult = null
+}) {
+  if (!checkpoint) return null
+
+  const source = String(currentSource || '')
+  const legacy = normalizeLegacyResult(legacyResult)
+  let comparison
+  let reconcileReason
+  let snapshotMatched = true
+
+  if (source !== checkpoint.source) {
+    comparison = 'shadow-stale-source'
+    reconcileReason = 'source-checkpoint-changed'
+    snapshotMatched = false
+  } else if (!sameDocument(currentDoc, checkpoint.newDoc)) {
+    comparison = 'shadow-stale-document'
+    reconcileReason = 'callback-document-changed'
+    snapshotMatched = false
+  } else {
+    comparison = compareCandidates(checkpoint.transaction, legacy)
+    reconcileReason = 'matched-snapshot'
+  }
+
+  const promotionEligible = snapshotMatched && comparison === 'byte-equal'
+  let publication = {
+    owner: legacy ? 'legacy' : 'source-checkpoint',
+    markdown: legacy?.markdown ?? source,
+    reason: legacy?.reason || 'no-legacy-candidate'
+  }
+  if (
+    snapshotMatched &&
+    checkpoint.mode === TRANSACTION_FIRST_MODES.AUTHORITATIVE &&
+    checkpoint.transaction?.ok
+  ) {
+    publication = {
+      owner: 'transaction',
+      markdown: checkpoint.transaction.markdown,
+      reason: checkpoint.transaction.reason
+    }
+  }
+
+  const result = {
+    mode: checkpoint.mode,
+    ownership: checkpoint.ownership,
+    transaction: checkpoint.transaction,
+    legacy,
+    comparison,
+    promotionEligible,
+    reconcileReason,
+    publication
+  }
+
+  trace({
+    phase: 'reconcile',
+    mode: result.mode,
+    ownership: result.ownership,
+    transactionReason: checkpoint.transaction?.reason || 'missing-transaction-result',
+    comparison,
+    promotionEligible,
+    publicationOwner: publication.owner,
+    sourceMapEntries: checkpoint.sourceMapEntries || 0,
+    stepNames: checkpoint.stepNames || [],
+    reconcileReason
+  })
+
+  return result
 }
 
 /**
@@ -184,28 +337,15 @@ export function runTransactionFirstSourceSync({
   const rolloutMode = validModes.has(mode) ? mode : TRANSACTION_FIRST_MODES.SHADOW
   const legacy = normalizeLegacyResult(legacyResult)
 
-  let transactionResult
-  if (!sourceRangeMap?.ok) {
-    transactionResult = {
-      ok: false,
-      markdown: original,
-      reason: sourceRangeMap?.reason || 'missing-source-range-map'
-    }
-  } else if (sourceRangeMap.source !== original || !sameDocument(sourceRangeMap.doc, oldState?.doc)) {
-    transactionResult = { ok: false, markdown: original, reason: 'stale-source-range-map' }
-  } else if (!phaseOneBatchOwned(transactions)) {
-    transactionResult = { ok: false, markdown: original, reason: 'phase1-batch-not-owned' }
-  } else {
-    transactionResult = mapPlainTextTransactionsToSource({
-      source: original,
-      transactions,
-      oldState,
-      newState,
-      mapPosition: sourceRangeMap.mapPosition,
-      blockHints,
-      validateMarkdown
-    })
-  }
+  const transactionResult = computeTransactionCandidate({
+    source: original,
+    transactions,
+    oldState,
+    newState,
+    sourceRangeMap,
+    blockHints,
+    validateMarkdown
+  })
 
   const comparison = compareCandidates(transactionResult, legacy)
   const promotionEligible = comparison === 'byte-equal'
@@ -234,13 +374,16 @@ export function runTransactionFirstSourceSync({
   }
 
   trace({
+    phase: 'immediate',
     mode: result.mode,
     ownership: result.ownership,
     transactionReason: transactionResult.reason,
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,
-    sourceMapEntries: sourceRangeMap?.entries?.length || 0
+    sourceMapEntries: sourceRangeMap?.entries?.length || 0,
+    stepNames: stepNamesFor(transactions),
+    reconcileReason: 'immediate'
   })
 
   return result
