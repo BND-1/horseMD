@@ -231,14 +231,39 @@ Validation at that checkpoint:
 - `npm run test:source-transaction-sync`
 - `node scripts/test-transaction-first-source-sync.mjs`
 
-### 2026-08-25 — Phase 0 shadow live wiring
+### 2026-08-25 — Phase 0 staged shadow lifecycle
 
-Status: **in progress**
+Status: **core committed; live wiring implemented and validated in working tree**
 
-Planned files:
+Completed core work:
 
-- `src/renderer/src/lib/transaction-first-source-sync.js`
-- `scripts/test-transaction-first-source-sync.mjs`
-- `src/renderer/src/components/Editor.jsx` — exact hunk staging only
+- added dispatch-time `captureTransactionFirstSourceSync()` checkpoints,
+- added deferred `reconcileTransactionFirstSourceSync()` against the final legacy candidate,
+- added stale-source / stale-document classifications,
+- added bounded step/source-map telemetry without full-document bytes,
+- kept one-shot coordinator behavior and authoritative API available for later promotion,
+- local commit: `bcc96a0 refactor(editor): stage transaction-first shadow evidence`.
 
-Completion evidence and commit hash will be appended after validation.
+Live `Editor.jsx` wiring now exists in the working tree:
+
+- builds a plain-paragraph SourceRangeMap only behind the existing transaction shadow switch,
+- captures the dispatch-time candidate without publishing it,
+- reconciles after legacy marker restoration and integrity fallback,
+- keeps `onChange` publication on `preserved.markdown`,
+- keeps the existing opt-in primary path behavior unchanged.
+
+Validation after live wiring:
+
+- `node scripts/test-editor-source-map.mjs` — PASS, 11 groups,
+- `npm run test:source-transaction-sync` — PASS,
+- `node scripts/test-transaction-first-source-sync.mjs` — PASS,
+- `npm run test:source-fidelity-probes` — PASS, 35/35,
+- `npm run build` — PASS.
+
+Audit note: `Editor.jsx` already contained a large pre-existing uncommitted RS/integrity diff. The new shadow import/state/capture/reconcile lines share hunk bases with that work, so staging the file against HEAD would also stage unrelated changes. Per this plan's isolation rule, the live wiring is intentionally left uncommitted rather than mixing histories. It should be committed only after the existing Editor baseline is safely checkpointed or when the migration hunks can be isolated without importing unrelated RS work.
+
+Next qualification step:
+
+- exercise real edits with `__hmTransactionSourceShadow` enabled,
+- inspect `__hmTransactionFirstTrace` for owned/rejected/equal/diverged/stale distributions,
+- do not promote plain paragraph edits until representative live evidence is byte-equal and unsupported structural families remain rejected.
