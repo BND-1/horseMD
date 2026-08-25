@@ -144,7 +144,11 @@ const normalizeLegacyResult = (legacyResult) => {
   return null
 }
 
-const PHASE_ONE_PLAIN_PARAGRAPH_FAMILY = 'plain-paragraph-inline-replace'
+export const TRANSACTION_FIRST_FAMILIES = Object.freeze({
+  PLAIN_PARAGRAPH_INLINE_REPLACE: 'plain-paragraph-inline-replace'
+})
+
+const PHASE_ONE_PLAIN_PARAGRAPH_FAMILY = TRANSACTION_FIRST_FAMILIES.PLAIN_PARAGRAPH_INLINE_REPLACE
 
 const isClosedPlainTextSlice = (slice) => {
   if (!slice || slice.size === 0 || slice.content?.size === 0) return true
@@ -292,6 +296,57 @@ const compareCandidates = (transactionResult, legacy) => {
   if (!transactionResult?.ok) return 'transaction-rejected'
   if (!legacy) return 'legacy-unavailable'
   return transactionResult.markdown === legacy.markdown ? 'byte-equal' : 'byte-diverged'
+}
+
+/**
+ * Pure publication policy for transaction-first rollout. AUTHORITATIVE is only
+ * a rollout mode; it is not ownership proof by itself. A transaction may own
+ * publication only when the exact callback snapshot still matches, the mapped
+ * candidate is valid, and the complete chain family is explicitly allowlisted.
+ * Every other decision returns the existing legacy/source checkpoint bytes.
+ */
+export function selectTransactionFirstPublication({
+  mode = TRANSACTION_FIRST_MODES.SHADOW,
+  snapshotMatched = true,
+  transaction = null,
+  family = transaction?.family || null,
+  allowedFamilies = [],
+  legacyResult = null,
+  fallbackSource = ''
+}) {
+  const rolloutMode = validModes.has(mode) ? mode : TRANSACTION_FIRST_MODES.SHADOW
+  const legacy = normalizeLegacyResult(legacyResult)
+  const fallback = {
+    owner: legacy ? 'legacy' : 'source-checkpoint',
+    markdown: legacy?.markdown ?? String(fallbackSource || ''),
+    reason: legacy?.reason || 'no-legacy-candidate'
+  }
+  const reject = (decisionReason) => ({
+    authorityEligible: false,
+    decisionReason,
+    publication: fallback
+  })
+
+  if (rolloutMode !== TRANSACTION_FIRST_MODES.AUTHORITATIVE) {
+    return reject('authority-disabled')
+  }
+  if (!snapshotMatched) return reject('authority-snapshot-stale')
+  if (!transaction?.ok) return reject('authority-transaction-rejected')
+  if (!family) return reject('authority-family-missing')
+  if (transaction.family !== family) return reject('authority-family-mismatch')
+
+  const allowed = new Set(Array.isArray(allowedFamilies) ? allowedFamilies : [])
+  if (!allowed.has(family)) return reject('authority-family-not-allowed')
+
+  return {
+    authorityEligible: true,
+    decisionReason: 'authority-owned',
+    publication: {
+      owner: 'transaction',
+      markdown: transaction.markdown,
+      reason: transaction.reason
+    }
+  }
 }
 
 const trace = (event) => {
@@ -532,7 +587,8 @@ export function reconcileTransactionFirstSourceSync({
   checkpoint,
   currentSource,
   currentDoc,
-  legacyResult = null
+  legacyResult = null,
+  allowedFamilies = []
 }) {
   if (!checkpoint) return null
 
@@ -557,22 +613,16 @@ export function reconcileTransactionFirstSourceSync({
   }
 
   const promotionEligible = snapshotMatched && comparison === 'byte-equal'
-  let publication = {
-    owner: legacy ? 'legacy' : 'source-checkpoint',
-    markdown: legacy?.markdown ?? source,
-    reason: legacy?.reason || 'no-legacy-candidate'
-  }
-  if (
-    snapshotMatched &&
-    checkpoint.mode === TRANSACTION_FIRST_MODES.AUTHORITATIVE &&
-    checkpoint.transaction?.ok
-  ) {
-    publication = {
-      owner: 'transaction',
-      markdown: checkpoint.transaction.markdown,
-      reason: checkpoint.transaction.reason
-    }
-  }
+  const authority = selectTransactionFirstPublication({
+    mode: checkpoint.mode,
+    snapshotMatched,
+    transaction: checkpoint.transaction,
+    family: checkpoint.family,
+    allowedFamilies,
+    legacyResult: legacy,
+    fallbackSource: source
+  })
+  const publication = authority.publication
 
   const result = {
     mode: checkpoint.mode,
@@ -582,6 +632,8 @@ export function reconcileTransactionFirstSourceSync({
     comparison,
     promotionEligible,
     reconcileReason,
+    authorityDecision: authority.decisionReason,
+    authorityEligible: authority.authorityEligible,
     publication
   }
 
@@ -594,6 +646,8 @@ export function reconcileTransactionFirstSourceSync({
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,
+    authorityDecision: authority.decisionReason,
+    authorityEligible: authority.authorityEligible,
     chainLength: checkpoint.chainLength || 1,
     chainReasons: checkpoint.chainReasons || [],
     sourceMapEntries: checkpoint.sourceMapEntries || 0,
@@ -618,7 +672,8 @@ export function runTransactionFirstSourceSync({
   sourceRangeMap,
   blockHints = [],
   validateMarkdown,
-  legacyResult = null
+  legacyResult = null,
+  allowedFamilies = []
 }) {
   const original = String(source || '')
   const rolloutMode = validModes.has(mode) ? mode : TRANSACTION_FIRST_MODES.SHADOW
@@ -636,19 +691,16 @@ export function runTransactionFirstSourceSync({
 
   const comparison = compareCandidates(transactionResult, legacy)
   const promotionEligible = comparison === 'byte-equal'
-
-  let publication = {
-    owner: legacy ? 'legacy' : 'source-checkpoint',
-    markdown: legacy?.markdown ?? original,
-    reason: legacy?.reason || 'no-legacy-candidate'
-  }
-  if (rolloutMode === TRANSACTION_FIRST_MODES.AUTHORITATIVE && transactionResult.ok) {
-    publication = {
-      owner: 'transaction',
-      markdown: transactionResult.markdown,
-      reason: transactionResult.reason
-    }
-  }
+  const authority = selectTransactionFirstPublication({
+    mode: rolloutMode,
+    snapshotMatched: true,
+    transaction: transactionResult,
+    family: transactionResult.family,
+    allowedFamilies,
+    legacyResult: legacy,
+    fallbackSource: original
+  })
+  const publication = authority.publication
 
   const result = {
     mode: rolloutMode,
@@ -657,6 +709,8 @@ export function runTransactionFirstSourceSync({
     legacy,
     comparison,
     promotionEligible,
+    authorityDecision: authority.decisionReason,
+    authorityEligible: authority.authorityEligible,
     publication
   }
 
@@ -669,6 +723,8 @@ export function runTransactionFirstSourceSync({
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,
+    authorityDecision: authority.decisionReason,
+    authorityEligible: authority.authorityEligible,
     sourceMapEntries: sourceRangeMap?.entries?.length || 0,
     stepNames: stepNamesFor(transactions),
     reconcileReason: 'immediate'

@@ -4,6 +4,7 @@ import { EditorState } from '@milkdown/prose/state'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import {
+  TRANSACTION_FIRST_FAMILIES,
   TRANSACTION_FIRST_MODES,
   buildPlainParagraphSourceRangeMap,
   captureTransactionFirstSourceSync,
@@ -27,6 +28,7 @@ const schema = new Schema({
 })
 
 const remark = unified().use(remarkParse)
+const phaseOneAuthority = [TRANSACTION_FIRST_FAMILIES.PLAIN_PARAGRAPH_INLINE_REPLACE]
 const text = (value, marks = null) => schema.text(value, marks)
 const paragraph = (value, marks = null) => schema.node('paragraph', null, value ? text(value, marks) : null)
 const heading = (value) => schema.node('heading', null, text(value))
@@ -170,6 +172,7 @@ assert.equal(observeDivergence.publication.owner, 'legacy', 'observe mode remain
 
 const authoritative = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source,
   transactions: [transaction],
   oldState,
@@ -183,6 +186,7 @@ assert.equal(authoritative.publication.markdown, expected)
 
 const staleMap = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source: `${source}tail`,
   transactions: [transaction],
   oldState,
@@ -199,6 +203,7 @@ const syntaxTransaction = oldState.tr.insertText('*', secondRepeatStart + 2)
 const syntaxState = oldState.apply(syntaxTransaction)
 const syntaxRejected = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source,
   transactions: [syntaxTransaction],
   oldState,
@@ -237,6 +242,7 @@ const deleteState = oldState.apply(deleteTransaction)
 const deleteExpected = source.replace('alpha', 'apha')
 const deleteResult = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source,
   transactions: [deleteTransaction],
   oldState,
@@ -254,6 +260,7 @@ const replaceState = oldState.apply(replaceTransaction)
 const replaceExpected = source.replace('alpha', 'aZZha')
 const replaceResult = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source,
   transactions: [replaceTransaction],
   oldState,
@@ -279,6 +286,7 @@ assert.equal(splitClassification.owned, false)
 assert.equal(splitClassification.reason, 'phase1-structural-slice')
 const splitResult = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source,
   transactions: [splitTransaction],
   oldState,
@@ -390,6 +398,7 @@ const crlfNextState = crlfState.apply(crlfTransaction)
 const crlfExpected = '\uFEFFalpha\r\n\r\nbeXta\r\n'
 const crlfResult = runTransactionFirstSourceSync({
   mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  allowedFamilies: phaseOneAuthority,
   source: crlfSource,
   transactions: [crlfTransaction],
   oldState: crlfState,
