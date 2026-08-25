@@ -144,10 +144,93 @@ const normalizeLegacyResult = (legacyResult) => {
   return null
 }
 
-const phaseOneBatchOwned = (transactions) => {
+const PHASE_ONE_PLAIN_PARAGRAPH_FAMILY = 'plain-paragraph-inline-replace'
+
+const isClosedPlainTextSlice = (slice) => {
+  if (!slice || slice.size === 0 || slice.content?.size === 0) return true
+  if (slice.openStart || slice.openEnd) return false
+  let plain = true
+  slice.content.forEach((node) => {
+    if (!node?.isText || (node.marks?.length || 0) > 0) plain = false
+  })
+  return plain
+}
+
+/**
+ * Phase 1 authority classifier. A ReplaceStep constructor is not sufficient
+ * evidence: paragraph splits and structural commands can use the same step
+ * family. This classifier admits only one closed inline edit inside one mapped,
+ * top-level, unmarked paragraph whose result remains the same kind of block.
+ */
+export function classifyPhaseOnePlainParagraphTransaction({
+  transactions,
+  oldState,
+  newState,
+  sourceRangeMap
+}) {
+  const reject = (reason) => ({ owned: false, family: null, reason })
   const changed = (transactions || []).filter((transaction) => transaction?.docChanged)
-  if (changed.length !== 1) return false
-  return changed[0].steps?.length === 1 && changed[0].steps[0]?.constructor?.name === 'ReplaceStep'
+  if (changed.length !== 1) return reject('phase1-changed-transaction-count')
+
+  const transaction = changed[0]
+  if (transaction.steps?.length !== 1) return reject('phase1-step-count')
+  const step = transaction.steps[0]
+  if (step?.constructor?.name !== 'ReplaceStep') return reject('phase1-step-not-replace')
+  if (!Number.isFinite(step.from) || !Number.isFinite(step.to)) {
+    return reject('phase1-unresolvable-range')
+  }
+  if (!sameDocument(transaction.before, oldState?.doc)) {
+    return reject('phase1-transaction-chain-mismatch')
+  }
+
+  const stepDoc = transaction.docs?.[0] || oldState?.doc
+  let $from
+  let $to
+  try {
+    $from = stepDoc?.resolve?.(step.from)
+    $to = stepDoc?.resolve?.(step.to)
+  } catch {
+    return reject('phase1-unresolvable-range')
+  }
+  if (!$from || !$to) return reject('phase1-unresolvable-range')
+  if (!$from.sameParent($to)) return reject('phase1-cross-parent-range')
+  if ($from.depth !== 1 || $from.parent?.type?.name !== 'paragraph') {
+    return reject('phase1-non-top-level-paragraph')
+  }
+  if (!isSimplePlainParagraph($from.parent)) {
+    return reject('phase1-non-plain-source-paragraph')
+  }
+  if (!isClosedPlainTextSlice(step.slice)) {
+    return reject('phase1-structural-slice')
+  }
+
+  const owners = (sourceRangeMap?.entries || []).filter((entry) =>
+    entry?.nodeType === 'paragraph' &&
+    step.from >= entry.pmContentStart &&
+    step.to <= entry.pmContentEnd)
+  if (owners.length !== 1) return reject('phase1-range-outside-source-map')
+
+  const topBlockStart = $from.before(1)
+  const resultDoc = transaction.doc
+  const nextBlock = resultDoc?.nodeAt?.(topBlockStart)
+  if (!nextBlock?.isTextblock || nextBlock.type?.name !== 'paragraph') {
+    return reject('phase1-result-not-plain-paragraph')
+  }
+  if (nextBlock.content?.size <= 0) return reject('phase1-result-empty-paragraph')
+  if (!isSimplePlainParagraph(nextBlock)) {
+    return reject('phase1-result-not-plain-paragraph')
+  }
+  if (!sameDocument(resultDoc, newState?.doc)) {
+    return reject('phase1-final-document-mismatch')
+  }
+
+  return {
+    owned: true,
+    family: PHASE_ONE_PLAIN_PARAGRAPH_FAMILY,
+    reason: 'phase1-plain-paragraph-inline-replace',
+    pmBlockStart: topBlockStart,
+    sourceMapEntry: owners[0]
+  }
 }
 
 const stepNamesFor = (transactions) =>
@@ -174,10 +257,22 @@ const computeTransactionCandidate = ({
   if (sourceRangeMap.source !== original || !sameDocument(sourceRangeMap.doc, oldState?.doc)) {
     return { ok: false, markdown: original, reason: 'stale-source-range-map' }
   }
-  if (!phaseOneBatchOwned(transactions)) {
-    return { ok: false, markdown: original, reason: 'phase1-batch-not-owned' }
+  const classification = classifyPhaseOnePlainParagraphTransaction({
+    transactions,
+    oldState,
+    newState,
+    sourceRangeMap
+  })
+  if (!classification.owned) {
+    return {
+      ok: false,
+      markdown: original,
+      reason: classification.reason,
+      family: null,
+      classificationReason: classification.reason
+    }
   }
-  return mapPlainTextTransactionsToSource({
+  const mapped = mapPlainTextTransactionsToSource({
     source: original,
     transactions,
     oldState,
@@ -186,6 +281,11 @@ const computeTransactionCandidate = ({
     blockHints,
     validateMarkdown
   })
+  return {
+    ...mapped,
+    family: classification.family,
+    classificationReason: classification.reason
+  }
 }
 
 const compareCandidates = (transactionResult, legacy) => {
@@ -235,6 +335,7 @@ export function captureTransactionFirstSourceSync({
     newDoc: newState?.doc || null,
     ownership: transaction.ok ? 'owned' : 'rejected',
     transaction,
+    family: transaction.family || null,
     sourceMapEntries: sourceRangeMap?.entries?.length || 0,
     stepNames: stepNamesFor(transactions)
   }
@@ -306,6 +407,7 @@ export function reconcileTransactionFirstSourceSync({
     mode: result.mode,
     ownership: result.ownership,
     transactionReason: checkpoint.transaction?.reason || 'missing-transaction-result',
+    transactionFamily: checkpoint.transaction?.family || null,
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,
@@ -378,6 +480,7 @@ export function runTransactionFirstSourceSync({
     mode: result.mode,
     ownership: result.ownership,
     transactionReason: transactionResult.reason,
+    transactionFamily: transactionResult.family || null,
     comparison,
     promotionEligible,
     publicationOwner: publication.owner,

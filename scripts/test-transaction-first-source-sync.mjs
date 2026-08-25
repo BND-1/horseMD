@@ -7,6 +7,7 @@ import {
   TRANSACTION_FIRST_MODES,
   buildPlainParagraphSourceRangeMap,
   captureTransactionFirstSourceSync,
+  classifyPhaseOnePlainParagraphTransaction,
   reconcileTransactionFirstSourceSync,
   runTransactionFirstSourceSync
 } from '../src/renderer/src/lib/transaction-first-source-sync.js'
@@ -16,6 +17,8 @@ const schema = new Schema({
     doc: { content: 'block+' },
     paragraph: { content: 'inline*', group: 'block' },
     heading: { content: 'inline*', group: 'block' },
+    bullet_list: { content: 'list_item+', group: 'block' },
+    list_item: { content: 'paragraph block*' },
     text: { group: 'inline' }
   },
   marks: {
@@ -27,6 +30,11 @@ const remark = unified().use(remarkParse)
 const text = (value, marks = null) => schema.text(value, marks)
 const paragraph = (value, marks = null) => schema.node('paragraph', null, value ? text(value, marks) : null)
 const heading = (value) => schema.node('heading', null, text(value))
+const bulletList = (...items) => schema.node(
+  'bullet_list',
+  null,
+  items.map((value) => schema.node('list_item', null, paragraph(value)))
+)
 const doc = (...blocks) => schema.node('doc', null, blocks)
 
 const contentStartOf = (pmDoc, value, occurrence = 0) => {
@@ -77,6 +85,8 @@ const shadow = runTransactionFirstSourceSync({
   legacyResult: { markdown: expected, reason: 'legacy-fixture' }
 })
 assert.equal(shadow.ownership, 'owned')
+assert.equal(shadow.transaction.family, 'plain-paragraph-inline-replace')
+assert.equal(shadow.transaction.classificationReason, 'phase1-plain-paragraph-inline-replace')
 assert.equal(shadow.transaction.markdown, expected)
 assert.equal(shadow.comparison, 'byte-equal')
 assert.equal(shadow.promotionEligible, true)
@@ -92,6 +102,7 @@ const stagedCheckpoint = captureTransactionFirstSourceSync({
   validateMarkdown: validateExpected
 })
 assert.equal(stagedCheckpoint.ownership, 'owned')
+assert.equal(stagedCheckpoint.family, 'plain-paragraph-inline-replace')
 assert.deepEqual(stagedCheckpoint.stepNames, ['ReplaceStep'])
 assert.equal(stagedCheckpoint.sourceMapEntries, 4)
 
@@ -107,6 +118,7 @@ assert.equal(stagedEqual.promotionEligible, true)
 assert.equal(stagedEqual.publication.owner, 'legacy', 'staged shadow reconcile must remain behavior-neutral')
 assert.equal(stagedEqual.reconcileReason, 'matched-snapshot')
 assert.deepEqual(globalThis.__hmTransactionFirstTrace.at(-1)?.stepNames, ['ReplaceStep'])
+assert.equal(globalThis.__hmTransactionFirstTrace.at(-1)?.transactionFamily, 'plain-paragraph-inline-replace')
 assert.equal(globalThis.__hmTransactionFirstTrace.at(-1)?.sourceMapEntries, 4)
 assert.equal('markdown' in globalThis.__hmTransactionFirstTrace.at(-1), false, 'trace must not include full source bytes')
 
@@ -219,12 +231,114 @@ assert.equal(stagedRejected.transaction.reason, 'syntax-sensitive-insert')
 assert.equal(stagedRejected.publication.owner, 'legacy')
 delete globalThis.__hmTransactionFirstTrace
 
+const alphaStart = contentStartOf(oldDoc, 'alpha')
+const deleteTransaction = oldState.tr.delete(alphaStart + 1, alphaStart + 2)
+const deleteState = oldState.apply(deleteTransaction)
+const deleteExpected = source.replace('alpha', 'apha')
+const deleteResult = runTransactionFirstSourceSync({
+  mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  source,
+  transactions: [deleteTransaction],
+  oldState,
+  newState: deleteState,
+  sourceRangeMap: sourceMap,
+  validateMarkdown: (markdown, expectedDoc) =>
+    markdown === deleteExpected && expectedDoc?.eq?.(deleteState.doc) === true,
+  legacyResult: { markdown: deleteExpected, reason: 'legacy-fixture' }
+})
+assert.equal(deleteResult.transaction.ok, true)
+assert.equal(deleteResult.transaction.family, 'plain-paragraph-inline-replace')
+
+const replaceTransaction = oldState.tr.insertText('ZZ', alphaStart + 1, alphaStart + 3)
+const replaceState = oldState.apply(replaceTransaction)
+const replaceExpected = source.replace('alpha', 'aZZha')
+const replaceResult = runTransactionFirstSourceSync({
+  mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  source,
+  transactions: [replaceTransaction],
+  oldState,
+  newState: replaceState,
+  sourceRangeMap: sourceMap,
+  validateMarkdown: (markdown, expectedDoc) =>
+    markdown === replaceExpected && expectedDoc?.eq?.(replaceState.doc) === true,
+  legacyResult: { markdown: replaceExpected, reason: 'legacy-fixture' }
+})
+assert.equal(replaceResult.transaction.ok, true)
+assert.equal(replaceResult.transaction.family, 'plain-paragraph-inline-replace')
+
+const splitTransaction = oldState.tr.split(secondRepeatStart + 3)
+const splitState = oldState.apply(splitTransaction)
+assert.equal(splitTransaction.steps[0]?.constructor?.name, 'ReplaceStep', 'paragraph split should exercise the structural ReplaceStep lookalike')
+const splitClassification = classifyPhaseOnePlainParagraphTransaction({
+  transactions: [splitTransaction],
+  oldState,
+  newState: splitState,
+  sourceRangeMap: sourceMap
+})
+assert.equal(splitClassification.owned, false)
+assert.equal(splitClassification.reason, 'phase1-structural-slice')
+const splitResult = runTransactionFirstSourceSync({
+  mode: TRANSACTION_FIRST_MODES.AUTHORITATIVE,
+  source,
+  transactions: [splitTransaction],
+  oldState,
+  newState: splitState,
+  sourceRangeMap: sourceMap,
+  validateMarkdown: () => true,
+  legacyResult: { markdown: 'legacy-safe', reason: 'legacy-fixture' }
+})
+assert.equal(splitResult.ownership, 'rejected')
+assert.equal(splitResult.transaction.reason, 'phase1-structural-slice')
+assert.equal(splitResult.publication.owner, 'legacy')
+
+const fakeStructuralTransaction = {
+  docChanged: true,
+  before: oldDoc,
+  steps: [{ constructor: { name: 'ReplaceAroundStep' } }]
+}
+assert.equal(
+  classifyPhaseOnePlainParagraphTransaction({
+    transactions: [fakeStructuralTransaction],
+    oldState,
+    newState,
+    sourceRangeMap: sourceMap
+  }).reason,
+  'phase1-step-not-replace'
+)
+
+const singleSource = 'x\n'
+const singleDoc = doc(paragraph('x'))
+const singleState = EditorState.create({ schema, doc: singleDoc })
+const singleMap = buildPlainParagraphSourceRangeMap({ source: singleSource, doc: singleDoc, remark })
+const emptyTransaction = singleState.tr.delete(1, 2)
+const emptyState = singleState.apply(emptyTransaction)
+const emptyClassification = classifyPhaseOnePlainParagraphTransaction({
+  transactions: [emptyTransaction],
+  oldState: singleState,
+  newState: emptyState,
+  sourceRangeMap: singleMap
+})
+assert.equal(emptyClassification.owned, false)
+assert.equal(emptyClassification.reason, 'phase1-result-empty-paragraph')
+
 const marked = schema.mark('em')
 const markedSource = '*styled*\n\nplain\n'
 const markedDoc = doc(paragraph('styled', [marked]), paragraph('plain'))
 const markedMap = buildPlainParagraphSourceRangeMap({ source: markedSource, doc: markedDoc, remark })
 assert.equal(markedMap.entries.length, 1, 'marked/non-contiguous authored text must be excluded from Phase 0')
 assert.equal(markedMap.entries[0].text, 'plain')
+const markedState = EditorState.create({ schema, doc: markedDoc })
+const markedTransaction = markedState.tr.insertText('X', 2)
+const markedNextState = markedState.apply(markedTransaction)
+assert.equal(
+  classifyPhaseOnePlainParagraphTransaction({
+    transactions: [markedTransaction],
+    oldState: markedState,
+    newState: markedNextState,
+    sourceRangeMap: markedMap
+  }).reason,
+  'phase1-non-plain-source-paragraph'
+)
 
 const headingSource = '# title\n\nbody\n'
 const headingDoc = doc(heading('title'), paragraph('body'))
@@ -233,6 +347,35 @@ assert.deepEqual(
   headingMap.entries.map((entry) => entry.text),
   ['body'],
   'Phase 0 source map must not silently expand ownership to headings'
+)
+const headingState = EditorState.create({ schema, doc: headingDoc })
+const headingTransaction = headingState.tr.insertText('X', 2)
+const headingNextState = headingState.apply(headingTransaction)
+assert.equal(
+  classifyPhaseOnePlainParagraphTransaction({
+    transactions: [headingTransaction],
+    oldState: headingState,
+    newState: headingNextState,
+    sourceRangeMap: headingMap
+  }).reason,
+  'phase1-non-top-level-paragraph'
+)
+
+const listSource = '- item\n\nplain\n'
+const listDoc = doc(bulletList('item'), paragraph('plain'))
+const listState = EditorState.create({ schema, doc: listDoc })
+const listMap = buildPlainParagraphSourceRangeMap({ source: listSource, doc: listDoc, remark })
+const listItemStart = contentStartOf(listDoc, 'item')
+const listTransaction = listState.tr.insertText('X', listItemStart + 2)
+const listNextState = listState.apply(listTransaction)
+assert.equal(
+  classifyPhaseOnePlainParagraphTransaction({
+    transactions: [listTransaction],
+    oldState: listState,
+    newState: listNextState,
+    sourceRangeMap: listMap
+  }).reason,
+  'phase1-non-top-level-paragraph'
 )
 
 const crlfSource = '\uFEFFalpha\r\n\r\nbeta\r\n'
@@ -260,4 +403,4 @@ assert.equal(crlfResult.transaction.ok, true)
 assert.equal(crlfResult.transaction.markdown, crlfExpected, 'transaction patch must retain authored BOM + CRLF bytes')
 assert.equal(crlfResult.publication.markdown, crlfExpected)
 
-console.log('PASS transaction-first source sync phase 0: source-map ownership, shadow rollout, fail-closed syntax, duplicate text, and BOM/CRLF')
+console.log('PASS transaction-first source sync phases 0-1: source-map shadow lifecycle plus explicit plain-paragraph authority classification')
