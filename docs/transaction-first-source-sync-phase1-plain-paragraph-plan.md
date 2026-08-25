@@ -306,6 +306,12 @@ Post-fix evidence:
 - all five `123321.md` family cells — PASS,
 - complete 4×5 family matrix — **still not all green**; independent failures remain in `HorseMD-0.13.33-引用后输入手测.md` and `反馈.md`.
 
+### 2026-08-25 — RS-74 list-slot fence scanner baseline repair
+
+The next first divergence in `HorseMD-0.13.33-引用后输入手测.md` was not caused by transaction-first observation. The legacy list-slot fingerprint scanner treated same-line literal ```` ```你好``` ```` as an unterminated fenced-code opener and therefore hid all later list slots from strict structure validation. RS-74 fixes only that scanner boundary: backtick opener info may not contain backticks, and a closing fence must use the same character, be at least as long as the opener, and contain only trailing whitespace.
+
+Post-fix baseline evidence: the original `ordered` cell now passes append/save/delete/reopen, `unordered` and `spaces` on the same fixture also pass, core fence regressions pass, build passes, source-fidelity probes remain 35/35, and source-transaction-sync remains green. The fixture is still not clean: `plain` fails later during delete with a `diverged-tail-line-delete` list-slot-count mismatch, while `list-spaces` fails delete with `visible-stream-mismatch`. Separately, the literal triple-backtick UI currently fails semantic integrity because `# ```你好```` reparses with an `inlineCode` mark; its trace has `listSlotsMatch=true`, so it is not part of RS-74.
+
 Therefore Phase 1 live authority remains blocked. The migration gate is doing its intended job: baseline failures are being separated from shadow behavior before publication ownership changes. Do not mark the clean-baseline or long-document criteria complete until the remaining first divergences are independently resolved or explicitly quarantined by a proven contract.
 
 See `docs/diverged-tail-image-delete-regression.md` and RS-73 in `docs/rich-source-fidelity-bug-family.md`.
