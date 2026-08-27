@@ -56,6 +56,7 @@ import {
 } from '../lib/source-transaction-sync.js'
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
+  createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
@@ -494,13 +495,40 @@ export default function Editor({
 
     let crepe
     const sourceSyncTransactionJournal = createSourceSyncTransactionJournal()
+    const resolveTransactionMarkdownOffset = ({ markdown, pmPos, doc }) => {
+      const remark = crepe.editor.ctx.get(remarkCtx)
+      return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
+    }
     const listSubtreeTransactionSourceSyncOwner = createListSubtreeTransactionSourceSyncOwner({
       mapListSubtree: preserveTransactionOwnedListSubtreeChange,
-      resolveMarkdownOffset: ({ markdown, pmPos, doc }) => {
-        const remark = crepe.editor.ctx.get(remarkCtx)
-        return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
-      }
+      resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    const codeBlockTransactionSourceSyncOwner = createCodeBlockTransactionSourceSyncOwner({
+      resolveMarkdownOffset: resolveTransactionMarkdownOffset
+    })
+    // Structural families share one revision-bound journal and one publication
+    // loop. Adding quote/table ownership means registering another focused owner
+    // here, not adding a new markdownUpdated/forced-flush canonical branch.
+    const structuralTransactionSourceSyncOwners = Object.freeze([
+      Object.freeze({
+        key: 'list-subtree',
+        owner: listSubtreeTransactionSourceSyncOwner,
+        traceKey: '__hmListSubtreeTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-subtree-markdown-updated',
+          'forced-flush': 'transaction-list-subtree-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'code-block',
+        owner: codeBlockTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-code-block-markdown-updated',
+          'forced-flush': 'transaction-code-block-forced-flush'
+        })
+      })
+    ])
     const plainParagraphTransactionSourceSyncOwner =
       createPlainParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: ({ markdown, pmPos, doc }) => {
@@ -988,10 +1016,17 @@ export default function Editor({
       fireToast(tRef.current('save.sourceSyncMismatch'), { sticky: true })
     }
 
-    const publishPendingListSubtreeTransaction = ({
+    const pushStructuralTransactionTrace = (entry, value) => {
+      const trace = globalThis[entry.traceKey]
+      if (!Array.isArray(trace)) return
+      trace.push(value)
+      if (trace.length > 100) trace.shift()
+    }
+
+    const publishPendingStructuralTransaction = ({
       canonical,
       expectedDoc,
-      boundary,
+      site = 'markdown-updated',
       notifyChange
     } = {}) => {
       const journal = pendingSourceSyncTransactionJournal
@@ -1006,90 +1041,106 @@ export default function Editor({
       } catch {
         callbackDocumentEquivalent = false
       }
-      const ownership = listSubtreeTransactionSourceSyncOwner.plan({
-        journal,
-        activeJournal: pendingSourceSyncTransactionJournal,
-        snapshot,
-        currentSource: lastMarkdownRef.current,
-        currentCanonical: canonicalMarkdownRef.current,
-        canonical,
-        expectedDoc,
-        callbackDocumentEquivalent,
-        boundary
-      })
-      if (!ownership.ok) {
-        // Non-list and topology-unchanged journals remain available to the
-        // transaction-first/legacy path and future family owners. Only a proven
-        // stale revision/source/doc invalidates the shared journal itself.
-        if (ownership.reset) pendingSourceSyncTransactionJournal = null
-        if (Array.isArray(globalThis.__hmListSubtreeTransactionTrace)) {
-          globalThis.__hmListSubtreeTransactionTrace.push({
+
+      let lastRejection = null
+      for (const entry of structuralTransactionSourceSyncOwners) {
+        const boundary = entry.boundaries[site] || `transaction-${entry.key}-${site}`
+        const ownership = entry.owner.plan({
+          journal,
+          activeJournal: pendingSourceSyncTransactionJournal,
+          snapshot,
+          currentSource: lastMarkdownRef.current,
+          currentCanonical: canonicalMarkdownRef.current,
+          canonical,
+          expectedDoc,
+          callbackDocumentEquivalent,
+          boundary
+        })
+        if (!ownership.ok) {
+          pushStructuralTransactionTrace(entry, {
             phase: 'plan',
             ok: false,
+            family: entry.owner.family,
             reason: ownership.reason || null,
             journalId: journal.journalId,
             baseRevision: journal.baseRevision,
             chainLength: journal.transactionCount
           })
-          if (globalThis.__hmListSubtreeTransactionTrace.length > 100) {
-            globalThis.__hmListSubtreeTransactionTrace.shift()
+          lastRejection = {
+            attempted: true,
+            ok: false,
+            deferred: ownership.deferred === true,
+            reason: ownership.reason || null,
+            family: entry.owner.family
+          }
+          // A stale revision/source/doc invalidates the shared journal for every
+          // family. Ordinary family rejection must leave it available for the
+          // next registered owner and the legacy fallback.
+          if (ownership.reset) {
+            pendingSourceSyncTransactionJournal = null
+            return { ...lastRejection, reset: true }
+          }
+          continue
+        }
+
+        const coordinated = sourceSyncBridge.publishOwned({
+          ownership,
+          notifyChange,
+          boundary
+        })
+        if (!coordinated?.ok) {
+          pushStructuralTransactionTrace(entry, {
+            phase: 'publish',
+            ok: false,
+            family: ownership.family,
+            reason: coordinated?.reason || 'source-document-mismatch',
+            journalId: journal.journalId,
+            baseRevision: journal.baseRevision,
+            chainLength: journal.transactionCount
+          })
+          return {
+            attempted: true,
+            ok: false,
+            reason: coordinated?.reason || 'source-document-mismatch',
+            family: ownership.family
           }
         }
-        return {
-          attempted: true,
-          ok: false,
-          deferred: ownership.reason === 'list-subtree-callback-document-mismatch',
-          reason: ownership.reason || null
+
+        pendingSourceSyncTransactionJournal = null
+        if (Array.isArray(globalThis.__hmPreserveLog)) {
+          globalThis.__hmPreserveLog.push({
+            source: journal.source,
+            previous: journal.canonical,
+            next: canonical,
+            markdown: ownership.result.markdown,
+            preserved: true,
+            reason: ownership.result.reason,
+            integrityProof: ownership.proof
+          })
+          if (globalThis.__hmPreserveLog.length > 200) globalThis.__hmPreserveLog.shift()
         }
-      }
-      const coordinated = sourceSyncBridge.publishOwned({
-        ownership,
-        notifyChange,
-        boundary
-      })
-      if (!coordinated?.ok) {
-        return {
-          attempted: true,
-          ok: false,
-          reason: coordinated?.reason || 'source-document-mismatch'
-        }
-      }
-      pendingSourceSyncTransactionJournal = null
-      if (Array.isArray(globalThis.__hmPreserveLog)) {
-        globalThis.__hmPreserveLog.push({
-          source: journal.source,
-          previous: journal.canonical,
-          next: canonical,
-          markdown: ownership.result.markdown,
-          preserved: true,
-          reason: ownership.result.reason,
-          integrityProof: ownership.proof
-        })
-        if (globalThis.__hmPreserveLog.length > 200) globalThis.__hmPreserveLog.shift()
-      }
-      if (Array.isArray(globalThis.__hmListSubtreeTransactionTrace)) {
-        globalThis.__hmListSubtreeTransactionTrace.push({
+        pushStructuralTransactionTrace(entry, {
           phase: 'published',
           ok: true,
+          family: ownership.family,
           reason: ownership.result.reason,
           journalId: journal.journalId,
           baseRevision: journal.baseRevision,
           chainLength: journal.transactionCount,
-          revision: coordinated.snapshot?.revision ?? null
+          revision: coordinated.snapshot?.revision ?? null,
+          boundary
         })
-        if (globalThis.__hmListSubtreeTransactionTrace.length > 100) {
-          globalThis.__hmListSubtreeTransactionTrace.shift()
+        return {
+          attempted: true,
+          ok: true,
+          markdown: ownership.result.markdown,
+          reason: ownership.result.reason,
+          family: ownership.family,
+          coordinated
         }
       }
-      return {
-        attempted: true,
-        ok: true,
-        markdown: ownership.result.markdown,
-        reason: ownership.result.reason,
-        coordinated
-      }
+      return lastRejection || { attempted: true, ok: false, reason: 'transaction-family-unowned' }
     }
-
     const planPendingPlainParagraphTransaction = ({
       canonical,
       expectedDoc,
@@ -1228,13 +1279,15 @@ export default function Editor({
       expectedDoc,
       notifyChange = false
     } = {}) => {
-      const listResult = publishPendingListSubtreeTransaction({
+      const structuralResult = publishPendingStructuralTransaction({
         canonical,
         expectedDoc,
-        boundary: 'transaction-list-subtree-forced-flush',
+        site: 'forced-flush',
         notifyChange
       })
-      if (listResult.ok || transactionFirstMode() !== 'authoritative') return listResult
+      if (structuralResult.ok || transactionFirstMode() !== 'authoritative') {
+        return structuralResult
+      }
 
       const planned = planPendingPlainParagraphTransaction({
         canonical,
@@ -1250,9 +1303,9 @@ export default function Editor({
           authorityEligible: false
         })
         return {
-          attempted: listResult.attempted || planned.attempted,
+          attempted: structuralResult.attempted || planned.attempted,
           ok: false,
-          reason: planned.ownership?.reason || listResult.reason
+          reason: planned.ownership?.reason || structuralResult.reason
         }
       }
       const published = publishPlannedPlainParagraphTransaction({
@@ -1588,11 +1641,10 @@ export default function Editor({
           const hasPendingListIntent = isActiveListInputIntent(pendingMarkdownInputIntent)
           let pendingPlainParagraphPlan = null
           const plainTransactionMode = transactionFirstMode()
-          // One transaction-owned top-level list subtree is resolved and
-          // validated before any whole-document canonical diff. This prevents a
-          // zero-visible list deletion from borrowing syntax bytes from an
-          // unchanged neighbouring code/table/heading block. Special command,
-          // paste, generated and input-rule owners retain their existing order.
+          // Focused structural owners inspect the same journal before any
+          // whole-document canonical diff. The registry currently owns exact
+          // single-list-subtree and existing fenced-code content families;
+          // quote/table migration adds owners there rather than callback branches.
           if (
             !pendingPaste &&
             !pendingList &&
@@ -1602,13 +1654,13 @@ export default function Editor({
             !hasPendingListIntent &&
             pendingSourceSyncTransactionJournal
           ) {
-            const ownedListSubtree = publishPendingListSubtreeTransaction({
+            const ownedStructuralTransaction = publishPendingStructuralTransaction({
               canonical,
               expectedDoc: viewRef.current?.state.doc,
-              boundary: 'transaction-list-subtree-markdown-updated',
+              site: 'markdown-updated',
               notifyChange: true
             })
-            if (ownedListSubtree.ok) {
+            if (ownedStructuralTransaction.ok) {
               transactionSourcePendingPublish = false
               transactionSourcePendingDoc = null
               transactionSourceBlockHints = []

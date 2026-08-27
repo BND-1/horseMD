@@ -237,6 +237,42 @@ const cases = []
 }
 
 {
+  const markdown = 'Before\n\n```js\n\n```\n\nAfter\n'
+  const pmDoc = doc(paragraph('Before'), codeBlock(''), paragraph('After'))
+  const rawStart = markdown.indexOf('```js')
+  const pmPos = nthNodePos(pmDoc, 'code_block') + 1
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, pmPos, pmDoc, remark),
+    rawStart,
+    'empty fenced code block must map to its own opening fence, not a neighbouring blank-line gap'
+  )
+  assert.deepEqual(
+    markdownOffsetToPmPos(markdown, rawStart, pmDoc, remark),
+    { pos: pmPos, atom: false },
+    'empty fenced code block opening fence must map back to its code_block content position'
+  )
+  cases.push('empty fenced code block')
+}
+
+{
+  const markdown = '\uFEFFBefore\r\n\r\n~~~js\r\n\r\n~~~\r\n\r\nAfter\r\n'
+  const pmDoc = doc(paragraph('Before'), codeBlock(''), paragraph('After'))
+  const rawStart = markdown.indexOf('~~~js')
+  const pmPos = nthNodePos(pmDoc, 'code_block') + 1
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, pmPos, pmDoc, remark),
+    rawStart,
+    'BOM+CRLF empty tilde code block must map to its physical opening fence'
+  )
+  assert.deepEqual(
+    markdownOffsetToPmPos(markdown, rawStart, pmDoc, remark),
+    { pos: pmPos, atom: false },
+    'BOM+CRLF tilde opening fence must map back to the empty code_block content position'
+  )
+  cases.push('BOM CRLF empty tilde code block')
+}
+
+{
   const markdown = '- first item\n- second repeated item\n- third item\n'
   const pmDoc = doc(bulletList('first item', 'second repeated item', 'third item'))
   assertTextRoundTrip({

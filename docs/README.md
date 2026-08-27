@@ -17,7 +17,8 @@
 | [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
 | [family-root-cause-matrix.md](./family-root-cause-matrix.md) | 真实文件 4×5 家族矩阵、多轮保存重开根因、CRLF/尾换行/列表原子提交证据 |
 | [rich-source-divergence-incident-0.13.47.md](./rich-source-divergence-incident-0.13.47.md) | **P0 未解决**：0.13.47 自动化全绿但安装包真实长会话仍发生富文本/源码/磁盘分叉；含现场证据、测试缺口、统一 trace 要求与接手完成标准 |
-| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.132）**：revision-bound transaction journal、共享 list/plain owner 生命周期、legacy fallback 与剩余结构族迁移门槛 |
+| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.133）**：revision-bound transaction journal、structural owner registry、共享 list/code/plain 生命周期与剩余结构族迁移门槛 |
+| [transaction-journal-code-block-content-family.md](./transaction-journal-code-block-content-family.md) | 0.13.133 已有 fenced code block 正文迁移：逐 Step 所有权、BOM 物理坐标、作者围栏/CRLF 保真、callback/forced-flush 与冷重开证据 |
 | [transaction-first-source-sync-phase1-plain-paragraph-plan.md](./transaction-first-source-sync-phase1-plain-paragraph-plan.md) | Phase 1 普通段落 authority 的分类器、shadow/authority 合同、当前未完成门禁与回归证据 |
 | [slash-code-source-sync-regression.md](./slash-code-source-sync-regression.md) | `/code` 两阶段结构命令缺失 fence 的根因、命令级原子 source intent 与连续编辑回归 |
 | [canonical-escape-audit.md](./canonical-escape-audit.md) | canonical Markdown 中实体、反斜杠、列表标记与 `<br />` 的完整泄漏面审计 |

@@ -1,5 +1,16 @@
-const nodeStart = (node) => node?.position?.start?.offset
-const nodeEnd = (node) => node?.position?.end?.offset
+// unified/remark consumes a leading BOM before assigning AST offsets. Every
+// raw range returned by this module must still address the physical authored
+// Markdown, so restore that one byte centrally for blocks, text spans and atoms.
+// Local value lookup below then remains exact for both empty and non-empty nodes.
+const markdownAstOffset = (markdown) => String(markdown || '').charCodeAt(0) === 0xFEFF ? 1 : 0
+const nodeStart = (markdown, node) => {
+  const offset = node?.position?.start?.offset
+  return Number.isFinite(offset) ? offset + markdownAstOffset(markdown) : offset
+}
+const nodeEnd = (markdown, node) => {
+  const offset = node?.position?.end?.offset
+  return Number.isFinite(offset) ? offset + markdownAstOffset(markdown) : offset
+}
 
 const textOf = (node) => {
   if (!node) return ''
@@ -37,8 +48,8 @@ const comparableTextOf = (node) => {
 }
 
 const valueSpan = (markdown, node) => {
-  const start = nodeStart(node)
-  const end = nodeEnd(node)
+  const start = nodeStart(markdown, node)
+  const end = nodeEnd(markdown, node)
   const value = node?.value == null ? '' : String(node.value)
   if (!Number.isFinite(start) || !Number.isFinite(end) || !value) return null
   const raw = markdown.slice(start, end)
@@ -69,14 +80,14 @@ const collectInlineItems = (markdown, node, items = []) => {
     case 'image':
     case 'imageReference':
     case 'inlineMath': {
-      const start = nodeStart(node)
-      const end = nodeEnd(node)
+      const start = nodeStart(markdown, node)
+      const end = nodeEnd(markdown, node)
       if (Number.isFinite(start) && Number.isFinite(end)) items.push({ rawStart: start, rawEnd: end, atom: true })
       return items
     }
     case 'break': {
-      const start = nodeStart(node)
-      const end = nodeEnd(node)
+      const start = nodeStart(markdown, node)
+      const end = nodeEnd(markdown, node)
       if (Number.isFinite(start) && Number.isFinite(end)) items.push({ rawStart: start, rawEnd: end, atom: true })
       return items
     }
@@ -90,8 +101,8 @@ const collectInlineItems = (markdown, node, items = []) => {
 }
 
 const mdBlock = (markdown, node, kind = node.type) => {
-  const start = nodeStart(node)
-  const end = nodeEnd(node)
+  const start = nodeStart(markdown, node)
+  const end = nodeEnd(markdown, node)
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null
   return {
     kind,
@@ -145,7 +156,7 @@ const collectMdBlocks = (markdown, tree) => {
 }
 
 const isPmAtom = (node) => {
-  if (!node || node.isText) return false
+  if (!node || node.isText || node.isTextblock) return false
   const name = node.type?.name || ''
   const attrs = node.attrs || {}
   return node.isAtom ||
@@ -309,7 +320,7 @@ const correspondingMdBlock = (mdBlocks, pmBlocks, pmIndex) => {
   // source (empty paragraphs are blank-line separators, not markdown blocks).
   // Map its caret to the blank-line gap after the previous authored block;
   // ordinal alignment must NOT drift into the following block.
-  if (pm.textblock && !normText(pm.matchText ?? pm.text)) {
+  if (pm.kind === 'paragraph' && pm.textblock && !normText(pm.matchText ?? pm.text)) {
     let prevMd = null
     for (let i = pmIndex - 1; i >= 0; i--) {
       const neighbor = pmBlocks[i]

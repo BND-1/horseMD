@@ -1,10 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-27，HorseMD `0.13.132`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；列表子树 owner 与普通段落 owner消费同一份不可变 journal。列表中可证明的单一顶层子树变化可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。输入规则、代码块、表格、引用及未迁移结构继续使用既有 fail-closed owner。
+> 状态：2026-08-27，HorseMD `0.13.133`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树 owner 与已有代码块正文 owner，以及普通段落 owner，共享同一份不可变 journal。可证明的单一顶层列表子树变化和已有 fenced code block 纯正文变化可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块 info string/围栏结构、表格结构、引用结构、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
 >
 > `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
 >
-> `markdownUpdated` 与 forced flush 现在都先尝试共享 journal owner，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。完整 Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
+> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
 
 ## 1. 目标与不变量
 
@@ -58,6 +58,14 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - transaction journal 负责生命周期与 StepMap 证据，owner 只负责拓扑分类、精确 source/canonical 范围和 bounded list mapper；
 - callback 与立即切源码 forced flush 使用同一 ownership proof、Coordinator revision guard、保存与冷重开合同。
 
+### `lib/source-sync/code-block-transaction-owner.js`
+
+- 消费同一 journal，只认领已有顶层 `code_block` 内、attrs 不变的 closed plain-text `ReplaceStep` 链；
+- 每个 Step 都在其捕获时 stepDoc 上验证同父节点、目标顶层序号、邻块不变和完整 oldDoc → finalDoc 连续性；
+- 分别解析作者 source、previous canonical 和 next canonical 的 fenced range，只替换作者围栏内部正文；BOM、CRLF、围栏字符/长度、info string 和邻块保持 byte-stable；
+- `editor-source-map.js` 统一把 remark 去除的 BOM offset 恢复为物理 raw 坐标，空代码块不再落到 opening fence 前的换行；
+- callback 与立即 forced flush 均通过 structural registry + Coordinator 发布；attrs/fence 变化、跨块编辑和围栏冲突继续 fail closed。完整合同见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)。
+
 ### `lib/source-transaction-sync.js`
 
 - 当前接收纯文本 `ReplaceStep` 和受限的尾段 paragraph/heading split；
@@ -93,8 +101,8 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 ### `Editor.jsx` 迁移控制器
 
 - `markdownUpdated`、强制 flush、保存和源码切换仍保留原有安全网；
-- 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
-- list subtree owner 先处理可证明的结构子树；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/code/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
+- structural registry 依次让 list subtree 与 existing code-block content owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
 - `globalThis.__hmTransactionFirstAuthority = true` 仅放行已验收的普通段落 family；默认发布仍由 legacy 处理该 family。历史 broad `__hmTransactionSourcePrimary` 仅供专项测试/迁移实验；
 - callback 与 forced flush 共用 journal、ownership proof 和 Coordinator revision guard，成功时原子推进 source/canonical/checkpoint，失败时保持 authored baseline；
 - 不支持的结构继续走既有 legacy owner。只有 stale revision/source/doc 或成功 publication 会清空 journal，family rejection 本身不能销毁其它 owner 仍可能消费的证据；

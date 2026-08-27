@@ -272,35 +272,50 @@ export const preserveDisplayMathBlockTextChange = ({
 }
 
 const fencedBlocks = (markdown) => {
-  const lines = markdownLines(String(markdown || ''))
+  const source = String(markdown || '')
+  const lines = markdownLines(source)
   const blocks = []
   let open = null
   for (const line of lines) {
+    // `markdownLines` deliberately retains the CR byte in a CRLF row so raw
+    // offsets remain physical-source offsets. Classify Markdown syntax against
+    // the logical line without that terminator; JavaScript `.` does not match
+    // `\r`, which previously made every CRLF opening fence invisible while the
+    // closing `\s*` still appeared valid.
+    const lineText = line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text
     if (!open) {
-      const match = line.text.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
+      const match = lineText.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
       if (match) {
         open = {
           openStart: line.start,
           openEnd: line.end,
-          contentStart: line.end + (markdown[line.end] === '\n' ? 1 : 0),
-          openLine: line.text,
+          contentStart: line.end + (source[line.end] === '\n' ? 1 : 0),
+          openLine: lineText,
           char: match[1][0],
           length: match[1].length
         }
       }
       continue
     }
-    const close = line.text.match(/^ {0,3}(`{3,}|~{3,})\s*$/)
+    const close = lineText.match(/^ {0,3}(`{3,}|~{3,})\s*$/)
     if (!close || close[1][0] !== open.char || close[1].length < open.length) continue
     blocks.push({
       ...open,
       closeStart: line.start,
       closeEnd: line.end,
-      closeLine: line.text
+      closeLine: lineText
     })
     open = null
   }
   return blocks
+}
+
+export const fencedCodeBlockAt = (markdown, offset) => {
+  const source = String(markdown || '')
+  const safe = Math.max(0, Math.min(Number(offset) || 0, source.length))
+  return fencedBlocks(source).find((block) =>
+    safe >= block.openStart && safe <= block.closeEnd
+  ) || null
 }
 
 // Code-block content is a distinct transaction owner. When an empty fenced

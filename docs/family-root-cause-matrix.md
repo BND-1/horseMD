@@ -49,12 +49,16 @@
 
 在已有文档中间编辑一个空 fenced code block 时，代码块的开闭围栏和前后块本身没有变化，只有围栏内部新增代码字符。但可见行映射会把围栏语法视为不可见边界；当源码前方已经存在列表 marker 或实体差异时，通用 `preserveMiddleEmptyBlock` 可能把这笔事务误判成“新增普通段落”，将首段代码插到开围栏之前，随后源码与富文本分叉。
 
-这不是再增加一个内容关键词分支，而是同步入口的结构所有权规则：
-- 先扫描 canonical 前后快照中的成对 fenced block，并要求开围栏、闭围栏、围栏外前缀和后缀都保持不变；
-- 再按同序号找到作者源码中的对应围栏，并证明已有代码内容的可见流一致；
-- 只有证明通过，才把 canonical 围栏内容作为一个局部替换写入作者源码的内容区；否则不让代码块处理器猜测，也不让普通段落 mapper 抢占。
+0.13.133 将该规则从 canonical-first 的局部专用分支迁入共享 transaction journal：
+- dispatch 时保存完整 `ReplaceStep`、对应 stepDoc、StepMap、oldDoc/finalDoc 和 Coordinator revision；
+- `code-block-content-replace` owner 只在恰好一个顶层 `code_block` 正文变化、attrs 与邻块不变时认领；
+- 分别定位作者 source、previous canonical、next canonical 的成对 fence，只替换作者 source 的 content range；
+- 作者围栏字符/长度、info string、BOM、CRLF 和前后字节全部保持不变；任何 attrs/围栏结构变化、跨块编辑或 closing-fence 冲突继续 fail closed；
+- callback 与立即切源码 forced flush 均在 legacy diff 前通过 `SourceSyncCoordinator` 原子发布。
 
-因此所有块级事务都遵循同一方法：**先确定结构所有权，再做局部 raw patch；无法证明归属就 fail-closed 并通知，不用整篇 canonical 覆盖源码**。回归：`test:middle-codeblock-source-ui`、`test:markdown-preservation`、`test:code-fence-delete-source-ui`、`test:tail-fence-ui`。
+真实 UI 首轮还暴露了一个通用坐标根因：remark 会在生成 AST offset 前消费 BOM，空代码块又没有 `node.value` 可二次搜索，因此 PM 位置落到 opening fence 前一字节并返回 `code-block-range-unmapped`。修复位于通用 `editor-source-map.js`：block、text span、atom 全部恢复 BOM 的物理 raw offset，而不是在代码块 owner 中写 `+1` 补丁。
+
+因此所有块级事务都遵循同一方法：**先由 PM transaction/doc 链证明结构所有权，再做局部 raw patch；canonical 只负责 callback/final semantic 验证；无法证明归属就 fail-closed，不用整篇 canonical 覆盖源码**。回归：`test:source-map`、`test:code-block-transaction-owner`、`test:middle-codeblock-source-ui`、`test:list-subtree-transaction-ui`、`test:markdown-preservation`、`test:source-fidelity-probes`。
 
 ### 根因 1：尾部行追加/删除没有精确的“行级锚定”映射器
 
