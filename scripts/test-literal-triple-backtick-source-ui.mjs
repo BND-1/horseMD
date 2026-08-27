@@ -106,6 +106,12 @@ async function main() {
   let app
   try {
     app = await openApp('first-open', port)
+    await app.evaluate(`(() => {
+      window.__hmLiteralBacktickParserTrace = []
+      window.__hmSourceSyncCoordinatorTrace = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceIntegrityDiffTrace = []
+    })()`)
     assert.equal(await app.evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       editor?.focus()
@@ -130,10 +136,25 @@ async function main() {
     assert.equal(richState.codeCount, 0, 'same-line triple-backtick text became inline code')
 
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch the empty document to source mode')
-    const source = await waitFor(
-      () => visibleSource(app.evaluate),
-      'source mode did not open for literal triple-backtick text'
-    )
+    let source
+    try {
+      source = await waitFor(
+        () => visibleSource(app.evaluate),
+        'source mode did not open for literal triple-backtick text'
+      )
+    } catch (error) {
+      const diagnostic = await app.evaluate(`(() => ({
+        parser: window.__hmLiteralBacktickParserTrace || [],
+        coordinator: window.__hmSourceSyncCoordinatorTrace || [],
+        integrity: window.__hmSourceIntegrityTrace || [],
+        semanticDiff: window.__hmSourceIntegrityDiffTrace || [],
+        toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || ''),
+        visibleSourceCount: [...document.querySelectorAll('textarea.source-editor')].filter((node) => node.offsetParent).length,
+        visibleRichCount: [...document.querySelectorAll('.ProseMirror')].filter((node) => node.offsetParent).length
+      }))()`)
+      console.error('LITERAL_TRIPLE_SOURCE_TOGGLE_DIAGNOSTIC', JSON.stringify(diagnostic))
+      throw error
+    }
     assert.ok(source.includes('```你好```'), `source lost literal triple backticks: ${JSON.stringify(source)}`)
     assert.ok(!source.includes('\\`'), `source leaked serializer backtick escapes: ${JSON.stringify(source)}`)
 
@@ -147,6 +168,19 @@ async function main() {
     await stopBuiltElectron(app, { removeProfile: true })
     app = null
     app = await openApp('reopen', port + 1)
+    const reopenedRich = await app.evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = [...(editor?.querySelectorAll('p, h1, h2, h3, h4, h5, h6') || [])]
+        .find((node) => node.textContent.includes('\`\`\`你好\`\`\`'))
+      return {
+        text: block?.textContent || '',
+        codeCount: block?.querySelectorAll('code').length ?? -1
+      }
+    })()`)
+    assert.deepEqual(reopenedRich, {
+      text: '```你好```',
+      codeCount: 0
+    }, 'cold reopen reparsed literal triple backticks as inline code')
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch reopened document to source mode')
     const reopened = await waitFor(
       () => visibleSource(app.evaluate),

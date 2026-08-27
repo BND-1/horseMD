@@ -7,7 +7,8 @@ import {
   adaptCanonicalRegionToSource,
   commonChange,
   isTableLine,
-  lineAt
+  lineAt,
+  markdownLines
 } from './core.js'
 
 const isTableSeparatorLine = (line) => {
@@ -44,6 +45,20 @@ const tableBlockAt = (markdown, offset) => {
   return lines.some(isTableSeparatorLine) ? table : null
 }
 
+const tableBlocksIn = (markdown) => {
+  const blocks = new Map()
+  for (const line of markdownLines(markdown)) {
+    if (!isTableLine(line.text)) continue
+    const table = tableBlockAt(markdown, line.start)
+    if (table) blocks.set(`${table.start}:${table.end}`, table)
+  }
+  return [...blocks.values()].sort((left, right) => left.start - right.start)
+}
+
+const tableVisibleText = (markdown, table) => table
+  ? sourceVisibleIndex(markdown.slice(table.start, table.end)).text
+  : ''
+
 const tableShape = (markdown, table) => {
   if (!table) return ''
   return markdown
@@ -78,25 +93,52 @@ export const hasTableStructureChange = ({ previous, next, start, previousEnd, ne
 export const replaceChangedTableBlock = ({ source, previous, next, start, previousEnd, nextEnd }) => {
   const previousTable = tableBlockAt(previous, start) || tableBlockAt(previous, previousEnd)
   const nextTable = tableBlockAt(next, start) || tableBlockAt(next, nextEnd)
-  if (!previousTable || !nextTable) return null
+  if (!previousTable || !nextTable) {
+    return null
+  }
 
   const tableStart = sourceVisiblePositionAtRaw(previous, previousTable.start)
   const rawInsideSource = sourceRawFromVisibleIndex(source, tableStart.visibleIndex, 'forward')
   const sourceTable = tableBlockAt(source, rawInsideSource)
-  if (!sourceTable) return null
-
-  const sourceText = sourceVisibleIndex(source.slice(sourceTable.start, sourceTable.end)).text
-  const previousText = sourceVisibleIndex(previous.slice(previousTable.start, previousTable.end)).text
-  if (sourceText !== previousText) return null
+  const previousText = tableVisibleText(previous, previousTable)
+  const sourceText = sourceTable ? tableVisibleText(source, sourceTable) : ''
+  if (!sourceTable || sourceText !== previousText) {
+    // The document may already be globally diverged because an earlier list
+    // uses authored marker/spacing that Crepe canonicalizes. In that case the
+    // visible-offset hint above can land on the wrong source table (or in a
+    // non-table line). Re-anchor by the complete table-local visible text,
+    // choosing the nearest match only when duplicate tables exist.
+    const candidates = tableBlocksIn(source).filter((candidate) =>
+      tableVisibleText(source, candidate) === previousText
+    )
+    const replacement = candidates.length === 1
+      ? candidates[0]
+      : candidates.reduce((best, candidate) => {
+          const distance = Math.abs(candidate.start - rawInsideSource)
+          return !best || distance < best.distance ? { candidate, distance } : best
+        }, null)?.candidate
+    if (!replacement) return null
+    return {
+      markdown: source.slice(0, replacement.start) +
+        adaptCanonicalRegionToSource(
+          normalizeEmptyTableCells(next.slice(nextTable.start, nextTable.end)),
+          source,
+          replacement
+        ) +
+        source.slice(replacement.end),
+      preserved: true,
+      reason: 'table-block-change-local-anchor'
+    }
+  }
 
   return {
     markdown: source.slice(0, sourceTable.start) +
       adaptCanonicalRegionToSource(
         normalizeEmptyTableCells(next.slice(nextTable.start, nextTable.end)),
-        source,
-        sourceTable
+        source,        sourceTable
       ) +
-      source.slice(sourceTable.end),
+    source.slice(sourceTable.end),
+
     preserved: true,
     reason: 'table-block-change'
   }

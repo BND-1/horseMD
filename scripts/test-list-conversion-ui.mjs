@@ -142,22 +142,49 @@ async function clickBlockMenuActionWithMouse({ evaluate, send }, targetType) {
 }
 
 async function hoverContextSubmenu({ evaluate, send }, name) {
+  let diagnostic = null
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const point = await evaluate(`(() => {
-      const trigger = document.querySelector('[data-context-submenu-trigger=${JSON.stringify(name)}]')
+      const trigger = [...document.querySelectorAll('[data-context-submenu-trigger=${JSON.stringify(name)}]')]
+        .find((node) => node.offsetParent)
       const rect = trigger?.getBoundingClientRect()
-      return rect && trigger.offsetParent ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+      return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
     })()`)
     if (!point) return false
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' })
-    await sleep(100)
-    const open = await evaluate(`(() => {
-      const submenu = document.querySelector('[data-context-submenu=${JSON.stringify(name)}]')
-      return submenu?.offsetParent ? true : false
+    await sleep(120)
+    diagnostic = await evaluate(`(() => {
+      const triggers = [...document.querySelectorAll('[data-context-submenu-trigger=${JSON.stringify(name)}]')]
+      const submenus = [...document.querySelectorAll('[data-context-submenu=${JSON.stringify(name)}]')]
+      const visibleTrigger = triggers.find((node) => node.offsetParent)
+      const visibleSubmenu = submenus.find((node) => node.offsetParent)
+      const hit = document.elementFromPoint(${point.x}, ${point.y})
+      const rect = visibleTrigger?.getBoundingClientRect()
+      return {
+        open: !!visibleSubmenu,
+        triggerCount: triggers.length,
+        visibleTriggerCount: triggers.filter((node) => node.offsetParent).length,
+        submenuCount: submenus.length,
+        visibleSubmenuCount: submenus.filter((node) => node.offsetParent).length,
+        triggerRect: rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null,
+        hitTag: hit?.tagName || null,
+        hitClass: hit?.className || null,
+        hitTrigger: hit?.closest?.('[data-context-submenu-trigger]')?.dataset.contextSubmenuTrigger || null,
+        menuCount: document.querySelectorAll('.block-ctxmenu').length,
+        visibleMenuCount: [...document.querySelectorAll('.block-ctxmenu')]
+          .filter((node) => node.offsetParent).length,
+        toasts: [...document.querySelectorAll('[class*="toast"]')]
+          .map((node) => node.textContent),
+        integrity: (window.__hmSourceIntegrityTrace || []).slice(0, 12)
+          .map(({ parsed, expected, ...entry }) => entry),
+        coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-20),
+        preserveReasons: (window.__hmPreserveLog || []).slice(-20)
+          .map((entry) => ({ reason: entry.reason, preserved: entry.preserved }))
+      }
     })()`)
-    if (open) return true
+    if (diagnostic.open) return true
   }
-  throw new Error(`context submenu did not open: ${name}`)
+  throw new Error(`context submenu did not open: ${name}: ${JSON.stringify(diagnostic)}`)
 }
 
 async function openListMenu(app, text) {
@@ -225,6 +252,10 @@ async function main() {
       () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
       'list conversion fixture did not open in rich mode'
     )
+    await evaluate(`(() => {
+      window.__hmSourceSyncCoordinatorTrace = []
+      window.__hmSourceIntegrityTrace = []
+    })()`)
 
     assert.deepEqual(await listShape(evaluate), {
       parent: 'UL', child: 'UL', ordered: 'OL', orderedChild: 'OL', task: 'UL'
@@ -359,6 +390,26 @@ async function main() {
       })()`),
       'OL',
       'leading-space list conversion was rejected or rendered with the wrong list type'
+    )
+
+    const sourceSyncState = await evaluate(`(() => ({
+      publications: (window.__hmSourceSyncCoordinatorTrace || [])
+        .filter((entry) => entry.phase === 'published'),
+      failures: (window.__hmSourceIntegrityTrace || [])
+        .filter((entry) => entry?.ok === false)
+    }))()`)
+    assert.ok(
+      sourceSyncState.publications.some((entry) => entry.boundary === 'list-conversion-command-snapshot'),
+      'list-type conversion bypassed its command-snapshot owner'
+    )
+    assert.ok(
+      sourceSyncState.publications.some((entry) => entry.boundary === 'block-to-list-command-snapshot'),
+      'paragraph-to-list conversion bypassed its command-snapshot owner'
+    )
+    assert.equal(
+      sourceSyncState.failures.length,
+      0,
+      'list conversion produced first-divergence failures: ' + JSON.stringify(sourceSyncState.failures)
     )
 
     assert.equal(await toggleSource(evaluate), true, 'could not inspect converted Markdown in source mode')

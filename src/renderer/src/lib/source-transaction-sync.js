@@ -68,6 +68,59 @@ const documentLineEnding = (source) => {
   return '\n'
 }
 
+// A whole-document replacement is authoritative only when the pre-transaction
+// selection itself covered the complete ProseMirror document. This excludes
+// input rules that happen to structurally replace the sole top-level block.
+export const isWholeDocumentReplacementBatch = ({
+  transactions,
+  oldState,
+  newState
+}) => {
+  const oldDoc = oldState?.doc
+  const selection = oldState?.selection
+  if (
+    !oldDoc ||
+    !selection ||
+    selection.from > 0 ||
+    selection.to < oldDoc.content.size
+  ) {
+    return false
+  }
+  const changed = (transactions || []).filter((transaction) => transaction?.docChanged)
+  if (changed.length !== 1) return false
+  const transaction = changed[0]
+  if (
+    !sameDocument(transaction.before, oldDoc) ||
+    !sameDocument(transaction.doc, newState?.doc) ||
+    transaction.steps?.length !== 1
+  ) {
+    return false
+  }
+  const step = transaction.steps[0]
+  return (
+    step?.constructor?.name === 'ReplaceStep' &&
+    step.from === 0 &&
+    step.to === oldDoc.content.size
+  )
+}
+
+// Once the complete old document was selected, its per-block Markdown spelling
+// no longer has surviving ownership. Keep only the file-level format that still
+// belongs to the document: BOM and a uniform line-ending convention.
+export const formatWholeDocumentReplacementSource = ({
+  canonical,
+  previousSource
+}) => {
+  const previous = String(previousSource || '')
+  let markdown = String(canonical || '').replace(/^\uFEFF/, '')
+  if (!markdown) return ''
+  const lineEnding = documentLineEnding(previous.replace(/^\uFEFF/, ''))
+  if (lineEnding && lineEnding !== '\n') {
+    markdown = markdown.replace(/\r\n|\r|\n/g, lineEnding)
+  }
+  return `${previous.charCodeAt(0) === 0xFEFF ? '\uFEFF' : ''}${markdown}`
+}
+
 const leadingLineEndingCount = (source, lineEnding) => {
   let count = 0
   let offset = 0
@@ -135,10 +188,19 @@ const applyViewEdit = (view, from, to, text, lineEnding = null) => {
   view.text = view.text.slice(0, from) + text + view.text.slice(to)
   view.original = view.original.slice(0, origFrom) + origText + view.original.slice(origTo)
   const delta = origText.length - (origTo - origFrom)
-  const next = view.toRaw.slice(0, from)
-  const insertedMapsOneToOne = origText.length === text.length
-  for (let i = 0; i < text.length; i += 1) {
-    next.push(insertedMapsOneToOne ? origFrom + i : null)
+  // `toRaw` maps normalized BOUNDARIES, not characters. Preserve the boundary
+  // at `from`, append one boundary after every inserted normalized character,
+  // then shift untouched boundaries after `to`. The previous implementation
+  // dropped the insertion-start boundary, so a second transaction in the same
+  // journal mapped one character to the right and could consume the terminal
+  // newline. Structural newline insertions use the authored EOL width here.
+  const next = view.toRaw.slice(0, from + 1)
+  let insertedRawOffset = origFrom
+  for (let index = 0; index < text.length; index += 1) {
+    insertedRawOffset += lineEnding && text[index] === '\n'
+      ? lineEnding.length
+      : 1
+    next.push(insertedRawOffset)
   }
   for (let i = to + 1; i < view.toRaw.length; i += 1) {
     const value = view.toRaw[i]
@@ -156,19 +218,123 @@ const diagnostic = (value) => {
   }
 }
 
-const semanticJson = (node) => {
+const semanticJson = (node, {
+  ignoreTrailingEmptyListItemParagraph = false,
+  ignoreTrailingEmptyListItemParagraphAfterNestedStructure = false,
+  ignoreTrailingEmptyBlockquoteParagraph = false
+} = {}) => {
   if (!node?.toJSON) return null
   const visit = (value) => {
     if (!value || typeof value !== 'object') return value
     const next = { ...value }
-    if (next.type === 'heading' && next.attrs) {
+    if (next.attrs) {
       next.attrs = { ...next.attrs }
-      // Heading ids are derived by the live editor and regenerated after parse;
-      // they are not authored Markdown semantics.
-      delete next.attrs.id
+      if (next.type === 'heading') {
+        // Heading ids are derived by the live editor and regenerated after
+        // parse; they are not authored Markdown semantics.
+        delete next.attrs.id
+      }
+      if (next.type === 'bullet_list' || next.type === 'ordered_list') {
+        // Milkdown uses both booleans and string values for this internal
+        // layout attribute depending on whether the list came from parsing or
+        // an input rule. Blank-line layout is already represented by Markdown
+        // spacing and must not make a valid source candidate fail integrity.
+        delete next.attrs.spread
+      }
+      if (next.type === 'list_item') {
+        // Marker spelling and the derived list type are preserved by the raw
+        // source mapper, not by semantic document identity. `checked` remains
+        // because task-list state is authored meaning.
+        delete next.attrs.label
+        delete next.attrs.listType
+        delete next.attrs.spread
+      }
       if (!Object.keys(next.attrs).length) delete next.attrs
     }
     if (Array.isArray(next.content)) next.content = next.content.map(visit)
+    if (next.type === 'paragraph' && Array.isArray(next.content) &&
+        next.content.every((child) => child?.type === 'hardbreak')) {
+      // A standalone hardbreak is Crepe's internal placeholder for an empty
+      // paragraph/cell. It carries no authored text; inline breaks surrounded
+      // by text remain untouched.
+      delete next.content
+    }
+    if (next.type === 'list_item' && Array.isArray(next.content)) {
+      // Backspace on an empty list item briefly leaves TWO consecutive empty
+      // paragraphs in the preceding item: the real empty item paragraph plus a
+      // Crepe-only hardbreak placeholder for the lifted row. Markdown cannot
+      // encode the multiplicity of empty paragraphs inside a list item without
+      // leaking `<br />`. Collapse only consecutive empty paragraphs to one;
+      // every non-empty paragraph/list/quote child remains structurally strict.
+      let trailingEmptyParagraphs = 0
+      for (let index = next.content.length - 1; index >= 0; index -= 1) {
+        const child = next.content[index]
+        if (child?.type !== 'paragraph' || child?.content?.length) break
+        trailingEmptyParagraphs += 1
+      }
+      const compact = []
+      for (const child of next.content) {
+        const emptyParagraph = child?.type === 'paragraph' && !child?.content?.length
+        const previousChild = compact.at(-1)
+        const previousEmpty = previousChild?.type === 'paragraph' && !previousChild?.content?.length
+        if (emptyParagraph && previousEmpty) continue
+        compact.push(child)
+      }
+      // Deleting one EMPTY bullet with Backspace can leave exactly one
+      // editor-owned empty paragraph after the preceding non-empty paragraph.
+      // Authored Markdown has no distinct source bytes for that transient. The
+      // generic RS-51 path accepts it only after a text paragraph. RS-63 adds a
+      // separate opt-in for the stricter case where raw preservation proved the
+      // removed top-level row merged after a nested list inside the same item.
+      if (
+        (ignoreTrailingEmptyListItemParagraph || ignoreTrailingEmptyListItemParagraphAfterNestedStructure) &&
+        trailingEmptyParagraphs === 1 &&
+        compact.length >= 2
+      ) {
+        const trailing = compact.at(-1)
+        const previousChild = compact.at(-2)
+        const trailingEmpty = trailing?.type === 'paragraph' && !trailing?.content?.length
+        const previousTextParagraph =
+          previousChild?.type === 'paragraph' && Array.isArray(previousChild.content) && previousChild.content.length > 0
+        const previousNestedList = previousChild?.type === 'bullet_list' || previousChild?.type === 'ordered_list'
+        const hasEarlierTextParagraph = compact.slice(0, -1).some((child) =>
+          child?.type === 'paragraph' && Array.isArray(child.content) && child.content.length > 0
+        )
+        if (
+          trailingEmpty &&
+          (
+            (ignoreTrailingEmptyListItemParagraph && previousTextParagraph) ||
+            (
+              ignoreTrailingEmptyListItemParagraphAfterNestedStructure &&
+              previousNestedList &&
+              hasEarlierTextParagraph
+            )
+          )
+        ) compact.pop()
+      }
+      next.content = compact
+    }
+    if (
+      next.type === 'blockquote' &&
+      ignoreTrailingEmptyBlockquoteParagraph &&
+      Array.isArray(next.content) &&
+      next.content.length >= 2
+    ) {
+      let trailingEmptyParagraphs = 0
+      for (let index = next.content.length - 1; index >= 0; index -= 1) {
+        const child = next.content[index]
+        if (child?.type !== 'paragraph' || child?.content?.length) break
+        trailingEmptyParagraphs += 1
+      }
+      const trailing = next.content.at(-1)
+      const previousChild = next.content.at(-2)
+      const trailingEmpty = trailing?.type === 'paragraph' && !trailing?.content?.length
+      const previousTextParagraph =
+        previousChild?.type === 'paragraph' && Array.isArray(previousChild.content) && previousChild.content.length > 0
+      if (trailingEmptyParagraphs === 1 && trailingEmpty && previousTextParagraph) {
+        next.content = next.content.slice(0, -1)
+      }
+    }
     if (Array.isArray(next.marks)) next.marks = next.marks.map(visit)
     return next
   }
@@ -182,15 +348,160 @@ const semanticJson = (node) => {
     result.content = result.content.filter((child) => !(
       child?.type === 'paragraph' && !child?.content?.length
     ))
+
+    // Markdown parsers intentionally merge adjacent same-kind lists even when
+    // the authored source has a blank line between them. ProseMirror can keep
+    // those as two separate list nodes because the empty paragraph is an
+    // editor-owned structural boundary. Compare their item streams as one
+    // semantic list; raw marker/spacing preservation remains responsible for
+    // retaining the authored boundary and is checked by the localized mapper.
+    const merged = []
+    for (const child of result.content) {
+      const previous = merged.at(-1)
+      if (
+        previous &&
+        (child?.type === 'bullet_list' || child?.type === 'ordered_list') &&
+        child.type === previous.type
+      ) {
+        previous.content = [
+          ...(previous.content || []),
+          ...(child.content || [])
+        ]
+      } else {
+        merged.push(child)
+      }
+    }
+    result.content = merged
   }
   return result
 }
 
-export const areSourceDocumentsEquivalent = (parsed, expected) => {
-  const left = semanticJson(parsed)
-  const right = semanticJson(expected)
+const emptyParagraphBeforeOrderedListCandidates = (root) => {
+  const candidates = []
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return
+    if (value.type === 'list_item' && Array.isArray(value.content)) {
+      for (let index = 1; index < value.content.length - 1; index += 1) {
+        const previousChild = value.content[index - 1]
+        const emptyChild = value.content[index]
+        const followingChild = value.content[index + 1]
+        const previousTextParagraph =
+          previousChild?.type === 'paragraph' &&
+          Array.isArray(previousChild.content) &&
+          previousChild.content.length > 0
+        const middleEmptyParagraph =
+          emptyChild?.type === 'paragraph' && !emptyChild?.content?.length
+        const followingOrderedList = followingChild?.type === 'ordered_list'
+        if (previousTextParagraph && middleEmptyParagraph && followingOrderedList) {
+          candidates.push({ content: value.content, index })
+        }
+      }
+    }
+    if (Array.isArray(value.content)) {
+      for (const child of value.content) visit(child)
+    }
+  }
+  visit(root)
+  return candidates
+}
+
+const reconcileSingleEmptyParagraphBeforeOrderedList = (left, right) => {
+  const leftCandidates = emptyParagraphBeforeOrderedListCandidates(left)
+  const rightCandidates = emptyParagraphBeforeOrderedListCandidates(right)
+  // RS-85 is a one-sided, one-transaction transient. Fail closed when both
+  // documents contain a candidate, either side contains more than one, or the
+  // empty paragraph moved to a different list item. This prevents a dedicated
+  // owner from masking unrelated pre-existing middle paragraphs elsewhere.
+  if (leftCandidates.length === 1 && rightCandidates.length === 0) {
+    leftCandidates[0].content.splice(leftCandidates[0].index, 1)
+  } else if (rightCandidates.length === 1 && leftCandidates.length === 0) {
+    rightCandidates[0].content.splice(rightCandidates[0].index, 1)
+  }
+}
+
+const firstSemanticDifference = (left, right, path = '$') => {
+  if (Object.is(left, right)) return null
+  if (typeof left !== typeof right || left == null || right == null) {
+    return { path, left, right }
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return { path, leftLength: left?.length, rightLength: right?.length }
+    }
+    for (let index = 0; index < left.length; index += 1) {
+      const difference = firstSemanticDifference(left[index], right[index], `${path}[${index}]`)
+      if (difference) return difference
+    }
+    return null
+  }
+  if (typeof left === 'object' && typeof right === 'object') {
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+    for (const key of keys) {
+      const difference = firstSemanticDifference(left[key], right[key], `${path}.${key}`)
+      if (difference) return difference
+    }
+    return null
+  }
+  return { path, left, right }
+}
+
+const semanticTransition = (before, after, options = {}) => {
+  const left = semanticJson(before, options)
+  const right = semanticJson(after, options)
+  if (!left || !right || left.type !== 'doc' || right.type !== 'doc') return null
+  const beforeContent = Array.isArray(left.content) ? left.content : []
+  const afterContent = Array.isArray(right.content) ? right.content : []
+  let prefix = 0
+  while (
+    prefix < beforeContent.length &&
+    prefix < afterContent.length &&
+    JSON.stringify(beforeContent[prefix]) === JSON.stringify(afterContent[prefix])
+  ) prefix += 1
+  let suffix = 0
+  while (
+    suffix < beforeContent.length - prefix &&
+    suffix < afterContent.length - prefix &&
+    JSON.stringify(beforeContent[beforeContent.length - 1 - suffix]) ===
+      JSON.stringify(afterContent[afterContent.length - 1 - suffix])
+  ) suffix += 1
+  return {
+    before: beforeContent.slice(prefix, beforeContent.length - suffix),
+    after: afterContent.slice(prefix, afterContent.length - suffix)
+  }
+}
+
+// Existing authored Markdown can legitimately parse to a different whole-doc
+// shape than Crepe's serializer while still representing the file HorseMD
+// opened. For a later LOCAL edit, prove the delta instead of requiring the two
+// already-diverged end states to suddenly become identical. Both sides must
+// have the exact same normalized semantic transition; callers still apply raw
+// structure/list-slot guards separately.
+export const areSourceDocumentTransitionsEquivalent = (
+  beforeSource,
+  afterSource,
+  beforeExpected,
+  afterExpected,
+  options = {}
+) => {
+  const sourceTransition = semanticTransition(beforeSource, afterSource, options)
+  const expectedTransition = semanticTransition(beforeExpected, afterExpected, options)
+  if (!sourceTransition || !expectedTransition) return false
+  return JSON.stringify(sourceTransition) === JSON.stringify(expectedTransition)
+}
+
+export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => {
+  const left = semanticJson(parsed, options)
+  const right = semanticJson(expected, options)
   if (!left || !right) return false
-  return JSON.stringify(left) === JSON.stringify(right)
+  if (options.ignoreEmptyListItemParagraphBeforeNestedStructure) {
+    reconcileSingleEmptyParagraphBeforeOrderedList(left, right)
+  }
+  const equal = JSON.stringify(left) === JSON.stringify(right)
+  if (!equal && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+    globalThis.__hmSourceIntegrityDiffTrace.push(firstSemanticDifference(left, right))
+    if (globalThis.__hmSourceIntegrityDiffTrace.length > 20) globalThis.__hmSourceIntegrityDiffTrace.shift()
+  }
+  return equal
 }
 
 export function mapPlainTextTransactionsToSource({

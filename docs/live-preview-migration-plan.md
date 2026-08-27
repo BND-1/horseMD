@@ -1,7 +1,7 @@
 # 源码优先 Live Preview 架构迁移计划
 
-> 状态：2026-08-10 已选择“方案一”——保留 Milkdown/ProseMirror，优先完成 transaction→source 迁移；CodeMirror Live Preview 保留为长期备选，不在当前阶段大爆炸替换。
-> 目标：把 HorseMD 从「ProseMirror 文档 + 启发式源码对账」迁移到
+> 状态：2026-08-26，当前版本 `0.13.125`。执行路线已明确为“先保留 Milkdown/ProseMirror，按结构族完成 transaction→source 迁移”；CodeMirror Live Preview 是长期终局备选，当前不启动全量替换。生产发布仍由 legacy preservation 主导，transaction-first 处于受限 authority/影子验证阶段。
+> 目标：长期把 HorseMD 从「ProseMirror 文档 + 启发式源码对账」迁移到
 > Obsidian/Typora 式「源码即数据模型」的 CodeMirror 6 Live Preview 架构，
 > 从根本上消除 canonical/source 保真 bug 家族。
 
@@ -66,7 +66,17 @@
 - HTML/Pandoc 导出、大纲/滚动跟随、移动端（Capacitor 共享 renderer）、
   i18n、快捷键、设置：接口层复用，内核替换。
 
-## 4. 迁移策略（禁止大爆炸）
+## 4. 当前执行状态与迁移策略（禁止大爆炸）
+
+截至 `0.13.125`，Phase 0 基础设施和 Phase 1 的普通段落 authority 合同已经落地，但 Phase 1 还没有完成生产放行：
+
+- 已完成：transaction observer、完整 batch、raw range mapper、checkpoint、shadow/authority gate、普通段落的受限 authority、保存前 live flush 和结构完整性门禁；
+- 当前默认：legacy preservation 仍拥有生产发布权；authority 只接受明确 allowlist 的普通段落 inline replacement；
+- 未迁移：列表输入规则/Enter/Backspace、引用、代码块、表格、任务项、inline mark/atom、paste/generated/special 事务；这些仍由 legacy owner 处理；
+- 本轮 `RS-80` 是 legacy 列表 owner 的局部事务归属收紧，不应计入“列表已迁移到 transaction-first”；
+- 每个结构族必须完成分类器、raw range proof、candidate、semantic/structure proof、源码切换、保存、磁盘字节、冷重开和真实逐字回归后，才能独立提升 authority；提升后删除或缩减对应 legacy owner。
+
+### Phase 0：现状冻结
 
 ### Phase 0：现状冻结
 - 现有全量回归（`npm run test:*` UI 套件 + 纯函数探针）作为验收基线。

@@ -216,6 +216,35 @@ add('thematic-break-input-rule',
   '前文\n\n---\n',
   '前文\n\n---\n')
 
+// 38b. Published escaped dash becomes a middle thematic break without gluing
+add('middle-thematic-break-after-escaped-dash',
+  '- authored\n\n3. 3fresh\n\n\\-\n\n1. following\n',
+  '* authored\n\n3. 3fresh\n\n\\-\n\n1. following\n',
+  '* authored\n\n3. 3fresh\n\n***\n\n1. following\n',
+  '- authored\n\n3. 3fresh\n\n---\n\n1. following\n')
+
+// 38c. Cross-list selection deletion leaves one empty bullet atomically
+add('cross-list-selection-delete-to-empty-bullet',
+  '左段\n\n- first\n\n2. middle\n\n- last\n- survivor\n',
+  '左段\n\n* first\n\n2. middle\n\n* last\n\n* survivor\n',
+  '左段\n\n* <br />\n\n* survivor\n',
+  '左段\n\n- \n- survivor\n')
+
+// 38d. Empty ordered parent with a nested child merges into its left sibling
+add('empty-ordered-parent-before-nested-list',
+  '# sdvs\n\n- srgsrgs \n- srgsrgsg \n  * srgtrhyj \n\n当然会当然好\n\n1. 是共生共荣\n2. \n   1. 如何电话\n',
+  '# sdvs\n\n* srgsrgs \n* srgsrgsg \n\n  * srgtrhyj \n\n当然会当然好\n\n1. 是共生共荣\n2. <br />\n\n   1. 如何电话\n\n',
+  '# sdvs\n\n* srgsrgs \n* srgsrgsg \n\n  * srgtrhyj \n\n当然会当然好\n\n1. 是共生共荣\n\n   <br />\n\n   1. 如何电话\n\n',
+  '# sdvs\n\n- srgsrgs \n- srgsrgsg \n  * srgtrhyj \n\n当然会当然好\n\n1. 是共生共荣\n   1. 如何电话\n')
+
+// 38e. Rapid double Enter inserts an editor-only empty paragraph while the
+// surviving sibling list changes only its canonical bullet token.
+add('coalesced-empty-bullet-exit-before-sibling',
+  '# RS86\n\n- prefix\n\n- u高科技\n\n- 12312\n\n- 1\\. 色粉色分\n\n1. 后文\n',
+  '# RS86\n\n* prefix\n\n- u高科技\n\n- 12312\n\n- 1\\. 色粉色分\n\n1. 后文\n',
+  '# RS86\n\n* prefix\n\n- u高科技\n\n- 12312\n\n<br />\n\n* 1\\. 色粉色分\n\n1. 后文\n',
+  '# RS86\n\n- prefix\n\n- u高科技\n\n- 12312\n\n- 1\\. 色粉色分\n\n1. 后文\n')
+
 // 39. Image with title text edit
 add('image-title',
   '![图](img/a.png "旧标题")\n',

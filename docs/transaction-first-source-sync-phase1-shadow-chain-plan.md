@@ -2,11 +2,15 @@
 
 ## Status
 
-- Date: 2026-08-25
-- Phase: 1 shadow qualification
+- Date: 2026-08-27
+- Phase: historical Phase 1 shadow qualification; production lifecycle replaced
 - Scope: rapid consecutive plain-paragraph transactions before one deferred `markdownUpdated`
-- Production publication: unchanged; legacy remains authoritative
+- Production publication: shared `SourceSyncTransactionJournal`; legacy default / explicit plain authority
 - Parent plan: `docs/transaction-first-source-sync-phase1-plain-paragraph-plan.md`
+
+## Current replacement
+
+`advanceTransactionFirstSourceSync()` and its scalar private checkpoint are no longer used by production `Editor.jsx`. They remain only as historical policy/compatibility pure contracts. Production dispatch now appends every eligible batch to `SourceSyncTransactionJournal`, including per-Step documents and StepMaps; list/plain focused owners consume that same journal at callback or forced-flush time. This removes the parallel checkpoint lifecycle and prevents one family from silently rebasing after another publication.
 
 ## Why this plan exists
 

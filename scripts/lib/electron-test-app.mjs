@@ -47,20 +47,49 @@ export async function connectOrLaunchBuiltElectron({
   }
 }
 
+const waitForChildExit = (child, timeoutMs) => new Promise((resolve) => {
+  if (!child || child.exitCode != null || child.signalCode != null) {
+    resolve(true)
+    return
+  }
+  let timer = null
+  const onExit = () => {
+    if (timer) clearTimeout(timer)
+    resolve(true)
+  }
+  timer = setTimeout(() => {
+    child.off('exit', onExit)
+    resolve(false)
+  }, timeoutMs)
+  child.once('exit', onExit)
+})
+
+const removeProfileWithRetry = async (profileDir) => {
+  const retryable = new Set(['ENOTEMPTY', 'EBUSY', 'EPERM'])
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await rm(profileDir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (!retryable.has(error?.code) || attempt === 5) throw error
+      await sleep(80 * (attempt + 1))
+    }
+  }
+}
+
 export async function stopBuiltElectron(app, { removeProfile = false } = {}) {
   try {
     app?.ws?.close()
   } catch {}
-  if (app?.child && app.child.exitCode == null) {
+  if (app?.child && app.child.exitCode == null && app.child.signalCode == null) {
     app.child.kill('SIGTERM')
-    await Promise.race([
-      new Promise((resolve) => app.child.once('exit', resolve)),
-      sleep(3000).then(() => {
-        if (app.child.exitCode == null) app.child.kill('SIGKILL')
-      })
-    ])
+    const exited = await waitForChildExit(app.child, 3000)
+    if (!exited && app.child.exitCode == null && app.child.signalCode == null) {
+      app.child.kill('SIGKILL')
+      await waitForChildExit(app.child, 2000)
+    }
   }
   if (removeProfile && app?.profileDir) {
-    await rm(app.profileDir, { recursive: true, force: true })
+    await removeProfileWithRetry(app.profileDir)
   }
 }

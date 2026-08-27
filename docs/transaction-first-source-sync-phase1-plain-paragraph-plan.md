@@ -4,13 +4,22 @@
 
 - Phase: 1 — first authoritative family
 - Scope: top-level unmarked plain-paragraph inline replacement only
-- Current live publication: legacy remains authoritative
+- Current live publication: legacy remains authoritative by default; explicit authority is allowlisted to the plain-paragraph family
 - Parent architecture: `docs/transaction-first-source-sync-migration.md`
 - Shadow qualification: `docs/transaction-first-source-sync-phase0-shadow-plan.md`
+- Current application version: `0.13.132`
+- Current production lifecycle: one shared revision-bound `SourceSyncTransactionJournal`; no private `transactionFirstShadowPending`
+- Current structure ownership: exact single-list-subtree journals may publish transaction bytes; unsupported families remain legacy fallback
 
 Phase 1 starts only after Phase 0 has proven that the live editor can capture transaction evidence, compare it with the final legacy candidate, reject unsupported structure, and leave publication unchanged.
 
 This phase does **not** switch the application to transaction-first immediately. It first makes authoritative eligibility a named, testable contract. Live publication can be promoted only after that contract is implemented, shadow-qualified, and safely wired against a clean `Editor.jsx` baseline.
+
+## Current checkpoint (2026-08-27)
+
+Phase 1 production wiring now consumes the shared `SourceSyncTransactionJournal`. Dispatch captures revision/source/canonical/oldDoc, complete transaction batches, per-Step documents and StepMaps once; `plain-paragraph-transaction-owner.js` classifies and maps the complete journal at callback/forced-flush time. The old scalar `transactionFirstShadowPending` and per-dispatch whole-document SourceRangeMap lifecycle are removed from `Editor.jsx`; the historical module remains compatibility-test-only.
+
+The default application still publishes ordinary paragraphs through legacy unless the explicit authority gate is enabled. Shadow, authority, 1000-paragraph BOM/CRLF, list subtree callback/forced-flush, 39/39 source probes and adjacent high-risk list/input-rule UI matrices are green. Code-block, table, quote and other unported structural journals remain outside this authority family.
 
 ## Objective
 
@@ -316,11 +325,53 @@ Post-fix baseline evidence: the original `ordered` cell now passes append/save/d
 
 The next `plain` first divergence was again a legacy ownership bug, not a transaction-first shadow effect. The tail had one already-empty ordered slot followed by `1) 测试`. Deleting that body produced a second empty slot. Because both empty list bodies have no visible text, the broad tail delete proof treated the newly emptied `1)` row as if it had disappeared and the previous empty slot had become the tail. It deleted the authored row and failed strict list-slot count validation.
 
-RS-75 adds no new source mapper. It only vetoes whole-row deletion when raw tail identity proves an in-place list edit: identical raw prefix, indent, marker token and marker spacing, with body changing from non-empty to blank/`<br />`. The existing `diverged-nested-list-change` mapper then owns the body-empty transition. A dedicated core regression also proves genuine tail row deletion is still owned by `diverged-tail-line-delete`. The real `引用后输入手测.md + plain` cell now passes append/save/delete/reopen. `list-spaces` remains the next independent baseline failure.
+RS-75 adds no new source mapper. It only vetoes whole-row deletion when raw tail identity proves an in-place list edit: identical raw prefix, indent, marker token and marker spacing, with body changing from non-empty to blank/`<br />`. The existing `diverged-nested-list-change` mapper then owns the body-empty transition. A dedicated core regression also proves genuine tail row deletion is still owned by `diverged-tail-line-delete`. The real `引用后输入手测.md + plain` cell now passes append/save/delete/reopen.
 
-Therefore Phase 1 live authority remains blocked. The migration gate is doing its intended job: baseline failures are being separated from shadow behavior before publication ownership changes. Do not mark the clean-baseline or long-document criteria complete until the remaining first divergences are independently resolved or explicitly quarantined by a proven contract.
+### 2026-08-25 — RS-76 leading-space sentinel tail lifecycle
+
+The remaining `list-spaces` first divergence was another legacy source-owner gap. The test deliberately leaves leading whitespace in a bullet item after deleting its marker text. Before deletion, canonical uses `&#x20;` while authored source uses U+200B as source-only syntax. After the body is deleted to whitespace-only, the serializer emits a spaces-only bullet row. On the heavily diverged fixture no generic visible mapper can identify that zero-visible edit, and the old sentinel post-process never runs because core already returned `visible-stream-mismatch`.
+
+RS-76 adds a tail-only owner with a full raw proof: canonical prefixes before the last row are byte-identical; previous last row is a bullet with `&#x20;` plus non-whitespace text; next last row keeps the same canonical bullet/indent and contains only horizontal whitespace; authored source ends in a matching sentinel-backed bullet whose decoded body equals canonical previous. Only then does it replace the authored final row, preserve its bullet token, copy the spaces-only suffix, and remove U+200B. Parsing confirms leaving U+200B after visible body deletion would turn it into real paragraph text. The real `引用后输入手测.md + list-spaces` cell now passes the full cycle under the unchanged semantic/list-slot integrity gate. The subsequent 0.13.121 full matrix confirmed the entire fixture 5/5.
+
+### 2026-08-25 — RS-77 localized sentinel reconciliation after body deletion
+
+The same sentinel lifecycle appeared through a different legacy path on `11111.md + list-spaces`. Here core did **not** fail closed: `localized-change` successfully mapped the edit but left `* U+200B  ` in its candidate. The facade already invoked `reconcileLeadingSpaceSentinelTransition`, yet that helper located result rows by the previous visible body. Once the body became empty, the lookup could no longer find the patched sentinel row, and strict semantic/list-slot validation correctly rejected the candidate.
+
+RS-77 extends only that post-process. When the ordinary previous-visible result lookup returns nothing and `nextVisible` is empty, it may use the exact source line ordinal only if the source sentinel row is uniquely proven, source/result line counts are unchanged, the corresponding result line still contains the sentinel, and removing it makes that row's visible text exactly equal to `nextVisible`. The dedicated core test, full markdown-preservation suite, build, and real `11111.md + list-spaces` cycle pass. The 0.13.121 full matrix before this fix was 18/20; the formal 0.13.122 rerun reached **19/20**, with all `11111.md` cells green and only `反馈.md + plain` remaining.
+
+### 2026-08-25 — RS-78 globally-diverged tail bullet body-empty ownership
+
+The final 19/20 baseline blocker was another exact ownership gap. `反馈.md` already ends inside a bullet list, so the family `plain` append actually creates a new bullet item. On reopen, authored source ends in `- 而为` while canonical ends in `* 而为`. Deleting the body leaves the same PM list slot as `* <br />`, but the document's earlier blockquote/list structural divergence makes global visible mapping ambiguous and core returns `visible-stream-mismatch`. A simple one-divergence synthetic did not reproduce the failure, so the permanent regression retains the complete captured source/canonical triple rather than broadening a generic mapper.
+
+RS-78 adds one final-row-only proof before generic diverged mapping. Previous and next canonical prefixes before the final content row must be byte-identical; both final rows must be the same bullet indent/token/spacing with only non-empty→empty body change; authored source must itself end in a same-indent bullet whose body visible text equals canonical previous. Only then is the authored final body removed, preserving its original marker spelling, spacing, EOL, and all earlier bytes. RS-76's sentinel-specific owner stays earlier in dispatch. The dedicated RS-78 core regression, full markdown-preservation suite, source structure fingerprint, 35/35 probes, source-transaction-sync, build, and real `反馈.md + plain` cycle pass. The formal 0.13.123 four-file × five-operation matrix also passes 20/20.
+
+The legacy automated baseline is no longer the Phase 1 blocker. A clean-baseline isolation run removed the complete 44-line transaction-first shadow live wiring from `Editor.jsx`, rebuilt 0.13.123, and reran the full four-file × five-operation matrix: the pure legacy path still passed 20/20 / exit 0. The shadow wiring was then restored byte-for-byte. This proves the family baseline does not depend on transaction-first telemetry, even though the accumulated dirty tree is still too broad to turn that proof into a clean branch commit without risking unrelated history.
+
+Live authority is qualified behind a separate development-only gate, `globalThis.__hmTransactionFirstAuthority === true`; it is not aliased to the historical broad `__hmTransactionSourcePrimary` flag and remains off by default. RS-79 exposed one final ordering error in that wiring: an owned authoritative transaction still waited until after legacy preservation/integrity, so a legacy candidate could emit a transient `ok=false` before transaction-first replaced the final publication. The live callback now performs an early reconcile only for an exact owned, allowlisted `plain-paragraph-inline-replace` snapshot whose callback canonical matches the current PM document; it publishes transaction bytes before legacy preservation. Rejected, syntax-sensitive, structural, list, paste, generated-scratch, stale, or otherwise unproven checkpoints are not consumed and continue through the existing legacy fallback plus late reconcile.
+
+Long-document qualification also forced a SourceRangeMap performance correction. The scalar `pmPosToMarkdownOffset()` reparses and recollects the full document on every call, while Phase 1 needs start/end positions for every eligible paragraph. `createPmPosToMarkdownOffsetMapper()` now prepares one immutable parse/block snapshot per SourceRangeMap and reuses the same mapping logic for all positions; the scalar API remains compatible. A 1000-paragraph, >120KB, BOM+CRLF authority-on Electron regression edits an early paragraph, a middle paragraph, and a tail paragraph. All three publish transaction bytes, the entire run records zero `integrity ok=false`, source mode matches exactly, save preserves BOM/CRLF and untouched bytes, and observed edit-to-reconcile timings were approximately 0.7s, 0.7s, and 1.75s. The small authority UI still proves Markdown-sensitive `*`, paragraph Enter/split, and list Backspace publish legacy bytes; shadow/policy/core/source-map/markdown-preservation/source-transaction-sync are green, and with the authority flag off the full 4×5 family matrix remains 20/20.
 
 See `docs/diverged-tail-image-delete-regression.md` and RS-73 in `docs/rich-source-fidelity-bug-family.md`.
+
+### 2026-08-27 — shared revision-bound journal production migration
+
+- added `lib/source-sync/transaction-journal.js` as the only production transaction lifecycle;
+- journal entries now retain per-Step documents as well as StepMaps, allowing focused owners to replay exact multi-transaction chains;
+- added `plain-paragraph-transaction-owner.js`; it consumes the shared journal and owns no mutable checkpoint state;
+- removed `transactionFirstShadowPending`, `advanceTransactionFirstSourceSync()` and `buildPlainParagraphSourceRangeMap()` from production `Editor.jsx` wiring;
+- callback and forced flush now plan list/plain ownership from the same journal and publish through `SourceSyncCoordinator`;
+- fixed normalized→raw boundary maintenance for a journal that inserts in one block and later replaces another block; terminal newline and authored EOL bytes remain intact;
+- the old transaction-first core remains temporarily for policy/compatibility pure tests only.
+
+Validation at this checkpoint:
+
+- production build — PASS;
+- shared journal, plain owner, list owner, mapper and Coordinator pure contracts — PASS;
+- shadow UI and authority UI — PASS;
+- 1000-paragraph BOM/CRLF authority UI — PASS;
+- list callback + immediate forced-flush + save + cold reopen — PASS;
+- source fidelity probes — PASS, 39/39;
+- RS68 at 5/18/70 ms, RS84, RS85, nested ordered Enter and task Enter/fill — PASS.
 
 ## Exit criteria
 
@@ -332,8 +383,10 @@ Phase 1 is complete only when:
 - [x] shadow evidence covers insertion/deletion/replacement and key negative families,
 - [x] exact BOM/CRLF behavior is covered,
 - [x] authoritative coordinator tests prove transaction publication and fallback behind an explicit family allowlist,
-- [ ] live authority is committed from a clean Editor baseline,
+- [ ] live authority is committed from a clean Editor baseline (technical isolation and UI qualification are complete; branch checkpoint remains blocked by the broad accumulated dirty tree),
+- [x] explicit live authority flag owns plain insert/delete/rapid replace and falls back for syntax/split/list UI cases,
 - [x] current shadow source/integrity/UI regressions remain green,
+- [x] automated 1000-paragraph BOM/CRLF authority-on qualification shows zero first-divergence integrity failures and exact source/save bytes,
 - [ ] manual long-document qualification shows no first-divergence integrity failure.
 
 Until every live-promotion criterion is met, Phase 1 remains a migration branch capability rather than normal application behavior.

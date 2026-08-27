@@ -410,7 +410,15 @@ const pmPosFromItemIndex = (block, index) => {
   return items[safe].pmStart
 }
 
-export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
+// Prepare one immutable PM→Markdown mapping snapshot for callers that need to
+// resolve many positions against the same source/doc pair. The scalar helper
+// below historically reparsed and recollected the complete document on every
+// call; SourceRangeMap construction asks for two offsets per paragraph, which
+// makes that scalar shape prohibitively expensive on long documents.
+//
+// Keep all block correspondence rules centralized here: this is a cache of the
+// existing mapping model, not a second mapping algorithm.
+export function createPmPosToMarkdownOffsetMapper(markdown, doc, remark) {
   if (!markdown || !doc || !remark) return null
   let tree
   try {
@@ -420,15 +428,28 @@ export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
   }
   const mdBlocks = collectMdBlocks(markdown, tree)
   const pmBlocks = collectPmBlocks(doc)
-  const pmIndex = pmBlockIndexAtPos(pmBlocks, pmPos)
-  if (pmIndex < 0) return null
-  const pm = pmBlocks[pmIndex]
-  const md = correspondingMdBlock(mdBlocks, pmBlocks, pmIndex)
-  if (!md) return null
-  if (md.gap) return md.gapOffset
-  if (pm.atom) return md.start
-  const local = pmItemIndexAtPos(pm, pmPos)
-  return rawOffsetFromBlockLocal(md, local)
+  const mdByPmIndex = new Map()
+
+  return (pmPos) => {
+    const pmIndex = pmBlockIndexAtPos(pmBlocks, pmPos)
+    if (pmIndex < 0) return null
+    const pm = pmBlocks[pmIndex]
+    let md = mdByPmIndex.get(pmIndex)
+    if (md === undefined) {
+      md = correspondingMdBlock(mdBlocks, pmBlocks, pmIndex) || null
+      mdByPmIndex.set(pmIndex, md)
+    }
+    if (!md) return null
+    if (md.gap) return md.gapOffset
+    if (pm.atom) return md.start
+    const local = pmItemIndexAtPos(pm, pmPos)
+    return rawOffsetFromBlockLocal(md, local)
+  }
+}
+
+export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
+  const mapPosition = createPmPosToMarkdownOffsetMapper(markdown, doc, remark)
+  return mapPosition ? mapPosition(pmPos) : null
 }
 
 export function markdownOffsetToPmPos(markdown, rawOffset, doc, remark) {

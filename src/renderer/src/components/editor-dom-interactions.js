@@ -59,6 +59,69 @@ export function mountEditorInteractionBindings({
     })
   }
 
+  const exitIsolatedEmptyBulletAfterOrdered = (event) => {
+    if (
+      event.key !== 'Backspace' ||
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey
+    ) return false
+
+    const currentView = viewRef.current || view
+    const state = currentView?.state
+    const selection = state?.selection
+    if (!state || !selection?.empty) return false
+    const { $from } = selection
+
+    // RS-54: ProseMirror's default list keymap joins an isolated empty bullet
+    // into an immediately preceding ordered list, changing its type to the next
+    // ordered number. HorseMD treats Backspace on this exact boundary as
+    // "delete/exit this empty bullet" instead. Keep the guard intentionally
+    // narrow so ordinary list lifting, nested lists, task items and non-empty
+    // bullets continue to use the editor's native keymap.
+    if (
+      $from.depth !== 3 ||
+      $from.parent.type?.name !== 'paragraph' ||
+      $from.parent.content.size !== 0 ||
+      $from.node(1)?.type?.name !== 'bullet_list' ||
+      $from.node(2)?.type?.name !== 'list_item'
+    ) return false
+
+    const list = $from.node(1)
+    const item = $from.node(2)
+    if (
+      list.childCount !== 1 ||
+      item.childCount !== 1 ||
+      item.firstChild?.type?.name !== 'paragraph' ||
+      item.textContent !== '' ||
+      item.attrs?.checked != null
+    ) return false
+
+    const topIndex = $from.index(0)
+    if (topIndex <= 0 || state.doc.child(topIndex - 1)?.type?.name !== 'ordered_list') return false
+
+    const from = $from.before(1)
+    const to = $from.after(1)
+    const nextTop = topIndex + 1 < state.doc.childCount ? state.doc.child(topIndex + 1) : null
+    const paragraphType = state.schema.nodes.paragraph
+    if (!paragraphType) return false
+
+    event.preventDefault()
+    event.stopImmediatePropagation()
+
+    let tr = state.tr.delete(from, to)
+    const reuseNextEmptyParagraph = nextTop?.type === paragraphType && nextTop.content.size === 0
+    if (!reuseNextEmptyParagraph) {
+      tr = tr.insert(from, paragraphType.create())
+    }
+    tr = tr.setSelection(TextSelection.create(tr.doc, Math.min(from + 1, tr.doc.content.size)))
+    currentView.dispatch(tr)
+    onRichEditPending?.(0)
+    return true
+  }
+
   const onKeydown = (event) => {
     noteUserInteraction()
     if (isReadOnly?.()) {
@@ -72,6 +135,7 @@ export function mountEditorInteractionBindings({
       return
     }
     markUserEdit()
+    if (exitIsolatedEmptyBulletAfterOrdered(event)) return
     const codeBlock = event.target.closest?.('.milkdown-code-block')
     const codeContent = codeBlock?.querySelector('.cm-content')
     if (event.key === 'Backspace' && codeBlock && codeContent?.textContent === '') {

@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
 const port = Number(process.env.CDP_PORT || 9697)
-const fixture = join(process.cwd(), 'scripts', 'fixtures', 'inline-code-input.md')
+const template = join(process.cwd(), 'scripts', 'fixtures', 'inline-code-input.md')
+const root = `/tmp/horsemd-inline-code-ui-${process.pid}`
+const fixture = join(root, 'inline-code-input.md')
 let compositionId = 1
 
 async function waitFor(check, message, attempts = 40) {
@@ -16,27 +19,59 @@ async function waitFor(check, message, attempts = 40) {
   throw new Error(message)
 }
 
-async function main() {
+const toggleSource = (evaluate) => evaluate(`(() => {
+  const button = [...document.querySelectorAll('.status-btn')]
+    .find((node) => node.offsetParent && /源码|Source|Ctrl\\+\\//.test(node.title || node.textContent || ''))
+  button?.click()
+  return !!button
+})()`)
+
+const visibleSource = (evaluate) => evaluate(`(
+  [...document.querySelectorAll('textarea.source-editor')]
+    .find((node) => node.offsetParent)?.value ?? null
+)`)
+
+const warningToasts = (evaluate) => evaluate(`
+  [...document.querySelectorAll('[class*="toast"]')]
+    .map((node) => node.textContent || '')
+    .filter((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused|rich text.*source/i.test(text))
+`)
+
+async function openApp(profile, appPort) {
   const app = await launchBuiltElectron({
-    profileDir: `/tmp/horsemd-inline-code-ui-${process.pid}`,
-    port,
+    profileDir: join(root, profile),
+    port: appPort,
     appArgs: [fixture],
     executable: process.env.HORSEMD_APP_PATH || undefined,
     entrypoint: process.env.HORSEMD_APP_PATH ? null : undefined
   })
-  const { evaluate, send } = app
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
+    'inline-code fixture did not render'
+  )
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror')]
+      .filter((node) => node.offsetParent)
+      .some((editor) => [...editor.querySelectorAll('p')].some((node) => node.textContent.includes('Type target')))`),
+    'inline-code input target did not render'
+  )
+  return app
+}
 
+async function main() {
+  await rm(root, { recursive: true, force: true })
+  await mkdir(root, { recursive: true })
+  await writeFile(fixture, await readFile(template))
+
+  let app
   try {
-    await waitFor(
-      () => evaluate(`[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`),
-      'inline-code fixture did not render'
-    )
-    await waitFor(
-      () => evaluate(`[...document.querySelectorAll('.ProseMirror')]
-        .filter((node) => node.offsetParent)
-        .some((editor) => [...editor.querySelectorAll('p')].some((node) => node.textContent.includes('Type target')))`),
-      'inline-code input target did not render'
-    )
+    app = await openApp('profile-1', port)
+    const { evaluate, send } = app
+    await evaluate(`(() => {
+      window.__hmSourceSyncCoordinatorTrace = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceIntegrityDiffTrace = []
+    })()`)
     const caretPoint = await evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       const paragraph = [...(editor?.querySelectorAll('p') || [])]
@@ -281,19 +316,72 @@ async function main() {
       button?.click()
       return !!button
     })()`), true, 'could not open source mode')
-    const source = await waitFor(
-      () => evaluate(`[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)?.value || null`),
-      'source editor did not open'
-    )
+    let source
+    try {
+      source = await waitFor(
+        () => evaluate(`[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)?.value || null`),
+        'source editor did not open'
+      )
+    } catch (error) {
+      const diagnostic = await evaluate(`(() => ({
+        coordinator: window.__hmSourceSyncCoordinatorTrace || [],
+        integrity: window.__hmSourceIntegrityTrace || [],
+        flush: window.__hmFlushTrace || [],
+        toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || ''),
+        visibleSourceCount: [...document.querySelectorAll('textarea.source-editor')].filter((node) => node.offsetParent).length,
+        visibleRichCount: [...document.querySelectorAll('.ProseMirror')].filter((node) => node.offsetParent).length,
+        saveVisible: !!document.querySelector('.hm-save-fab')
+      }))()`)
+      console.error('INLINE_CODE_SOURCE_TOGGLE_DIAGNOSTIC', JSON.stringify(diagnostic))
+      throw error
+    }
     assert.ok(
       source.includes('`中文`outside\n\n`feaef`212afea') &&
         source.split(/\r?\n/).includes('```你好```') &&
         !source.includes('\\`\\`\\`你好\\`\\`\\`'),
       `inline-code exit or triple backticks changed in Markdown: ${JSON.stringify(source)}; rich text was: ${richTextBeforeSource}`
     )
-    console.log('PASS inline code UI: closing-delimiter activation, real Chinese IME, arrow-boundary exit, and exact literal triple-backtick source')
-  } finally {
+
+    const publication = await waitFor(async () => {
+      const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
+      return trace.find((entry) =>
+        entry.phase === 'published' &&
+        entry.boundary === 'inline-code-value-change' &&
+        entry.owner === 'legacy' &&
+        entry.family === 'legacy-preservation'
+      ) || null
+    }, 'inline-code plugin publication bypassed SourceSyncCoordinator')
+    assert.ok(publication.revision >= 1)
+    const integrityFailures = await evaluate(`
+      (window.__hmSourceIntegrityTrace || []).filter((entry) => entry?.ok === false)
+    `)
+    assert.equal(
+      integrityFailures.length,
+      0,
+      `inline-code publication had first-divergence failures: ${JSON.stringify(integrityFailures)}`
+    )
+    assert.equal((await warningToasts(evaluate)).length, 0, 'inline-code publication showed a warning toast')
+
+    assert.equal(await toggleSource(evaluate), true, 'could not return to rich mode before inline-code save')
+    await waitFor(() => evaluate(`!!document.querySelector('.hm-save-fab')`), 'inline-code save button did not appear')
+    await evaluate(`document.querySelector('.hm-save-fab')?.click()`)
+    await waitFor(() => evaluate(`!document.querySelector('.hm-save-fab')`), 'inline-code save did not finish')
+    assert.equal(await readFile(fixture, 'utf8'), source, 'inline-code coordinator publication did not reach disk exactly')
+
     await stopBuiltElectron(app, { removeProfile: true })
+    app = null
+    app = await openApp('profile-2', port + 1)
+    assert.equal(await toggleSource(app.evaluate), true, 'could not open source after inline-code cold reopen')
+    const reopenedSource = await waitFor(
+      () => visibleSource(app.evaluate),
+      'inline-code cold-reopen source did not appear'
+    )
+    assert.equal(reopenedSource, source, 'inline-code source changed after cold reopen')
+
+    console.log('PASS inline code UI: plugin publication uses SourceSyncCoordinator; IME, source, save, and cold reopen are exact')
+  } finally {
+    if (app) await stopBuiltElectron(app, { removeProfile: true })
+    await rm(root, { recursive: true, force: true })
   }
 }
 

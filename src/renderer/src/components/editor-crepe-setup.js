@@ -16,6 +16,7 @@ import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
 import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
 import { remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
+import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import {
   tableBreakKeymap,
@@ -233,6 +234,7 @@ export function createConfiguredCrepe({
       ...plugins,
       { plugin: remarkStripLeadingSpaceSentinel, options: undefined },
       { plugin: remarkNormalizeCodeOnlyLinkLabels, options: undefined },
+      { plugin: remarkPreserveLiteralTripleBacktickTextBlocks, options: undefined },
       { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
       { plugin: remarkFrontmatter, options: undefined },
       { plugin: brToBreakRemarkPlugin, options: undefined },

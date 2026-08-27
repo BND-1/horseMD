@@ -107,7 +107,10 @@ const appendInlineVisible = (out, raw, base = 0, referenceLabels = new Set()) =>
     out.map.push(rawIndex)
   }
   while (i < raw.length) {
-    if (raw[i] === LEADING_SPACE_SENTINEL && raw[i + 1] === ' ') {
+    if (
+      raw[i] === LEADING_SPACE_SENTINEL &&
+      (raw[i + 1] === ' ' || (i === 0 && raw.length === LEADING_SPACE_SENTINEL.length))
+    ) {
       i += LEADING_SPACE_SENTINEL.length
       continue
     }

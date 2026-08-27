@@ -268,6 +268,7 @@ export default function App() {
     tabsRef,
     activeIdRef,
     editorApis,
+    liveContentRef,
     editorHostRef,
     focusedTabRef,
     commitAllLive,

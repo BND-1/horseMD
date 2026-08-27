@@ -78,6 +78,11 @@ async function main() {
   let app
   try {
     app = await openApp('edit', port)
+    await app.evaluate(`(() => {
+      window.__hmPreserveLog = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceIntegrityDiffTrace = []
+    })()`)
 
     // Split the first item mid-text with Enter, then type.
     assert.equal(await caretAfter(app.evaluate, '甲', 0), true, 'could not place the caret after 甲')
@@ -88,6 +93,25 @@ async function main() {
 
     // The typed text must reach source with the authored spelling intact.
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch to source mode')
+    await sleepMs(900)
+    const sourceSwitchDiagnostics = await app.evaluate(`(() => ({
+      sourceVisible: !![...document.querySelectorAll('textarea.source-editor')].find((n) => n.offsetParent),
+      preserve: (window.__hmPreserveLog || []).slice(-12).map(({ source, previous, next, markdown, ...entry }) => ({
+        ...entry,
+        source: String(source || '').slice(0, 220),
+        previous: String(previous || '').slice(0, 220),
+        next: String(next || '').slice(0, 220),
+        markdown: String(markdown || '').slice(0, 220)
+      })),
+      integrity: (window.__hmSourceIntegrityTrace || []).slice(-12).map(({ candidate, canonical, ...entry }) => ({
+        ...entry,
+        candidate: String(candidate || '').slice(0, 260),
+        canonical: String(canonical || '').slice(0, 260)
+      })),
+      integrityDiff: (window.__hmSourceIntegrityDiffTrace || []).slice(-12),
+      toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || '')
+    }))()`)
+    console.log('NESTED_NUMBER_SOURCE_SWITCH:', JSON.stringify(sourceSwitchDiagnostics))
     await waitFor(() => app.evaluate(`!![...document.querySelectorAll('textarea.source-editor')].find((n) => n.offsetParent)`), 'source textarea did not appear')
     const raw = await visibleSource(app.evaluate)
     assert.ok(
@@ -95,8 +119,8 @@ async function main() {
       `the typed text must survive the mode switch (got ${JSON.stringify(raw)})`
     )
     assert.ok(
-      raw.startsWith('- 1. 甲\n- 2. 新乙'),
-      `the Entered split must become its own authored row (got ${JSON.stringify(raw)})`
+      raw.startsWith('- 1. 甲\n  2. 新乙'),
+      `the Entered split must remain a nested ordered sibling under the same outer bullet (got ${JSON.stringify(raw)})`
     )
 
     // Back to rich, save, reopen: the edit must be durable.
@@ -106,7 +130,7 @@ async function main() {
     await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
     await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not complete')
     const saved = await readFile(file, 'utf8')
-    assert.equal(saved, '- 1. 甲\n- 2. 新乙\n- 丙丁\n', 'the typed text must persist on disk')
+    assert.equal(saved, '- 1. 甲\n  2. 新乙\n- 丙丁\n', 'the typed text and nested ordered structure must persist on disk')
 
     console.log('PASS nested-number list source sync: edits inside `- 1. …` rows survive switch, save, and reopen')
   } finally {

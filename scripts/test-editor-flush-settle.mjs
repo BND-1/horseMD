@@ -8,7 +8,11 @@ const settled = await settleEditorMarkdown(() => {
 }, { delays: [0, 0, 0] })
 
 assert.equal(settled, 'safe source\n')
-assert.equal(calls, 3, 'the durability boundary must retry a transient fail-closed mapping')
+assert.equal(
+  calls,
+  4,
+  'the durability boundary must retry a transient failure and continue observing every configured settle delay'
+)
 
 calls = 0
 const blocked = await settleEditorMarkdown(() => {

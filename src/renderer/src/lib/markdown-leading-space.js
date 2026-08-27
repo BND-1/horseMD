@@ -11,6 +11,31 @@ export function remarkStripLeadingSpaceSentinel() {
   return (tree) => {
     const walk = (node) => {
       if (!node || typeof node !== 'object') return
+
+      // RS-50: GFM requires some body content after `[ ]` / `[x]` to retain
+      // task-list semantics. Generated scratch writes a lone U+200B while the
+      // task paragraph is empty. It is source syntax, not editor text: remove
+      // it only from the exact one-paragraph/one-text-node task shape. A
+      // sentinel anywhere else remains ordinary authored content.
+      if (
+        node.type === 'listItem' &&
+        node.checked !== null &&
+        node.checked !== undefined &&
+        Array.isArray(node.children) &&
+        node.children.length === 1
+      ) {
+        const paragraph = node.children[0]
+        if (
+          paragraph?.type === 'paragraph' &&
+          Array.isArray(paragraph.children) &&
+          paragraph.children.length === 1 &&
+          paragraph.children[0]?.type === 'text' &&
+          paragraph.children[0]?.value === LEADING_SPACE_SENTINEL
+        ) {
+          paragraph.children = []
+        }
+      }
+
       if (
         node.type === 'text' &&
         typeof node.value === 'string' &&

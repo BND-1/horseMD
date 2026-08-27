@@ -109,15 +109,19 @@
 ## 6. 接手者的正确排查方式
 
 1. 先复制真实 fixture 到 `/tmp`，保留原文件 SHA-256、BOM、EOL、尾换行和字节长度。
-2. 启用 `__hmPreserveLog`、`__hmSourceTransactionLog`、`__hmSourceTransactionTrace`、
+2. **真实人工复现进程必须在开始编辑前带 `--horsemd-input-trace` 启动。** 主进程会把输入事件
+   追加到系统临时目录的 `horsemd-input-trace-<pid>.jsonl`；只设置 `ELECTRON_ENABLE_LOGGING`
+   不足以记录源码同步首个分叉所需的 transaction 证据。若已经在无 trace 实例里看到不一致，
+   不要把终端缺少业务日志误判为“没有问题”，应保留操作序列并在 trace-enabled 实例重现。
+3. 同时启用 `__hmPreserveLog`、`__hmSourceTransactionLog`、`__hmSourceTransactionTrace`、
    `__hmListIntentTrace`，再增加一个按 transaction 序号关联上述七类状态的统一 trace。
-3. 每输入一个字符或执行一次结构命令后，只记录，不主动切源码或保存，避免诊断动作改变时序。
-4. 在用户指定 checkpoint 一次性抓取：live doc serializer、作者源码、tab mirror、textarea
+4. 每输入一个字符或执行一次结构命令后，只记录，不主动切源码或保存，避免诊断动作改变时序。
+5. 在用户指定 checkpoint 一次性抓取：live doc serializer、作者源码、tab mirror、textarea
    live value、磁盘内容和所有 pending 标志。
-5. 找到**第一次**不一致的事务，而不是只修最后弹出“保存已暂停”的地方。
-6. 先把这条完整操作序列写成会失败的安装包 UI 回归，再修改实现。
-7. 修复后至少执行 10 轮同一长会话；每轮都验证首次源码、第二次往返、保存、磁盘和冷重开。
-8. 自动化全部通过后仍需安装正式路径 `/Applications/HorseMD.app`，由真实用户手测验收。
+6. 找到**第一次**不一致的事务，而不是只修最后弹出“保存已暂停”的地方。
+7. 先把这条完整操作序列写成会失败的安装包 UI 回归，再修改实现。
+8. 修复后至少执行 10 轮同一长会话；每轮都验证首次源码、第二次往返、保存、磁盘和冷重开。
+9. 自动化全部通过后仍需安装正式路径 `/Applications/HorseMD.app`，由真实用户手测验收。
 
 ## 7. 禁止采用的“修复”
 

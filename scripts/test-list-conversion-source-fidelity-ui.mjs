@@ -120,11 +120,32 @@ async function main() {
   let app
   try {
     app = await openApp('profile-edit', port)
+    await app.evaluate(`(() => {
+      window.__hmSourceSyncCoordinatorTrace = []
+      window.__hmSourceIntegrityTrace = []
+    })()`)
     await convertFirstListAndType(app)
+    const commandSnapshot = await waitFor(() => app.evaluate(`
+      (window.__hmSourceSyncCoordinatorTrace || []).find((entry) =>
+        entry.phase === 'published' &&
+        entry.boundary === 'list-conversion-command-snapshot' &&
+        entry.owner === 'legacy' &&
+        entry.family === 'legacy-preservation'
+      ) || null
+    `), 'list conversion command snapshot bypassed SourceSyncCoordinator')
+    assert.ok(commandSnapshot.revision >= 1)
     await waitFor(() => app.evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       return editor?.textContent.includes('追加甲') || false
     })()`), 'per-character input did not become visible in the ProseMirror document')
+    const integrityFailures = await app.evaluate(`
+      (window.__hmSourceIntegrityTrace || []).filter((entry) => entry?.ok === false)
+    `)
+    assert.equal(
+      integrityFailures.length,
+      0,
+      'list conversion command snapshot had first-divergence failures: ' + JSON.stringify(integrityFailures)
+    )
     // Save directly from rich mode before inspecting source. This protects the
     // production path where no standalone markdownUpdated callback arrives and
     // the user saves immediately after conversion/typing.

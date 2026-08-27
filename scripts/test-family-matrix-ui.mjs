@@ -90,7 +90,11 @@ async function runCell(file, op, marker) {
   try {
     app = await openApp(`p-${op}`, port, copy)
     const { evaluate, send } = app
-    await evaluate(`(() => { window.__hmPreserveLog = [] })()`)
+    await evaluate(`(() => {
+      window.__hmPreserveLog = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceIntegrityDiffTrace = []
+    })()`)
 
     // Append. A real user starts a new line before typing a list marker:
     // Markdown list input rules fire only at line start, so typing `- ` right
@@ -133,7 +137,23 @@ async function runCell(file, op, marker) {
     assert.equal(await toggleSource(evaluate), true, 'source toggle failed')
     const afterAppend = await waitFor(() => visibleSource(evaluate), 'source missing').catch(() => null)
     if (!afterAppend) {
-      failures.push({ file, op, symptom: 'source-locked-after-append' })
+      const detail = await evaluate(`(() => ({
+        preserve: (window.__hmPreserveLog || []).slice(-6).map(({ source, previous, next, markdown, ...entry }) => ({
+          ...entry,
+          sourceTail: String(source || '').slice(-220),
+          previousTail: String(previous || '').slice(-220),
+          nextTail: String(next || '').slice(-220),
+          markdownTail: String(markdown || '').slice(-220)
+        })),
+        integrity: (window.__hmSourceIntegrityTrace || []).slice(-6).map(({ candidate, canonical, parsed, expected, ...entry }) => ({
+          ...entry,
+          candidateTail: String(candidate || '').slice(-320),
+          canonicalTail: String(canonical || '').slice(-320)
+        })),
+        integrityDiff: (window.__hmSourceIntegrityDiffTrace || []).slice(-6),
+        toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || '')
+      }))()`)
+      failures.push({ file, op, symptom: 'source-locked-after-append', detail })
       return
     }
     if (!afterAppend.includes(marker)) {
@@ -172,7 +192,11 @@ async function runCell(file, op, marker) {
     await stopBuiltElectron(app, { removeProfile: true })
     app = await openApp(`r-${op}`, port + 50, copy)
     const { evaluate: e2, send: s2 } = app
-    await e2(`(() => { window.__hmPreserveLog = [] })()`)
+    await e2(`(() => {
+      window.__hmPreserveLog = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceIntegrityDiffTrace = []
+    })()`)
     await focusEnd(e2, s2)
     await pressKey(s2, { key: 'End', code: 'End', delayMs: 30 })
     for (let i = 0; i < marker.length + 3; i += 1) {
@@ -182,14 +206,23 @@ async function runCell(file, op, marker) {
     assert.equal(await toggleSource(e2), true, 'reopen source toggle failed')
     const afterDelete = await waitFor(() => visibleSource(e2), 'reopen source missing').catch(() => null)
     if (!afterDelete) {
-      const log = await e2(`(window.__hmPreserveLog || []).slice(-4).map((entry) => ({
-        reason: entry.reason,
-        preserved: entry.preserved,
-        previousTail: entry.previous?.slice(-90),
-        nextTail: entry.next?.slice(-90)
-      }))`)
-      const pause = await toasts(e2)
-      failures.push({ file, op, symptom: 'source-locked-after-delete', detail: { log, pause } })
+      const detail = await e2(`(() => ({
+        preserve: (window.__hmPreserveLog || []).slice(-6).map(({ source, previous, next, markdown, ...entry }) => ({
+          ...entry,
+          sourceTail: String(source || '').slice(-260),
+          previousTail: String(previous || '').slice(-260),
+          nextTail: String(next || '').slice(-260),
+          markdownTail: String(markdown || '').slice(-260)
+        })),
+        integrity: (window.__hmSourceIntegrityTrace || []).slice(-6).map(({ candidate, canonical, parsed, expected, ...entry }) => ({
+          ...entry,
+          candidateTail: String(candidate || '').slice(-360),
+          canonicalTail: String(canonical || '').slice(-360)
+        })),
+        integrityDiff: (window.__hmSourceIntegrityDiffTrace || []).slice(-8),
+        toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || '')
+      }))()`)
+      failures.push({ file, op, symptom: 'source-locked-after-delete', detail })
       return
     }
     if (afterDelete.includes(marker)) {
@@ -246,7 +279,10 @@ async function main() {
     for (const failure of failures) {
       console.error(`  ${failure.symptom}: ${failure.op}@${failure.file.split('/').at(-1)}`)
       if (failure.detail) {
-        console.error('    detail:', JSON.stringify(failure.detail).slice(0, 1500))
+        if (failure.detail.integrityDiff) {
+          console.error('    integrityDiff:', JSON.stringify(failure.detail.integrityDiff))
+        }
+        console.error('    detail:', JSON.stringify(failure.detail).slice(0, 12000))
       }
     }
     process.exit(1)

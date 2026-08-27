@@ -55,6 +55,13 @@ keys. Bulk text insertion is only appropriate for paste semantics, fixture
 setup, or behavior unrelated to incremental typing. Per-character committed
 Chinese text is not a substitute for a real IME composition test.
 
+For any real/manual reproduction of rich-text ↔ source divergence, launch the
+actual HorseMD process with `--horsemd-input-trace` in Electron argv before the
+user starts editing. Do not rely on `ELECTRON_ENABLE_LOGGING` alone: it does not
+persist the source/candidate/canonical transaction evidence needed to identify
+the first divergence. Keep the trace-enabled instance running through the real
+operation sequence, and inspect the first integrity failure before changing code.
+
 User-facing changes must update the matching `guide/` page. Tutorial screenshots must come from a rebuilt and freshly installed current app using an isolated profile; follow `docs/user-guide-maintenance.md`. Never publish screenshots containing personal paths or stale UI.
 
 ## Commit & Pull Request Guidelines
@@ -64,6 +71,14 @@ History uses concise subjects such as `feat(#38): ...`, `fix(site): ...`, `docs:
 ## Security & Configuration Tips
 
 Keep Electron renderer access behind `window.api`; do not enable Node integration. Do not commit signing keys, keystores, or local config such as `android/key.properties`. When adding native capabilities, update both desktop preload and the Capacitor shim or gate the UI with `window.api.capabilities`.
+
+## User Execution Preference
+
+- For routine project-development commands such as build, start, dev, test, read-only diagnostics, and local packaging, the user has explicitly authorized automatic execution without asking again each time.
+- Every independently fixed bug must immediately consume one patch version as soon as its targeted fix is complete; do not wait for the rest of a larger bug batch or family investigation to finish before bumping. Example: three independently fixed bugs after 0.13.90 become 0.13.91, 0.13.92, and 0.13.93 respectively.
+- For rich/source “family bug” work, after each bug-specific fix reaches its required targeted verification gate, immediately bump that bug's patch version; continue broader family regression work on the next patch version. When a user-testable build is requested or the current checkpoint is ready, automatically build/package and launch the latest accumulated patch without asking for another confirmation. Treat the user's standing authorization as explicit permission for these routine development actions; do not interrupt the workflow to ask again.
+- This standing authorization does not override higher-risk confirmation requirements for destructive actions, publishing/releasing to external channels, pushing, deployment, or replacing an installed production application.
+- After a trace-identified family bug is fixed, continue through targeted verification, generalized family tests, patch bump, local packaging, and trace-enabled launch as one uninterrupted routine workflow unless a genuine product regression or higher-risk action requires stopping.
 
 ## Operational Notes From CLAUDE.md
 

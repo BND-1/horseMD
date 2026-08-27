@@ -2,6 +2,7 @@
 
 > 首次稳定复现：2026-08-11 / 0.13.46
 > 子路径修复候选：0.13.47
+> 统一 publication 迁移：0.13.126（行为保持，不表示 RS-41/P0 关闭）
 > 家族编号：RS-40
 
 > **验收更正：RS-40 的命令创建阶段已覆盖，但富文本/源码家族没有关闭。** 0.13.47
@@ -42,8 +43,8 @@ source/canonical 可见流本来就允许存在合法拼写分歧，例如作者
 - `editor-slash-menu.js` 在执行代码类命令前后传递同一个命令 token。
 - 命令前从 live ProseMirror doc 对账 `/query`，定位并捕获精确 authored source 行、raw
   区间和原始行尾。
-- 命令后只序列化当前 `code_block` 节点；验证结果是完整成对 fence 后，原子替换捕获行，
-  再同时推进 source/canonical 基线。
+- 命令后只序列化当前 `code_block` 节点；验证结果是完整成对 fence 后，原子替换捕获行。
+- 0.13.126 起不再由 Slash callback 直接写 source/canonical/App，而是以 `slash-code-block-atomic` legacy candidate 进入 `SourceSyncCoordinator`；只有 semantic/list proof、host commit 和 revision publication 全部成功才推进基线与 trusted checkpoint。
 - 重复 `/code` 只有 PM 映射精确命中的那一行可以被替换；没有映射且不唯一时 fail closed。
 - CRLF 在块内与块外均保持 CRLF；不扫描、不格式化其他行。
 - 普通标题、列表、引用、表格等非代码斜杠命令不进入本处理器。
@@ -64,7 +65,7 @@ source/canonical 可见流本来就允许存在合法拼写分歧，例如作者
 7. 保存、全新 profile 冷打开、再次切源码；
 8. 断言磁盘和源码一致，未编辑前缀逐字节不变，冷重开后 DOM 仍是 `.milkdown-code-block` 而非普通文本。
 
-同一脚本还分别验证 literal fence 与 ` ``` + Space` input-rule 变体。纯函数回归覆盖
+0.13.126 的同一脚本还明确要求 `boundary=slash-code-block-atomic / owner=legacy / family=legacy-preservation`，并断言整个连续操作窗口 `integrity ok=false = 0`。同一脚本还分别验证 literal fence 与 ` ``` + Space` input-rule 变体。纯函数回归覆盖
 CRLF、mixed-EOL 无 final-EOL、重复 `/code` 的精确命中与歧义拒绝。真实
 `123321.md` 临时副本和 `/Applications/HorseMD-0.13.47-test.app` 隔离安装包也执行同一
 连续编辑流程；测试不会写回用户原文件。

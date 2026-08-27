@@ -1,10 +1,12 @@
 # 保存暂停、事务稳定与恢复副本合同
 
-> 状态：0.13.34 已实现数据保护出口；0.13.47 现场再次证明它**不是根治方案**
+> 状态：0.13.125。保存/恢复仍是迁移期间的数据保护层，不是源码同步架构本身。
+> 当前发布链路仍以 legacy preservation 为主；transaction-first 只在受限、明确授权的事务
+> 家族中试运行/验证，无法证明的列表、代码块、表格和复杂结构继续走 fail-closed。
 >
 > 家族编号：RS-34
 >
-> 日期：2026-08-10
+> 日期：2026-08-26
 
 > 2026-08-11 更正：真实长文档仍会进入“富文本有内容、作者源码未同步”的状态。
 > 恢复副本能够从 live ProseMirror 救回可见内容，但会经过 serializer 规范化，不能替代
@@ -80,7 +82,19 @@ canonical 当作作者原文，也没有推进失败事务的 baseline。持续�
 恢复副本的目标是“不让可见编辑只活在 renderer 内存中”，不是假装完成了原文
 保真合并。它可能采用规范化 Markdown 写法，必须与原文件分开。
 
-## 5. 根治边界
+## 5. 当前架构进展
+
+截至 `0.13.125`，项目已经从“只有 canonical diff + 局部启发式”进入混合迁移阶段，但还没有完成统一架构替换：
+
+- 已建立 ProseMirror transaction observer、完整 batch 边界、raw source range mapper、checkpoint、shadow/authority gate 和保存前 live flush；
+- 普通段落的少数明确事务可以由 transaction-first 直接生成 source patch，并在发布前跳过 legacy candidate；
+- 列表输入规则、Enter/Backspace、代码块、表格、引用、任务项和语法敏感编辑仍主要由 legacy preservation 的结构 owner 处理；
+- `source/canonical` 双快照、语义解析、结构指纹和 fail-closed 通知仍是所有路径的共同安全门；
+- 只有当某一结构族拥有完整的 transaction classifier、raw range proof、source candidate、源码切换/保存/冷重开回归后，才允许从 legacy 迁移到 authority；迁移完成后还必须删除或缩减旧 owner，避免双重提交。
+
+本轮 `RS-80` 的列表修复属于 legacy owner 的结构所有权收紧：它解决了已发布 `\\-` marker 在 Space input rule 中被错误映射的问题，但没有把列表事务标记为 transaction-first 已接管。恢复副本、settle 和 fail-closed 仍然有效，不能被绿色专项测试解释为“架构迁移完成”。
+
+## 6. 根治边界
 
 当前 canonical-diff 保真层无法从数学上保证任意富文本结构编辑都能恢复原始
 Markdown 拼写，因为 ProseMirror 已丢失 `-` / `*`、紧凑/松散列表、部分转义和
@@ -99,7 +113,7 @@ Markdown 拼写，因为 ProseMirror 已丢失 `-` / `*`、紧凑/松散列表�
 0.13.34 的 settle + recovery 是迁移期间的生产安全层：减少瞬时误报，并确保真正
 无法映射时也不破坏原文件、不丢失可见编辑。它不能被描述成架构迁移已经完成。
 
-## 6. 回归
+## 7. 回归
 
 ```bash
 npm run test:editor-flush-settle

@@ -165,7 +165,25 @@ async function main() {
       expected = expected.replace(needle, needle + inserted)
 
       assert.equal(await toggleSource(evaluate), true, `could not inspect source after ${needle}`)
-      const source = await waitFor(() => visibleSource(evaluate), `source did not open after ${needle}`)
+      let source
+      try {
+        source = await waitFor(() => visibleSource(evaluate), `source did not open after ${needle}`)
+      } catch (error) {
+        console.error('source-fidelity source-open diagnostics:', JSON.stringify(
+          await evaluate(`({
+            preserve: window.__hmPreserveLog || [],
+            integrity: window.__hmSourceIntegrityTrace || [],
+            integrityDiff: window.__hmSourceIntegrityDiffTrace || [],
+            flush: window.__hmFlushTrace || [],
+            toasts: [...document.querySelectorAll('[class*=\"toast\"]')]
+              .filter((node) => node.offsetParent)
+              .map((node) => node.textContent || '')
+          })`),
+          null,
+          2
+        ))
+        throw error
+      }
       if (source !== expected) {
         console.error('source-fidelity preservation log:', JSON.stringify(
           await evaluate(`window.__hmPreserveLog || []`),

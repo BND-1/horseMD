@@ -70,13 +70,42 @@ const completeFenceBlock = (value) => {
   return !!(open && close && open[1][0] === close[1][0] && close[1].length >= open[1].length)
 }
 
+const completeDisplayMathBlock = (value) => {
+  const lines = String(value || '').replace(/(?:\r\n|\r|\n)+$/, '').split(/\r\n|\r|\n/)
+  if (lines.length < 2) return false
+  return /^ {0,3}\$\$\s*$/.test(lines[0]) && /^ {0,3}\$\$\s*$/.test(lines.at(-1))
+}
+
+// Serializing an isolated empty math node can emit `$$\n\n$$`, while the same
+// node in the live document canonicalizes to `$$\n$$`. The interior blank row
+// is serializer-owned, not user-authored. Collapse only a whitespace-only
+// interior; non-empty math and intentional internal blank lines stay intact.
+const compactEmptyDisplayMathBlock = (value) => {
+  const lines = String(value || '').split(/\r\n|\r|\n/)
+  if (
+    lines.length > 2 &&
+    /^ {0,3}\$\$\s*$/.test(lines[0]) &&
+    /^ {0,3}\$\$\s*$/.test(lines.at(-1)) &&
+    lines.slice(1, -1).every((line) => !line.trim())
+  ) {
+    return `${lines[0]}\n${lines.at(-1)}`
+  }
+  return String(value || '')
+}
+
 export const applySlashBlockSourceIntent = ({ intent, blockMarkdown }) => {
   if (!intent || typeof blockMarkdown !== 'string') return null
   const codeLike = intent.id === 'code' || intent.id === 'math' || intent.id.startsWith('code:')
   if (!codeLike) return null
   const replacement = blockMarkdown.replace(/(?:\r\n|\r|\n)+$/, '')
-  if (!completeFenceBlock(replacement)) return null
-  const authoredReplacement = replacement.replace(/\r\n|\r|\n/g, intent.lineEnding)
+  const ownedReplacement = intent.id === 'math'
+    ? compactEmptyDisplayMathBlock(replacement)
+    : replacement
+  const completeBlock = intent.id === 'math'
+    ? completeDisplayMathBlock(ownedReplacement)
+    : completeFenceBlock(ownedReplacement)
+  if (!completeBlock) return null
+  const authoredReplacement = ownedReplacement.replace(/\r\n|\r|\n/g, intent.lineEnding)
   return intent.source.slice(0, intent.rawStart) +
     authoredReplacement +
     intent.source.slice(intent.rawEnd)

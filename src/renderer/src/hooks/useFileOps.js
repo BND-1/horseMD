@@ -189,6 +189,11 @@ export function useFileOps({
 
   const updateContent = useCallback((id, md, isInitial) => {
     if (!isInitial) {
+      // Keep the shared uncontrolled-source mirror current for rich edits too.
+      // EditorArea intentionally prefers this mirror when mounting a textarea;
+      // leaving it populated with an older source-mode value lets a rich
+      // callback update tabsRef while source mode still mounts stale bytes.
+      liveContentRef.current.set(id, md)
       // `markdownUpdated` is also the source-mode handoff boundary. Mirror the
       // committed source synchronously before React renders the textarea;
       // otherwise a rapid structural input-rule callback can leave `tabsRef`
@@ -217,7 +222,7 @@ export function useFileOps({
         return { ...t, content: md, pendingRichEdit: false }
       })
     )
-  }, [setTabs, tabsRef])
+  }, [liveContentRef, setTabs, tabsRef])
 
   // Milkdown batches `markdownUpdated` for 200ms. Rich text must nevertheless
   // show its unsaved indicator immediately after a real DOM input event. This

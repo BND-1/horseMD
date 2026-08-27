@@ -1,4 +1,7 @@
-import { pmPosToMarkdownOffset } from '../components/editor-source-map.js'
+import {
+  createPmPosToMarkdownOffsetMapper,
+  pmPosToMarkdownOffset
+} from '../components/editor-source-map.js'
 import { mapPlainTextTransactionsToSource } from './source-transaction-sync.js'
 
 export const TRANSACTION_FIRST_MODES = Object.freeze({
@@ -77,6 +80,29 @@ export function buildPlainParagraphSourceRangeMap({
     }
   }
 
+  // The default scalar PM→source mapper parses the complete Markdown on each
+  // call. A SourceRangeMap needs two positions per eligible paragraph, so use
+  // one prepared snapshot when the default mapper is selected. Tests and future
+  // callers can still inject a custom scalar mapper unchanged.
+  const preparedMapPosition = mapPosition === pmPosToMarkdownOffset
+    ? createPmPosToMarkdownOffsetMapper(normalizedSource, doc, remark)
+    : null
+  if (mapPosition === pmPosToMarkdownOffset && !preparedMapPosition) {
+    return {
+      ok: false,
+      reason: 'markdown-position-snapshot-failed',
+      source: String(source || ''),
+      normalizedSource,
+      doc,
+      entries,
+      rejected,
+      mapPosition: () => null
+    }
+  }
+  const resolveRawOffset = (pmPos) => preparedMapPosition
+    ? preparedMapPosition(pmPos)
+    : mapPosition(normalizedSource, pmPos, doc, remark)
+
   doc.forEach((node, pmBlockStart) => {
     if (!isSimplePlainParagraph(node)) {
       rejected.push({ pmBlockStart, nodeType: node?.type?.name || 'unknown', reason: 'unsupported-block' })
@@ -85,8 +111,8 @@ export function buildPlainParagraphSourceRangeMap({
 
     const pmContentStart = pmBlockStart + 1
     const pmContentEnd = pmContentStart + node.content.size
-    const rawStart = mapPosition(normalizedSource, pmContentStart, doc, remark)
-    const rawEnd = mapPosition(normalizedSource, pmContentEnd, doc, remark)
+    const rawStart = resolveRawOffset(pmContentStart)
+    const rawEnd = resolveRawOffset(pmContentEnd)
     const text = node.textContent || ''
 
     if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) {

@@ -1,9 +1,15 @@
 # 家族根因矩阵（2026-08-11）
 
-> **当前结论：自动化矩阵为绿，但 0.13.47 安装包人工验收仍失败。** 真实
-> `123321.md` 长会话在文章末尾建立代码块、继续编辑并保存后，源码与富文本仍会分叉。
-> 因此本文件中的“通过”只代表已覆盖脚本路径，不代表家族问题已经关闭。P0 现场见
-> [`rich-source-divergence-incident-0.13.47.md`](./rich-source-divergence-incident-0.13.47.md)。
+> **当前结论（2026-08-26 / 0.13.125）：legacy source-fidelity baseline 的 20/20 结果来自 0.13.124 的完整矩阵，0.13.125 在此基础上通过了 RS-80 列表输入规则专项和相关列表/代码块/保存重开回归。** 这证明本轮列表 owner 修复没有破坏已覆盖家族，但不等于 transaction-first 已接管全部结构编辑，也不等于真实长会话 P0 已关闭。当前生产链路仍是 legacy preservation 主导，transaction-first authority 只对受限普通段落事务开放；下一阶段仍是按结构族迁移并逐步删除 legacy owner。RS-80 见 `rich-source-fidelity-bug-family.md`，RS-79 见 [`transaction-first-authority-first-divergence-regression.md`](./transaction-first-authority-first-divergence-regression.md)。
+
+## 当前架构进展
+
+这个矩阵现在承担两项不同职责，必须分开解读：
+
+1. **legacy baseline**：验证当前发布链路对真实文件、列表、代码块、表格、保存和重开的保真边界；
+2. **migration gate**：验证某个结构族能否从 legacy owner 迁移到 transaction-first authority。
+
+矩阵通过只能说明候选源码经过现有安全门并保持一致，不能单独证明新架构已接管，也不能证明所有未覆盖事务都不会分叉。每个迁移族还必须有 transaction trace、逐字 UI、立即源码切换、保存、磁盘字节和冷重开证据。
 
 ## 为什么建这个矩阵
 
@@ -20,6 +26,35 @@
 - 命令：`npm run test:family-matrix-ui`
 
 ## 根因聚类（本轮发现并修复）
+
+### 根因 0：段落拆分被错误当成全局可见文字变化
+
+在已有长文档中，用户点击普通段落内部并按 Enter，ProseMirror 只是在同一段落中插入一个结构边界，前后 canonical 的可见文字完全相同。但如果文档其他位置已经存在作者 marker 与 serializer marker 的差异，旧逻辑会把这笔零可见字符事务送进全局 visible-stream mapper，得到 `visible-stream-mismatch`，随后用户输入 `1. ` 时触发保存暂停通知。
+
+修复不是放宽全局 mismatch：新增段落拆分事务证明，要求同时满足：
+- canonical 可见流前后一致；
+- delta 只包含新的段落分隔符，且不触及列表、表格、标题、引用或围栏语法；
+- 由拆分点前后唯一可见文本上下文在作者源码中定位到唯一 raw 边界；
+- 候选只在该边界插入作者原有行尾风格的两个换行，其他源码字节保持不变。
+
+任何一个条件不满足仍然 fail-closed。这样把“结构事务的所有权”从全文可见偏移中分离出来，避免用单个列表/字符串补丁掩盖家族根因。回归：`test:middle-ordered-marker-only-ui`、`test:markdown-preservation`。
+
+### 根因 0B：已发布的字面 `-` 在 Space 输入规则中失去局部所有权
+
+在分叉长文档中退出有序列表后，用户可能先让单独的 `-` 完成一次源码同步，再按空格触发无序列表输入规则。此时 canonical 已经把该段落纳入前后相邻的 bullet tree，但输入规则携带的 ProseMirror 旧位置可能落到前一个 sibling；如果按全局 offset 或整个合并 list block 重建，结果会丢掉 `-`、复制前一个列表项，或把新 item 写到错误位置。
+
+修复采用事务所有权而不是放宽完整性：当源码在捕获位置仍是唯一的 escaped marker（例如 `\\-`）时，只在 previous canonical 中按同级 bullet 序号找到对应 literal 行，并在 next canonical 中取同 ordinal 的新 list item；前后正文、缩进和 marker 必须满足唯一性，最终只替换这个 item。任何快照漂移、重复锚点或跨层级情况继续 fail-closed，由完整 source/list integrity gate 拒绝静默提交。回归：`test-human-list-exit-dash-space-ui`、`test:fast-empty-bullet-ordered-input-rule-ui`。
+
+### 根因 0A：代码块内部首字符被普通段落 mapper 越权处理
+
+在已有文档中间编辑一个空 fenced code block 时，代码块的开闭围栏和前后块本身没有变化，只有围栏内部新增代码字符。但可见行映射会把围栏语法视为不可见边界；当源码前方已经存在列表 marker 或实体差异时，通用 `preserveMiddleEmptyBlock` 可能把这笔事务误判成“新增普通段落”，将首段代码插到开围栏之前，随后源码与富文本分叉。
+
+这不是再增加一个内容关键词分支，而是同步入口的结构所有权规则：
+- 先扫描 canonical 前后快照中的成对 fenced block，并要求开围栏、闭围栏、围栏外前缀和后缀都保持不变；
+- 再按同序号找到作者源码中的对应围栏，并证明已有代码内容的可见流一致；
+- 只有证明通过，才把 canonical 围栏内容作为一个局部替换写入作者源码的内容区；否则不让代码块处理器猜测，也不让普通段落 mapper 抢占。
+
+因此所有块级事务都遵循同一方法：**先确定结构所有权，再做局部 raw patch；无法证明归属就 fail-closed 并通知，不用整篇 canonical 覆盖源码**。回归：`test:middle-codeblock-source-ui`、`test:markdown-preservation`、`test:code-fence-delete-source-ui`、`test:tail-fence-ui`。
 
 ### 根因 1：尾部行追加/删除没有精确的“行级锚定”映射器
 
@@ -206,6 +241,37 @@ source 中间仍是未被占用的空白间隙时，允许“列表 + 列表后�
 精确 PM 映射时拒绝；非代码 slash 命令不进入该处理器。专项 `test:tail-fence-ui` 不做
 中间 checkpoint，连续编辑代码、尾部正文与前文列表，再验证源码、磁盘和冷重开。
 
+### 根因 16：零宽插入被误判为中间结构块
+
+普通正文中的单字符插入也满足“`previousEnd === start` 且变更片段非空”这一
+表面条件。旧的中间空段 mapper 没有再确认插入点是否位于块边界，因此在前方列表/表格
+已造成 canonical/source 偏移时，可能把一个字符当成新段落，插入到前一块与后一块之间；
+源码看似成功提交，但富文本和源码已经分叉。
+
+修复：只有插入点落在 canonical 行首或行尾时才允许进入 direct block insertion；普通
+行内编辑交给局部文字 mapper。候选提交、源码切换和保存统一执行当前文档语义校验，校验
+失败保持作者源码、保留 pending 状态并显示持续通知。这样表格尾部列表、中间列表、重复
+列表、连续空段和普通正文不再各自维护一套“成功”判断。
+
+验证：`test:markdown-preservation`、`test:table-tail-list-source-ui`、
+`test:forest-middle-list-source-ui`、`test:repeated-ordered-list-middle-ui`、
+`test:middle-body-list-source-ui`、`test:source-fidelity-ui`、
+`test:new-source-fidelity-ui`、`test:source-transaction-sync`。
+
+### 根因 17：已消费 marker 意图跨越 IME 与后续 Enter
+
+列表输入意图原本按“捕获后 3 秒”存活。用户在中间输入 `1. ` 后，先提交正文再按
+Enter 创建下一项时，第一次列表事务已经成功写回 `2.`，但旧 `1.` 意图仍被后续
+`markdownUpdated` 认领。它按全局列表行序号恢复 marker，遇到前方已有 marker/空项
+差异时会把新空项改成 `1.`；结构指纹随后正确拒绝候选，所以用户看到的是提示，根因
+却发生在更早的 marker 恢复阶段。
+
+修复：输入意图成功消费后，生命周期缩短为同一 input-rule dispatch 的 750ms 回调尾部；
+正文、IME composition 和后续 Enter 不再共享旧意图。这个限制不是关闭校验，而是缩小
+所有权：候选仍必须通过语义比较和列表槽位指纹，失败继续 fail-closed。验证：
+`test:middle-ordered-marker-only-ui`、`test:input-intent-staleness-ui`、
+`test:repeated-ordered-list-middle-ui`。
+
 ### 未闭环 15：`/code` 子路径修复后，真实长会话仍可再次分叉
 
 0.13.47 安装包手测否决了“根因 14 修复即可关闭问题”的结论。用户在真实长文档末尾
@@ -222,6 +288,18 @@ textarea live value 和 durability boundary 之间失去同一所有权。当前
 
 下一位接手者应按专项事故文档建立统一 transaction trace，并把真实安装包长会话写成
 新的失败回归。恢复副本只证明数据可以救援，不证明作者源码保真。
+
+## 事务级防护方法论
+
+这类问题不能按“表格 bug / 列表 bug / 空段 bug”分别添加字符串例外。统一提交协议是：
+
+1. 以完整 ProseMirror transaction batch 为边界，不能把一个结构事务拆成多个回调后部分提交。
+2. 源码候选同时通过 parser 语义证明和 raw Markdown 结构指纹；后者检查列表项数量、空项槽位、类型、任务状态和有序编号。
+3. 证明全部通过后，才原子推进作者源码与 canonical 双快照；失败保留 pending，不能清除失败基线。
+4. 源码切换、保存和重开前再次读取 live ProseMirror 文档并复核；失败只通知并阻止静默提交。
+5. 日志以 physical key → transaction steps → 首次候选 → 首次证明失败为证据链，修复以首笔分叉事务建立回归，不再围绕最终错误源码补丁。
+
+本轮新增的 `source-structure-fingerprint.js` 就是这套协议的结构门禁，覆盖连续 Enter、重复列表、表格尾部列表和延迟回调共享的空列表槽位边界。
 
 ## 矩阵当前状态
 
@@ -248,3 +326,202 @@ textarea live value 和 durability boundary 之间失去同一所有权。当前
 
 这两个场景都需要在可见流比较前识别“实体空格段”和“canonical 多出的空列表项”，
 与根因 2 同族但边界更深；已记录为后续迭代项。
+
+### 根因 13：残留有序列表输入意图改写 Enter 自动编号的新行（0.13.66）
+
+**现象**：空文档（scratch 路径）中先输入 `1. ` 创建有序列表、输入正文后按 Enter
+新建下一项，源码里的新项被写成 `1. ` 而不是 `2. `，列表槽位校验 fail-closed 弹出
+“源码与富文本不一致”，保存被暂停。
+
+**日志证据链**：`markerRestore` trace 显示残留的 `1.` intent 把 canonical 的
+`2. <br />` 行改写为 `1. `——`changedOrderedCandidate` 只判断“标点不同”（`2.` ≠
+`1.`），没有判断数字相同，于是 Enter 新建的自动编号行被误判为“Crepe 默认输出”
+需要恢复；`nearbyOffsetTarget`（光标在新项内）也命中同一行。
+
+**修复（事务级，非单场景补丁）**：有序 marker 恢复建立两条不变式：
+1. 恢复目标行的数字必须与用户敲入的 marker 数字相同（`1.` 只能恢复 `1)` 这类
+   同数字不同标点，绝不能改写 `2.`/`3.` 行）；
+2. changed-line 兜底只有在意图自身位置可信（距离 ≤ 4）且与变更行一致时才被采纳，
+   Enter 后光标已移到新行、意图仍属于旧项时不再用旧 marker 污染新行。
+
+**回归**：`npm run test:ordered-enter-next-item-ui`（空文档逐字符：`# 测试` → `1. `
+→ IME 正文 → Enter），断言源码第二项保持 `2. `、无 toast、切换源码一致；同时
+`markdown-preservation`、family-multicycle、middle-ordered-marker-only、重复有序
+列表、表格删行删列、源码保真与结构指纹全部通过。
+
+### 根因 14：行首转义符号被“还原”成块级语法（0.13.67）
+
+**现象**：中间段落按 Enter 两次退出列表后，输入单个 `-`（未按空格），源码候选
+变成裸 `-`（空 bullet 项），与 canonical 的 `\-`（字面量）语义不同，
+`source-document-mismatch` fail-closed 弹提示。同一会话中输入 `.` 时 canonical
+为 `1\.` 却正常——因为 `1` 在 `\` 前（可见文本），还原安全。
+
+**根因**：`canonicalFreshTextToSource` 的 `restoreFreshPunctuation` 把 canonical
+里所有 `\X` 都还原成物理字符。行首 `\-` 还原成 `-` 后，Markdown 把它解析为空
+bullet 项；`\#`、`\>`、`\*`、`\+`、行首 `\|` 同理。`1\.` 等有可见文本前缀的
+还原没有风险。
+
+**修复（语义保持，非补丁）**：`translateInlineCanonicalEscapes` 在还原 `\X`
+前先判断：该转义是否位于行首无可见文本区，且还原后是否成为块级语法（`[-+*]`
+后接空白/行尾、数字加 `.`/`)`、`#`/`>`/`|`、三连反引号/波浪线）。若是则保留
+反斜杠；否则照常还原。既有行为（如 ``` ``` ``` 围栏转义整行还原、`\~` 还原）
+全部保持。
+
+**回归**：`canonicalFreshTextToSource('\\-') === '\\-'`、`1\. → 1.`、
+`middle-empty-block-filled` 保留 `\-` 的纯函数断言；UI 测试在 `1. ` 列表里
+Enter 两次退出后逐字符输入 `-`，断言源码为 `\-` 且无 toast；family-multicycle、
+表格、列表、源码保真与结构指纹全部通过。
+
+### 根因 15：裸列表 marker 行对列表机制不可见导致填文本错位（0.13.69）
+
+**现象**：文档里存在类似 `-   1. 二哥你来拿如果` 的嵌套列表字面量时，用户在中间
+创建 `1. ` 有序列表并输入法填充正文，同步器把文本写成了新的 `- 1. …` 独立
+bullet 行，而不是填进 `1.` 有序项；结构指纹正确拒绝错误候选，fail-closed 弹出
+“源码与富文本不一致”，用户被卡住。
+
+**日志证据链**：`source-list-structure-mismatch`（16:15:54）。canonical 是
+`1. 色粉嫩绿色负能量`（有序项带文本），candidate 却是 `- 1. 色粉嫩绿色负能量`
+（独立 bullet 行）。追踪 three-way 输入复现：空列表项落库时被 `.trim()` 写成
+裸 `1.`（无尾随空格），而 `sourceListItemRows`/`listMarker`/`comparableListLine`
+都要求 marker 后必须有 `\s+`，裸 `1.` 对列表机制完全不可见——ordinal 对齐因此
+把有序项映射到了错误的分歧 bullet 块，文本被写成新 bullet 行。
+
+**修复（三处一致性，非单场景补丁）**：
+1. 列表 marker 识别兼容无尾随空格的裸行（`1.`/`-`/`*` 行尾即行末），并让
+   `sourceListItemRows`/`comparableListLine`/`nestedMarkerPrefixLength` 同步；
+2. 空列表项写入源码时保留尾随空格（`1. `），不再 `.trim()` 成裸 marker；
+3. 分歧列表处理器填充裸行时补一个空格（避免 `1.色粉` 被解析成普通段落）。
+
+**回归**：`test:bare-marker-fill-ui`（真实分歧文档逐字符：`啊额绿化` 段末
+Enter → `1. ` → IME 填充，断言源码 `1. 色粉嫩绿色负能量`、分歧行原样保留、
+无 toast）；纯函数断言覆盖“裸 `1.` 行填文本”防御路径；ordered-enter-next-item、
+middle-body、forest-middle、family-multicycle、表格删行删列、源码保真与结构
+指纹全部通过。
+
+### 根因 16：中间块插入分支抢走“空列表项填充”导致 IME 文本写成独立段落（0.13.70）
+
+**现象**：在分歧文档（含 `-   1. 二哥...` 嵌套字面量）中，`啊额绿化` 段末
+Enter → `- ` + 空格（bullet 输入规则，源码写入空 `- ` 行）→ 输入法提交正文，
+源码候选把正文写成 `- ` 行之前的独立段落（`text\n\n- `），而 canonical 是
+`* 了海伦凯勒看`（文本在列表项内）；列表结构指纹 `source-list-structure-mismatch`
+fail-closed 弹提示，保存被暂停。
+
+**日志证据链**：`markdown-sync` 事件 145（IME compositionend 后），reason
+`middle-block-inserted`。同一 three-way 输入下 `preserveMiddleEmptyBlock` 输出
+`text\n\n- `（错误），而 `preserveEmptyListItemTextChange` 输出 `- text`（正确）
+——调度顺序决定了结果：`preserveMiddleEmptyBlock` 在 `preserveEmptyListItemTextChange`
+之前执行，前者的 `middle-block-inserted` 分支看到源码槽位里的 `- `（视为已创作
+语法）就抢占把文本作为新段落插入，后者永远轮不到。
+
+**修复（归属优先，非补丁）**：`preserveMiddleEmptyBlock` 的中间块插入分支新增
+归属守卫——当源码槽位包含空列表行（`- ` / `1. ` 行尾无内容）且 canonical
+变更在填充列表行（`* 文本` / `1. 文本`）时，不返回 `middle-block-inserted`，
+把该事务留给 `preserveEmptyListItemTextChange`（`empty-list-item-filled`）。
+既有 fence 前置插入、列表后插入普通块等场景的判定不受影响（它们没有
+“源码槽位空列表行 + canonical 填充列表行”的组合）。
+
+**回归**：`test:empty-bullet-fill-ui`（真实分歧 fixture 逐字符：`啊额绿化` 段末
+Enter → `- ` → 空格 → IME 提交 `了海伦凯勒看`，断言源码 `- 了海伦凯勒看`、
+文本绝不成为独立段落、分歧行原样保留、无 toast）；纯函数用真实日志
+three-way 输入验证 reason 变为 `empty-list-item-filled`；bare-marker-fill、
+ordered-enter-next-item、middle-body、forest-middle、family-multicycle、表格
+删行删列、源码保真与结构指纹全部通过。
+
+### 根因 17：列表槽位指纹把独立 `<br />` 空段占位当作硬分组边界（0.13.71）
+
+**现象**：在已有文档中给有序列表填正文、Enter 新建下一项、再在空项里按 Enter
+退出列表，且列表下方已有另一个列表时，弹“源码与富文本不一致”、保存被暂停。
+
+**日志证据链**：`source-list-structure-mismatch`（17:21:24，无序列表测试.md）。
+canonical 是 `1. 输入…\n2. 的人多…\n\n<br />\n\n* 看了呢分`（退出列表后在两个
+列表之间留下独立的 `<br />` 空段占位），candidate 是 `…\n\n- 看了呢分`（正确
+丢弃了占位、只留普通空行）。保留层本身输出正确（`empty-list-item-removed`），
+失败发生在校验层：列表槽位指纹把 canonical 里的独立 `<br />` 行当作“非空普通行”
+→ 硬分组边界（canonical 分成两组），而 candidate 里的空行不打破分组（合并成一组），
+两边分组数量/槽位错位，指纹 fail-closed。语义校验不受影响（Milkdown 的
+`remark-preserve-empty-line` 插件在解析时已经把独立 `<br />` 移除），日志确认
+`semanticOk: true`、只有 `listSlotsMatch: false`。
+
+**修复（一致性收敛，非补丁）**：`source-structure-fingerprint.js` 把独立
+`<br />`（含 `> <br />` 引用前缀，与 `withoutStandaloneEmptyBlockLines` 同一
+识别口径）当作空行跳过——不建分组边界、不产生槽位。它与“独立 `<br />` 是内部
+空段占位、绝不进入原始源码”的不变量对齐：占位在指纹层等价于它代表的那一行空行。
+
+**回归**：`test:ordered-exit-before-list-ui`（新回归：fixture 有序列表 → 空项
+Enter 退出 → 下方已有无序列表，断言源码 `1. …\n2. …\n\n- 看了呢分`、无 `3.` 残留、
+无 `<br />` 泄漏、无 toast；反证：还原守卫后该测试复现 `listSlotsMatch: false`
++ 持久通知）；纯函数断言覆盖“退出空项删除 item 与 `<br />` 占位不改列表分组”；
+ordered-enter-next-item、empty-bullet-fill、bare-marker-fill、middle-body、
+forest-middle、空段保真、表格尾部/删行/删列、源码保真与结构指纹全部通过。
+
+### 根因 18：行尾字面空格被当成硬换行语法，继续输入文字插到空格前（0.13.72）
+
+**现象**：在段落末尾打若干空格（字面空格），停顿让空格先落库到源码后继续输入
+文字，同步器把新文字插到了空格之前：源码变成 `将皮机配件了；你       `，而
+富文本是 `将皮机配件       了；你`（空格在中间）。语义校验 `source-document-mismatch`
+fail-closed 弹“源码与富文本不一致”，保存被暂停。
+
+**日志证据链**：`source-document-mismatch`（12:22:18，无序列表测试.md）。
+source/candidate 是 `将皮机配件了；你       `，canonical 是 `将皮机配件       了；你`。
+`markdown-sync` 显示两步：先 `structural-line-change` 把 7 个空格落到源码
+（`将皮机配件       `），再 `localized-change` 把 `了；你` 插到空格之前。分叉点
+是 `rawInsertionAtCanonicalLineEnd`：它无条件 `sourceLine.end - trailingWhitespace.length`，
+把“字面空格”当成了“作者硬换行语法”（该分支本意是：源文件里 `  ` 硬换行空格不在
+canonical 里，输入应插在它们之前）。
+
+**修复（按 canonical 是否保留空格区分，非补丁）**：`rawInsertionAtCanonicalLineEnd`
+新增判别——当 canonical 那一行自身以空白结尾（说明这些空格是序列化器保留的字面
+文字、光标在空格之后）时插到 `sourceLine.end`（空格之后）；仅当 canonical 已丢弃
+源文件的硬换行空格时，才保持原有“插在硬换行空格之前”的行为。**回归**：`test:trailing-spaces-fill-ui`（新回归：行尾 7 个空格 → 停顿 900ms 让
+空格先落库 → IME 输入 `了；你`，断言源码 `将皮机配件       了；你`、无 toast；
+反证：还原分支后该测试复现 `将皮机配件了；你       ` + 持久通知）；纯函数断言
+覆盖“字面行尾空格后继续输入”与既有“硬换行空格前插入”两个方向；
+ordered-exit-before-list、ordered-enter-next-item、empty-bullet-fill、
+bare-marker-fill、middle-body、forest-middle、空段保真、表格尾部/删行/删列、
+源码保真与结构指纹全部通过。
+
+### 根因 19：退出无序列表时空项删除范围吞掉后续兄弟项（0.13.73）
+
+**现象**：在无序列表中输入内容后按 Enter 创建空项，再按一次 Enter 退出列表，富文本
+显示正常，但源码会少掉空项后面的下一条列表项（例如 `- 露娜了`），随后可能弹出
+“源码与富文本不一致”。日志中该事务先出现 `middle-empty-block-created`，第二次
+Enter 出现 `empty-list-item-removed`；问题发生在后者的列表块对齐，而不是保存写盘。
+
+**根因**：canonical 在退出列表时会把空项序列化为 `* <br />`，并把后续兄弟列表以另一
+个 marker 发布。旧的 `listBlockAt` 把空项前后两个列表错误合成一个 previousList，
+`formatCanonicalListLikeSource` 按行数对齐时把“空 marker + 后续兄弟项”一起裁掉；同时
+空项判断只接受完全裸的 `*`，没有处理 change span 泄漏的后续 marker。
+
+**修复（局部结构所有权）**：`preserveEmptiedParagraph` 现在只在存在独立 `<br />` 空段
+占位且前一行确实是列表 marker 时接管退出事务；对空 marker 与 canonical marker 做
+列表类型归一化，并按 canonical/source 的实际边界收敛前缀和尾部多余空行。这样只删除
+退出的那一行，不重建整棵列表，也不动后续兄弟项的内容、marker 或分隔。
+
+**回归**：`test:bullet-exit-keeps-sibling-ui` 通过两次间隔 300ms 的 Enter 复现真实事务
+顺序，并断言源码保留后续兄弟项、无 toast；还覆盖列表尾部退出和纯函数 three-way 输入。
+ordered-exit-before-list、empty-bullet-fill、bare-marker-fill、middle-body、forest-middle、
+repeated-ordered-list-middle、trailing-spaces-fill、表格尾部/删行/删列及结构指纹全部通过。
+
+### 根因 20：列表前导空格 sentinel 在后续普通空格输入后未收敛（0.13.74）
+
+**现象**：在有序列表中按回车创建新的空项，先输入一个空格，再用输入法输入正文，最后继续输入空格，富文本显示正常，但源码保留了 `U+200B + 空格`，而 canonical 已变成 marker 后的普通双空格，触发 `source-document-mismatch`。
+
+**日志证据链**：13:59:52.795 点击第二项 → 13:59:53.374 Enter 创建第三项 → 13:59:53.938 输入首个空格 → 输入法提交“色粉色分”和“看了你快乐” → 13:59:56.737 再输入空格；13:59:56.983 首次分叉。canonical 为 `3.  色粉色分看了你快乐 `，candidate 为 `3. \\u200B 色粉色分看了你快乐 `。
+
+**根因**：第一个行首字面空格需要通过 `&#x20;` 序列化，并在源码中暂存为 U+200B sentinel；当后续空格使 Markdown 在列表 marker 后可以直接表示普通双空格时，canonical 不再包含 `&#x20;`。原有局部可见偏移映射从 sentinel 后开始，只追加了新空格，没有重新处理 sentinel，导致旧占位符永久残留。
+
+**修复（按序列化状态转换收敛）**：新增严格的单行转换证明：previous 行必须含 `&#x20;`、next 行必须不含 `&#x20;`，source/result 必须唯一包含对应 sentinel 行，且移除 sentinel 后的可见文本必须精确等于 next 行。证明成立才移除一个 sentinel；无法唯一证明时保持 fail-closed，不做全局替换。
+
+**回归**：`test:leading-space-list-transition-ui` 以真实逐字 Enter → 空格 → 输入法正文 → 再空格复现并断言源码为普通双空格、无 U+200B、无 toast；纯函数还覆盖完整 three-way 输入。ordered-enter-next-item、bare-marker-fill、empty-bullet-fill、bullet-exit-keeps-sibling、trailing-spaces-fill 及源码保真回归全部通过。
+
+### 根因 21：退出空有序项时，后续有序列表的标点翻转吞掉了整段列表（0.13.76）
+
+**现象**：在有序列表里给一项填正文、Enter 新建空项、再在空项里 Enter 退出；下方紧跟一个作者用 `1)` 书写的有序列表时，Crepe 在同一事务里把它重新序列化成 `1.`，源码里的后续列表整段消失，触发 `source-list-structure-mismatch`。
+
+**日志证据链**：16:46:59.873 点击 `1. 三个人过` → 16:47:01.564 Enter 新建 `2.` 空项（`middle-empty-block-list-filled`）→ 16:47:02.102 再次 Enter 退出；16:47:02.353 `source-list-structure-mismatch`。canonical 由 `1) 斯卡洛尼快乐 / 2) 是干嘛的了；吗` 翻转为 `1. / 2.`，候选却只剩 `1. 三个人过`，把后续 `1) 斯卡洛尼快乐 / 2) 是干嘛的了；吗` 整段删除。
+
+**根因**：`commonChange` 把“删空项”和“后续列表标点变化”并进同一变更区间。于是 `preserveEmptiedParagraph` 的空项删除分支被 `nextChangedText` 含真实文字而拒绝，`preserveEmptyListItemTextChange` 把合并后的整块列表用只剩 `1. 三个人过` 的 next 块替换，删掉后续列表。深层原因是把有序列表标点（`1.` vs `1)`）当成了内容差异参与 diff，而它其实是序列化器会翻转的实现细节（作者标点以源码为准，和 bullet marker 统一成 `*` 是同一类）。
+
+**修复（归一化序列化器伪差异，非场景补丁）**：在 diff 前把行首有序 marker 的标点归一化为 `.`（`normalizeOrderedListDelimiters`）。只命中行首 `\d+[.)]` + 空白，不碰列表项内的字面 `1.`/`1)`；`. ↔ )` 等长，偏移不变。归一化后变更区间只剩 `2. ` → `<br />`，`empty-list-item-removed` 分支正常删空项并保留后续列表及其作者 `1)` 标点。
+
+**回归**：`test:ordered-exit-delimiter-ui` 以真实逐字“填正文 → 两次分开的 Enter → 源码切换”复现并断言 `1) 斯卡洛尼快乐 / 2) 是干嘛的了；吗` 字节级保留、无 toast；纯函数断言 `ordered-exit-delimiter` 覆盖 same 场景。反证：还原标点归一化后该测试复现“源码切换被阻止 / 后续列表被删”。ordered-exit-before-list、bullet-exit-keeps-sibling、middle-ordered-marker-only、list-conversion-source-fidelity、repeated-ordered-list-middle 及源码保真、结构指纹回归全部通过。

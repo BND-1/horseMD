@@ -1,18 +1,33 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-11。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-27。
 
 ## 0. 当前状态快照
 
-- 当前主分支：`main`
-- 当前源码候选：`0.13.47`；正式路径 `/Applications/HorseMD.app` 已替换为 0.13.47，
-  但**人工验收失败，禁止按稳定版发布**。真实 `123321.md` 长会话在文章末尾通过
-  `/code` 建立代码块、继续编辑并保存后，源码与富文本仍会再次分叉；保存暂停和
-  “保存成功但磁盘内容不等于富文本”都属于同一 P0。RS-40 只修复了 slash 命令创建
-  fence 的一个子路径，新增 RS-41 继续跟踪未知的首次分叉 transaction。完整现场、
-  救援过程、排查字段和完成标准见 `rich-source-divergence-incident-0.13.47.md`。方案一
-  （保留 ProseMirror，迁移 transaction→source）生产仍未默认接管；0.13.34 的
-  settle/recovery 只是数据保护安全网，不是根治。`v0.13.29` 是最近正式发布版。
+- 当前分支：`fix/rs-41-rich-source-divergence`
+- 当前源码、`package-lock`、`dist/mac-arm64/HorseMD.app`、`/Applications/HorseMD.app` 和人工手测运行实例均为 `0.13.131`。正式安装版主进程 PID `16298`，命令 `/Applications/HorseMD.app/Contents/MacOS/HorseMD --horsemd-input-trace`；当前 trace：`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-16298.jsonl`。启动 trace 已创建（初始约 52 KB），尚无 `source-sync-integrity-failure`、`source-document-mismatch` 或 `source-list-structure-mismatch`。旧 0.13.130 备份：`/tmp/HorseMD-0.13.130-backup-rs86-20260827-1245.app`；更早 0.13.129 备份：`/tmp/HorseMD-0.13.129-backup-rs85-20260827-0156.app`；0.13.128 备份：`/tmp/HorseMD-0.13.128-backup-rs84-20260827-0045.app`；0.13.127 备份：`/tmp/HorseMD-0.13.127-backup-rs83-20260826-2354.app`；0.13.126 备份：`/tmp/HorseMD-0.13.126-backup-rs82-20260826-2228.app`。
+- 当前架构状态是**混合迁移，不是完整重构**：生产发布仍由 legacy canonical-preservation
+  主导；transaction-first 已有 observer、raw mapper、checkpoint、shadow/authority gate，
+  但只对少量明确允许的普通段落事务具备 authority。列表、输入规则、代码块、表格、引用、
+  任务项和复杂结构仍由 legacy structure owner 负责。不要把单个专项的绿色结果写成
+  transaction-first 已接管全部编辑。
+- `SourceSyncCoordinator` 阶段 A 的核心生命周期已在 `0.13.125` 工作树完成，属于行为保持型
+  架构抽取、没有消费新 patch 版本。普通 `markdownUpdated`、forced flush、transaction-first
+  early/late authority 已共用 revision-bound candidate/proof/validation/Publisher；transaction
+  proof 组装位于 `lib/source-sync/editor-bridge.js`，host callback 抛错会回滚 source/canonical
+  refs；validation 不提前 trust，只有成功 commit 后才建立 checkpoint；Coordinator 只保留最近
+  candidate ID。inline-code、frontmatter 与 Slash code/math 已作为首批 post-Phase-A 专项入口迁移；其它 direct publication 仍登记在
+  `source-sync-coordinator-phase-a.md`，不得误写为全部迁移完成。
+- 0.13.131 的 RS-86 修复真实长会话 mixed-marker bullet 中“中间项末尾快速连续按两次 Enter，空 bullet 在 source callback 前立即提升为顶层空段”时后继项被误删的问题。0.13.130 正式安装版 PID 258 trace 在 2026-08-27 04:02:31.385 line 332 首发 `source-document-mismatch`：第一拍在 `- 12312` 后创建位于 `- 1\\. 色粉色分` 前的空 bullet，第二拍在延迟 callback 前把它退出为顶层空 paragraph；列表拆分后后继项正文不变，但 live canonical marker 从长期 PM 树中的 `-` 重序列化为 `*`，形成 `- 12312\n\n<br />\n\n* 1\\. 色粉色分`。旧 `empty-list-item-removed` 因 marker 漂移扩大 common-change，line 331 错误删除非空后继项。新增严格 raw owner `preserveCoalescedEmptyBulletExitBeforeSibling` / reason `coalesced-empty-bullet-exit-before-sibling`：只接受唯一顶层非任务 middle/right bullet pair、一个未缩进 `<br />` 原位插入、middle 逐字不变、right 仅一字符 token 变化、两个新 gap 与旧 gap 完全相同、前缀/后缀 byte-identical、source 可见正文 pair 唯一且不在 fence；命中后作者源码完全不变，只推进 canonical baseline。该 family 不新增 semantic 例外，也不加入 generated-scratch/forced-flush allowlist。PID 258 line 331 完整长文档三态直接回放命中，后继项与目标局部字节保留；完整 markdown-preservation、source probes 39/39、source transaction、RS-51/54/63/68/82/83/84/85、structure fingerprint、异构 source-fidelity 与 desktop build 均 PASS。普通 all-`*` 物理快速双 Enter 控制组继续由 `middle-empty-block-created` 认领，专用 owner 不抢占，source/save/cold reopen 稳定。详见 `rapid-double-enter-bullet-exit-before-sibling-regression.md`。
+- 0.13.130 的 RS-85 修复真实分叉长文档中“第二个顶层 ordered 父项正文已清空但仍持有 nested ordered child，再按 Backspace 并入前一项”的源码锁定。0.13.129 PID 94298 trace 在 2026-08-26 17:03:36.558 line 589 首发 `source-document-mismatch`：最后一拍 PM 删除空 `2.` 的 list-item 边界、把 nested child `如何电话` 移入 `1. 是共生共荣`，并在正文与 child 之间保留一个 Markdown 无法编码的 editor-owned 空 paragraph。旧 `empty-list-item-removed` 已正确只删除 authored `2. ` 行且 `listSlotsMatch=true`，但 strict semantic comparator 因该不可编码空段得到 `semanticOk=false`。新增严格 raw owner `preserveEmptyOrderedItemBackspaceMergeBeforeNestedList` / reason `empty-ordered-item-merged-before-nested-list`，只接受唯一顶层 ordered left、连续空 sibling、未变化 nested ordered child、next 空段与 child 同缩进、目标命中真实 change range、left 前缀和 child 后缀 byte-identical、source 唯一 compact 三元组且不在 fence；只删除 authored 空父项行。semantic gate 仅为该 reason 允许一侧全篇唯一的“非空 paragraph→空 paragraph→ordered_list” transient，且另一侧必须零候选。独立审查曾发现初版会在每个 list item 各忽略一次，发布前已收紧并补入“同一项多个候选、不同项各有候选、两侧候选错位、正文中段、bullet child”反例，全部 fail closed。PID 94298 line 591 真实三态直接回放命中；source transaction、完整 markdown-preservation、source probes 38/38、RS-56/63/68/72/82/83/84、异构 source-fidelity、desktop/mobile build 均 PASS。`test:empty-ordered-parent-before-nested-backspace-ui` 从空文档真实逐键建立现场并物理执行四次 Backspace，已在开发入口、dist 二进制和 `/Applications` 正式安装副本三次通过专用 owner、`semanticOk/listSlotsMatch/ok=true`、零 warning、精确 source/save/cold reopen。详见 `empty-ordered-parent-before-nested-backspace-regression.md`。
+- 0.13.129 的 RS-84 修复真实分叉长文档中“反向选区跨 bullet→ordered→bullet，连续按两次 Backspace”的双拍事务。0.13.128 PID 90936 trace 在 2026-08-26 16:07:25.136 line 29 首发 `unmapped-diverged-list-batch`：选区从 `- 看了呢分` 正文开头跨过独立 `2. 斛律v哦` 到后续 `- u高科技` 正文末尾，PM 一次 replace 合法留下 `* <br /> / * 1\\. 色粉色分`；旧 broad mapper 却把三棵列表分别对账而无法原子认领。第一拍未推进 baseline 后，16:07:25.620 line 35 的第二拍继续使用 stale source/canonical，只删除首个 authored bullet 并触发 `source-list-structure-mismatch`。新增严格 raw owner `preserveCrossListSelectionDeleteToEmptyBullet` / reason `diverged-cross-list-selection-delete-to-empty-bullet`，仅在唯一顶层非任务 bullet→ordered→bullet 三行被一个同 token 空 bullet 原位替换、canonical 前后 byte-identical、两处 block gap、左右可见锚与 source target 唯一且不在 fence 时认领；只把三行 authored range 替换为首行作者 bullet prefix。首拍正确提交后，第二拍继续由既有 `empty-list-item-removed` 拥有。真实自动化在此还发现一个原 warning 没暴露的字节漂移：第二拍虽 `semanticOk/listSlotsMatch/ok=true`，旧 prefix collapse 会把 `正文\n\n- surviving` 静默压成单换行；0.13.129 因而收窄为空项位于普通块后新列表首项时保留作者 block gap，列表内部 placeholder 仍按旧合同压缩。PID 90936 两拍已按修复后的正确 canonical baseline 链式回放；markdown-preservation、source probes 37/37、普通/嵌套空 bullet、single-empty ordered、RS-59、RS-68 5/18/70ms、RS-72、RS-82、RS-83、dash+Space、source transaction 和异构 source-fidelity 全部 PASS。`test:cross-list-selection-delete-empty-bullet-ui` 使用真实 backward DOM selection 与两次物理 Backspace，已在开发入口、dist 二进制和 `/Applications` 正式安装副本三次通过逐拍 owner、`semanticOk/listSlotsMatch/ok=true`、零 warning、精确 source/save/cold reopen。详见 `cross-list-selection-delete-empty-bullet-regression.md`。
+- 0.13.128 的 RS-83 修复真实分叉长文档中“退出有序列表后连续输入三个连字符创建 thematic break”时，零可见结构变化被通用 mapper 错粘到上一列表项正文的问题。0.13.127 PID 85614 trace line 630 在 2026-08-26 15:17:23.243 首发 `source-document-mismatch`：两次 Enter 已退出 `3. 3fresh` 列表，第一个 `-` 正确发布为独立 `\\-`，第二、第三键合并触发 PM `hr`，canonical 为独立 `***`，旧 `locally-aligned-change` 却生成 `3. 3fresh***`。新增 `preserveEscapedStandaloneThematicBreakInputRule` / reason `escaped-standalone-thematic-break-input-rule`，仅在 canonical 除唯一独立 `\\-`→thematic-break 行外 byte-identical、上下 block gap 与 source 可见邻居唯一、目标不在 fence 内时认领；只把 authored 行改为用户实际输入风格 `---`，歧义、普通 `--x` 和同 callback 其它编辑继续 fail closed。完整 PID 85614 约 5.5 MB trace line 633 三态直接回放命中；markdown-preservation、source probes 36/36、build、RS-59、dash+Space、RS-82、source transaction、异构 source-fidelity、RS-68 5/18/70ms 全部 PASS。`test:middle-thematic-break-input-rule-ui` 已在开发入口、dist 二进制和 `/Applications` 正式安装副本三次通过两次 Enter setup、独立 `\\-` 中间帧、coalesced hr、forced flush、`semanticOk/listSlotsMatch/ok=true`、零 warning、精确 source/save/cold reopen。详见 `middle-thematic-break-input-rule-regression.md`。
+- 0.13.127 的 RS-82 修复真实分叉长文档中“非空 bullet 段首项 Backspace 并入左侧 ordered list”的首发 `unmapped-diverged-list-batch`。0.13.126 PID 81568 trace line 13 显示两个 non-empty bullet items 合法变为连续 `3.`/`4.`；后续独立 ordered list 的 `1.`→`1)` 是 CommonMark 冷重开保持列表边界所需的 parse-safe separator，不是可忽略 serializer drift。严格 raw owner 只改 moved markers 与必要 following delimiter，错误 ordinal、无关正文编辑、source 歧义均 fail closed，并在 `normalizeOrderedListDelimiters()` 前保留 separator 证据。专项 `test:nonempty-bullet-backspace-merge-ordered-ui` 已在开发入口、dist 二进制和 `/Applications` 安装副本三次通过 owner、semantic/list proof、零 warning、精确 source、save 与 cold reopen；相邻 empty-bullet family、RS-54、完整 list conversion、source transaction、rich-list、35/35 probes、异构 source-fidelity UI 与 RS-68 5/18/70ms 也全部通过。详见 `nonempty-bullet-backspace-merge-ordered-regression.md`。
+- 0.13.126 的 RS-81 是 parser/SourceSync 边界修复：inline-code value-change 已删除直接 refs/App 写回并改走 Coordinator；整段 paragraph/heading 的精确 triple-backtick inlineCode 形状，以及无 info/meta/content 的裸第三反引号中间 fence，按 mdast 原始 byte slice 恢复为普通 text。普通 inline/fenced code 不受影响；专项见 `literal-triple-backtick-parser-regression.md`。
+- 0.13.125 的 RS-80 是 legacy 列表 owner 的事务归属修复：已发布的 `\\-` marker 在
+  Space input rule 中按同级 ordinal 定位对应新 item，只做局部 raw patch；它不是列表链路
+  的 transaction-first 迁移。完整边界见 `transaction-source-sync-architecture.md`、
+  `source-sync-save-recovery.md` 和 `rich-source-fidelity-bug-family.md`。
 - **0.13.x 系列主线（自 0.12.69 之后）**：
   - **原文保真与空段落硬不变式**：空段落 `<br />` 占位绝不允许进入作者源码（`withoutStandaloneEmptyBlockLines` 在 `preserveRichMarkdownSource` 出口强制剥离）；空段落映射不得要求全文可见流相等、不得被无关空段落否决；连续空段落映射不递归。系列提交 `bb5b9f4` → `cfae66a`。
   - **可见流分叉单块回退**：源码与 canonical 可见流分叉（如行中 `* ` 使 remark 拆成列表项）时，局部对齐与行区域映射都会失败并 fail-closed。`preserveDivergedBlockTextChange()`（`lib/markdown-preservation/regions.js`）只处理单 canonical 块：先反转义 canonical 拼写（`\*`→`*`、`&#x20;`→空格），0.13.30 起优先用 source/canonical 等数量非空块的 ordinal 定位；候选数量不等才退回全文唯一子串，仍歧义则拒绝写回。初始提交 `abb6d09`，最新复盘见 `diverged-ordinary-save-regression.md`。
@@ -36,7 +51,7 @@
   - **事务优先源码同步第二阶段（0.13.36，方案一）**：mapper 改为 BOM/CRLF/lone-CR 归一化双视图（字节证明在 LF 视图，输出保留作者拼写）；hint 槽坐标指向完整段落分隔之后；嵌套空 textblock（列表项/引用）拒绝接管；列表输入意图只在当前源快照上重建自己的块，不再覆盖延迟窗口内的跨块编辑；`preserveChangedLineRegion` 零宽行边界粘行根因修复。回归含 LF/CRLF/BOM+CRLF + undo/redo 逐字节、列表意图跨块专项（primary 构建验证、默认构建 SKIP）、全家族矩阵双构建。`test:list-intent-cross-block-ui` 与 `test:source-transaction-sync-ui`（三行尾变体）为方案一专项。
   - **多轮持久化与列表原子提交（0.13.46 候选）**：列表 input intent 在完整 slot 重建、marker 恢复或严格中间空槽列表写回后立即消费，禁止下一次正文回调复用旧快照；批量列表写回必须完整覆盖同一 callback 的后续正文，CRLF 在 `\r` 前插入，0/1 final-EOL 分别保留正确退出列表边界。新增 `test:family-multicycle-ui`（4 轮编辑保存、5 次冷打开，默认/primary 双路径）；第四轮专门在正文与 fence 之间输入“正文 → 有序列表 → 正文”。真实 `123321.md` override 与 20/20 家族矩阵均通过。
   - **斜杠菜单代码块原子同步（0.13.47，子路径完成、家族未关闭）**：稳定复现 `/code` 已写入源码后，slash 菜单先删 query、再创建空 code_block；旧尾部 mapper 只删除 `/code`，没有写入 fence，后续代码/尾文/前文编辑全部从错误基线继续。现于命令前捕获精确 authored 行，命令后只序列化当前 code_block 并验证成对 fence 后原子替换。`test:tail-fence-ui` 在 40ms 菜单选择后不做 checkpoint，连续编辑三块，再验证源码、保存和冷重开；但安装包真实长会话继续编辑后仍能再次分叉，见 RS-41，不得把该专项绿色结果描述为整体修复。
-  - **源码/富文本架构探索**：`live-preview-migration-plan.md` 当前以 transaction→source 为主线；CodeMirror Live Preview 仅保留长期备选。
+  - **源码/富文本架构迁移状态**：当前以“保留 ProseMirror、逐类迁移 transaction→source”为主线；transaction-first 已进入受限 authority 阶段，但默认发布仍由 legacy preservation 主导。CodeMirror Live Preview 仍是长期备选，不是当前 bug 修复的默认方向。迁移时必须按“分类器 → raw range → candidate → semantic/structure proof → 原子发布”推进，完成一类后再删除对应 legacy owner。
   - **代码块体验**：编辑器代码块行号（不透明背景、贴左、全高、右侧分隔竖线）、**PDF 导出代码块带行号**、表格单元格单击直接编辑。提交 `5094e0b`、`7b2e50b`、`9bc9412`、`a45f958`。
   - **原生 HTML 表格自适应**：带 `width` 属性的 HTML 表格恢复作者语义（`100%` 跟随容器、固定像素收缩），`td/th` 允许列收缩，表格内图片按单元格宽度显示，不再横向溢出。提交 `8a98b5f`。
   - **文档位置记忆（#111）**：重开文档恢复上次光标与滚动位置；按路径存 `{offset, len, scrollTop}`，长度不匹配（外部修改）不恢复。提交 `5fe4af4`。
@@ -80,6 +95,11 @@
 - 输入规则、Enter/退格、模式切换后立即输入和源码保真必须逐字符派发，优先
   使用 `scripts/lib/human-input.mjs`。批量 `Input.insertText` 只能用于粘贴、
   数据准备或与逐键行为无关的测试；中文逐字提交不能代替真实 IME composition。
+- **真实人工复现源码/富文本分叉时，启动进程必须带 `--horsemd-input-trace`。**
+  `ELECTRON_ENABLE_LOGGING=1` 只能补 Electron/Chromium 日志，不能替代 HorseMD 的输入/事务
+  trace；没有该参数时，一旦提示“源码与富文本不一致”，事后通常无法恢复首个错误的
+  `source / candidate / canonical`。以后让用户做真实操作前先确认 Electron argv 已包含该参数，
+  再开始复现，优先分析第一次 integrity failure，不要只看最后的保存暂停提示。
 - 不要把大文件、小文件、富文本、源码模式混为一谈。HorseMD 很多 bug 只在真实大文档、表格、代码块、LaTeX、远程图片、源码/富文本双向切换里出现。
 - 不要轻易重写敏感状态机。源码/富文本切换、dirty 状态、保存、PDF 预览、编辑器生命周期都已经踩过坑。
 - UI 需要“高级、优雅、和谐”。如果改视觉，至少检查浅色、深色、莫兰迪主题和窄屏，不要只看一个默认主题。
@@ -573,7 +593,7 @@ npm run guide:capture
 3. 完善 Windows/Linux 实机包验证。
 4. AI Phase 0 的合同、上下文快照和变更提案纯逻辑已落地；下一步仍先做只读 Provider，不急着开放自动写入或 Agent 权限。
 5. 插件市场难度高，先不急；优先可控的自定义快捷键、同步、AI provider 合同。
-6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；先维护已落地的原文保真层。
+6. 源码优先 Live Preview 是远期独立架构项目，不能作为当前 Crepe 模式切换的小修；近期优先完成 transaction-first 的分类型迁移，同时维护已落地的原文保真层。
 7. **代码块围栏「吞正文」**：已留底待用户提供复现（`codeblock-fence-investigation.md`）；拿到精确步骤后定位保存路径的围栏/换行丢失点。
 8. **损坏围栏吞后文**：0.13.26 修复反引号删除导致的保存/源码锁死，0.13.27 验证 ``` + Space 创建代码块和空块 Backspace 快速退出；但既有文件的结束围栏已损坏后吞正文仍按 `codeblock-fence-investigation.md` 独立排查，不要退回到整篇 canonical 覆盖。
 

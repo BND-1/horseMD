@@ -25,6 +25,7 @@ export function useSourceModeSwitch({
   tabsRef,
   activeIdRef,
   editorApis,
+  liveContentRef,
   editorHostRef,
   focusedTabRef,
   commitAllLive,
@@ -107,6 +108,13 @@ export function useSourceModeSwitch({
     // The source textarea is uncontrolled. Update the synchronous mirror before
     // mounting it, then queue the matching React state update in the same event;
     // waiting for markdownUpdated would leave defaultValue stuck on stale text.
+    // EditorArea prefers the uncontrolled textarea's live mirror over
+    // tab.content when mounting source mode. Rich edits do not normally write
+    // that mirror, so leaving an older value there can mount source mode with
+    // the first intermediate structural snapshot even though flushMarkdown
+    // has already settled to a newer candidate. Replace the mirror atomically
+    // at this same durability boundary.
+    liveContentRef?.current?.set(id, markdown)
     tabsRef.current = tabsRef.current.map((tab) =>
       tab.id === id ? { ...tab, content: markdown, pendingRichEdit: false } : tab
     )
@@ -116,7 +124,7 @@ export function useSourceModeSwitch({
         : tab
     ))
     return true
-  }, [editorApis, setTabs, tabsRef])
+  }, [editorApis, liveContentRef, setTabs, tabsRef])
 
   const toggleSource = useCallback(async () => {
     const id = activeIdRef.current

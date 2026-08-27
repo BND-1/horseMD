@@ -60,8 +60,8 @@ The full fixture matrix still exposes independent failures and must remain fail-
 
 These are follow-up first divergences, not extensions of the fence scanner rule.
 
-## Separate triple-backtick semantic failure
+## Separate triple-backtick semantic failure: resolved as RS-81
 
-`test:literal-triple-backtick-source-ui` currently fails before source mode opens. Temporary trace instrumentation showed the stored candidate as `# ```你好````, while the canonical representation escapes the backticks. Re-parsing the authored candidate produces an `inlineCode` mark, so semantic integrity rejects it. Crucially the same trace reports `listSlotsMatch=true`.
+The earlier `test:literal-triple-backtick-source-ui` failure was correctly kept outside RS-74. Trace showed the candidate `# ```你好````, canonical escaped delimiters, an `inlineCode` mark only after reparsing authored bytes, and `listSlotsMatch=true`. Inline-code publication migration later exposed the same mismatch at the exact third-backtick intermediate frame, where bare ` ``` ` reparsed as an empty unterminated code fence.
 
-Therefore that failure is outside RS-74: the list-slot scanner is no longer the failing proof. It must be handled as a separate source/semantic ownership problem rather than by weakening the scanner or integrity gate.
+RS-81 / 0.13.126 resolves this at the parser boundary rather than weakening the list scanner or semantic integrity. A remark transformer uses mdast source positions and exact raw-shape proof to preserve only HorseMD's whole-textblock literal triple-backtick contract, including the bare third-backtick intermediate. Normal inline code and real fenced code retain standard Markdown parsing. Full rationale and negative cases are in [`literal-triple-backtick-parser-regression.md`](./literal-triple-backtick-parser-regression.md).

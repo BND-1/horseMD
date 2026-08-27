@@ -17,10 +17,20 @@
 | [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
 | [family-root-cause-matrix.md](./family-root-cause-matrix.md) | 真实文件 4×5 家族矩阵、多轮保存重开根因、CRLF/尾换行/列表原子提交证据 |
 | [rich-source-divergence-incident-0.13.47.md](./rich-source-divergence-incident-0.13.47.md) | **P0 未解决**：0.13.47 自动化全绿但安装包真实长会话仍发生富文本/源码/磁盘分叉；含现场证据、测试缺口、统一 trace 要求与接手完成标准 |
-| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | 方案一：保留 ProseMirror，以事务直接更新作者源码；含影子/接管状态机、空块事故与放行门槛 |
+| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.132）**：revision-bound transaction journal、共享 list/plain owner 生命周期、legacy fallback 与剩余结构族迁移门槛 |
+| [transaction-first-source-sync-phase1-plain-paragraph-plan.md](./transaction-first-source-sync-phase1-plain-paragraph-plan.md) | Phase 1 普通段落 authority 的分类器、shadow/authority 合同、当前未完成门禁与回归证据 |
 | [slash-code-source-sync-regression.md](./slash-code-source-sync-regression.md) | `/code` 两阶段结构命令缺失 fence 的根因、命令级原子 source intent 与连续编辑回归 |
 | [canonical-escape-audit.md](./canonical-escape-audit.md) | canonical Markdown 中实体、反斜杠、列表标记与 `<br />` 的完整泄漏面审计 |
 | [nested-list-sync-bug-handoff.md](./nested-list-sync-bug-handoff.md) | `- 1. 内容`、多列表批次、marker 保留与列表结构分歧的根因和回归矩阵 |
+| [generated-scratch-empty-ordered-indent-regression.md](./generated-scratch-empty-ordered-indent-regression.md) | RS-45：新建文档空 `2.` 按 Tab 后，generated scratch 误删空嵌套项重解析所需空行，导致合法结构被 integrity gate 拒绝 |
+| [diverged-nested-number-enter-split-regression.md](./diverged-nested-number-enter-split-regression.md) | RS-46：`- 1. 文本` 行内嵌套 ordered item 经 Enter 拆项后，新 sibling 被错误写成新的外层 bullet |
+| [empty-blockquote-ime-fill-regression.md](./empty-blockquote-ime-fill-regression.md) | RS-48：空 blockquote 中 IME 提交正文时，尾部空块 mapper 把 quoted text 错写成引用块外普通段落；0.13.94 原位填充 quote slot |
+| [generated-scratch-literal-ordered-ime-regression.md](./generated-scratch-literal-ordered-ime-regression.md) | RS-49：新文档 bullet 正文开头 `1\\.` 被 generated scratch 去转义后重解析成 nested ordered list；0.13.95 保留结构保护 escape |
+| [appended-literal-ordered-marker-regression.md](./appended-literal-ordered-marker-regression.md) | RS-55：尾部普通段输入字面 `3.` 时，appended paragraph 过早去掉结构保护反斜杠；0.13.101 仅保护整块 `N\\.` / `N\\)` |
+| [generated-scratch-nested-empty-backspace-regression.md](./generated-scratch-nested-empty-backspace-regression.md) | RS-56：三级 nested bullet 最深项快速双 Backspace 时 raw `<br />` 缩进证据被 normalize 抹掉；0.13.102 以 raw canonical 窄证明 nested list-item removal |
+| [generated-scratch-blockquote-empty-paragraph-regression.md](./generated-scratch-blockquote-empty-paragraph-regression.md) | RS-57：引用正文末尾 Enter 产生无法直接用 Markdown 持久化的空第二段；0.13.103 用专用 transient proof 保持源码不变直到该段收到正文 |
+| [generated-scratch-task-continuation-empty-regression.md](./generated-scratch-task-continuation-empty-regression.md) | RS-58：checked task/list item 内尾随 continuation paragraph 删空时，raw `<br />` 缩进 ownership 被 normalize 丢失；0.13.104 用专用 list transient proof 保持源码、保存和冷重开一致 |
+| [escaped-standalone-paragraph-expand-regression.md](./escaped-standalone-paragraph-expand-regression.md) | RS-59：已有 source/canonical 拼写分歧时，中间空段的字面 `\\-` 扩写为 `-【】` 会因 visible-offset 零宽边界粘到上一段；0.13.105 用 mapped source line identity fail-closed 到行级 mapper |
 | [backtick-source-sync-lock-regression.md](./backtick-source-sync-lock-regression.md) | 反引号输入/删除、行内代码闭合、代码围栏退出、保存暂停与源码锁死的联合回归 |
 | [list-item-literal-marker-escape-regression.md](./list-item-literal-marker-escape-regression.md) | 列表正文中 `1.`、`1)`、`-`、`+`、`*` 字面文本被错误转义的根因与修复 |
 | [desktop-drop-open.md](./desktop-drop-open.md) | 桌面端从 Finder / 文件资源管理器拖入文件或文件夹的产品边界、IPC 与测试合同 |
@@ -70,7 +80,7 @@
 | [issue-86-table-save-report.md](./issue-86-table-save-report.md) | 表格增删行列后的单元格归属、空单元格与保存重开回归 |
 | [issues-93-98-implementation-report.md](./issues-93-98-implementation-report.md) | issue 93/96/97/98 的实现与验收记录 |
 | [codeblock-fence-investigation.md](./codeblock-fence-investigation.md) | **进行中**：代码块围栏「吞正文」排查留底（解析机制已确认，正常路径未复现，待用户提供步骤） |
-| [live-preview-migration-plan.md](./live-preview-migration-plan.md) | 远期「源码即数据模型」Live Preview 独立架构迁移计划（不可作为 Crepe 模式切换小修） |
+| [live-preview-migration-plan.md](./live-preview-migration-plan.md) | 长期「源码即数据模型」Live Preview 终局方案；当前先执行 transaction-first 分类型迁移，不启动全量替换 |
 | [macos-real-input-testing.md](./macos-real-input-testing.md) | macOS CGEvent 前台逐键输入的真实测试方法（疑难编辑问题的补充手段） |
 | [list-conversion-prd.md](./list-conversion-prd.md) | 有序/无序/待办列表相互转换的产品范围与验收标准 |
 | [floating-outline-design.md](./floating-outline-design.md) | 右侧悬浮大纲（Scroll Spy 圆点导航）设计与实现边界 |

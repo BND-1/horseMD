@@ -1,10 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-11 第二阶段基础设施与默认/primary 回归仍在，但 0.13.47 安装包人工
-> 验收出现 RS-41：真实长会话在代码块及后续编辑后仍发生富文本/源码分叉。发布构建
-> 默认关闭 transaction-primary；现有 canonical preservation 也没有通过产品验收。
-> 方案一仍是主线，但下一步必须先抓到第一次状态分叉的统一 trace，不能继续按最终症状
-> 增加 mapper。见 `rich-source-divergence-incident-0.13.47.md`。
+> 状态：2026-08-27，HorseMD `0.13.132`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；列表子树 owner 与普通段落 owner消费同一份不可变 journal。列表中可证明的单一顶层子树变化可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。输入规则、代码块、表格、引用及未迁移结构继续使用既有 fail-closed owner。
+>
+> `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
+>
+> `markdownUpdated` 与 forced flush 现在都先尝试共享 journal owner，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。完整 Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
 
 ## 1. 目标与不变量
 
@@ -37,6 +37,26 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 在其他插件完成 `appendTransaction` 后取得完整 transaction batch；
 - 测试可显式启用 `window.__hmSourceTransactionTrace = []`，记录真实 step、old/new doc；
 - 生产环境不初始化数组，不记录用户文档内容。
+
+### `lib/source-sync/transaction-journal.js`
+
+- 每个正常用户 dispatch batch 绑定一个不可变 `baseRevision`、source/canonical digest、oldDoc 与最终 expectedDoc；
+- 保存完整 transaction batch、逐 Step `stepDoc`、StepMap 和受限 step metadata，后续 family owner 可重建真实事务链而无需从 delayed canonical 反推操作；
+- 后续 batch 只有在 revision、source、canonical 与 `expectedDoc → oldDoc` 连续时才可追加；任何 gap、外部发布、容量超限或 stale snapshot 都整本 journal fail closed；
+- journal 自身不生成 Markdown，也不决定 family；它只提供统一生命周期和可审计证据。
+
+### `lib/source-sync/plain-paragraph-transaction-owner.js`
+
+- 只认领顶层、无 mark/atom、非空普通段落内的 closed plain-text `ReplaceStep`；
+- 对 journal 中每个 Step 使用对应 stepDoc 重新应用并验证完整 oldDoc → finalDoc 链；
+- 语法敏感插入、开放 slice、段落 split、列表内编辑、空段结果和陈旧 revision 均拒绝；
+- callback 与 forced flush 均通过相同 owner + Coordinator 发布，不再维护独立 shadow checkpoint。
+
+### `lib/source-sync/list-subtree-transaction-owner.js`
+
+- 消费同一 journal，只在 oldDoc → finalDoc 恰有一个顶层列表子树变化且邻块完全不变时认领；
+- transaction journal 负责生命周期与 StepMap 证据，owner 只负责拓扑分类、精确 source/canonical 范围和 bounded list mapper；
+- callback 与立即切源码 forced flush 使用同一 ownership proof、Coordinator revision guard、保存与冷重开合同。
 
 ### `lib/source-transaction-sync.js`
 
@@ -73,11 +93,12 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 ### `Editor.jsx` 迁移控制器
 
 - `markdownUpdated`、强制 flush、保存和源码切换仍保留原有安全网；
-- 新 mapper 目前只在开发环境或显式测试开关下运行，发布构建默认关闭，避免给用户输入增加未验收的逐键映射成本；
-- `window.__hmTransactionSourcePrimary = true` 只供专项测试显式打开主路径；
-- 完整家族试跑可用 `VITE_HM_TRANSACTION_PRIMARY=1 npm run build` 生成临时实验构建；验收后必须重新普通构建，不能把实验开关误带进发布包；
-- 主路径成功时，源码来自 transaction patch，serializer 只临时生成 canonical baseline 指纹，不能反向覆盖源码；
-- 主路径失败会 quarantine 当前结构阶段，直到旧保真层成功建立新 checkpoint；后续字符不能在一个尚未同步的空块上继续猜 raw offset。
+- 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
+- list subtree owner 先处理可证明的结构子树；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- `globalThis.__hmTransactionFirstAuthority = true` 仅放行已验收的普通段落 family；默认发布仍由 legacy 处理该 family。历史 broad `__hmTransactionSourcePrimary` 仅供专项测试/迁移实验；
+- callback 与 forced flush 共用 journal、ownership proof 和 Coordinator revision guard，成功时原子推进 source/canonical/checkpoint，失败时保持 authored baseline；
+- 不支持的结构继续走既有 legacy owner。只有 stale revision/source/doc 或成功 publication 会清空 journal，family rejection 本身不能销毁其它 owner 仍可能消费的证据；
+- 通用 normalized→raw mapper 已按“边界”而非“字符”维护插入后的坐标，支持同一本 journal 中先插入、后在另一段替换而不吞掉终止换行。
 
 ### 斜杠菜单结构命令的原子边界
 
@@ -183,19 +204,19 @@ npm run test:source-fidelity-probes
 
 以上矩阵在 `VITE_HM_TRANSACTION_PRIMARY=1 npm run build` 的实验构建上全绿；同一组回归在默认发布构建上也全绿（primary 专项测试自动 SKIP），证明 regions/list preservation 的修复不破坏旧路径。
 
-## 8. 本轮同时修复的旧路径家族 bug
+## 7. 本轮同时修复的旧路径家族 bug
 
 1. **源末尾空行 + 新块粘行**（`preserveChangedLineRegion`）：零宽变化落在 previous 末尾空行/行边界时，可见字符映射把源区域拉进上一行，新列表/引用/标题行被粘到上一行尾（`正文* `）。修复：零宽且位于行边界的变化，源区域就是该空行本身。`已有正文\n\n` + 列表创建现在输出 `已有正文\n\n* \n\n` 而不是 `已有正文* \n\n`。该修复不依赖 primary，默认构建同样生效。
 2. **BOM/CRLF 文档普通编辑损坏**：旧回退在 CRLF 上把新文字插进 `\r\n` 中间（`正文\r追加\n`），后续进入“保存已暂停”。primary 归一化视图接管后此类文档不再落到该回退。
 
-## 9. 仍未放行的分类（默认关闭）
+## 8. 仍未放行的分类（默认关闭）
 
 - 行内 mark/atom（粗斜体、链接、行内代码、公式、图片）；
 - 代码块、表格、Mermaid、LaTeX、HTML、frontmatter、Review；
 - 列表/引用结构的输入规则与退出、缩进、类型转换（仍走专门 preservation，仅空槽协调已打通）；
 - 大文档逐键性能：当前成功事务仍同步执行两次全文 parse 与一次全文 serializer，未做增量索引；默认开启前必须补 100K–400K 文档的逐键延迟门禁。
 
-## 7. 禁止回退的修法
+## 9. 禁止回退的修法
 
 - 不得让 serializer 结果直接覆盖作者源码；
 - 不得把空 PM paragraph 序列化为独立 `<br />`；
