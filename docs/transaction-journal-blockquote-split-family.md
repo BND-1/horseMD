@@ -101,6 +101,7 @@ code-block-content
 code-block-info
 blockquote-paragraph
 blockquote-split
+blockquote-join
 ```
 
 所有 family 共用：
@@ -168,10 +169,9 @@ split fixture 真实位于 bullet list item 内，并执行：
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. blockquote Backspace join；
-2. blockquote 退出引用；
-3. table cell plain text；
-4. table row insert/delete；
-5. table column/alignment changes。
+1. blockquote 退出引用；
+2. table cell plain text；
+3. table row insert/delete；
+4. table column/alignment changes。
 
 每个 family 都必须沿用 transaction journal、stable path、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

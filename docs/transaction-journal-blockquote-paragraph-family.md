@@ -119,9 +119,10 @@ owner 再通过共享 `validateTransactionMarkdown()` 执行 semantic document �
 - `code-block-content-replace`；
 - `code-block-info-string-change`；
 - `blockquote-paragraph-text-replace`；
-- `blockquote-paragraph-split`。
+- `blockquote-paragraph-split`；
+- `blockquote-paragraph-join`。
 
-五个 family 共用：
+六个 family 共用：
 
 - 唯一 `pendingSourceSyncTransactionJournal`；
 - 相同 revision/source/canonical/doc stale guard；
@@ -197,9 +198,8 @@ npm run build
 
 下一步建立独立结构 family，不扩大本 owner：
 
-1. blockquote Backspace join；
-2. blockquote 退出引用；
-3. table cell 文字与 row structural change；
-4. code-block 创建/删除/拆分/合并与围栏结构。
+1. blockquote 退出引用；
+2. table cell 文字与 row structural change；
+3. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 必须独立完成 transaction/stepDoc 分类、bounded source patch、纯正反合同、真实 callback、立即 forced flush、保存与全新 profile 冷重开后，才允许注册 production authority。

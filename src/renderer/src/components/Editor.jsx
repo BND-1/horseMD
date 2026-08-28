@@ -56,6 +56,7 @@ import {
 } from '../lib/source-transaction-sync.js'
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
+  createBlockquoteJoinTransactionSourceSyncOwner,
   createBlockquoteParagraphTransactionSourceSyncOwner,
   createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
@@ -533,6 +534,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const blockquoteJoinTransactionSourceSyncOwner =
+      createBlockquoteJoinTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
@@ -580,6 +586,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-split-markdown-updated',
           'forced-flush': 'transaction-blockquote-split-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'blockquote-join',
+        owner: blockquoteJoinTransactionSourceSyncOwner,
+        traceKey: '__hmBlockquoteTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-blockquote-join-markdown-updated',
+          'forced-flush': 'transaction-blockquote-join-forced-flush'
         })
       })
     ])
