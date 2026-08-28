@@ -1,10 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-28，HorseMD `0.13.137`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string、已有 blockquote 同段纯文字、blockquote paragraph split/join，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化，以及稳定 ProseMirror descendant path 上的 blockquote 纯文字、中间 Enter 拆段和段首 Backspace join，可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块围栏结构与块生命周期、引用退出、表格结构、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
+> 状态：2026-08-28，HorseMD `0.13.138`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string、已有 blockquote 同段纯文字、blockquote paragraph split/join/exit，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化，以及稳定 ProseMirror descendant/parent path 上的 blockquote 纯文字、中间 Enter 拆段、段首 Backspace join 和末尾双 Enter exit，可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块围栏结构与块生命周期、表格结构、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
 >
 > `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
 >
-> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，引用同段纯文字 family 见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)，引用拆分 family 见 [`transaction-journal-blockquote-split-family.md`](./transaction-journal-blockquote-split-family.md)，引用合并 family 见 [`transaction-journal-blockquote-join-family.md`](./transaction-journal-blockquote-join-family.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
+> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，引用同段纯文字 family 见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)，引用拆分 family 见 [`transaction-journal-blockquote-split-family.md`](./transaction-journal-blockquote-split-family.md)，引用合并 family 见 [`transaction-journal-blockquote-join-family.md`](./transaction-journal-blockquote-join-family.md)，引用退出 family 见 [`transaction-journal-blockquote-exit-family.md`](./transaction-journal-blockquote-exit-family.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
 
 ## 1. 目标与不变量
 
@@ -96,6 +96,14 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - raw patch 映射左右作者正文和它们之间的 quote-only separator，只把整个 raw span替换为最终合并正文；保留左段作者 quote prefix、BOM/EOL、父容器与全部其它字节，并再次执行 semantic validator；
 - callback 与立即 forced flush 分别通过 `transaction-blockquote-join-markdown-updated` / `transaction-blockquote-join-forced-flush` 进入 structural registry + Coordinator。完整合同见 [`transaction-journal-blockquote-join-family.md`](./transaction-journal-blockquote-join-family.md)。
 
+### `lib/source-sync/blockquote-exit-transaction-owner.js`
+
+- 只认领稳定 parent/blockquote path 上已有引用末尾的双 Enter exit；第一拍 `ReplaceStep` 新增 trailing empty quote paragraph，第二拍 `ReplaceAroundStep` 将该空段提升为 quote 后同级 paragraph，后续 Step 只能在退出段内追加 closed plain text；
+- pending 第一拍由同一 owner 以 source 不变的 `trailing-empty-blockquote-paragraph-created` proof 提交 canonical baseline；最终 owner同时支持 coalesced journal（split + lift + text）和 staged journal（lift + text），避免第一拍落回 legacy 后污染第二拍 baseline；
+- parent 类型只允许 `doc` 或 `list_item`，引用必须是 parent 的直接 child，退出段必须插入其后；Step 在捕获时 stepDoc 上完整重放，parent attrs、quote prefix children、祖先 path、siblings 和邻块必须不变；空退出、marks、nested quote parent、邻块混改和多目标均拒绝；
+- raw patch 映射作者最后一条 quote paragraph，仅在其物理行后插入 block gap + 退出段：顶层 prefix 为空，list item 内 prefix 等于 quote indentation；不写 transient quote-only line，保留作者 `>` spacing、BOM/EOL、列表 marker 和其余字节；
+- callback 与立即 forced flush 分别通过 `transaction-blockquote-exit-markdown-updated` / `transaction-blockquote-exit-forced-flush` 进入 structural registry + Coordinator。完整合同见 [`transaction-journal-blockquote-exit-family.md`](./transaction-journal-blockquote-exit-family.md)。
+
 ### `lib/source-sync/top-level-subtree.js`（稳定 descendant path）
 
 - 顶层 diff 只用于证明整篇文档恰有一个 top-level subtree 变化；family owner 再用 `classifySingleAnchoredSubtreeChange()` 找到唯一承担全部变化的目标 node path；
@@ -138,7 +146,7 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 
 - `markdownUpdated`、强制 flush、保存和源码切换仍保留原有安全网；
 - 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/code/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
-- structural registry 依次让 list subtree、existing code-block content、code-block info、blockquote paragraph、blockquote split 与 blockquote join owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- structural registry 依次让 list subtree、existing code-block content、code-block info、blockquote paragraph、blockquote split、blockquote join 与 blockquote exit owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
 - `globalThis.__hmTransactionFirstAuthority = true` 仅放行已验收的普通段落 family；默认发布仍由 legacy 处理该 family。历史 broad `__hmTransactionSourcePrimary` 仅供专项测试/迁移实验；
 - callback 与 forced flush 共用 journal、ownership proof 和 Coordinator revision guard，成功时原子推进 source/canonical/checkpoint，失败时保持 authored baseline；
 - 不支持的结构继续走既有 legacy owner。只有 stale revision/source/doc 或成功 publication 会清空 journal，family rejection 本身不能销毁其它 owner 仍可能消费的证据；
