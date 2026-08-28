@@ -71,6 +71,7 @@ import {
   createSourceSyncTransactionJournal,
   createTableCellTransactionSourceSyncOwner,
   createTableColumnDeleteTransactionSourceSyncOwner,
+  createTableColumnInsertTransactionSourceSyncOwner,
   createTableRowDeleteTransactionSourceSyncOwner,
   createTableRowInsertTransactionSourceSyncOwner,
   createSlashBlockSourceSyncOwner,
@@ -559,6 +560,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const tableColumnInsertTransactionSourceSyncOwner =
+      createTableColumnInsertTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const tableRowDeleteTransactionSourceSyncOwner =
       createTableRowDeleteTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -652,6 +658,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-table-column-delete-markdown-updated',
           'forced-flush': 'transaction-table-column-delete-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'table-column-insert',
+        owner: tableColumnInsertTransactionSourceSyncOwner,
+        traceKey: '__hmTableTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-table-column-insert-markdown-updated',
+          'forced-flush': 'transaction-table-column-insert-forced-flush'
         })
       }),
       Object.freeze({

@@ -169,8 +169,7 @@ npm run test:table-cell-transaction-ui
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table column insert；
-2. table alignment changes 与复杂 span/topology；
-3. code-block 创建/删除/拆分/合并与围栏结构。
+1. table alignment changes 与复杂 span/topology；
+2. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 继续使用 transaction journal、stable path、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

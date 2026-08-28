@@ -88,6 +88,11 @@ export {
   createTableColumnDeleteTransactionSourceSyncOwner
 } from './table-column-delete-transaction-owner.js'
 export {
+  TABLE_COLUMN_INSERT_TRANSACTION_BOUNDARY,
+  TABLE_COLUMN_INSERT_TRANSACTION_FAMILY,
+  createTableColumnInsertTransactionSourceSyncOwner
+} from './table-column-insert-transaction-owner.js'
+export {
   TABLE_ROW_DELETE_TRANSACTION_BOUNDARY,
   TABLE_ROW_DELETE_TRANSACTION_FAMILY,
   createTableRowDeleteTransactionSourceSyncOwner

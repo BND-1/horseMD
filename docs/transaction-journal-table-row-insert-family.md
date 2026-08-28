@@ -26,7 +26,7 @@
 - 空 template row、多个 paragraph、mark、inline code/math/image 等 atom；
 - colspan、rowspan、colwidth、列数、alignment 或其它 topology 同步变化；
 - table 创建、整表移动、邻块变化或与 column command 混合；
-- row deletion 已由独立 `table-row-delete` owner 处理；column insertion/deletion 与 alignment command 仍不认领；
+- row deletion、column insertion/deletion 已由独立 focused owners 处理；本 owner 仍不认领 alignment command；
 - source/canonical/doc stale、raw mismatch 或 semantic/list-slot 不等价。
 
 ## 2. 真实 Transaction 证据
@@ -269,8 +269,7 @@ immediate source-mode forced flush
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table column insert；
-2. table alignment changes 与复杂 span/topology；
-3. code-block 创建/删除/拆分/合并与围栏结构。
+1. table alignment changes 与复杂 span/topology；
+2. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 继续使用 transaction journal、stable path、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

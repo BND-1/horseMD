@@ -218,8 +218,7 @@ nested-list fixture 执行：
 
 引用 text/split/join/exit 已形成完整 focused set。下一阶段不扩大这些 owners，依次迁移：
 
-1. table column insert；
-2. table alignment changes 与复杂 span/topology；
-3. code-block 创建/删除/拆分/合并与围栏结构。
+1. table alignment changes 与复杂 span/topology；
+2. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family继续使用 transaction journal、stable path、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

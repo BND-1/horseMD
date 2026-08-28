@@ -252,11 +252,18 @@ const semanticJson = (node, {
       if (!Object.keys(next.attrs).length) delete next.attrs
     }
     if (Array.isArray(next.content)) next.content = next.content.map(visit)
-    if (next.type === 'paragraph' && Array.isArray(next.content) &&
-        next.content.every((child) => child?.type === 'hardbreak')) {
+    if (
+      next.type === 'paragraph' &&
+      Array.isArray(next.content) &&
+      next.content.every((child) =>
+        child?.type === 'hardbreak' || child?.type === 'hard_break'
+      )
+    ) {
       // A standalone hardbreak is Crepe's internal placeholder for an empty
-      // paragraph/cell. It carries no authored text; inline breaks surrounded
-      // by text remain untouched.
+      // paragraph/cell. Milkdown schemas have used both `hardbreak` and
+      // `hard_break`; neither spelling carries authored text when it is the
+      // paragraph's entire content. Inline breaks surrounded by text remain
+      // structurally strict.
       delete next.content
     }
     if (next.type === 'list_item' && Array.isArray(next.content)) {

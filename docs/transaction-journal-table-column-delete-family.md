@@ -20,7 +20,7 @@
 
 它不认领：
 
-- table column insert；
+- table column insert 已由独立 `table-column-insert` owner 处理；
 - alignment command、header/body 转换或其它 attrs 变化；
 - colspan、rowspan、colwidth 或非矩形 topology；
 - 删除唯一一列；底层 `deleteColumn` 在该场景必须直接返回 `false` 且不 dispatch；
@@ -299,8 +299,7 @@ immediate source-mode forced flush
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table column insert；
-2. table alignment changes 与复杂 span/topology；
-3. code-block 创建/删除/拆分/合并与围栏结构。
+1. table alignment changes 与复杂 span/topology；
+2. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 继续使用 transaction journal、逐 Step stepDoc 证明、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

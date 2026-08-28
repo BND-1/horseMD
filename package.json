@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.142",
+  "version": "0.13.143",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -229,6 +229,8 @@
     "test:table-cell-transaction-ui": "node scripts/test-table-cell-transaction-ui.mjs",
     "test:table-column-delete-transaction-owner": "node scripts/test-table-column-delete-transaction-owner.mjs",
     "test:table-column-delete-transaction-ui": "node scripts/test-table-column-delete-transaction-ui.mjs",
+    "test:table-column-insert-transaction-owner": "node scripts/test-table-column-insert-transaction-owner.mjs",
+    "test:table-column-insert-transaction-ui": "node scripts/test-table-column-insert-transaction-ui.mjs",
     "test:table-row-delete-transaction-owner": "node scripts/test-table-row-delete-transaction-owner.mjs",
     "test:table-row-delete-transaction-ui": "node scripts/test-table-row-delete-transaction-ui.mjs",
     "test:table-row-insert-transaction-owner": "node scripts/test-table-row-insert-transaction-owner.mjs",

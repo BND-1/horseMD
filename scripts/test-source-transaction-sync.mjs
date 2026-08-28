@@ -48,6 +48,71 @@ const doc = schema.nodes.doc.create(null, [
 
 const source = '# 标题\n\n正文\n\n> 引用\n\n- 项目\n'
 
+const jsonNode = (value) => ({
+  toJSON: () => JSON.parse(JSON.stringify(value))
+})
+const emptyTableCellDocument = jsonNode({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [{
+      type: 'table_row',
+      content: [{
+        type: 'table_cell',
+        content: [{ type: 'paragraph' }]
+      }]
+    }]
+  }]
+})
+for (const placeholderType of ['hardbreak', 'hard_break']) {
+  const placeholderTableCellDocument = jsonNode({
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [{
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: placeholderType }]
+          }]
+        }]
+      }]
+    }]
+  })
+  assert.equal(
+    areSourceDocumentsEquivalent(emptyTableCellDocument, placeholderTableCellDocument),
+    true,
+    `standalone ${placeholderType} table-cell placeholder must equal an authored blank cell`
+  )
+  const meaningfulBreakDocument = jsonNode({
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [{
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'before' },
+              { type: placeholderType },
+              { type: 'text', text: 'after' }
+            ]
+          }]
+        }]
+      }]
+    }]
+  })
+  assert.equal(
+    areSourceDocumentsEquivalent(emptyTableCellDocument, meaningfulBreakDocument),
+    false,
+    `inline ${placeholderType} surrounded by text must remain authored semantics`
+  )
+}
+
 // A list-item Backspace can transiently turn an empty sibling item into a
 // second hardbreak-only/empty paragraph inside the preceding item. Markdown
 // cannot persist two consecutive empty list-item paragraphs without exposing a
