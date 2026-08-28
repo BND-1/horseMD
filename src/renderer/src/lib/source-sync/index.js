@@ -83,6 +83,11 @@ export {
   createTableCellTransactionSourceSyncOwner
 } from './table-cell-transaction-owner.js'
 export {
+  TABLE_COLUMN_ALIGNMENT_TRANSACTION_BOUNDARY,
+  TABLE_COLUMN_ALIGNMENT_TRANSACTION_FAMILY,
+  createTableColumnAlignmentTransactionSourceSyncOwner
+} from './table-column-alignment-transaction-owner.js'
+export {
   TABLE_COLUMN_DELETE_TRANSACTION_BOUNDARY,
   TABLE_COLUMN_DELETE_TRANSACTION_FAMILY,
   createTableColumnDeleteTransactionSourceSyncOwner

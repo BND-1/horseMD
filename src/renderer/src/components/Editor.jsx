@@ -70,6 +70,7 @@ import {
   createPlainParagraphTransactionSourceSyncOwner,
   createSourceSyncTransactionJournal,
   createTableCellTransactionSourceSyncOwner,
+  createTableColumnAlignmentTransactionSourceSyncOwner,
   createTableColumnDeleteTransactionSourceSyncOwner,
   createTableColumnInsertTransactionSourceSyncOwner,
   createTableRowDeleteTransactionSourceSyncOwner,
@@ -555,6 +556,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const tableColumnAlignmentTransactionSourceSyncOwner =
+      createTableColumnAlignmentTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const tableColumnDeleteTransactionSourceSyncOwner =
       createTableColumnDeleteTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -649,6 +655,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-table-cell-markdown-updated',
           'forced-flush': 'transaction-table-cell-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'table-column-alignment',
+        owner: tableColumnAlignmentTransactionSourceSyncOwner,
+        traceKey: '__hmTableTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-table-column-alignment-markdown-updated',
+          'forced-flush': 'transaction-table-column-alignment-forced-flush'
         })
       }),
       Object.freeze({
