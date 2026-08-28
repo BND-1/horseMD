@@ -43,6 +43,11 @@ export {
   createPlainParagraphTransactionSourceSyncOwner
 } from './plain-paragraph-transaction-owner.js'
 export {
+  CODE_BLOCK_INFO_TRANSACTION_BOUNDARY,
+  CODE_BLOCK_INFO_TRANSACTION_FAMILY,
+  createCodeBlockInfoTransactionSourceSyncOwner
+} from './code-block-info-transaction-owner.js'
+export {
   CODE_BLOCK_TRANSACTION_BOUNDARY,
   CODE_BLOCK_TRANSACTION_FAMILY,
   createCodeBlockTransactionSourceSyncOwner

@@ -16,7 +16,7 @@
 
 它不认领：
 
-- 修改语言或其他 `code_block` attrs；
+- 修改其他 `code_block` attrs；语言 attr 已由独立 [`code-block-info-string-change`](./transaction-journal-code-block-info-family.md) family 认领；
 - 改变开闭围栏字符或长度；
 - 创建、删除、拆分、合并或 unwrap 整个代码块；
 - 跨代码块/跨父节点选区；
@@ -115,7 +115,8 @@ owner 只替换作者围栏内部的 content range。作者的：
 `Editor.jsx` 现在维护一个 structural transaction owner registry。当前注册：
 
 - `list-subtree-replace`；
-- `code-block-content-replace`。
+- `code-block-content-replace`；
+- `code-block-info-string-change`。
 
 两者共用：
 
@@ -160,8 +161,8 @@ npm run test:source-transaction-sync
 
 下一步不是扩大本 owner，而是建立新的 family：
 
-1. `code-block-info-string-change`：根据 `SetNodeMarkupStep`/attrs 变化定位 opening-fence info range；
-2. blockquote split/join：根据结构 Step 链和 quote raw prefix 认领；
-3. table row structural change：根据 row-level Step 链、delimiter row 和单元格 source slots 认领。
+1. blockquote split/join：根据结构 Step 链和 quote raw prefix 认领；
+2. table row structural change：根据 row-level Step 链、delimiter row 和单元格 source slots 认领；
+3. code-block fence/lifecycle：创建、删除、拆分、合并与围栏结构作为后续独立 family。
 
 每个 family 都必须独立完成纯合同、真实 callback、立即 forced flush、保存和全新 profile 冷重开后再注册生产 authority。

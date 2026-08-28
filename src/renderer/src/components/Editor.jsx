@@ -56,6 +56,7 @@ import {
 } from '../lib/source-transaction-sync.js'
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
+  createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
   createEditorSourceSyncBridge,
@@ -506,6 +507,9 @@ export default function Editor({
     const codeBlockTransactionSourceSyncOwner = createCodeBlockTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    const codeBlockInfoTransactionSourceSyncOwner = createCodeBlockInfoTransactionSourceSyncOwner({
+      resolveMarkdownOffset: resolveTransactionMarkdownOffset
+    })
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
@@ -526,6 +530,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-code-block-markdown-updated',
           'forced-flush': 'transaction-code-block-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'code-block-info',
+        owner: codeBlockInfoTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-code-block-info-markdown-updated',
+          'forced-flush': 'transaction-code-block-info-forced-flush'
         })
       })
     ])

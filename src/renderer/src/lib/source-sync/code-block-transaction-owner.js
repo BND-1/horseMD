@@ -1,9 +1,16 @@
 import { lineEndingNear } from '../markdown-preservation/core.js'
-import { fencedCodeBlockAt } from '../markdown-preservation/regions.js'
+import {
+  fencedCodeBlockContent,
+  isPlainCodeBlock,
+  normalizeCodeBlockText,
+  normalizedFenceLine,
+  resolveFencedCodeBlockRange
+} from './code-block-transaction-common.js'
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
 import {
   classifySingleTopLevelSubtreeChange,
+  onlyTopLevelSourceSyncIndexChanged,
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
   topLevelSourceSyncEntries
@@ -26,15 +33,6 @@ const rejected = (reason, {
   proof
 })
 
-const isPlainCodeBlock = (node) => {
-  if (!node?.isTextblock || node.type?.name !== 'code_block') return false
-  let plain = true
-  node.forEach?.((child) => {
-    if (!child?.isText || (child.marks?.length || 0) > 0) plain = false
-  })
-  return plain
-}
-
 const plainSliceText = (slice) => {
   if (!slice || slice.size === 0 || slice.content?.size === 0) return ''
   if (slice.openStart || slice.openEnd) return null
@@ -50,37 +48,17 @@ const plainSliceText = (slice) => {
   return plain ? text : null
 }
 
-const onlyTopLevelIndexChanged = (beforeDoc, afterDoc, index) => {
-  const before = topLevelSourceSyncEntries(beforeDoc)
-  const after = topLevelSourceSyncEntries(afterDoc)
-  if (before.length !== after.length || !before[index] || !after[index]) return false
-  return before.every((entry, candidateIndex) =>
-    candidateIndex === index || entry.node?.eq?.(after[candidateIndex]?.node) === true
-  )
-}
-
-const normalizeCodeText = (value) => String(value || '').replace(/\r\n|\r/g, '\n')
-
-const fencedContentForDocument = (markdown, block) => {
-  if (!block) return null
-  let text = normalizeCodeText(markdown.slice(block.contentStart, block.closeStart))
-  if (text.endsWith('\n')) text = text.slice(0, -1)
-  return text
-}
-
 const rawContentForDocument = (text, eol) => {
-  const normalized = normalizeCodeText(text)
+  const normalized = normalizeCodeBlockText(text)
   if (!normalized) return ''
   return normalized.replace(/\n/g, eol) + eol
 }
-
-const normalizedFenceLine = (line) => String(line || '').replace(/\r$/, '')
 
 const sourceFenceCollides = (block, nextText) => {
   const token = block?.char === '~' ? '~' : '`'
   const length = Number(block?.length) || 3
   const pattern = new RegExp(`^ {0,3}${token}{${length},}\\s*$`)
-  return normalizeCodeText(nextText).split('\n').some((line) => pattern.test(line))
+  return normalizeCodeBlockText(nextText).split('\n').some((line) => pattern.test(line))
 }
 
 const classifyCodeBlockJournal = ({ journal, expectedDoc }) => {
@@ -151,7 +129,7 @@ const classifyCodeBlockJournal = ({ journal, expectedDoc }) => {
         return rejected('code-block-step-apply-failed')
       }
       if (applied?.failed || !applied?.doc) return rejected('code-block-step-apply-failed')
-      if (!onlyTopLevelIndexChanged(stepDoc, applied.doc, classification.topLevelIndex)) {
+      if (!onlyTopLevelSourceSyncIndexChanged(stepDoc, applied.doc, classification.topLevelIndex)) {
         return rejected('code-block-neighbour-changed')
       }
       const resultBlock = topLevelSourceSyncEntries(applied.doc)[classification.topLevelIndex]?.node
@@ -252,31 +230,15 @@ export function createCodeBlockTransactionSourceSyncOwner({
     const classification = classifyCodeBlockJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
 
-    const resolveRange = ({ markdown, doc, entry, side }) => {
-      const pmPos = entry.offset + 1
-      let rawOffset
-      try {
-        rawOffset = resolveMarkdownOffset({
-          markdown,
-          pmPos,
-          doc,
-          topLevelIndex: classification.topLevelIndex,
-          side
-        })
-      } catch {
-        return null
-      }
-      if (!Number.isFinite(rawOffset)) return null
-      const block = fencedCodeBlockAt(markdown, rawOffset)
-      if (!block) return null
-      return Object.freeze({
-        ...block,
-        start: block.openStart,
-        end: block.closeEnd,
-        pmPos,
-        rawOffset
+    const resolveRange = ({ markdown, doc, entry, side }) =>
+      resolveFencedCodeBlockRange({
+        markdown,
+        doc,
+        entry,
+        topLevelIndex: classification.topLevelIndex,
+        side,
+        resolveMarkdownOffset
       })
-    }
 
     const sourceRange = resolveRange({
       markdown: journal.source,
@@ -308,13 +270,13 @@ export function createCodeBlockTransactionSourceSyncOwner({
 
     const previousText = classification.previousBlock.textContent || ''
     const nextText = classification.nextBlock.textContent || ''
-    if (fencedContentForDocument(journal.source, sourceRange) !== previousText) {
+    if (fencedCodeBlockContent(journal.source, sourceRange) !== previousText) {
       return rejected('code-block-source-content-mismatch')
     }
-    if (fencedContentForDocument(journal.canonical, previousRange) !== previousText) {
+    if (fencedCodeBlockContent(journal.canonical, previousRange) !== previousText) {
       return rejected('code-block-previous-canonical-content-mismatch')
     }
-    if (fencedContentForDocument(canonical, nextRange) !== nextText) {
+    if (fencedCodeBlockContent(canonical, nextRange) !== nextText) {
       return rejected('code-block-next-canonical-content-mismatch')
     }
     if (sourceFenceCollides(sourceRange, nextText)) {
@@ -326,8 +288,15 @@ export function createCodeBlockTransactionSourceSyncOwner({
     const markdown = journal.source.slice(0, sourceRange.contentStart) +
       replacement +
       journal.source.slice(sourceRange.closeStart)
-    const mappedBlock = fencedCodeBlockAt(markdown, sourceRange.openStart)
-    if (!mappedBlock || fencedContentForDocument(markdown, mappedBlock) !== nextText) {
+    const mappedBlock = resolveFencedCodeBlockRange({
+      markdown,
+      doc: expectedDoc,
+      entry: classification.nextEntry,
+      topLevelIndex: classification.topLevelIndex,
+      side: 'mapped-source',
+      resolveMarkdownOffset
+    })
+    if (!mappedBlock || fencedCodeBlockContent(markdown, mappedBlock) !== nextText) {
       return rejected('code-block-mapped-content-mismatch')
     }
 

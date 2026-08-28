@@ -33,6 +33,15 @@ export const topLevelSourceSyncEntries = (doc) => {
   return entries
 }
 
+export const onlyTopLevelSourceSyncIndexChanged = (beforeDoc, afterDoc, index) => {
+  const before = topLevelSourceSyncEntries(beforeDoc)
+  const after = topLevelSourceSyncEntries(afterDoc)
+  if (before.length !== after.length || !before[index] || !after[index]) return false
+  return before.every((entry, candidateIndex) =>
+    candidateIndex === index || entry.node?.eq?.(after[candidateIndex]?.node) === true
+  )
+}
+
 export function classifySingleTopLevelSubtreeChange({
   oldDoc,
   newDoc,

@@ -286,13 +286,22 @@ const fencedBlocks = (markdown) => {
     if (!open) {
       const match = lineText.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
       if (match) {
+        const fenceOffset = lineText.indexOf(match[1])
+        const fenceStart = line.start + fenceOffset
+        const fenceEnd = fenceStart + match[1].length
         open = {
           openStart: line.start,
           openEnd: line.end,
           contentStart: line.end + (source[line.end] === '\n' ? 1 : 0),
           openLine: lineText,
+          indent: lineText.slice(0, fenceOffset),
           char: match[1][0],
-          length: match[1].length
+          length: match[1].length,
+          fenceStart,
+          fenceEnd,
+          infoStart: fenceEnd,
+          infoEnd: line.start + lineText.length,
+          infoRaw: match[2]
         }
       }
       continue
