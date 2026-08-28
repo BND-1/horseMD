@@ -70,6 +70,7 @@ import {
   createPlainParagraphTransactionSourceSyncOwner,
   createSourceSyncTransactionJournal,
   createTableCellTransactionSourceSyncOwner,
+  createTableColumnDeleteTransactionSourceSyncOwner,
   createTableRowDeleteTransactionSourceSyncOwner,
   createTableRowInsertTransactionSourceSyncOwner,
   createSlashBlockSourceSyncOwner,
@@ -553,6 +554,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const tableColumnDeleteTransactionSourceSyncOwner =
+      createTableColumnDeleteTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const tableRowDeleteTransactionSourceSyncOwner =
       createTableRowDeleteTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -637,6 +643,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-table-cell-markdown-updated',
           'forced-flush': 'transaction-table-cell-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'table-column-delete',
+        owner: tableColumnDeleteTransactionSourceSyncOwner,
+        traceKey: '__hmTableTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-table-column-delete-markdown-updated',
+          'forced-flush': 'transaction-table-column-delete-forced-flush'
         })
       }),
       Object.freeze({

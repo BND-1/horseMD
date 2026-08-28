@@ -269,7 +269,7 @@ immediate source-mode forced flush
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table column insert/delete；
+1. table column insert；
 2. table alignment changes 与复杂 span/topology；
 3. code-block 创建/删除/拆分/合并与围栏结构。
 

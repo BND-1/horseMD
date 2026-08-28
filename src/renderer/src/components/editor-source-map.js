@@ -167,6 +167,11 @@ const isPmAtom = (node) => {
     /image|html|frontmatter|horizontal_rule|hard_break|thematic|rule/i.test(name)
 }
 
+const isPmTableCellName = (name) =>
+  name === 'table_cell' ||
+  name === 'table_header' ||
+  /table.*cell/i.test(name)
+
 const pmKind = (node) => {
   const name = node.type?.name || ''
   if (/heading/i.test(name)) return 'heading'
@@ -174,7 +179,7 @@ const pmKind = (node) => {
   if (/image/i.test(name)) return 'image'
   if (/html/i.test(name)) return 'html'
   if (/frontmatter|yaml/i.test(name)) return 'yaml'
-  if (/table.*cell|cell/i.test(name)) return 'tableCell'
+  if (isPmTableCellName(name)) return 'tableCell'
   if (isPmAtom(node)) return 'atom'
   return 'paragraph'
 }
@@ -183,7 +188,7 @@ const isInsideTableCell = (doc, pos) => {
   try {
     const $pos = doc.resolve(Math.max(0, Math.min(pos + 1, doc.content.size)))
     for (let depth = $pos.depth; depth >= 0; depth--) {
-      if (/table.*cell|cell/i.test($pos.node(depth).type?.name || '')) return true
+      if (isPmTableCellName($pos.node(depth).type?.name || '')) return true
     }
   } catch {
     // Fall back to the node's own type when resolving a transient position.
@@ -215,9 +220,9 @@ const collectPmBlocks = (doc) => {
   doc.descendants((node, pos) => {
     if (node.isTextblock) {
       blocks.push({
-        // ProseMirror places a paragraph inside each table_cell. The Markdown
-        // side exposes the cell itself as the block, so inherit the ancestor
-        // type or block occurrence matching will drift into ordinary paragraphs.
+        // ProseMirror places a paragraph inside each table_cell/table_header.
+        // The Markdown side exposes the cell itself as the block, so inherit
+        // the ancestor type or occurrence matching will drift into paragraphs.
         kind: isInsideTableCell(doc, pos) ? 'tableCell' : pmKind(node),
         pos,
         contentPos: pos + 1,

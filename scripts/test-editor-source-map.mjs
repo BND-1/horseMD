@@ -19,8 +19,9 @@ const schema = new Schema({
     bullet_list: { content: 'list_item+', group: 'block' },
     list_item: { content: 'paragraph block*' },
     table: { content: 'table_row+', group: 'block' },
-    table_row: { content: 'table_cell+' },
+    table_row: { content: '(table_cell | table_header)+' },
     table_cell: { content: 'paragraph+' },
+    table_header: { content: 'paragraph+' },
     image: { group: 'block', atom: true, attrs: { src: { default: '' } } },
     inline_image: { group: 'inline', inline: true, atom: true, attrs: { src: { default: '' } } },
     inline_math: { group: 'inline', inline: true, atom: true, attrs: { value: { default: '' } } },
@@ -36,7 +37,9 @@ const paragraph = (value) => schema.node('paragraph', null, text(value))
 const heading = (value, level = 1) => schema.node('heading', { level }, text(value))
 const codeBlock = (value) => schema.node('code_block', null, text(value))
 const cell = (value) => schema.node('table_cell', null, paragraph(value))
+const headerCell = (value) => schema.node('table_header', null, paragraph(value))
 const row = (...values) => schema.node('table_row', null, values.map(cell))
+const headerRow = (...values) => schema.node('table_row', null, values.map(headerCell))
 const table = (...rows) => schema.node('table', null, rows)
 const listItem = (value) => schema.node('list_item', null, paragraph(value))
 const bulletList = (...values) => schema.node('bullet_list', null, values.map(listItem))
@@ -195,11 +198,19 @@ const cases = []
     '| Gamma | `npm run build` | final |'
   ].join('\n')
   const pmDoc = doc(table(
-    row('Item', 'Command', 'Note'),
+    headerRow('Item', 'Command', 'Note'),
     row('Alpha', 'npm run build', 'repeated'),
     row('Beta', 'prefix git status suffix', 'repeated'),
     row('Gamma', 'npm run build', 'final')
   ))
+  assertTextRoundTrip({
+    label: 'table header cell local offset',
+    markdown,
+    pmDoc,
+    token: 'Command',
+    local: 4,
+    pmText: 'Command'
+  })
   assertTextRoundTrip({
     label: 'table inline code local offset',
     markdown,
