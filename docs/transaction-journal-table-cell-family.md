@@ -20,7 +20,7 @@
 - 空单元格、多个 paragraphs、marks、inline code/math/image 等 atom；
 - `|`、换行或其它 Markdown-sensitive 输入；
 - 跨 cell 选区、多 cell 同批编辑；
-- row/column 新增删除、header/body 转换；
+- row/column 结构变化或 header/body 转换；其中单 body-row 删除已由独立 `table-row-delete` owner 处理；
 - table/row/cell/paragraph attrs、colspan/rowspan/colwidth/alignment 变化；
 - 表格整体创建、删除、移动或邻块变化；
 - source/canonical/doc stale、raw mismatch 或 semantic/list-slot 不等价。
@@ -169,8 +169,8 @@ npm run test:table-cell-transaction-ui
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table row insert/delete；
-2. table column/alignment changes；
+1. table row insert；
+2. table column insert/delete 与 alignment changes；
 3. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 继续使用 transaction journal、stable path、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。

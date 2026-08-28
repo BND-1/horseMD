@@ -286,10 +286,12 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   // the result. Enforce it here as a post-condition on every output, so a
   // future path with a too-strict guard cannot leak the serializer's internal
   // representation again (this is what the empty-paragraph/visible-stream
-  // bugs kept tripping over). Table-cell and inline `text<br>text` breaks are
-  // not standalone lines and stay untouched.
+  // bugs kept tripping over). Normalize table cells separately: only a cell
+  // whose sole content is `<br />` is empty; inline `text<br>text` stays intact.
   if (result && result.markdown != null) {
-    const withoutPlaceholders = withoutStandaloneEmptyBlockLines(result.markdown)
+    const withoutPlaceholders = withoutStandaloneEmptyBlockLines(
+      normalizeEmptyTableCells(result.markdown)
+    )
     // Crepe may append a serializer blank line after the last edited block; the
     // file's terminal line-ending run is authored formatting and must not grow.
     result.markdown = capOutputTrailingNewlines(

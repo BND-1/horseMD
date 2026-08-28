@@ -83,6 +83,11 @@ export {
   createTableCellTransactionSourceSyncOwner
 } from './table-cell-transaction-owner.js'
 export {
+  TABLE_ROW_DELETE_TRANSACTION_BOUNDARY,
+  TABLE_ROW_DELETE_TRANSACTION_FAMILY,
+  createTableRowDeleteTransactionSourceSyncOwner
+} from './table-row-delete-transaction-owner.js'
+export {
   SLASH_BLOCK_SOURCE_SYNC_BOUNDARY,
   createSlashBlockSourceSyncOwner,
   findSlashCodeBlockAtSelection,
