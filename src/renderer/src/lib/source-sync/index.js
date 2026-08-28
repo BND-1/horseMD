@@ -78,6 +78,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  TABLE_CELL_TRANSACTION_BOUNDARY,
+  TABLE_CELL_TRANSACTION_FAMILY,
+  createTableCellTransactionSourceSyncOwner
+} from './table-cell-transaction-owner.js'
+export {
   SLASH_BLOCK_SOURCE_SYNC_BOUNDARY,
   createSlashBlockSourceSyncOwner,
   findSlashCodeBlockAtSelection,
