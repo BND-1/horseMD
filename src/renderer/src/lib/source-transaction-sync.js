@@ -221,10 +221,20 @@ const diagnostic = (value) => {
 const semanticJson = (node, {
   ignoreTrailingEmptyListItemParagraph = false,
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure = false,
-  ignoreTrailingEmptyBlockquoteParagraph = false
+  ignoreTrailingEmptyBlockquoteParagraph = false,
+  ignoreTableColumnWidthPaths = []
 } = {}) => {
   if (!node?.toJSON) return null
-  const visit = (value) => {
+  const ignoredTableColumnWidthPaths = new Set(
+    (Array.isArray(ignoreTableColumnWidthPaths) ? ignoreTableColumnWidthPaths : [])
+      .filter((path) =>
+        Array.isArray(path) &&
+        path.length >= 3 &&
+        path.every((index) => Number.isInteger(index) && index >= 0)
+      )
+      .map((path) => path.join('.'))
+  )
+  const visit = (value, path = []) => {
     if (!value || typeof value !== 'object') return value
     const next = { ...value }
     if (next.attrs) {
@@ -249,9 +259,22 @@ const semanticJson = (node, {
         delete next.attrs.listType
         delete next.attrs.spread
       }
+      if (
+        (next.type === 'table_cell' || next.type === 'table_header') &&
+        ignoredTableColumnWidthPaths.has(path.join('.'))
+      ) {
+        // GFM Markdown has no syntax for editor-only column widths. A focused
+        // transaction owner may bind the exact affected cell paths and ask the
+        // semantic comparator to ignore ONLY `colwidth` at those paths. All
+        // content, alignment, span attrs, siblings and table topology remain
+        // strict; default callers never receive this relaxation.
+        delete next.attrs.colwidth
+      }
       if (!Object.keys(next.attrs).length) delete next.attrs
     }
-    if (Array.isArray(next.content)) next.content = next.content.map(visit)
+    if (Array.isArray(next.content)) {
+      next.content = next.content.map((child, index) => visit(child, [...path, index]))
+    }
     if (
       next.type === 'paragraph' &&
       Array.isArray(next.content) &&
@@ -342,7 +365,7 @@ const semanticJson = (node, {
         next.content = next.content.slice(0, -1)
       }
     }
-    if (Array.isArray(next.marks)) next.marks = next.marks.map(visit)
+    if (Array.isArray(next.marks)) next.marks = next.marks.map((mark) => visit(mark, path))
     return next
   }
   const result = visit(node.toJSON())
@@ -504,7 +527,11 @@ export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => 
     reconcileSingleEmptyParagraphBeforeOrderedList(left, right)
   }
   const equal = JSON.stringify(left) === JSON.stringify(right)
-  if (!equal && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+  if (
+    !equal &&
+    options.recordDifference !== false &&
+    Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)
+  ) {
     globalThis.__hmSourceIntegrityDiffTrace.push(firstSemanticDifference(left, right))
     if (globalThis.__hmSourceIntegrityDiffTrace.length > 20) globalThis.__hmSourceIntegrityDiffTrace.shift()
   }

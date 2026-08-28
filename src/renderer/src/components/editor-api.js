@@ -22,6 +22,7 @@ import {
 import { strikethroughSchema } from '@milkdown/kit/preset/gfm'
 import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
 import { settleEditorMarkdown } from '../lib/editor-flush-settle.js'
+import { publishPendingSourceSyncJournalForFlush } from '../lib/source-sync/flush-journal.js'
 
 export function createEditorApi({
   viewRef,
@@ -188,20 +189,20 @@ export function createEditorApi({
       // delayed markdownUpdated callback. Serialize the current ProseMirror
       // document instead of reading Crepe's potentially stale cached snapshot.
       const canonical = canonicalForSource(serializeCurrentDocument())
-      if (
-        !generatedScratchRef?.current &&
-        canonical !== canonicalMarkdownRef.current &&
-        typeof publishPendingTransactionJournal === 'function'
-      ) {
-        const ownedTransaction = publishPendingTransactionJournal({
-          canonical,
-          expectedDoc: viewRef.current?.state.doc,
-          notifyChange: false
-        })
-        if (ownedTransaction?.ok) {
-          clearPendingRichFlush?.()
-          return ownedTransaction.markdown
-        }
+      // A pending transaction journal owns the live PM revision even when the
+      // serialized Markdown is byte-identical to the committed canonical. This
+      // is required for editor-only metadata such as table column widths: GFM
+      // has no source syntax for `colwidth`, but Coordinator still must advance
+      // its expectedDoc checkpoint before committed-baseline validation runs.
+      const ownedTransaction = publishPendingSourceSyncJournalForFlush({
+        generatedScratch: generatedScratchRef?.current === true,
+        publishPendingTransactionJournal,
+        canonical,
+        expectedDoc: viewRef.current?.state.doc
+      })
+      if (ownedTransaction?.ok) {
+        clearPendingRichFlush?.()
+        return ownedTransaction.markdown
       }
       if (canonical === canonicalMarkdownRef.current) {
         // A cached canonical snapshot is not proof that the authored source is

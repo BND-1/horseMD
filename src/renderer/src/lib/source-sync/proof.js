@@ -1,17 +1,27 @@
 import { sourceSyncDigest } from './snapshot.js'
 
-const stableValue = (value, seen = new WeakSet()) => {
+const stableValue = (value, ancestors = new WeakSet()) => {
   if (value == null || typeof value !== 'object') return value
-  if (seen.has(value)) return '[Circular]'
-  seen.add(value)
-  if (Array.isArray(value)) return value.map((item) => stableValue(item, seen))
-  const result = {}
-  for (const key of Object.keys(value).sort()) {
-    const item = value[key]
-    if (typeof item === 'function' || typeof item === 'undefined') continue
-    result[key] = stableValue(item, seen)
+  if (ancestors.has(value)) return '[Circular]'
+  // Track only the active recursion chain. The same immutable proof object is
+  // intentionally exposed as both `ownershipProof` and `preservationProof`;
+  // treating every repeated sibling reference as a cycle erased the latter
+  // into the string `[Circular]` before final integrity validation.
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => stableValue(item, ancestors))
+    }
+    const result = {}
+    for (const key of Object.keys(value).sort()) {
+      const item = value[key]
+      if (typeof item === 'function' || typeof item === 'undefined') continue
+      result[key] = stableValue(item, ancestors)
+    }
+    return result
+  } finally {
+    ancestors.delete(value)
   }
-  return result
 }
 
 const stableStringify = (value) => {

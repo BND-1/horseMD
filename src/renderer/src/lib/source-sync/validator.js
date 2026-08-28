@@ -46,7 +46,38 @@ const localRange = (value, range) => {
   return value.slice(range.start, range.end)
 }
 
-const semanticOptionsForReason = (preservationReason) => ({
+const tableColumnWidthProofPaths = (preservationReason, preservationProof) => {
+  if (preservationReason !== 'table-column-width-changed') {
+    return preservationProof?.kind === 'transaction-table-column-width-proof'
+      ? false
+      : null
+  }
+  if (
+    preservationProof?.kind !== 'transaction-table-column-width-proof' ||
+    preservationProof?.family !== 'table-column-width' ||
+    preservationProof?.sourceUnchanged !== true ||
+    preservationProof?.canonicalUnchanged !== true ||
+    !Array.isArray(preservationProof?.cellPaths) ||
+    preservationProof.cellPaths.length === 0 ||
+    preservationProof.cellPaths.length !== preservationProof.rowCount ||
+    !preservationProof.cellPaths.every((path) =>
+      Array.isArray(path) &&
+      path.length === 3 &&
+      path.every((index) => Number.isInteger(index) && index >= 0) &&
+      path[0] === preservationProof.topLevelIndex &&
+      path[2] === preservationProof.columnIndex
+    )
+  ) return false
+  const rows = preservationProof.cellPaths.map((path) => path[1])
+  if (new Set(rows).size !== rows.length) return false
+  return preservationProof.cellPaths
+}
+
+const semanticOptionsForReason = (
+  preservationReason,
+  preservationProof = null,
+  tableColumnWidthPaths = tableColumnWidthProofPaths(preservationReason, preservationProof)
+) => ({
   // Backspace on a newly-created empty bullet can briefly leave one
   // editor-owned empty paragraph at the end of the preceding/parent list item.
   // Keep the exact legacy allowlist while Phase A only extracts lifecycle.
@@ -64,7 +95,9 @@ const semanticOptionsForReason = (preservationReason) => ({
   // Markdown cannot encode this single editor-owned empty paragraph without
   // leaking `<br />`; only the existing dedicated legacy reason may ignore it.
   ignoreTrailingEmptyBlockquoteParagraph:
-    preservationReason === 'trailing-empty-blockquote-paragraph-created'
+    preservationReason === 'trailing-empty-blockquote-paragraph-created',
+  ignoreTableColumnWidthPaths:
+    Array.isArray(tableColumnWidthPaths) ? tableColumnWidthPaths : []
 })
 
 /**
@@ -117,10 +150,24 @@ export function createLegacySourceIntegrityValidator({
       const expectedMarkdown = typeof canonical === 'string'
         ? canonical
         : canonicalForSource(getSerializer()(expectedDoc))
-      const expected = typeof canonical === 'string' ? parser(canonical) : expectedDoc
+      const tableColumnWidthPaths = tableColumnWidthProofPaths(
+        preservationReason,
+        preservationProof
+      )
+      const tableColumnWidthProofInvalid = tableColumnWidthPaths === false
+      const expected = Array.isArray(tableColumnWidthPaths)
+        ? expectedDoc
+        : typeof canonical === 'string'
+          ? parser(canonical)
+          : expectedDoc
       const canonicalBaseline = getCanonicalBaseline?.()
-      const semanticOptions = semanticOptionsForReason(preservationReason)
-      const semanticOk = areSourceDocumentsEquivalent(parsed, expected, semanticOptions)
+      const semanticOptions = semanticOptionsForReason(
+        preservationReason,
+        preservationProof,
+        tableColumnWidthPaths
+      )
+      const semanticOk = !tableColumnWidthProofInvalid &&
+        areSourceDocumentsEquivalent(parsed, expected, semanticOptions)
       const checkpointTrusted = checkpointStore.has(authoredSource, canonicalBaseline)
       const committedCheckpointOk = Boolean(
         preservationReason === 'committed-source-baseline' &&
@@ -218,7 +265,8 @@ export function createLegacySourceIntegrityValidator({
         )
       }
 
-      const semanticProofOk = semanticOk || committedCheckpointOk || transitionOk
+      const semanticProofOk = !tableColumnWidthProofInvalid &&
+        (semanticOk || committedCheckpointOk || transitionOk)
       const listProofOk = listSlotsMatch || committedCheckpointOk || listTransitionOk || localizedListProofOk
       const ok = semanticProofOk && listProofOk
       // Legacy direct callers historically use validation as their checkpoint

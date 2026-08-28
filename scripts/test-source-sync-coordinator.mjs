@@ -58,6 +58,111 @@ const legacyIntegrityValidator = createLegacySourceIntegrityValidator({
   checkpointStore: integrityCheckpoints,
   getTrace: () => null
 })
+const tableWidthParsed = {
+  toJSON: () => ({
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [
+        {
+          type: 'table_row',
+          content: [{
+            type: 'table_header',
+            attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+          }]
+        },
+        {
+          type: 'table_row',
+          content: [{
+            type: 'table_cell',
+            attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+          }]
+        }
+      ]
+    }]
+  })
+}
+const tableWidthExpected = {
+  toJSON: () => ({
+    type: 'doc',
+    content: [{
+      type: 'table',
+      content: [
+        {
+          type: 'table_row',
+          content: [{
+            type: 'table_header',
+            attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+          }]
+        },
+        {
+          type: 'table_row',
+          content: [{
+            type: 'table_cell',
+            attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+          }]
+        }
+      ]
+    }]
+  })
+}
+const widthCheckpoints = createSourceSyncCheckpointStore({ limit: 4 })
+widthCheckpoints.trust('| A |\n| - |\n| a |\n', '| A |\n| - |\n| a |\n')
+const widthValidator = createLegacySourceIntegrityValidator({
+  getParser: () => () => tableWidthParsed,
+  getSerializer: () => () => '| A |\n| - |\n| a |\n',
+  getExpectedDoc: () => tableWidthExpected,
+  getAuthoredSource: () => '| A |\n| - |\n| a |\n',
+  getCanonicalBaseline: () => '| A |\n| - |\n| a |\n',
+  canonicalForSource: (markdown) => markdown,
+  checkpointStore: widthCheckpoints,
+  getTrace: () => null
+})
+const exactWidthProof = {
+  kind: 'transaction-table-column-width-proof',
+  family: 'table-column-width',
+  topLevelIndex: 0,
+  columnIndex: 0,
+  rowCount: 2,
+  cellPaths: [[0, 0, 0], [0, 1, 0]],
+  sourceUnchanged: true,
+  canonicalUnchanged: true
+}
+assert.equal(widthValidator(
+  '| A |\n| - |\n| a |\n',
+  tableWidthExpected,
+  '| A |\n| - |\n| a |\n',
+  '| A |\n| - |\n| a |\n',
+  'table-column-width-changed',
+  exactWidthProof,
+  'table-width-unit',
+  { trustCheckpoint: false }
+).ok, true, 'exact owner-bound width proof must pass full integrity validation')
+assert.equal(widthValidator(
+  '| A |\n| - |\n| a |\n',
+  tableWidthExpected,
+  '| A |\n| - |\n| a |\n',
+  '| A |\n| - |\n| a |\n',
+  'table-column-width-changed',
+  { ...exactWidthProof, cellPaths: [[0, 0, 0]] },
+  'table-width-missing-path',
+  { trustCheckpoint: false }
+).ok, false, 'incomplete width proof must remain strict')
+assert.equal(widthValidator(
+  '| A |\n| - |\n| a |\n',
+  tableWidthExpected,
+  '| A |\n| - |\n| a |\n',
+  '| A |\n| - |\n| a |\n',
+  'other-reason',
+  exactWidthProof,
+  'table-width-wrong-reason',
+  { trustCheckpoint: false }
+).ok, false, 'width proof cannot be reused by another reason')
+
 const validationOnly = legacyIntegrityValidator(
   'integrity-next\n',
   fakeDoc('integrity-next'),
@@ -138,6 +243,48 @@ assert.equal(createSourceSyncCandidate({
   family: 'legacy-preservation',
   markdown: 'missing canonical'
 }).reason, 'candidate-missing-canonical')
+
+const sharedOwnershipProof = {
+  kind: 'transaction-table-column-width-proof',
+  family: 'table-column-width',
+  cellPaths: [[1, 0, 1], [1, 1, 1]]
+}
+const sharedProofCandidate = createSourceSyncCandidate({
+  snapshot: initial,
+  owner: 'transaction',
+  family: 'table-column-width',
+  markdown: 'alpha\n',
+  canonical: 'alpha\n',
+  expectedDoc: doc1,
+  reason: 'table-column-width-changed',
+  proof: {
+    kind: 'owned-source-sync-proof',
+    ownershipProof: sharedOwnershipProof,
+    preservationProof: sharedOwnershipProof
+  }
+})
+assert.equal(sharedProofCandidate.ok, true)
+assert.deepEqual(
+  sharedProofCandidate.proof.ownershipProof.cellPaths,
+  [[1, 0, 1], [1, 1, 1]],
+  'ownership proof must retain shared path data'
+)
+assert.deepEqual(
+  sharedProofCandidate.proof.preservationProof.cellPaths,
+  [[1, 0, 1], [1, 1, 1]],
+  'preservation proof must not collapse a shared sibling reference to [Circular]'
+)
+const circularProof = { kind: 'circular-proof' }
+circularProof.self = circularProof
+const circularCandidate = createSourceSyncCandidate({
+  snapshot: initial,
+  owner: 'transaction',
+  family: 'cycle-test',
+  markdown: 'alpha\n',
+  canonical: 'alpha\n',
+  proof: circularProof
+})
+assert.equal(circularCandidate.proof.self, '[Circular]', 'real recursive cycles must stay bounded')
 
 const validator = createSourceSyncValidator({
   validate: (candidate) => candidate.markdown === candidate.canonical

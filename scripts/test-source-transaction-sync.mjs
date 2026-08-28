@@ -64,6 +64,120 @@ const emptyTableCellDocument = jsonNode({
     }]
   }]
 })
+const tableColumnWidthBaseline = jsonNode({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_header',
+          attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+        }]
+      },
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+        }]
+      }
+    ]
+  }]
+})
+const tableColumnWidthExpected = jsonNode({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_header',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+        }]
+      },
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+        }]
+      }
+    ]
+  }]
+})
+assert.equal(
+  areSourceDocumentsEquivalent(tableColumnWidthBaseline, tableColumnWidthExpected),
+  false,
+  'table colwidth metadata must remain strict without a focused path proof'
+)
+const previousSemanticDiffTrace = globalThis.__hmSourceIntegrityDiffTrace
+globalThis.__hmSourceIntegrityDiffTrace = []
+assert.equal(
+  areSourceDocumentsEquivalent(tableColumnWidthBaseline, tableColumnWidthExpected, {
+    recordDifference: false
+  }),
+  false,
+  'preflight semantic comparison must remain strict when diagnostics are disabled'
+)
+assert.deepEqual(
+  globalThis.__hmSourceIntegrityDiffTrace,
+  [],
+  'preflight semantic comparison must not pollute first-divergence diagnostics'
+)
+globalThis.__hmSourceIntegrityDiffTrace = previousSemanticDiffTrace
+assert.equal(
+  areSourceDocumentsEquivalent(tableColumnWidthBaseline, tableColumnWidthExpected, {
+    ignoreTableColumnWidthPaths: [[0, 0, 0], [0, 1, 0]]
+  }),
+  true,
+  'a focused owner may ignore colwidth at every proven cell path'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(tableColumnWidthBaseline, tableColumnWidthExpected, {
+    ignoreTableColumnWidthPaths: [[0, 0, 0]]
+  }),
+  false,
+  'missing one changed row path must keep table colwidth semantics strict'
+)
+const tableColumnAlignmentChanged = jsonNode({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_header',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'right' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+        }]
+      },
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+        }]
+      }
+    ]
+  }]
+})
+assert.equal(
+  areSourceDocumentsEquivalent(tableColumnWidthBaseline, tableColumnAlignmentChanged, {
+    ignoreTableColumnWidthPaths: [[0, 0, 0], [0, 1, 0]]
+  }),
+  false,
+  'colwidth proof must not hide alignment or other authored attrs'
+)
+
 for (const placeholderType of ['hardbreak', 'hard_break']) {
   const placeholderTableCellDocument = jsonNode({
     type: 'doc',

@@ -73,6 +73,7 @@ import {
   createTableColumnAlignmentTransactionSourceSyncOwner,
   createTableColumnDeleteTransactionSourceSyncOwner,
   createTableColumnInsertTransactionSourceSyncOwner,
+  createTableColumnWidthTransactionSourceSyncOwner,
   createTableRowDeleteTransactionSourceSyncOwner,
   createTableRowInsertTransactionSourceSyncOwner,
   createSlashBlockSourceSyncOwner,
@@ -510,12 +511,12 @@ export default function Editor({
       const remark = crepe.editor.ctx.get(remarkCtx)
       return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
     }
-    const validateTransactionMarkdown = ({ markdown, expectedDoc }) => {
+    const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
       const serializer = crepe.editor.ctx.get(serializerCtx)
       const parsed = parser(markdown)
       const expectedCanonical = canonicalForSource(serializer(expectedDoc))
-      return areSourceDocumentsEquivalent(parsed, expectedDoc) &&
+      return areSourceDocumentsEquivalent(parsed, expectedDoc, semanticOptions) &&
         areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
           strictOrderedNumbers: true,
           previousMarkdown: canonicalMarkdownRef.current
@@ -569,6 +570,10 @@ export default function Editor({
     const tableColumnInsertTransactionSourceSyncOwner =
       createTableColumnInsertTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
+    const tableColumnWidthTransactionSourceSyncOwner =
+      createTableColumnWidthTransactionSourceSyncOwner({
         validateMarkdown: validateTransactionMarkdown
       })
     const tableRowDeleteTransactionSourceSyncOwner =
@@ -655,6 +660,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-table-cell-markdown-updated',
           'forced-flush': 'transaction-table-cell-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'table-column-width',
+        owner: tableColumnWidthTransactionSourceSyncOwner,
+        traceKey: '__hmTableTransactionTrace',
+        notifyChange: false,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-table-column-width-markdown-updated',
+          'forced-flush': 'transaction-table-column-width-forced-flush'
         })
       }),
       Object.freeze({
@@ -1197,7 +1212,9 @@ export default function Editor({
       try {
         const parser = crepe.editor.ctx.get(parserCtx)
         callbackDocumentEquivalent = Boolean(
-          expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc)
+          expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc, {
+            recordDifference: false
+          })
         )
       } catch {
         callbackDocumentEquivalent = false
@@ -1247,7 +1264,7 @@ export default function Editor({
 
         const coordinated = sourceSyncBridge.publishOwned({
           ownership,
-          notifyChange,
+          notifyChange: entry.notifyChange === false ? false : notifyChange,
           boundary
         })
         if (!coordinated?.ok) {
@@ -1315,7 +1332,9 @@ export default function Editor({
       try {
         const parser = crepe.editor.ctx.get(parserCtx)
         callbackDocumentEquivalent = Boolean(
-          expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc)
+          expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc, {
+            recordDifference: false
+          })
         )
       } catch {
         callbackDocumentEquivalent = false

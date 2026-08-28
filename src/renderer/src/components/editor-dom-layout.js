@@ -127,7 +127,7 @@ const getColumnResizeAtPointer = (view, event, side) => {
 // the default TableView, so its native live-resize path has no persistent
 // colgroup to update. Keeping the final transaction here lets the preview stay
 // DOM-only while retaining the standard data-colwidth document format.
-const persistColumnWidth = (view, resize, width) => {
+const persistColumnWidth = (view, resize, width, beforeDispatch = null) => {
   const $cell = view.state.doc.resolve(resize.cellPos)
   const table = $cell.node(-1)
   const map = TableMap.get(table)
@@ -147,6 +147,7 @@ const persistColumnWidth = (view, resize, width) => {
     tr.setNodeMarkup(tableStart + pos, null, { ...attrs, colwidth })
   }
   if (!tr.docChanged) return false
+  if (typeof beforeDispatch === 'function') beforeDispatch()
   view.dispatch(tr)
   return true
 }
@@ -709,10 +710,11 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
         finished.table.dataset.hmColumnPreview = ''
         removeResizeGuide(finished)
         // The layout binding intercepts this boundary press before the editor's
-        // normal pointer-intent listener sees it, so mark it explicitly before
-        // dispatching the document transaction.
-        const changed = persistColumnWidth(view, finished.resize, finished.currentWidth)
-        if (changed) markUserEdit()
+        // normal pointer-intent listener sees it. `persistColumnWidth` invokes
+        // markUserEdit only after it has built a real docChanged transaction,
+        // but still before dispatch, so a no-op hold cannot leave false dirty
+        // state and a real resize is captured by SourceSyncTransactionJournal.
+        persistColumnWidth(view, finished.resize, finished.currentWidth, markUserEdit)
         requestAnimationFrame(() => requestAnimationFrame(() => {
           schedule({ syncColumnWidths: true })
         }))

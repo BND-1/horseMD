@@ -22,6 +22,7 @@ export {
 } from './validator.js'
 export { createSourceSyncPublication } from './publisher.js'
 export { createSourceSyncCoordinator } from './coordinator.js'
+export { publishPendingSourceSyncJournalForFlush } from './flush-journal.js'
 export {
   SOURCE_SYNC_TRANSACTION_JOURNAL_KIND,
   createSourceSyncTransactionJournal,
@@ -97,6 +98,11 @@ export {
   TABLE_COLUMN_INSERT_TRANSACTION_FAMILY,
   createTableColumnInsertTransactionSourceSyncOwner
 } from './table-column-insert-transaction-owner.js'
+export {
+  TABLE_COLUMN_WIDTH_TRANSACTION_BOUNDARY,
+  TABLE_COLUMN_WIDTH_TRANSACTION_FAMILY,
+  createTableColumnWidthTransactionSourceSyncOwner
+} from './table-column-width-transaction-owner.js'
 export {
   TABLE_ROW_DELETE_TRANSACTION_BOUNDARY,
   TABLE_ROW_DELETE_TRANSACTION_FAMILY,

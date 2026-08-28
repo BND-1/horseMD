@@ -269,7 +269,7 @@ center → right，settled markdownUpdated
 
 不扩大本 owner，后续独立 family 依次为：
 
-1. table 复杂 span/topology；
-2. code-block 创建/删除/拆分/合并与围栏结构。
+1. code-block 创建/删除/拆分/合并与围栏结构；
+2. 对 GFM 不可表达的 table span/merge/split 保持显式 fail closed，除非未来先定义独立持久化格式。
 
 每个 family 继续使用 transaction journal、逐 Step stepDoc 证明、bounded raw patch、semantic/structure validation 和 Coordinator 原子发布合同。
