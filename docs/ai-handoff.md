@@ -1,16 +1,13 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-27。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-28。
 
 ## 0. 当前状态快照
 
 - 当前分支：`fix/rs-41-rich-source-divergence`
-- 当前源码、`package-lock`、`dist/mac-arm64/HorseMD.app`、`/Applications/HorseMD.app` 和人工手测运行实例均为 `0.13.131`。正式安装版主进程 PID `16298`，命令 `/Applications/HorseMD.app/Contents/MacOS/HorseMD --horsemd-input-trace`；当前 trace：`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-16298.jsonl`。启动 trace 已创建（初始约 52 KB），尚无 `source-sync-integrity-failure`、`source-document-mismatch` 或 `source-list-structure-mismatch`。旧 0.13.130 备份：`/tmp/HorseMD-0.13.130-backup-rs86-20260827-1245.app`；更早 0.13.129 备份：`/tmp/HorseMD-0.13.129-backup-rs85-20260827-0156.app`；0.13.128 备份：`/tmp/HorseMD-0.13.128-backup-rs84-20260827-0045.app`；0.13.127 备份：`/tmp/HorseMD-0.13.127-backup-rs83-20260826-2354.app`；0.13.126 备份：`/tmp/HorseMD-0.13.126-backup-rs82-20260826-2228.app`。
-- 当前架构状态是**混合迁移，不是完整重构**：生产发布仍由 legacy canonical-preservation
-  主导；transaction-first 已有 observer、raw mapper、checkpoint、shadow/authority gate，
-  但只对少量明确允许的普通段落事务具备 authority。列表、输入规则、代码块、表格、引用、
-  任务项和复杂结构仍由 legacy structure owner 负责。不要把单个专项的绿色结果写成
-  transaction-first 已接管全部编辑。
+- 当前源码与 `package-lock` 为 `0.13.136`；本轮是 transaction-journal 架构迁移，尚未重新生成/安装手测包。`dist/mac-arm64/HorseMD.app`、`/Applications/HorseMD.app` 与旧人工 trace 实例仍是此前 `0.13.131` 基线，不能用于验收 0.13.132–0.13.136 的 journal owners。旧运行 trace 路径历史记录仍为 `/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-16298.jsonl`；后续需要用户手测时必须从当前源码重新 `dist:dir`、安装并以 `--horsemd-input-trace` 启动后再更新此项。
+- 当前架构状态是**混合迁移，不是完整重构**：所有普通用户 transaction 已进入唯一 revision-bound `SourceSyncTransactionJournal`；生产 structural registry 已可 transaction-own 单一列表子树、已有代码块正文、代码块 language info、已有 blockquote plain paragraph 和 blockquote middle split。引用可位于顶层或列表项等稳定 descendant path；family 由 PM path/Step/stepDoc 证明，不由 canonical 形状猜测。普通段落仍通过显式 shadow/authority 门禁，引用 join/退出、表格结构、输入规则、任务复杂结构和其余 family 保持 legacy fail-closed fallback。不要把当前进度写成全部编辑已 transaction-first。
+- 0.13.136 完成 `blockquote-paragraph-split`：通用 `classifySingleAnchoredSubtreeChange()` 先证明唯一 changed top-level subtree，再要求其中恰有一个 stable `blockquote` nodePath 承担全部变化；每个 Step 在捕获时 stepDoc 上核对 path 与祖先兄弟。真实 nested-list fixture path `[1,0,1]` 的物理 Enter + 快速 `XY` 已在 callback/forced-flush、源码、保存、磁盘和冷重开两条路径通过，BOM/CRLF、作者 `  >   ` spacing 与前后列表保持；多引用同时变化 fail closed。引用正文 owner 同步复用该 path 机制。专项见 `transaction-journal-blockquote-split-family.md`。
 - `SourceSyncCoordinator` 阶段 A 的核心生命周期已在 `0.13.125` 工作树完成，属于行为保持型
   架构抽取、没有消费新 patch 版本。普通 `markdownUpdated`、forced flush、transaction-first
   early/late authority 已共用 revision-bound candidate/proof/validation/Publisher；transaction

@@ -1,6 +1,6 @@
-# Transaction Journal：顶层 Blockquote 同段纯文字 Family
+# Transaction Journal：Blockquote 同段纯文字 Family
 
-> 状态：HorseMD `0.13.135` 已迁移并通过生产门禁。
+> 状态：HorseMD `0.13.135` 完成顶层引用迁移；`0.13.136` 复用稳定 descendant path，支持列表项等容器内的已有引用，并通过新增歧义负例。
 > Family：`blockquote-paragraph-text-replace`
 > Publication boundaries：`transaction-blockquote-paragraph-markdown-updated`、`transaction-blockquote-paragraph-forced-flush`
 
@@ -8,7 +8,7 @@
 
 本 family 只认领：
 
-- 已有、顶层 `blockquote`；
+- 已有、位于稳定 ProseMirror `nodePath` 的 `blockquote`，可在文档顶层或列表项等容器内；
 - 引用中恰好一个**直接子** `paragraph` 变化；
 - 前后段落均非空、无 mark、无 atom；
 - 变化由一个或多个连续 closed plain-text `ReplaceStep` 构成；
@@ -23,7 +23,7 @@
 - Backspace/Delete 合并段落或退出引用；
 - 修改 quote attrs 或 paragraph attrs；
 - 粗体、斜体、链接、行内代码、图片、公式等 mark/atom；
-- 引用内 heading、list、nested blockquote 或其它结构；
+- 目标引用自身包含 heading、list、nested blockquote 或其它非 plain-paragraph 结构（引用作为整体嵌套在列表项内则允许）；
 - 同时修改两个引用段；
 - 同时修改引用外邻块；
 - 语法敏感字符的 raw 转义转换；
@@ -61,16 +61,16 @@ PM dispatch batches
 
 认领条件：
 
-1. oldDoc→finalDoc 恰好一个顶层 `blockquote` 变化；
+1. oldDoc→finalDoc 恰好一个顶层 subtree 变化，该 subtree 内恰有一个 `blockquote` descendant path 承担全部变化；
 2. quote attrs 不变、直接子节点数量不变；
 3. 恰好一个直接子节点变化，且前后均为非空、无 mark 的普通 `paragraph`；
 4. 其它直接子节点、顶层前缀和顶层后缀完全相同；
 5. journal 中每个 Step 都是非 structural `ReplaceStep`；
 6. inserted slice 是 closed plain text；
-7. 每个 Step 的 from/to 在对应 stepDoc 上同父、depth=2；
-8. parent 是目标 paragraph，node(1) 是目标顶层 blockquote；
-9. `$from.before(1)`、顶层 index、quote child index 与最终分类完全一致；
-10. Step apply 后只有同一顶层 quote、同一直接子段落变化；
+7. 每个 Step 的 from/to 在对应 stepDoc 上同父，depth 必须精确等于 `quotePath.length + 1`；
+8. parent 是目标 paragraph，`node(quoteDepth)` 是目标 blockquote；
+9. resolved child indexes、`$from.before(quoteDepth)`、quote child ordinal 与分类得到的稳定 path 完全一致；
+10. Step apply 后只有同一 anchored quote path、同一直接子段落变化，祖先 path 外的兄弟保持 `eq`；
 11. 完整 journal 链连续并收敛到 expectedDoc。
 
 canonical 只证明 callback 与 expectedDoc 对应并参与最终 semantic validation；它不决定 family。
@@ -118,9 +118,10 @@ owner 再通过共享 `validateTransactionMarkdown()` 执行 semantic document �
 - `list-subtree-replace`；
 - `code-block-content-replace`；
 - `code-block-info-string-change`；
-- `blockquote-paragraph-text-replace`。
+- `blockquote-paragraph-text-replace`；
+- `blockquote-paragraph-split`。
 
-四个 family 共用：
+五个 family 共用：
 
 - 唯一 `pendingSourceSyncTransactionJournal`；
 - 相同 revision/source/canonical/doc stale guard；
@@ -141,7 +142,7 @@ owner 再通过共享 `validateTransactionMarkdown()` 执行 semantic document �
 - quote 与邻块同一 batch 变化；
 - 添加 marks；
 - 引用内 heading；
-- 引用内 nested list；
+- 目标引用内部 nested list（引用嵌套在 list item 内的稳定 path 正向用例另有覆盖）；
 - syntax-sensitive `*`；
 - 作者 source 正文与 PM baseline 不一致；
 - callback document 不对应；
@@ -196,10 +197,9 @@ npm run build
 
 下一步建立独立结构 family，不扩大本 owner：
 
-1. blockquote Enter split；
-2. blockquote Backspace join；
-3. blockquote 退出引用；
-4. table cell 文字与 row structural change；
-5. code-block 创建/删除/拆分/合并与围栏结构。
+1. blockquote Backspace join；
+2. blockquote 退出引用；
+3. table cell 文字与 row structural change；
+4. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 必须独立完成 transaction/stepDoc 分类、bounded source patch、纯正反合同、真实 callback、立即 forced flush、保存与全新 profile 冷重开后，才允许注册 production authority。

@@ -2,11 +2,12 @@ import { mapPlainTextTransactionsToSource } from '../source-transaction-sync.js'
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
 import {
-  classifySingleTopLevelSubtreeChange,
-  onlyTopLevelSourceSyncIndexChanged,
+  classifySingleAnchoredSubtreeChange,
+  onlySourceSyncNodePathChanged,
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
-  topLevelSourceSyncEntries
+  sourceSyncNodeEntryAtPath,
+  sourceSyncResolvedPositionMatchesPath
 } from './top-level-subtree.js'
 import {
   transactionsFromSourceSyncTransactionJournal,
@@ -70,7 +71,7 @@ const onlyQuoteChildIndexChanged = (beforeQuote, afterQuote, childIndex) => {
 }
 
 const classifyBlockquoteParagraphJournal = ({ journal, expectedDoc }) => {
-  const classification = classifySingleTopLevelSubtreeChange({
+  const classification = classifySingleAnchoredSubtreeChange({
     oldDoc: journal?.oldDoc,
     newDoc: expectedDoc,
     expectedType: 'blockquote',
@@ -143,16 +144,17 @@ const classifyBlockquoteParagraphJournal = ({ journal, expectedDoc }) => {
       if (!$from?.sameParent?.($to)) {
         return rejected('blockquote-paragraph-cross-parent-range')
       }
-      const beforeEntry = topLevelSourceSyncEntries(stepDoc)[classification.topLevelIndex]
+      const beforeEntry = sourceSyncNodeEntryAtPath(stepDoc, classification.nodePath)
+      const quoteDepth = classification.targetDepth
       if (
         !beforeEntry ||
         beforeEntry.type !== 'blockquote' ||
-        $from.depth !== 2 ||
+        $from.depth !== quoteDepth + 1 ||
         $from.parent?.type?.name !== 'paragraph' ||
-        $from.node(1)?.type?.name !== 'blockquote' ||
-        $from.before(1) !== beforeEntry.offset ||
-        $from.index(0) !== classification.topLevelIndex ||
-        $from.index(1) !== paragraphIndex
+        $from.node(quoteDepth)?.type?.name !== 'blockquote' ||
+        $from.before(quoteDepth) !== beforeEntry.offset ||
+        !sourceSyncResolvedPositionMatchesPath($from, classification.nodePath) ||
+        $from.index(quoteDepth) !== paragraphIndex
       ) return rejected('blockquote-paragraph-step-outside-owned-paragraph')
       const beforeQuote = beforeEntry.node
       const beforeParagraph = quoteChildren(beforeQuote)[paragraphIndex]?.node
@@ -171,12 +173,15 @@ const classifyBlockquoteParagraphJournal = ({ journal, expectedDoc }) => {
       if (applied?.failed || !applied?.doc) {
         return rejected('blockquote-paragraph-step-apply-failed')
       }
-      if (!onlyTopLevelSourceSyncIndexChanged(
+      if (!onlySourceSyncNodePathChanged(
         stepDoc,
         applied.doc,
-        classification.topLevelIndex
+        classification.nodePath
       )) return rejected('blockquote-paragraph-neighbour-changed')
-      const afterQuote = topLevelSourceSyncEntries(applied.doc)[classification.topLevelIndex]?.node
+      const afterQuote = sourceSyncNodeEntryAtPath(
+        applied.doc,
+        classification.nodePath
+      )?.node
       if (
         afterQuote?.type?.name !== 'blockquote' ||
         !sourceSyncAttrsEqual(afterQuote.attrs, previousQuote.attrs) ||
@@ -333,6 +338,7 @@ export function createBlockquoteParagraphTransactionSourceSyncOwner({
       journalId: journal.journalId,
       family: BLOCKQUOTE_PARAGRAPH_TRANSACTION_FAMILY,
       topLevelIndex: classification.topLevelIndex,
+      nodePath: classification.nodePath,
       paragraphIndex: classification.paragraphIndex,
       unchangedPrefix: classification.unchangedPrefix,
       unchangedSuffix: classification.unchangedSuffix,

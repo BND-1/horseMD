@@ -57,6 +57,7 @@ import {
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
   createBlockquoteParagraphTransactionSourceSyncOwner,
+  createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
@@ -527,6 +528,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const blockquoteSplitTransactionSourceSyncOwner =
+      createBlockquoteSplitTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
@@ -565,6 +571,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-paragraph-markdown-updated',
           'forced-flush': 'transaction-blockquote-paragraph-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'blockquote-split',
+        owner: blockquoteSplitTransactionSourceSyncOwner,
+        traceKey: '__hmBlockquoteTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-blockquote-split-markdown-updated',
+          'forced-flush': 'transaction-blockquote-split-forced-flush'
         })
       })
     ])
@@ -1088,6 +1103,7 @@ export default function Editor({
             ok: false,
             family: entry.owner.family,
             reason: ownership.reason || null,
+            proof: ownership.proof || null,
             journalId: journal.journalId,
             baseRevision: journal.baseRevision,
             chainLength: journal.transactionCount

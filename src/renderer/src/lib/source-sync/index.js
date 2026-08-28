@@ -48,6 +48,11 @@ export {
   createBlockquoteParagraphTransactionSourceSyncOwner
 } from './blockquote-paragraph-transaction-owner.js'
 export {
+  BLOCKQUOTE_SPLIT_TRANSACTION_BOUNDARY,
+  BLOCKQUOTE_SPLIT_TRANSACTION_FAMILY,
+  createBlockquoteSplitTransactionSourceSyncOwner
+} from './blockquote-split-transaction-owner.js'
+export {
   CODE_BLOCK_INFO_TRANSACTION_BOUNDARY,
   CODE_BLOCK_INFO_TRANSACTION_FAMILY,
   createCodeBlockInfoTransactionSourceSyncOwner

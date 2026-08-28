@@ -37,7 +37,12 @@ const quote = (children, kind = '') => schema.nodes.blockquote.create(
   Array.isArray(children) ? children : [paragraph(children)]
 )
 const item = (value) => schema.nodes.list_item.create(null, paragraph(value))
-const list = (value) => schema.nodes.bullet_list.create(null, item(value))
+const listItem = (children) => schema.nodes.list_item.create(
+  null,
+  Array.isArray(children) ? children : [paragraph(children)]
+)
+const bulletList = (items) => schema.nodes.bullet_list.create(null, items)
+const list = (value) => bulletList([item(value)])
 const document = (...blocks) => schema.nodes.doc.create(null, blocks)
 
 const topLevelStart = (doc, targetIndex) => {
@@ -49,15 +54,34 @@ const topLevelStart = (doc, targetIndex) => {
   return result
 }
 
-const directParagraphTextPos = (doc, topLevelIndex, paragraphIndex = 0) => {
-  const quoteStart = topLevelStart(doc, topLevelIndex)
-  const quoteNode = doc.child(topLevelIndex)
+const nodeBeforePosAtPath = (doc, path) => {
+  let parent = doc
+  let beforePos = 0
+  for (let depth = 0; depth < path.length; depth += 1) {
+    const index = path[depth]
+    let childOffset = 0
+    for (let sibling = 0; sibling < index; sibling += 1) {
+      childOffset += parent.child(sibling).nodeSize
+    }
+    beforePos = depth === 0 ? childOffset : beforePos + 1 + childOffset
+    parent = parent.child(index)
+  }
+  return beforePos
+}
+
+const paragraphTextPosAtPath = (doc, quotePath, paragraphIndex = 0) => {
+  const quoteStart = nodeBeforePosAtPath(doc, quotePath)
+  let quoteNode = doc
+  for (const index of quotePath) quoteNode = quoteNode.child(index)
   let childOffset = 0
   for (let index = 0; index < paragraphIndex; index += 1) {
     childOffset += quoteNode.child(index).nodeSize
   }
   return quoteStart + 2 + childOffset
 }
+
+const directParagraphTextPos = (doc, topLevelIndex, paragraphIndex = 0) =>
+  paragraphTextPosAtPath(doc, [topLevelIndex], paragraphIndex)
 
 const owner = createBlockquoteParagraphTransactionSourceSyncOwner({
   resolveMarkdownOffset: ({ markdown, pmPos, doc }) =>
@@ -142,6 +166,30 @@ const planFor = ({
   assert.equal(plan.result.markdown.startsWith('\uFEFF'), true)
   assert.equal(plan.result.markdown.includes('\r\n'), true)
   assert.equal(plan.result.markdown.includes('  >   alphaXY'), true)
+}
+
+{
+  const source = '- authored\n\n  >   nested alpha\n\n- following\n'
+  const canonical = '* authored\n\n  > nested alpha\n\n* following\n\n'
+  const quotePath = [0, 0, 1]
+  const oldDoc = document(bulletList([
+    listItem([paragraph('authored'), quote('nested alpha')]),
+    listItem('following')
+  ]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const pos = paragraphTextPosAtPath(oldDoc, quotePath)
+  const transaction = state.tr.insertText('X', pos + 'nested alpha'.length)
+  const { plan } = planFor({
+    source,
+    canonical,
+    oldDoc,
+    transactions: [transaction],
+    nextCanonical: '* authored\n\n  > nested alphaX\n\n* following\n\n',
+    revision: 41
+  })
+  assert.equal(plan.ok, true, `nested quote text rejected: ${JSON.stringify(plan)}`)
+  assert.deepEqual(plan.proof.nodePath, quotePath)
+  assert.equal(plan.result.markdown, source.replace('nested alpha', 'nested alphaX'))
 }
 
 {
@@ -286,6 +334,30 @@ const planFor = ({
     revision: 48
   })
   assert.equal(plan.reason, 'blockquote-paragraph-not-simple-nonempty')
+}
+
+{
+  const source = '- holder\n\n  > alpha\n\n  > beta\n'
+  const canonical = '* holder\n\n  > alpha\n\n  > beta\n\n'
+  const firstPath = [0, 0, 1]
+  const secondPath = [0, 0, 2]
+  const oldDoc = document(bulletList([
+    listItem([paragraph('holder'), quote('alpha'), quote('beta')])
+  ]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const transaction = state.tr
+    .insertText('X', paragraphTextPosAtPath(oldDoc, firstPath) + 'alpha'.length)
+    .insertText('Y', paragraphTextPosAtPath(oldDoc, secondPath) + 'beta'.length + 1)
+  const { plan } = planFor({
+    source,
+    canonical,
+    oldDoc,
+    transactions: [transaction],
+    nextCanonical: '* holder\n\n  > alphaX\n\n  > betaY\n\n',
+    revision: 49
+  })
+  assert.equal(plan.reason, 'blockquote-paragraph-anchored-target-count')
+  assert.equal(plan.proof?.candidateCount, 0)
 }
 
 {
