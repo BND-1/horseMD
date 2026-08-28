@@ -17,7 +17,7 @@
 | [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
 | [family-root-cause-matrix.md](./family-root-cause-matrix.md) | 真实文件 4×5 家族矩阵、多轮保存重开根因、CRLF/尾换行/列表原子提交证据 |
 | [rich-source-divergence-incident-0.13.47.md](./rich-source-divergence-incident-0.13.47.md) | **P0 未解决**：0.13.47 自动化全绿但安装包真实长会话仍发生富文本/源码/磁盘分叉；含现场证据、测试缺口、统一 trace 要求与接手完成标准 |
-| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.140）**：revision-bound transaction journal、stable descendant path、structural owner registry、共享 list/code/quote/table/plain 生命周期与剩余结构族迁移门槛 |
+| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.141）**：revision-bound transaction journal、stable descendant path、structural owner registry、共享 list/code/quote/table/plain 生命周期与剩余结构族迁移门槛 |
 | [transaction-journal-code-block-content-family.md](./transaction-journal-code-block-content-family.md) | 0.13.133 已有 fenced code block 正文迁移：逐 Step 所有权、BOM 物理坐标、作者围栏/CRLF 保真、callback/forced-flush 与冷重开证据 |
 | [transaction-journal-code-block-info-family.md](./transaction-journal-code-block-info-family.md) | 0.13.134 已有 fenced code block 语言 info string 迁移：AttrStep 所有权、opening info 物理范围、作者 padding/BOM/CRLF 保真与真实语言选择器双路径证据 |
 | [transaction-journal-blockquote-paragraph-family.md](./transaction-journal-blockquote-paragraph-family.md) | 0.13.135–0.13.136 已有 blockquote 同一直接子段落纯文字迁移：stable descendant path、作者 quote 前缀/BOM/CRLF 保真、callback/forced-flush、保存与冷重开证据 |
@@ -26,6 +26,7 @@
 | [transaction-journal-blockquote-exit-family.md](./transaction-journal-blockquote-exit-family.md) | 0.13.138 blockquote 末尾双 Enter exit 迁移：pending/coalesced/staged journal、ReplaceAroundStep、parent/quote/inserted paths、bounded raw insertion 与三种真实持久化路径 |
 | [transaction-journal-table-cell-family.md](./transaction-journal-table-cell-family.md) | 0.13.139 GFM table 单一 cell 纯文字迁移：stable cell path、重复 occurrence、bounded source-map patch、callback/forced-flush 与持久化证据 |
 | [transaction-journal-table-row-delete-family.md](./transaction-journal-table-row-delete-family.md) | 0.13.140 GFM table 单 body-row 删除迁移：real deleteRow Step、exact row range、重复 row occurrence、raw physical-line deletion 与真实控件持久化证据 |
+| [transaction-journal-table-row-insert-family.md](./transaction-journal-table-row-insert-family.md) | 0.13.141 GFM table 单空 body-row 新增迁移：real addRowAfter Step、exact insertion boundary、作者行模板、三种 EOL/EOF 与真实控件持久化证据 |
 | [transaction-first-source-sync-phase1-plain-paragraph-plan.md](./transaction-first-source-sync-phase1-plain-paragraph-plan.md) | Phase 1 普通段落 authority 的分类器、shadow/authority 合同、当前未完成门禁与回归证据 |
 | [slash-code-source-sync-regression.md](./slash-code-source-sync-regression.md) | `/code` 两阶段结构命令缺失 fence 的根因、命令级原子 source intent 与连续编辑回归 |
 | [canonical-escape-audit.md](./canonical-escape-audit.md) | canonical Markdown 中实体、反斜杠、列表标记与 `<br />` 的完整泄漏面审计 |

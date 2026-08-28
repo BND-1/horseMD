@@ -71,6 +71,7 @@ import {
   createSourceSyncTransactionJournal,
   createTableCellTransactionSourceSyncOwner,
   createTableRowDeleteTransactionSourceSyncOwner,
+  createTableRowInsertTransactionSourceSyncOwner,
   createSlashBlockSourceSyncOwner,
   createSourceSyncCheckpointStore,
   findSlashCodeBlockAtSelection
@@ -557,6 +558,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const tableRowInsertTransactionSourceSyncOwner =
+      createTableRowInsertTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
@@ -640,6 +646,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-table-row-delete-markdown-updated',
           'forced-flush': 'transaction-table-row-delete-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'table-row-insert',
+        owner: tableRowInsertTransactionSourceSyncOwner,
+        traceKey: '__hmTableTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-table-row-insert-markdown-updated',
+          'forced-flush': 'transaction-table-row-insert-forced-flush'
         })
       })
     ])
