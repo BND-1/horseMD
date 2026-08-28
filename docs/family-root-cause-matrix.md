@@ -45,6 +45,20 @@
 
 修复采用事务所有权而不是放宽完整性：当源码在捕获位置仍是唯一的 escaped marker（例如 `\\-`）时，只在 previous canonical 中按同级 bullet 序号找到对应 literal 行，并在 next canonical 中取同 ordinal 的新 list item；前后正文、缩进和 marker 必须满足唯一性，最终只替换这个 item。任何快照漂移、重复锚点或跨层级情况继续 fail-closed，由完整 source/list integrity gate 拒绝静默提交。回归：`test-human-list-exit-dash-space-ui`、`test:fast-empty-bullet-ordered-input-rule-ui`。
 
+### 根因 0AAA：引用同段纯文字变化缺少容器路径事务所有权
+
+已有顶层 blockquote 内输入普通文字时，ProseMirror 的真实变化是深度 2 的 `paragraph` 内 `ReplaceStep`；quote marker、其它引用段和邻块都不应变化。旧 canonical-first 路径只能观察 serializer 中某条 `> text` 行改变，无法证明目标属于哪个 blockquote、哪个直接子段落，也无法排除同一 callback 内的 split/join、清空、marks、嵌套列表或邻块变化。文档存在作者 quote 前导空格、BOM/CRLF、列表 marker 等合法 source/canonical 分叉时，通用 visible mapper还可能把新增字符插到 `\r\n` 中间或错误引用行。
+
+0.13.135 将受限 family 迁入共享 transaction journal：
+- oldDoc→finalDoc 必须恰好一个顶层 `blockquote` 变化，quote attrs 和直接子数量不变；
+- 恰好一个直接子 `paragraph` 变化，前后均非空、无 marks/atoms、attrs 不变；
+- 每个 Step 必须是 closed plain-text `ReplaceStep`，在捕获时 stepDoc 上证明 depth=2、同一顶层 quote、同一直接子段落，并逐 Step 重放完整链；
+- 通过分类后复用成熟 plain-text mapper 的 exact raw textblock match 与 bounded patch，只改引用正文，作者 ` > ` 前缀、BOM、CRLF、其它引用行和邻接列表逐字保留；
+- 清空、Enter split、Backspace join、退出引用、marks、heading/list/nested quote、跨段/跨块、syntax-sensitive insert、baseline mismatch 与 stale revision 均 fail closed；
+- callback 与立即切源码 forced flush 通过同一 structural registry 与 `SourceSyncCoordinator` 原子发布。
+
+真实 Electron 回归用物理输入逐字键入 `XY`，两个字符形成同一个两步 journal，分别命中 `transaction-blockquote-paragraph-markdown-updated` 和 `transaction-blockquote-paragraph-forced-flush`；作者 ` > quoted alpha` 只变为 ` > quoted alphaXY`，源码、磁盘、全新 profile 冷重开一致且零 integrity failure / warning。空引用删除、IME 填充、Enter 临时空段和中间引用续写四组既有结构回归继续全绿。回归：`test:blockquote-paragraph-transaction-owner`、`test:blockquote-paragraph-transaction-ui`、`test:empty-blockquote-removal-ui`、`test:empty-blockquote-ime-fill-ui`、`test:generated-scratch-blockquote-empty-paragraph-ui`、`test:middle-blockquote-empty-paragraph-ui`。
+
 ### 根因 0AA：代码块语言变化缺少 opening info string 的事务所有权
 
 已有 fenced code block 通过语言选择器修改语种时，ProseMirror 实际产生的是目标 `code_block` 节点上的 `AttrStep(language)`，代码正文和邻块都不应变化。旧 canonical-first 路径只能观察 serializer 把 `````JavaScript`` 改为 `````TypeScript``，无法证明目标节点、逐 Step 文档链和作者源码的 opening-fence 字节范围；在作者使用 `~~~`、自定义 info padding、BOM/CRLF 或文档其它位置已有合法拼写分叉时，按 canonical 行替换会改写围栏或其它未触及字节。

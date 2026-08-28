@@ -187,9 +187,8 @@ npm run build
 
 下一步不是扩大本 owner，而是建立新的 focused family：
 
-1. blockquote 同段文字变化；
-2. blockquote Enter split、Backspace join 与退出引用；
-3. table cell 文字、row structural change，再到 column/alignment；
-4. code-block 创建/删除/拆分/合并与围栏结构。
+1. blockquote Enter split、Backspace join 与退出引用；
+2. table cell 文字、row structural change，再到 column/alignment；
+3. code-block 创建/删除/拆分/合并与围栏结构。
 
 每个 family 必须独立完成 transaction/stepDoc 证明、bounded raw patch、纯正反合同、真实 callback、立即 forced flush、保存与全新 profile 冷重开后再注册生产 authority。

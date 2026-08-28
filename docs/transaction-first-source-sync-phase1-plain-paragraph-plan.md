@@ -7,9 +7,9 @@
 - Current live publication: legacy remains authoritative by default; explicit authority is allowlisted to the plain-paragraph family
 - Parent architecture: `docs/transaction-first-source-sync-migration.md`
 - Shadow qualification: `docs/transaction-first-source-sync-phase0-shadow-plan.md`
-- Current application version: `0.13.134`
+- Current application version: `0.13.135`
 - Current production lifecycle: one shared revision-bound `SourceSyncTransactionJournal`; no private `transactionFirstShadowPending`
-- Current structure ownership: exact single-list-subtree, existing fenced-code-content and fenced-code-info journals may publish transaction bytes; unsupported families remain legacy fallback
+- Current structure ownership: exact single-list-subtree, existing fenced-code-content, fenced-code-info and top-level blockquote direct-paragraph text journals may publish transaction bytes; unsupported families remain legacy fallback
 
 Phase 1 starts only after Phase 0 has proven that the live editor can capture transaction evidence, compare it with the final legacy candidate, reject unsupported structure, and leave publication unchanged.
 
@@ -19,7 +19,7 @@ This phase does **not** switch the application to transaction-first immediately.
 
 Phase 1 production wiring now consumes the shared `SourceSyncTransactionJournal`. Dispatch captures revision/source/canonical/oldDoc, complete transaction batches, per-Step documents and StepMaps once; `plain-paragraph-transaction-owner.js` classifies and maps the complete journal at callback/forced-flush time. The old scalar `transactionFirstShadowPending` and per-dispatch whole-document SourceRangeMap lifecycle are removed from `Editor.jsx`; the historical module remains compatibility-test-only.
 
-The default application still publishes ordinary paragraphs through legacy unless the explicit authority gate is enabled. Shadow, authority, 1000-paragraph BOM/CRLF, list subtree callback/forced-flush, existing code-block-content callback/forced-flush, code-block language-info callback/forced-flush, 39/39 source probes and adjacent high-risk list/input-rule UI matrices are green. Code-block fence/lifecycle structure, non-language attrs, table, quote and other unported structural journals remain outside this plain-paragraph authority family.
+The default application still publishes ordinary paragraphs through legacy unless the explicit authority gate is enabled. Shadow, authority, 1000-paragraph BOM/CRLF, list subtree callback/forced-flush, existing code-block-content callback/forced-flush, code-block language-info callback/forced-flush, top-level blockquote direct-paragraph callback/forced-flush, 39/39 source probes and adjacent high-risk list/input-rule UI matrices are green. Code-block fence/lifecycle structure, non-language attrs, blockquote split/join/exit and nested structures, table and other unported structural journals remain outside this plain-paragraph authority family.
 
 ## Objective
 

@@ -1,10 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-28，HorseMD `0.13.134`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string owner，以及普通段落 owner，共享同一份不可变 journal。可证明的单一顶层列表子树变化、已有 fenced code block 纯正文变化和仅语言 attr 变化可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块围栏结构与块生命周期、表格结构、引用结构、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
+> 状态：2026-08-28，HorseMD `0.13.135`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string、已有顶层引用同段纯文字 owner，以及普通段落 owner，共享同一份不可变 journal。可证明的单一顶层列表子树变化、已有 fenced code block 纯正文变化、仅语言 attr 变化和顶层 blockquote 单一直接子段落纯文字变化可直接 transaction-owned 发布；普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块围栏结构与块生命周期、引用 split/join/退出、表格结构、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
 >
 > `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
 >
-> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
+> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，引用同段纯文字 family 见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
 
 ## 1. 目标与不变量
 
@@ -74,6 +74,14 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 作者围栏字符/长度、info 前后 padding、BOM、EOL、正文和邻块保持 byte-stable；metadata、多 token、非法语言、正文混改、其它 attrs、跨块事务和 stale revision 均拒绝；
 - callback 与立即 forced flush 分别通过 `transaction-code-block-info-markdown-updated` / `transaction-code-block-info-forced-flush` 进入 structural registry + Coordinator。完整合同见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)。
 
+### `lib/source-sync/blockquote-paragraph-transaction-owner.js`
+
+- 只认领一个顶层 `blockquote` 中恰好一个直接子 `paragraph` 的非空、无 mark 纯文字变化；引用 attrs、直接子数量、其它段落和邻块必须不变；
+- journal 中每个 Step 必须是 closed plain-text `ReplaceStep`，在对应 stepDoc 上仍落在同一顶层引用、同一直接子段落，并完整重放到 expectedDoc；
+- 严格路径分类后复用 `mapPlainTextTransactionsToSource()`：该 mapper 逐 Step 比较 PM 删除文字与作者 raw textblock、只做 bounded byte patch，并由共享 semantic/list-slot validator 验证候选；
+- 作者 quote marker/前导空格、BOM、EOL、其它引用行和邻接结构保持 byte-stable；清空、split/join/退出、marks、heading/list/nested quote、跨段/跨块和 syntax-sensitive insert 均拒绝；
+- callback 与立即 forced flush 分别通过 `transaction-blockquote-paragraph-markdown-updated` / `transaction-blockquote-paragraph-forced-flush` 进入 structural registry + Coordinator。完整合同见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)。
+
 ### `lib/source-transaction-sync.js`
 
 - 当前接收纯文本 `ReplaceStep` 和受限的尾段 paragraph/heading split；
@@ -110,7 +118,7 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 
 - `markdownUpdated`、强制 flush、保存和源码切换仍保留原有安全网；
 - 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/code/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
-- structural registry 依次让 list subtree、existing code-block content 与 code-block info owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- structural registry 依次让 list subtree、existing code-block content、code-block info 与 blockquote paragraph owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
 - `globalThis.__hmTransactionFirstAuthority = true` 仅放行已验收的普通段落 family；默认发布仍由 legacy 处理该 family。历史 broad `__hmTransactionSourcePrimary` 仅供专项测试/迁移实验；
 - callback 与 forced flush 共用 journal、ownership proof 和 Coordinator revision guard，成功时原子推进 source/canonical/checkpoint，失败时保持 authored baseline；
 - 不支持的结构继续走既有 legacy owner。只有 stale revision/source/doc 或成功 publication 会清空 journal，family rejection 本身不能销毁其它 owner 仍可能消费的证据；
@@ -195,6 +203,8 @@ npm run test:code-block-transaction-owner
 npm run test:middle-codeblock-source-ui
 npm run test:code-block-info-transaction-owner
 npm run test:code-block-info-transaction-ui
+npm run test:blockquote-paragraph-transaction-owner
+npm run test:blockquote-paragraph-transaction-ui
 npm run test:list-intent-cross-block-ui
 npm run test:family-multicycle-ui
 npm run test:paragraph-source-ui
@@ -232,7 +242,7 @@ npm run test:source-fidelity-probes
 ## 8. 仍未放行的分类（默认关闭）
 
 - 行内 mark/atom（粗斜体、链接、行内代码、公式、图片）；
-- 代码块围栏结构与创建/删除/拆分/合并、表格、Mermaid、LaTeX、HTML、frontmatter、Review；
+- 代码块围栏结构与创建/删除/拆分/合并、引用 split/join/退出与嵌套结构、表格、Mermaid、LaTeX、HTML、frontmatter、Review；
 - 列表/引用结构的输入规则与退出、缩进、类型转换（仍走专门 preservation，仅空槽协调已打通）；
 - 大文档逐键性能：当前成功事务仍同步执行两次全文 parse 与一次全文 serializer，未做增量索引；默认开启前必须补 100K–400K 文档的逐键延迟门禁。
 

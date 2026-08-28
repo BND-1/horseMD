@@ -56,6 +56,7 @@ import {
 } from '../lib/source-transaction-sync.js'
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
+  createBlockquoteParagraphTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
@@ -500,6 +501,17 @@ export default function Editor({
       const remark = crepe.editor.ctx.get(remarkCtx)
       return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
     }
+    const validateTransactionMarkdown = ({ markdown, expectedDoc }) => {
+      const parser = crepe.editor.ctx.get(parserCtx)
+      const serializer = crepe.editor.ctx.get(serializerCtx)
+      const parsed = parser(markdown)
+      const expectedCanonical = canonicalForSource(serializer(expectedDoc))
+      return areSourceDocumentsEquivalent(parsed, expectedDoc) &&
+        areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
+          strictOrderedNumbers: true,
+          previousMarkdown: canonicalMarkdownRef.current
+        })
+    }
     const listSubtreeTransactionSourceSyncOwner = createListSubtreeTransactionSourceSyncOwner({
       mapListSubtree: preserveTransactionOwnedListSubtreeChange,
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
@@ -510,6 +522,11 @@ export default function Editor({
     const codeBlockInfoTransactionSourceSyncOwner = createCodeBlockInfoTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    const blockquoteParagraphTransactionSourceSyncOwner =
+      createBlockquoteParagraphTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
@@ -540,25 +557,21 @@ export default function Editor({
           'markdown-updated': 'transaction-code-block-info-markdown-updated',
           'forced-flush': 'transaction-code-block-info-forced-flush'
         })
+      }),
+      Object.freeze({
+        key: 'blockquote-paragraph',
+        owner: blockquoteParagraphTransactionSourceSyncOwner,
+        traceKey: '__hmBlockquoteTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-blockquote-paragraph-markdown-updated',
+          'forced-flush': 'transaction-blockquote-paragraph-forced-flush'
+        })
       })
     ])
     const plainParagraphTransactionSourceSyncOwner =
       createPlainParagraphTransactionSourceSyncOwner({
-        resolveMarkdownOffset: ({ markdown, pmPos, doc }) => {
-          const remark = crepe.editor.ctx.get(remarkCtx)
-          return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
-        },
-        validateMarkdown: ({ markdown, expectedDoc }) => {
-          const parser = crepe.editor.ctx.get(parserCtx)
-          const serializer = crepe.editor.ctx.get(serializerCtx)
-          const parsed = parser(markdown)
-          const expectedCanonical = canonicalForSource(serializer(expectedDoc))
-          return areSourceDocumentsEquivalent(parsed, expectedDoc) &&
-            areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
-              strictOrderedNumbers: true,
-              previousMarkdown: canonicalMarkdownRef.current
-            })
-        }
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
       })
     const transactionFirstMode = () => {
       if (globalThis.__hmTransactionFirstAuthority === true) return 'authoritative'
