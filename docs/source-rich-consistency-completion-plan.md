@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 bullet first-empty + 0.13.154 isolated ordered lift + 0.13.155 RS-72 single-successor 已迁移，下一项 multi-successor ordered relabel chain** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.156 已完成 interior/tail/first-empty/isolated ordered/single-successor/multi-successor Backspace 链，下一项 nested list split/join/indent/outdent** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -239,6 +239,17 @@ build:mobile
 - legacy retirement：生产 registry 把 `list-ordered-empty-successor-lift` 放在 isolated/first/tail/interior/broad owner之前并设置 `legacyRetired:true`。一空格 authored ordered rows仍可形成相同 PM 两 Step family，但 source range不可安全证明；此时 `recognized:true + legacyBlocked:true`，rich edit保留、显示warning、没有 focused success、没有 broad/legacy/Coordinator publication，磁盘保持原字节。
 - 永久门禁：pure owner；BOM+CRLF + `)` delimiter callback/forced source/save/disk/fresh-profile reopen；one-space authored fail-closed；原 `test-single-empty-ordered-backspace-successor-ui` 长文档要求 focused-only publication；generic list-subtree pure/UI；0.13.154 isolated、first/tail/interior正负、RS-63/60/84/85/86、ordered Enter/exit/delimiter/repeated-list；Journal/provenance/Coordinator/source transaction、完整 preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build全部通过。
 - 下一独立 family 是 **multi-successor ordered middle-empty relabel chain**：先捕获四项及更长 ordered list 中删除一个 middle empty item时后续 `3→2, 4→3, ...` 的真实 transaction/Step 链、非 `order=1` 起点和 `.`/`)` delimiter行为；在真实 Step 数和 raw row ownership没有证明前，不把当前三项 owner泛化。
+
+### List ordered Backspace 第三子族实际完成记录（0.13.156）
+
+- 范围覆盖 **multi-successor ordered middle-empty relabel chain**：顶层 plain `ordered_list` 至少四项、恰好一个 middle empty item、empty 后至少两个 nonempty successor；removedIndex 可大于 1，`ordered_list.attrs.order` 可不是 1。single-successor、多个空项、首/尾空项、nested/task继续不认领。
+- 真实物理 Backspace 仍是同一本 journal 的 **2 transactions**，但 Step 数随 successorCount 扩展。第一笔只有一个 `ReplaceStep(structure=true,sliceSize=0)`，精确合并 removed item到其前一 item；第二笔 transaction 恰含 `successorCount` 个 `ReplaceAroundStep(structure=true,sliceSize=2,insert=1,openStart=0,openEnd=0)`，按列表顺序逐项 relabel。owner要求 `transactionCount===2`、`stepCount===successorCount+1`，并逐 Step 使用捕获的递进 `stepDoc` 重放；任何遗漏、额外 Step、错误 gap/range 或错误 wrapper attrs 都在 family 已识别后 fail closed。
+- topology proof 要求 old ordered labels 从 `attrs.order` 连续增长且 delimiter统一；removed item是唯一空 plain paragraph，其余 items均为单一非空 plain paragraph。intermediate doc只允许前一 item新增一个 editor-owned trailing empty paragraph，所有 successor仍保持旧 label；final doc只允许删除该 empty item并将每个 successor label减 1，正文、attrs、prefix/suffix和邻块全部不变。
+- raw source 独立使用 `preserveTransactionOwnedOrderedEmptySuccessorChain()`，不调用 single-successor 或 generic list mapper。bounded source/previous/next 先做 EOL与empty-placeholder比较归一化；source必须有相同数量的顶层 ordered rows、唯一空 row以及连续 authored ordinals。成功时先记录全部 successor ordinal digit patch，再从后向前应用，同时删除 empty row到下一 row起点的完整物理范围；因此作者 `.`/`)` delimiter、marker spacing、body、BOM、LF/CRLF、block gaps和其它未编辑字节都保持。
+- validator只在 exact `transaction-list-ordered-empty-successor-chain-proof` 下忽略 removed 前一 item 的一个 trailing empty paragraph；proof同时绑定 removed/previous path、successor count、old/final label数组、第一笔 Step、全部 relabel Step和 Journal snapshot/document证明。single-successor proof不能伪装成chain proof，伪 path、少一个 relabel、错误 transaction/step count均拒绝。
+- legacy retirement：registry把chain owner置于0.13.155 single-successor与broad list-subtree之前并`legacyRetired:true`。一空格 authored四项列表仍形成相同PM merge+relabel chain，但source range无法安全映射；此时 `recognized:true + legacyBlocked:true`，保留rich edit和transient paragraph、显示warning，不允许 single/broad/legacy/Coordinator publication，disk不变。
+- 永久门禁：pure owner覆盖2/3 successor、removedIndex 1/2、`order=4`、`)` delimiter、body/mixed-EOL/wrong-step负例和single-successor no-hit；真实Electron覆盖callback/forced、BOM+CRLF、source/save/disk/fresh-profile reopen与one-space fail-closed。0.13.155 single-successor、0.13.154 isolated、first/tail/interior、RS-63/60/84/85/86、nested Enter、ordered Enter/exit/delimiter/repeated-list、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build和`git diff --check`均通过。
+- 阶段 E 尚未结束。下一项按既定顺序进入 **nested list split/join/indent/outdent**：先从真实物理 Tab/Shift+Tab、Enter、Backspace/Delete 捕获 PM Step/stepDoc/path 家族，再拆 focused owners；task sentinel、conversion、input rules与跨列表/coalescing继续排在后面，不把 broad list owner提前删除。
 
 ## 9. 阶段 F：普通段落默认 authority
 

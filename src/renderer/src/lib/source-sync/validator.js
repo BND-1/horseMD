@@ -146,6 +146,54 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
     return [listItemPath]
   }
 
+  if (preservationReason === 'list-ordered-empty-successor-chain-lifted') {
+    const removedPath = preservationProof?.removedPath
+    const firstStep = preservationProof?.firstStep
+    const relabelSteps = preservationProof?.relabelSteps
+    const successorCount = preservationProof?.successorCount
+    const stepNames = preservationProof?.transactionJournal?.stepNames
+    const validRelabelSteps = Boolean(
+      Number.isInteger(successorCount) && successorCount >= 2 &&
+      Array.isArray(relabelSteps) && relabelSteps.length === successorCount &&
+      Array.isArray(stepNames) && stepNames.length === successorCount + 1 &&
+      stepNames[0] === 'ReplaceStep' &&
+      stepNames.slice(1).every((name) => name === 'ReplaceAroundStep') &&
+      relabelSteps.every((entry, index) => {
+        const step = entry?.step
+        return entry?.index === index &&
+          typeof entry?.oldLabel === 'string' && typeof entry?.finalLabel === 'string' &&
+          step?.name === 'ReplaceAroundStep' && step?.structure === true &&
+          step?.sliceSize === 2 && step?.insert === 1 && step?.openStart === 0 && step?.openEnd === 0 &&
+          Number.isFinite(step?.from) && Number.isFinite(step?.to) && step.to > step.from &&
+          Number.isFinite(step?.gapFrom) && Number.isFinite(step?.gapTo) && step.gapTo > step.gapFrom
+      })
+    )
+    if (
+      preservationProof?.kind !== 'transaction-list-ordered-empty-successor-chain-proof' ||
+      preservationProof?.family !== 'list-ordered-empty-successor-chain-lift' ||
+      preservationProof?.listType !== 'ordered_list' ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      preservationProof?.transactionJournal?.transactionCount !== 2 ||
+      preservationProof?.transactionJournal?.stepCount !== successorCount + 1 ||
+      preservationProof?.chainLength !== 2 ||
+      !Number.isInteger(preservationProof?.removedIndex) || preservationProof.removedIndex < 1 ||
+      !Array.isArray(removedPath) || removedPath.length !== 2 ||
+      removedPath[0] !== preservationProof.topLevelIndex || removedPath[1] !== preservationProof.removedIndex ||
+      listItemPath?.length !== 2 || listItemPath[1] !== preservationProof.removedIndex - 1 ||
+      paragraphPath?.length !== 3 || paragraphPath[2] !== 1 ||
+      !validPathPair ||
+      firstStep?.name !== 'ReplaceStep' || firstStep?.structure !== true || firstStep?.sliceSize !== 0 ||
+      !Number.isFinite(firstStep?.from) || !Number.isFinite(firstStep?.to) || firstStep.to <= firstStep.from ||
+      !Array.isArray(preservationProof?.successorOldLabels) ||
+      preservationProof.successorOldLabels.length !== successorCount ||
+      !Array.isArray(preservationProof?.successorFinalLabels) ||
+      preservationProof.successorFinalLabels.length !== successorCount ||
+      !validRelabelSteps
+    ) return false
+    return [listItemPath]
+  }
+
   if (preservationReason === 'list-ordered-empty-successor-lifted') {
     const removedPath = preservationProof?.removedPath
     const firstStep = preservationProof?.firstStep

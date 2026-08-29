@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.155",
+  "version": "0.13.156",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -254,6 +254,9 @@
     "test:list-ordered-empty-successor-lift-transaction-owner": "node scripts/test-list-ordered-empty-successor-lift-transaction-owner.mjs",
     "test:list-ordered-empty-successor-lift-transaction-ui": "node scripts/test-list-ordered-empty-successor-lift-transaction-ui.mjs",
     "test:list-ordered-empty-successor-lift-legacy-retirement-ui": "node scripts/test-list-ordered-empty-successor-lift-legacy-retirement-ui.mjs",
+    "test:list-ordered-empty-successor-chain-transaction-owner": "node scripts/test-list-ordered-empty-successor-chain-transaction-owner.mjs",
+    "test:list-ordered-empty-successor-chain-transaction-ui": "node scripts/test-list-ordered-empty-successor-chain-transaction-ui.mjs",
+    "test:list-ordered-empty-successor-chain-legacy-retirement-ui": "node scripts/test-list-ordered-empty-successor-chain-legacy-retirement-ui.mjs",
     "test:list-input-intent-lifecycle": "node scripts/test-list-input-intent-lifecycle.mjs",
     "test:list-item-paragraph-transaction-owner": "node scripts/test-list-item-paragraph-transaction-owner.mjs",
     "test:table-cell-transaction-owner": "node scripts/test-table-cell-transaction-owner.mjs",

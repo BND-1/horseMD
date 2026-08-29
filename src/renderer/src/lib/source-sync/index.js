@@ -96,6 +96,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_BOUNDARY,
+  LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_FAMILY,
+  createListOrderedEmptySuccessorChainTransactionSourceSyncOwner
+} from './list-ordered-empty-successor-chain-transaction-owner.js'
+export {
   LIST_ORDERED_EMPTY_SUCCESSOR_LIFT_TRANSACTION_BOUNDARY,
   LIST_ORDERED_EMPTY_SUCCESSOR_LIFT_TRANSACTION_FAMILY,
   createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner

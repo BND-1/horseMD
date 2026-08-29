@@ -2799,6 +2799,172 @@ export const preserveSingleEmptyOrderedBackspaceLift = ({ source, previous, next
   }
 }
 
+// Multi-successor ordered Backspace is physically a merge followed by one
+// relabel Step for every successor. The transaction owner supplies the exact
+// removed index/list order/successor count; this raw mapper only proves that the
+// bounded authored rows match that PM family, then deletes the empty row and
+// rewrites successor ORDINAL DIGITS in place. Delimiters, spacing, bodies and
+// every unowned byte remain authored source.
+export const preserveOrderedEmptyBackspaceSuccessorChain = ({
+  source,
+  previous,
+  next,
+  removedIndex,
+  listOrder,
+  successorCount
+}) => {
+  if (
+    !Number.isInteger(removedIndex) || removedIndex < 1 ||
+    !Number.isInteger(listOrder) || listOrder < 0 ||
+    !Number.isInteger(successorCount) || successorCount < 2
+  ) return null
+
+  const rowMeta = (line) => {
+    const text = line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text
+    const match = text.match(/^([ \t]*)(\d{1,9})([.)])([ \t]+)(.*)$/)
+    if (!match) return null
+    return Object.freeze({
+      line,
+      indent: match[1],
+      ordinal: Number(match[2]),
+      ordinalText: match[2],
+      delimiter: match[3],
+      spacing: match[4],
+      body: match[5]
+    })
+  }
+  const topRows = (markdown) => markdownLines(markdown)
+    .map(rowMeta)
+    .filter((row) => row && row.indent.length === 0)
+  const visibleBody = (value) => sourceVisibleIndex(String(value || '')).text.trim()
+  const previousRows = topRows(previous)
+  const nextRows = topRows(next)
+  const sourceRows = topRows(source)
+  const oldCount = previousRows.length
+  if (
+    oldCount < 4 ||
+    removedIndex >= oldCount - 1 ||
+    successorCount !== oldCount - removedIndex - 1 ||
+    nextRows.length !== oldCount - 1 ||
+    sourceRows.length !== oldCount
+  ) return null
+
+  const sourceDelimiters = new Set(sourceRows.map((row) => row.delimiter))
+  if (sourceDelimiters.size !== 1) return null
+  for (let index = 0; index < oldCount; index += 1) {
+    const previousRow = previousRows[index]
+    const sourceRow = sourceRows[index]
+    const expectedOrdinal = listOrder + index
+    if (
+      previousRow.ordinal !== expectedOrdinal ||
+      sourceRow.ordinal !== expectedOrdinal ||
+      previousRow.delimiter !== previousRows[0].delimiter ||
+      sourceRow.indent !== '' ||
+      visibleBody(sourceRow.body) !== visibleBody(previousRow.body)
+    ) return null
+    const previousEmpty = visibleBody(previousRow.body) === ''
+    const sourceEmpty = visibleBody(sourceRow.body) === ''
+    if (index === removedIndex) {
+      if (!previousEmpty || !sourceEmpty) return null
+    } else if (previousEmpty || sourceEmpty) {
+      return null
+    }
+  }
+
+  for (let nextIndex = 0; nextIndex < nextRows.length; nextIndex += 1) {
+    const sourceOldIndex = nextIndex < removedIndex ? nextIndex : nextIndex + 1
+    const previousRow = previousRows[sourceOldIndex]
+    const nextRow = nextRows[nextIndex]
+    if (
+      nextRow.ordinal !== listOrder + nextIndex ||
+      nextRow.delimiter !== nextRows[0].delimiter ||
+      visibleBody(nextRow.body) !== visibleBody(previousRow.body)
+    ) return null
+  }
+
+  const patches = []
+  for (let offset = 0; offset < successorCount; offset += 1) {
+    const oldIndex = removedIndex + 1 + offset
+    const row = sourceRows[oldIndex]
+    const ordinalStart = row.line.start + row.indent.length
+    patches.push(Object.freeze({
+      start: ordinalStart,
+      end: ordinalStart + row.ordinalText.length,
+      replacement: String(row.ordinal - 1)
+    }))
+  }
+  patches.push(Object.freeze({
+    start: sourceRows[removedIndex].line.start,
+    end: sourceRows[removedIndex + 1].line.start,
+    replacement: ''
+  }))
+  patches.sort((left, right) => right.start - left.start)
+  let markdown = source
+  for (const patch of patches) {
+    markdown = markdown.slice(0, patch.start) + patch.replacement + markdown.slice(patch.end)
+  }
+  return Object.freeze({
+    markdown,
+    preserved: true,
+    reason: 'diverged-empty-ordered-backspace-successor-chain',
+    nextBaseline: next,
+    removedIndex,
+    successorCount
+  })
+}
+
+export const preserveTransactionOwnedOrderedEmptySuccessorChain = ({
+  source,
+  previous,
+  next,
+  removedIndex,
+  listOrder,
+  successorCount
+}) => {
+  const rawSource = String(source || '')
+  const rawPrevious = String(previous || '')
+  const rawNext = String(next || '')
+  if (!rawPrevious || !rawNext || rawPrevious === rawNext) return null
+  const sourceEndings = new Set(rawSource.match(/\r\n|\r|\n/g) || [])
+  if (sourceEndings.size > 1) return null
+  const sourceEol = sourceEndings.values().next().value || '\n'
+  const normalize = (value) => String(value || '').replace(/\r\n|\r/g, '\n')
+  const restore = (value) => sourceEol === '\n'
+    ? String(value || '')
+    : String(value || '').replace(/\n/g, sourceEol)
+  const normalizedSource = normalize(rawSource)
+  const comparablePrevious = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalize(rawPrevious))
+  )
+  const comparableNext = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalize(rawNext))
+  )
+  const result = preserveOrderedEmptyBackspaceSuccessorChain({
+    source: normalizedSource,
+    previous: comparablePrevious,
+    next: comparableNext,
+    removedIndex,
+    listOrder,
+    successorCount
+  })
+  if (!result || result.preserved === false || typeof result.markdown !== 'string') return null
+  const normalizedMapped = normalize(result.markdown)
+  const contentLineCount = (value) => {
+    const withoutTerminal = String(value || '').replace(/\n+$/, '')
+    return withoutTerminal ? withoutTerminal.split('\n').length : 0
+  }
+  const trailingBoundaryNewlineGrowth = Boolean(
+    /\n$/.test(normalizedMapped) &&
+    contentLineCount(normalizedMapped) > contentLineCount(normalizedSource)
+  ) ? 1 : 0
+  return Object.freeze({
+    ...result,
+    markdown: restore(result.markdown),
+    trailingBoundaryNewlineGrowth,
+    nextBaseline: rawNext
+  })
+}
+
 // RS-72 has its own transaction family. Once its two-Step journal is proven,
 // only the single-empty ordered Backspace mapper is allowed to interpret the
 // bounded source fragment. Do not run the generic list mapper chain here: a

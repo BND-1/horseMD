@@ -74,6 +74,7 @@ export {
   preserveOwnedTypedBulletInputRule,
   preserveTypedBulletInputRule,
   preserveGeneratedBulletMarkers,
+  preserveTransactionOwnedOrderedEmptySuccessorChain,
   preserveTransactionOwnedSingleEmptyOrderedBackspaceLift,
   preserveTransactionOwnedListSubtreeChange,
   replaceMarkdownListBlock,
