@@ -101,6 +101,11 @@ export {
   createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner
 } from './list-nested-empty-bullet-tail-indent-transaction-owner.js'
 export {
+  LIST_NESTED_NONEMPTY_BULLET_INDENT_TRANSACTION_BOUNDARY,
+  LIST_NESTED_NONEMPTY_BULLET_INDENT_TRANSACTION_FAMILY,
+  createListNestedNonemptyBulletIndentTransactionSourceSyncOwner
+} from './list-nested-nonempty-bullet-indent-transaction-owner.js'
+export {
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_BOUNDARY,
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_FAMILY,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner
