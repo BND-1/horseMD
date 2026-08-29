@@ -16,7 +16,15 @@ const schema = new Schema({
     paragraph: { content: 'text*', group: 'block' },
     bullet_list: { content: 'list_item+', group: 'block' },
     ordered_list: { content: 'list_item+', group: 'block' },
-    list_item: { content: 'paragraph block*', attrs: { checked: { default: null } } },
+    list_item: {
+      content: 'paragraph block*',
+      attrs: {
+        checked: { default: null },
+        label: { default: null },
+        listType: { default: null },
+        spread: { default: null }
+      }
+    },
     text: { group: 'inline' }
   }
 })
@@ -24,6 +32,7 @@ const text = (value) => value ? schema.text(value) : null
 const paragraph = (value = '') => schema.nodes.paragraph.create(null, text(value))
 const item = (...children) => schema.nodes.list_item.create(null, children)
 const taskItem = (checked, ...children) => schema.nodes.list_item.create({ checked }, children)
+const semanticItem = (attrs, ...children) => schema.nodes.list_item.create(attrs, children)
 const bullet = (...items) => schema.nodes.bullet_list.create(null, items)
 const document = (...blocks) => schema.nodes.doc.create(null, blocks)
 
@@ -155,6 +164,54 @@ const taskPlan = owner.plan({
 })
 assert.equal(taskPlan.ok, false)
 assert.equal(taskPlan.recognized, false, 'task tail removal stays outside plain family')
+
+const mixedOrderedOld = document(
+  paragraph('before'),
+  bullet(
+    semanticItem({ listType: 'bullet', label: '•' }, paragraph('left')),
+    semanticItem({ listType: 'ordered', label: '1.' }, paragraph())
+  ),
+  paragraph('after')
+)
+const mixedOrderedExpected = document(
+  paragraph('before'),
+  bullet(semanticItem({ listType: 'bullet', label: '•' }, paragraph('left'), paragraph())),
+  paragraph('after')
+)
+const mixedOrderedSnapshot = createSourceSyncSnapshot({
+  revision: 1541,
+  source,
+  canonical: previous,
+  doc: mixedOrderedOld
+})
+const mixedOrderedTx = {
+  ...fakeTransaction,
+  before: mixedOrderedOld,
+  doc: mixedOrderedExpected,
+  docs: [mixedOrderedOld],
+  steps: [{ ...step, apply: () => ({ doc: mixedOrderedExpected }) }]
+}
+const mixedOrderedCapture = journalFactory.captureOrAdvance({
+  checkpoint: null,
+  snapshot: mixedOrderedSnapshot,
+  transactions: [mixedOrderedTx],
+  oldDoc: mixedOrderedOld,
+  newDoc: mixedOrderedExpected
+})
+assert.equal(mixedOrderedCapture.ok, true)
+const mixedOrderedPlan = owner.plan({
+  journal: mixedOrderedCapture.checkpoint,
+  activeJournal: mixedOrderedCapture.checkpoint,
+  snapshot: mixedOrderedSnapshot,
+  currentSource: source,
+  currentCanonical: previous,
+  canonical,
+  expectedDoc: mixedOrderedExpected,
+  callbackDocumentEquivalent: true
+})
+assert.equal(mixedOrderedPlan.ok, false)
+assert.equal(mixedOrderedPlan.recognized, false,
+  'explicit ordered item inside bullet container belongs to ordered lift family, not plain tail owner')
 
 const nestedOld = document(
   paragraph('before'),

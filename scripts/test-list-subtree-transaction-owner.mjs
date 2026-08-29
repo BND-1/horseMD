@@ -20,7 +20,12 @@ const schema = new Schema({
     ordered_list: { content: 'list_item+', group: 'block' },
     list_item: {
       content: 'paragraph block*',
-      attrs: { checked: { default: null } }
+      attrs: {
+        checked: { default: null },
+        label: { default: null },
+        listType: { default: null },
+        spread: { default: null }
+      }
     },
     text: { group: 'inline' }
   }
@@ -31,6 +36,7 @@ const paragraph = (value = '') => schema.nodes.paragraph.create(null, text(value
 const code = (value) => schema.nodes.code_block.create(null, text(value))
 const item = (...children) => schema.nodes.list_item.create(null, children)
 const taskItem = (checked, ...children) => schema.nodes.list_item.create({ checked }, children)
+const semanticItem = (attrs, ...children) => schema.nodes.list_item.create(attrs, children)
 const ordered = (...items) => schema.nodes.ordered_list.create(null, items)
 const bullet = (...items) => schema.nodes.bullet_list.create(null, items)
 const document = (...blocks) => schema.nodes.doc.create(null, blocks)
@@ -158,6 +164,44 @@ const next = [
 const expected = next
 
 const owner = makeOwner()
+
+{
+  const mixedOldList = bullet(
+    semanticItem({ listType: 'bullet', label: '•' }, paragraph('left')),
+    semanticItem({ listType: 'ordered', label: '1.' }, paragraph())
+  )
+  const mixedNextList = bullet(
+    semanticItem({ listType: 'bullet', label: '•' }, paragraph('left'), paragraph())
+  )
+  const mixedOldDoc = document(mixedOldList, paragraph('after'))
+  const mixedNextDoc = document(mixedNextList, paragraph('after'))
+  const mixedSource = '- left\n- \n\nafter\n'
+  const mixedPrevious = '* left\n\n* <br />\n\nafter\n'
+  const mixedCanonical = '* left\n\n  <br />\n\nafter\n'
+  const mixedTx = transaction(
+    mixedOldDoc,
+    mixedNextDoc,
+    [step('ReplaceStep', 7, 9, true)]
+  )
+  const mixedJournal = captureJournal({
+    source: mixedSource,
+    canonical: mixedPrevious,
+    oldDoc: mixedOldDoc,
+    batches: [{ transactions: [mixedTx], oldDoc: mixedOldDoc, newDoc: mixedNextDoc }],
+    revision: 110
+  })
+  const mixedOwner = makeOwner('left', () => {
+    throw new Error('mixed list semantics must be rejected before mapper')
+  })
+  const mixedPlan = planWithJournal(mixedOwner, {
+    ...mixedJournal,
+    checkpoint: mixedJournal.checkpoint,
+    canonical: mixedCanonical,
+    expectedDoc: mixedNextDoc
+  })
+  assert.equal(mixedPlan.ok, false)
+  assert.equal(mixedPlan.reason, 'list-subtree-item-list-type-mismatch')
+}
 const mainJournal = captureJournal({
   source,
   canonical: previous,

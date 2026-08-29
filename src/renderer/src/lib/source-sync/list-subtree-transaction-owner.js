@@ -21,6 +21,30 @@ const rejected = (reason, {
   proof
 })
 
+const listHasMismatchedItemSemantics = (listNode) => {
+  if (!supportedListTypes.has(listNode?.type?.name)) return false
+  const expectedListType = listNode.type.name === 'ordered_list' ? 'ordered' : 'bullet'
+  let mismatched = false
+  listNode.forEach?.((item) => {
+    if (mismatched || item?.type?.name !== 'list_item') return
+    const explicitListType = item.attrs?.listType
+    if (
+      explicitListType != null &&
+      explicitListType !== '' &&
+      explicitListType !== expectedListType
+    ) {
+      mismatched = true
+      return
+    }
+    item.forEach?.((child) => {
+      if (!mismatched && supportedListTypes.has(child?.type?.name)) {
+        mismatched = listHasMismatchedItemSemantics(child)
+      }
+    })
+  })
+  return mismatched
+}
+
 const nodeContainsTaskMetadata = (node) => {
   if (!node) return false
   let found = false
@@ -199,6 +223,10 @@ const classifySingleListSubtreeChange = (oldDoc, newDoc) => {
     nodeContainsTaskMetadata(previousEntry.node) ||
     nodeContainsTaskMetadata(nextEntry.node)
   ) return rejected('list-subtree-task-metadata')
+  if (
+    listHasMismatchedItemSemantics(previousEntry.node) ||
+    listHasMismatchedItemSemantics(nextEntry.node)
+  ) return rejected('list-subtree-item-list-type-mismatch')
   if (
     listTopologySignature(previousEntry.node) ===
     listTopologySignature(nextEntry.node)

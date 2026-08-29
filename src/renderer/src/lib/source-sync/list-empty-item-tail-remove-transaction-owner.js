@@ -30,8 +30,13 @@ const plainEmptyParagraph = (node) =>
 const plainNonEmptyParagraph = (node) =>
   node?.type?.name === 'paragraph' && node.isTextblock && node.content?.size > 0
 
-const plainItem = (node) =>
-  node?.type?.name === 'list_item' && node.attrs?.checked == null
+const itemMatchesListSemantics = (node, listNode) => {
+  if (node?.type?.name !== 'list_item' || node.attrs?.checked != null) return false
+  const explicitListType = node.attrs?.listType
+  if (explicitListType == null || explicitListType === '') return true
+  const expectedListType = listNode?.type?.name === 'ordered_list' ? 'ordered' : 'bullet'
+  return explicitListType === expectedListType
+}
 
 const topLevelEntries = (doc) => topLevelSourceSyncEntries(doc)
 
@@ -71,11 +76,11 @@ const classify = ({ journal, expectedDoc }) => {
   const previousLeft = previousList.child(removedIndex - 1)
   const nextLeft = nextList.child(removedIndex - 1)
   if (
-    !plainItem(removed) ||
+    !itemMatchesListSemantics(removed, previousList) ||
     removed.childCount !== 1 ||
     !plainEmptyParagraph(removed.firstChild) ||
-    !plainItem(previousLeft) ||
-    !plainItem(nextLeft) ||
+    !itemMatchesListSemantics(previousLeft, previousList) ||
+    !itemMatchesListSemantics(nextLeft, nextList) ||
     !sourceSyncAttrsEqual(previousLeft.attrs, nextLeft.attrs) ||
     previousLeft.childCount !== 1 ||
     !plainNonEmptyParagraph(previousLeft.firstChild) ||
