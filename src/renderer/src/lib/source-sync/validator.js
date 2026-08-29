@@ -74,9 +74,50 @@ const tableColumnWidthProofPaths = (preservationReason, preservationProof) => {
 }
 
 const transactionListTransientEmptyPaths = (preservationReason, preservationProof) => {
-  if (preservationProof?.mapperReason !== 'diverged-empty-ordered-backspace-lift') return []
   const listItemPath = preservationProof?.transientEmptyListItemPath
   const paragraphPath = preservationProof?.transientEmptyParagraphPath
+  const validPathPair = Boolean(
+    Array.isArray(listItemPath) &&
+    listItemPath.length >= 2 &&
+    listItemPath.every((index) => Number.isInteger(index) && index >= 0) &&
+    listItemPath[0] === preservationProof?.topLevelIndex &&
+    Array.isArray(paragraphPath) &&
+    paragraphPath.length === listItemPath.length + 1 &&
+    paragraphPath.every((index) => Number.isInteger(index) && index >= 0) &&
+    listItemPath.every((index, pathIndex) => paragraphPath[pathIndex] === index) &&
+    paragraphPath.at(-1) >= 1
+  )
+
+  if (preservationReason === 'list-empty-item-removed') {
+    const removedPath = preservationProof?.removedPath
+    const step = preservationProof?.step
+    if (
+      preservationProof?.kind !== 'transaction-list-empty-item-remove-proof' ||
+      preservationProof?.family !== 'list-empty-item-remove' ||
+      !['bullet_list', 'ordered_list'].includes(preservationProof?.listType) ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      preservationProof?.chainLength !== 1 ||
+      !Number.isInteger(preservationProof?.removedIndex) ||
+      preservationProof.removedIndex < 1 ||
+      !Array.isArray(removedPath) ||
+      removedPath.length !== 2 ||
+      removedPath[0] !== preservationProof.topLevelIndex ||
+      removedPath[1] !== preservationProof.removedIndex ||
+      listItemPath?.length !== 2 ||
+      listItemPath?.[1] !== preservationProof.removedIndex - 1 ||
+      !validPathPair ||
+      step?.name !== 'ReplaceStep' ||
+      step?.structure !== true ||
+      step?.sliceSize !== 0 ||
+      !Number.isFinite(step?.from) ||
+      !Number.isFinite(step?.to) ||
+      step.to <= step.from
+    ) return false
+    return [listItemPath]
+  }
+
+  if (preservationProof?.mapperReason !== 'diverged-empty-ordered-backspace-lift') return []
   if (
     preservationReason !== 'transaction-list-subtree' ||
     preservationProof?.kind !== 'transaction-list-subtree-proof' ||
@@ -84,15 +125,7 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
     preservationProof?.listType !== 'ordered_list' ||
     preservationProof?.transactionJournal?.snapshotMatched !== true ||
     preservationProof?.transactionJournal?.documentMatched !== true ||
-    !Array.isArray(listItemPath) ||
-    listItemPath.length < 2 ||
-    !listItemPath.every((index) => Number.isInteger(index) && index >= 0) ||
-    listItemPath[0] !== preservationProof.topLevelIndex ||
-    !Array.isArray(paragraphPath) ||
-    paragraphPath.length !== listItemPath.length + 1 ||
-    !paragraphPath.every((index) => Number.isInteger(index) && index >= 0) ||
-    !listItemPath.every((index, pathIndex) => paragraphPath[pathIndex] === index) ||
-    paragraphPath.at(-1) < 1
+    !validPathPair
   ) return false
   return [listItemPath]
 }

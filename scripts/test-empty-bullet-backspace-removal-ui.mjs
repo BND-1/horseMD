@@ -8,6 +8,7 @@ const root = `/tmp/horsemd-empty-bullet-backspace-removal-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 11240 + (process.pid % 40))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
+const forceBackspaceFlush = process.env.EMPTY_ITEM_FORCE === '1'
 
 const fixture = [
   '# 删除空 bullet 回归', '',
@@ -28,12 +29,12 @@ const waitFor = async (check, message, attempts = 160) => {
   throw new Error(message)
 }
 
-const rawKey = async (app, key, code, keyCode, text = '') => {
+const rawKey = async (app, key, code, keyCode, text = '', settleMs = 150) => {
   const common = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode }
   await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...common })
   if (text) await app.send('Input.dispatchKeyEvent', { type: 'char', ...common, text, unmodifiedText: text })
   await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...common })
-  await sleep(150)
+  await sleep(settleMs)
 }
 
 const focusBulletEnd = async (app, text) => app.evaluate(`(() => {
@@ -60,6 +61,10 @@ const diagnostics = (app) => app.evaluate(`(() => ({
     candidate: String(entry.candidate || '').slice(0, 900),
     canonical: String(entry.canonical || '').slice(0, 900)
   })),
+  journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-40),
+  listSubtree: (window.__hmListSubtreeTransactionTrace || []).slice(-40),
+  listEmptyItem: (window.__hmListEmptyItemTransactionTrace || []).slice(-40),
+  listItem: (window.__hmListItemTransactionTrace || []).slice(-40),
   toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || '')
 }))()`)
 
@@ -88,7 +93,14 @@ try {
   })
   await waitFor(() => app.evaluate(`Boolean([...document.querySelectorAll('.ProseMirror')]
     .find((node) => node.offsetParent && node.textContent.includes('啊v擦') && node.textContent.includes('u高科技')))`), 'fixture did not mount')
-  await app.evaluate(`(() => { window.__hmPreserveLog = []; window.__hmSourceIntegrityTrace = [] })()`)
+  await app.evaluate(`(() => {
+    window.__hmPreserveLog = []
+    window.__hmSourceIntegrityTrace = []
+    window.__hmSourceSyncTransactionJournalTrace = []
+    window.__hmListSubtreeTransactionTrace = []
+    window.__hmListEmptyItemTransactionTrace = []
+    window.__hmListItemTransactionTrace = []
+  })()`)
 
   const focused = await focusBulletEnd(app, '啊v擦')
   assert.equal(focused.ok, true, JSON.stringify(focused))
@@ -99,14 +111,50 @@ try {
   assert.equal(entered.integrity.some((entry) => entry.ok === false), false, 'Enter creating empty bullet failed integrity')
   assert.equal(entered.integrity.some((entry) => entry.candidate.includes('- 啊v擦\n- \n- u高科技')), true, 'Enter did not persist the empty bullet between siblings')
 
-  await rawKey(app, 'Backspace', 'Backspace', 8)
-  await sleep(1050)
+  await rawKey(app, 'Backspace', 'Backspace', 8, '', forceBackspaceFlush ? 10 : 150)
+  if (forceBackspaceFlush) {
+    assert.equal(await toggleSource(app), true, 'forced source toggle failed')
+    const forcedSource = await waitFor(() => visibleSource(app), 'forced source textarea did not open')
+    assert.match(forcedSource, /- 啊v擦\n- u高科技/)
+    assert.doesNotMatch(forcedSource, /<br\s*\/?\s*>/i)
+    assert.equal(await toggleSource(app), true, 'forced rich toggle failed')
+    await sleep(650)
+  } else {
+    await sleep(1050)
+  }
   const removed = await diagnostics(app)
   console.log('EMPTY_BULLET_AFTER_BACKSPACE:', JSON.stringify(removed))
   assert.equal(removed.integrity.some((entry) => entry.ok === false), false, 'Backspace deleting empty bullet failed source integrity')
   assert.equal(removed.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false, 'Backspace deleting empty bullet showed warning')
-  assert.equal(removed.preserve.some((entry) => entry.reason === 'empty-list-item-removed' && entry.preserved === true), true, 'empty-list-item-removed branch did not own the deletion')
-  assert.equal(removed.integrity.some((entry) => entry.preservationReason === 'empty-list-item-removed' && entry.semanticOk === true && entry.listSlotsMatch === true), true, 'empty-list-item-removed candidate was not fully equivalent')
+  const focusedPreservation = removed.preserve.find((entry) =>
+    entry.reason === 'list-empty-item-removed' &&
+    entry.preserved === true &&
+    entry.integrityProof?.kind === 'transaction-list-empty-item-remove-proof'
+  )
+  assert.ok(focusedPreservation, `transaction empty-item owner did not publish: ${JSON.stringify(removed.preserve)}`)
+  assert.equal(focusedPreservation.integrityProof.family, 'list-empty-item-remove')
+  assert.deepEqual(focusedPreservation.integrityProof.removedPath, [1, 1])
+  assert.deepEqual(focusedPreservation.integrityProof.transientEmptyListItemPath, [1, 0])
+  assert.deepEqual(focusedPreservation.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
+  assert.equal(removed.integrity.some((entry) =>
+    entry.preservationReason === 'list-empty-item-removed' &&
+    entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true
+  ), true, 'transaction empty-item candidate was not fully equivalent')
+  const focusedPublications = removed.listEmptyItem.filter((entry) =>
+    entry.phase === 'published' && entry.ok === true && entry.family === 'list-empty-item-remove'
+  )
+  assert.equal(focusedPublications.length, 1,
+    `focused owner publication count mismatch: ${JSON.stringify(removed.listEmptyItem)}`)
+  assert.equal(
+    focusedPublications[0].boundary,
+    forceBackspaceFlush
+      ? 'transaction-list-empty-item-remove-forced-flush'
+      : 'transaction-list-empty-item-remove-markdown-updated',
+    `focused owner boundary mismatch: ${JSON.stringify(focusedPublications)}`
+  )
+  assert.equal(removed.listSubtree.some((entry) =>
+    entry.phase === 'publish' && entry.ok === false && entry.journalId === 'source-sync-journal-2'
+  ), false, `broad list-subtree still failed before the focused owner: ${JSON.stringify(removed.listSubtree)}`)
   assert.equal(removed.integrity.some((entry) => entry.candidate.includes('- 啊v擦\n- u高科技')), true, 'deleted empty bullet remained in authored source')
   assert.equal(removed.integrity.some((entry) => /<br\s*\/?\s*>/i.test(entry.candidate)), false, 'editor-only br placeholder leaked into source')
 
@@ -116,7 +164,7 @@ try {
   assert.match(source, /- 啊v擦\n- u高科技\n\n```txt\n尼玛，吗了解\n了几百块\n```/)
   assert.match(source, /-   1\. 二哥你来拿如果\n  - \u200B     就了解了呢\n  \* 如果可能老顾客/)
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i)
-  console.log('PASS Enter empty bullet -> Backspace removal ignores only the editor-owned trailing placeholder')
+  console.log(`PASS Enter empty bullet -> Backspace removal is transaction-owned via ${forceBackspaceFlush ? 'forced flush' : 'markdownUpdated'} and ignores only the exact editor-owned trailing placeholder`)
 } finally {
   await stopBuiltElectron(app, { removeProfile: true })
   await rm(root, { recursive: true, force: true })
