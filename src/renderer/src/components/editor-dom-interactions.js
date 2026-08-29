@@ -2,7 +2,11 @@ import { TextSelection } from '@milkdown/prose/state'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
 import { isReadOnlyMutationKey } from './editor-read-only.js'
-import { exitCodeBlockFromDomEvent } from './editor-code-block-exit.js'
+import {
+  exitCodeBlockFromDomEvent,
+  topLevelCodeBlockForDom
+} from './editor-code-block-exit.js'
+import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
@@ -226,11 +230,37 @@ export function mountEditorInteractionBindings({
         }
         const domSelection = currentView.dom.ownerDocument.getSelection()
         let preservedTextSelection = false
+        // CodeMirror owns its DOM selection and ProseMirror can therefore keep
+        // a stale selection in a neighbouring paragraph. Before a block action
+        // runs, bridge a collapsed caret only when it belongs to the exact code
+        // block that received this context-menu event.
+        const clickedCodeBlock = event.target.closest?.('.milkdown-code-block') || null
+        if (clickedCodeBlock && currentView.dom.contains(clickedCodeBlock)) {
+          const match = topLevelCodeBlockForDom(currentView, clickedCodeBlock)
+          if (match) {
+            const codeSelection = domSelection?.isCollapsed
+              ? codeMirrorSelectionInfo(currentView, domSelection)
+              : null
+            const local = codeSelection?.blockPos === match.offset
+              ? codeSelection.local
+              : 0
+            const pmPos = match.offset + 1 + Math.max(
+              0,
+              Math.min(local, match.node.content.size)
+            )
+            currentView.dispatch(currentView.state.tr.setSelection(
+              TextSelection.create(currentView.state.doc, pmPos)
+            ))
+            blockPos = pmPos
+            blockListConvertible = false
+            preservedTextSelection = true
+          }
+        }
         // ProseMirror normally syncs DOM selection changes immediately. A
         // context-menu event can race that sync on macOS/Windows, though. Read
         // the browser's selected range once here and commit it to editor state
         // before opening actions that depend on it.
-        if (domSelection && !domSelection.isCollapsed &&
+        if (!preservedTextSelection && domSelection && !domSelection.isCollapsed &&
           currentView.dom.contains(domSelection.anchorNode) &&
           currentView.dom.contains(domSelection.focusNode)) {
           try {

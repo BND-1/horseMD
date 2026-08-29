@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.149`
+> 当前源码版本：`0.13.150`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -41,7 +41,7 @@
 | 阶段 | 目标 | 当前状态 | 完成标志 |
 | --- | --- | --- | --- |
 | A | 收口 `0.13.148` 代码块显式退出与首批 legacy 退役 | **完成：`9dafd76`** | 完整工作树版本通过 focused/global/build，排除未来草稿，形成本地提交 |
-| B | 完成剩余代码块生命周期 owner | **进行中：审计非空 `code_block → paragraph`** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
+| B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
 | E | 退役 list legacy owners | 未开始 | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
@@ -126,6 +126,15 @@ build:mobile
 5. nested、跨 block selection 和多节点批次。
 
 每个 family 通过后立即做 legacy no-hit/negative fallback测试，不等到全部生命周期完成再统一退役。
+
+### `code_block → paragraph` 实际完成记录（0.13.150）
+
+- 产品入口：真实 HorseMD 右键“转换为正文”通过被点击 CodeMirror NodeView identity 唯一映射目标 PM `code_block`；wrapper 的 end-boundary `posAtDOM` 不再决定归属。
+- 事务：`setNodeMarkup(...paragraph)` 的 `ReplaceAroundStep(structure=true)` 与随后快速 paragraph `ReplaceStep` 由同一本 revision-bound journal 拥有；其它块、marks、atom、多行/空代码块保持不认领或 fail closed。
+- raw patch：只把作者完整 opening/content/closing fenced range 原子替换为最终 paragraph，保留作者 BOM、LF/CRLF、fence 之外邻块与未编辑字节。
+- legacy retirement：生产 registry 的 `code-block-paragraph` 设置 `legacyRetired:true`；family 已识别后的 range/content/language/semantic失败 `recognized:true`，禁止 generic fallback。
+- 永久回归：共享 NodeView identity 的 identity/end-boundary/strict-interior/empty 合同；focused owner 正反合同；legacy no-hit；真实 Electron callback、forced-flush、源码、保存、磁盘、fresh-profile reopen；`# heading` semantic rejection证明 warning + source/disk不变且无 publication。
+- focused gate、production build 与真实三场 Electron 均已在 2026-08-29 重新从当前工作树执行通过；完成全局/相邻门禁并形成本地提交后，再进入下一代码块生命周期 family。
 
 ## 6. 阶段 C：Blockquote legacy 退役
 

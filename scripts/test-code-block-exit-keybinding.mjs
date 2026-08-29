@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
 import { EditorState } from '@milkdown/prose/state'
-import { exitCodeBlockFromDomEvent } from '../src/renderer/src/components/editor-code-block-exit.js'
+import {
+  exitCodeBlockFromDomEvent,
+  topLevelCodeBlockForDom
+} from '../src/renderer/src/components/editor-code-block-exit.js'
 
 const schema = new Schema({
   nodes: {
@@ -80,6 +83,28 @@ const createView = ({ doc, codeDom, exposeNode = true, contained = true } = {}) 
 }
 
 {
+  const doc = document(paragraph('before'), codeBlock('identity'), paragraph('after'))
+  const { codeDom } = createDom()
+  const fixture = createView({ doc, codeDom })
+  fixture.view.posAtDOM = () => fixture.codeOffset + doc.child(1).nodeSize
+  const match = topLevelCodeBlockForDom(fixture.view, codeDom)
+  assert.equal(match?.offset, fixture.codeOffset,
+    'nodeDOM identity must win even when posAtDOM exposes the code-block end boundary')
+}
+
+{
+  const doc = document(paragraph('before'), codeBlock('fallback'), paragraph('after'))
+  const { codeDom } = createDom()
+  const fixture = createView({ doc, codeDom, exposeNode: false })
+  fixture.view.posAtDOM = () => fixture.codeOffset + 1
+  assert.equal(topLevelCodeBlockForDom(fixture.view, codeDom)?.offset, fixture.codeOffset,
+    'a unique strict interior PM position may identify a code block without nodeDOM')
+  fixture.view.posAtDOM = () => fixture.codeOffset + doc.child(1).nodeSize
+  assert.equal(topLevelCodeBlockForDom(fixture.view, codeDom), null,
+    'an exact end boundary without nodeDOM identity must fail closed')
+}
+
+{
   const doc = document(paragraph('before'), codeBlock('console.log(1)'), paragraph('after'))
   const { codeDom, target } = createDom()
   const { event, calls } = createEvent(target)
@@ -116,6 +141,8 @@ const createView = ({ doc, codeDom, exposeNode = true, contained = true } = {}) 
   const { codeDom, target } = createDom()
   const { event, calls } = createEvent(target)
   const fixture = createView({ doc, codeDom })
+  assert.equal(topLevelCodeBlockForDom(fixture.view, codeDom)?.offset, fixture.codeOffset,
+    'the shared DOM identity helper may locate an empty code block')
   assert.equal(exitCodeBlockFromDomEvent({ event, view: fixture.view }), false)
   assert.deepEqual(calls, { preventDefault: 0, stopImmediatePropagation: 0 })
   assert.equal(fixture.dispatched.length, 0)
@@ -150,4 +177,4 @@ const createView = ({ doc, codeDom, exposeNode = true, contained = true } = {}) 
   assert.deepEqual(calls, { preventDefault: 0, stopImmediatePropagation: 0 })
 }
 
-console.log('PASS code block exit keybinding: a DOM-owned Mod+Enter maps one non-empty CodeMirror node view to the official exitCode transaction; empty, outside, unmapped and foreign DOM fail open')
+console.log('PASS code block DOM identity and exit keybinding: exact nodeDOM identity wins over an end-boundary mapping, unique strict interior fallback is accepted, boundary-only mapping fails closed, and Mod+Enter dispatches only the official non-empty exitCode transaction')

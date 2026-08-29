@@ -162,25 +162,49 @@ export function remarkMergeInlineHtml() {
 // Convert the block containing the cursor to a different type. Operates on the
 // textblock the selection actually sits in and commits through the view so
 // ProseMirror's state stays in sync.
-export function convertBlock(view, typeName, attrs = {}) {
+export function convertBlock(view, typeName, attrs = {}, targetPos = null) {
   const { state } = view
   const { schema, selection } = state
-  const { $from } = selection
 
   const targetType = schema.nodes[typeName]
-  if (!targetType) return
+  if (!targetType) return false
 
-  let depth = $from.depth
-  while (depth > 0 && !$from.node(depth).isTextblock) depth--
-  const node = depth >= 0 ? $from.node(depth) : null
-  if (!node) return
+  let node = null
+  let pos = null
+  if (Number.isFinite(targetPos)) {
+    const safePos = Math.max(0, Math.min(targetPos, state.doc.content.size))
+    const $target = state.doc.resolve(safePos)
+    let depth = $target.depth
+    while (depth > 0 && !$target.node(depth).isTextblock) depth--
+    if (depth > 0 && $target.node(depth).isTextblock) {
+      node = $target.node(depth)
+      pos = $target.before(depth)
+    } else if ($target.nodeAfter?.isTextblock) {
+      node = $target.nodeAfter
+      pos = safePos
+    } else if ($target.nodeBefore?.isTextblock) {
+      node = $target.nodeBefore
+      pos = safePos - node.nodeSize
+    }
+  } else {
+    const { $from } = selection
+    let depth = $from.depth
+    while (depth > 0 && !$from.node(depth).isTextblock) depth--
+    if (depth > 0 && $from.node(depth).isTextblock) {
+      node = $from.node(depth)
+      pos = $from.before(depth)
+    }
+  }
+  if (!node || !Number.isFinite(pos)) return false
 
   // No-op if it's already exactly what we'd convert to.
   if (node.type.name === typeName) {
-    if (typeName === 'heading' && node.attrs.level === attrs.level) return
-    if (typeName === 'paragraph') return
+    if (typeName === 'heading' && node.attrs.level === attrs.level) return false
+    if (typeName === 'paragraph') return false
   }
 
-  const pos = $from.before(depth)
-  view.dispatch(state.tr.setNodeMarkup(pos, targetType, attrs))
+  const transaction = state.tr.setNodeMarkup(pos, targetType, attrs)
+  if (!transaction.docChanged) return false
+  view.dispatch(transaction)
+  return true
 }

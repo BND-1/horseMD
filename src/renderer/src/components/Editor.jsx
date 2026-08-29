@@ -62,6 +62,7 @@ import {
   createBlockquoteParagraphTransactionSourceSyncOwner,
   createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockExitTransactionSourceSyncOwner,
+  createCodeBlockParagraphTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
@@ -536,6 +537,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const codeBlockParagraphTransactionSourceSyncOwner =
+      createCodeBlockParagraphTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const emptyCodeBlockUnpackTransactionSourceSyncOwner =
       createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -626,6 +632,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-item-paragraph-markdown-updated',
           'forced-flush': 'transaction-list-item-paragraph-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'code-block-paragraph',
+        owner: codeBlockParagraphTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-code-block-to-paragraph-markdown-updated',
+          'forced-flush': 'transaction-code-block-to-paragraph-forced-flush'
         })
       }),
       Object.freeze({
@@ -1658,9 +1674,10 @@ export default function Editor({
       onActiveBlock,
       lastBlockRef
     })
-    const setBlock = (id) => {
-      if (readOnlyRef.current) return
-      setEditableBlock(id)
+    const setBlock = (id, blockPos = null) => {
+      if (readOnlyRef.current) return false
+      markUserEdit()
+      return setEditableBlock(id, blockPos)
     }
     const convertBlockToList = (targetType, blockPos) => {
       if (readOnlyRef.current) return false
@@ -3105,7 +3122,11 @@ export default function Editor({
 
   // The floating bar and context menu reuse the same conversion path as the
   // keyboard shortcuts (defined inside the effect, reached through apiRef).
-  const pickBlock = (id) => apiRef.current?.setBlock(id)
+  const pickBlock = (id) => {
+    const changed = apiRef.current?.setBlock(id, ctxMenu?.blockPos) === true
+    if (!changed) setCtxMenu(null)
+    return changed
+  }
   const pickListConversion = (targetType, listPos, anchorPos) =>
     apiRef.current?.convertList(targetType, listPos, anchorPos)
   const pickBlockListConversion = (targetType, blockPos) => apiRef.current?.convertBlockToList(targetType, blockPos)

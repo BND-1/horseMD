@@ -23,6 +23,7 @@ const legacyImplementation = (await Promise.all(
 // must not contain a dedicated mapper or claim for them.
 for (const key of [
   'empty-code-block-unpack',
+  'code-block-paragraph',
   'code-block-exit',
   'code-block',
   'code-block-info'
@@ -40,6 +41,7 @@ for (const retiredClaim of [
   "reason: 'fenced-code-block-content-change'",
   "reason: 'fenced-code-block-info-string-change'",
   "reason: 'empty-fenced-code-block-backspace-unpack'",
+  "reason: 'code-block-converted-to-paragraph'",
   "reason: 'code-block-exit'"
 ]) {
   assert.equal(

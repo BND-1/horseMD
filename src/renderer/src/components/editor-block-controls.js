@@ -13,15 +13,21 @@ import { convertBlock } from './editor-html.js'
 
 export function createBlockControls({ viewRef, setCtxMenu, onActiveBlock, lastBlockRef }) {
   // Convert the block the cursor sits in to a given block id (paragraph/h1…h6).
-  const setBlock = (id) => {
+  const setBlock = (id, blockPos = null) => {
     const view = viewRef.current
-    if (!view) return
+    if (!view) return false
     const def = blockById(id)
-    if (!def) return
-    convertBlock(view, def.name, def.level ? { level: def.level } : {})
+    if (!def) return false
+    const changed = convertBlock(
+      view,
+      def.name,
+      def.level ? { level: def.level } : {},
+      blockPos
+    )
     view.focus()
     reportActiveBlock()
     setCtxMenu(null)
+    return changed === true
   }
 
   const canConvertCurrentBlockToList = (blockPos) => {

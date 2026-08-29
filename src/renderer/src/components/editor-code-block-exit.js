@@ -11,7 +11,7 @@ const domContains = (container, candidate) => {
   }
 }
 
-const topLevelCodeBlockForDom = (view, blockDom) => {
+export const topLevelCodeBlockForDom = (view, blockDom) => {
   const doc = view?.state?.doc
   if (!doc || !blockDom) return null
   let mappedPosition = null
@@ -23,21 +23,26 @@ const topLevelCodeBlockForDom = (view, blockDom) => {
     // the primary identity proof below.
   }
 
-  let match = null
+  const identityMatches = []
+  const mappedMatches = []
   doc.forEach((node, offset, index) => {
-    if (match || node?.type?.name !== 'code_block' || node.content?.size <= 0) return
+    if (node?.type?.name !== 'code_block') return
+    const entry = Object.freeze({ node, offset, index })
     let nodeDom = null
     try { nodeDom = view.nodeDOM?.(offset) || null } catch {}
-    const sameNodeView =
+    if (
       domContains(nodeDom, blockDom) ||
       domContains(blockDom, nodeDom)
-    const mappedInsideNode = Number.isFinite(mappedPosition) &&
-      mappedPosition >= offset &&
-      mappedPosition <= offset + node.nodeSize
-    if (!sameNodeView && !mappedInsideNode) return
-    match = Object.freeze({ node, offset, index })
+    ) identityMatches.push(entry)
+    if (
+      Number.isFinite(mappedPosition) &&
+      mappedPosition > offset &&
+      mappedPosition < offset + node.nodeSize
+    ) mappedMatches.push(entry)
   })
-  return match
+  if (identityMatches.length === 1) return identityMatches[0]
+  if (identityMatches.length > 1) return null
+  return mappedMatches.length === 1 ? mappedMatches[0] : null
 }
 
 /**
@@ -56,7 +61,7 @@ export function exitCodeBlockFromDomEvent({ event, view } = {}) {
   if (!blockDom || !domContains(view.dom, blockDom)) return false
 
   const match = topLevelCodeBlockForDom(view, blockDom)
-  if (!match) return false
+  if (!match || match.node.content.size <= 0) return false
 
   const codeEnd = match.offset + 1 + match.node.content.size
   let commandState
