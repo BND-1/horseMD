@@ -70,6 +70,7 @@ import {
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
+  createListEmptyItemTailRemoveTransactionSourceSyncOwner,
   createListEmptyItemRemoveTransactionSourceSyncOwner,
   createListItemParagraphTransactionSourceSyncOwner,
   createListSubtreeTransactionSourceSyncOwner,
@@ -538,6 +539,10 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listEmptyItemTailRemoveTransactionSourceSyncOwner =
+      createListEmptyItemTailRemoveTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset
+      })
     const listEmptyItemRemoveTransactionSourceSyncOwner =
       createListEmptyItemRemoveTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset
@@ -621,6 +626,16 @@ export default function Editor({
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
     const structuralTransactionSourceSyncOwners = Object.freeze([
+      Object.freeze({
+        key: 'list-empty-item-tail-remove',
+        owner: listEmptyItemTailRemoveTransactionSourceSyncOwner,
+        traceKey: '__hmListEmptyItemTailTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-empty-item-tail-remove-markdown-updated',
+          'forced-flush': 'transaction-list-empty-item-tail-remove-forced-flush'
+        })
+      }),
       Object.freeze({
         key: 'list-empty-item-remove',
         owner: listEmptyItemRemoveTransactionSourceSyncOwner,

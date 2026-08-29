@@ -96,6 +96,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_BOUNDARY,
+  LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY,
+  createListEmptyItemTailRemoveTransactionSourceSyncOwner
+} from './list-empty-item-tail-remove-transaction-owner.js'
+export {
   LIST_EMPTY_ITEM_REMOVE_TRANSACTION_BOUNDARY,
   LIST_EMPTY_ITEM_REMOVE_TRANSACTION_FAMILY,
   createListEmptyItemRemoveTransactionSourceSyncOwner

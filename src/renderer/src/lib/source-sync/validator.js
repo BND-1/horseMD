@@ -88,6 +88,35 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
     paragraphPath.at(-1) >= 1
   )
 
+  if (preservationReason === 'list-empty-item-tail-removed') {
+    const removedPath = preservationProof?.removedPath
+    const step = preservationProof?.step
+    if (
+      preservationProof?.kind !== 'transaction-list-empty-item-tail-remove-proof' ||
+      preservationProof?.family !== 'list-empty-item-tail-remove' ||
+      !['bullet_list', 'ordered_list'].includes(preservationProof?.listType) ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      preservationProof?.chainLength !== 1 ||
+      !Number.isInteger(preservationProof?.removedIndex) ||
+      preservationProof.removedIndex < 1 ||
+      !Array.isArray(removedPath) ||
+      removedPath.length !== 2 ||
+      removedPath[0] !== preservationProof.topLevelIndex ||
+      removedPath[1] !== preservationProof.removedIndex ||
+      listItemPath?.length !== 2 ||
+      listItemPath?.[1] !== preservationProof.removedIndex - 1 ||
+      !validPathPair ||
+      step?.name !== 'ReplaceStep' ||
+      step?.structure !== true ||
+      step?.sliceSize !== 0 ||
+      !Number.isFinite(step?.from) ||
+      !Number.isFinite(step?.to) ||
+      step.to <= step.from
+    ) return false
+    return [listItemPath]
+  }
+
   if (preservationReason === 'list-empty-item-removed') {
     const removedPath = preservationProof?.removedPath
     const step = preservationProof?.step

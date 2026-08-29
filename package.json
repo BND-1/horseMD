@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.151",
+  "version": "0.13.152",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -242,6 +242,9 @@
     "test:list-empty-item-remove-transaction-owner": "node scripts/test-list-empty-item-remove-transaction-owner.mjs",
     "test:list-empty-item-remove-transaction-ui": "node scripts/test-list-empty-item-remove-transaction-ui.mjs",
     "test:list-empty-item-remove-legacy-retirement-ui": "node scripts/test-list-empty-item-remove-legacy-retirement-ui.mjs",
+    "test:list-empty-item-tail-remove-transaction-owner": "node scripts/test-list-empty-item-tail-remove-transaction-owner.mjs",
+    "test:list-empty-item-tail-remove-transaction-ui": "node scripts/test-list-empty-item-tail-remove-transaction-ui.mjs",
+    "test:list-empty-item-tail-remove-legacy-retirement-ui": "node scripts/test-list-empty-item-tail-remove-legacy-retirement-ui.mjs",
     "test:list-item-paragraph-transaction-owner": "node scripts/test-list-item-paragraph-transaction-owner.mjs",
     "test:table-cell-transaction-owner": "node scripts/test-table-cell-transaction-owner.mjs",
     "test:table-cell-transaction-ui": "node scripts/test-table-cell-transaction-ui.mjs",
