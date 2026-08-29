@@ -40,8 +40,8 @@
 
 | 阶段 | 目标 | 当前状态 | 完成标志 |
 | --- | --- | --- | --- |
-| A | 收口 `0.13.148` 代码块显式退出与首批 legacy 退役 | **进行中** | 完整工作树版本通过 focused/global/build，排除未来草稿，形成本地提交 |
-| B | 完成剩余代码块生命周期 owner | 未开始正式接线 | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
+| A | 收口 `0.13.148` 代码块显式退出与首批 legacy 退役 | **完成：`9dafd76`** | 完整工作树版本通过 focused/global/build，排除未来草稿，形成本地提交 |
+| B | 完成剩余代码块生命周期 owner | **进行中：审计 `paragraph → code_block`** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | 未开始 | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
 | E | 退役 list legacy owners | 未开始 | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
@@ -104,6 +104,16 @@ build:mobile
 - 上述矩阵 exit 0。
 - staged 集合只含本阶段文件。
 - 本地提交后重跑 retirement UI、exit 三条 UI、middle-code、39/39 probes。
+
+### 实际完成记录（2026-08-29）
+
+- 本地提交：`9dafd76 refactor(editor): finish code block source authority`。
+- 提交范围：43 个文件，包含 `code-block-exit` 产品入口、owner、provenance、四项代码块 family 的 legacy 退役、负向 fence-collision 回归、版本文档和本路线图。
+- 提交前 focused 矩阵全部 exit 0：legacy retirement 静态/真实负例、code content、info、empty unpack、exit callback/staged/forced、middle-code source/save/cold-reopen。
+- 提交前 global 矩阵全部 exit 0：Journal、Coordinator、source mapper、flush policy、完整 preservation、39/39 probes、异构 fidelity、mixed immediate switch、tail-fence 两档、desktop build、mobile build。
+- post-commit smoke 全部 exit 0：retirement UI、exit callback/staged/forced、middle-code、39/39 probes。
+- 提交后 tracked/staged/unstaged 均为空；工作树只保留明确排除的阶段 B 草稿和历史 RS-44/73/76 临时复现文件。
+- 本阶段没有打包、安装、推送或发布；正式安装包资格验收仍属于阶段 I。
 
 ## 5. 阶段 B：剩余代码块生命周期
 
