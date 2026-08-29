@@ -54,7 +54,6 @@ import {
   preserveDivergedLeadingSpaceListWhitespaceTail,
   preserveDivergedTailBulletBodyEmptied,
   preserveDisplayMathBlockTextChange,
-  preserveFencedCodeBlockTextChange,
   preserveChangedLineRegion,
   preserveLocallyAlignedTextChange,
   preserveOrdinalLineTextChange,
@@ -1922,10 +1921,9 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     nextEnd
   })
   if (trailingEmptyPreserved) return trailingEmptyPreserved
-  // Display math and fenced code content each have a dedicated source boundary.
-  // Resolve them before the generic middle-block mapper, which otherwise treats
-  // their first content row as a paragraph insertion and can move/add bytes
-  // around the closing delimiter.
+  // Display math still has a dedicated legacy source boundary because it is
+  // not owned by the fenced-code Transaction Journal family. Fenced code-block
+  // content is transaction-owned and deliberately has no canonical-diff mapper.
   const displayMathPreserved = preserveDisplayMathBlockTextChange({
     source: sourceMarkdown,
     previous,
@@ -1933,13 +1931,6 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     start
   })
   if (displayMathPreserved) return displayMathPreserved
-  const fencedCodePreserved = preserveFencedCodeBlockTextChange({
-    source: sourceMarkdown,
-    previous,
-    next,
-    start
-  })
-  if (fencedCodePreserved) return fencedCodePreserved
   const middleEmptyPreserved = preserveMiddleEmptyBlock({
     source: sourceMarkdown,
     previous,

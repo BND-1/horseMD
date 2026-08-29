@@ -17,10 +17,13 @@
 | [rich-source-fidelity-bug-family.md](./rich-source-fidelity-bug-family.md) | 富文本编辑、模式切换、保存重开、列表、空段落与转义问题的家族总账和发布前回归合同 |
 | [family-root-cause-matrix.md](./family-root-cause-matrix.md) | 真实文件 4×5 家族矩阵、多轮保存重开根因、CRLF/尾换行/列表原子提交证据 |
 | [rich-source-divergence-incident-0.13.47.md](./rich-source-divergence-incident-0.13.47.md) | **P0 未解决**：0.13.47 自动化全绿但安装包真实长会话仍发生富文本/源码/磁盘分叉；含现场证据、测试缺口、统一 trace 要求与接手完成标准 |
-| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.147）**：revision-bound transaction journal、stable descendant path、structural owner registry、共享 list/code/quote/table/plain 生命周期与剩余结构族迁移门槛 |
+| [transaction-source-sync-architecture.md](./transaction-source-sync-architecture.md) | **当前架构状态（0.13.148）**：revision-bound transaction journal、stable descendant path、structural owner registry、共享 list/code/quote/table/plain 生命周期与剩余结构族迁移门槛 |
+| [source-rich-consistency-completion-plan.md](./source-rich-consistency-completion-plan.md) | **最终收口路线图**：从 0.13.148 检查点、剩余 owner、legacy 退役、普通段落 authority、特殊入口到安装包长会话 P0 关闭的阶段、门禁和 Definition of Done |
 | [transaction-journal-code-block-content-family.md](./transaction-journal-code-block-content-family.md) | 0.13.133 已有 fenced code block 正文迁移：逐 Step 所有权、BOM 物理坐标、作者围栏/CRLF 保真、callback/forced-flush 与冷重开证据 |
 | [transaction-journal-code-block-info-family.md](./transaction-journal-code-block-info-family.md) | 0.13.134 已有 fenced code block 语言 info string 迁移：AttrStep 所有权、opening info 物理范围、作者 padding/BOM/CRLF 保真与真实语言选择器双路径证据 |
+| [transaction-journal-code-block-exit.md](./transaction-journal-code-block-exit.md) | 0.13.148 非空 fenced code block 的 Mod+Enter显式退出：exact exitCode Step、pending/coalesced/staged provenance、bounded段落插入与三条真实持久化路径 |
 | [transaction-journal-empty-code-block-backspace.md](./transaction-journal-empty-code-block-backspace.md) | 0.13.146 空 fenced code block Backspace 解包迁移：完整 node ReplaceStep、同 journal 快速正文、forced-empty、作者围栏/BOM/CRLF 保真与冷重开证据 |
+| [transaction-journal-code-block-legacy-owner-retirement.md](./transaction-journal-code-block-legacy-owner-retirement.md) | 已接线代码块 family 的 legacy owner 退役矩阵：正文 dedicated mapper 删除、info/unpack/exit generic fallback 阻断、recognition边界与负向 fence-collision 证据 |
 | [transaction-journal-empty-code-list-paragraph-families.md](./transaction-journal-empty-code-list-paragraph-families.md) | 0.13.147 顶层 list-item plain paragraph raw owner、RS-72 exact PM path transient抑制及空代码块相邻生命周期门禁 |
 | [transaction-journal-blockquote-paragraph-family.md](./transaction-journal-blockquote-paragraph-family.md) | 0.13.135–0.13.136 已有 blockquote 同一直接子段落纯文字迁移：stable descendant path、作者 quote 前缀/BOM/CRLF 保真、callback/forced-flush、保存与冷重开证据 |
 | [transaction-journal-blockquote-split-family.md](./transaction-journal-blockquote-split-family.md) | 0.13.136 blockquote 中间 Enter 拆段迁移：nested-list PM nodePath、结构 Step 链、单行 bounded raw patch、歧义拒绝与真实双边界持久化证据 |

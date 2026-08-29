@@ -27,7 +27,10 @@ const validSnapshot = (snapshot) => Boolean(
   typeof snapshot.source === 'string' &&
   typeof snapshot.canonical === 'string' &&
   typeof snapshot.sourceDigest === 'string' &&
-  typeof snapshot.canonicalDigest === 'string'
+  typeof snapshot.canonicalDigest === 'string' &&
+  typeof snapshot.owner === 'string' &&
+  typeof snapshot.family === 'string' &&
+  typeof snapshot.reason === 'string'
 )
 
 const changedTransactions = (transactions) =>
@@ -106,6 +109,11 @@ const snapshotMismatchReason = (checkpoint, snapshot) => {
     checkpoint.baseCanonicalDigest !== snapshot.canonicalDigest ||
     checkpoint.canonical !== snapshot.canonical
   ) return 'transaction-journal-canonical-stale'
+  if (
+    checkpoint.baseOwner !== snapshot.owner ||
+    checkpoint.baseFamily !== snapshot.family ||
+    checkpoint.baseReason !== snapshot.reason
+  ) return 'transaction-journal-provenance-stale'
   return null
 }
 
@@ -129,6 +137,9 @@ export function verifySourceSyncTransactionJournalCheckpoint({
     baseRevision: checkpoint.baseRevision,
     baseSourceDigest: checkpoint.baseSourceDigest,
     baseCanonicalDigest: checkpoint.baseCanonicalDigest,
+    baseOwner: checkpoint.baseOwner,
+    baseFamily: checkpoint.baseFamily,
+    baseReason: checkpoint.baseReason,
     batchCount: checkpoint.batchCount,
     transactionCount: checkpoint.transactionCount,
     stepCount: checkpoint.stepCount,
@@ -259,6 +270,9 @@ export function createSourceSyncTransactionJournal({
       baseRevision: checkpoint?.baseRevision ?? snapshot.revision,
       baseSourceDigest: checkpoint?.baseSourceDigest || snapshot.sourceDigest,
       baseCanonicalDigest: checkpoint?.baseCanonicalDigest || snapshot.canonicalDigest,
+      baseOwner: checkpoint?.baseOwner ?? snapshot.owner,
+      baseFamily: checkpoint?.baseFamily ?? snapshot.family,
+      baseReason: checkpoint?.baseReason ?? snapshot.reason,
       source: checkpoint?.source ?? snapshot.source,
       canonical: checkpoint?.canonical ?? snapshot.canonical,
       oldDoc: checkpoint?.oldDoc || oldDoc,

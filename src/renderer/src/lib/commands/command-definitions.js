@@ -295,6 +295,15 @@ export const COMMAND_DEFINITIONS = [
     configurable: false
   },
   {
+    id: 'editor.code.exit',
+    fallbackTitle: 'Exit Code Block',
+    category: COMMAND_CATEGORIES.EDITOR,
+    context: COMMAND_CONTEXTS.EDITOR,
+    defaultKeybindings: ['Mod+Enter'],
+    editorOwned: true,
+    configurable: false
+  },
+  {
     id: 'editor.block.paragraph',
     titleKey: 'block.paragraph',
     category: COMMAND_CATEGORIES.EDITOR,

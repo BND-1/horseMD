@@ -4678,11 +4678,9 @@ assert.equal(
   'batched nested-list exit must insert the new outer empty item and promote unchanged canonical siblings without changing their marker/content bytes'
 )
 
-// A code block is a structural owner, even when an earlier list marker has
-// already made the authored source spelling differ from canonical. The first
-// committed characters in an empty middle fence must replace only the fence's
-// content region; the generic middle-paragraph mapper must not insert them
-// before the opening fence.
+// Fenced code-block content is now exclusively owned by the revision-bound
+// Transaction Journal path. The legacy canonical-diff layer must not claim the
+// same change, even when source/canonical already differ elsewhere.
 const middleCodeSource = [
   '# code block ownership',
   '',
@@ -4720,18 +4718,10 @@ const middleCodeResult = preserveRichMarkdownSource(
   middleCodePrevious,
   middleCodeNext
 )
-assert.equal(
-  middleCodeResult?.markdown,
-  middleCodeSource.replace(
-    ['```', '', '```'].join(String.fromCharCode(10)),
-    ['```', 'surge', '```'].join(String.fromCharCode(10))
-  ),
-  'first code-block content must stay between the authored fence boundaries'
-)
-assert.equal(
+assert.notEqual(
   middleCodeResult?.reason,
   'fenced-code-block-content-change',
-  'code-block content must be handled by its structural owner'
+  'legacy canonical-diff must not claim transaction-owned code-block content'
 )
 
 // Display math uses paired `$$` rows rather than backtick/tilde fences, but is

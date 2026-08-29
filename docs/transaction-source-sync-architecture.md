@@ -1,10 +1,10 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-29，HorseMD `0.13.147`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、顶层非任务列表项 direct plain paragraph、已有代码块正文、已有代码块 info string、空代码块 Backspace 解包、已有 blockquote text/split/join/exit、单一 table cell plain text、已有 table body-row insert/delete、simple-grid table column delete/insert/alignment/width，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化、空 fenced code block Backspace 解包、稳定 blockquote path 上的 text/split/join/exit、稳定 table cell path 内的纯文字 ReplaceStep、真实 `addRowAfter` / `deleteRow` 的 exact insertion/range Step、`deleteColumn` / `addColumnBefore` / `addColumnAfter` 的逐 row ReplaceStep 链、整列 alignment 与 colwidth 的逐 row ReplaceAroundStep/stepDoc 链，可直接 transaction-owned 发布；其中列宽属于 GFM 不可编码的 PM-only 元数据，成功后 source/canonical 原样不动，只推进 Coordinator expectedDoc。普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。除已迁移空块 Backspace 解包外的代码块围栏结构与块生命周期、表格 span/merge/split 等 GFM 不可表达 topology、插入空行/空列后同 journal 快速输入、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
+> 状态：2026-08-29，HorseMD `0.13.148`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、顶层非任务列表项 direct plain paragraph、已有代码块正文、已有代码块 info string、空代码块 Backspace 解包、非空代码块显式退出、已有 blockquote text/split/join/exit、单一 table cell plain text、已有 table body-row insert/delete、simple-grid table column delete/insert/alignment/width，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化、空 fenced code block Backspace 解包、稳定 blockquote path 上的 text/split/join/exit、稳定 table cell path 内的纯文字 ReplaceStep、真实 `addRowAfter` / `deleteRow` 的 exact insertion/range Step、`deleteColumn` / `addColumnBefore` / `addColumnAfter` 的逐 row ReplaceStep 链、整列 alignment 与 colwidth 的逐 row ReplaceAroundStep/stepDoc 链，可直接 transaction-owned 发布；其中列宽属于 GFM 不可编码的 PM-only 元数据，成功后 source/canonical 原样不动，只推进 Coordinator expectedDoc。普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。除已迁移的空块 Backspace 解包与非空代码块显式退出外，代码块围栏创建/删除/转换/边界合并等未迁移生命周期、表格 span/merge/split 等 GFM 不可表达 topology、插入空行/空列后同 journal 快速输入、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
 >
 > `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
 >
-> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，引用同段纯文字 family 见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)，引用拆分 family 见 [`transaction-journal-blockquote-split-family.md`](./transaction-journal-blockquote-split-family.md)，引用合并 family 见 [`transaction-journal-blockquote-join-family.md`](./transaction-journal-blockquote-join-family.md)，引用退出 family 见 [`transaction-journal-blockquote-exit-family.md`](./transaction-journal-blockquote-exit-family.md)，表格单元格 family 见 [`transaction-journal-table-cell-family.md`](./transaction-journal-table-cell-family.md)，表格行删除 family 见 [`transaction-journal-table-row-delete-family.md`](./transaction-journal-table-row-delete-family.md)，表格行新增 family 见 [`transaction-journal-table-row-insert-family.md`](./transaction-journal-table-row-insert-family.md)，表格列删除 family 见 [`transaction-journal-table-column-delete-family.md`](./transaction-journal-table-column-delete-family.md)，表格列新增 family 见 [`transaction-journal-table-column-insert-family.md`](./transaction-journal-table-column-insert-family.md)，表格列对齐 family 见 [`transaction-journal-table-column-alignment-family.md`](./transaction-journal-table-column-alignment-family.md)，表格列宽 family 见 [`transaction-journal-table-column-width-family.md`](./transaction-journal-table-column-width-family.md)，列表项正文与 RS-72 exact-path 合同见 [`transaction-journal-empty-code-list-paragraph-families.md`](./transaction-journal-empty-code-list-paragraph-families.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
+> `markdownUpdated` 与 forced flush 现在都先遍历共享 structural owner registry，再由严格 semantic/list-slot integrity gate 和 `SourceSyncCoordinator` 发布。journal 只在成功提交或证明 revision/source/doc 已陈旧时清空，不允许某个 family 私下重启基线。inline-code、frontmatter、Slash code/math、列表转换、paste/whole-document 等已登记入口继续共用 Coordinator snapshot/candidate/proof/validation 合同；generated scratch 与尚未迁移的结构仍保持 legacy fallback。代码块 legacy owner 退役矩阵见 [`transaction-journal-code-block-legacy-owner-retirement.md`](./transaction-journal-code-block-legacy-owner-retirement.md)，代码块显式退出 family 见 [`transaction-journal-code-block-exit.md`](./transaction-journal-code-block-exit.md)，代码块正文 family 的完整合同与 BOM 根因见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)，语言 info family 见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)，引用同段纯文字 family 见 [`transaction-journal-blockquote-paragraph-family.md`](./transaction-journal-blockquote-paragraph-family.md)，引用拆分 family 见 [`transaction-journal-blockquote-split-family.md`](./transaction-journal-blockquote-split-family.md)，引用合并 family 见 [`transaction-journal-blockquote-join-family.md`](./transaction-journal-blockquote-join-family.md)，引用退出 family 见 [`transaction-journal-blockquote-exit-family.md`](./transaction-journal-blockquote-exit-family.md)，表格单元格 family 见 [`transaction-journal-table-cell-family.md`](./transaction-journal-table-cell-family.md)，表格行删除 family 见 [`transaction-journal-table-row-delete-family.md`](./transaction-journal-table-row-delete-family.md)，表格行新增 family 见 [`transaction-journal-table-row-insert-family.md`](./transaction-journal-table-row-insert-family.md)，表格列删除 family 见 [`transaction-journal-table-column-delete-family.md`](./transaction-journal-table-column-delete-family.md)，表格列新增 family 见 [`transaction-journal-table-column-insert-family.md`](./transaction-journal-table-column-insert-family.md)，表格列对齐 family 见 [`transaction-journal-table-column-alignment-family.md`](./transaction-journal-table-column-alignment-family.md)，表格列宽 family 见 [`transaction-journal-table-column-width-family.md`](./transaction-journal-table-column-width-family.md)，列表项正文与 RS-72 exact-path 合同见 [`transaction-journal-empty-code-list-paragraph-families.md`](./transaction-journal-empty-code-list-paragraph-families.md)，Coordinator 合同见 [`source-sync-coordinator-phase-a.md`](./source-sync-coordinator-phase-a.md)。
 
 ## 1. 目标与不变量
 
@@ -40,7 +40,7 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 
 ### `lib/source-sync/transaction-journal.js`
 
-- 每个正常用户 dispatch batch 绑定一个不可变 `baseRevision`、source/canonical digest、oldDoc 与最终 expectedDoc；
+- 每个正常用户 dispatch batch 绑定一个不可变 `baseRevision`、source/canonical digest、snapshot `owner/family/reason` provenance、oldDoc 与最终 expectedDoc；同字节同revision但provenance被重标也视为stale；
 - 保存完整 transaction batch、逐 Step `stepDoc`、StepMap 和受限 step metadata，后续 family owner 可重建真实事务链而无需从 delayed canonical 反推操作；
 - 后续 batch 只有在 revision、source、canonical 与 `expectedDoc → oldDoc` 连续时才可追加；任何 gap、外部发布、容量超限或 stale snapshot 都整本 journal fail closed；
 - journal 自身不生成 Markdown，也不决定 family；它只提供统一生命周期和可审计证据。
@@ -73,6 +73,20 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - `editor-source-map.js` 统一把 remark 去除的 BOM offset 恢复为物理 raw 坐标，空代码块不再落到 opening fence 前的换行；
 - callback 与立即 forced flush 均通过 structural registry + Coordinator 发布；attrs/fence 变化、跨块编辑和围栏冲突继续 fail closed。完整合同见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)。
 
+### `components/editor-code-block-exit.js` 与固定命令入口
+
+- 命令总账登记不可配置、editor-owned的`editor.code.exit = Mod+Enter`；统一DOM keydown层只在事件目标位于当前EditorView的非空`.milkdown-code-block`时尝试执行，其他上下文不preventDefault；
+- CodeMirror DOM不是PM selection事实源。bridge用`view.nodeDOM(topLevelOffset)` identity/containment为主、`posAtDOM`区间为辅，要求唯一顶层非空`code_block`；无法映射、空块或foreign DOM均fail open；
+- bridge在临时EditorState中把selection放到该code block正文末尾，调用官方ProseMirror`exitCode`取得唯一doc-changing transaction，再dispatch到真实view；不暴露生产PM test hook、不先dispatch selection事务，也不自行构造文档Step；
+- 实测快速物理`Mod+Enter+XY`因rich-pending边界先forced-flush发布source不变pending checkpoint，再由下一revision staged journal写入文字；自然等待走markdownUpdated pending→staged，立即源码切换走forced pending→staged。
+
+### `lib/source-sync/code-block-exit-transaction-owner.js`
+
+- 只认领非空plain `code_block` 的显式退出；coalesced模式必须由exact closed `ReplaceStep`在code block after position插入空paragraph，后续Step只能编辑该段；staged模式要求oldDoc已有空段且journal基线provenance为上一轮transaction/code-block-exit publication；coalesced由纯owner合同保留，但当前DOM物理默认路径为pending→staged；
+- pending空段可source byte-identical发布并推进canonical/doc checkpoint；后续文字阶段再把最终段落raw bytes插入作者closing fence之后，不写`<br />`也不重排整个fence；
+- source与previous canonical的fenced range、正文和language必须分别与旧PM code block一致；作者tilde/backtick、fence长度、info padding、BOM/EOL、邻块与未编辑字节保持；空代码块、marks、直接非空插入、邻块/attrs混改、错误provenance与range/semantic歧义均fail closed；
+- callback/forced flush分别通过`transaction-code-block-exit-markdown-updated` / `transaction-code-block-exit-forced-flush`进入registry + Coordinator；物理回归同时要求DOM结构、代码正文、owner/provenance、source/save/CRLF disk/fresh-profile reopen和零warning。完整合同见 [`transaction-journal-code-block-exit.md`](./transaction-journal-code-block-exit.md)。
+
 ### `lib/source-sync/empty-code-block-unpack-transaction-owner.js`
 
 - 只认领一个空 `code_block` 原位解包为 plain paragraph 的真实 lifecycle；第一笔 closed `ReplaceStep` 必须覆盖旧节点完整 range，后续 Step 只能在同一 paragraph 内追加 plain text；
@@ -87,6 +101,14 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 通用 fence scanner 暴露 opening fence 与 info string 的物理字节范围；owner 分别验证作者 source、previous canonical 和 next canonical 的语言 token，只替换作者 `infoStart..infoEnd`；
 - 作者围栏字符/长度、info 前后 padding、BOM、EOL、正文和邻块保持 byte-stable；metadata、多 token、非法语言、正文混改、其它 attrs、跨块事务和 stale revision 均拒绝；
 - callback 与立即 forced flush 分别通过 `transaction-code-block-info-markdown-updated` / `transaction-code-block-info-forced-flush` 进入 structural registry + Coordinator。完整合同见 [`transaction-journal-code-block-info-family.md`](./transaction-journal-code-block-info-family.md)。
+
+### 已迁移代码块 family 的 legacy owner 退役
+
+- `code-block-content-replace` 曾有 dedicated canonical-diff mapper `preserveFencedCodeBlockTextChange()`；永久回归先证明旧分支存在时会命中，再删除函数、import和dispatcher调用。info、empty-unpack、exit没有同名 dedicated mapper，因此没有伪造“删除”，只退役 generic fallback；
+- structural registry为四项已迁移 family登记 `legacyRetired: true`。owner只有在真实Step/stepDoc分类与完整replay已经成功、后续raw source range/正文/language/fence/semantic证明失败时才返回`recognized: true`；分类、回放和callback mismatch保持未识别，以便其它owner继续消费同一本journal；
+- `legacyRetired && recognized` 生成`legacyBlocked`：`markdownUpdated`与forced flush均直接fail closed，不再调用`preserveRichMarkdownSource()`，不发布Coordinator candidate，也不覆盖作者source或磁盘。空代码块`awaiting-content`仍为`deferred + holdJournal`，不会误报；
+- fenced scanner/range helper继续保留，因为Transaction Journal需要它们证明作者围栏的物理范围；它们不决定family、不发布source，不属于legacy owner；
+- 真实负向回归在作者`~~~js`代码块末尾物理输入独立`~~~`行，要求transaction owner返回`code-block-source-fence-collision / recognized=true`，registry trace为`legacyBlocked=true`，富文本保留编辑并警告，但preservation/Coordinator/source/disk均不变。完整矩阵见 [`transaction-journal-code-block-legacy-owner-retirement.md`](./transaction-journal-code-block-legacy-owner-retirement.md)。
 
 ### `lib/source-sync/blockquote-paragraph-transaction-owner.js`
 
@@ -212,7 +234,8 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 
 - `markdownUpdated`、强制 flush、保存和源码切换仍保留原有安全网；
 - 所有普通用户 transaction batch 先进入唯一的 `pendingSourceSyncTransactionJournal`；list/code/plain focused owner 不得保留自己的生命周期 token，也不得在其他 publication 后静默 rebase；
-- structural registry 依次让 list subtree、existing code-block content、code-block info、blockquote paragraph/split/join/exit、table-cell、table-column-width、table-column-alignment、table-column-delete、table-column-insert、table-row-delete 与 table-row-insert owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- structural registry 依次让 list subtree、empty-code-block unpack、code-block exit、existing code-block content、code-block info、blockquote paragraph/split/join/exit、table-cell、table-column-width、table-column-alignment、table-column-delete、table-column-insert、table-row-delete 与 table-row-insert owner 处理可证明 family；普通段落 shadow/authority 再从同一 journal 规划。authority 成功时在 legacy diff 前发布，shadow 只比较 transaction 与 legacy candidate；
+- 已完成退役的代码块 entry带`legacyRetired`。普通未识别 rejection仍继续下一owner；只有Step链已识别family后的source/semantic rejection才阻断legacy fallback。candidate最终validation失败也保持阻断，避免“新owner证明失败→旧canonical猜测接管”；
 - `globalThis.__hmTransactionFirstAuthority = true` 仅放行已验收的普通段落 family；默认发布仍由 legacy 处理该 family。历史 broad `__hmTransactionSourcePrimary` 仅供专项测试/迁移实验；
 - callback 与 forced flush 共用 journal、ownership proof 和 Coordinator revision guard，成功时原子推进 source/canonical/checkpoint，失败时保持 authored baseline；forced flush 即使 canonical 未变化也先询问 pending journal，以支持列宽等 PM-only metadata family；
 - 不支持的结构继续走既有 legacy owner。只有 stale revision/source/doc 或成功 publication 会清空 journal，family rejection 本身不能销毁其它 owner 仍可能消费的证据；
@@ -297,6 +320,8 @@ npm run test:code-block-transaction-owner
 npm run test:middle-codeblock-source-ui
 npm run test:code-block-info-transaction-owner
 npm run test:code-block-info-transaction-ui
+npm run test:code-block-legacy-owner-retirement
+npm run test:code-block-legacy-owner-retirement-ui
 npm run test:empty-code-block-unpack-transaction-owner
 npm run test:empty-code-block-unpack-transaction-ui
 npm run test:blockquote-paragraph-transaction-owner

@@ -25,6 +25,7 @@ export const EMPTY_CODE_BLOCK_UNPACK_TRANSACTION_BOUNDARY =
 const rejected = (reason, {
   deferred = false,
   holdJournal = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
@@ -32,9 +33,15 @@ const rejected = (reason, {
   decision: 'rejected',
   deferred,
   holdJournal,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const isPlainParagraph = (node) => {
@@ -381,24 +388,24 @@ export function createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
       side: 'previous-canonical'
     })
     if (!sourceRange || !previousRange) {
-      return rejected('empty-code-block-unpack-range-unmapped')
+      return recognizedRejection('empty-code-block-unpack-range-unmapped')
     }
     if (
       fencedCodeBlockContent(journal.source, sourceRange) !== '' ||
       fencedCodeBlockContent(journal.canonical, previousRange) !== ''
-    ) return rejected('empty-code-block-unpack-source-content-mismatch')
+    ) return recognizedRejection('empty-code-block-unpack-source-content-mismatch')
 
     const language = codeBlockLanguage(classification.originalBlock)
     if (!validCodeBlockLanguage(language)) {
-      return rejected('empty-code-block-unpack-language-invalid')
+      return recognizedRejection('empty-code-block-unpack-language-invalid')
     }
     const sourceInfo = parseLanguageOnlyFenceInfo(journal.source, sourceRange)
     const previousInfo = parseLanguageOnlyFenceInfo(journal.canonical, previousRange)
     if (!sourceInfo || !previousInfo) {
-      return rejected('empty-code-block-unpack-info-invalid')
+      return recognizedRejection('empty-code-block-unpack-info-invalid')
     }
     if (sourceInfo.language !== language || previousInfo.language !== language) {
-      return rejected('empty-code-block-unpack-language-mismatch')
+      return recognizedRejection('empty-code-block-unpack-language-mismatch')
     }
 
     const finalText = classification.finalParagraph.textContent || ''
@@ -415,10 +422,10 @@ export function createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
     try {
       semanticOk = validateMarkdown({ markdown, expectedDoc }) === true
     } catch {
-      return rejected('empty-code-block-unpack-semantic-validator-threw')
+      return recognizedRejection('empty-code-block-unpack-semantic-validator-threw')
     }
     if (!semanticOk) {
-      return rejected('empty-code-block-unpack-semantic-document-mismatch')
+      return recognizedRejection('empty-code-block-unpack-semantic-document-mismatch')
     }
 
     const forcedFlush = boundary.endsWith('forced-flush')

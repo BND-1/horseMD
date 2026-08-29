@@ -22,15 +22,22 @@ export const CODE_BLOCK_TRANSACTION_BOUNDARY = 'transaction-code-block-content'
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const plainSliceText = (slice) => {
@@ -259,28 +266,28 @@ export function createCodeBlockTransactionSourceSyncOwner({
       side: 'next-canonical'
     })
     if (!sourceRange || !previousRange || !nextRange) {
-      return rejected('code-block-range-unmapped')
+      return recognizedRejection('code-block-range-unmapped')
     }
     if (
       normalizedFenceLine(previousRange.openLine) !== normalizedFenceLine(nextRange.openLine) ||
       normalizedFenceLine(previousRange.closeLine) !== normalizedFenceLine(nextRange.closeLine) ||
       previousRange.char !== nextRange.char ||
       previousRange.length !== nextRange.length
-    ) return rejected('code-block-canonical-fence-changed')
+    ) return recognizedRejection('code-block-canonical-fence-changed')
 
     const previousText = classification.previousBlock.textContent || ''
     const nextText = classification.nextBlock.textContent || ''
     if (fencedCodeBlockContent(journal.source, sourceRange) !== previousText) {
-      return rejected('code-block-source-content-mismatch')
+      return recognizedRejection('code-block-source-content-mismatch')
     }
     if (fencedCodeBlockContent(journal.canonical, previousRange) !== previousText) {
-      return rejected('code-block-previous-canonical-content-mismatch')
+      return recognizedRejection('code-block-previous-canonical-content-mismatch')
     }
     if (fencedCodeBlockContent(canonical, nextRange) !== nextText) {
-      return rejected('code-block-next-canonical-content-mismatch')
+      return recognizedRejection('code-block-next-canonical-content-mismatch')
     }
     if (sourceFenceCollides(sourceRange, nextText)) {
-      return rejected('code-block-source-fence-collision')
+      return recognizedRejection('code-block-source-fence-collision')
     }
 
     const eol = lineEndingNear(journal.source, sourceRange.contentStart)
@@ -297,7 +304,7 @@ export function createCodeBlockTransactionSourceSyncOwner({
       resolveMarkdownOffset
     })
     if (!mappedBlock || fencedCodeBlockContent(markdown, mappedBlock) !== nextText) {
-      return rejected('code-block-mapped-content-mismatch')
+      return recognizedRejection('code-block-mapped-content-mismatch')
     }
 
     const proof = Object.freeze({

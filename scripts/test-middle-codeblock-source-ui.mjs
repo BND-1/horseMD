@@ -202,6 +202,15 @@ const assertTransactionPublication = (state, marker, expectedBoundary, label) =>
   assert.equal(preservation.integrityProof.transactionJournal?.baseRevision, finalCapture.baseRevision)
   assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
   assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
+  assert.equal(state.preserve.some((entry) =>
+    entry.reason === 'fenced-code-block-content-change' &&
+    entry.integrityProof?.kind !== 'transaction-code-block-content-proof'
+  ), false, `${label} allowed the retired legacy content mapper to publish`)
+  assert.equal(state.coordinator.some((entry) =>
+    entry.phase === 'published' &&
+    entry.owner === 'legacy' &&
+    entry.reason === 'fenced-code-block-content-change'
+  ), false, `${label} published code-block content through the legacy owner`)
 
   assert.equal(state.integrity.some((entry) =>
     entry.preservationReason === 'fenced-code-block-content-change' &&

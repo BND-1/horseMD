@@ -13,8 +13,10 @@ export {
   sourceSyncCandidateMatchesValidation
 } from './proof.js'
 export {
+  blocksRetiredLegacySourceSyncFallback,
   createLegacySourceSyncCandidateFromResult,
-  createLegacySourceSyncOwner
+  createLegacySourceSyncOwner,
+  retiredLegacySourceSyncFailureReason
 } from './legacy-owner.js'
 export {
   createLegacySourceIntegrityValidator,
@@ -73,6 +75,11 @@ export {
   CODE_BLOCK_TRANSACTION_FAMILY,
   createCodeBlockTransactionSourceSyncOwner
 } from './code-block-transaction-owner.js'
+export {
+  CODE_BLOCK_EXIT_TRANSACTION_BOUNDARY,
+  CODE_BLOCK_EXIT_TRANSACTION_FAMILY,
+  createCodeBlockExitTransactionSourceSyncOwner
+} from './code-block-exit-transaction-owner.js'
 export {
   EMPTY_CODE_BLOCK_UNPACK_TRANSACTION_BOUNDARY,
   EMPTY_CODE_BLOCK_UNPACK_TRANSACTION_FAMILY,

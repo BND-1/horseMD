@@ -188,6 +188,15 @@ const assertOwned = (state, scenario) => {
     entry.reason === 'paragraph-emptied' ||
     entry.reason === 'middle-empty-block-filled'
   ), false, `${scenario.name} fell back to legacy lifecycle mapping`)
+  assert.equal(state.preserve.some((entry) =>
+    entry.reason === 'empty-fenced-code-block-backspace-unpack' &&
+    entry.integrityProof?.kind !== 'transaction-empty-code-block-unpack-proof'
+  ), false, `${scenario.name} allowed a legacy empty-code-block publication`)
+  assert.equal(state.coordinator.some((entry) =>
+    entry.phase === 'published' &&
+    entry.owner === 'legacy' &&
+    entry.reason === 'empty-fenced-code-block-backspace-unpack'
+  ), false, `${scenario.name} published empty-code-block unpack through legacy`)
   assert.equal(state.integrity.some((entry) => entry.ok === false), false,
     `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.integrity.some((entry) =>

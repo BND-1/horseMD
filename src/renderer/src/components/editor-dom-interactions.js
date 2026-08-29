@@ -2,6 +2,7 @@ import { TextSelection } from '@milkdown/prose/state'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
 import { isReadOnlyMutationKey } from './editor-read-only.js'
+import { exitCodeBlockFromDomEvent } from './editor-code-block-exit.js'
 import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
@@ -136,12 +137,19 @@ export function mountEditorInteractionBindings({
     }
     markUserEdit()
     if (exitIsolatedEmptyBulletAfterOrdered(event)) return
+    const keybindings = getKeybindings?.() || getEffectiveKeybindingMap()
+    const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
+    if (
+      keybindingMatchesEvent(keybindings['editor.code.exit']?.[0], event, platform) &&
+      exitCodeBlockFromDomEvent({ event, view: viewRef.current || view })
+    ) {
+      onRichEditPending?.()
+      return
+    }
     if (!event.ctrlKey && !event.metaKey && !event.altKey &&
       (event.key === ' ' || event.code === 'Space')) {
       noteListInputRuleIntent()
     }
-    const keybindings = getKeybindings?.() || getEffectiveKeybindingMap()
-    const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
     if (keybindingMatchesEvent(keybindings['editor.block.paragraph']?.[0], event, platform)) {
       event.preventDefault()
       setBlock('paragraph')

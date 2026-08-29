@@ -63,6 +63,23 @@ export const validCodeBlockLanguage = (value) => {
   return true
 }
 
+const nextNonblankPhysicalLine = (markdown, start) => {
+  const source = String(markdown || '')
+  let cursor = Math.max(0, Math.min(Number(start) || 0, source.length))
+  while (cursor < source.length) {
+    const newline = source.indexOf('\n', cursor)
+    const end = newline < 0 ? source.length : newline
+    const next = newline < 0 ? source.length : newline + 1
+    const raw = source.slice(cursor, end)
+    const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw
+    if (text.trim()) {
+      return Object.freeze({ start: cursor, end, next, text })
+    }
+    cursor = next
+  }
+  return null
+}
+
 export const resolveFencedCodeBlockRange = ({
   markdown,
   doc,
@@ -88,10 +105,15 @@ export const resolveFencedCodeBlockRange = ({
   if (!Number.isFinite(rawOffset)) return null
   const block = fencedCodeBlockAt(markdown, rawOffset)
   if (!block) return null
+  const source = String(markdown || '')
+  const endWithEol = block.closeEnd + (source[block.closeEnd] === '\n' ? 1 : 0)
   return Object.freeze({
     ...block,
     start: block.openStart,
     end: block.closeEnd,
+    endWithEol,
+    contentEnd: block.closeStart,
+    nextNonblank: nextNonblankPhysicalLine(source, endWithEol),
     pmPos,
     rawOffset
   })

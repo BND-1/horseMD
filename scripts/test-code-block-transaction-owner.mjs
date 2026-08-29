@@ -150,7 +150,7 @@ const outsideJournal = journal.captureOrAdvance({
   oldDoc,
   newDoc: outsideNext.doc
 }).checkpoint
-assert.equal(owner.plan({
+const outsidePlan = owner.plan({
   journal: outsideJournal,
   activeJournal: outsideJournal,
   snapshot,
@@ -159,7 +159,9 @@ assert.equal(owner.plan({
   canonical: '# Heading\n\n```js\nalpha\n```\n\ntail!\n',
   expectedDoc: outsideNext.doc,
   callbackDocumentEquivalent: true
-}).reason, 'code-block-top-level-node-type')
+})
+assert.equal(outsidePlan.reason, 'code-block-top-level-node-type')
+assert.notEqual(outsidePlan.recognized, true)
 
 const attrsState = EditorState.create({ schema, doc: oldDoc })
 const attrs = attrsState.tr.setNodeMarkup(topLevelStart(oldDoc, 1), null, { language: 'ts' })
@@ -170,7 +172,7 @@ const attrsJournal = journal.captureOrAdvance({
   oldDoc,
   newDoc: attrsNext.doc
 }).checkpoint
-assert.equal(owner.plan({
+const attrsPlan = owner.plan({
   journal: attrsJournal,
   activeJournal: attrsJournal,
   snapshot,
@@ -179,7 +181,9 @@ assert.equal(owner.plan({
   canonical: '# Heading\n\n```ts\nalpha\n```\n\ntail\n',
   expectedDoc: attrsNext.doc,
   callbackDocumentEquivalent: true
-}).reason, 'code-block-attrs-changed')
+})
+assert.equal(attrsPlan.reason, 'code-block-attrs-changed')
+assert.notEqual(attrsPlan.recognized, true)
 
 const collisionState = EditorState.create({ schema, doc: oldDoc })
 const collision = collisionState.tr.insertText('\n~~~', codeContentStart + 'alpha'.length)
@@ -190,7 +194,7 @@ const collisionJournal = journal.captureOrAdvance({
   oldDoc,
   newDoc: collisionNext.doc
 }).checkpoint
-assert.equal(owner.plan({
+const collisionPlan = owner.plan({
   journal: collisionJournal,
   activeJournal: collisionJournal,
   snapshot,
@@ -199,7 +203,9 @@ assert.equal(owner.plan({
   canonical: '# Heading\n\n```js\nalpha\n~~~\n```\n\ntail\n',
   expectedDoc: collisionNext.doc,
   callbackDocumentEquivalent: true
-}).reason, 'code-block-source-fence-collision')
+})
+assert.equal(collisionPlan.reason, 'code-block-source-fence-collision')
+assert.equal(collisionPlan.recognized, true)
 
 assert.equal(owner.plan({
   journal: advanced.checkpoint,

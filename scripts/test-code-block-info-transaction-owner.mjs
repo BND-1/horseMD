@@ -192,12 +192,14 @@ const makePlan = ({
     .setNodeAttribute(codePos, 'language', 'Python')
     .insertText('X', codePos + 1 + 'alpha'.length)
   const nextState = stateWithContent.apply(tr)
-  assert.equal(makePlan({
+  const result = makePlan({
     transaction: tr,
     newState: nextState,
     next: '# Heading\n\n```Python\nalphaX\n```\n\ntail\n',
     revision: 15
-  }).reason, 'code-block-info-content-changed')
+  })
+  assert.equal(result.reason, 'code-block-info-content-changed')
+  assert.notEqual(result.recognized, true)
 }
 
 {
@@ -229,13 +231,15 @@ for (const value of ['Type Script', 'bad`lang', 'line\nbreak']) {
   const metadataState = EditorState.create({ schema, doc: oldDoc })
   const tr = metadataState.tr.setNodeAttribute(codePos, 'language', 'Python')
   const nextState = metadataState.apply(tr)
-  assert.equal(makePlan({
+  const result = makePlan({
     baseSource: metadataSource,
     transaction: tr,
     newState: nextState,
     next: '# Heading\n\n```Python\nalpha\n```\n\ntail\n',
     revision: 30
-  }).reason, 'code-block-info-source-not-language-only')
+  })
+  assert.equal(result.reason, 'code-block-info-source-not-language-only')
+  assert.equal(result.recognized, true)
 }
 
 {
@@ -267,7 +271,7 @@ for (const value of ['Type Script', 'bad`lang', 'line\nbreak']) {
   }).reason, 'code-block-info-top-level-change-count')
 }
 
-assert.equal(owner.plan({
+const callbackMismatch = owner.plan({
   journal: advanced.checkpoint,
   activeJournal: advanced.checkpoint,
   snapshot,
@@ -276,7 +280,9 @@ assert.equal(owner.plan({
   canonical: nextCanonical,
   expectedDoc: secondState.doc,
   callbackDocumentEquivalent: false
-}).reason, 'code-block-info-callback-document-mismatch')
+})
+assert.equal(callbackMismatch.reason, 'code-block-info-callback-document-mismatch')
+assert.notEqual(callbackMismatch.recognized, true)
 
 const staleSnapshot = createSourceSyncSnapshot({
   revision: 99,

@@ -327,64 +327,6 @@ export const fencedCodeBlockAt = (markdown, offset) => {
   ) || null
 }
 
-// Code-block content is a distinct transaction owner. When an empty fenced
-// block in the middle of a diverged document receives its first characters,
-// the visible-line mapper sees only a new plain line and the generic middle
-// paragraph handler can insert that text before the opening fence. Prove the
-// edit against the paired fence boundaries first and replace only the source
-// block's content region; never let a paragraph mapper own this transaction.
-export const preserveFencedCodeBlockTextChange = ({
-  source,
-  previous,
-  next,
-  start
-}) => {
-  const previousBlocks = fencedBlocks(previous)
-  const nextBlocks = fencedBlocks(next)
-  const previousIndex = previousBlocks.findIndex((block) =>
-    start >= block.contentStart && start <= block.closeStart
-  )
-  if (previousIndex < 0 || previousIndex >= nextBlocks.length) return null
-  const previousBlock = previousBlocks[previousIndex]
-  const nextBlock = nextBlocks[previousIndex]
-  if (
-    previousBlock.openLine !== nextBlock.openLine ||
-    previousBlock.closeLine !== nextBlock.closeLine ||
-    previous.slice(0, previousBlock.openStart) !== next.slice(0, nextBlock.openStart) ||
-    previous.slice(previousBlock.closeEnd) !== next.slice(nextBlock.closeEnd)
-  ) return null
-
-  const sourceBlocks = fencedBlocks(source)
-  const sourceBlock = sourceBlocks[previousIndex]
-  if (!sourceBlock) return null
-  if (
-    sourceBlock.char !== previousBlock.char ||
-    sourceBlock.length !== previousBlock.length ||
-    sourceVisibleIndex(source.slice(sourceBlock.contentStart, sourceBlock.closeStart)).text !==
-      sourceVisibleIndex(previous.slice(previousBlock.contentStart, previousBlock.closeStart)).text
-  ) return null
-
-  const sourceContent = source.slice(sourceBlock.contentStart, sourceBlock.closeStart)
-  const nextContent = next.slice(nextBlock.contentStart, nextBlock.closeStart)
-  const eol = source.includes(String.fromCharCode(13, 10))
-    ? String.fromCharCode(13, 10)
-    : String.fromCharCode(10)
-  const replacement = nextContent
-    .split(String.fromCharCode(13, 10)).join(eol)
-    .split(String.fromCharCode(13)).join(eol)
-    .split(String.fromCharCode(10)).join(eol)
-  return {
-    markdown: source.slice(0, sourceBlock.contentStart) +
-      replacement +
-      source.slice(sourceBlock.closeStart),
-    preserved: true,
-    reason: 'fenced-code-block-content-change',
-    sourceContent,
-    canonicalContent: previous.slice(previousBlock.contentStart, previousBlock.closeStart),
-    nextContent
-  }
-}
-
 const lineRegion = (markdown, start, end) => {
   const first = lineAt(markdown, start)
   // `end` is exclusive. When a structural insertion is exactly a newline,

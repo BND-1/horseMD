@@ -157,7 +157,15 @@ npm run test:source-transaction-sync
 - 列表 structural owner callback/forced-flush 继续通过；
 - source fidelity probes 为 `39/39`。
 
-## 7. 下一迁移顺序
+## 7. Legacy canonical owner 退役
+
+0.13.148 的退役审计已物理删除 dedicated `preserveFencedCodeBlockTextChange()`、其 import 与总 dispatcher 调用。旧的“中间空代码块首批正文”正向 canonical-diff 单测改为反向合同：legacy层不得再返回 `fenced-code-block-content-change`。
+
+仅删除 dedicated mapper仍不充分。诊断证明 generic `middle-block-inserted` 会把同一变化重新认领并把正文移到 opening fence 外，因此生产registry为本family登记`legacyRetired`：只有Step/journal已完整分类为`code-block-content-replace`、随后source range或fence proof失败时才标记`recognized`并阻断legacy fallback；普通分类失败仍允许后续owner继续。
+
+作者tilde fence中物理输入冲突`~~~`行的负向Electron回归要求富文本编辑可见、warning出现、trace为`recognized=true / legacyBlocked=true`，且没有preservation/Coordinator publication、source与磁盘逐字不变。完整审计与另外三类代码块family的边界见 [`transaction-journal-code-block-legacy-owner-retirement.md`](./transaction-journal-code-block-legacy-owner-retirement.md)。
+
+## 8. 下一迁移顺序
 
 下一步不是扩大本 owner，而是建立新的 family：
 

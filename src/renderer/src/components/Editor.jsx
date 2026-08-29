@@ -56,10 +56,12 @@ import {
 } from '../lib/source-transaction-sync.js'
 import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
+  blocksRetiredLegacySourceSyncFallback,
   createBlockquoteExitTransactionSourceSyncOwner,
   createBlockquoteJoinTransactionSourceSyncOwner,
   createBlockquoteParagraphTransactionSourceSyncOwner,
   createBlockquoteSplitTransactionSourceSyncOwner,
+  createCodeBlockExitTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
@@ -80,7 +82,8 @@ import {
   createTableRowInsertTransactionSourceSyncOwner,
   createSlashBlockSourceSyncOwner,
   createSourceSyncCheckpointStore,
-  findSlashCodeBlockAtSelection
+  findSlashCodeBlockAtSelection,
+  retiredLegacySourceSyncFailureReason
 } from '../lib/source-sync/index.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
@@ -538,6 +541,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const codeBlockExitTransactionSourceSyncOwner =
+      createCodeBlockExitTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const codeBlockTransactionSourceSyncOwner = createCodeBlockTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
@@ -624,15 +632,27 @@ export default function Editor({
         key: 'empty-code-block-unpack',
         owner: emptyCodeBlockUnpackTransactionSourceSyncOwner,
         traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-empty-code-block-unpack-markdown-updated',
           'forced-flush': 'transaction-empty-code-block-unpack-forced-flush'
         })
       }),
       Object.freeze({
+        key: 'code-block-exit',
+        owner: codeBlockExitTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-code-block-exit-markdown-updated',
+          'forced-flush': 'transaction-code-block-exit-forced-flush'
+        })
+      }),
+      Object.freeze({
         key: 'code-block',
         owner: codeBlockTransactionSourceSyncOwner,
         traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-code-block-markdown-updated',
           'forced-flush': 'transaction-code-block-forced-flush'
@@ -642,6 +662,7 @@ export default function Editor({
         key: 'code-block-info',
         owner: codeBlockInfoTransactionSourceSyncOwner,
         traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-code-block-info-markdown-updated',
           'forced-flush': 'transaction-code-block-info-forced-flush'
@@ -1267,12 +1288,18 @@ export default function Editor({
           boundary
         })
         if (!ownership.ok) {
+          const legacyBlocked = blocksRetiredLegacySourceSyncFallback({
+            ownerEntry: entry,
+            ownership
+          })
           pushStructuralTransactionTrace(entry, {
             phase: 'plan',
             ok: false,
             family: entry.owner.family,
             reason: ownership.reason || null,
             proof: ownership.proof || null,
+            recognized: ownership.recognized === true,
+            legacyBlocked,
             journalId: journal.journalId,
             baseRevision: journal.baseRevision,
             chainLength: journal.transactionCount
@@ -1282,18 +1309,21 @@ export default function Editor({
             ok: false,
             deferred: ownership.deferred === true,
             holdJournal: ownership.holdJournal === true,
+            recognized: ownership.recognized === true,
+            legacyBlocked,
             reason: ownership.reason || null,
             family: entry.owner.family,
             proof: ownership.proof || null
           }
           if (ownership.holdJournal === true) heldRejection = lastRejection
           // A stale revision/source/doc invalidates the shared journal for every
-          // family. Ordinary family rejection must leave it available for the
-          // next registered owner and the legacy fallback.
+          // family. Unrecognized rejection remains available to the next owner.
+          // A recognized family whose legacy branch is retired must fail closed.
           if (ownership.reset) {
             pendingSourceSyncTransactionJournal = null
             return { ...lastRejection, reset: true }
           }
+          if (legacyBlocked) return lastRejection
           continue
         }
 
@@ -1303,11 +1333,13 @@ export default function Editor({
           boundary
         })
         if (!coordinated?.ok) {
+          const legacyBlocked = entry.legacyRetired === true
           pushStructuralTransactionTrace(entry, {
             phase: 'publish',
             ok: false,
             family: ownership.family,
             reason: coordinated?.reason || 'source-document-mismatch',
+            legacyBlocked,
             journalId: journal.journalId,
             baseRevision: journal.baseRevision,
             chainLength: journal.transactionCount
@@ -1315,6 +1347,7 @@ export default function Editor({
           return {
             attempted: true,
             ok: false,
+            legacyBlocked,
             reason: coordinated?.reason || 'source-document-mismatch',
             family: ownership.family
           }
@@ -1505,7 +1538,11 @@ export default function Editor({
         site: 'forced-flush',
         notifyChange
       })
-      if (structuralResult.ok || transactionFirstMode() !== 'authoritative') {
+      if (
+        structuralResult.ok ||
+        structuralResult.legacyBlocked === true ||
+        transactionFirstMode() !== 'authoritative'
+      ) {
         return structuralResult
       }
 
@@ -1889,6 +1926,14 @@ export default function Editor({
               clearRichFlushPending()
               pendingRawMarkdownPasteRef.current = null
               pendingListConversion = null
+              userEditUntil = Date.now() + 1000
+              return
+            }
+            const retiredLegacyFailure = retiredLegacySourceSyncFailureReason(
+              ownedStructuralTransaction
+            )
+            if (retiredLegacyFailure) {
+              reportSourceSyncFailure(retiredLegacyFailure)
               userEditUntil = Date.now() + 1000
               return
             }

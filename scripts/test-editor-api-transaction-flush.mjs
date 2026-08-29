@@ -66,6 +66,23 @@ const doc = Object.freeze({ id: 'live-doc' })
 }
 
 {
+  const blocked = Object.freeze({
+    attempted: true,
+    ok: false,
+    legacyBlocked: true,
+    family: 'code-block-content-replace',
+    reason: 'code-block-source-fence-collision'
+  })
+  const result = publishPendingSourceSyncJournalForFlush({
+    canonical: 'changed\n',
+    expectedDoc: doc,
+    publishPendingTransactionJournal: () => blocked
+  })
+  assert.equal(result, blocked,
+    'forced-flush policy must preserve a retired-family legacy block decision')
+}
+
+{
   const result = publishPendingSourceSyncJournalForFlush({
     canonical: 'same\n',
     expectedDoc: doc,
@@ -75,5 +92,6 @@ const doc = Object.freeze({ id: 'live-doc' })
   assert.equal(result.ok, false)
   assert.equal(result.reason, 'pending-transaction-journal-invalid-result')
 }
+
 
 console.log('PASS editor-api transaction flush policy: canonical-unchanged PM metadata delegates to the shared journal before committed-baseline handling, while generated scratch and missing publishers stay isolated')

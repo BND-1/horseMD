@@ -140,6 +140,8 @@ const planFor = ({
   assert.equal(plan.reason, 'empty-code-block-unpack-awaiting-content')
   assert.equal(plan.deferred, true)
   assert.equal(plan.holdJournal, true)
+  assert.notEqual(plan.recognized, true,
+    'pending empty paragraph must hold the journal without failing closed')
   assert.equal(plan.proof.kind, 'transaction-empty-code-block-unpack-proof')
   assert.equal(plan.proof.mode, 'pending-empty')
   assert.equal(plan.proof.finalText, '')
@@ -203,6 +205,7 @@ const planFor = ({
     revision: 813
   })
   assert.equal(plan.reason, 'empty-code-block-unpack-source-not-empty')
+  assert.notEqual(plan.recognized, true)
 }
 
 {
@@ -275,6 +278,7 @@ const planFor = ({
     callbackDocumentEquivalent: true
   })
   assert.equal(plan.reason, 'empty-code-block-unpack-language-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -313,6 +317,7 @@ const planFor = ({
     validateMarkdown: () => false
   })
   assert.equal(plan.reason, 'empty-code-block-unpack-semantic-document-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -324,6 +329,7 @@ const planFor = ({
   })
   assert.equal(plan.reason, 'empty-code-block-unpack-callback-document-mismatch')
   assert.equal(plan.deferred, true)
+  assert.notEqual(plan.recognized, true)
 }
 
 {

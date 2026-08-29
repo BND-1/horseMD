@@ -23,15 +23,22 @@ export const CODE_BLOCK_INFO_TRANSACTION_BOUNDARY = 'transaction-code-block-info
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const classifyCodeBlockInfoJournal = ({ journal, expectedDoc }) => {
@@ -254,34 +261,34 @@ export function createCodeBlockInfoTransactionSourceSyncOwner({
       side: 'next-canonical'
     })
     if (!sourceRange || !previousRange || !nextRange) {
-      return rejected('code-block-info-range-unmapped')
+      return recognizedRejection('code-block-info-range-unmapped')
     }
 
     const sourceInfo = parseLanguageOnlyFenceInfo(journal.source, sourceRange)
     const previousInfo = parseLanguageOnlyFenceInfo(journal.canonical, previousRange)
     const nextInfo = parseLanguageOnlyFenceInfo(canonical, nextRange)
-    if (!sourceInfo) return rejected('code-block-info-source-not-language-only')
-    if (!previousInfo) return rejected('code-block-info-previous-not-language-only')
-    if (!nextInfo) return rejected('code-block-info-next-not-language-only')
+    if (!sourceInfo) return recognizedRejection('code-block-info-source-not-language-only')
+    if (!previousInfo) return recognizedRejection('code-block-info-previous-not-language-only')
+    if (!nextInfo) return recognizedRejection('code-block-info-next-not-language-only')
     if (
       sourceInfo.language !== classification.previousLanguage ||
       previousInfo.language !== classification.previousLanguage ||
       nextInfo.language !== classification.nextLanguage
-    ) return rejected('code-block-info-language-source-mismatch')
+    ) return recognizedRejection('code-block-info-language-source-mismatch')
 
     const unchangedText = classification.previousBlock.textContent || ''
     if (
       fencedCodeBlockContent(journal.source, sourceRange) !== unchangedText ||
       fencedCodeBlockContent(journal.canonical, previousRange) !== unchangedText ||
       fencedCodeBlockContent(canonical, nextRange) !== unchangedText
-    ) return rejected('code-block-info-content-source-mismatch')
+    ) return recognizedRejection('code-block-info-content-source-mismatch')
     if (
       previousRange.char !== nextRange.char ||
       previousRange.length !== nextRange.length ||
       normalizedFenceLine(previousRange.closeLine) !== normalizedFenceLine(nextRange.closeLine) ||
       journal.canonical.slice(0, previousRange.infoStart) !== canonical.slice(0, nextRange.infoStart) ||
       journal.canonical.slice(previousRange.infoEnd) !== canonical.slice(nextRange.infoEnd)
-    ) return rejected('code-block-info-canonical-outside-info-changed')
+    ) return recognizedRejection('code-block-info-canonical-outside-info-changed')
 
     const replacementInfo = sourceInfo.leading +
       classification.nextLanguage +
@@ -304,7 +311,7 @@ export function createCodeBlockInfoTransactionSourceSyncOwner({
       mappedRange.length !== sourceRange.length ||
       mappedRange.closeLine !== sourceRange.closeLine ||
       fencedCodeBlockContent(markdown, mappedRange) !== unchangedText
-    ) return rejected('code-block-info-mapped-source-mismatch')
+    ) return recognizedRejection('code-block-info-mapped-source-mismatch')
 
     const proof = Object.freeze({
       kind: 'transaction-code-block-info-proof',

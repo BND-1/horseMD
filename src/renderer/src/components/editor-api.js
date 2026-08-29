@@ -23,6 +23,7 @@ import { strikethroughSchema } from '@milkdown/kit/preset/gfm'
 import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
 import { settleEditorMarkdown } from '../lib/editor-flush-settle.js'
 import { publishPendingSourceSyncJournalForFlush } from '../lib/source-sync/flush-journal.js'
+import { retiredLegacySourceSyncFailureReason } from '../lib/source-sync/legacy-owner.js'
 
 export function createEditorApi({
   viewRef,
@@ -203,6 +204,11 @@ export function createEditorApi({
       if (ownedTransaction?.ok) {
         clearPendingRichFlush?.()
         return ownedTransaction.markdown
+      }
+      const retiredLegacyFailure = retiredLegacySourceSyncFailureReason(ownedTransaction)
+      if (retiredLegacyFailure) {
+        reportSourceSyncFailure?.(retiredLegacyFailure)
+        return null
       }
       if (canonical === canonicalMarkdownRef.current) {
         // A cached canonical snapshot is not proof that the authored source is

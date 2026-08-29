@@ -200,6 +200,15 @@ const assertPublication = (state, expectedBoundary, label) => {
   assert.equal(preservation.integrityProof.transactionJournal?.journalId, capture.journalId)
   assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
   assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
+  assert.equal(state.preserve.some((entry) =>
+    entry.reason === 'fenced-code-block-info-string-change' &&
+    entry.integrityProof?.kind !== 'transaction-code-block-info-proof'
+  ), false, `${label} allowed a legacy info-string publication`)
+  assert.equal(state.coordinator.some((entry) =>
+    entry.phase === 'published' &&
+    entry.owner === 'legacy' &&
+    entry.reason === 'fenced-code-block-info-string-change'
+  ), false, `${label} published code-block info through the legacy owner`)
 
   assert.equal(state.integrity.some((entry) =>
     entry.preservationReason === 'fenced-code-block-info-string-change' &&
