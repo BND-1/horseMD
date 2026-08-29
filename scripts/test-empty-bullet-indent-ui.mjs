@@ -128,9 +128,14 @@ try {
   assert.equal(afterTab.integrity.some((entry) => entry.ok === false), false, `RS-64 Tab failed integrity: ${JSON.stringify(afterTab.integrity)}`)
   assert.equal(afterTab.toasts.some((text) => warningPattern.test(text)), false, `RS-64 Tab showed warning: ${JSON.stringify(afterTab.toasts)}`)
   assert.equal(
-    afterTab.integrity.some((entry) => entry.preservationReason === 'batched-list-block-changes' && entry.ok === true),
+    afterTab.integrity.some((entry) =>
+      entry.preservationReason === 'transaction-list-subtree' &&
+      entry.preservationProof?.family === 'list-subtree-replace' &&
+      entry.preservationProof?.mapperReason === 'batched-list-block-changes' &&
+      entry.ok === true
+    ),
     true,
-    `RS-64 did not finish on a proven batched-list candidate: ${JSON.stringify(afterTab.integrity)}`
+    `RS-64 did not finish on the transaction-owned batched-list candidate: ${JSON.stringify(afterTab.integrity)}`
   )
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-64 source after Tab')

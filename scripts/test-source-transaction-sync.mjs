@@ -280,6 +280,64 @@ assert.equal(
   false,
   'nested trailing empty list-item paragraph must remain strict without an explicit removal proof'
 )
+
+const exactPathListBaseline = schema.nodes.doc.create(null, [
+  schema.nodes.ordered_list.create(null, [
+    schema.nodes.list_item.create(null, [paragraph('first')]),
+    schema.nodes.list_item.create(null, [paragraph('second')])
+  ])
+])
+const exactPathFirstItemTransient = schema.nodes.doc.create(null, [
+  schema.nodes.ordered_list.create(null, [
+    schema.nodes.list_item.create(null, [paragraph('first'), paragraph()]),
+    schema.nodes.list_item.create(null, [paragraph('second')])
+  ])
+])
+const exactPathBothItemsTransient = schema.nodes.doc.create(null, [
+  schema.nodes.ordered_list.create(null, [
+    schema.nodes.list_item.create(null, [paragraph('first'), paragraph()]),
+    schema.nodes.list_item.create(null, [paragraph('second'), paragraph()])
+  ])
+])
+const exactPathMeaningfulSecondParagraph = schema.nodes.doc.create(null, [
+  schema.nodes.ordered_list.create(null, [
+    schema.nodes.list_item.create(null, [paragraph('first'), paragraph('must remain')]),
+    schema.nodes.list_item.create(null, [paragraph('second')])
+  ])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(exactPathListBaseline, exactPathFirstItemTransient),
+  false,
+  'transaction list transient must remain strict without its exact PM path'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(exactPathListBaseline, exactPathFirstItemTransient, {
+    ignoreTrailingEmptyListItemPaths: [[0, 0]]
+  }),
+  true,
+  'a focused transaction proof may ignore one trailing empty paragraph at its exact list_item path'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(exactPathListBaseline, exactPathFirstItemTransient, {
+    ignoreTrailingEmptyListItemPaths: [[0, 1]]
+  }),
+  false,
+  'an exact-path proof must not relax a different list item'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(exactPathListBaseline, exactPathBothItemsTransient, {
+    ignoreTrailingEmptyListItemPaths: [[0, 0]]
+  }),
+  false,
+  'one proven path must not hide a second transient in another list item'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(exactPathListBaseline, exactPathMeaningfulSecondParagraph, {
+    ignoreTrailingEmptyListItemPaths: [[0, 0]]
+  }),
+  false,
+  'the exact-path option must never hide meaningful paragraph text'
+)
 assert.equal(
   areSourceDocumentsEquivalent(
     nestedListWithoutTrailingEmpty,

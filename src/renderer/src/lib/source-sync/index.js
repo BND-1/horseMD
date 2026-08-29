@@ -84,6 +84,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
+  LIST_ITEM_PARAGRAPH_TRANSACTION_FAMILY,
+  createListItemParagraphTransactionSourceSyncOwner
+} from './list-item-paragraph-transaction-owner.js'
+export {
   TABLE_CELL_TRANSACTION_BOUNDARY,
   TABLE_CELL_TRANSACTION_FAMILY,
   createTableCellTransactionSourceSyncOwner

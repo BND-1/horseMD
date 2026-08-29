@@ -99,6 +99,9 @@ const state = (app) => app.evaluate(`(() => {
       candidate: String(entry.candidate || '').slice(0, 900),
       canonical: String(entry.canonical || '').slice(0, 900)
     })),
+    coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-30),
+    journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-50),
+    owner: (window.__hmListSubtreeTransactionTrace || []).slice(-50),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || '')
@@ -151,6 +154,9 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmSourceSyncTransactionJournalTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
 
   await backspace(app)
@@ -162,16 +168,35 @@ try {
   assert.deepEqual(after.texts, ['吗。不开机；口红', '露娜了'], `RS-72 successor disappeared or changed: ${JSON.stringify(after.texts)}`)
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-72 produced transient integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-72 showed source warning: ${JSON.stringify(after.toasts)}`)
-  assert.equal(
-    after.preserve.some((entry) => entry.reason === 'diverged-empty-ordered-backspace-lift' && entry.preserved !== false),
-    true,
-    `RS-72 structural Backspace was not owned by the dedicated transient lift proof: ${JSON.stringify(after.preserve)}`
+  const transactionPublication = after.preserve.find((entry) =>
+    entry.reason === 'transaction-list-subtree' &&
+    entry.preserved !== false &&
+    entry.integrityProof?.kind === 'transaction-list-subtree-proof'
   )
-  assert.equal(
-    after.preserve.some((entry) => entry.reason === 'empty-list-item-filled'),
-    false,
-    `RS-72 structural Backspace was still claimed by empty-list-item-filled: ${JSON.stringify(after.preserve)}`
-  )
+  assert.ok(transactionPublication,
+    `RS-72 structural Backspace was not owned by the transaction list subtree family: ${JSON.stringify(after.preserve)}`)
+  assert.equal(transactionPublication.integrityProof.listType, 'ordered_list')
+  assert.equal(transactionPublication.integrityProof.mapperReason, 'diverged-empty-ordered-backspace-lift')
+  assert.deepEqual(transactionPublication.integrityProof.transientEmptyListItemPath, [1, 0])
+  assert.deepEqual(transactionPublication.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
+  assert.deepEqual(transactionPublication.integrityProof.transactionJournal?.stepNames,
+    ['ReplaceStep', 'ReplaceAroundStep'])
+  assert.equal(transactionPublication.integrityProof.transactionJournal?.snapshotMatched, true)
+  assert.equal(transactionPublication.integrityProof.transactionJournal?.documentMatched, true)
+  assert.equal(after.coordinator.some((entry) =>
+    entry.phase === 'published' && entry.owner === 'transaction' &&
+    entry.family === 'list-subtree-replace' &&
+    entry.boundary === 'transaction-list-subtree-markdown-updated'
+  ), true, `RS-72 bypassed Coordinator transaction publication: ${JSON.stringify(after.coordinator)}`)
+  assert.equal(after.owner.some((entry) =>
+    entry.phase === 'published' && entry.ok === true &&
+    entry.family === 'list-subtree-replace' &&
+    entry.journalId === transactionPublication.integrityProof.journalId
+  ), true, `RS-72 missing list subtree owner trace: ${JSON.stringify(after.owner)}`)
+  assert.equal(after.preserve.some((entry) =>
+    entry.reason === 'diverged-empty-ordered-backspace-lift' ||
+    entry.reason === 'empty-list-item-filled'
+  ), false, `RS-72 fell back to a legacy transient owner: ${JSON.stringify(after.preserve)}`)
   assert.equal(
     after.integrity.some((entry) => entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true),
     true,

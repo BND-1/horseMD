@@ -119,7 +119,28 @@ async function openApp(profile, appPort, { reopened = false } = {}) {
 async function assertSource(evaluate, stage) {
   const source = await waitFor(() => visibleSource(evaluate), `${stage}: source textarea did not appear`)
   if (source !== expected) {
+    const diagnostics = await evaluate(`(() => ({
+      preserve: (window.__hmPreserveLog || []).slice(-80)
+        .map(({ source, previous, next, markdown, ...entry }) => entry),
+      integrity: (window.__hmSourceIntegrityTrace || []).slice(-80).map((entry) => ({
+        ok: entry.ok,
+        semanticOk: entry.semanticOk,
+        listSlotsMatch: entry.listSlotsMatch,
+        preservationReason: entry.preservationReason,
+        validationSite: entry.validationSite
+      })),
+      coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-80),
+      journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-120),
+      listOwner: (window.__hmListSubtreeTransactionTrace || []).slice(-120),
+      listItemOwner: (window.__hmListItemTransactionTrace || []).slice(-120),
+      plainOwner: (window.__hmTransactionFirstTrace || []).slice(-120),
+      flush: (window.__hmFlushTrace || []).slice(-80),
+      toasts: [...document.querySelectorAll('[class*="toast"]')]
+        .filter((node) => node.offsetParent)
+        .map((node) => node.textContent || '')
+    }))()`)
     console.error(`--- ${stage} actual ---\n${source}--- expected ---\n${expected}`)
+    console.error(`--- ${stage} diagnostics ---\n${JSON.stringify(diagnostics)}`)
   }
   assert.equal(source, expected, `${stage}: rich edits did not reach the authored source exactly`)
 }
@@ -133,6 +154,16 @@ async function main() {
   try {
     app = await openApp('edit', port)
     const { evaluate, send } = app
+    await evaluate(`(() => {
+      window.__hmPreserveLog = []
+      window.__hmSourceIntegrityTrace = []
+      window.__hmSourceSyncCoordinatorTrace = []
+      window.__hmSourceSyncTransactionJournalTrace = []
+      window.__hmListSubtreeTransactionTrace = []
+      window.__hmListItemTransactionTrace = []
+      window.__hmTransactionFirstTrace = []
+      window.__hmFlushTrace = []
+    })()`)
 
     // Perform three edits in separate blocks faster than Milkdown's delayed
     // markdownUpdated callback. Every inserted character and Backspace travels
@@ -151,6 +182,35 @@ async function main() {
     // Switch immediately: no sleep is allowed to hide a stale callback race.
     assert.equal(await toggleSource(evaluate), true, 'could not request source mode')
     await assertSource(evaluate, 'immediate rich→source')
+    const listItemOwnership = await evaluate(`(() => ({
+      preserve: (window.__hmPreserveLog || []).filter((entry) =>
+        entry.reason === 'list-item-paragraph-text-change'
+      ),
+      coordinator: (window.__hmSourceSyncCoordinatorTrace || []).filter((entry) =>
+        entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
+      ),
+      owner: (window.__hmListItemTransactionTrace || []).filter((entry) =>
+        entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
+      )
+    }))()`)
+    assert.equal(listItemOwnership.preserve.length, 2,
+      `both list-item text edits must use the focused owner: ${JSON.stringify(listItemOwnership)}`)
+    const emptiedPublication = listItemOwnership.preserve.find((entry) =>
+      entry.integrityProof?.emptied === true &&
+      entry.integrityProof?.previousText === '综合行政部' &&
+      entry.integrityProof?.nextText === ''
+    )
+    assert.ok(emptiedPublication,
+      `empty list item did not retain its focused proof: ${JSON.stringify(listItemOwnership)}`)
+    assert.equal(listItemOwnership.coordinator.length, 2)
+    assert.equal(listItemOwnership.coordinator.every((entry) =>
+      entry.boundary === 'transaction-list-item-paragraph-forced-flush'
+    ), true)
+    assert.equal(listItemOwnership.owner.length, 2)
+    assert.equal(listItemOwnership.owner.some((entry) =>
+      entry.journalId === emptiedPublication.integrityProof.journalId &&
+      entry.boundary === 'transaction-list-item-paragraph-forced-flush'
+    ), true)
 
     assert.equal(await toggleSource(evaluate), true, 'could not return to rich mode')
     await waitFor(

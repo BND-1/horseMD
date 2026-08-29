@@ -67,6 +67,7 @@ import {
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
+  createListItemParagraphTransactionSourceSyncOwner,
   createListSubtreeTransactionSourceSyncOwner,
   createPlainParagraphTransactionSourceSyncOwner,
   createSourceSyncTransactionJournal,
@@ -527,6 +528,11 @@ export default function Editor({
       mapListSubtree: preserveTransactionOwnedListSubtreeChange,
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    const listItemParagraphTransactionSourceSyncOwner =
+      createListItemParagraphTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const emptyCodeBlockUnpackTransactionSourceSyncOwner =
       createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -603,6 +609,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-subtree-markdown-updated',
           'forced-flush': 'transaction-list-subtree-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-item-paragraph',
+        owner: listItemParagraphTransactionSourceSyncOwner,
+        traceKey: '__hmListItemTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-item-paragraph-markdown-updated',
+          'forced-flush': 'transaction-list-item-paragraph-forced-flush'
         })
       }),
       Object.freeze({

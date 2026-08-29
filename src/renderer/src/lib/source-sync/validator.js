@@ -73,10 +73,38 @@ const tableColumnWidthProofPaths = (preservationReason, preservationProof) => {
   return preservationProof.cellPaths
 }
 
+const transactionListTransientEmptyPaths = (preservationReason, preservationProof) => {
+  if (preservationProof?.mapperReason !== 'diverged-empty-ordered-backspace-lift') return []
+  const listItemPath = preservationProof?.transientEmptyListItemPath
+  const paragraphPath = preservationProof?.transientEmptyParagraphPath
+  if (
+    preservationReason !== 'transaction-list-subtree' ||
+    preservationProof?.kind !== 'transaction-list-subtree-proof' ||
+    preservationProof?.family !== 'list-subtree-replace' ||
+    preservationProof?.listType !== 'ordered_list' ||
+    preservationProof?.transactionJournal?.snapshotMatched !== true ||
+    preservationProof?.transactionJournal?.documentMatched !== true ||
+    !Array.isArray(listItemPath) ||
+    listItemPath.length < 2 ||
+    !listItemPath.every((index) => Number.isInteger(index) && index >= 0) ||
+    listItemPath[0] !== preservationProof.topLevelIndex ||
+    !Array.isArray(paragraphPath) ||
+    paragraphPath.length !== listItemPath.length + 1 ||
+    !paragraphPath.every((index) => Number.isInteger(index) && index >= 0) ||
+    !listItemPath.every((index, pathIndex) => paragraphPath[pathIndex] === index) ||
+    paragraphPath.at(-1) < 1
+  ) return false
+  return [listItemPath]
+}
+
 const semanticOptionsForReason = (
   preservationReason,
   preservationProof = null,
-  tableColumnWidthPaths = tableColumnWidthProofPaths(preservationReason, preservationProof)
+  tableColumnWidthPaths = tableColumnWidthProofPaths(preservationReason, preservationProof),
+  transientEmptyListItemPaths = transactionListTransientEmptyPaths(
+    preservationReason,
+    preservationProof
+  )
 ) => ({
   // Backspace on a newly-created empty bullet can briefly leave one
   // editor-owned empty paragraph at the end of the preceding/parent list item.
@@ -96,6 +124,8 @@ const semanticOptionsForReason = (
   // leaking `<br />`; only the existing dedicated legacy reason may ignore it.
   ignoreTrailingEmptyBlockquoteParagraph:
     preservationReason === 'trailing-empty-blockquote-paragraph-created',
+  ignoreTrailingEmptyListItemPaths:
+    Array.isArray(transientEmptyListItemPaths) ? transientEmptyListItemPaths : [],
   ignoreTableColumnWidthPaths:
     Array.isArray(tableColumnWidthPaths) ? tableColumnWidthPaths : []
 })
@@ -155,6 +185,11 @@ export function createLegacySourceIntegrityValidator({
         preservationProof
       )
       const tableColumnWidthProofInvalid = tableColumnWidthPaths === false
+      const transientEmptyListItemPaths = transactionListTransientEmptyPaths(
+        preservationReason,
+        preservationProof
+      )
+      const transactionListTransientProofInvalid = transientEmptyListItemPaths === false
       const expected = Array.isArray(tableColumnWidthPaths)
         ? expectedDoc
         : typeof canonical === 'string'
@@ -164,9 +199,11 @@ export function createLegacySourceIntegrityValidator({
       const semanticOptions = semanticOptionsForReason(
         preservationReason,
         preservationProof,
-        tableColumnWidthPaths
+        tableColumnWidthPaths,
+        transientEmptyListItemPaths
       )
       const semanticOk = !tableColumnWidthProofInvalid &&
+        !transactionListTransientProofInvalid &&
         areSourceDocumentsEquivalent(parsed, expected, semanticOptions)
       const checkpointTrusted = checkpointStore.has(authoredSource, canonicalBaseline)
       const committedCheckpointOk = Boolean(
@@ -266,6 +303,7 @@ export function createLegacySourceIntegrityValidator({
       }
 
       const semanticProofOk = !tableColumnWidthProofInvalid &&
+        !transactionListTransientProofInvalid &&
         (semanticOk || committedCheckpointOk || transitionOk)
       const listProofOk = listSlotsMatch || committedCheckpointOk || listTransitionOk || localizedListProofOk
       const ok = semanticProofOk && listProofOk
@@ -290,6 +328,7 @@ export function createLegacySourceIntegrityValidator({
           listTransitionOk,
           localizedListProofOk,
           localizedListProofTrace,
+          transactionListTransientProofInvalid,
           preservationProof: preservationProof || null,
           validationSite,
           preservationReason,
@@ -309,7 +348,8 @@ export function createLegacySourceIntegrityValidator({
         listSlotsMatch,
         listTransitionOk,
         localizedListProofOk,
-        localizedListProofTrace
+        localizedListProofTrace,
+        transactionListTransientProofInvalid
       }
       return ok
         ? { ok: true, ...details }

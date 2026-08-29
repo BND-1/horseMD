@@ -2686,6 +2686,119 @@ export const preserveDivergedNestedListChange = ({
   }
 }
 
+// Backspace on one empty ordered item removes that item, renumbers its
+// successor, and leaves one editor-only empty paragraph inside the preceding
+// item. Crepe serializes the transient paragraph as an indented standalone
+// `<br />`; authored Markdown must persist only the real row deletion and
+// renumbering. The left/empty/right rows are proven uniquely on previous,
+// next, and source before any bytes are changed.
+export const preserveSingleEmptyOrderedBackspaceLift = ({ source, previous, next }) => {
+  const rowMeta = (line) => {
+    const text = line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text
+    const match = text.match(/^([ \t]*)(\d{1,9})([.)])([ \t]+)(.*)$/)
+    if (!match) return null
+    return {
+      line,
+      indent: match[1],
+      ordinal: Number(match[2]),
+      delimiter: match[3],
+      token: `${match[2]}${match[3]}`,
+      spacing: match[4],
+      body: match[5]
+    }
+  }
+  const nearestNonBlank = (lines, index, step) => {
+    for (let cursor = index + step; cursor >= 0 && cursor < lines.length; cursor += step) {
+      if (lines[cursor].text.trim()) return cursor
+    }
+    return -1
+  }
+  const visibleBody = (value) => sourceVisibleIndex(String(value || '')).text.trim()
+  const change = commonChange(previous, next)
+
+  const previousLines = markdownLines(previous)
+  const before = []
+  for (let index = 0; index < previousLines.length; index += 1) {
+    const empty = rowMeta(previousLines[index])
+    if (!empty || empty.body.trim()) continue
+    const leftIndex = nearestNonBlank(previousLines, index, -1)
+    const rightIndex = nearestNonBlank(previousLines, index, 1)
+    if (leftIndex < 0 || rightIndex < 0) continue
+    const left = rowMeta(previousLines[leftIndex])
+    const right = rowMeta(previousLines[rightIndex])
+    if (
+      !left || !right || !left.body.trim() || !right.body.trim() ||
+      left.indent !== empty.indent || right.indent !== empty.indent ||
+      left.delimiter !== empty.delimiter || right.delimiter !== empty.delimiter ||
+      empty.ordinal !== left.ordinal + 1 || right.ordinal !== empty.ordinal + 1
+    ) continue
+    if (empty.line.end < change.start - 2 || empty.line.start > change.previousEnd + 2) continue
+    before.push({ left, empty, right })
+  }
+  if (before.length !== 1) return null
+  const target = before[0]
+
+  const nextLines = markdownLines(next)
+  const after = []
+  for (let index = 0; index < nextLines.length; index += 1) {
+    if (!/^[ \t]*<br\s*\/?>[ \t]*$/i.test(nextLines[index].text)) continue
+    const leftIndex = nearestNonBlank(nextLines, index, -1)
+    const rightIndex = nearestNonBlank(nextLines, index, 1)
+    if (leftIndex < 0 || rightIndex < 0) continue
+    const left = rowMeta(nextLines[leftIndex])
+    const right = rowMeta(nextLines[rightIndex])
+    if (
+      !left || !right ||
+      left.indent !== target.left.indent || right.indent !== target.right.indent ||
+      left.delimiter !== target.left.delimiter || right.delimiter !== target.right.delimiter ||
+      left.ordinal !== target.left.ordinal || right.ordinal !== target.empty.ordinal ||
+      visibleBody(left.body) !== visibleBody(target.left.body) ||
+      visibleBody(right.body) !== visibleBody(target.right.body)
+    ) continue
+    const line = nextLines[index]
+    if (line.end < change.start - 2 || line.start > change.nextEnd + 2) continue
+    after.push({ left, transient: line, right })
+  }
+  if (after.length !== 1) return null
+  const afterTarget = after[0]
+
+  const sourceLines = markdownLines(source)
+  const sourceMatches = []
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    const empty = rowMeta(sourceLines[index])
+    if (!empty || empty.body.trim()) continue
+    const leftIndex = nearestNonBlank(sourceLines, index, -1)
+    const rightIndex = nearestNonBlank(sourceLines, index, 1)
+    if (leftIndex < 0 || rightIndex < 0) continue
+    const left = rowMeta(sourceLines[leftIndex])
+    const right = rowMeta(sourceLines[rightIndex])
+    if (
+      !left || !right || !left.body.trim() || !right.body.trim() ||
+      left.indent !== empty.indent || right.indent !== empty.indent ||
+      left.delimiter !== empty.delimiter || right.delimiter !== empty.delimiter ||
+      left.ordinal !== target.left.ordinal || empty.ordinal !== target.empty.ordinal || right.ordinal !== target.right.ordinal ||
+      visibleBody(left.body) !== visibleBody(target.left.body) ||
+      visibleBody(right.body) !== visibleBody(target.right.body)
+    ) continue
+    sourceMatches.push({ left, empty, right })
+  }
+  if (sourceMatches.length !== 1) return null
+  const sourceTarget = sourceMatches[0]
+
+  const rightTokenStart = sourceTarget.right.line.start + sourceTarget.right.indent.length
+  const rightTokenEnd = rightTokenStart + sourceTarget.right.token.length
+  const markdown = source.slice(0, sourceTarget.empty.line.start) +
+    source.slice(sourceTarget.right.line.start, rightTokenStart) +
+    `${afterTarget.right.ordinal}${sourceTarget.right.delimiter}` +
+    source.slice(rightTokenEnd)
+  return {
+    markdown,
+    preserved: true,
+    reason: 'diverged-empty-ordered-backspace-lift',
+    nextBaseline: next
+  }
+}
+
 // A transaction owner has already proven the exact old/new top-level list
 // subtree and sliced away every neighbouring block. Reuse the established list
 // delta implementations on that bounded region instead of asking a
@@ -2717,29 +2830,44 @@ export const preserveTransactionOwnedListSubtreeChange = ({
   const normalizedSource = normalize(rawSource)
   const normalizedPrevious = normalize(rawPrevious)
   const normalizedNext = normalize(rawNext)
-  const change = commonChange(normalizedPrevious, normalizedNext)
+  // The legacy facade performs these source-safe canonical normalizations
+  // before dispatching list mappers. Transaction ownership changes lifecycle,
+  // not list syntax semantics: use the same comparable representation so an
+  // empty nested item persists as a parse-safe marker, never Crepe's `<br />`.
+  const comparablePrevious = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalizedPrevious)
+  )
+  const comparableNext = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalizedNext)
+  )
+  const change = commonChange(comparablePrevious, comparableNext)
   const attempts = [
+    () => preserveSingleEmptyOrderedBackspaceLift({
+      source: normalizedSource,
+      previous: comparablePrevious,
+      next: comparableNext
+    }),
     () => preserveStableListRowChanges({
       source: normalizedSource,
-      previous: normalizedPrevious,
-      next: normalizedNext
+      previous: comparablePrevious,
+      next: comparableNext
     }),
     () => preserveDivergedNestedListChange({
       source: normalizedSource,
-      previous: normalizedPrevious,
-      next: normalizedNext,
+      previous: comparablePrevious,
+      next: comparableNext,
       ...change
     }),
     () => preserveListBlockChange({
       source: normalizedSource,
-      previous: normalizedPrevious,
-      next: normalizedNext,
+      previous: comparablePrevious,
+      next: comparableNext,
       ...change
     }),
     () => preserveBatchedListBlockChanges({
       source: normalizedSource,
-      previous: normalizedPrevious,
-      next: normalizedNext
+      previous: comparablePrevious,
+      next: comparableNext
     })
   ]
   const contentLineCount = (value) => {

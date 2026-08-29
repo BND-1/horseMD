@@ -246,6 +246,158 @@ assert.equal(
   '1. 啊额法色饭\r\n   1. 微风、\r\n   2. \r\n'
 )
 
+const nestedEnterOldList = bullet(
+  item(paragraph('parent'), bullet(item(paragraph('1. child'))))
+)
+const nestedEnterNextList = bullet(
+  item(paragraph('parent'), bullet(item(paragraph('1. child')), item(paragraph())))
+)
+const nestedEnterOldDoc = document(paragraph('before'), nestedEnterOldList, paragraph('after'))
+const nestedEnterNextDoc = document(paragraph('before'), nestedEnterNextList, paragraph('after'))
+const nestedEnterSource = [
+  'before', '',
+  '- parent',
+  '  * 1\\. child', '',
+  'after', ''
+].join('\n')
+const nestedEnterPrevious = [
+  'before', '',
+  '* parent', '',
+  '  * 1\\. child', '',
+  'after', ''
+].join('\n')
+const nestedEnterNext = [
+  'before', '',
+  '* parent', '',
+  '  * 1\\. child', '',
+  '  * <br />', '',
+  'after', ''
+].join('\n')
+const nestedEnterExpected = [
+  'before', '',
+  '- parent',
+  '  * 1\\. child',
+  '  * ', '',
+  'after', ''
+].join('\n')
+const nestedEnterTransaction = transaction(
+  nestedEnterOldDoc,
+  nestedEnterNextDoc,
+  [step('ReplaceStep', 18, 18, true)]
+)
+const nestedEnterJournal = captureJournal({
+  source: nestedEnterSource,
+  canonical: nestedEnterPrevious,
+  oldDoc: nestedEnterOldDoc,
+  revision: 71,
+  batches: [{
+    transactions: [nestedEnterTransaction],
+    oldDoc: nestedEnterOldDoc,
+    newDoc: nestedEnterNextDoc
+  }]
+})
+const nestedEnterPlan = planWithJournal(makeOwner('parent'), {
+  snapshot: nestedEnterJournal.snapshot,
+  checkpoint: nestedEnterJournal.checkpoint,
+  canonical: nestedEnterNext,
+  expectedDoc: nestedEnterNextDoc
+})
+assert.equal(nestedEnterPlan.ok, true, `nested Enter plan rejected: ${JSON.stringify(nestedEnterPlan)}`)
+assert.equal(nestedEnterPlan.result.markdown, nestedEnterExpected)
+assert.equal(nestedEnterPlan.result.markdown.includes('<br'), false)
+assert.equal(nestedEnterPlan.proof.mapperReason, 'diverged-nested-list-change')
+assert.equal(nestedEnterPlan.proof.trailingBoundaryNewlineGrowth, 0)
+assert.equal(nestedEnterPlan.proof.suffixOwnedRowTerminator, true)
+
+const rs72OldList = ordered(
+  item(paragraph('first')),
+  item(paragraph()),
+  item(paragraph('successor'))
+)
+const rs72NextList = ordered(
+  item(paragraph('first'), paragraph()),
+  item(paragraph('successor'))
+)
+const rs72OldDoc = document(paragraph('before'), rs72OldList, paragraph('after'))
+const rs72NextDoc = document(paragraph('before'), rs72NextList, paragraph('after'))
+const rs72Source = '\uFEFF' + [
+  'before', '',
+  '1. first', '',
+  '2. ', '',
+  '3. successor', '',
+  'after', ''
+].join('\r\n')
+const rs72Previous = [
+  'before', '',
+  '1. first', '',
+  '2. <br />', '',
+  '3. successor', '',
+  'after', ''
+].join('\n')
+const rs72Next = [
+  'before', '',
+  '1. first', '',
+  '   <br />', '',
+  '2. successor', '',
+  'after', ''
+].join('\n')
+const rs72Expected = '\uFEFF' + [
+  'before', '',
+  '1. first', '',
+  '2. successor', '',
+  'after', ''
+].join('\r\n')
+const rs72Transaction = transaction(
+  rs72OldDoc,
+  rs72NextDoc,
+  [
+    step('ReplaceStep', 18, 20, true),
+    step('ReplaceAroundStep', 21, 28, true)
+  ]
+)
+const rs72Journal = captureJournal({
+  source: rs72Source,
+  canonical: rs72Previous,
+  oldDoc: rs72OldDoc,
+  revision: 72,
+  batches: [{
+    transactions: [rs72Transaction],
+    oldDoc: rs72OldDoc,
+    newDoc: rs72NextDoc
+  }]
+})
+const rs72Plan = planWithJournal(makeOwner('first'), {
+  snapshot: rs72Journal.snapshot,
+  checkpoint: rs72Journal.checkpoint,
+  canonical: rs72Next,
+  expectedDoc: rs72NextDoc
+})
+assert.equal(rs72Plan.ok, true, `RS-72 plan rejected: ${JSON.stringify(rs72Plan)}`)
+assert.equal(rs72Plan.result.markdown, rs72Expected)
+assert.equal(rs72Plan.result.markdown.includes('<br'), false)
+assert.equal(rs72Plan.result.markdown.charCodeAt(0), 0xFEFF)
+assert.equal(rs72Plan.result.markdown.includes('\r\n'), true)
+assert.equal(rs72Plan.proof.mapperReason, 'diverged-empty-ordered-backspace-lift')
+assert.deepEqual(rs72Plan.proof.transientEmptyListItemPath, [1, 0])
+assert.deepEqual(rs72Plan.proof.transientEmptyParagraphPath, [1, 0, 1])
+assert.deepEqual(
+  rs72Plan.proof.transactionJournal.stepNames,
+  ['ReplaceStep', 'ReplaceAroundStep']
+)
+
+const unprovenTransientOwner = makeOwner(parent, ({ source: ownedSource, next: ownedNext }) => ({
+  markdown: ownedSource,
+  preserved: true,
+  reason: 'diverged-empty-ordered-backspace-lift',
+  nextBaseline: ownedNext
+}))
+assert.equal(planWithJournal(unprovenTransientOwner, {
+  snapshot: mainJournal.snapshot,
+  checkpoint: mainJournal.checkpoint,
+  canonical: next,
+  expectedDoc: finalDoc
+}).reason, 'list-subtree-transient-empty-path-unproven')
+
 assert.equal(planWithJournal(owner, {
   snapshot: mainJournal.snapshot,
   checkpoint: mainJournal.checkpoint,

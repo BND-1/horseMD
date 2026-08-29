@@ -45,6 +45,79 @@ const stableAttrs = (attrs) => Object.fromEntries(
     .sort(([left], [right]) => left.localeCompare(right))
 )
 
+const stableAttrsEqual = (left, right) =>
+  JSON.stringify(stableAttrs(left)) === JSON.stringify(stableAttrs(right))
+
+const isEditorEmptyParagraph = (node) => {
+  if (node?.type?.name !== 'paragraph' || !node.isTextblock) return false
+  if (node.content?.size === 0) return true
+  let empty = true
+  node.forEach?.((child) => {
+    const type = child?.type?.name || ''
+    if (type !== 'hardbreak' && type !== 'hard_break') empty = false
+  })
+  return empty
+}
+
+const collectInsertedTrailingEmptyParagraphs = ({
+  beforeNode,
+  afterNode,
+  path,
+  candidates
+}) => {
+  if (
+    !beforeNode || !afterNode ||
+    beforeNode.type?.name !== afterNode.type?.name
+  ) return
+
+  if (
+    beforeNode.type?.name === 'list_item' &&
+    stableAttrsEqual(beforeNode.attrs, afterNode.attrs) &&
+    afterNode.childCount === beforeNode.childCount + 1 &&
+    beforeNode.childCount >= 1 &&
+    isEditorEmptyParagraph(afterNode.child(afterNode.childCount - 1))
+  ) {
+    let unchangedPrefix = true
+    for (let index = 0; index < beforeNode.childCount; index += 1) {
+      if (beforeNode.child(index).eq?.(afterNode.child(index)) !== true) {
+        unchangedPrefix = false
+        break
+      }
+    }
+    if (unchangedPrefix) {
+      candidates.push(Object.freeze({
+        listItemPath: Object.freeze([...path]),
+        paragraphPath: Object.freeze([...path, afterNode.childCount - 1])
+      }))
+    }
+  }
+
+  const sharedChildren = Math.min(beforeNode.childCount || 0, afterNode.childCount || 0)
+  for (let index = 0; index < sharedChildren; index += 1) {
+    collectInsertedTrailingEmptyParagraphs({
+      beforeNode: beforeNode.child(index),
+      afterNode: afterNode.child(index),
+      path: [...path, index],
+      candidates
+    })
+  }
+}
+
+const proveSingleInsertedTrailingEmptyParagraph = ({
+  previousList,
+  nextList,
+  topLevelIndex
+}) => {
+  const candidates = []
+  collectInsertedTrailingEmptyParagraphs({
+    beforeNode: previousList,
+    afterNode: nextList,
+    path: [topLevelIndex],
+    candidates
+  })
+  return candidates.length === 1 ? candidates[0] : null
+}
+
 // Authority is limited to LIST TOPOLOGY, not arbitrary content inside a list.
 // Text, marks, escapes, images and paragraph bytes keep their mature legacy
 // mappers. The signature records only list/list_item hierarchy, item counts and
@@ -273,6 +346,11 @@ export function createListSubtreeTransactionSourceSyncOwner({
 
     const classification = classifySingleListSubtreeChange(journal.oldDoc, expectedDoc)
     if (!classification.ok) return classification
+    const insertedTrailingEmptyParagraph = proveSingleInsertedTrailingEmptyParagraph({
+      previousList: classification.previousEntry.node,
+      nextList: classification.nextEntry.node,
+      topLevelIndex: classification.topLevelIndex
+    })
 
     const resolveRange = ({ markdown, doc, entry, side }) => {
       const pmPos = findAnchorPosition(entry)
@@ -334,18 +412,29 @@ export function createListSubtreeTransactionSourceSyncOwner({
       return rejected(mapped?.reason || 'list-subtree-mapper-rejected')
     }
     if (
+      mapped.reason === 'diverged-empty-ordered-backspace-lift' &&
+      !insertedTrailingEmptyParagraph
+    ) {
+      return rejected('list-subtree-transient-empty-path-unproven')
+    }
+    if (
       typeof mapped.nextBaseline === 'string' &&
       trimOwnedFragmentEnd(mapped.nextBaseline) !== trimOwnedFragmentEnd(nextFragment)
     ) return rejected('list-subtree-mapper-partial-baseline')
 
     const trailingEol = String(mapped.markdown || '').match(/(\r\n|\r|\n)$/)?.[1] || ''
-    const boundaryEolGrowth = mapped.trailingBoundaryNewlineGrowth === 1 && trailingEol
-      ? trailingEol
-      : ''
+    const sourceSuffix = journal.source.slice(sourceRange.end)
+    const suffixOwnsRowTerminator = /^(?:\r\n|\r|\n)/.test(sourceSuffix)
+    const boundaryEolGrowth =
+      mapped.trailingBoundaryNewlineGrowth === 1 &&
+      trailingEol &&
+      !suffixOwnsRowTerminator
+        ? trailingEol
+        : ''
     const replacement = trimOwnedFragmentEnd(mapped.markdown) + boundaryEolGrowth
     const markdown = journal.source.slice(0, sourceRange.start) +
       replacement +
-      journal.source.slice(sourceRange.end)
+      sourceSuffix
     const proof = Object.freeze({
       kind: 'transaction-list-subtree-proof',
       journalId: journal.journalId,
@@ -365,7 +454,16 @@ export function createListSubtreeTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
       mapperReason: mapped.reason || null,
+      transientEmptyListItemPath:
+        mapped.reason === 'diverged-empty-ordered-backspace-lift'
+          ? insertedTrailingEmptyParagraph.listItemPath
+          : null,
+      transientEmptyParagraphPath:
+        mapped.reason === 'diverged-empty-ordered-backspace-lift'
+          ? insertedTrailingEmptyParagraph.paragraphPath
+          : null,
       trailingBoundaryNewlineGrowth: boundaryEolGrowth ? 1 : 0,
+      suffixOwnedRowTerminator: suffixOwnsRowTerminator,
       callbackDocumentEquivalent: true,
       snapshotMatched: true,
       documentMatched: true

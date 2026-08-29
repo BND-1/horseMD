@@ -164,9 +164,16 @@ try {
   assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `nested Enter failed integrity: ${JSON.stringify(afterEnter.integrity)}`)
   assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `nested Enter showed warning: ${JSON.stringify(afterEnter.toasts)}`)
   assert.equal(
-    afterEnter.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled' && entry.preserved !== false),
+    afterEnter.preserve.some((entry) =>
+      entry.reason === 'transaction-list-subtree' &&
+      entry.preserved !== false &&
+      entry.integrityProof?.family === 'list-subtree-replace' &&
+      entry.integrityProof?.mapperReason === 'diverged-nested-list-change' &&
+      entry.integrityProof?.transactionJournal?.stepNames?.length === 1 &&
+      entry.integrityProof?.transactionJournal?.stepNames?.[0] === 'ReplaceStep'
+    ),
     true,
-    `nested Enter was not owned by middle-empty-block-list-filled: ${JSON.stringify(afterEnter.preserve)}`,
+    `nested Enter was not owned by the transaction list subtree family: ${JSON.stringify(afterEnter.preserve)}`,
   )
 
   assert.equal(await toggleSource(app), true, 'could not inspect nested Enter source')

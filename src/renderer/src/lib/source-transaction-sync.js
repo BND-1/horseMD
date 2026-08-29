@@ -222,6 +222,7 @@ const semanticJson = (node, {
   ignoreTrailingEmptyListItemParagraph = false,
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure = false,
   ignoreTrailingEmptyBlockquoteParagraph = false,
+  ignoreTrailingEmptyListItemPaths = [],
   ignoreTableColumnWidthPaths = []
 } = {}) => {
   if (!node?.toJSON) return null
@@ -230,6 +231,15 @@ const semanticJson = (node, {
       .filter((path) =>
         Array.isArray(path) &&
         path.length >= 3 &&
+        path.every((index) => Number.isInteger(index) && index >= 0)
+      )
+      .map((path) => path.join('.'))
+  )
+  const ignoredTrailingEmptyListItemPaths = new Set(
+    (Array.isArray(ignoreTrailingEmptyListItemPaths) ? ignoreTrailingEmptyListItemPaths : [])
+      .filter((path) =>
+        Array.isArray(path) &&
+        path.length >= 2 &&
         path.every((index) => Number.isInteger(index) && index >= 0)
       )
       .map((path) => path.join('.'))
@@ -290,6 +300,8 @@ const semanticJson = (node, {
       delete next.content
     }
     if (next.type === 'list_item' && Array.isArray(next.content)) {
+      const ignoreTrailingEmptyAtOwnedPath =
+        ignoredTrailingEmptyListItemPaths.has(path.join('.'))
       // Backspace on an empty list item briefly leaves TWO consecutive empty
       // paragraphs in the preceding item: the real empty item paragraph plus a
       // Crepe-only hardbreak placeholder for the lifted row. Markdown cannot
@@ -317,7 +329,11 @@ const semanticJson = (node, {
       // separate opt-in for the stricter case where raw preservation proved the
       // removed top-level row merged after a nested list inside the same item.
       if (
-        (ignoreTrailingEmptyListItemParagraph || ignoreTrailingEmptyListItemParagraphAfterNestedStructure) &&
+        (
+          ignoreTrailingEmptyListItemParagraph ||
+          ignoreTrailingEmptyListItemParagraphAfterNestedStructure ||
+          ignoreTrailingEmptyAtOwnedPath
+        ) &&
         trailingEmptyParagraphs === 1 &&
         compact.length >= 2
       ) {
@@ -333,7 +349,10 @@ const semanticJson = (node, {
         if (
           trailingEmpty &&
           (
-            (ignoreTrailingEmptyListItemParagraph && previousTextParagraph) ||
+            (
+              (ignoreTrailingEmptyListItemParagraph || ignoreTrailingEmptyAtOwnedPath) &&
+              previousTextParagraph
+            ) ||
             (
               ignoreTrailingEmptyListItemParagraphAfterNestedStructure &&
               previousNestedList &&
@@ -545,7 +564,8 @@ export function mapPlainTextTransactionsToSource({
   newState,
   mapPosition,
   blockHints = [],
-  validateMarkdown
+  validateMarkdown,
+  allowEmptyTextblock = false
 }) {
   const original = String(source || '')
   if (!Array.isArray(transactions) || !transactions.length) {
@@ -743,6 +763,7 @@ export function mapPlainTextTransactionsToSource({
         return fail('post-step-position-unresolvable')
       }
       if (
+        !allowEmptyTextblock &&
         $from.parent.content.size > 0 &&
         nextTextblock?.content.size === 0
       ) {
