@@ -72,6 +72,7 @@ import {
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
+  createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
   createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
@@ -550,6 +551,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listNestedEmptyBulletTailIndentTransactionSourceSyncOwner =
+      createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const listOrderedEmptySuccessorChainTransactionSourceSyncOwner =
       createListOrderedEmptySuccessorChainTransactionSourceSyncOwner({
         mapOrderedChain: preserveTransactionOwnedOrderedEmptySuccessorChain,
@@ -655,6 +661,16 @@ export default function Editor({
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
     const structuralTransactionSourceSyncOwners = Object.freeze([
+      Object.freeze({
+        key: 'list-nested-empty-bullet-tail-indent',
+        owner: listNestedEmptyBulletTailIndentTransactionSourceSyncOwner,
+        traceKey: '__hmListNestedEmptyBulletTailIndentTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-nested-empty-bullet-tail-indent-markdown-updated',
+          'forced-flush': 'transaction-list-nested-empty-bullet-tail-indent-forced-flush'
+        })
+      }),
       Object.freeze({
         key: 'list-ordered-empty-successor-chain-lift',
         owner: listOrderedEmptySuccessorChainTransactionSourceSyncOwner,

@@ -9,7 +9,7 @@ const root = `/tmp/horsemd-rs64-empty-bullet-indent-${process.pid}`
 const file = join(root, 'rs-64.md')
 const port = Number(process.env.CDP_PORT || 10764)
 const fixture = '# RS64\n\n- u高科技\n- 阿尔萨俄方\n- \n'
-const afterTabExpected = '# RS64\n\n- u高科技\n- 阿尔萨俄方\n\n  * \n'
+const afterTabExpected = '# RS64\n\n- u高科技\n- 阿尔萨俄方\n\n  - \n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 async function waitFor(check, message, attempts = 140) {
@@ -53,6 +53,9 @@ const diagnostics = (app) => app.evaluate(`(() => {
       ...entry,
       markdown: String(markdown || '').slice(-500)
     })),
+    owner: (window.__hmListNestedEmptyBulletTailIndentTransactionTrace || []).slice(-30),
+    broad: (window.__hmListSubtreeTransactionTrace || []).slice(-30),
+    coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-30),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || '')
@@ -117,6 +120,9 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmListNestedEmptyBulletTailIndentTransactionTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
   await pressKey(app.send, { key: 'Tab', code: 'Tab', delayMs: 80 })
   await sleep(850)
@@ -127,16 +133,28 @@ try {
   assert.equal(afterTab.topItems.length, 2, `Tab did not move the empty item under its previous sibling: ${JSON.stringify(afterTab.topItems)}`)
   assert.equal(afterTab.integrity.some((entry) => entry.ok === false), false, `RS-64 Tab failed integrity: ${JSON.stringify(afterTab.integrity)}`)
   assert.equal(afterTab.toasts.some((text) => warningPattern.test(text)), false, `RS-64 Tab showed warning: ${JSON.stringify(afterTab.toasts)}`)
-  assert.equal(
-    afterTab.integrity.some((entry) =>
-      entry.preservationReason === 'transaction-list-subtree' &&
-      entry.preservationProof?.family === 'list-subtree-replace' &&
-      entry.preservationProof?.mapperReason === 'batched-list-block-changes' &&
-      entry.ok === true
-    ),
-    true,
-    `RS-64 did not finish on the transaction-owned batched-list candidate: ${JSON.stringify(afterTab.integrity)}`
+  const focusedPublication = afterTab.preserve.find((entry) =>
+    entry.reason === 'list-nested-empty-bullet-tail-indented' &&
+    entry.preserved !== false &&
+    entry.integrityProof?.kind === 'transaction-list-nested-empty-bullet-tail-indent-proof'
   )
+  assert.ok(focusedPublication,
+    `RS-64 Tab was not owned by focused nested indent family: ${JSON.stringify(afterTab.preserve)}`)
+  assert.equal(focusedPublication.integrityProof.family, 'list-nested-empty-bullet-tail-indent')
+  assert.equal(focusedPublication.integrityProof.movedSourceRow?.token, '-')
+  assert.equal(focusedPublication.integrityProof.step?.name, 'ReplaceAroundStep')
+  assert.equal(focusedPublication.integrityProof.step?.sliceSize, 3)
+  assert.equal(afterTab.owner.some((entry) =>
+    entry.phase === 'published' && entry.ok === true &&
+    entry.family === 'list-nested-empty-bullet-tail-indent' &&
+    entry.boundary === 'transaction-list-nested-empty-bullet-tail-indent-markdown-updated'
+  ), true, `RS-64 missing focused owner publication: ${JSON.stringify(afterTab.owner)}`)
+  assert.equal(afterTab.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+    `RS-64 unexpectedly reached broad list-subtree owner: ${JSON.stringify(afterTab.broad)}`)
+  assert.equal(afterTab.coordinator.some((entry) =>
+    entry.phase === 'published' && entry.owner === 'transaction' &&
+    entry.family === 'list-nested-empty-bullet-tail-indent'
+  ), true, `RS-64 bypassed Coordinator focused publication: ${JSON.stringify(afterTab.coordinator)}`)
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-64 source after Tab')
   const sourceAfterTab = await waitFor(() => visibleSource(app), 'RS-64 source textarea missing after Tab')
@@ -156,7 +174,7 @@ try {
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-64 source after nested text')
   const finalSource = await waitFor(() => visibleSource(app), 'RS-64 final source textarea missing')
-  assert.match(finalSource, /^# RS64\n\n- u高科技\n- 阿尔萨俄方\n(?:\n)?  \* s\n$/m, `RS-64 final source lost nested item or changed untouched top-level rows: ${JSON.stringify(finalSource)}`)
+  assert.match(finalSource, /^# RS64\n\n- u高科技\n- 阿尔萨俄方\n(?:\n)?  - s\n$/m, `RS-64 final source lost authored nested marker or changed untouched top-level rows: ${JSON.stringify(finalSource)}`)
   assert.doesNotMatch(finalSource, /<br\s*\/?\s*>/i, 'RS-64 final source leaked Crepe placeholder')
   assert.equal(await toggleSource(app), true, 'could not return RS-64 to rich mode before save')
   await save(app)

@@ -96,6 +96,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  LIST_NESTED_EMPTY_BULLET_TAIL_INDENT_TRANSACTION_BOUNDARY,
+  LIST_NESTED_EMPTY_BULLET_TAIL_INDENT_TRANSACTION_FAMILY,
+  createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner
+} from './list-nested-empty-bullet-tail-indent-transaction-owner.js'
+export {
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_BOUNDARY,
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_FAMILY,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner

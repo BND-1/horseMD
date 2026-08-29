@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.156 已完成 interior/tail/first-empty/isolated ordered/single-successor/multi-successor Backspace 链，下一项 nested list split/join/indent/outdent** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.157 已完成 interior/tail/first-empty/ordered successor Backspace 链 + 首个 nested tail-empty Tab indent；nested nonempty/middle indent、outdent、split/join 仍待迁移** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -250,6 +250,17 @@ build:mobile
 - legacy retirement：registry把chain owner置于0.13.155 single-successor与broad list-subtree之前并`legacyRetired:true`。一空格 authored四项列表仍形成相同PM merge+relabel chain，但source range无法安全映射；此时 `recognized:true + legacyBlocked:true`，保留rich edit和transient paragraph、显示warning，不允许 single/broad/legacy/Coordinator publication，disk不变。
 - 永久门禁：pure owner覆盖2/3 successor、removedIndex 1/2、`order=4`、`)` delimiter、body/mixed-EOL/wrong-step负例和single-successor no-hit；真实Electron覆盖callback/forced、BOM+CRLF、source/save/disk/fresh-profile reopen与one-space fail-closed。0.13.155 single-successor、0.13.154 isolated、first/tail/interior、RS-63/60/84/85/86、nested Enter、ordered Enter/exit/delimiter/repeated-list、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build和`git diff --check`均通过。
 - 阶段 E 尚未结束。下一项按既定顺序进入 **nested list split/join/indent/outdent**：先从真实物理 Tab/Shift+Tab、Enter、Backspace/Delete 捕获 PM Step/stepDoc/path 家族，再拆 focused owners；task sentinel、conversion、input rules与跨列表/coalescing继续排在后面，不把 broad list owner提前删除。
+
+### Nested list 第一子族实际完成记录（0.13.157）
+
+- 范围刻意只覆盖 **top-level plain bullet list 的 tail empty item 物理 Tab sink**：target 必须是最后一个 non-task、单一空 paragraph item；其前一 sibling 必须是 non-task、只有一个非空 plain paragraph且尚无 nested list。中间项、非空项、已有 nested parent、task、ordered、Shift+Tab/outdent、split/join都不认领。
+- 真实产品路径没有 HorseMD 自定义普通列表 Tab 特判，而是 ProseMirror 原生 `sinkListItem`。RS-64 与最小 schema均证明唯一 `ReplaceAroundStep(structure=true,sliceSize=3,openStart=1,openEnd=0,insert=1)`；精确边界为 `from=target.beforePos-1`、`gapFrom=target.beforePos`、`gapTo=to=target.beforePos+target.nodeSize`。slice是一个外层 `list_item` wrapper包住空 `bullet_list` wrapper，target item本身通过 gap移动到该 nested list。
+- Milkdown parsed top list目前把 `spread` 表示为字符串 `"false"`，`sinkListItem` 新建 nested wrapper则是布尔 `false`。owner只对 **list wrapper 的 false spread** 做局部语义归一化；target item、parent item、Step、path、sibling与其它 attrs仍严格，不把表示差异扩散到通用 comparator。
+- raw source不复用 broad list mapper。CommonMark解析实验表明空 nested bullet若直接写成 `- beta\n  - ` 会被错误解释，而 `- beta\n\n  - ` 才是稳定父 item + 空 nested child。因此成功 patch只在作者 tail marker row前插入“一个原 EOL + 两个 spaces”，即把连续 top-level row变为 parse-safe nested row；原 `-`/`+`/`*` token、marker spacing、body、BOM、LF/CRLF、前后邻块都逐字保持。RS-64 过去由 broad `batched-list-block-changes` 输出 serializer `*`，0.13.157 focused owner后作者 `-` 在 Tab、继续输入`s`、source/save/reopen全周期保持。
+- 本 family不需要 semantic transient豁免：空 nested item有合法 authored Markdown 表示，focused candidate可直接通过 strict semantic + list-slot validation。proof仍绑定 Journal snapshot/document、parent/target/nested paths、单一真实 ReplaceAroundStep、source range、原 parent/target rows与 raw insertion。
+- legacy retirement：registry把该 owner放在其它 list focused owners和 broad list-subtree之前，并设置 `legacyRetired:true`。两空格 authored marker spacing仍可解析出相同PM family，但当前raw byte合同刻意只证明单空格 spacing；因此在 `nested-empty-bullet-indent-source-row-unproven` 阶段 `recognized:true + legacyBlocked:true`，rich Tab sink和nested list保持可见、显示warning，不允许 broad/legacy/Coordinator publication，disk不变。
+- 永久门禁：pure owner使用真实 `sinkListItem`，覆盖BOM+CRLF作者`+` marker以及body/spacing recognized负例、nonempty/existing-nested/task/ordered no-hit；RS-64永久回归升级为必须focused publication且作者`-` marker保持；专用Electron覆盖callback/forced、BOM+CRLF、source/save/disk/fresh-profile reopen与两空格fail-closed。相邻矩阵覆盖nested Enter、RS-68/63/85、generated nested/task、first/tail/interior、0.13.154–156 ordered、generic list-subtree和nested 3×2 fidelity；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`全部通过。
+- 阶段 E 仍未完成。下一步先继续真实取证 **nonempty/middle Tab indent** 与 **Shift+Tab outdent**，再决定是否拆成独立 family；nested split/join、task sentinel、conversion、input rules与跨列表/coalescing仍排在后面。
 
 ## 9. 阶段 F：普通段落默认 authority
 
