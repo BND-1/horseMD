@@ -15,15 +15,22 @@ export const BLOCKQUOTE_JOIN_TRANSACTION_BOUNDARY = 'transaction-blockquote-para
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const quoteChildren = (quote) => {
@@ -423,7 +430,9 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
     }
 
     const classification = classifyBlockquoteJoinJournal({ journal, expectedDoc })
-    if (!classification.ok) return classification
+    if (!classification.ok) {
+      return rejected(classification.reason, { proof: classification.proof })
+    }
 
     const leftStart = paragraphContentStart(
       classification.previousEntry,
@@ -469,7 +478,7 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
         paragraphIndex: classification.rightIndex
       })
     } catch {
-      return rejected('blockquote-join-range-mapper-threw')
+      return recognizedRejection('blockquote-join-range-mapper-threw')
     }
     if (
       !Number.isFinite(leftRawStart) ||
@@ -479,11 +488,11 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
       leftRawEnd < leftRawStart ||
       rightRawEnd < rightRawStart ||
       rightRawStart <= leftRawEnd
-    ) return rejected('blockquote-join-range-unmapped')
+    ) return recognizedRejection('blockquote-join-range-unmapped')
     if (
       journal.source.slice(leftRawStart, leftRawEnd) !== leftText ||
       journal.source.slice(rightRawStart, rightRawEnd) !== rightText
-    ) return rejected('blockquote-join-raw-text-mismatch')
+    ) return recognizedRejection('blockquote-join-raw-text-mismatch')
 
     const leftLine = lineAtOffset(journal.source, leftRawStart)
     const rightLine = lineAtOffset(journal.source, rightRawStart)
@@ -493,13 +502,13 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
       leftRawEnd !== leftLine.end ||
       rightRawEnd !== rightLine.end ||
       !leftLine.eol
-    ) return rejected('blockquote-join-not-single-line')
+    ) return recognizedRejection('blockquote-join-not-single-line')
     const leftPrefixRaw = journal.source.slice(leftLine.start, leftRawStart)
     const rightPrefixRaw = journal.source.slice(rightLine.start, rightRawStart)
     const leftPrefix = quotePrefix(leftPrefixRaw)
     const rightPrefix = quotePrefix(rightPrefixRaw)
     if (!leftPrefix || !rightPrefix || leftPrefix.indent !== rightPrefix.indent) {
-      return rejected('blockquote-join-prefix-unowned')
+      return recognizedRejection('blockquote-join-prefix-unowned')
     }
 
     const blankStart = leftLine.end + leftLine.eol.length
@@ -509,12 +518,12 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
       blankLine.start !== blankStart ||
       !blankLine.eol ||
       rightLine.start !== blankLine.end + blankLine.eol.length
-    ) return rejected('blockquote-join-separator-shape')
+    ) return recognizedRejection('blockquote-join-separator-shape')
     const blankPrefix = quotePrefix(
       journal.source.slice(blankLine.start, blankLine.end)
     )
     if (!blankPrefix || blankPrefix.indent !== leftPrefix.indent) {
-      return rejected('blockquote-join-separator-prefix')
+      return recognizedRejection('blockquote-join-separator-prefix')
     }
 
     const markdown = journal.source.slice(0, leftRawStart) +
@@ -524,9 +533,11 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
     try {
       semanticOk = validateMarkdown({ markdown, expectedDoc }) === true
     } catch {
-      return rejected('blockquote-join-semantic-validator-threw')
+      return recognizedRejection('blockquote-join-semantic-validator-threw')
     }
-    if (!semanticOk) return rejected('blockquote-join-semantic-document-mismatch')
+    if (!semanticOk) {
+      return recognizedRejection('blockquote-join-semantic-document-mismatch')
+    }
 
     const proof = Object.freeze({
       kind: 'transaction-blockquote-join-proof',

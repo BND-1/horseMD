@@ -284,6 +284,7 @@ const planFor = ({
     true,
     `missing quote separator was not rejected: ${plan.reason}`
   )
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -367,6 +368,7 @@ const planFor = ({
     revision: 87
   })
   assert.equal(plan.reason, 'blockquote-join-raw-text-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -383,6 +385,7 @@ const planFor = ({
     validateMarkdown: () => false
   })
   assert.equal(plan.reason, 'blockquote-join-semantic-document-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {

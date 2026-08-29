@@ -278,6 +278,7 @@ for (const [label, offset] of [['start', 0], ['end', 5]]) {
     revision: 70
   })
   assert.equal(plan.reason, 'blockquote-split-top-level-change-count')
+  assert.equal(plan.recognized, false)
 }
 
 {
@@ -362,6 +363,7 @@ for (const [label, offset] of [['start', 0], ['end', 5]]) {
     revision: 73
   })
   assert.equal(plan.reason, 'blockquote-split-raw-text-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -379,6 +381,7 @@ for (const [label, offset] of [['start', 0], ['end', 5]]) {
     validateMarkdown: () => false
   })
   assert.equal(plan.reason, 'blockquote-split-semantic-document-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {

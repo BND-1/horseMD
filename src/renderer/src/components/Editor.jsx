@@ -672,6 +672,7 @@ export default function Editor({
         key: 'blockquote-paragraph',
         owner: blockquoteParagraphTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-paragraph-markdown-updated',
           'forced-flush': 'transaction-blockquote-paragraph-forced-flush'
@@ -681,6 +682,7 @@ export default function Editor({
         key: 'blockquote-split',
         owner: blockquoteSplitTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-split-markdown-updated',
           'forced-flush': 'transaction-blockquote-split-forced-flush'
@@ -690,6 +692,7 @@ export default function Editor({
         key: 'blockquote-join',
         owner: blockquoteJoinTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-join-markdown-updated',
           'forced-flush': 'transaction-blockquote-join-forced-flush'
@@ -699,6 +702,7 @@ export default function Editor({
         key: 'blockquote-exit',
         owner: blockquoteExitTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
+        legacyRetired: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-exit-markdown-updated',
           'forced-flush': 'transaction-blockquote-exit-forced-flush'

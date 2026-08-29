@@ -19,15 +19,22 @@ export const BLOCKQUOTE_PARAGRAPH_TRANSACTION_BOUNDARY = 'transaction-blockquote
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const isSimpleNonEmptyParagraph = (node) => {
@@ -302,9 +309,11 @@ export function createBlockquoteParagraphTransactionSourceSyncOwner({
     }
 
     const classification = classifyBlockquoteParagraphJournal({ journal, expectedDoc })
-    if (!classification.ok) return classification
+    if (!classification.ok) {
+      return rejected(classification.reason, { proof: classification.proof })
+    }
     const transactions = transactionsFromSourceSyncTransactionJournal(journal)
-    if (!transactions.length) return rejected('blockquote-paragraph-step-count')
+    if (!transactions.length) return recognizedRejection('blockquote-paragraph-step-count')
 
     let mapped
     try {
@@ -327,10 +336,10 @@ export function createBlockquoteParagraphTransactionSourceSyncOwner({
         })
       })
     } catch (error) {
-      return rejected(`blockquote-paragraph-mapper-threw:${error?.name || 'Error'}`)
+      return recognizedRejection(`blockquote-paragraph-mapper-threw:${error?.name || 'Error'}`)
     }
     if (!mapped?.ok || typeof mapped.markdown !== 'string') {
-      return rejected(mapped?.reason || 'blockquote-paragraph-mapper-rejected')
+      return recognizedRejection(mapped?.reason || 'blockquote-paragraph-mapper-rejected')
     }
 
     const proof = Object.freeze({

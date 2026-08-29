@@ -15,15 +15,22 @@ export const BLOCKQUOTE_EXIT_TRANSACTION_BOUNDARY = 'transaction-blockquote-para
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const nodeAtPath = (doc, path) => {
@@ -754,21 +761,23 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
         paragraphIndex
       })
     } catch {
-      return rejected('blockquote-exit-range-mapper-threw')
+      return recognizedRejection('blockquote-exit-range-mapper-threw')
     }
     if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawEnd < rawStart) {
-      return rejected('blockquote-exit-range-unmapped')
+      return recognizedRejection('blockquote-exit-range-unmapped')
     }
     if (journal.source.slice(rawStart, rawEnd) !== textValue) {
-      return rejected('blockquote-exit-raw-text-mismatch')
+      return recognizedRejection('blockquote-exit-raw-text-mismatch')
     }
     const line = lineAtOffset(journal.source, rawStart)
-    if (!line || rawEnd !== line.end) return rejected('blockquote-exit-not-single-line')
+    if (!line || rawEnd !== line.end) {
+      return recognizedRejection('blockquote-exit-not-single-line')
+    }
     const prefixRaw = journal.source.slice(line.start, rawStart)
     const prefix = quotePrefix(prefixRaw)
-    if (!prefix) return rejected('blockquote-exit-prefix-unowned')
+    if (!prefix) return recognizedRejection('blockquote-exit-prefix-unowned')
     if (classification.parentType === 'doc' && prefix.indent) {
-      return rejected('blockquote-exit-top-level-indent')
+      return recognizedRejection('blockquote-exit-top-level-indent')
     }
     const exitedPrefix = classification.parentType === 'list_item'
       ? prefix.indent
@@ -786,9 +795,11 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
     try {
       semanticOk = validateMarkdown({ markdown, expectedDoc }) === true
     } catch {
-      return rejected('blockquote-exit-semantic-validator-threw')
+      return recognizedRejection('blockquote-exit-semantic-validator-threw')
     }
-    if (!semanticOk) return rejected('blockquote-exit-semantic-document-mismatch')
+    if (!semanticOk) {
+      return recognizedRejection('blockquote-exit-semantic-document-mismatch')
+    }
 
     const proof = Object.freeze({
       kind: 'transaction-blockquote-exit-proof',

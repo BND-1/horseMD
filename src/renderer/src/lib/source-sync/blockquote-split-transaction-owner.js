@@ -15,15 +15,22 @@ export const BLOCKQUOTE_SPLIT_TRANSACTION_BOUNDARY = 'transaction-blockquote-par
 
 const rejected = (reason, {
   deferred = false,
+  recognized = false,
   reset = false,
   proof = null
 } = {}) => Object.freeze({
   ok: false,
   decision: 'rejected',
   deferred,
+  recognized,
   reset,
   reason,
   proof
+})
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
 })
 
 const quoteChildren = (quote) => {
@@ -399,7 +406,9 @@ export function createBlockquoteSplitTransactionSourceSyncOwner({
     }
 
     const classification = classifyBlockquoteSplitJournal({ journal, expectedDoc })
-    if (!classification.ok) return classification
+    if (!classification.ok) {
+      return rejected(classification.reason, { proof: classification.proof })
+    }
     const textStart = paragraphContentStart(
       classification.previousEntry,
       classification.splitIndex
@@ -423,19 +432,21 @@ export function createBlockquoteSplitTransactionSourceSyncOwner({
         paragraphIndex: classification.splitIndex
       })
     } catch {
-      return rejected('blockquote-split-range-mapper-threw')
+      return recognizedRejection('blockquote-split-range-mapper-threw')
     }
     if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawEnd < rawStart) {
-      return rejected('blockquote-split-range-unmapped')
+      return recognizedRejection('blockquote-split-range-unmapped')
     }
     if (journal.source.slice(rawStart, rawEnd) !== oldText) {
-      return rejected('blockquote-split-raw-text-mismatch')
+      return recognizedRejection('blockquote-split-raw-text-mismatch')
     }
     const line = lineAtOffset(journal.source, rawStart)
-    if (!line || rawEnd !== line.end) return rejected('blockquote-split-not-single-line')
+    if (!line || rawEnd !== line.end) {
+      return recognizedRejection('blockquote-split-not-single-line')
+    }
     const prefix = journal.source.slice(line.start, rawStart)
     if (!/^ {0,3}>[ \t]*$/.test(prefix)) {
-      return rejected('blockquote-split-prefix-unowned')
+      return recognizedRejection('blockquote-split-prefix-unowned')
     }
     const markerEnd = prefix.indexOf('>') + 1
     const blankPrefix = prefix.slice(0, markerEnd)
@@ -449,9 +460,11 @@ export function createBlockquoteSplitTransactionSourceSyncOwner({
     try {
       semanticOk = validateMarkdown({ markdown, expectedDoc }) === true
     } catch {
-      return rejected('blockquote-split-semantic-validator-threw')
+      return recognizedRejection('blockquote-split-semantic-validator-threw')
     }
-    if (!semanticOk) return rejected('blockquote-split-semantic-document-mismatch')
+    if (!semanticOk) {
+      return recognizedRejection('blockquote-split-semantic-document-mismatch')
+    }
 
     const proof = Object.freeze({
       kind: 'transaction-blockquote-split-proof',

@@ -263,6 +263,7 @@ const planFor = ({
     revision: 44
   })
   assert.equal(plan.reason, 'blockquote-paragraph-change-count')
+  assert.equal(plan.recognized, false)
 }
 
 {
@@ -376,6 +377,7 @@ const planFor = ({
     revision: 49
   })
   assert.equal(plan.reason, 'raw-block-text-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -392,6 +394,7 @@ const planFor = ({
     revision: 50
   })
   assert.equal(plan.reason, 'syntax-sensitive-insert')
+  assert.equal(plan.recognized, true)
 }
 
 {

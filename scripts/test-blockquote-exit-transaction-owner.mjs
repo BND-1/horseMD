@@ -317,6 +317,7 @@ const nestedExit = exitAndType({ oldDoc: nestedDoc, quotePath: nestedPath })
     revision: 104
   })
   assert.equal(plan.reason, 'blockquote-exit-target-count')
+  assert.equal(plan.recognized, false)
 }
 
 {
@@ -390,6 +391,7 @@ const nestedExit = exitAndType({ oldDoc: nestedDoc, quotePath: nestedPath })
     true,
     `source mismatch was not rejected: ${plan.reason}`
   )
+  assert.equal(plan.recognized, true)
 }
 
 {
@@ -403,6 +405,7 @@ const nestedExit = exitAndType({ oldDoc: nestedDoc, quotePath: nestedPath })
     validateMarkdown: () => false
   })
   assert.equal(plan.reason, 'blockquote-exit-semantic-document-mismatch')
+  assert.equal(plan.recognized, true)
 }
 
 {
