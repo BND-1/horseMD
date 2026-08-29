@@ -42,6 +42,7 @@ import {
   preserveRichMarkdownSource,
   preserveGeneratedBulletMarkers,
   preserveOwnedTypedBulletInputRule,
+  preserveTransactionOwnedSingleEmptyOrderedBackspaceLift,
   preserveTransactionOwnedListSubtreeChange,
   replaceMarkdownFrontmatterBlock,
   replaceMarkdownListBlock,
@@ -70,6 +71,7 @@ import {
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
+  createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
   createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
   createListEmptyItemFirstLiftTransactionSourceSyncOwner,
   createListEmptyItemTailRemoveTransactionSourceSyncOwner,
@@ -546,6 +548,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listOrderedEmptySuccessorLiftTransactionSourceSyncOwner =
+      createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner({
+        mapOrderedLift: preserveTransactionOwnedSingleEmptyOrderedBackspaceLift,
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset
+      })
     const listIsolatedEmptyOrderedLiftTransactionSourceSyncOwner =
       createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset
@@ -641,6 +648,16 @@ export default function Editor({
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
     const structuralTransactionSourceSyncOwners = Object.freeze([
+      Object.freeze({
+        key: 'list-ordered-empty-successor-lift',
+        owner: listOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
+        traceKey: '__hmListOrderedEmptySuccessorLiftTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-ordered-empty-successor-lift-markdown-updated',
+          'forced-flush': 'transaction-list-ordered-empty-successor-lift-forced-flush'
+        })
+      }),
       Object.freeze({
         key: 'list-isolated-empty-ordered-lift',
         owner: listIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,

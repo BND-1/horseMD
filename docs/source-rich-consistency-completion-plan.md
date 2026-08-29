@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.154`
+> 当前源码版本：`0.13.155`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 bullet first-empty + 0.13.154 isolated ordered lift 已迁移，下一项 RS-72 ordered successor** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 bullet first-empty + 0.13.154 isolated ordered lift + 0.13.155 RS-72 single-successor 已迁移，下一项 multi-successor ordered relabel chain** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -228,6 +228,17 @@ build:mobile
 - ordered lift后的第二 Backspace会暂时出现`bullet_list`内显式`listType='ordered'` item；前置提交`5c91042`已收紧tail和generic list-subtree，让显式item/container语义冲突在mapper前保持未识别，第二拍因此直接走既有`empty-list-item-removed` legacy且全周期零integrity false。
 - 永久门禁：pure owner、input-intent lifecycle、generated-input两拍、直接authored callback/forced、BOM+CRLF source/save/disk/fresh-profile reopen、legacy-blocked负例；first/tail/interior正负、RS-72、RS-63、task、RS-84、rapid Enter、nested Enter、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/fidelity、desktop/mobile build全部通过。
 - 下一独立 family 是 **RS-72 ordered successor/multi-step**：当前仍由`list-subtree-replace`的两Step journal（`ReplaceStep + ReplaceAroundStep`）处理，后续必须单独证明successor numbering、ordered start/delimiter与transient paragraph path，不把它扩入本 isolated owner。
+
+### List ordered Backspace 第二子族实际完成记录（0.13.155）
+
+- 范围刻意只覆盖 **RS-72 single-successor**：顶层 plain `ordered_list` 必须恰有三项 `[nonempty, empty, nonempty]`，空项位于 ordinal 1，前后 item 都是非 task、单一非空 plain paragraph；四项以上、多空项、nested、task、首/尾空项继续不认领。
+- 真实物理 Backspace 是同一本 journal 内 **2 transactions / 2 steps**。第一笔为 `ReplaceStep(structure=true,sliceSize=0)`，精确删除前一 item closing wrapper 与 empty item opening wrapper；它 apply 后产生 intermediate doc：前一 item 变成原非空 paragraph + 一个 editor-only empty paragraph，原 successor 内容和 label `3.` 均未变化。第二笔为 `ReplaceAroundStep(structure=true,sliceSize=2,insert=1,openStart=0,openEnd=0)`，gap 精确包住 successor content，只把该 successor wrapper/label 改成 `2.`。每笔都必须在捕获时 `stepDoc` 上重放并等于下一实际 doc。
+- proof 明确绑定 old `removedPath` / `previousPath` / `successorOldPath`、intermediate successor path、final successor path，以及唯一 transient `[previousItem, trailingParagraph]`；validator 只在 exact `transaction-list-ordered-empty-successor-lift-proof` + 两 Step journal + 精确 path 下忽略这一处 Markdown 无法编码的 empty paragraph。
+- raw source ownership 使用 PM source-map 锁定 source / previous canonical / next canonical 中同一顶层 ordered block，但 focused owner不再调用 broad `preserveTransactionOwnedListSubtreeChange()`。新增 `preserveTransactionOwnedSingleEmptyOrderedBackspaceLift()`，只允许 RS-72 专用 mapper解释 bounded fragment；它拒绝 mixed EOL，规范化 canonical 的 ordered delimiter/empty placeholder用于比较，成功后恢复作者 EOL。
+- 成功 patch 一次性删除作者中间空 ordered row，并把唯一 successor 的数字从 `order+2` 改成 `order+1`；delimiter完全取作者原 token，所以 `1) / 2) / 3)` 保持 `)`，BOM、LF/CRLF、空行、列表外邻块与其它字节不变。owner要求 mapper reason只能是历史已验证的 `diverged-empty-ordered-backspace-lift`，其它 list mapper不能在 focused rejection后接管。
+- legacy retirement：生产 registry 把 `list-ordered-empty-successor-lift` 放在 isolated/first/tail/interior/broad owner之前并设置 `legacyRetired:true`。一空格 authored ordered rows仍可形成相同 PM 两 Step family，但 source range不可安全证明；此时 `recognized:true + legacyBlocked:true`，rich edit保留、显示warning、没有 focused success、没有 broad/legacy/Coordinator publication，磁盘保持原字节。
+- 永久门禁：pure owner；BOM+CRLF + `)` delimiter callback/forced source/save/disk/fresh-profile reopen；one-space authored fail-closed；原 `test-single-empty-ordered-backspace-successor-ui` 长文档要求 focused-only publication；generic list-subtree pure/UI；0.13.154 isolated、first/tail/interior正负、RS-63/60/84/85/86、ordered Enter/exit/delimiter/repeated-list；Journal/provenance/Coordinator/source transaction、完整 preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build全部通过。
+- 下一独立 family 是 **multi-successor ordered middle-empty relabel chain**：先捕获四项及更长 ordered list 中删除一个 middle empty item时后续 `3→2, 4→3, ...` 的真实 transaction/Step 链、非 `order=1` 起点和 `.`/`)` delimiter行为；在真实 Step 数和 raw row ownership没有证明前，不把当前三项 owner泛化。
 
 ## 9. 阶段 F：普通段落默认 authority
 

@@ -2799,6 +2799,59 @@ export const preserveSingleEmptyOrderedBackspaceLift = ({ source, previous, next
   }
 }
 
+// RS-72 has its own transaction family. Once its two-Step journal is proven,
+// only the single-empty ordered Backspace mapper is allowed to interpret the
+// bounded source fragment. Do not run the generic list mapper chain here: a
+// focused owner rejection must stay a rejection rather than finding another
+// list-shaped explanation inside the same callback.
+export const preserveTransactionOwnedSingleEmptyOrderedBackspaceLift = ({
+  source,
+  previous,
+  next
+}) => {
+  const rawSource = String(source || '')
+  const rawPrevious = String(previous || '')
+  const rawNext = String(next || '')
+  if (!rawPrevious || !rawNext || rawPrevious === rawNext) return null
+
+  const sourceEndings = new Set(rawSource.match(/\r\n|\r|\n/g) || [])
+  if (sourceEndings.size > 1) return null
+  const sourceEol = sourceEndings.values().next().value || '\n'
+  const normalize = (value) => String(value || '').replace(/\r\n|\r/g, '\n')
+  const restore = (value) => sourceEol === '\n'
+    ? String(value || '')
+    : String(value || '').replace(/\n/g, sourceEol)
+  const normalizedSource = normalize(rawSource)
+  const comparablePrevious = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalize(rawPrevious))
+  )
+  const comparableNext = normalizeOrderedListDelimiters(
+    normalizeEmptyListItems(normalize(rawNext))
+  )
+  const result = preserveSingleEmptyOrderedBackspaceLift({
+    source: normalizedSource,
+    previous: comparablePrevious,
+    next: comparableNext
+  })
+  if (!result || result.preserved === false || typeof result.markdown !== 'string') return null
+
+  const normalizedMapped = normalize(result.markdown)
+  const contentLineCount = (value) => {
+    const withoutTerminal = String(value || '').replace(/\n+$/, '')
+    return withoutTerminal ? withoutTerminal.split('\n').length : 0
+  }
+  const trailingBoundaryNewlineGrowth = Boolean(
+    /\n$/.test(normalizedMapped) &&
+    contentLineCount(normalizedMapped) > contentLineCount(normalizedSource)
+  ) ? 1 : 0
+  return {
+    ...result,
+    markdown: restore(result.markdown),
+    trailingBoundaryNewlineGrowth,
+    nextBaseline: rawNext
+  }
+}
+
 // A transaction owner has already proven the exact old/new top-level list
 // subtree and sliced away every neighbouring block. Reuse the established list
 // delta implementations on that bounded region instead of asking a

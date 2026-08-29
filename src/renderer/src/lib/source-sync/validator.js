@@ -146,6 +146,34 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
     return [listItemPath]
   }
 
+  if (preservationReason === 'list-ordered-empty-successor-lifted') {
+    const removedPath = preservationProof?.removedPath
+    const firstStep = preservationProof?.firstStep
+    const secondStep = preservationProof?.secondStep
+    if (
+      preservationProof?.kind !== 'transaction-list-ordered-empty-successor-lift-proof' ||
+      preservationProof?.family !== 'list-ordered-empty-successor-lift' ||
+      preservationProof?.listType !== 'ordered_list' ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      preservationProof?.chainLength !== 2 ||
+      preservationProof?.removedIndex !== 1 ||
+      !Array.isArray(removedPath) || removedPath.length !== 2 ||
+      removedPath[0] !== preservationProof.topLevelIndex || removedPath[1] !== 1 ||
+      listItemPath?.length !== 2 || listItemPath[1] !== 0 ||
+      paragraphPath?.length !== 3 || paragraphPath[2] !== 1 ||
+      !validPathPair ||
+      firstStep?.name !== 'ReplaceStep' || firstStep?.structure !== true || firstStep?.sliceSize !== 0 ||
+      !Number.isFinite(firstStep?.from) || !Number.isFinite(firstStep?.to) || firstStep.to <= firstStep.from ||
+      secondStep?.name !== 'ReplaceAroundStep' || secondStep?.structure !== true ||
+      secondStep?.sliceSize !== 2 || secondStep?.insert !== 1 ||
+      !Number.isFinite(secondStep?.from) || !Number.isFinite(secondStep?.to) ||
+      !Number.isFinite(secondStep?.gapFrom) || !Number.isFinite(secondStep?.gapTo) ||
+      secondStep.gapTo <= secondStep.gapFrom || secondStep.to <= secondStep.from
+    ) return false
+    return [listItemPath]
+  }
+
   if (preservationProof?.mapperReason !== 'diverged-empty-ordered-backspace-lift') return []
   if (
     preservationReason !== 'transaction-list-subtree' ||

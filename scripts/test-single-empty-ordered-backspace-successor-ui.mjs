@@ -101,7 +101,8 @@ const state = (app) => app.evaluate(`(() => {
     })),
     coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-30),
     journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-50),
-    owner: (window.__hmListSubtreeTransactionTrace || []).slice(-50),
+    owner: (window.__hmListOrderedEmptySuccessorLiftTransactionTrace || []).slice(-50),
+    broad: (window.__hmListSubtreeTransactionTrace || []).slice(-50),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || '')
@@ -156,6 +157,7 @@ try {
     window.__hmSourceIntegrityDiffTrace = []
     window.__hmSourceSyncCoordinatorTrace = []
     window.__hmSourceSyncTransactionJournalTrace = []
+    window.__hmListOrderedEmptySuccessorLiftTransactionTrace = []
     window.__hmListSubtreeTransactionTrace = []
   })()`)
 
@@ -169,30 +171,36 @@ try {
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-72 produced transient integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-72 showed source warning: ${JSON.stringify(after.toasts)}`)
   const transactionPublication = after.preserve.find((entry) =>
-    entry.reason === 'transaction-list-subtree' &&
+    entry.reason === 'list-ordered-empty-successor-lifted' &&
     entry.preserved !== false &&
-    entry.integrityProof?.kind === 'transaction-list-subtree-proof'
+    entry.integrityProof?.kind === 'transaction-list-ordered-empty-successor-lift-proof'
   )
   assert.ok(transactionPublication,
-    `RS-72 structural Backspace was not owned by the transaction list subtree family: ${JSON.stringify(after.preserve)}`)
+    `RS-72 structural Backspace was not owned by the focused ordered successor family: ${JSON.stringify(after.preserve)}`)
+  assert.equal(transactionPublication.integrityProof.family, 'list-ordered-empty-successor-lift')
   assert.equal(transactionPublication.integrityProof.listType, 'ordered_list')
   assert.equal(transactionPublication.integrityProof.mapperReason, 'diverged-empty-ordered-backspace-lift')
   assert.deepEqual(transactionPublication.integrityProof.transientEmptyListItemPath, [1, 0])
   assert.deepEqual(transactionPublication.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
   assert.deepEqual(transactionPublication.integrityProof.transactionJournal?.stepNames,
     ['ReplaceStep', 'ReplaceAroundStep'])
+  assert.equal(transactionPublication.integrityProof.firstStep?.name, 'ReplaceStep')
+  assert.equal(transactionPublication.integrityProof.secondStep?.name, 'ReplaceAroundStep')
+  assert.equal(transactionPublication.integrityProof.secondStep?.insert, 1)
   assert.equal(transactionPublication.integrityProof.transactionJournal?.snapshotMatched, true)
   assert.equal(transactionPublication.integrityProof.transactionJournal?.documentMatched, true)
   assert.equal(after.coordinator.some((entry) =>
     entry.phase === 'published' && entry.owner === 'transaction' &&
-    entry.family === 'list-subtree-replace' &&
-    entry.boundary === 'transaction-list-subtree-markdown-updated'
+    entry.family === 'list-ordered-empty-successor-lift' &&
+    entry.boundary === 'transaction-list-ordered-empty-successor-lift-markdown-updated'
   ), true, `RS-72 bypassed Coordinator transaction publication: ${JSON.stringify(after.coordinator)}`)
   assert.equal(after.owner.some((entry) =>
     entry.phase === 'published' && entry.ok === true &&
-    entry.family === 'list-subtree-replace' &&
+    entry.family === 'list-ordered-empty-successor-lift' &&
     entry.journalId === transactionPublication.integrityProof.journalId
-  ), true, `RS-72 missing list subtree owner trace: ${JSON.stringify(after.owner)}`)
+  ), true, `RS-72 missing focused ordered successor owner trace: ${JSON.stringify(after.owner)}`)
+  assert.equal(after.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+    `RS-72 unexpectedly reached broad list-subtree publication: ${JSON.stringify(after.broad)}`)
   assert.equal(after.preserve.some((entry) =>
     entry.reason === 'diverged-empty-ordered-backspace-lift' ||
     entry.reason === 'empty-list-item-filled'
