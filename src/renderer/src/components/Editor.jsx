@@ -70,6 +70,7 @@ import {
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
+  createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
   createListEmptyItemFirstLiftTransactionSourceSyncOwner,
   createListEmptyItemTailRemoveTransactionSourceSyncOwner,
   createListEmptyItemRemoveTransactionSourceSyncOwner,
@@ -89,6 +90,11 @@ import {
   findSlashCodeBlockAtSelection,
   retiredLegacySourceSyncFailureReason
 } from '../lib/source-sync/index.js'
+import {
+  hasBlockingSourceSyncListInputIntent,
+  isSourceSyncListInputIntentActive,
+  markSourceSyncListInputIntentConsumed
+} from '../lib/source-sync/list-input-intent-lifecycle.js'
 
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
@@ -328,7 +334,7 @@ export default function Editor({
         // but flushing here races ahead of the exact marker-ownership bridge and
         // produces a false source mismatch. Real cross-block edits have no
         // active list input intent and still flush immediately.
-        !isActiveListInputIntent(pendingMarkdownInputIntent)
+        !hasBlockingListInputIntent()
       ) {
         const markdown = apiRef.current?.flushMarkdown?.()
         if (typeof markdown === 'string') onChange?.(markdown, false)
@@ -355,7 +361,7 @@ export default function Editor({
         // flush; retry after a short interval while the captured intent remains
         // active. If the callback never arrives, normal reconciliation resumes
         // once the bounded intent window expires.
-        if (isActiveListInputIntent(pendingMarkdownInputIntent)) {
+        if (hasBlockingListInputIntent()) {
           scheduleRichDirtyReconcile(120)
           return
         }
@@ -371,13 +377,13 @@ export default function Editor({
     const pendingRawMarkdownPasteRef = { current: null }
     let pendingListConversion = null
     let pendingMarkdownInputIntent = null
-    const isActiveListInputIntent = (intent) => {
-      if (!intent || (intent.type !== 'bullet-list' && intent.type !== 'ordered-list')) return false
-      const expiresAt = Number.isFinite(intent.batchUntil)
-        ? intent.batchUntil
-        : Number(intent.at || 0) + 3000
-      return Date.now() < expiresAt
-    }
+    const isActiveListInputIntent = (intent) =>
+      isSourceSyncListInputIntentActive(intent)
+    const hasBlockingListInputIntent = () =>
+      hasBlockingSourceSyncListInputIntent(
+        pendingMarkdownInputIntents,
+        pendingMarkdownInputIntent
+      )
     // A physical/IME input sequence can create an outer list and a nested list
     // before Milkdown emits its first markdownUpdated callback. Keep every
     // marker intent until that callback serializes the generated document;
@@ -540,6 +546,10 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listIsolatedEmptyOrderedLiftTransactionSourceSyncOwner =
+      createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset
+      })
     const listEmptyItemFirstLiftTransactionSourceSyncOwner =
       createListEmptyItemFirstLiftTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset
@@ -631,6 +641,16 @@ export default function Editor({
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
     const structuralTransactionSourceSyncOwners = Object.freeze([
+      Object.freeze({
+        key: 'list-isolated-empty-ordered-lift',
+        owner: listIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
+        traceKey: '__hmListIsolatedEmptyOrderedLiftTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-isolated-empty-ordered-lift-markdown-updated',
+          'forced-flush': 'transaction-list-isolated-empty-ordered-lift-forced-flush'
+        })
+      }),
       Object.freeze({
         key: 'list-empty-item-first-lift',
         owner: listEmptyItemFirstLiftTransactionSourceSyncOwner,
@@ -1083,20 +1103,38 @@ export default function Editor({
       // Markdown range resolution waits for callback/forced flush. Structural
       // follow-ups extend the same journal instead of publishing an intermediate
       // empty-item representation or forcing each owner to invent a token.
-      const transactionJournalTrackingBlocked =
-        !ready ||
-        appending ||
-        programmaticReplaceRef.current ||
-        generatedScratchRef.current ||
-        viewRef.current?.composing ||
-        pendingRawMarkdownPasteRef.current ||
-        pendingListConversion ||
-        pendingMarkdownInputIntent ||
-        wholeDocumentReplacementPending ||
-        transactionSourceQuarantined ||
-        !hasRecentUserEdit()
+      const transactionJournalBlockState = {
+        notReady: !ready,
+        appending: Boolean(appending),
+        programmaticReplace: Boolean(programmaticReplaceRef.current),
+        generatedScratch: Boolean(generatedScratchRef.current),
+        composing: Boolean(viewRef.current?.composing),
+        rawPaste: Boolean(pendingRawMarkdownPasteRef.current),
+        listConversion: Boolean(pendingListConversion),
+        listInputIntent: hasBlockingListInputIntent(),
+        wholeDocumentReplacement: Boolean(wholeDocumentReplacementPending),
+        quarantined: Boolean(transactionSourceQuarantined),
+        recentUserEditMissing: !hasRecentUserEdit()
+      }
+      const transactionJournalTrackingBlocked = Object.values(transactionJournalBlockState).some(Boolean)
       if (transactionJournalTrackingBlocked) {
         pendingSourceSyncTransactionJournal = null
+        if (Array.isArray(globalThis.__hmSourceSyncTransactionJournalTrace)) {
+          globalThis.__hmSourceSyncTransactionJournalTrace.push({
+            phase: 'blocked',
+            ok: false,
+            reason: 'transaction-journal-tracking-blocked',
+            blockers: transactionJournalBlockState,
+            transactionCount: transactions.length,
+            stepCount: transactions.reduce(
+              (total, transaction) => total + (transaction.steps?.length || 0),
+              0
+            )
+          })
+          if (globalThis.__hmSourceSyncTransactionJournalTrace.length > 100) {
+            globalThis.__hmSourceSyncTransactionJournalTrace.shift()
+          }
+        }
       } else {
         try {
           const snapshot = sourceSyncBridge.getSnapshot()
@@ -1158,7 +1196,7 @@ export default function Editor({
         viewRef.current?.composing ||
         pendingRawMarkdownPasteRef.current ||
         pendingListConversion ||
-        pendingMarkdownInputIntent ||
+        hasBlockingListInputIntent() ||
         transactionSourceQuarantined ||
         !hasRecentUserEdit()
       ) {
@@ -1961,7 +1999,7 @@ export default function Editor({
         const pendingList = pendingListConversion
         const pendingWholeDocumentReplacement = wholeDocumentReplacementPending
         if (ready && !appending && (pendingPaste || pendingWholeDocumentReplacement || hasRecentUserEdit())) {
-          const hasPendingListIntent = isActiveListInputIntent(pendingMarkdownInputIntent)
+          const hasPendingListIntent = hasBlockingListInputIntent()
           let pendingPlainParagraphPlan = null
           const plainTransactionMode = transactionFirstMode()
           // Focused structural owners inspect the same journal before any
@@ -1973,7 +2011,6 @@ export default function Editor({
             !pendingList &&
             !pendingWholeDocumentReplacement &&
             !generatedScratchRef.current &&
-            !pendingMarkdownInputIntent &&
             !hasPendingListIntent &&
             pendingSourceSyncTransactionJournal
           ) {
@@ -2024,7 +2061,6 @@ export default function Editor({
             !pendingList &&
             !pendingWholeDocumentReplacement &&
             !generatedScratchRef.current &&
-            !pendingMarkdownInputIntent &&
             !hasPendingListIntent &&
             pendingSourceSyncTransactionJournal &&
             plainTransactionMode !== 'disabled'
@@ -2325,7 +2361,8 @@ export default function Editor({
             return false
           })()
           if (
-            isActiveListInputIntent(pendingMarkdownInputIntent)
+            isActiveListInputIntent(pendingMarkdownInputIntent) &&
+            pendingMarkdownInputIntent?.consumed !== true
           ) {
             try {
               // Do not gate the input-rule intent on the *current* selection
@@ -2459,13 +2496,17 @@ export default function Editor({
                 // `1.` -> Space -> IME composition -> Enter to reuse the old
                 // marker and rewrite the new empty row (`2.` became `1.`).
                 const callbackTailUntil = Date.now() + 750
-                pendingMarkdownInputIntents = pendingMarkdownInputIntents.map((intent) => ({
-                  ...intent,
-                  batchUntil: Math.min(
-                    Number.isFinite(intent.batchUntil) ? intent.batchUntil : callbackTailUntil,
-                    callbackTailUntil
-                  )
-                }))
+                pendingMarkdownInputIntents = pendingMarkdownInputIntents.map((intent) =>
+                  intent === consumedIntent
+                    ? markSourceSyncListInputIntentConsumed(intent, callbackTailUntil)
+                    : {
+                        ...intent,
+                        batchUntil: Math.min(
+                          Number.isFinite(intent.batchUntil) ? intent.batchUntil : callbackTailUntil,
+                          callbackTailUntil
+                        )
+                      }
+                )
                 pendingMarkdownInputIntent = pendingMarkdownInputIntents.at(-1) || null
                 if (Array.isArray(globalThis.__hmListIntentTrace)) {
                   globalThis.__hmListIntentTrace.push({

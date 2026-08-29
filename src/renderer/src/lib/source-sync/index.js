@@ -96,6 +96,11 @@ export {
   createListSubtreeTransactionSourceSyncOwner
 } from './list-subtree-transaction-owner.js'
 export {
+  LIST_ISOLATED_EMPTY_ORDERED_LIFT_TRANSACTION_BOUNDARY,
+  LIST_ISOLATED_EMPTY_ORDERED_LIFT_TRANSACTION_FAMILY,
+  createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner
+} from './list-isolated-empty-ordered-lift-transaction-owner.js'
+export {
   LIST_EMPTY_ITEM_FIRST_LIFT_TRANSACTION_BOUNDARY,
   LIST_EMPTY_ITEM_FIRST_LIFT_TRANSACTION_FAMILY,
   createListEmptyItemFirstLiftTransactionSourceSyncOwner

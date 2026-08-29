@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.153`
+> 当前源码版本：`0.13.154`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 plain bullet first-empty 已迁移，下一项 ordered successor/lift** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 bullet first-empty + 0.13.154 isolated ordered lift 已迁移，下一项 RS-72 ordered successor** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -217,6 +217,17 @@ build:mobile
 - RS-84 第二拍现在由 `list-empty-item-first-lift` transaction proof接管，第一拍 cross-list owner保持不变；永久测试明确禁止第二拍再回落到 legacy `empty-list-item-removed`。
 - callback/立即源码 forced-flush、BOM+CRLF、source/save/disk/fresh-profile reopen、纯正反合同、loose-first负例、tail/interior、isolated ordered lift、RS-72、nested/task/cross-list/rapid Enter、generic list-subtree、Journal/Coordinator/source transaction、完整 preservation、39/39 probes、mixed rich/source、异构 fidelity、desktop/mobile build全部通过。
 - 下一独立 family 为 **ordered successor/lift**：先从 `test-isolated-empty-ordered-backspace-lift-ui.mjs` 与 `test-single-empty-ordered-backspace-successor-ui.mjs` 捕获真实 ordered Step/topology、`start`/delimiter/renumbering与 raw source 影响，不能把 ordered 纳入 bullet first owner。
+
+### List ordered Backspace 第一子族实际完成记录（0.13.154）
+
+- 范围刻意只覆盖 **isolated empty ordered lift**：旧拓扑必须是顶层 plain bullet list、紧邻单一空 ordered list、再紧邻一个未变化的 nonempty bullet list；前一/空ordered/后继 item 的显式 `listType` 必须分别与 bullet/ordered/bullet 容器一致。RS-72 的 ordered successor、多 item ordered、task、nested全部不认领。
+- 真实 PM `joinBackward` 是一个 `ReplaceStep(structure=true,sliceSize=0)`；最小合同 `24→26`，generated-input真实文档 `40→42`。精确关系是 `from === ordered.beforePos - 1`、`to === ordered.contentStart`，即删除前一 bullet closing wrapper与isolated ordered opening wrapper，保留空 item并追加进前一 bullet list。
+- 为使 `1.` input-rule后立即 Backspace可被Journal看到，新增 `list-input-intent-lifecycle`：active且未消费的intent仍阻断结构跟踪；回调已消费但仍处于callback-tail TTL的intent不再阻断后续真实结构事务。没有新增基于时间窗口推断操作的source mapper。
+- 空 ordered paragraph无法作为可靠 PM→Markdown offset锚点；owner改用前一 bullet最后非空 paragraph和后继 bullet第一非空 paragraph两端定位，在source与previous canonical的两个list block边界之间分别要求唯一非空top-level ordered row。作者ordered数字必须等于PM `ordered_list.attrs.order`，成功只替换marker token；`1)`/`.` delimiter、`+/-/*` bullet token、BOM、LF/CRLF和空行均由作者source决定。
+- legacy retirement：registry把`list-isolated-empty-ordered-lift`置于first/tail/interior/broad list owners之前并`legacyRetired:true`。一空格 authored ordered row在PM family已证明后以`isolated-ordered-lift-row-count / recognized:true / legacyBlocked:true` fail closed，rich lift保留、warning、无publication、disk不变。
+- ordered lift后的第二 Backspace会暂时出现`bullet_list`内显式`listType='ordered'` item；前置提交`5c91042`已收紧tail和generic list-subtree，让显式item/container语义冲突在mapper前保持未识别，第二拍因此直接走既有`empty-list-item-removed` legacy且全周期零integrity false。
+- 永久门禁：pure owner、input-intent lifecycle、generated-input两拍、直接authored callback/forced、BOM+CRLF source/save/disk/fresh-profile reopen、legacy-blocked负例；first/tail/interior正负、RS-72、RS-63、task、RS-84、rapid Enter、nested Enter、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/fidelity、desktop/mobile build全部通过。
+- 下一独立 family 是 **RS-72 ordered successor/multi-step**：当前仍由`list-subtree-replace`的两Step journal（`ReplaceStep + ReplaceAroundStep`）处理，后续必须单独证明successor numbering、ordered start/delimiter与transient paragraph path，不把它扩入本 isolated owner。
 
 ## 9. 阶段 F：普通段落默认 authority
 

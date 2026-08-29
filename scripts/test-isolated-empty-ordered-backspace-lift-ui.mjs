@@ -57,6 +57,14 @@ const diagnostics = (app) => app.evaluate(`(() => ({
     candidate: String(entry.candidate || '').slice(0, 1400),
     canonical: String(entry.canonical || '').slice(0, 1400)
   })),
+  journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-40),
+  isolatedOrdered: (window.__hmListIsolatedEmptyOrderedLiftTransactionTrace || []).slice(-40),
+  first: (window.__hmListEmptyItemFirstTransactionTrace || []).slice(-40),
+  tail: (window.__hmListEmptyItemTailTransactionTrace || []).slice(-40),
+  interior: (window.__hmListEmptyItemTransactionTrace || []).slice(-40),
+  broad: (window.__hmListSubtreeTransactionTrace || []).slice(-40),
+  coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-40),
+  listIntent: (window.__hmListIntentTrace || []).slice(-80),
   toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || ''),
   html: [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)?.innerHTML.slice(0, 2200) || ''
 }))()`)
@@ -119,6 +127,14 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncTransactionJournalTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmListIntentTrace = []
+    window.__hmListIsolatedEmptyOrderedLiftTransactionTrace = []
+    window.__hmListEmptyItemFirstTransactionTrace = []
+    window.__hmListEmptyItemTailTransactionTrace = []
+    window.__hmListEmptyItemTransactionTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
 
   const focused = await focusInitialEmptyBullet(app)
@@ -153,6 +169,13 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncTransactionJournalTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmListIsolatedEmptyOrderedLiftTransactionTrace = []
+    window.__hmListEmptyItemFirstTransactionTrace = []
+    window.__hmListEmptyItemTailTransactionTrace = []
+    window.__hmListEmptyItemTransactionTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
 
   await key(app, 'Backspace', 'Backspace', 8)
@@ -161,10 +184,24 @@ try {
   const first = await diagnostics(app)
   console.log('ISOLATED_EMPTY_ORDERED_FIRST_BACKSPACE_OBSERVED:', JSON.stringify(first))
   assert.equal(
-    first.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-ordered-backspace-lift' && entry.preserved === true),
+    first.preserve.some((entry) =>
+      entry.reason === 'list-isolated-empty-ordered-lifted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-list-isolated-empty-ordered-lift-proof' &&
+      entry.integrityProof?.family === 'list-isolated-empty-ordered-lift'),
     true,
-    'first Backspace was not owned by isolated empty ordered lift mapper'
+    `first Backspace was not transaction-owned by isolated ordered lift: ${JSON.stringify(first.preserve)}`
   )
+  assert.equal(
+    first.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-ordered-backspace-lift'),
+    false,
+    `first Backspace unexpectedly fell back to legacy isolated ordered lift: ${JSON.stringify(first.preserve)}`
+  )
+  const firstPublications = first.isolatedOrdered.filter((entry) =>
+    entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
+  )
+  assert.equal(firstPublications.length, 1, JSON.stringify(first.isolatedOrdered))
+  assert.equal(firstPublications[0].boundary, 'transaction-list-isolated-empty-ordered-lift-markdown-updated')
   console.log('ISOLATED_EMPTY_ORDERED_FIRST_BACKSPACE:', JSON.stringify(first))
   assert.equal(first.integrity.some((entry) => entry.ok === false), false, 'first Backspace produced an integrity failure')
   assert.equal(
@@ -173,7 +210,7 @@ try {
     'first Backspace showed a source-sync warning'
   )
   assert.equal(
-    first.integrity.some((entry) => entry.preservationReason === 'diverged-isolated-empty-ordered-backspace-lift' &&
+    first.integrity.some((entry) => entry.preservationReason === 'list-isolated-empty-ordered-lifted' &&
       entry.semanticOk === true && entry.listSlotsMatch === true),
     true,
     'first Backspace candidate was not fully source-equivalent'
@@ -205,6 +242,13 @@ try {
       entry.semanticOk === true && entry.listSlotsMatch === true),
     true,
     'second Backspace candidate was not fully source-equivalent'
+  )
+  assert.equal(
+    second.isolatedOrdered.filter((entry) =>
+      entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
+    ).length,
+    1,
+    'second Backspace must not be reclassified as another isolated ordered lift'
   )
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
