@@ -74,6 +74,11 @@ export {
   createCodeBlockTransactionSourceSyncOwner
 } from './code-block-transaction-owner.js'
 export {
+  EMPTY_CODE_BLOCK_UNPACK_TRANSACTION_BOUNDARY,
+  EMPTY_CODE_BLOCK_UNPACK_TRANSACTION_FAMILY,
+  createEmptyCodeBlockUnpackTransactionSourceSyncOwner
+} from './empty-code-block-unpack-transaction-owner.js'
+export {
   LIST_SUBTREE_TRANSACTION_BOUNDARY,
   LIST_SUBTREE_TRANSACTION_FAMILY,
   createListSubtreeTransactionSourceSyncOwner

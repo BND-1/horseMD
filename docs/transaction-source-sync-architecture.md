@@ -1,6 +1,6 @@
 # 事务优先源码同步架构（方案一）
 
-> 状态：2026-08-28，HorseMD `0.13.145`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string、已有 blockquote text/split/join/exit、单一 table cell plain text、已有 table body-row insert/delete、simple-grid table column delete/insert/alignment/width，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化、稳定 blockquote path 上的 text/split/join/exit、稳定 table cell path 内的纯文字 ReplaceStep、真实 `addRowAfter` / `deleteRow` 的 exact insertion/range Step、`deleteColumn` / `addColumnBefore` / `addColumnAfter` 的逐 row ReplaceStep 链、整列 alignment 与 colwidth 的逐 row ReplaceAroundStep/stepDoc 链，可直接 transaction-owned 发布；其中列宽属于 GFM 不可编码的 PM-only 元数据，成功后 source/canonical 原样不动，只推进 Coordinator expectedDoc。普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。代码块围栏结构与块生命周期、表格 span/merge/split 等 GFM 不可表达 topology、插入空行/空列后同 journal 快速输入、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
+> 状态：2026-08-29，HorseMD `0.13.146`。当前仍是**混合架构迁移状态**，但生产事务生命周期已经收敛：普通用户编辑先进入一个绑定 `SourceSyncCoordinator` revision、source、canonical 与 oldDoc 的 `SourceSyncTransactionJournal`；structural owner registry 中的列表子树、已有代码块正文、已有代码块 info string、空代码块 Backspace 解包、已有 blockquote text/split/join/exit、单一 table cell plain text、已有 table body-row insert/delete、simple-grid table column delete/insert/alignment/width，以及普通段落 owner，共享同一份不可变 journal。可证明的列表子树变化、已有 fenced code block 正文/语言变化、空 fenced code block Backspace 解包、稳定 blockquote path 上的 text/split/join/exit、稳定 table cell path 内的纯文字 ReplaceStep、真实 `addRowAfter` / `deleteRow` 的 exact insertion/range Step、`deleteColumn` / `addColumnBefore` / `addColumnAfter` 的逐 row ReplaceStep 链、整列 alignment 与 colwidth 的逐 row ReplaceAroundStep/stepDoc 链，可直接 transaction-owned 发布；其中列宽属于 GFM 不可编码的 PM-only 元数据，成功后 source/canonical 原样不动，只推进 Coordinator expectedDoc。普通段落默认仍走 legacy，显式 shadow/authority 门禁从共享 journal 规划候选。除已迁移空块 Backspace 解包外的代码块围栏结构与块生命周期、表格 span/merge/split 等 GFM 不可表达 topology、插入空行/空列后同 journal 快速输入、输入规则及其他未迁移 family 继续使用既有 fail-closed owner。
 >
 > `Editor.jsx` 已删除生产路径上的 `transactionFirstShadowPending`、逐回调 SourceRangeMap checkpoint 和私有 chain rebase。旧 `lib/transaction-first-source-sync.js` 暂时仅保留给历史策略/兼容纯测试，不再拥有生产生命周期。当前不能描述为“全部迁移完成”：完成的是 revision-bound journal、逐 Step 文档/StepMap 证据、focused family owner 与 Coordinator 原子发布；未完成的是把其余结构 family 逐个迁入同一 journal → bounded source patch 管线并删除对应 legacy 分支。
 >
@@ -65,6 +65,13 @@ ProseMirror 文档 → 整篇 Markdown serializer → canonical/source 猜测对
 - 分别解析作者 source、previous canonical 和 next canonical 的 fenced range，只替换作者围栏内部正文；BOM、CRLF、围栏字符/长度、info string 和邻块保持 byte-stable；
 - `editor-source-map.js` 统一把 remark 去除的 BOM offset 恢复为物理 raw 坐标，空代码块不再落到 opening fence 前的换行；
 - callback 与立即 forced flush 均通过 structural registry + Coordinator 发布；attrs/fence 变化、跨块编辑和围栏冲突继续 fail closed。完整合同见 [`transaction-journal-code-block-content-family.md`](./transaction-journal-code-block-content-family.md)。
+
+### `lib/source-sync/empty-code-block-unpack-transaction-owner.js`
+
+- 只认领一个空 `code_block` 原位解包为 plain paragraph 的真实 lifecycle；第一笔 closed `ReplaceStep` 必须覆盖旧节点完整 range，后续 Step 只能在同一 paragraph 内追加 plain text；
+- 空中间态通过 `holdJournal` 阻止 legacy canonical diff 抢先提交，快速文字与结构 Step 保持同一本 revision-bound journal；没有后续文字时仅 forced flush 可提交空解包；
+- raw patch 一次删除作者 opening/content/closing fence 并按最终 paragraph 写回，保留 fence 之外的 BOM、EOL、邻块与全部未编辑字节；非空代码、marks/atoms、邻块混改、language/source/range/semantic/stale 失败均 fail closed；
+- callback 与 forced flush 分别通过 `transaction-empty-code-block-unpack-markdown-updated` / `transaction-empty-code-block-unpack-forced-flush` 进入 registry + Coordinator。完整合同见 [`transaction-journal-empty-code-block-backspace.md`](./transaction-journal-empty-code-block-backspace.md)。
 
 ### `lib/source-sync/code-block-info-transaction-owner.js`
 
@@ -283,6 +290,8 @@ npm run test:code-block-transaction-owner
 npm run test:middle-codeblock-source-ui
 npm run test:code-block-info-transaction-owner
 npm run test:code-block-info-transaction-ui
+npm run test:empty-code-block-unpack-transaction-owner
+npm run test:empty-code-block-unpack-transaction-ui
 npm run test:blockquote-paragraph-transaction-owner
 npm run test:blockquote-paragraph-transaction-ui
 npm run test:list-intent-cross-block-ui

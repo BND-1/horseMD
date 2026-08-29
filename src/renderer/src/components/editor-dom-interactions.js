@@ -136,15 +136,6 @@ export function mountEditorInteractionBindings({
     }
     markUserEdit()
     if (exitIsolatedEmptyBulletAfterOrdered(event)) return
-    const codeBlock = event.target.closest?.('.milkdown-code-block')
-    const codeContent = codeBlock?.querySelector('.cm-content')
-    if (event.key === 'Backspace' && codeBlock && codeContent?.textContent === '') {
-      // CodeMirror/Crepe owns this key and can unwrap an empty fenced block
-      // without publishing markdownUpdated before the next fast keystroke.
-      // Reconcile in the next task, after the structural command has applied,
-      // so following prose is never mapped against the stale fenced baseline.
-      setTimeout(() => onRichEditPending?.(0), 0)
-    }
     if (!event.ctrlKey && !event.metaKey && !event.altKey &&
       (event.key === ' ' || event.code === 'Space')) {
       noteListInputRuleIntent()

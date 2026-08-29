@@ -63,6 +63,7 @@ import {
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
   createDocumentReplacementSourceSyncOwner,
+  createEmptyCodeBlockUnpackTransactionSourceSyncOwner,
   createEditorSourceSyncBridge,
   createLegacySourceIntegrityValidator,
   createListConversionSnapshotSourceSyncOwner,
@@ -526,6 +527,11 @@ export default function Editor({
       mapListSubtree: preserveTransactionOwnedListSubtreeChange,
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    const emptyCodeBlockUnpackTransactionSourceSyncOwner =
+      createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const codeBlockTransactionSourceSyncOwner = createCodeBlockTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
@@ -597,6 +603,15 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-subtree-markdown-updated',
           'forced-flush': 'transaction-list-subtree-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'empty-code-block-unpack',
+        owner: emptyCodeBlockUnpackTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-empty-code-block-unpack-markdown-updated',
+          'forced-flush': 'transaction-empty-code-block-unpack-forced-flush'
         })
       }),
       Object.freeze({
@@ -1014,7 +1029,8 @@ export default function Editor({
               baseRevision: captured.checkpoint?.baseRevision ?? null,
               batchCount: captured.checkpoint?.batchCount || null,
               transactionCount: captured.checkpoint?.transactionCount || null,
-              stepCount: captured.checkpoint?.stepCount || null
+              stepCount: captured.checkpoint?.stepCount || null,
+              stepDetails: captured.checkpoint?.stepDetails || []
             })
             if (globalThis.__hmSourceSyncTransactionJournalTrace.length > 100) {
               globalThis.__hmSourceSyncTransactionJournalTrace.shift()
@@ -1221,6 +1237,7 @@ export default function Editor({
       }
 
       let lastRejection = null
+      let heldRejection = null
       for (const entry of structuralTransactionSourceSyncOwners) {
         const boundary = entry.boundaries[site] || `transaction-${entry.key}-${site}`
         const ownership = entry.owner.plan({
@@ -1249,9 +1266,12 @@ export default function Editor({
             attempted: true,
             ok: false,
             deferred: ownership.deferred === true,
+            holdJournal: ownership.holdJournal === true,
             reason: ownership.reason || null,
-            family: entry.owner.family
+            family: entry.owner.family,
+            proof: ownership.proof || null
           }
+          if (ownership.holdJournal === true) heldRejection = lastRejection
           // A stale revision/source/doc invalidates the shared journal for every
           // family. Ordinary family rejection must leave it available for the
           // next registered owner and the legacy fallback.
@@ -1318,7 +1338,11 @@ export default function Editor({
           coordinated
         }
       }
-      return lastRejection || { attempted: true, ok: false, reason: 'transaction-family-unowned' }
+      return heldRejection || lastRejection || {
+        attempted: true,
+        ok: false,
+        reason: 'transaction-family-unowned'
+      }
     }
     const planPendingPlainParagraphTransaction = ({
       canonical,
@@ -1850,6 +1874,17 @@ export default function Editor({
               clearRichFlushPending()
               pendingRawMarkdownPasteRef.current = null
               pendingListConversion = null
+              userEditUntil = Date.now() + 1000
+              return
+            }
+            if (
+              ownedStructuralTransaction.deferred === true &&
+              ownedStructuralTransaction.holdJournal === true
+            ) {
+              // A focused lifecycle owner has fully proven this intermediate
+              // PM state but intentionally retains the same journal for the
+              // next physical transaction. Do not let legacy canonical-diff
+              // inference race ahead and publish a partial source candidate.
               userEditUntil = Date.now() + 1000
               return
             }
