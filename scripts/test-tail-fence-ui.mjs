@@ -289,9 +289,16 @@ async function openApp(profile, appPort) {
     executable: testExecutable || undefined,
     entrypoint: testExecutable ? '' : undefined
   })
-  await waitFor(() => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)`), 'editor did not mount')
-  await sleep(700)
-  return app
+  try {
+    await waitFor(() => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)`), 'editor did not mount')
+    await sleep(700)
+    return app
+  } catch (error) {
+    try {
+      await stopBuiltElectron(app, { removeProfile: true })
+    } catch {}
+    throw error
+  }
 }
 
 async function main() {

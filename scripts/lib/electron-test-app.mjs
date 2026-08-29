@@ -1,7 +1,26 @@
 import { rm } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 import electronPath from 'electron'
 import { connectCdp, sleep } from './cdp.mjs'
+
+const assertTcpPortAvailable = (port, host = '127.0.0.1') => new Promise((resolve, reject) => {
+  const server = createServer()
+  server.unref()
+  server.once('error', (error) => {
+    if (error?.code === 'EADDRINUSE') {
+      reject(new Error(`CDP port ${port} is already in use`))
+      return
+    }
+    reject(error)
+  })
+  server.listen({ host, port, exclusive: true }, () => {
+    server.close((error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
+})
 
 export async function launchBuiltElectron({
   profileDir,
@@ -15,6 +34,7 @@ export async function launchBuiltElectron({
   env = process.env
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
+  await assertTcpPortAvailable(port)
   const child = spawn(executable, [
     ...(profileDir ? [`--user-data-dir=${profileDir}`] : []),
     `--remote-debugging-port=${port}`,
