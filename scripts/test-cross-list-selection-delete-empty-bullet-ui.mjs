@@ -262,16 +262,25 @@ try {
   assert.equal(second.integrity.some((entry) => entry.ok === false), false, `second Backspace produced integrity failure: ${JSON.stringify(second.integrity)}`)
   assert.equal(second.toasts.some((text) => warningPattern.test(text)), false, `second Backspace showed warning: ${JSON.stringify(second.toasts)}`)
   assert.equal(
-    second.preserve.some((entry) => entry.reason === 'empty-list-item-removed' && entry.preserved === true),
+    second.preserve.some((entry) =>
+      entry.reason === 'list-empty-item-first-lifted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-list-empty-item-first-lift-proof' &&
+      entry.integrityProof?.family === 'list-empty-item-first-lift'),
     true,
-    `second Backspace did not reuse empty-list-item-removed: ${JSON.stringify(second.preserve)}`
+    `second Backspace was not transaction-owned by first-empty lift: ${JSON.stringify(second.preserve)}`
+  )
+  assert.equal(
+    second.preserve.some((entry) => entry.reason === 'empty-list-item-removed'),
+    false,
+    `second Backspace unexpectedly fell back to legacy empty-list-item-removed: ${JSON.stringify(second.preserve)}`
   )
   assert.equal(
     second.integrity.some((entry) =>
-      entry.preservationReason === 'empty-list-item-removed' &&
+      entry.preservationReason === 'list-empty-item-first-lifted' &&
       entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
     true,
-    `second Backspace candidate was not strictly source-equivalent: ${JSON.stringify(second.integrity)}`
+    `second Backspace transaction candidate was not strictly source-equivalent: ${JSON.stringify(second.integrity)}`
   )
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-84 source')

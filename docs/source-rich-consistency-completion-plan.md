@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.152`
+> 当前源码版本：`0.13.153`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 plain tail empty-item Backspace 已迁移，下一项 first-empty** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151 interior + 0.13.152 tail + 0.13.153 plain bullet first-empty 已迁移，下一项 ordered successor/lift** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -207,6 +207,16 @@ build:mobile
 - 相邻门禁发现初版会抢 RS-63 nested continuation；发布前已收窄为 old preceding item `childCount===1` 且唯一 child为非空 paragraph，新态恰为该 paragraph + 一个空 paragraph。RS-63恢复 `empty-list-item-merged-after-nested-list`，task/cross-list/rapid Enter/nested Enter均保持原 owner。
 - callback与立即源码 forced-flush、BOM+CRLF、source/save/disk/fresh-profile reopen、纯正反合同、loose-tail负例、0.13.151 interior、first-empty控制、isolated ordered lift、RS-72、generic list-subtree、完整 preservation、39/39 probes、mixed rich/source和异构 fidelity均通过。
 - 下一独立 family 是 **first-empty Backspace**：真实 Step 已确认是 `ReplaceAroundStep from=8,to=13,structure=true,sliceSize=1`，拓扑为 `[empty,right]` 列表变成“列表前一个顶层 editor-only 空 paragraph + `[right]` 列表”；必须独立证明，不复用 tail 的 trailing-paragraph semantic path。
+
+### List empty-item Backspace 第三子族实际完成记录（0.13.153）
+
+- 范围只覆盖顶层 **plain bullet** first-empty：old list 第一 item 只能是非 task 空 paragraph，第二 item 必须是非 task、单一非空 paragraph；ordered first-empty、task、tail/interior、多 transaction继续不认领。
+- 真实 ProseMirror `joinBackward` 形成唯一 `ReplaceAroundStep from=8,to=13,gapFrom=10,gapTo=12,insert=0,structure=true`，slice 是空 `bullet_list` wrapper，`size=1/openStart=0/openEnd=1`。owner精确绑定 old list `[i]`、first item `[i,0]`、first paragraph `[i,0,0]`、successor `[i,1]`，并要求 after 为顶层空 paragraph `[i]` + remaining list `[i+1]`。
+- raw source patch只删除作者第一空 marker row + 自身 EOL，successor row、前后 block gap、BOM、LF/CRLF与其它字节保持。loose-first rows在 PM family已识别后 `recognized:true + legacyBlocked:true`，warning且source/disk不变。
+- 本 family不新增 validator semantic 例外：共享 comparator 已只在 doc 顶层过滤 editor-owned empty paragraph；该行为正好匹配 first-lift 当前会话 transient，cold reopen从源码恢复时该空段自然消失。
+- RS-84 第二拍现在由 `list-empty-item-first-lift` transaction proof接管，第一拍 cross-list owner保持不变；永久测试明确禁止第二拍再回落到 legacy `empty-list-item-removed`。
+- callback/立即源码 forced-flush、BOM+CRLF、source/save/disk/fresh-profile reopen、纯正反合同、loose-first负例、tail/interior、isolated ordered lift、RS-72、nested/task/cross-list/rapid Enter、generic list-subtree、Journal/Coordinator/source transaction、完整 preservation、39/39 probes、mixed rich/source、异构 fidelity、desktop/mobile build全部通过。
+- 下一独立 family 为 **ordered successor/lift**：先从 `test-isolated-empty-ordered-backspace-lift-ui.mjs` 与 `test-single-empty-ordered-backspace-successor-ui.mjs` 捕获真实 ordered Step/topology、`start`/delimiter/renumbering与 raw source 影响，不能把 ordered 纳入 bullet first owner。
 
 ## 9. 阶段 F：普通段落默认 authority
 
