@@ -958,6 +958,7 @@ export default function Editor({
         owner: blockquoteParagraphTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
         legacyRetired: true,
+        generatedScratchEligible: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-paragraph-markdown-updated',
           'forced-flush': 'transaction-blockquote-paragraph-forced-flush'
@@ -968,6 +969,7 @@ export default function Editor({
         owner: blockquoteSplitTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
         legacyRetired: true,
+        generatedScratchEligible: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-split-markdown-updated',
           'forced-flush': 'transaction-blockquote-split-forced-flush'
@@ -978,6 +980,7 @@ export default function Editor({
         owner: blockquoteJoinTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
         legacyRetired: true,
+        generatedScratchEligible: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-join-markdown-updated',
           'forced-flush': 'transaction-blockquote-join-forced-flush'
@@ -988,6 +991,7 @@ export default function Editor({
         owner: blockquoteExitTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
         legacyRetired: true,
+        generatedScratchEligible: true,
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-blockquote-exit-markdown-updated',
           'forced-flush': 'transaction-blockquote-exit-forced-flush'
@@ -1307,12 +1311,19 @@ export default function Editor({
       // Markdown range resolution waits for callback/forced flush. Structural
       // follow-ups extend the same journal instead of publishing an intermediate
       // empty-item representation or forcing each owner to invent a token.
+      // Journal capture is evidence-only: it never publishes Markdown here.
+      // Keep IME composition and generated-scratch transactions so a later
+      // focused owner can prove the complete chain after compositionend. The
+      // old blocking policy discarded exactly the ReplaceSteps needed to map
+      // rapid quote IME edits before Enter.
+      const transactionJournalCaptureContext = {
+        generatedScratch: Boolean(generatedScratchRef.current),
+        composing: Boolean(viewRef.current?.composing)
+      }
       const transactionJournalBlockState = {
         notReady: !ready,
         appending: Boolean(appending),
         programmaticReplace: Boolean(programmaticReplaceRef.current),
-        generatedScratch: Boolean(generatedScratchRef.current),
-        composing: Boolean(viewRef.current?.composing),
         rawPaste: Boolean(pendingRawMarkdownPasteRef.current),
         listConversion: Boolean(pendingListConversion),
         listInputIntent: hasBlockingListInputIntent(),
@@ -1373,7 +1384,9 @@ export default function Editor({
               batchCount: captured.checkpoint?.batchCount || null,
               transactionCount: captured.checkpoint?.transactionCount || null,
               stepCount: captured.checkpoint?.stepCount || null,
-              stepDetails: captured.checkpoint?.stepDetails || []
+              stepDetails: captured.checkpoint?.stepDetails || [],
+              generatedScratch: transactionJournalCaptureContext.generatedScratch,
+              composing: transactionJournalCaptureContext.composing
             })
             if (globalThis.__hmSourceSyncTransactionJournalTrace.length > 100) {
               globalThis.__hmSourceSyncTransactionJournalTrace.shift()
@@ -1583,6 +1596,11 @@ export default function Editor({
       let lastRejection = null
       let heldRejection = null
       for (const entry of structuralTransactionSourceSyncOwners) {
+        // A new/empty document still uses generated-scratch canonical fallback
+        // for unowned edits. Only explicitly reviewed focused owners may consume
+        // its journal; this preserves scratch behavior without discarding PM
+        // evidence or widening every migrated family at once.
+        if (generatedScratchRef.current && entry.generatedScratchEligible !== true) continue
         const boundary = entry.boundaries[site] || `transaction-${entry.key}-${site}`
         const ownership = entry.owner.plan({
           journal,
@@ -2216,7 +2234,6 @@ export default function Editor({
             !pendingPaste &&
             !pendingList &&
             !pendingWholeDocumentReplacement &&
-            !generatedScratchRef.current &&
             !hasPendingListIntent &&
             pendingSourceSyncTransactionJournal
           ) {

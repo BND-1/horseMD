@@ -8,8 +8,8 @@ const root = `/tmp/horsemd-rs57-quote-${process.pid}`
 const file = join(root, 'doc.md')
 const port = Number(process.env.CDP_PORT || 10401)
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
-const firstExpected = '# RS57\n\n> 引用正文\n'
-const filledExpected = '# RS57\n\n> 引用正文\n>\n> 第二段\n'
+const firstExpected = '# RS57\n\n> 引用正文测试\n'
+const filledExpected = '# RS57\n\n> 引用正文测试\n>\n> 第二段\n'
 const warningPattern = /源码|source|不一致|保存已暂停|Save paused/i
 
 async function waitFor(check, message, attempts = 120) {
@@ -51,6 +51,32 @@ async function typeAscii(app, text) {
   }
 }
 
+async function imeType(app, pinyin, cjk, step = 18) {
+  const replacementId = `rs57-${Date.now()}`
+  for (let index = 0; index < pinyin.length; index += 1) {
+    const ch = pinyin[index]
+    const code = ch.charCodeAt(0)
+    const common = {
+      key: ch,
+      code: `Key${ch.toUpperCase()}`,
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code
+    }
+    await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...common })
+    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...common })
+    const value = pinyin.slice(0, index + 1)
+    await app.send('Input.imeSetComposition', {
+      text: value,
+      selectionStart: value.length,
+      selectionEnd: value.length,
+      replacementId,
+      location: 0
+    })
+    await sleep(step)
+  }
+  await app.send('Input.insertText', { text: cjk })
+}
+
 async function clickNode(app, selector, ordinal = 0) {
   const point = await app.evaluate(`(() => {
     const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
@@ -90,13 +116,15 @@ const snapshot = (app) => app.evaluate(`(() => {
       candidate: String(entry.candidate || '').slice(-500),
       canonical: String(entry.canonical || '').slice(-500)
     })),
-    preserve: (window.__hmPreserveLog || []).slice(-12).map(({ source, previous, next, markdown, ...entry }) => ({
+    preserve: (window.__hmPreserveLog || []).slice(-20).map(({ source, previous, next, markdown, ...entry }) => ({
       ...entry,
       sourceTail: String(source || '').slice(-320),
       previousTail: String(previous || '').slice(-320),
       nextTail: String(next || '').slice(-320),
       markdownTail: String(markdown || '').slice(-320)
     })),
+    journal: (window.__hmSourceSyncTransactionJournalTrace || []).slice(-80),
+    blockquote: (window.__hmBlockquoteTransactionTrace || []).slice(-80),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || '')
@@ -155,21 +183,30 @@ async function main() {
       'slash quote command did not create blockquote'
     )
 
+    // Establish the same stable baseline as the user's real trace: the quote
+    // and its existing text are already committed before a new IME edit starts.
     await app.send('Input.insertText', { text: '引用正文' })
-    await sleep(700)
+    await sleep(800)
     await app.evaluate(`(() => {
       window.__hmPreserveLog = []
       window.__hmSourceIntegrityTrace = []
       window.__hmSourceIntegrityDiffTrace = []
+      window.__hmSourceSyncTransactionJournalTrace = []
+      window.__hmBlockquoteTransactionTrace = []
       window.__hmFlushTrace = []
     })()`)
 
+    // Real failure boundary: generated scratch used to discard IME ReplaceSteps
+    // from the shared journal. Append committed CJK to the stable quote and
+    // press Enter immediately so the focused owner must consume the captured
+    // composition chain without involving the earlier /quote creation family.
+    await imeType(app, 'ceshi', '测试')
     await key(app, 'Enter', 'Enter', 13)
     await sleep(800)
     const afterEnter = await snapshot(app)
     console.log('RS57_AFTER_ENTER:', JSON.stringify(afterEnter))
     assert.equal(afterEnter.quoteParagraphs, 2, `quote Enter did not create exactly two paragraphs: ${JSON.stringify(afterEnter)}`)
-    assert.deepEqual(afterEnter.quoteTexts, ['引用正文', ''], `quote paragraph content mismatch: ${JSON.stringify(afterEnter)}`)
+    assert.deepEqual(afterEnter.quoteTexts, ['引用正文测试', ''], `quote paragraph content mismatch: ${JSON.stringify(afterEnter)}`)
     assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `RS-57 integrity failure after Enter: ${JSON.stringify(afterEnter)}`)
     assert.ok(
       afterEnter.integrity.some((entry) =>
@@ -179,13 +216,30 @@ async function main() {
       `missing RS-57 dedicated integrity proof: ${JSON.stringify(afterEnter.integrity)}`
     )
     assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `RS-57 showed warning after Enter: ${JSON.stringify(afterEnter.toasts)}`)
+    assert.equal(
+      afterEnter.journal.some((entry) => entry.ok === true && entry.generatedScratch === true && entry.composing === true),
+      true,
+      `RS-57 did not capture IME transactions while generated scratch was composing: ${JSON.stringify(afterEnter.journal)}`
+    )
+    const focusedPublication = afterEnter.preserve.find((entry) =>
+      entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
+      entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof'
+    )
+    assert.ok(focusedPublication, `RS-57 Enter bypassed focused blockquote owner: ${JSON.stringify(afterEnter)}`)
+    assert.equal(
+      afterEnter.blockquote.some((entry) =>
+        entry.phase === 'published' && entry.family === 'blockquote-paragraph-exit'
+      ),
+      true,
+      `RS-57 focused blockquote owner did not publish in generated scratch: ${JSON.stringify(afterEnter.blockquote)}`
+    )
 
     // Fill the unrepresentable empty quote paragraph before changing modes.
     // Once it has real text, normal Markdown can persist both quote paragraphs.
     await app.send('Input.insertText', { text: '第二段' })
     await sleep(900)
     const filled = await snapshot(app)
-    assert.deepEqual(filled.quoteTexts, ['引用正文', '第二段'], `second quote paragraph did not fill in place: ${JSON.stringify(filled)}`)
+    assert.deepEqual(filled.quoteTexts, ['引用正文测试', '第二段'], `second quote paragraph did not fill in place: ${JSON.stringify(filled)}`)
     assert.equal(filled.integrity.some((entry) => entry.ok === false), false, `RS-57 integrity failure after filling: ${JSON.stringify(filled)}`)
     assert.equal(filled.toasts.some((text) => warningPattern.test(text)), false, `RS-57 showed warning after filling: ${JSON.stringify(filled.toasts)}`)
 
@@ -201,15 +255,15 @@ async function main() {
     await stopBuiltElectron(app, { removeProfile: true })
     app = await openApp('reopen', port + 1)
     const reopened = await snapshot(app)
-    assert.deepEqual(reopened.quoteTexts, ['引用正文', '第二段'], `cold reopen changed quote paragraphs: ${JSON.stringify(reopened)}`)
+    assert.deepEqual(reopened.quoteTexts, ['引用正文测试', '第二段'], `cold reopen changed quote paragraphs: ${JSON.stringify(reopened)}`)
     assert.equal(await toggleSource(app), true, 'could not inspect reopened source')
     assert.equal(await waitFor(() => visibleSource(app), 'reopened source missing'), filledExpected)
     assert.equal(await readFile(file, 'utf8'), filledExpected, 'cold reopen changed disk bytes')
 
     // Keep the exact first-stage expected bytes explicit in this regression:
     // the Enter transient has no additional authored Markdown bytes.
-    assert.equal(firstExpected, '# RS57\n\n> 引用正文\n')
-    console.log('PASS RS-57 generated scratch blockquote Enter: transient empty paragraph, fill, source, save, and reopen stable')
+    assert.equal(firstExpected, '# RS57\n\n> 引用正文测试\n')
+    console.log('PASS RS-57 generated scratch blockquote IME+Enter: composing journal evidence reaches focused owner; transient empty paragraph, fill, source, save, and reopen stay stable')
   } finally {
     if (app) await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })
