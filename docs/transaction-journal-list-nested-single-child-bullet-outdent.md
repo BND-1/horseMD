@@ -303,15 +303,8 @@ mixed marker authored fixture 必须产生：
 
 ## 下一步边界
 
-multi-child Shift+Tab outdent 仍未迁移。
+0.13.160 已完成 multi-child 的 **last-of-multiple** 子族：nestedCount>=2 的最后一项是单 `ReplaceAroundStep(insert=2,sliceSize=2,openStart=2)`，只删除目标作者行两个spaces并保留nested prefix。
 
-0.13.158 时的 generic-minimal 比较曾提示 first-of-multiple 与 last-of-multiple 可能有不同 Step 拓扑，但这些具体参数尚未用 HorseMD 真实 attrs / Electron 重新证明，不能直接写进 owner。
+真实 HorseMD 已同时证明 **first-of-multiple 是不同 family**：两子项场景在同一个 document transaction 中有两笔 `ReplaceAroundStep`。第一步先重构被提升项与剩余nested siblings的归属，第二步再完成外层lift；最终被提升的第一项成为top-level，同时仍持有原后继nested siblings。它不能与single-child或last-child owner合并。
 
-下一轮必须：
-
-1. 真实 Electron 抓 first nested child / last nested child Shift+Tab；
-2. 同时抓 transaction count、每个 `stepDoc`、ReplaceAround/ReplaceStep 顺序和 slice attrs；
-3. 证明 raw source 应如何局部去缩进、以及剩余 nested siblings 的 authored bytes 如何保持；
-4. 只有 Step/topology/raw patch一致才合并，否则继续拆 family。
-
-nested split/join 排在 multi-child outdent 之后；task sentinel、conversion、input rules 与跨列表/coalescing继续排后。
+下一轮只迁移 first-of-multiple，必须绑定两Step各自的`stepDoc`、slice attrs与中间doc，并证明raw source只对被提升第一行去缩进、后继nested rows仍保持原两个spaces且语义转为被提升项的nested children。完成后再进入nested split/join；task sentinel、conversion、input rules与跨列表/coalescing继续排后。

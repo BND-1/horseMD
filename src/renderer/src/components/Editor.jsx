@@ -75,6 +75,7 @@ import {
   createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner,
   createListNestedNonemptyBulletIndentTransactionSourceSyncOwner,
   createListNestedSingleChildBulletOutdentTransactionSourceSyncOwner,
+  createListNestedLastChildBulletOutdentTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
   createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
@@ -568,6 +569,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listNestedLastChildBulletOutdentTransactionSourceSyncOwner =
+      createListNestedLastChildBulletOutdentTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const listOrderedEmptySuccessorChainTransactionSourceSyncOwner =
       createListOrderedEmptySuccessorChainTransactionSourceSyncOwner({
         mapOrderedChain: preserveTransactionOwnedOrderedEmptySuccessorChain,
@@ -701,6 +707,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-nested-single-child-bullet-outdent-markdown-updated',
           'forced-flush': 'transaction-list-nested-single-child-bullet-outdent-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-nested-last-child-bullet-outdent',
+        owner: listNestedLastChildBulletOutdentTransactionSourceSyncOwner,
+        traceKey: '__hmListNestedLastChildBulletOutdentTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-nested-last-child-bullet-outdent-markdown-updated',
+          'forced-flush': 'transaction-list-nested-last-child-bullet-outdent-forced-flush'
         })
       }),
       Object.freeze({

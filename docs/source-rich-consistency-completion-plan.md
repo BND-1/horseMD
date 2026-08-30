@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.159 已完成 empty-item/ordered successor Backspace 链 + plain bullet empty-tail/nonempty middle-tail Tab indent + single-child Shift+Tab outdent；multi-child outdent、nested split/join 仍待拆 family** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.160 已完成 empty-item/ordered successor Backspace 链 + plain bullet empty-tail/nonempty middle-tail Tab indent + single/last-child Shift+Tab outdent；first-of-multiple outdent、nested split/join 仍待迁移** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -283,6 +283,17 @@ build:mobile
 - legacy retirement：registry位于0.13.157/158 nested indent owners之后、ordered focused owners与broad list-subtree之前，并设置`legacyRetired:true`。四空格target、mixed parent/target marker或raw body不一致等在PM topology+Step已完整分类后返回`recognized:true`，统一`legacyBlocked:true`；rich outdent保留、warning出现，但indent owners/broad/legacy/Coordinator均不得publication，disk不变。
 - 永久门禁：pure owner覆盖真实`liftListItem`、exact range/slice、BOM+CRLF作者`+`、wide-indent/mixed-marker/wrong-step recognized负例、multi-child/empty/task/ordered no-hit。真实Electron覆盖parent为第二项的callback `+`、parent为第一项且后有sibling的forced `-`，两条均验证source/save/disk/fresh-profile reopen与focused-only publication；mixed-marker负例验证rich outdent保留且disk不变。相邻矩阵覆盖0.13.157/158 indent、continuous/nested 3×2 fidelity、nested Enter/RS-68/63/85、generated nested/ordered、0.13.154–156 ordered families和generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均通过。
 - 阶段E下一步继续 **multi-child Shift+Tab outdent**。先对first-child与last-child分别做真实Electron transaction/stepDoc取证，只有真实Step拓扑一致时才合并；否则继续拆family。nested split/join随后再迁移，task sentinel、conversion、input rules与跨列表/coalescing仍在后面。
+
+### Nested list 第四子族实际完成记录（0.13.160）
+
+- 范围只覆盖 **top-level plain bullet parent 下 nestedCount>=2 时最后一个 nonempty plain bullet child 的物理 Shift+Tab outdent**。parent直接children仍要求一个无marks非空paragraph + 一个plain nested `bullet_list`；nested中每一项当前都要求non-task、单一无marks非空paragraph。first child、single child、empty/task/ordered/复杂nested明确不认领。
+- 真实 HorseMD 对两子项 `gamma/delta` 的 last child 与HorseMD同attrs 2/3-child最小`liftListItem`一致：单transaction/单`ReplaceAroundStep(structure=true,insert=2,sliceSize=2,openStart=2,openEnd=0)`。exact relation为`from===gapFrom===target.beforePos`、`gapTo===target.beforePos+target.nodeSize`、`to===parent.beforePos+parent.nodeSize`。slice外层空`list_item` attrs与target精确一致，其唯一child是与old nested attrs一致的空`bullet_list` wrapper；Step在捕获stepDoc上apply必须精确等于expectedDoc。
+- topology：new top-level list childCount增加1，parent仍原index；parent paragraph不变，nested list保留old target之前全部prefix children并逐项`.eq()`，最后target被提升为`parentIndex+1` top-level item，parent之后其它siblings整体后移一位且不变。2-child与3-child均使用同一proof。
+- raw source：source-map同时锚定parent和全部nested paragraph。当前byte合同要求parent indent 0、所有nested indent恰两个spaces，parent+全部nested物理连续、全部使用同一作者bullet token且marker spacing恰一个space，raw body逐项精确等于PM正文。成功只删除最后target row起始的两个spaces；前面的nested siblings、marker、BOM、LF/CRLF、邻块和其它字节逐字保持。
+- retirement：target marker padding为两个spaces、wide indent、mixed marker/body等，在exact PM last-child family已分类后返回`recognized:true + legacyBlocked:true`；rich outdent保留，single-child/broad/legacy/Coordinator不得publication，warning出现且disk不变。
+- 永久门禁：pure覆盖2/3 nested children、exact Step/path/slice、BOM+CRLF `+`、wide/mixed/wrong-step recognized负例及first/single/empty/task/ordered no-hit；真实Electron覆盖2-child callback与3-child forced、`+/-`、source/save/disk/fresh-profile reopen和target marker-spacing retirement。真实multi-child diagnostic在production接线后再次证明first-child仍由broad `list-subtree-replace`持有，而last-child由0.13.160 focused owner持有；0.13.157–159、continuous/nested fidelity、nested Enter/RS-68/63/85、ordered families、generic subtree、Journal/Coordinator、完整preservation、39/39、mixed/heterogeneous fidelity与双build均通过。
+- **first-of-multiple 不属于本 family**：同一文档transaction中有两笔`ReplaceAroundStep`。实机两子项时第一步`48→58 / gap 49→58 / insert=1 / sliceSize=3`，把剩余`delta`挂到被提升`gamma`下；第二步`39→62 / gap 40→60 / insert=1 / sliceSize=1`完成外层lift，最终`gamma`成为top-level且仍含nested `delta`。下一版本必须按两Step/stepDoc链单独建立focused owner，不允许last-child owner扩宽。
+- nested split/join排在first-of-multiple之后；task sentinel、conversion、input rules与跨列表/coalescing继续排后。
 
 ## 9. 阶段 F：普通段落默认 authority
 
