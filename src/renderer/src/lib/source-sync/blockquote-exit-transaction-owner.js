@@ -1,3 +1,4 @@
+import { mapPlainTextTransactionsToSource } from '../source-transaction-sync.js'
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
 import {
@@ -8,7 +9,10 @@ import {
   sourceSyncNodeEntryAtPath,
   sourceSyncResolvedPositionMatchesPath
 } from './top-level-subtree.js'
-import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
+import {
+  transactionsFromSourceSyncTransactionJournal,
+  verifySourceSyncTransactionJournalCheckpoint
+} from './transaction-journal.js'
 
 export const BLOCKQUOTE_EXIT_TRANSACTION_FAMILY = 'blockquote-paragraph-exit'
 export const BLOCKQUOTE_EXIT_TRANSACTION_BOUNDARY = 'transaction-blockquote-paragraph-exit'
@@ -300,7 +304,7 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     !sourceSyncAttrsEqual(beforeQuote.attrs, afterQuote.attrs) ||
     beforeQuote.childCount < 1 ||
     afterQuote.childCount !== beforeQuote.childCount + 1 ||
-    !isSimpleParagraph(beforeQuote.lastChild) ||
+    !isSimpleParagraph(beforeQuote.lastChild, { nonEmpty: false }) ||
     !isSimpleParagraph(afterQuote.lastChild, { nonEmpty: false }) ||
     afterQuote.lastChild.content.size !== 0
   ) return rejected('blockquote-exit-pending-shape')
@@ -315,13 +319,11 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
   const retainedParagraph = afterQuote.child(paragraphIndex)
   if (
     !isSimpleParagraph(retainedParagraph) ||
-    !sourceSyncAttrsEqual(beforeParagraph.attrs, retainedParagraph.attrs) ||
-    !retainedParagraph.textContent.startsWith(beforeParagraph.textContent)
+    !sourceSyncAttrsEqual(beforeParagraph.attrs, retainedParagraph.attrs)
   ) return rejected('blockquote-exit-pending-retained-paragraph-shape')
-  const expectedInsertedSuffix = retainedParagraph.textContent.slice(beforeParagraph.textContent.length)
-  if (expectedInsertedSuffix && expectedInsertedSuffix !== ' ') {
-    return rejected('blockquote-exit-pending-pre-split-suffix-unowned')
-  }
+  const insertedSuffix = retainedParagraph.textContent.startsWith(beforeParagraph.textContent)
+    ? retainedParagraph.textContent.slice(beforeParagraph.textContent.length)
+    : null
   const retainedQuote = withoutTrailingEmptyParagraph(afterQuote)
   if (!retainedQuote) return rejected('blockquote-exit-pending-retained-quote-missing')
 
@@ -329,9 +331,12 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
   let splitSeen = false
   let splitStepName = null
   let splitStructure = null
-  let insertedSuffix = ''
   let preSplitTextStepCount = 0
-  for (const entry of journal.entries || []) {
+  let preSplitReplacementStepCount = 0
+  let preSplitTransactionCount = 0
+  let preSplitDocument = journal.oldDoc
+  for (let entryIndex = 0; entryIndex < (journal.entries || []).length; entryIndex += 1) {
+    const entry = journal.entries[entryIndex]
     if (!sameSourceSyncDocument(entry.beforeDoc, currentDoc)) {
       return rejected('blockquote-exit-pending-transaction-chain-mismatch')
     }
@@ -353,7 +358,7 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
         currentQuote?.type?.name !== 'blockquote' ||
         !sourceSyncAttrsEqual(currentQuote.attrs, beforeQuote.attrs) ||
         currentQuote.childCount !== beforeQuote.childCount ||
-        !isSimpleParagraph(currentQuote.lastChild)
+        !isSimpleParagraph(currentQuote.lastChild, { nonEmpty: false })
       ) return rejected('blockquote-exit-pending-step-baseline-mismatch')
       for (let childIndex = 0; childIndex < paragraphIndex; childIndex += 1) {
         if (currentQuote.child(childIndex).eq?.(beforeQuote.child(childIndex)) !== true) {
@@ -361,14 +366,15 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
         }
       }
 
-      const paragraphContentStart = beforeEntry.offset + 2 +
+      const paragraphStart = beforeEntry.offset + 2 +
         childEntries(currentQuote)
           .slice(0, paragraphIndex)
           .reduce((total, child) => total + child.node.nodeSize, 0)
-      const expectedPosition = paragraphContentStart + currentQuote.lastChild.textContent.length
+      const expectedPosition = paragraphStart + currentQuote.lastChild.textContent.length
       const slice = step.slice
       const splitContract = Boolean(
         currentQuote.eq?.(retainedQuote) === true &&
+        step.structure === true &&
         step.from === expectedPosition &&
         step.to === expectedPosition &&
         slice &&
@@ -393,30 +399,35 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
       }
 
       if (splitContract) {
+        if (entry.steps.length !== 1 || index !== 0) {
+          return rejected('blockquote-exit-pending-split-transaction-shape')
+        }
         const appliedQuote = sourceSyncNodeEntryAtPath(applied.doc, classification.nodePath)?.node
         if (appliedQuote?.eq?.(afterQuote) !== true) {
           return rejected('blockquote-exit-pending-result-mismatch')
         }
         splitSeen = true
         splitStepName = step.constructor.name
-        splitStructure = step.structure === true
+        splitStructure = true
+        preSplitTransactionCount = entryIndex
+        preSplitDocument = stepDoc
       } else {
-        if (
-          step.structure === true ||
-          step.from !== expectedPosition ||
-          step.to !== expectedPosition ||
-          !slice ||
-          slice.openStart !== 0 ||
-          slice.openEnd !== 0 ||
-          slice.content?.childCount !== 1
-        ) return rejected('blockquote-exit-pending-pre-split-step-contract')
-        const insertedNode = slice.content.child(0)
-        const insertedText = insertedNode?.isText && (insertedNode.marks?.length || 0) === 0
-          ? insertedNode.text
-          : null
-        if (typeof insertedText !== 'string' || insertedText.length === 0 || /[\r\n]/.test(insertedText)) {
-          return rejected('blockquote-exit-pending-pre-split-text-unproven')
+        if (step.structure === true || !isClosedPlainTextSlice(slice)) {
+          return rejected('blockquote-exit-pending-pre-split-step-contract')
         }
+        let $from
+        let $to
+        try {
+          $from = stepDoc.resolve(step.from)
+          $to = stepDoc.resolve(step.to)
+        } catch {
+          return rejected('blockquote-exit-pending-pre-split-range-unresolvable')
+        }
+        if (
+          !$from.sameParent?.($to) ||
+          directParagraphIndexAt($from, classification.nodePath) !== paragraphIndex ||
+          directParagraphIndexAt($to, classification.nodePath) !== paragraphIndex
+        ) return rejected('blockquote-exit-pending-pre-split-outside-owned-paragraph')
         const appliedQuote = sourceSyncNodeEntryAtPath(applied.doc, classification.nodePath)?.node
         if (
           appliedQuote?.type?.name !== 'blockquote' ||
@@ -430,15 +441,12 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
         }
         const nextParagraph = appliedQuote.lastChild
         if (
-          !isSimpleParagraph(nextParagraph) ||
+          !isSimpleParagraph(nextParagraph, { nonEmpty: false }) ||
           !sourceSyncAttrsEqual(nextParagraph.attrs, currentQuote.lastChild.attrs) ||
-          nextParagraph.textContent !== `${currentQuote.lastChild.textContent}${insertedText}`
+          currentQuote.lastChild.eq?.(nextParagraph) === true
         ) return rejected('blockquote-exit-pending-pre-split-result-mismatch')
-        insertedSuffix += insertedText
         preSplitTextStepCount += 1
-        if (!expectedInsertedSuffix.startsWith(insertedSuffix)) {
-          return rejected('blockquote-exit-pending-pre-split-suffix-mismatch')
-        }
+        if (step.from !== step.to) preSplitReplacementStepCount += 1
       }
       entryDoc = applied.doc
     }
@@ -448,8 +456,9 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     currentDoc = entry.afterDoc
   }
   if (!splitSeen) return rejected('blockquote-exit-pending-step-missing')
-  if (insertedSuffix !== expectedInsertedSuffix) {
-    return rejected('blockquote-exit-pending-inserted-suffix-mismatch')
+  const preSplitQuote = sourceSyncNodeEntryAtPath(preSplitDocument, classification.nodePath)?.node
+  if (preSplitQuote?.eq?.(retainedQuote) !== true) {
+    return rejected('blockquote-exit-pending-pre-split-document-mismatch')
   }
   if (!sameSourceSyncDocument(currentDoc, expectedDoc)) {
     return rejected('blockquote-exit-pending-final-document-mismatch')
@@ -458,10 +467,17 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     ...classification,
     beforeQuote,
     afterQuote,
+    beforeParagraph,
+    retainedParagraph,
+    paragraphIndex,
+    retainedQuote,
     splitStepName,
     splitStructure,
     insertedSuffix,
-    preSplitTextStepCount
+    preSplitTextStepCount,
+    preSplitReplacementStepCount,
+    preSplitTransactionCount,
+    preSplitDocument
   })
 }
 const supportedList = (node) =>
@@ -824,6 +840,150 @@ const quotePrefix = (value) => {
     : null
 }
 
+const isSimpleNonemptyTextblock = (node) => {
+  if (!node?.isTextblock || node.content?.size <= 0) return false
+  let simple = true
+  node.forEach?.((child) => {
+    if (!child?.isText || (child.marks?.length || 0) > 0) simple = false
+  })
+  return simple
+}
+
+const descendantTextAnchorPath = (node, path, direction) => {
+  if (isSimpleNonemptyTextblock(node)) return path
+  if (!node?.childCount) return null
+  if (direction === 'previous') {
+    for (let index = node.childCount - 1; index >= 0; index -= 1) {
+      const found = descendantTextAnchorPath(node.child(index), [...path, index], direction)
+      if (found) return found
+    }
+    return null
+  }
+  for (let index = 0; index < node.childCount; index += 1) {
+    const found = descendantTextAnchorPath(node.child(index), [...path, index], direction)
+    if (found) return found
+  }
+  return null
+}
+
+const nearestTopLevelTextAnchor = ({ doc, topLevelIndex, direction }) => {
+  if (!doc || !Number.isInteger(topLevelIndex)) return null
+  const step = direction === 'previous' ? -1 : 1
+  for (
+    let index = topLevelIndex + step;
+    index >= 0 && index < doc.childCount;
+    index += step
+  ) {
+    const path = descendantTextAnchorPath(doc.child(index), [index], direction)
+    if (!path) continue
+    const entry = sourceSyncNodeEntryAtPath(doc, path)
+    if (!entry || !isSimpleNonemptyTextblock(entry.node)) continue
+    return Object.freeze({
+      path: Object.freeze([...path]),
+      entry,
+      pmStart: entry.contentStart,
+      pmEnd: entry.contentStart + entry.node.textContent.length
+    })
+  }
+  return null
+}
+
+const actualLineEolLength = (source, line) => {
+  if (!line) return 0
+  if (source.startsWith('\r\n', line.end)) return 2
+  if (source[line.end] === '\r' || source[line.end] === '\n') return 1
+  return 0
+}
+
+const resolvePendingEmptyBlockquoteRow = ({
+  source,
+  doc,
+  classification,
+  resolveMarkdownOffset
+}) => {
+  if (
+    !Array.isArray(classification?.nodePath) ||
+    classification.nodePath.length !== 1 ||
+    classification.beforeQuote?.childCount !== 1 ||
+    classification.beforeParagraph?.content?.size !== 0 ||
+    !classification.retainedParagraph?.textContent
+  ) return null
+  const topLevelIndex = classification.nodePath[0]
+  const previousAnchor = nearestTopLevelTextAnchor({
+    doc,
+    topLevelIndex,
+    direction: 'previous'
+  })
+  const nextAnchor = nearestTopLevelTextAnchor({
+    doc,
+    topLevelIndex,
+    direction: 'next'
+  })
+
+  let scanStart = source.startsWith('\uFEFF') ? 1 : 0
+  if (previousAnchor) {
+    let rawEnd
+    try {
+      rawEnd = resolveMarkdownOffset({
+        markdown: source,
+        pmPos: previousAnchor.pmEnd,
+        doc
+      })
+    } catch {
+      return null
+    }
+    if (!Number.isFinite(rawEnd)) return null
+    const line = lineAtOffset(source, rawEnd)
+    if (!line || rawEnd < line.start || rawEnd > line.end) return null
+    scanStart = line.end + actualLineEolLength(source, line)
+  }
+
+  let scanEnd = source.length
+  if (nextAnchor) {
+    let rawStart
+    try {
+      rawStart = resolveMarkdownOffset({
+        markdown: source,
+        pmPos: nextAnchor.pmStart,
+        doc
+      })
+    } catch {
+      return null
+    }
+    if (!Number.isFinite(rawStart)) return null
+    const line = lineAtOffset(source, rawStart)
+    if (!line || rawStart < line.start || rawStart > line.end) return null
+    scanEnd = line.start
+  }
+  if (scanEnd <= scanStart) return null
+
+  const rows = []
+  let offset = scanStart
+  while (offset < scanEnd) {
+    const line = lineAtOffset(source, offset)
+    if (!line || line.start >= scanEnd) break
+    const raw = source.slice(line.start, Math.min(line.end, scanEnd))
+    const normalizedRaw = line.start === 0 && raw.startsWith('\uFEFF')
+      ? raw.slice(1)
+      : raw
+    const prefix = quotePrefix(normalizedRaw)
+    if (prefix && line.end <= scanEnd) {
+      rows.push(Object.freeze({ line, prefix, raw: normalizedRaw }))
+    }
+    const next = line.end + actualLineEolLength(source, line)
+    if (next <= offset) break
+    offset = next
+  }
+  if (rows.length !== 1) return null
+  return Object.freeze({
+    ...rows[0],
+    previousAnchorPath: previousAnchor?.path || null,
+    nextAnchorPath: nextAnchor?.path || null,
+    scanStart,
+    scanEnd
+  })
+}
+
 const quoteListRow = ({ source, line, listType }) => {
   if (!line) return null
   const raw = source.slice(line.start, line.end)
@@ -922,7 +1082,12 @@ const patchPendingBlockquoteSuffix = ({
       baselineSingleTrailingSpace: false
     })
   }
-  if (suffix && suffix !== ' ') return null
+  const emptyBaselineFill = Boolean(
+    beforeText.length === 0 &&
+    classification?.preSplitTextStepCount > 0 &&
+    suffix.length > 0
+  )
+  if (suffix && suffix !== ' ' && !emptyBaselineFill) return null
   const quoteEntry = sourceSyncNodeEntryAtPath(doc, classification.nodePath)
   const paragraphIndex = classification.beforeQuote.childCount - 1
   if (!quoteEntry || paragraphIndex < 0) return null
@@ -1005,9 +1170,13 @@ const createOwnedPlan = ({
 }
 
 export function createBlockquoteExitTransactionSourceSyncOwner({
+  mapTransactions = mapPlainTextTransactionsToSource,
   resolveMarkdownOffset,
   validateMarkdown
 } = {}) {
+  if (typeof mapTransactions !== 'function') {
+    throw new TypeError('blockquote exit owner requires mapTransactions')
+  }
   if (typeof resolveMarkdownOffset !== 'function') {
     throw new TypeError('blockquote exit owner requires resolveMarkdownOffset')
   }
@@ -1132,15 +1301,91 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
 
     const pending = classifyPendingBlockquoteExitJournal({ journal, expectedDoc })
     if (pending.ok) {
-      const patched = patchPendingBlockquoteSuffix({
-        source: journal.source,
-        doc: journal.oldDoc,
-        classification: pending,
-        resolveMarkdownOffset
-      })
-      if (!patched) {
-        return recognizedRejection('blockquote-exit-pending-authored-suffix-unmapped')
+      let patched = null
+      let mappedPreSplitText = false
+      let mapperReason = null
+      const emptyBaselineFill = Boolean(
+        pending.beforeParagraph.content.size === 0 &&
+        pending.preSplitTextStepCount > 0
+      )
+      if (emptyBaselineFill) {
+        const emptyRow = resolvePendingEmptyBlockquoteRow({
+          source: journal.source,
+          doc: journal.oldDoc,
+          classification: pending,
+          resolveMarkdownOffset
+        })
+        if (!emptyRow) {
+          return recognizedRejection('blockquote-exit-pending-empty-baseline-unmapped')
+        }
+        patched = Object.freeze({
+          markdown: journal.source.slice(0, emptyRow.line.end) +
+            pending.retainedParagraph.textContent +
+            journal.source.slice(emptyRow.line.end),
+          sourceUnchanged: false,
+          range: Object.freeze({
+            start: emptyRow.line.end,
+            end: emptyRow.line.end,
+            replacement: pending.retainedParagraph.textContent
+          }),
+          quotePrefix: emptyRow.raw,
+          baselineSingleTrailingSpace: false,
+          emptyRowProof: emptyRow
+        })
+      } else if (pending.preSplitTextStepCount > 0 && pending.insertedSuffix !== ' ') {
+        const transactions = transactionsFromSourceSyncTransactionJournal(journal)
+          .slice(0, pending.preSplitTransactionCount)
+        if (transactions.length !== pending.preSplitTransactionCount || !pending.preSplitDocument) {
+          return recognizedRejection('blockquote-exit-pending-pre-split-transactions-missing')
+        }
+        let mapped
+        try {
+          mapped = mapTransactions({
+            source: journal.source,
+            transactions,
+            oldState: { doc: journal.oldDoc },
+            newState: { doc: pending.preSplitDocument },
+            blockHints: [],
+            mapPosition: (markdown, pmPos, doc) => resolveMarkdownOffset({
+              markdown,
+              pmPos,
+              doc,
+              topLevelIndex: pending.topLevelIndex,
+              paragraphIndex: pending.paragraphIndex
+            }),
+            validateMarkdown: (markdown, mappedExpectedDoc) => validateMarkdown({
+              markdown,
+              expectedDoc: mappedExpectedDoc
+            })
+          })
+        } catch (error) {
+          return recognizedRejection(`blockquote-exit-pending-pre-split-mapper-threw:${error?.name || 'Error'}`)
+        }
+        if (!mapped?.ok || typeof mapped.markdown !== 'string') {
+          return recognizedRejection(mapped?.reason || 'blockquote-exit-pending-pre-split-mapper-rejected')
+        }
+        patched = Object.freeze({
+          markdown: mapped.markdown,
+          sourceUnchanged: mapped.markdown === journal.source,
+          range: null,
+          quotePrefix: null,
+          baselineSingleTrailingSpace: false
+        })
+        mappedPreSplitText = true
+        mapperReason = mapped.reason || null
+      } else {
+        patched = patchPendingBlockquoteSuffix({
+          source: journal.source,
+          doc: journal.oldDoc,
+          classification: pending,
+          resolveMarkdownOffset
+        })
+        if (!patched) {
+          return recognizedRejection('blockquote-exit-pending-authored-suffix-unmapped')
+        }
       }
+      const finalText = pending.retainedParagraph.textContent
+      const finalSingleTrailingSpace = finalText.endsWith(' ') && !finalText.endsWith('  ')
       let semanticOk = false
       try {
         semanticOk = validateMarkdown({
@@ -1149,9 +1394,7 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
           semanticOptions: {
             ignoreTrailingEmptyBlockquoteParagraphPaths: [pending.nodePath],
             ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths:
-              (pending.insertedSuffix === ' ' || patched.baselineSingleTrailingSpace)
-                ? [pending.nodePath]
-                : []
+              finalSingleTrailingSpace ? [pending.nodePath] : []
           }
         }) === true
       } catch {
@@ -1171,10 +1414,19 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
         splitStructure: pending.splitStructure,
         insertedSuffix: pending.insertedSuffix,
         preSplitTextStepCount: pending.preSplitTextStepCount,
+        preSplitReplacementStepCount: pending.preSplitReplacementStepCount,
+        preSplitTransactionCount: pending.preSplitTransactionCount,
+        textChangeMode: pending.preSplitTextStepCount === 0
+          ? 'none'
+          : (pending.preSplitReplacementStepCount > 0 ? 'replace' : 'suffix'),
+        emptyBaselineFill,
+        mappedPreSplitText,
+        mapperReason,
         sourceUnchanged: patched.sourceUnchanged,
         rawReplacement: patched.range,
         quotePrefix: patched.quotePrefix,
         baselineSingleTrailingSpace: patched.baselineSingleTrailingSpace === true,
+        emptyRowProof: patched.emptyRowProof || null,
         chainLength: journal.transactionCount,
         stepDetails: journal.stepDetails,
         transactionJournal: verified.proof,

@@ -118,6 +118,27 @@ const suffixThenEnter = ({ oldDoc, quotePath, suffix = ' ' }) => {
   }
 }
 
+const imeReplacementThenEnter = ({ oldDoc, quotePath, temporary = 'q w r d', replacement = '全网热度' }) => {
+  let state = EditorState.create({
+    schema,
+    doc: oldDoc,
+    selection: TextSelection.create(oldDoc, lastQuoteParagraphTextEnd(oldDoc, quotePath))
+  })
+  const start = state.selection.from
+  const temporaryInsert = state.tr.insertText(temporary, start)
+  state = state.apply(temporaryInsert)
+  const compositionReplace = state.tr.insertText(replacement, start, start + temporary.length)
+  state = state.apply(compositionReplace)
+  const enter = runEnter(state)
+  return {
+    temporaryInsert,
+    compositionReplace,
+    enter: enter.transaction,
+    finalDoc: enter.state.doc,
+    transactions: [temporaryInsert, compositionReplace, enter.transaction]
+  }
+}
+
 const journalFactory = createSourceSyncTransactionJournal()
 const createOwner = (validateMarkdown = () => true) =>
   createBlockquoteExitTransactionSourceSyncOwner({
@@ -229,6 +250,70 @@ const topExit = exitAndType({ oldDoc: topDoc, quotePath: [1] })
   assert.deepEqual(plan.proof.rawReplacement, { start: rawInsert, end: rawInsert, replacement: ' ' })
   assert.equal(plan.proof.chainLength, 2)
   assert.deepEqual(plan.proof.transactionJournal.stepNames, ['ReplaceStep', 'ReplaceStep'])
+}
+
+{
+  const emptyImeDoc = document(paragraph('before'), quote(''), paragraph('after'))
+  const rapid = imeReplacementThenEnter({
+    oldDoc: emptyImeDoc,
+    quotePath: [1],
+    temporary: 'qu g h f dui q g h',
+    replacement: '去国会反对去干活'
+  })
+  const source = '\uFEFFbefore\r\n\r\n>\r\n\r\nafter\r\n'
+  const canonical = 'before\n\n>\n\nafter\n'
+  const nextCanonical = 'before\n\n> 去国会反对去干活\n>\n\nafter\n'
+  const expectedSource = '\uFEFFbefore\r\n\r\n>去国会反对去干活\r\n\r\nafter\r\n'
+  const { plan } = planFor({
+    source,
+    canonical,
+    oldDoc: emptyImeDoc,
+    transactions: rapid.transactions,
+    nextCanonical,
+    revision: 9914,
+    callbackDocumentEquivalent: false
+  })
+  assert.equal(plan.ok, true, `empty quote IME fill+Enter rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.markdown, expectedSource)
+  assert.equal(plan.proof.emptyBaselineFill, true)
+  assert.equal(plan.proof.mappedPreSplitText, false)
+  assert.equal(plan.proof.textChangeMode, 'replace')
+  assert.equal(plan.proof.preSplitTextStepCount, 2)
+  assert.equal(plan.proof.preSplitReplacementStepCount, 1)
+  assert.equal(plan.proof.preSplitTransactionCount, 2)
+  assert.equal(plan.proof.insertedSuffix, '去国会反对去干活')
+  assert.equal(plan.proof.chainLength, 3)
+}
+
+{
+  const imeDoc = document(paragraph('before'), quote('请问富户'), paragraph('after'))
+  const rapid = imeReplacementThenEnter({ oldDoc: imeDoc, quotePath: [1] })
+  const source = '\uFEFFbefore\r\n\r\n>   请问富户\r\n\r\nafter\r\n'
+  const canonical = 'before\n\n> 请问富户\n\nafter\n'
+  const nextCanonical = 'before\n\n> 请问富户全网热度\n>\n\nafter\n'
+  const expectedSource = '\uFEFFbefore\r\n\r\n>   请问富户全网热度\r\n\r\nafter\r\n'
+  const { plan } = planFor({
+    source,
+    canonical,
+    oldDoc: imeDoc,
+    transactions: rapid.transactions,
+    nextCanonical,
+    revision: 9915,
+    callbackDocumentEquivalent: false
+  })
+  assert.equal(plan.ok, true, `IME replacement+Enter pending rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'trailing-empty-blockquote-paragraph-created')
+  assert.equal(plan.result.markdown, expectedSource)
+  assert.equal(plan.proof.kind, 'transaction-blockquote-exit-pending-proof')
+  assert.equal(plan.proof.insertedSuffix, '全网热度')
+  assert.equal(plan.proof.textChangeMode, 'replace')
+  assert.equal(plan.proof.mappedPreSplitText, true)
+  assert.equal(plan.proof.preSplitTextStepCount, 2)
+  assert.equal(plan.proof.preSplitReplacementStepCount, 1)
+  assert.equal(plan.proof.preSplitTransactionCount, 2)
+  assert.equal(plan.proof.chainLength, 3)
+  assert.equal(plan.proof.callbackDocumentEquivalent, false)
+  assert.deepEqual(plan.proof.transactionJournal.stepNames, ['ReplaceStep', 'ReplaceStep', 'ReplaceStep'])
 }
 
 {
@@ -546,4 +631,4 @@ assert.throws(
   /requires validateMarkdown/
 )
 
-console.log('PASS blockquote exit transaction owner: real two-Enter coalesced/staged journals lift one trailing empty quote paragraph, carry rapid text, preserve top/nested authored prefix/BOM/CRLF/neighbours, and reject empty, marked, neighbour, unsupported, mismatched, semantic and stale cases')
+console.log('PASS blockquote exit transaction owner: pending journals atomically map rapid plain-text/IME replacements before Enter, while two-Enter coalesced/staged exits preserve top/nested authored prefix/BOM/CRLF/neighbours and reject unsafe or stale shapes')

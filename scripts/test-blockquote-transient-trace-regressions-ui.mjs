@@ -88,6 +88,24 @@ const focusText = async (app, selector, text, offset = 'end') => {
   assert.equal(result.ok, true, `could not focus ${text}: ${JSON.stringify(result)}`)
   await sleep(70)
 }
+const focusEmptyQuoteParagraph = async (app) => {
+  const result = await app.evaluate(`(() => {
+    const editor = ${visibleEditor()}
+    const paragraphs = [...(editor?.querySelectorAll('blockquote p') || [])]
+    const paragraph = paragraphs.find((node) => !(node.textContent || '').trim())
+    if (!paragraph) return { ok: false, reason: 'empty-quote-paragraph-not-found' }
+    const rect = paragraph.getBoundingClientRect()
+    return {
+      ok: true,
+      point: { x: rect.left + 10, y: rect.top + Math.max(8, Math.min(16, rect.height / 2)) }
+    }
+  })()`)
+  assert.equal(result.ok, true, `could not focus empty quote paragraph: ${JSON.stringify(result)}`)
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...result.point, button: 'left', clickCount: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...result.point, button: 'left', clickCount: 1 })
+  await sleep(80)
+}
+
 const focusLastQuoteListItem = async (app) => {
   const result = await app.evaluate(`(() => {
     const editor = ${visibleEditor()}
@@ -207,6 +225,127 @@ await mkdir(root, { recursive: true })
   }
 }
 
+// Regression 1b: multiple plain-text bytes can still be pending when Enter arrives.
+// This is the deterministic physical counterpart of the user's IME replacement trace:
+// the owner must map the uncommitted text journal before proving the empty quote tail.
+{
+  const file = join(root, 'rapid-text-enter.md')
+  const fixture = '\uFEFF# rapid text enter\r\n\r\n> quote-ime\r\n\r\nafter\r\n'
+  await writeFile(file, fixture, 'utf8')
+  let app = await openApp({ file, profile: 'rapid-text-enter', port: basePort + 5, marker: 'quote-ime' })
+  let finalSource = null
+  try {
+    await clearDiagnostics(app)
+    await focusText(app, 'blockquote p', 'quote-ime', 'end')
+    await typeTextLikeUser(app.send, 'rapid', { delayMs: 1 })
+    await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 1 })
+    await sleep(1000)
+    const state = await snapshot(app)
+    assertClean(state, 'quote rapid-text+Enter')
+    const publication = state.preserve.find((entry) =>
+      entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
+      entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof' &&
+      entry.integrityProof?.mappedPreSplitText === true
+    )
+    assert.ok(publication, `rapid text+Enter did not atomically map pending text: ${JSON.stringify(state)}`)
+    assert.equal(publication.integrityProof.preSplitTextStepCount > 0, true)
+    assert.equal(publication.integrityProof.textChangeMode, 'suffix')
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'blockquote-paragraph-exit' &&
+      entry.reason === 'trailing-empty-blockquote-paragraph-created'
+    ), true, `rapid text+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(await toggleSource(app), true, 'could not inspect rapid text+Enter source')
+    finalSource = await waitFor(() => visibleSource(app), 'rapid text+Enter source did not open')
+    assert.equal(finalSource.includes('> quote-imerapid'), true,
+      `pending rapid text was not preserved in source: ${JSON.stringify(finalSource)}`)
+    assert.equal(finalSource.includes('> <br />'), false, 'rapid text+Enter leaked transient quote placeholder')
+    assert.equal(await toggleSource(app), true, 'could not return rapid text+Enter to rich mode')
+    await sleep(250)
+    await save(app)
+    const disk = await readFile(file, 'utf8')
+    assert.equal(disk.replace(/\r\n/g, '\n'), finalSource,
+      'rapid text+Enter saved bytes diverged from source view')
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
+    app = null
+  }
+
+  app = await openApp({ file, profile: 'rapid-text-enter-cold', port: basePort + 6, marker: 'quote-imerapid' })
+  try {
+    const reopened = await snapshot(app)
+    assertClean(reopened, 'rapid text+Enter cold reopen')
+    assert.equal(await toggleSource(app), true, 'could not inspect cold rapid text+Enter source')
+    const coldSource = await waitFor(() => visibleSource(app), 'cold rapid text+Enter source did not open')
+    assert.equal(coldSource, finalSource, 'rapid text+Enter source changed after cold reopen')
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
+  }
+}
+
+// Regression 1c: an authored empty quote row has no text source-map anchor.
+// Bound it by neighbouring stable textblocks, fill that exact physical row, then Enter.
+{
+  const file = join(root, 'empty-quote-fill-enter.md')
+  const fixture = '\uFEFF# empty quote fill\r\n\r\n>\r\n\r\nafter\r\n'
+  await writeFile(file, fixture, 'utf8')
+  let app = await openApp({ file, profile: 'empty-quote-fill-enter', port: basePort + 7, marker: 'empty quote fill' })
+  let finalSource = null
+  try {
+    await clearDiagnostics(app)
+    await focusEmptyQuoteParagraph(app)
+    await typeTextLikeUser(app.send, 'rapid', { delayMs: 1 })
+    await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 1 })
+    await sleep(1000)
+    const state = await snapshot(app)
+    assertClean(state, 'empty quote fill+Enter')
+    const publication = state.preserve.find((entry) =>
+      entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
+      entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof' &&
+      entry.integrityProof?.emptyBaselineFill === true
+    )
+    assert.ok(publication, `empty quote fill+Enter bypassed focused owner: ${JSON.stringify(state)}`)
+    const proof = publication.integrityProof
+    assert.equal(proof.preSplitTextStepCount > 0, true)
+    assert.equal(proof.emptyRowProof?.previousAnchorPath?.length > 0, true,
+      `empty quote fill lacked previous stable anchor: ${JSON.stringify(proof)}`)
+    assert.equal(proof.emptyRowProof?.nextAnchorPath?.length > 0, true,
+      `empty quote fill lacked next stable anchor: ${JSON.stringify(proof)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'blockquote-paragraph-exit' &&
+      entry.reason === 'trailing-empty-blockquote-paragraph-created'
+    ), true, `empty quote fill+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(await toggleSource(app), true, 'could not inspect empty quote fill source')
+    finalSource = await waitFor(() => visibleSource(app), 'empty quote fill source did not open')
+    assert.equal(finalSource.includes('>rapid'), true,
+      `empty authored quote row was not filled in source: ${JSON.stringify(finalSource)}`)
+    assert.equal(finalSource.includes('> <br />'), false, 'empty quote fill leaked transient quote placeholder')
+    assert.equal(await toggleSource(app), true, 'could not return empty quote fill to rich mode')
+    await sleep(250)
+    await save(app)
+    const disk = await readFile(file, 'utf8')
+    assert.equal(disk.replace(/\r\n/g, '\n'), finalSource,
+      'empty quote fill saved bytes diverged from source view')
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
+    app = null
+  }
+
+  app = await openApp({ file, profile: 'empty-quote-fill-enter-cold', port: basePort + 8, marker: 'rapid' })
+  try {
+    const reopened = await snapshot(app)
+    assertClean(reopened, 'empty quote fill cold reopen')
+    assert.equal(await toggleSource(app), true, 'could not inspect cold empty quote fill source')
+    const coldSource = await waitFor(() => visibleSource(app), 'cold empty quote fill source did not open')
+    assert.equal(coldSource, finalSource, 'empty quote fill source changed after cold reopen')
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
+  }
+}
+
 // Regression 2: Backspace on the last empty ordered item inside a top-level blockquote.
 {
   const file = join(root, 'quote-list-tail.md')
@@ -277,4 +416,4 @@ await mkdir(root, { recursive: true })
 }
 
 await rm(root, { recursive: true, force: true })
-console.log('PASS blockquote transient trace regressions UI: rapid suffix+Enter and quote-list empty-tail Backspace remain warning-free with transaction proof; quote-tail source survives save and cold reopen')
+console.log('PASS blockquote transient trace regressions UI: single-space+Enter, pending nonempty text+Enter, empty authored quote fill+Enter, and quote-list empty-tail Backspace remain warning-free through source/save/disk/cold reopen')
