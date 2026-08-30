@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.160 已完成 empty-item/ordered successor Backspace 链 + plain bullet empty-tail/nonempty middle-tail Tab indent + single/last-child Shift+Tab outdent；first-of-multiple outdent、nested split/join 仍待迁移** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.161 已完成 empty-item/ordered successor Backspace 链 + plain bullet empty-tail/nonempty middle-tail Tab indent + single/last/first-child Shift+Tab outdent；nested split/join 仍待迁移** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -294,6 +294,16 @@ build:mobile
 - 永久门禁：pure覆盖2/3 nested children、exact Step/path/slice、BOM+CRLF `+`、wide/mixed/wrong-step recognized负例及first/single/empty/task/ordered no-hit；真实Electron覆盖2-child callback与3-child forced、`+/-`、source/save/disk/fresh-profile reopen和target marker-spacing retirement。真实multi-child diagnostic在production接线后再次证明first-child仍由broad `list-subtree-replace`持有，而last-child由0.13.160 focused owner持有；0.13.157–159、continuous/nested fidelity、nested Enter/RS-68/63/85、ordered families、generic subtree、Journal/Coordinator、完整preservation、39/39、mixed/heterogeneous fidelity与双build均通过。
 - **first-of-multiple 不属于本 family**：同一文档transaction中有两笔`ReplaceAroundStep`。实机两子项时第一步`48→58 / gap 49→58 / insert=1 / sliceSize=3`，把剩余`delta`挂到被提升`gamma`下；第二步`39→62 / gap 40→60 / insert=1 / sliceSize=1`完成外层lift，最终`gamma`成为top-level且仍含nested `delta`。下一版本必须按两Step/stepDoc链单独建立focused owner，不允许last-child owner扩宽。
 - nested split/join排在first-of-multiple之后；task sentinel、conversion、input rules与跨列表/coalescing继续排后。
+
+### Nested list 第五子族实际完成记录（0.13.161）
+
+- 范围只覆盖 **top-level plain bullet parent 下 nestedCount>=2 时第一个 nonempty plain bullet child 的物理 Shift+Tab outdent**。parent与所有nested items仍要求non-task、单一无marks非空paragraph；last child由0.13.160，single child由0.13.159，empty/task/ordered/复杂nested继续不认领。
+- 真实 HorseMD 与 2/3-child同attrs `liftListItem` 都在同一document transaction里产生 **两笔 `ReplaceAroundStep`**。Step 1 `insert=1/sliceSize=3/openStart=1/openEnd=0`，从target结束wrapper前到old nested结束wrapper前，把全部successors通过gap搬入target中新建nested wrapper；Step 2 `insert=1/sliceSize=1/openStart=1/openEnd=0`，严格以Step 1后的`stepDoc`为输入，把这个已经带successor nested list的target从old parent提升到top-level。owner要求Step 1 apply结果精确等于捕获的第二个stepDoc，Step 2 apply结果精确等于live expectedDoc。
+- intermediate topology是本family的核心证据：outer top-level item count尚未变化；old parent仍保留一个nested list，但其中只剩target；target已经拥有与old nested attrs一致的新nested list，并按原顺序包含全部successors。第二步之后parent只保留原paragraph，target成为`parentIndex+1` top-level item且successors仍位于target的nested list；其它outer siblings只整体后移一位并`.eq()`。
+- raw source不尝试复现中间态。source-map证明parent + 全部nested rows物理连续、同作者bullet token、marker spacing一个space、parent indent=0、nested indent恰两个spaces且raw body逐项等于PM正文后，最终patch只删除**第一 target row**的两个spaces。successor rows完全不动，因此原来的`  + delta`/`  + epsilon`自然在最终Markdown中继续属于被提升target。
+- legacy retirement：wide target indent、target marker padding、mixed marker/body等在两-Step PM family已完整分类后`recognized:true + legacyBlocked:true`；last/single/broad/legacy/Coordinator不得接管，rich结构保持、warning出现且disk不变。
+- 永久门禁：pure覆盖2/3 nested children、Step 1/2 range/slice、stepDoc中间态、successor顺序、BOM+CRLF、wide/mixed/wrong-step recognized负例以及last/single/empty/task/ordered no-hit；真实Electron覆盖2-child callback与3-child forced、`+/-` marker、source/save/disk/fresh-profile reopen和marker-spacing retirement。相邻矩阵覆盖0.13.157–160、continuous/nested 3×2 fidelity和generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`全部通过。
+- 至此 plain bullet 的基础 Tab/Shift+Tab families 已按真实 Step 拆清。下一步进入 **nested split/join**，先通过真实Electron比较 Enter split、Backspace/Delete join 的Step topology与raw byte影响，优先迁移最小且稳定的子族；task sentinel、conversion、input rules与跨列表/coalescing仍在之后。
 
 ## 9. 阶段 F：普通段落默认 authority
 
