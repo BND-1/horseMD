@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.155`
+> 当前源码版本：`0.13.165`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.164 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep；下一步 task Enter/sentinel** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.165 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep + task end-Enter empty sibling；下一步 sentinel fill** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -335,6 +335,16 @@ build:mobile
 - legacy retirement：registry将`list-task-checkbox-toggle`置于nested join之后、ordered/broad owners之前并`legacyRetired:true`。entity-authored正文`A &amp; B`作为永久负例：PM checked AttrStep已完整分类，但raw body无法由有限plain/escape对齐证明时返回`recognized:true + legacyBlocked:true`；rich checkbox切换保留，warning出现，legacy `list-line-change`、broad list-subtree与Coordinator均不得publication，disk不变。
 - 永久门禁：pure覆盖top-level/nested、false→true/true→false、exact AttrStep、BOM+CRLF、作者`+/-`、`1\\.` escape、entity/wrong-step recognized fail-closed、ordinary conversion/ordered no-hit；Electron覆盖top-level callback + nested forced、focused-only publication、source/save/disk/reopen和entity retirement。相邻覆盖原task persistence、RS-70 task Enter empty sibling、RS-58 task continuation empty、RS-60 empty task Backspace、0.13.162/163 nested split/join与generic subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build及`git diff --check`全部通过。
 - Stage E下一步进入 **task Enter/sentinel 生命周期**：需要把`taskEmptyNext`、zero-width sentinel、empty sibling填充/退出等真实transaction/Step拆开；conversion、typed input rule与cross-list/coalescing继续后排，不能扩宽checkbox AttrStep owner。
+
+### Task list 第二子族实际完成记录（0.13.165）
+
+- 范围只覆盖 **已有 plain bullet task item 在正文末尾物理 Enter，新建一个空同层 task sibling**。top-level task 与顶层 plain bullet parent 下的一层 nested task均支持；正文中间 split、item开头 Enter、ordinary bullet、ordered task、task conversion、sentinel 填充/退出与 Backspace明确不认领。
+- 真实 HorseMD top unchecked、top checked、nested checked 三组诊断均为单document-changing transaction / 单`ReplaceStep(structure=true,sliceSize=4,openStart=2,openEnd=2)`；`from===to===paragraph.contentStart+oldText.length`，slice恰有两个空`list_item` wrapper，各含空paragraph且attrs与旧task完全一致。new list只在target后增加一个sibling，其它siblings逐项`.eq()`；因此新空task继承旧item的`checked` boolean。
+- raw source不序列化整个list，也不让legacy决定marker。source-map锚定旧task paragraph后，row必须满足当前安全合同：top-level indent为空或nested恰两个spaces、作者bullet token任意`-`/`+`/`*`、bullet/task spacing各一个space、checkbox state与PM一致、正文为plain text或有限Markdown backslash escape、EOL为LF/CRLF。成功只在该物理row结束后插入同indent/token/spacing/state spelling的空task row，并用U+200B作为source-owned sentinel；BOM、原正文、后继row和其它bytes不动。
+- 该family直接消除了一个现有source-rich divergence：迁移前top-level Enter会落到legacy `list-line-change`，把作者`+` marker改为canonical `*`且曾出现`semanticOk:false`；nested Enter则落到`middle-empty-block-list-filled`。0.13.165 callback/forced永久回归要求 focused owner唯一publication，并禁止这两个legacy reason与broad list-subtree publication。
+- legacy retirement：registry将`list-task-empty-sibling-split`置于task checkbox之后、ordered/broad owners之前并`legacyRetired:true`。entity-authored `A &amp; B`作为真实负例：PM Step/topology已完整识别，但raw body不属于当前plain/escape证明时返回`recognized:true + legacyBlocked:true`；rich Enter保留、warning出现，legacy/broad/Coordinator不得publication，disk保持原字节。
+- 永久门禁：pure覆盖top unchecked、top checked uppercase `X`、nested checked、exact Step/slice/path、BOM+CRLF、`1\\.` escape、entity/wrong-step recognized fail-closed，以及middle split/ordinary/ordered no-hit；Electron覆盖top callback、nested forced、source/save/disk/fresh-profile reopen和entity retirement。原RS-70已升级为Enter必须由本focused family发布，随后填正文仍由legacy `empty-task-sentinel-filled`；task checkbox/persistence、RS-58 task continuation、RS-60 empty-task Backspace、nested split/join、generic subtree相邻矩阵全绿。Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均exit 0。
+- 下一family明确为 **`empty-task-sentinel-filled`**：从U+200B空task继续物理输入正文，当前RS-70已提供稳定legacy first-punch证据。先抓真实ReplaceStep/transaction chain，再做raw row“只消费sentinel并写入正文”的focused owner；不要同时迁移empty-task Backspace或task input rule。
 
 ## 9. 阶段 F：普通段落默认 authority
 

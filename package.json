@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.164",
+  "version": "0.13.165",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -281,6 +281,9 @@
     "test:list-task-checkbox-toggle-transaction-owner": "node scripts/test-list-task-checkbox-toggle-transaction-owner.mjs",
     "test:list-task-checkbox-toggle-transaction-ui": "node scripts/test-list-task-checkbox-toggle-transaction-ui.mjs",
     "test:list-task-checkbox-toggle-legacy-retirement-ui": "node scripts/test-list-task-checkbox-toggle-legacy-retirement-ui.mjs",
+    "test:list-task-empty-sibling-split-transaction-owner": "node scripts/test-list-task-empty-sibling-split-transaction-owner.mjs",
+    "test:list-task-empty-sibling-split-transaction-ui": "node scripts/test-list-task-empty-sibling-split-transaction-ui.mjs",
+    "test:list-task-empty-sibling-split-legacy-retirement-ui": "node scripts/test-list-task-empty-sibling-split-legacy-retirement-ui.mjs",
     "test:list-input-intent-lifecycle": "node scripts/test-list-input-intent-lifecycle.mjs",
     "test:list-item-paragraph-transaction-owner": "node scripts/test-list-item-paragraph-transaction-owner.mjs",
     "test:table-cell-transaction-owner": "node scripts/test-table-cell-transaction-owner.mjs",

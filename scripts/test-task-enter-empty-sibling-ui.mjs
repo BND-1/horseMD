@@ -84,6 +84,9 @@ const state = (app) => app.evaluate(`(() => {
       ...entry,
       markdown: String(markdown || '').slice(0, 720)
     })),
+    owner: (window.__hmListTaskEmptySiblingSplitTransactionTrace || []).slice(-20),
+    coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-20),
+    broad: (window.__hmListSubtreeTransactionTrace || []).slice(-20),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || '')
@@ -143,6 +146,9 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmListTaskEmptySiblingSplitTransactionTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
   await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 80 })
   await sleep(900)
@@ -154,14 +160,21 @@ try {
   assert.deepEqual(created.unchecked, [true, true], `RS-70 task state changed after Enter: ${JSON.stringify(created.unchecked)}`)
   assert.equal(created.integrity.some((entry) => entry.ok === false), false, `RS-70 Enter failed integrity: ${JSON.stringify(created.integrity)}`)
   assert.equal(created.toasts.some((text) => warningPattern.test(text)), false, `RS-70 Enter showed warning: ${JSON.stringify(created.toasts)}`)
-  assert.equal(
-    created.integrity.some((entry) =>
-      entry.preservationReason === 'middle-empty-block-list-filled' &&
-      entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
-    ),
-    true,
-    `RS-70 middle-list proof missing after Enter: ${JSON.stringify(created.integrity)}`
-  )
+  const focusedPublished = created.owner.filter((entry) =>
+    entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-empty-sibling-split')
+  assert.equal(focusedPublished.length, 1, `RS-70 focused task split publication missing: ${JSON.stringify(created.owner)}`)
+  assert.equal(focusedPublished[0].boundary, 'transaction-list-task-empty-sibling-split-markdown-updated')
+  assert.equal(created.preserve.some((entry) => entry.reason === 'list-task-empty-sibling-split'), true,
+    `RS-70 focused preservation proof missing: ${JSON.stringify(created.preserve)}`)
+  assert.equal(created.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled'), false,
+    `RS-70 legacy sentinel owner returned: ${JSON.stringify(created.preserve)}`)
+  assert.equal(created.preserve.some((entry) => entry.reason === 'list-line-change'), false,
+    `RS-70 list-line-change returned: ${JSON.stringify(created.preserve)}`)
+  assert.equal(created.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+    `RS-70 broad owner published: ${JSON.stringify(created.broad)}`)
+  assert.equal(created.coordinator.some((entry) =>
+    entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-empty-sibling-split'), true,
+    `RS-70 Coordinator focused publication missing: ${JSON.stringify(created.coordinator)}`)
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-70 empty sibling source')
   const emptySource = await waitFor(() => visibleSource(app), 'RS-70 source textarea missing after Enter')

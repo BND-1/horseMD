@@ -80,6 +80,7 @@ import {
   createListNestedBulletSplitTransactionSourceSyncOwner,
   createListNestedBulletJoinTransactionSourceSyncOwner,
   createListTaskCheckboxToggleTransactionSourceSyncOwner,
+  createListTaskEmptySiblingSplitTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
   createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
@@ -598,6 +599,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listTaskEmptySiblingSplitTransactionSourceSyncOwner =
+      createListTaskEmptySiblingSplitTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const listOrderedEmptySuccessorChainTransactionSourceSyncOwner =
       createListOrderedEmptySuccessorChainTransactionSourceSyncOwner({
         mapOrderedChain: preserveTransactionOwnedOrderedEmptySuccessorChain,
@@ -781,6 +787,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-task-checkbox-toggle-markdown-updated',
           'forced-flush': 'transaction-list-task-checkbox-toggle-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-task-empty-sibling-split',
+        owner: listTaskEmptySiblingSplitTransactionSourceSyncOwner,
+        traceKey: '__hmListTaskEmptySiblingSplitTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-task-empty-sibling-split-markdown-updated',
+          'forced-flush': 'transaction-list-task-empty-sibling-split-forced-flush'
         })
       }),
       Object.freeze({
