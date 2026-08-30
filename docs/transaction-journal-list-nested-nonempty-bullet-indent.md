@@ -309,10 +309,8 @@ raw target body与PM plain text不一致时也同样recognized fail closed。
 
 ## 后续边界：Shift+Tab outdent必须继续拆
 
-原生 `liftListItem` 的最小schema比较已经证明 outdent不是一个单一Step family：
+0.13.158 收口时的 generic-minimal `liftListItem` 对比只用于证明“outdent不是一个可以直接做宽owner的单一族”。其中 single nested child 曾被记录为 `sliceSize=0`，这不是 HorseMD 真实产品合同。
 
-1. **single nested child**：单 `ReplaceAroundStep`，`sliceSize=0`；
-2. **first of multiple nested children**：一笔 `ReplaceAroundStep` 后还有一笔 `ReplaceStep`，共两Step；
-3. **last of multiple nested children**：单 `ReplaceAroundStep`，但 `sliceSize=3` 且 `openEnd=1`。
+0.13.159 后续真实 Electron 取证与使用 HorseMD 同款 list attrs 的最小 schema 已一致证明：single nested child 是单 `ReplaceAroundStep(structure=true,sliceSize=1,openStart=1,openEnd=0,insert=1)`，并已迁入独立 `list-nested-single-child-bullet-outdent` owner。
 
-因此0.13.158之后不建立“通用outdent owner”。下一轮先对真实Electron的single-child Shift+Tab进行取证，如果产品Step与最小schema一致，再作为最窄0.13.159候选；其余两种必须独立证明。nested split/join继续排在outdent子族之后。
+multi-child 的 first/last child 具体 Step 数量、slice size 与 open depth 仍必须重新用真实 HorseMD 取证；旧 generic-minimal 参数只保留为历史线索，不再作为正式合同。下一步先分别抓 first-child / last-child Shift+Tab，再决定是否能共享 family；nested split/join继续排在outdent子族之后。
