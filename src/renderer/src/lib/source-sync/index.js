@@ -126,6 +126,11 @@ export {
   createListNestedBulletSplitTransactionSourceSyncOwner
 } from './list-nested-bullet-split-transaction-owner.js'
 export {
+  LIST_NESTED_BULLET_JOIN_TRANSACTION_BOUNDARY,
+  LIST_NESTED_BULLET_JOIN_TRANSACTION_FAMILY,
+  createListNestedBulletJoinTransactionSourceSyncOwner
+} from './list-nested-bullet-join-transaction-owner.js'
+export {
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_BOUNDARY,
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_FAMILY,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner

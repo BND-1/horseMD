@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.162",
+  "version": "0.13.163",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -275,6 +275,9 @@
     "test:list-nested-bullet-split-transaction-owner": "node scripts/test-list-nested-bullet-split-transaction-owner.mjs",
     "test:list-nested-bullet-split-transaction-ui": "node scripts/test-list-nested-bullet-split-transaction-ui.mjs",
     "test:list-nested-bullet-split-legacy-retirement-ui": "node scripts/test-list-nested-bullet-split-legacy-retirement-ui.mjs",
+    "test:list-nested-bullet-join-transaction-owner": "node scripts/test-list-nested-bullet-join-transaction-owner.mjs",
+    "test:list-nested-bullet-join-transaction-ui": "node scripts/test-list-nested-bullet-join-transaction-ui.mjs",
+    "test:list-nested-bullet-join-legacy-retirement-ui": "node scripts/test-list-nested-bullet-join-legacy-retirement-ui.mjs",
     "test:list-input-intent-lifecycle": "node scripts/test-list-input-intent-lifecycle.mjs",
     "test:list-item-paragraph-transaction-owner": "node scripts/test-list-item-paragraph-transaction-owner.mjs",
     "test:table-cell-transaction-owner": "node scripts/test-table-cell-transaction-owner.mjs",
