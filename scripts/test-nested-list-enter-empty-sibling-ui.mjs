@@ -81,6 +81,9 @@ const shape = (app) => app.evaluate(`(() => {
       ...entry,
       markdown: String(markdown || '').slice(-500),
     })),
+    owner: (window.__hmListNestedBulletSplitTransactionTrace || []).slice(-20),
+    broad: (window.__hmListSubtreeTransactionTrace || []).slice(-20),
+    coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-20),
     toasts: [...document.querySelectorAll('[class*="toast"]')]
       .filter((node) => node.offsetParent)
       .map((node) => node.textContent || ''),
@@ -150,6 +153,9 @@ try {
     window.__hmPreserveLog = []
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
+    window.__hmSourceSyncCoordinatorTrace = []
+    window.__hmListNestedBulletSplitTransactionTrace = []
+    window.__hmListSubtreeTransactionTrace = []
   })()`)
 
   await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 80 })
@@ -163,18 +169,27 @@ try {
   assert.equal(afterEnter.nestedText[1], '', `new nested sibling is not empty: ${JSON.stringify(afterEnter.nestedText)}`)
   assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `nested Enter failed integrity: ${JSON.stringify(afterEnter.integrity)}`)
   assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `nested Enter showed warning: ${JSON.stringify(afterEnter.toasts)}`)
+  const focusedPublication = afterEnter.owner.filter((entry) =>
+    entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
+  )
+  assert.equal(focusedPublication.length, 1, `nested Enter focused owner missing: ${JSON.stringify(afterEnter.owner)}`)
+  assert.equal(focusedPublication[0].boundary, 'transaction-list-nested-bullet-item-split-markdown-updated')
   assert.equal(
     afterEnter.preserve.some((entry) =>
-      entry.reason === 'transaction-list-subtree' &&
+      entry.reason === 'list-nested-bullet-item-split' &&
       entry.preserved !== false &&
-      entry.integrityProof?.family === 'list-subtree-replace' &&
-      entry.integrityProof?.mapperReason === 'diverged-nested-list-change' &&
-      entry.integrityProof?.transactionJournal?.stepNames?.length === 1 &&
-      entry.integrityProof?.transactionJournal?.stepNames?.[0] === 'ReplaceStep'
+      entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof' &&
+      entry.integrityProof?.step?.name === 'ReplaceStep' &&
+      entry.integrityProof?.step?.sliceSize === 4
     ),
     true,
-    `nested Enter was not owned by the transaction list subtree family: ${JSON.stringify(afterEnter.preserve)}`,
+    `nested Enter focused preservation proof missing: ${JSON.stringify(afterEnter.preserve)}`,
   )
+  assert.equal(afterEnter.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+    `nested Enter unexpectedly published broad list-subtree: ${JSON.stringify(afterEnter.broad)}`)
+  assert.equal(afterEnter.coordinator.some((entry) =>
+    entry.phase === 'published' && entry.family === 'list-nested-bullet-item-split'
+  ), true, `nested Enter did not publish through coordinator: ${JSON.stringify(afterEnter.coordinator)}`)
 
   assert.equal(await toggleSource(app), true, 'could not inspect nested Enter source')
   const source = await waitFor(() => visibleSource(app), 'nested Enter source textarea missing')
