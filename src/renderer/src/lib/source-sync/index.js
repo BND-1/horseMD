@@ -131,6 +131,11 @@ export {
   createListNestedBulletJoinTransactionSourceSyncOwner
 } from './list-nested-bullet-join-transaction-owner.js'
 export {
+  LIST_TASK_CHECKBOX_TOGGLE_TRANSACTION_BOUNDARY,
+  LIST_TASK_CHECKBOX_TOGGLE_TRANSACTION_FAMILY,
+  createListTaskCheckboxToggleTransactionSourceSyncOwner
+} from './list-task-checkbox-toggle-transaction-owner.js'
+export {
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_BOUNDARY,
   LIST_ORDERED_EMPTY_SUCCESSOR_CHAIN_TRANSACTION_FAMILY,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner

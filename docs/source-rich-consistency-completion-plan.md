@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.163 已完成 empty-item/ordered successor Backspace 链 + plain bullet empty-tail/nonempty middle-tail Tab indent + single/last/first-child Shift+Tab outdent + nested middle/end Enter split + nested sibling Backspace join；下一步 task sentinel** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.164 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep；下一步 task Enter/sentinel** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
@@ -325,6 +325,16 @@ build:mobile
 - legacy retirement：registry将join owner置于split之后、ordered/broad之前并`legacyRetired:true`。target marker padding等在exact PM family已分类后`recognized:true + legacyBlocked:true`；rich双paragraph join保留、warning出现，split/broad/legacy/Coordinator不得publication，disk不变。
 - 永久门禁：pure覆盖2-child、3-child middle/last、exact Step/path、BOM+CRLF、authored escape、unsafe row/wrong-step recognized fail-closed以及task/ordered no-hit；Electron覆盖2-child callback与3-child middle forced、source/save/disk/reopen和marker-padding retirement。相邻矩阵覆盖0.13.157–162、continuous/nested 3×2 fidelity、RS-68、RS-63与generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均通过。
 - 至此 plain nested bullet 的基础 **Tab indent / Shift+Tab outdent / Enter split / Backspace sibling join** 已全部迁入focused transaction owners。Stage E仍未结束；下一步进入 **task sentinel / task-list item 特有结构** 的真实Step与raw source取证，之后再处理conversion、input rules与cross-list/coalescing。
+
+### Task list 第一子族实际完成记录（0.13.164）
+
+- 范围只覆盖 **plain bullet task item 已存在 boolean `checked` 时的 checkbox 点击切换**。top-level task 与 top-level plain parent 下的一层 nested task均支持；ordinary item `checked:null→false` 的 task conversion、ordered task、空 task sentinel、task Enter/Backspace、复杂multi-block task明确不认领。
+- 真实 HorseMD top-level/nested checkbox点击均为单document-changing transaction / 单`AttrStep`：`step.pos===target list_item.beforePos`、`step.attr==='checked'`、`step.value===next checked boolean`，非checked attrs与paragraph content保持。nested场景里祖先parent list_item的`.eq()`也会变化，因此本family不用generic anchored-list-item classifier，而是先在old/new tree中找唯一“checked boolean翻转且content/nonchecked attrs不变”的leaf task，再由AttrStep.pos完成Step-first绑定。
+- raw source只锚定target paragraph所在task row。row解析保留indent、作者`-`/`+`/`*` token、bullet marker spacing、`[ ]/[xX]`之后的task spacing、正文与EOL；成功patch只替换checkbox状态字符一个byte/字符，unchecked写` `，checked写`x`。正文允许普通字符和有限Markdown backslash escape，entity等复杂raw spelling当前不猜。
+- 该owner直接修复现有 fidelity first divergence：真实诊断证明checkbox点击过去由legacy `list-line-change`持有，会把作者`+ [ ] Top task`及nested作者`  + [x] Nested task`改写为serializer默认`*`。0.13.164 focused callback/forced 回归要求 `+/-` token逐字保持，且source/save/disk/fresh-profile reopen全部一致。
+- legacy retirement：registry将`list-task-checkbox-toggle`置于nested join之后、ordered/broad owners之前并`legacyRetired:true`。entity-authored正文`A &amp; B`作为永久负例：PM checked AttrStep已完整分类，但raw body无法由有限plain/escape对齐证明时返回`recognized:true + legacyBlocked:true`；rich checkbox切换保留，warning出现，legacy `list-line-change`、broad list-subtree与Coordinator均不得publication，disk不变。
+- 永久门禁：pure覆盖top-level/nested、false→true/true→false、exact AttrStep、BOM+CRLF、作者`+/-`、`1\\.` escape、entity/wrong-step recognized fail-closed、ordinary conversion/ordered no-hit；Electron覆盖top-level callback + nested forced、focused-only publication、source/save/disk/reopen和entity retirement。相邻覆盖原task persistence、RS-70 task Enter empty sibling、RS-58 task continuation empty、RS-60 empty task Backspace、0.13.162/163 nested split/join与generic subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build及`git diff --check`全部通过。
+- Stage E下一步进入 **task Enter/sentinel 生命周期**：需要把`taskEmptyNext`、zero-width sentinel、empty sibling填充/退出等真实transaction/Step拆开；conversion、typed input rule与cross-list/coalescing继续后排，不能扩宽checkbox AttrStep owner。
 
 ## 9. 阶段 F：普通段落默认 authority
 

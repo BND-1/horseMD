@@ -79,6 +79,7 @@ import {
   createListNestedFirstChildBulletOutdentTransactionSourceSyncOwner,
   createListNestedBulletSplitTransactionSourceSyncOwner,
   createListNestedBulletJoinTransactionSourceSyncOwner,
+  createListTaskCheckboxToggleTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorChainTransactionSourceSyncOwner,
   createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner,
   createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner,
@@ -592,6 +593,11 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    const listTaskCheckboxToggleTransactionSourceSyncOwner =
+      createListTaskCheckboxToggleTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const listOrderedEmptySuccessorChainTransactionSourceSyncOwner =
       createListOrderedEmptySuccessorChainTransactionSourceSyncOwner({
         mapOrderedChain: preserveTransactionOwnedOrderedEmptySuccessorChain,
@@ -765,6 +771,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-nested-bullet-item-join-markdown-updated',
           'forced-flush': 'transaction-list-nested-bullet-item-join-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-task-checkbox-toggle',
+        owner: listTaskCheckboxToggleTransactionSourceSyncOwner,
+        traceKey: '__hmListTaskCheckboxToggleTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-task-checkbox-toggle-markdown-updated',
+          'forced-flush': 'transaction-list-task-checkbox-toggle-forced-flush'
         })
       }),
       Object.freeze({
