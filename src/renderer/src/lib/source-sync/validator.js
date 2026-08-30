@@ -91,6 +91,30 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
   if (preservationReason === 'list-empty-item-tail-removed') {
     const removedPath = preservationProof?.removedPath
     const step = preservationProof?.step
+    const containerType = preservationProof?.containerType || 'doc'
+    const listPath = Array.isArray(preservationProof?.listPath)
+      ? preservationProof.listPath
+      : [preservationProof?.topLevelIndex]
+    const validListPath = Boolean(
+      listPath.every((index) => Number.isInteger(index) && index >= 0) &&
+      listPath[0] === preservationProof?.topLevelIndex &&
+      (
+        (containerType === 'doc' && listPath.length === 1) ||
+        (
+          containerType === 'blockquote' &&
+          listPath.length === 2 &&
+          Number.isInteger(preservationProof?.quoteChildIndex) &&
+          preservationProof.quoteChildIndex >= 0 &&
+          listPath[1] === preservationProof.quoteChildIndex
+        )
+      )
+    )
+    const pathExtendsList = (path, tailIndex) => Boolean(
+      Array.isArray(path) &&
+      path.length === listPath.length + 1 &&
+      listPath.every((index, pathIndex) => path[pathIndex] === index) &&
+      path.at(-1) === tailIndex
+    )
     if (
       preservationProof?.kind !== 'transaction-list-empty-item-tail-remove-proof' ||
       preservationProof?.family !== 'list-empty-item-tail-remove' ||
@@ -100,12 +124,9 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
       preservationProof?.chainLength !== 1 ||
       !Number.isInteger(preservationProof?.removedIndex) ||
       preservationProof.removedIndex < 1 ||
-      !Array.isArray(removedPath) ||
-      removedPath.length !== 2 ||
-      removedPath[0] !== preservationProof.topLevelIndex ||
-      removedPath[1] !== preservationProof.removedIndex ||
-      listItemPath?.length !== 2 ||
-      listItemPath?.[1] !== preservationProof.removedIndex - 1 ||
+      !validListPath ||
+      !pathExtendsList(removedPath, preservationProof.removedIndex) ||
+      !pathExtendsList(listItemPath, preservationProof.removedIndex - 1) ||
       !validPathPair ||
       step?.name !== 'ReplaceStep' ||
       step?.structure !== true ||

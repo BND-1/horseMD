@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.166",
+  "version": "0.13.167",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -236,6 +236,7 @@
     "test:blockquote-exit-transaction-owner": "node scripts/test-blockquote-exit-transaction-owner.mjs",
     "test:blockquote-list-exit-transaction-owner": "node scripts/test-blockquote-list-exit-transaction-owner.mjs",
     "test:blockquote-list-exit-backspace-chain-ui": "node scripts/test-blockquote-list-exit-backspace-chain-ui.mjs",
+    "test:blockquote-transient-trace-regressions-ui": "node scripts/test-blockquote-transient-trace-regressions-ui.mjs",
     "test:blockquote-exit-transaction-ui": "node scripts/test-blockquote-exit-transaction-ui.mjs",
     "test:blockquote-paragraph-transaction-ui": "node scripts/test-blockquote-paragraph-transaction-ui.mjs",
     "test:source-sync-document-replacement-owner": "node scripts/test-source-sync-document-replacement-owner.mjs",

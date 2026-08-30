@@ -223,6 +223,7 @@ const semanticJson = (node, {
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure = false,
   ignoreTrailingEmptyBlockquoteParagraph = false,
   ignoreTrailingEmptyBlockquoteParagraphPaths = [],
+  ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths = [],
   ignoreTrailingEmptyListItemPaths = [],
   ignoreTableColumnWidthPaths = []
 } = {}) => {
@@ -248,6 +249,17 @@ const semanticJson = (node, {
   const ignoredTrailingEmptyBlockquoteParagraphPaths = new Set(
     (Array.isArray(ignoreTrailingEmptyBlockquoteParagraphPaths)
       ? ignoreTrailingEmptyBlockquoteParagraphPaths
+      : [])
+      .filter((path) =>
+        Array.isArray(path) &&
+        path.length >= 1 &&
+        path.every((index) => Number.isInteger(index) && index >= 0)
+      )
+      .map((path) => path.join('.'))
+  )
+  const ignoredSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths = new Set(
+    (Array.isArray(ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths)
+      ? ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths
       : [])
       .filter((path) =>
         Array.isArray(path) &&
@@ -378,6 +390,9 @@ const semanticJson = (node, {
     const ignoreTrailingEmptyBlockquoteAtOwnedPath =
       next.type === 'blockquote' &&
       ignoredTrailingEmptyBlockquoteParagraphPaths.has(path.join('.'))
+    const ignoreSingleTrailingSpaceAtOwnedPath =
+      next.type === 'blockquote' &&
+      ignoredSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths.has(path.join('.'))
     if (
       next.type === 'blockquote' &&
       (ignoreTrailingEmptyBlockquoteParagraph || ignoreTrailingEmptyBlockquoteAtOwnedPath) &&
@@ -402,9 +417,24 @@ const semanticJson = (node, {
         trailingEmpty &&
         (
           (ignoreTrailingEmptyBlockquoteParagraph && previousTextParagraph) ||
-          (ignoreTrailingEmptyBlockquoteAtOwnedPath && previousList)
+          (ignoreTrailingEmptyBlockquoteAtOwnedPath && (previousTextParagraph || previousList))
         )
       ) {
+        if (ignoreSingleTrailingSpaceAtOwnedPath && previousTextParagraph) {
+          const lastText = previousChild.content.at(-1)
+          const text = lastText?.type === 'text' ? String(lastText.text || '') : ''
+          if (text.endsWith(' ') && !text.endsWith('  ') && text.length > 1) {
+            const previousContent = [...previousChild.content]
+            previousContent[previousContent.length - 1] = {
+              ...lastText,
+              text: text.slice(0, -1)
+            }
+            next.content[next.content.length - 2] = {
+              ...previousChild,
+              content: previousContent
+            }
+          }
+        }
         next.content = next.content.slice(0, -1)
       }
     }

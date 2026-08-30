@@ -546,6 +546,65 @@ assert.equal(
   'a proven trailing blockquote Enter may ignore exactly one editor-owned empty paragraph'
 )
 
+// A focused transaction owner may also bind the exact blockquote path for the
+// normal text-predecessor transient. This is used when a trailing-space text
+// transaction and Enter share one journal; wrong paths and multiple empties
+// must remain strict.
+const quoteTextWithoutTrailingEmpty = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文 ')])
+])
+const quoteTextWithTrailingEmpty = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文 '), paragraph()])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteTextWithoutTrailingEmpty,
+    quoteTextWithTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]] }
+  ),
+  true,
+  'transaction-proven text quote may ignore one trailing empty paragraph at its exact path'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteTextWithoutTrailingEmpty,
+    quoteTextWithTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[1]] }
+  ),
+  false,
+  'transaction-proven text quote must stay strict at an unrelated path'
+)
+const quoteTextSourceWithoutSpace = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文')])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteTextSourceWithoutSpace,
+    quoteTextWithTrailingEmpty,
+    {
+      ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]],
+      ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths: [[0]]
+    }
+  ),
+  true,
+  'exact pending quote proof may ignore one Markdown-nonsemantic trailing space before its empty paragraph'
+)
+const quoteTextWithHardBreakSpaces = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文  '), paragraph()])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteTextSourceWithoutSpace,
+    quoteTextWithHardBreakSpaces,
+    {
+      ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]],
+      ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths: [[0]]
+    }
+  ),
+  false,
+  'exact pending quote proof must not erase two trailing spaces that can encode a Markdown hard break'
+)
+
 // A list exit inside a blockquote creates the same unrepresentable trailing
 // empty quote paragraph, but the previous child is a list rather than text.
 // Keep the generic blockquote relaxation strict and permit this shape only at

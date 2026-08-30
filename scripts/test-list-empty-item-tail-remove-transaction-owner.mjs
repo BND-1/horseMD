@@ -14,6 +14,7 @@ const schema = new Schema({
   nodes: {
     doc: { content: 'block+' },
     paragraph: { content: 'text*', group: 'block' },
+    blockquote: { content: 'block+', group: 'block' },
     bullet_list: { content: 'list_item+', group: 'block' },
     ordered_list: { content: 'list_item+', group: 'block' },
     list_item: {
@@ -34,7 +35,23 @@ const item = (...children) => schema.nodes.list_item.create(null, children)
 const taskItem = (checked, ...children) => schema.nodes.list_item.create({ checked }, children)
 const semanticItem = (attrs, ...children) => schema.nodes.list_item.create(attrs, children)
 const bullet = (...items) => schema.nodes.bullet_list.create(null, items)
+const ordered = (...items) => schema.nodes.ordered_list.create(null, items)
+const quote = (...blocks) => schema.nodes.blockquote.create(null, blocks)
 const document = (...blocks) => schema.nodes.doc.create(null, blocks)
+
+const nodeBeforePosAtPath = (doc, path) => {
+  let parent = doc
+  let beforePos = 0
+  for (let depth = 0; depth < path.length; depth += 1) {
+    const index = path[depth]
+    let childOffset = 0
+    for (let sibling = 0; sibling < index; sibling += 1) childOffset += parent.child(sibling).nodeSize
+    beforePos = depth === 0 ? childOffset : beforePos + 1 + childOffset
+    parent = parent.child(index)
+  }
+  return beforePos
+}
+const contentStartAtPath = (doc, path) => nodeBeforePosAtPath(doc, path) + 1
 
 const oldList = bullet(item(paragraph('left')), item(paragraph()))
 const nextList = bullet(item(paragraph('left'), paragraph()))
@@ -102,6 +119,99 @@ assert.equal(plan.proof.removedSourceRow.token, '-')
 assert.equal(plan.result.markdown.charCodeAt(0), 0xFEFF)
 assert.equal(plan.result.markdown.includes('\r\n'), true)
 assert.equal(plan.result.markdown.includes('<br'), false)
+
+{
+  const quoteOldList = ordered(
+    item(paragraph('alpha')),
+    item(paragraph('beta')),
+    item(paragraph())
+  )
+  const quoteNextList = ordered(
+    item(paragraph('alpha')),
+    item(paragraph('beta'), paragraph())
+  )
+  const quoteOldDoc = document(
+    paragraph('quote-title'),
+    quote(paragraph('intro'), quoteOldList),
+    paragraph('after')
+  )
+  const quoteExpectedDoc = document(
+    paragraph('quote-title'),
+    quote(paragraph('intro'), quoteNextList),
+    paragraph('after')
+  )
+  const removedBefore = nodeBeforePosAtPath(quoteOldDoc, [1, 1, 2])
+  const quoteStep = {
+    constructor: { name: 'ReplaceStep' },
+    from: removedBefore - 1,
+    to: removedBefore + 1,
+    structure: true,
+    slice: { size: 0 },
+    apply: () => ({ doc: quoteExpectedDoc })
+  }
+  const quoteTransaction = {
+    docChanged: true,
+    before: quoteOldDoc,
+    doc: quoteExpectedDoc,
+    docs: [quoteOldDoc],
+    steps: [quoteStep],
+    mapping: { maps: [{ map: (position) => position }] }
+  }
+  const quoteSource = '\uFEFFquote-title\r\n\r\n> intro\r\n>\r\n> 1. alpha\r\n> 2. beta\r\n> 3. <br />\r\n\r\nafter\r\n'
+  const quotePrevious = 'quote-title\n\n> intro\n>\n> 1. alpha\n> 2. beta\n> 3. <br />\n\nafter\n'
+  const quoteCanonical = 'quote-title\n\n> intro\n>\n> 1. alpha\n> 2. beta\n>\n>    <br />\n\nafter\n'
+  const quoteExpectedSource = '\uFEFFquote-title\r\n\r\n> intro\r\n>\r\n> 1. alpha\r\n> 2. beta\r\n\r\nafter\r\n'
+  const quoteSnapshot = createSourceSyncSnapshot({
+    revision: 1521,
+    source: quoteSource,
+    canonical: quotePrevious,
+    doc: quoteOldDoc
+  })
+  const quoteCapture = journalFactory.captureOrAdvance({
+    checkpoint: null,
+    snapshot: quoteSnapshot,
+    transactions: [quoteTransaction],
+    oldDoc: quoteOldDoc,
+    newDoc: quoteExpectedDoc
+  })
+  assert.equal(quoteCapture.ok, true)
+  const paragraphPositions = new Map([
+    [contentStartAtPath(quoteOldDoc, [1, 1, 0, 0]), 'alpha'],
+    [contentStartAtPath(quoteOldDoc, [1, 1, 1, 0]), 'beta']
+  ])
+  const quoteOwner = createListEmptyItemTailRemoveTransactionSourceSyncOwner({
+    resolveMarkdownOffset: ({ markdown, pmPos }) => {
+      const needle = paragraphPositions.get(pmPos)
+      assert.ok(needle, 'quote tail owner must never request a source-map anchor for the empty tail paragraph')
+      return markdown.indexOf(needle)
+    }
+  })
+  const quotePlan = quoteOwner.plan({
+    journal: quoteCapture.checkpoint,
+    activeJournal: quoteCapture.checkpoint,
+    snapshot: quoteSnapshot,
+    currentSource: quoteSource,
+    currentCanonical: quotePrevious,
+    canonical: quoteCanonical,
+    expectedDoc: quoteExpectedDoc,
+    callbackDocumentEquivalent: false
+  })
+  assert.equal(quotePlan.ok, true, JSON.stringify(quotePlan))
+  assert.equal(quotePlan.result.markdown, quoteExpectedSource)
+  assert.equal(quotePlan.proof.containerType, 'blockquote')
+  assert.deepEqual(quotePlan.proof.listPath, [1, 1])
+  assert.equal(quotePlan.proof.quoteChildIndex, 1)
+  assert.equal(quotePlan.proof.callbackDocumentEquivalent, false)
+  assert.equal(quotePlan.proof.transactionProvenTransientEquivalent, true)
+  assert.deepEqual(quotePlan.proof.removedPath, [1, 1, 2])
+  assert.deepEqual(quotePlan.proof.transientEmptyListItemPath, [1, 1, 1])
+  assert.deepEqual(quotePlan.proof.transientEmptyParagraphPath, [1, 1, 1, 1])
+  assert.equal(quotePlan.proof.removedSourceRow.prefix, '> ')
+  assert.equal(quotePlan.proof.removedSourceRow.token, '3.')
+  assert.equal(quotePlan.result.markdown.includes('> 3. <br />'), false)
+  assert.equal(quotePlan.result.markdown.charCodeAt(0), 0xFEFF)
+  assert.equal(quotePlan.result.markdown.includes('\r\n'), true)
+}
 
 const interiorOld = document(
   paragraph('before'),

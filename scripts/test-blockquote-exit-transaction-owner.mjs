@@ -101,6 +101,23 @@ const exitAndType = ({ oldDoc, quotePath, value = 'XY' }) => {
   }
 }
 
+const suffixThenEnter = ({ oldDoc, quotePath, suffix = ' ' }) => {
+  let state = EditorState.create({
+    schema,
+    doc: oldDoc,
+    selection: TextSelection.create(oldDoc, lastQuoteParagraphTextEnd(oldDoc, quotePath))
+  })
+  const insertion = state.tr.insertText(suffix, state.selection.from)
+  state = state.apply(insertion)
+  const enter = runEnter(state)
+  return {
+    insertion,
+    enter: enter.transaction,
+    finalDoc: enter.state.doc,
+    transactions: [insertion, enter.transaction]
+  }
+}
+
 const journalFactory = createSourceSyncTransactionJournal()
 const createOwner = (validateMarkdown = () => true) =>
   createBlockquoteExitTransactionSourceSyncOwner({
@@ -181,6 +198,65 @@ const topExit = exitAndType({ oldDoc: topDoc, quotePath: [1] })
   assert.deepEqual(plan.proof.nodePath, [1])
   assert.equal(plan.proof.splitStepName, 'ReplaceStep')
   assert.equal(plan.proof.splitStructure, true)
+  assert.equal(plan.proof.chainLength, 1)
+  assert.deepEqual(plan.proof.transactionJournal.stepNames, ['ReplaceStep'])
+}
+
+{
+  const suffixPending = suffixThenEnter({ oldDoc: topDoc, quotePath: [1], suffix: ' ' })
+  const pendingCanonical = 'before\n\n> alpha \n>\n\nafter\n'
+  const expectedSource = '\uFEFFbefore\r\n\r\n>   alpha \r\n\r\nafter\r\n'
+  const { plan } = planFor({
+    source: topSource,
+    canonical: topCanonical,
+    oldDoc: topDoc,
+    transactions: suffixPending.transactions,
+    nextCanonical: pendingCanonical,
+    revision: 991,
+    callbackDocumentEquivalent: false
+  })
+  assert.equal(plan.ok, true, `suffix+Enter pending rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'trailing-empty-blockquote-paragraph-created')
+  assert.equal(plan.result.markdown, expectedSource)
+  assert.equal(plan.proof.kind, 'transaction-blockquote-exit-pending-proof')
+  assert.equal(plan.proof.mode, 'pending')
+  assert.equal(plan.proof.insertedSuffix, ' ')
+  assert.equal(plan.proof.preSplitTextStepCount, 1)
+  assert.equal(plan.proof.sourceUnchanged, false)
+  assert.equal(plan.proof.callbackDocumentEquivalent, false)
+  assert.equal(plan.proof.transactionProvenTransientEquivalent, true)
+  const rawInsert = topSource.indexOf('\r\n', topSource.indexOf('alpha'))
+  assert.deepEqual(plan.proof.rawReplacement, { start: rawInsert, end: rawInsert, replacement: ' ' })
+  assert.equal(plan.proof.chainLength, 2)
+  assert.deepEqual(plan.proof.transactionJournal.stepNames, ['ReplaceStep', 'ReplaceStep'])
+}
+
+{
+  const stagedSpaceDoc = document(paragraph('before'), quote('alpha '), paragraph('after'))
+  let stagedSpaceState = EditorState.create({
+    schema,
+    doc: stagedSpaceDoc,
+    selection: TextSelection.create(stagedSpaceDoc, lastQuoteParagraphTextEnd(stagedSpaceDoc, [1]))
+  })
+  const stagedSpaceEnter = runEnter(stagedSpaceState).transaction
+  const stagedSpaceSource = '\uFEFFbefore\r\n\r\n>   alpha \r\n\r\nafter\r\n'
+  const stagedSpaceCanonical = 'before\n\n> alpha \n\nafter\n'
+  const stagedSpaceNextCanonical = 'before\n\n> alpha \n>\n\nafter\n'
+  const { plan } = planFor({
+    source: stagedSpaceSource,
+    canonical: stagedSpaceCanonical,
+    oldDoc: stagedSpaceDoc,
+    transactions: [stagedSpaceEnter],
+    nextCanonical: stagedSpaceNextCanonical,
+    revision: 992,
+    callbackDocumentEquivalent: false
+  })
+  assert.equal(plan.ok, true, `staged baseline-space Enter rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.markdown, stagedSpaceSource)
+  assert.equal(plan.proof.insertedSuffix, '')
+  assert.equal(plan.proof.preSplitTextStepCount, 0)
+  assert.equal(plan.proof.baselineSingleTrailingSpace, true)
+  assert.equal(plan.proof.sourceUnchanged, true)
   assert.equal(plan.proof.chainLength, 1)
   assert.deepEqual(plan.proof.transactionJournal.stepNames, ['ReplaceStep'])
 }

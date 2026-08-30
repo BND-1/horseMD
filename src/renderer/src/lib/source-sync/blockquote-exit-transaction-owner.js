@@ -304,16 +304,33 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     !isSimpleParagraph(afterQuote.lastChild, { nonEmpty: false }) ||
     afterQuote.lastChild.content.size !== 0
   ) return rejected('blockquote-exit-pending-shape')
-  for (let index = 0; index < beforeQuote.childCount; index += 1) {
+
+  const paragraphIndex = beforeQuote.childCount - 1
+  for (let index = 0; index < paragraphIndex; index += 1) {
     if (beforeQuote.child(index).eq?.(afterQuote.child(index)) !== true) {
       return rejected('blockquote-exit-pending-prefix-changed')
     }
   }
+  const beforeParagraph = beforeQuote.lastChild
+  const retainedParagraph = afterQuote.child(paragraphIndex)
+  if (
+    !isSimpleParagraph(retainedParagraph) ||
+    !sourceSyncAttrsEqual(beforeParagraph.attrs, retainedParagraph.attrs) ||
+    !retainedParagraph.textContent.startsWith(beforeParagraph.textContent)
+  ) return rejected('blockquote-exit-pending-retained-paragraph-shape')
+  const expectedInsertedSuffix = retainedParagraph.textContent.slice(beforeParagraph.textContent.length)
+  if (expectedInsertedSuffix && expectedInsertedSuffix !== ' ') {
+    return rejected('blockquote-exit-pending-pre-split-suffix-unowned')
+  }
+  const retainedQuote = withoutTrailingEmptyParagraph(afterQuote)
+  if (!retainedQuote) return rejected('blockquote-exit-pending-retained-quote-missing')
 
   let currentDoc = journal.oldDoc
   let splitSeen = false
   let splitStepName = null
   let splitStructure = null
+  let insertedSuffix = ''
+  let preSplitTextStepCount = 0
   for (const entry of journal.entries || []) {
     if (!sameSourceSyncDocument(entry.beforeDoc, currentDoc)) {
       return rejected('blockquote-exit-pending-transaction-chain-mismatch')
@@ -331,9 +348,37 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
         return rejected('blockquote-exit-pending-step-not-replace')
       }
       const beforeEntry = sourceSyncNodeEntryAtPath(stepDoc, classification.nodePath)
-      if (beforeEntry?.node?.eq?.(beforeQuote) !== true) {
-        return rejected('blockquote-exit-pending-step-baseline-mismatch')
+      const currentQuote = beforeEntry?.node
+      if (
+        currentQuote?.type?.name !== 'blockquote' ||
+        !sourceSyncAttrsEqual(currentQuote.attrs, beforeQuote.attrs) ||
+        currentQuote.childCount !== beforeQuote.childCount ||
+        !isSimpleParagraph(currentQuote.lastChild)
+      ) return rejected('blockquote-exit-pending-step-baseline-mismatch')
+      for (let childIndex = 0; childIndex < paragraphIndex; childIndex += 1) {
+        if (currentQuote.child(childIndex).eq?.(beforeQuote.child(childIndex)) !== true) {
+          return rejected('blockquote-exit-pending-step-prefix-changed')
+        }
       }
+
+      const paragraphContentStart = beforeEntry.offset + 2 +
+        childEntries(currentQuote)
+          .slice(0, paragraphIndex)
+          .reduce((total, child) => total + child.node.nodeSize, 0)
+      const expectedPosition = paragraphContentStart + currentQuote.lastChild.textContent.length
+      const slice = step.slice
+      const splitContract = Boolean(
+        currentQuote.eq?.(retainedQuote) === true &&
+        step.from === expectedPosition &&
+        step.to === expectedPosition &&
+        slice &&
+        slice.openStart === 1 &&
+        slice.openEnd === 1 &&
+        slice.content?.childCount === 2 &&
+        slice.content.child(0)?.type?.name === 'paragraph' &&
+        slice.content.child(1)?.type?.name === 'paragraph'
+      )
+
       let applied
       try {
         applied = step.apply(stepDoc)
@@ -343,39 +388,58 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
       if (applied?.failed || !applied?.doc) {
         return rejected('blockquote-exit-pending-step-apply-failed')
       }
-      if (!onlySourceSyncNodePathChanged(
-        stepDoc,
-        applied.doc,
-        classification.nodePath
-      )) return rejected('blockquote-exit-pending-neighbour-changed')
-      const appliedQuote = sourceSyncNodeEntryAtPath(
-        applied.doc,
-        classification.nodePath
-      )?.node
-      if (appliedQuote?.eq?.(afterQuote) !== true) {
-        return rejected('blockquote-exit-pending-result-mismatch')
+      if (!onlySourceSyncNodePathChanged(stepDoc, applied.doc, classification.nodePath)) {
+        return rejected('blockquote-exit-pending-neighbour-changed')
       }
 
-      const paragraphIndex = beforeQuote.childCount - 1
-      const paragraphContentStart = beforeEntry.offset + 2 +
-        childEntries(beforeQuote)
-          .slice(0, paragraphIndex)
-          .reduce((total, child) => total + child.node.nodeSize, 0)
-      const expectedPosition = paragraphContentStart + beforeQuote.lastChild.textContent.length
-      const slice = step.slice
-      if (
-        step.from !== expectedPosition ||
-        step.to !== expectedPosition ||
-        !slice ||
-        slice.openStart !== 1 ||
-        slice.openEnd !== 1 ||
-        slice.content?.childCount !== 2 ||
-        slice.content.child(0)?.type?.name !== 'paragraph' ||
-        slice.content.child(1)?.type?.name !== 'paragraph'
-      ) return rejected('blockquote-exit-pending-step-contract')
-      splitSeen = true
-      splitStepName = step.constructor.name
-      splitStructure = step.structure === true
+      if (splitContract) {
+        const appliedQuote = sourceSyncNodeEntryAtPath(applied.doc, classification.nodePath)?.node
+        if (appliedQuote?.eq?.(afterQuote) !== true) {
+          return rejected('blockquote-exit-pending-result-mismatch')
+        }
+        splitSeen = true
+        splitStepName = step.constructor.name
+        splitStructure = step.structure === true
+      } else {
+        if (
+          step.structure === true ||
+          step.from !== expectedPosition ||
+          step.to !== expectedPosition ||
+          !slice ||
+          slice.openStart !== 0 ||
+          slice.openEnd !== 0 ||
+          slice.content?.childCount !== 1
+        ) return rejected('blockquote-exit-pending-pre-split-step-contract')
+        const insertedNode = slice.content.child(0)
+        const insertedText = insertedNode?.isText && (insertedNode.marks?.length || 0) === 0
+          ? insertedNode.text
+          : null
+        if (typeof insertedText !== 'string' || insertedText.length === 0 || /[\r\n]/.test(insertedText)) {
+          return rejected('blockquote-exit-pending-pre-split-text-unproven')
+        }
+        const appliedQuote = sourceSyncNodeEntryAtPath(applied.doc, classification.nodePath)?.node
+        if (
+          appliedQuote?.type?.name !== 'blockquote' ||
+          appliedQuote.childCount !== currentQuote.childCount ||
+          !sourceSyncAttrsEqual(appliedQuote.attrs, currentQuote.attrs)
+        ) return rejected('blockquote-exit-pending-pre-split-result-shape')
+        for (let childIndex = 0; childIndex < paragraphIndex; childIndex += 1) {
+          if (appliedQuote.child(childIndex).eq?.(currentQuote.child(childIndex)) !== true) {
+            return rejected('blockquote-exit-pending-pre-split-prefix-changed')
+          }
+        }
+        const nextParagraph = appliedQuote.lastChild
+        if (
+          !isSimpleParagraph(nextParagraph) ||
+          !sourceSyncAttrsEqual(nextParagraph.attrs, currentQuote.lastChild.attrs) ||
+          nextParagraph.textContent !== `${currentQuote.lastChild.textContent}${insertedText}`
+        ) return rejected('blockquote-exit-pending-pre-split-result-mismatch')
+        insertedSuffix += insertedText
+        preSplitTextStepCount += 1
+        if (!expectedInsertedSuffix.startsWith(insertedSuffix)) {
+          return rejected('blockquote-exit-pending-pre-split-suffix-mismatch')
+        }
+      }
       entryDoc = applied.doc
     }
     if (!sameSourceSyncDocument(entryDoc, entry.afterDoc)) {
@@ -384,6 +448,9 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     currentDoc = entry.afterDoc
   }
   if (!splitSeen) return rejected('blockquote-exit-pending-step-missing')
+  if (insertedSuffix !== expectedInsertedSuffix) {
+    return rejected('blockquote-exit-pending-inserted-suffix-mismatch')
+  }
   if (!sameSourceSyncDocument(currentDoc, expectedDoc)) {
     return rejected('blockquote-exit-pending-final-document-mismatch')
   }
@@ -392,10 +459,11 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
     beforeQuote,
     afterQuote,
     splitStepName,
-    splitStructure
+    splitStructure,
+    insertedSuffix,
+    preSplitTextStepCount
   })
 }
-
 const supportedList = (node) =>
   node?.type?.name === 'bullet_list' || node?.type?.name === 'ordered_list'
 
@@ -834,6 +902,69 @@ const removeProvenQuoteListTailRow = ({ source, rows }) => {
   })
 }
 
+const patchPendingBlockquoteSuffix = ({
+  source,
+  doc,
+  classification,
+  resolveMarkdownOffset
+}) => {
+  const suffix = classification?.insertedSuffix || ''
+  const beforeText = classification?.beforeQuote?.lastChild?.textContent || ''
+  const baselineSingleTrailingSpace = Boolean(
+    !suffix && beforeText.endsWith(' ') && !beforeText.endsWith('  ')
+  )
+  if (!suffix && !baselineSingleTrailingSpace) {
+    return Object.freeze({
+      markdown: source,
+      sourceUnchanged: true,
+      range: null,
+      quotePrefix: null,
+      baselineSingleTrailingSpace: false
+    })
+  }
+  if (suffix && suffix !== ' ') return null
+  const quoteEntry = sourceSyncNodeEntryAtPath(doc, classification.nodePath)
+  const paragraphIndex = classification.beforeQuote.childCount - 1
+  if (!quoteEntry || paragraphIndex < 0) return null
+  const textStart = paragraphContentStart(quoteEntry, paragraphIndex)
+  let rawStart
+  try {
+    rawStart = resolveMarkdownOffset({
+      markdown: source,
+      pmPos: textStart,
+      doc,
+      topLevelIndex: classification.topLevelIndex,
+      paragraphIndex
+    })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(rawStart)) return null
+  const line = lineAtOffset(source, rawStart)
+  if (!line || rawStart < line.start || rawStart > line.end) return null
+  const prefix = quotePrefix(source.slice(line.start, rawStart))
+  if (!prefix) return null
+  const authoredText = source.slice(rawStart, line.end)
+  if (authoredText !== beforeText) return null
+  if (baselineSingleTrailingSpace) {
+    return Object.freeze({
+      markdown: source,
+      sourceUnchanged: true,
+      range: null,
+      quotePrefix: source.slice(line.start, rawStart),
+      baselineSingleTrailingSpace: true
+    })
+  }
+  const rawEnd = line.end
+  return Object.freeze({
+    markdown: source.slice(0, rawEnd) + suffix + source.slice(rawEnd),
+    sourceUnchanged: false,
+    range: Object.freeze({ start: rawEnd, end: rawEnd, replacement: suffix }),
+    quotePrefix: source.slice(line.start, rawStart),
+    baselineSingleTrailingSpace: false
+  })
+}
+
 const createOwnedPlan = ({
   boundary,
   markdown,
@@ -918,10 +1049,6 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('blockquote-exit-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('blockquote-exit-callback-document-mismatch', { deferred: true })
-    }
-
     const listExitPending = classifyBlockquoteListExitPendingJournal({ journal, expectedDoc })
     if (listExitPending.ok) {
       const sourceRows = resolveQuoteListTailRows({
@@ -987,7 +1114,8 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
         previousCanonicalDigest: sourceSyncDigest(journal.canonical),
         canonicalDigest: sourceSyncDigest(canonical),
         markdownDigest: sourceSyncDigest(removed.markdown),
-        callbackDocumentEquivalent: true,
+        callbackDocumentEquivalent: callbackDocumentEquivalent === true,
+        transactionProvenTransientEquivalent: true,
         snapshotMatched: true,
         documentMatched: true
       })
@@ -1004,6 +1132,34 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
 
     const pending = classifyPendingBlockquoteExitJournal({ journal, expectedDoc })
     if (pending.ok) {
+      const patched = patchPendingBlockquoteSuffix({
+        source: journal.source,
+        doc: journal.oldDoc,
+        classification: pending,
+        resolveMarkdownOffset
+      })
+      if (!patched) {
+        return recognizedRejection('blockquote-exit-pending-authored-suffix-unmapped')
+      }
+      let semanticOk = false
+      try {
+        semanticOk = validateMarkdown({
+          markdown: patched.markdown,
+          expectedDoc,
+          semanticOptions: {
+            ignoreTrailingEmptyBlockquoteParagraphPaths: [pending.nodePath],
+            ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths:
+              (pending.insertedSuffix === ' ' || patched.baselineSingleTrailingSpace)
+                ? [pending.nodePath]
+                : []
+          }
+        }) === true
+      } catch {
+        return recognizedRejection('blockquote-exit-pending-semantic-validator-threw')
+      }
+      if (!semanticOk) {
+        return recognizedRejection('blockquote-exit-pending-semantic-document-mismatch')
+      }
       const proof = Object.freeze({
         kind: 'transaction-blockquote-exit-pending-proof',
         journalId: journal.journalId,
@@ -1013,25 +1169,36 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
         nodePath: pending.nodePath,
         splitStepName: pending.splitStepName,
         splitStructure: pending.splitStructure,
+        insertedSuffix: pending.insertedSuffix,
+        preSplitTextStepCount: pending.preSplitTextStepCount,
+        sourceUnchanged: patched.sourceUnchanged,
+        rawReplacement: patched.range,
+        quotePrefix: patched.quotePrefix,
+        baselineSingleTrailingSpace: patched.baselineSingleTrailingSpace === true,
         chainLength: journal.transactionCount,
         stepDetails: journal.stepDetails,
         transactionJournal: verified.proof,
         sourceDigest: sourceSyncDigest(journal.source),
         previousCanonicalDigest: sourceSyncDigest(journal.canonical),
         canonicalDigest: sourceSyncDigest(canonical),
-        markdownDigest: sourceSyncDigest(journal.source),
-        callbackDocumentEquivalent: true,
+        markdownDigest: sourceSyncDigest(patched.markdown),
+        callbackDocumentEquivalent: callbackDocumentEquivalent === true,
+        transactionProvenTransientEquivalent: true,
         snapshotMatched: true,
         documentMatched: true
       })
       return createOwnedPlan({
         boundary,
-        markdown: journal.source,
+        markdown: patched.markdown,
         canonical,
         expectedDoc,
         proof,
         reason: 'trailing-empty-blockquote-paragraph-created'
       })
+    }
+
+    if (callbackDocumentEquivalent !== true) {
+      return rejected('blockquote-exit-callback-document-mismatch', { deferred: true })
     }
 
     const classification = classifyBlockquoteExitJournal({ journal, expectedDoc })
