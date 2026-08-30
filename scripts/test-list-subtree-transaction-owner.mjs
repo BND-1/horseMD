@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
+import { EditorState, TextSelection } from '@milkdown/prose/state'
+import { joinBackward } from '@milkdown/prose/commands'
 import {
   preserveTransactionOwnedListSubtreeChange
 } from '../src/renderer/src/markdown-source-preservation.js'
@@ -164,6 +166,112 @@ const next = [
 const expected = next
 
 const owner = makeOwner()
+
+{
+  const bulletJoinOldList = bullet(
+    item(paragraph('bullet-alpha')),
+    item(paragraph('bullet-beta'))
+  )
+  const bulletJoinOldDoc = document(paragraph('before'), bulletJoinOldList, paragraph('after'))
+  let betaParagraphPos = null
+  bulletJoinOldDoc.descendants((node, pos) => {
+    if (betaParagraphPos == null && node.type?.name === 'paragraph' && node.textContent === 'bullet-beta') {
+      betaParagraphPos = pos + 1
+      return false
+    }
+    return true
+  })
+  assert.ok(Number.isFinite(betaParagraphPos))
+  const bulletJoinState = EditorState.create({
+    schema,
+    doc: bulletJoinOldDoc,
+    selection: TextSelection.create(bulletJoinOldDoc, betaParagraphPos)
+  })
+  let bulletJoinTransaction = null
+  assert.equal(
+    joinBackward(bulletJoinState, (value) => { bulletJoinTransaction = value }),
+    true,
+    'joinBackward must merge the second bullet item into the first item'
+  )
+  assert.ok(bulletJoinTransaction)
+  assert.equal(bulletJoinTransaction.steps.length, 1)
+  assert.equal(bulletJoinTransaction.steps[0].constructor.name, 'ReplaceStep')
+  assert.equal(bulletJoinTransaction.steps[0].structure, true)
+  assert.equal(bulletJoinTransaction.steps[0].slice.size, 0)
+  const bulletJoinNextDoc = bulletJoinTransaction.doc
+  assert.equal(bulletJoinNextDoc.child(1).childCount, 1)
+  assert.equal(bulletJoinNextDoc.child(1).child(0).childCount, 2)
+  assert.equal(bulletJoinNextDoc.child(1).child(0).child(0).textContent, 'bullet-alpha')
+  assert.equal(bulletJoinNextDoc.child(1).child(0).child(1).textContent, 'bullet-beta')
+
+  const bulletJoinSource = 'before\n\n- bullet-alpha\n- bullet-beta\n\nafter\n'
+  const bulletJoinPrevious = 'before\n\n* bullet-alpha\n\n* bullet-beta\n\nafter\n'
+  const bulletJoinNext = 'before\n\n* bullet-alpha\n\n  bullet-beta\n\nafter\n'
+  const bulletJoinExpected = 'before\n\n- bullet-alpha\n\n  bullet-beta\n\nafter\n'
+  const bulletJoinJournal = captureJournal({
+    source: bulletJoinSource,
+    canonical: bulletJoinPrevious,
+    oldDoc: bulletJoinOldDoc,
+    revision: 166,
+    batches: [{
+      transactions: [bulletJoinTransaction],
+      oldDoc: bulletJoinOldDoc,
+      newDoc: bulletJoinNextDoc
+    }]
+  })
+  const bulletJoinPlan = planWithJournal(makeOwner('bullet-alpha'), {
+    snapshot: bulletJoinJournal.snapshot,
+    checkpoint: bulletJoinJournal.checkpoint,
+    canonical: bulletJoinNext,
+    expectedDoc: bulletJoinNextDoc
+  })
+  assert.equal(bulletJoinPlan.ok, true, `bullet sibling paragraph join rejected: ${JSON.stringify(bulletJoinPlan)}`)
+  assert.equal(bulletJoinPlan.result.markdown, bulletJoinExpected)
+  assert.equal(bulletJoinPlan.proof.mapperReason, 'diverged-sibling-list-item-paragraph-join')
+  assert.equal(
+    bulletJoinPlan.proof.siblingParagraphJoin?.kind,
+    'transaction-list-sibling-item-paragraph-join-proof'
+  )
+  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.retainedItemPath, [1, 0])
+  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.removedItemPath, [1, 1])
+  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.movedParagraphPath, [1, 0, 1])
+  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.name, 'ReplaceStep')
+  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.structure, true)
+  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.sliceSize, 0)
+
+  const bulletJoinCrLfSource = bulletJoinSource.replace(/\n/g, '\r\n')
+  const bulletJoinCrLfPrevious = bulletJoinPrevious.replace(/\n/g, '\r\n')
+  const bulletJoinCrLfNext = bulletJoinNext.replace(/\n/g, '\r\n')
+  const bulletJoinCrLfExpected = bulletJoinExpected.replace(/\n/g, '\r\n')
+  const bulletJoinCrLfJournal = captureJournal({
+    source: bulletJoinCrLfSource,
+    canonical: bulletJoinCrLfPrevious,
+    oldDoc: bulletJoinOldDoc,
+    revision: 167,
+    batches: [{
+      transactions: [bulletJoinTransaction],
+      oldDoc: bulletJoinOldDoc,
+      newDoc: bulletJoinNextDoc
+    }]
+  })
+  const bulletJoinCrLfPlan = planWithJournal(makeOwner('bullet-alpha'), {
+    snapshot: bulletJoinCrLfJournal.snapshot,
+    checkpoint: bulletJoinCrLfJournal.checkpoint,
+    canonical: bulletJoinCrLfNext,
+    expectedDoc: bulletJoinNextDoc
+  })
+  assert.equal(bulletJoinCrLfPlan.ok, true)
+  assert.equal(bulletJoinCrLfPlan.result.markdown, bulletJoinCrLfExpected)
+
+  const rawWithoutProof = preserveTransactionOwnedListSubtreeChange({
+    source: '- bullet-alpha\n- bullet-beta',
+    previous: '* bullet-alpha\n\n* bullet-beta',
+    next: '* bullet-alpha\n\n  bullet-beta'
+  })
+  assert.equal(rawWithoutProof?.reason, 'diverged-nested-list-change')
+  assert.equal(rawWithoutProof?.markdown, '- bullet-alpha\n  bullet-beta',
+    'the raw mapper must not insert a paragraph boundary without transaction proof')
+}
 
 {
   const mixedOldList = bullet(

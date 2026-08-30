@@ -546,6 +546,62 @@ assert.equal(
   'a proven trailing blockquote Enter may ignore exactly one editor-owned empty paragraph'
 )
 
+// A list exit inside a blockquote creates the same unrepresentable trailing
+// empty quote paragraph, but the previous child is a list rather than text.
+// Keep the generic blockquote relaxation strict and permit this shape only at
+// the exact blockquote path proven by the structural transaction owner.
+const quotedOrderedList = schema.nodes.ordered_list.create(null, [item('一'), item('二')])
+const quoteListWithoutTrailingEmpty = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文'), quotedOrderedList])
+])
+const quoteListWithTrailingEmpty = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [paragraph('引用正文'), quotedOrderedList, paragraph()])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteListWithoutTrailingEmpty,
+    quoteListWithTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraph: true }
+  ),
+  false,
+  'generic blockquote transient allowance must not accept an empty paragraph after a list'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteListWithoutTrailingEmpty,
+    quoteListWithTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[1]] }
+  ),
+  false,
+  'blockquote-list transient allowance must remain strict at an unrelated path'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteListWithoutTrailingEmpty,
+    quoteListWithTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]] }
+  ),
+  true,
+  'transaction-proven blockquote-list exit may ignore one trailing empty paragraph at its exact path'
+)
+const quoteListWithTwoTrailingEmpty = schema.nodes.doc.create(null, [
+  schema.nodes.blockquote.create(null, [
+    paragraph('引用正文'),
+    quotedOrderedList,
+    paragraph(),
+    paragraph()
+  ])
+])
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteListWithoutTrailingEmpty,
+    quoteListWithTwoTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]] }
+  ),
+  false,
+  'blockquote-list transient allowance must reject two trailing empty paragraphs'
+)
+
 // A trusted baseline may already have a stable serializer/source divergence.
 // The integrity gate may accept a later edit only when BOTH representations
 // undergo the same normalized semantic transition.

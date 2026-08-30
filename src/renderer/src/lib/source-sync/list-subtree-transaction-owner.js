@@ -72,6 +72,104 @@ const stableAttrs = (attrs) => Object.fromEntries(
 const stableAttrsEqual = (left, right) =>
   JSON.stringify(stableAttrs(left)) === JSON.stringify(stableAttrs(right))
 
+const stableAttrsWithoutSpreadEqual = (left, right) => {
+  const withoutSpread = (attrs) => Object.fromEntries(
+    Object.entries(stableAttrs(attrs)).filter(([key]) => key !== 'spread')
+  )
+  return JSON.stringify(withoutSpread(left)) === JSON.stringify(withoutSpread(right))
+}
+
+const isPlainNonEmptyParagraph = (node) => {
+  if (node?.type?.name !== 'paragraph' || !node.isTextblock || node.content?.size <= 0) return false
+  let plain = true
+  node.forEach?.((child) => {
+    if (!child?.isText || (child.marks?.length || 0) !== 0) plain = false
+  })
+  return plain
+}
+
+const isPlainListItem = (node, listType) => {
+  if (node?.type?.name !== 'list_item' || node.attrs?.checked != null) return false
+  const expected = listType === 'ordered_list' ? 'ordered' : 'bullet'
+  const explicit = node.attrs?.listType
+  return explicit == null || explicit === '' || explicit === expected
+}
+
+const proveBulletSiblingParagraphJoin = ({
+  previousList,
+  nextList,
+  topLevelIndex,
+  journal,
+  expectedDoc
+}) => {
+  if (
+    previousList?.type?.name !== 'bullet_list' ||
+    nextList?.type?.name !== 'bullet_list' ||
+    !stableAttrsEqual(previousList.attrs, nextList.attrs) ||
+    previousList.childCount !== 2 ||
+    nextList.childCount !== 1 ||
+    journal?.transactionCount !== 1 ||
+    journal?.stepCount !== 1 ||
+    journal?.entries?.length !== 1 ||
+    journal.entries[0]?.stepCount !== 1
+  ) return null
+
+  const previousFirst = previousList.child(0)
+  const previousSecond = previousList.child(1)
+  const nextFirst = nextList.child(0)
+  if (
+    !isPlainListItem(previousFirst, 'bullet_list') ||
+    !isPlainListItem(previousSecond, 'bullet_list') ||
+    !isPlainListItem(nextFirst, 'bullet_list') ||
+    previousFirst.childCount !== 1 ||
+    previousSecond.childCount !== 1 ||
+    nextFirst.childCount !== 2 ||
+    !isPlainNonEmptyParagraph(previousFirst.firstChild) ||
+    !isPlainNonEmptyParagraph(previousSecond.firstChild) ||
+    nextFirst.child(0)?.eq?.(previousFirst.firstChild) !== true ||
+    nextFirst.child(1)?.eq?.(previousSecond.firstChild) !== true ||
+    !stableAttrsWithoutSpreadEqual(previousFirst.attrs, nextFirst.attrs) ||
+    !stableAttrsWithoutSpreadEqual(previousFirst.attrs, previousSecond.attrs)
+  ) return null
+
+  const entry = journal.entries[0]
+  const step = entry.steps?.[0]
+  const stepDoc = entry.stepDocs?.[0] || entry.beforeDoc
+  if (
+    entry.beforeDoc?.eq?.(journal.oldDoc) !== true ||
+    entry.afterDoc?.eq?.(expectedDoc) !== true ||
+    stepDoc?.eq?.(journal.oldDoc) !== true ||
+    step?.constructor?.name !== 'ReplaceStep' ||
+    step.structure !== true ||
+    step.slice?.size !== 0 ||
+    !Number.isFinite(step.from) ||
+    !Number.isFinite(step.to) ||
+    step.to <= step.from
+  ) return null
+  if (typeof step.apply === 'function') {
+    let applied = null
+    try { applied = step.apply(stepDoc) } catch { applied = null }
+    if (applied?.failed || !applied?.doc || applied.doc.eq?.(expectedDoc) !== true) return null
+  }
+
+  return Object.freeze({
+    kind: 'transaction-list-sibling-item-paragraph-join-proof',
+    listType: 'bullet_list',
+    topLevelIndex,
+    retainedItemPath: Object.freeze([topLevelIndex, 0]),
+    removedItemPath: Object.freeze([topLevelIndex, 1]),
+    retainedParagraphPath: Object.freeze([topLevelIndex, 0, 0]),
+    movedParagraphPath: Object.freeze([topLevelIndex, 0, 1]),
+    step: Object.freeze({
+      name: step.constructor.name,
+      from: step.from,
+      to: step.to,
+      structure: true,
+      sliceSize: step.slice.size
+    })
+  })
+}
+
 const isEditorEmptyParagraph = (node) => {
   if (node?.type?.name !== 'paragraph' || !node.isTextblock) return false
   if (node.content?.size === 0) return true
@@ -379,6 +477,13 @@ export function createListSubtreeTransactionSourceSyncOwner({
       nextList: classification.nextEntry.node,
       topLevelIndex: classification.topLevelIndex
     })
+    const siblingParagraphJoin = proveBulletSiblingParagraphJoin({
+      previousList: classification.previousEntry.node,
+      nextList: classification.nextEntry.node,
+      topLevelIndex: classification.topLevelIndex,
+      journal,
+      expectedDoc
+    })
 
     const resolveRange = ({ markdown, doc, entry, side }) => {
       const pmPos = findAnchorPosition(entry)
@@ -431,7 +536,8 @@ export function createListSubtreeTransactionSourceSyncOwner({
       mapped = mapListSubtree({
         source: sourceFragment,
         previous: previousFragment,
-        next: nextFragment
+        next: nextFragment,
+        siblingParagraphJoin
       })
     } catch (error) {
       return rejected(`list-subtree-mapper-threw:${error?.name || 'Error'}`)
@@ -444,6 +550,12 @@ export function createListSubtreeTransactionSourceSyncOwner({
       !insertedTrailingEmptyParagraph
     ) {
       return rejected('list-subtree-transient-empty-path-unproven')
+    }
+    if (
+      mapped.reason === 'diverged-sibling-list-item-paragraph-join' &&
+      !siblingParagraphJoin
+    ) {
+      return rejected('list-subtree-sibling-paragraph-join-unproven')
     }
     if (
       typeof mapped.nextBaseline === 'string' &&
@@ -482,6 +594,10 @@ export function createListSubtreeTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
       mapperReason: mapped.reason || null,
+      siblingParagraphJoin:
+        mapped.reason === 'diverged-sibling-list-item-paragraph-join'
+          ? siblingParagraphJoin
+          : null,
       transientEmptyListItemPath:
         mapped.reason === 'diverged-empty-ordered-backspace-lift'
           ? insertedTrailingEmptyParagraph.listItemPath

@@ -235,11 +235,106 @@ const transactionListTransientEmptyPaths = (preservationReason, preservationProo
   return [listItemPath]
 }
 
+const jsonNodeAtPath = (doc, path) => {
+  if (!Array.isArray(path)) return null
+  let node = doc?.toJSON?.() || null
+  for (const index of path) {
+    if (!node || !Array.isArray(node.content) || !node.content[index]) return null
+    node = node.content[index]
+  }
+  return node
+}
+
+const activeTrailingEmptyBlockquotePaths = (expectedDoc, paths) => {
+  const active = []
+  const seen = new Set()
+  for (const path of Array.isArray(paths) ? paths : []) {
+    if (
+      !Array.isArray(path) || path.length < 1 ||
+      !path.every((index) => Number.isInteger(index) && index >= 0)
+    ) continue
+    const key = path.join('.')
+    if (seen.has(key)) continue
+    const node = jsonNodeAtPath(expectedDoc, path)
+    const content = node?.type === 'blockquote' && Array.isArray(node.content)
+      ? node.content
+      : null
+    if (!content || content.length < 2) continue
+    let trailingEmptyParagraphs = 0
+    for (let index = content.length - 1; index >= 0; index -= 1) {
+      const child = content[index]
+      if (child?.type !== 'paragraph' || (child.content?.length || 0) !== 0) break
+      trailingEmptyParagraphs += 1
+    }
+    const previous = content.at(-2)
+    if (
+      trailingEmptyParagraphs === 1 &&
+      (previous?.type === 'bullet_list' || previous?.type === 'ordered_list')
+    ) {
+      seen.add(key)
+      active.push(Object.freeze([...path]))
+    }
+  }
+  return Object.freeze(active)
+}
+
+export const sourceSyncSemanticOptionsFromContext = (semanticContext, expectedDoc) => {
+  const activePaths = activeTrailingEmptyBlockquotePaths(
+    expectedDoc,
+    semanticContext?.trailingEmptyBlockquoteParagraphPaths
+  )
+  return Object.freeze({
+    ignoreTrailingEmptyBlockquoteParagraphPaths: activePaths
+  })
+}
+
+const transactionBlockquoteListExitTransientPaths = (preservationReason, preservationProof) => {
+  if (preservationReason !== 'trailing-empty-blockquote-paragraph-after-list-exit') {
+    return preservationProof?.kind === 'transaction-blockquote-list-exit-pending-proof'
+      ? false
+      : []
+  }
+  const nodePath = preservationProof?.nodePath
+  const listPath = preservationProof?.listPath
+  const removedItemPath = preservationProof?.removedItemPath
+  const transientParagraphPath = preservationProof?.transientParagraphPath
+  const step = preservationProof?.step
+  if (
+    preservationProof?.kind !== 'transaction-blockquote-list-exit-pending-proof' ||
+    preservationProof?.family !== 'blockquote-paragraph-exit' ||
+    preservationProof?.mode !== 'list-exit-pending' ||
+    !['bullet_list', 'ordered_list'].includes(preservationProof?.listType) ||
+    preservationProof?.transactionJournal?.snapshotMatched !== true ||
+    preservationProof?.transactionJournal?.documentMatched !== true ||
+    !Array.isArray(nodePath) || nodePath.length !== 1 ||
+    !nodePath.every((index) => Number.isInteger(index) && index >= 0) ||
+    nodePath[0] !== preservationProof?.topLevelIndex ||
+    !Array.isArray(listPath) || listPath.length !== nodePath.length + 1 ||
+    !nodePath.every((index, pathIndex) => listPath[pathIndex] === index) ||
+    !Number.isInteger(preservationProof?.removedIndex) || preservationProof.removedIndex < 1 ||
+    !Array.isArray(removedItemPath) || removedItemPath.length !== listPath.length + 1 ||
+    !listPath.every((index, pathIndex) => removedItemPath[pathIndex] === index) ||
+    removedItemPath.at(-1) !== preservationProof.removedIndex ||
+    !Array.isArray(transientParagraphPath) || transientParagraphPath.length !== nodePath.length + 1 ||
+    !nodePath.every((index, pathIndex) => transientParagraphPath[pathIndex] === index) ||
+    step?.name !== 'ReplaceAroundStep' || step?.structure !== true ||
+    step?.sliceSize !== 1 || step?.openStart !== 1 || step?.openEnd !== 0 ||
+    step?.insert !== 1 ||
+    !Number.isFinite(step?.from) || !Number.isFinite(step?.to) || step.to <= step.from ||
+    !Number.isFinite(step?.gapFrom) || !Number.isFinite(step?.gapTo) || step.gapTo <= step.gapFrom
+  ) return false
+  return [nodePath]
+}
+
 const semanticOptionsForReason = (
   preservationReason,
   preservationProof = null,
   tableColumnWidthPaths = tableColumnWidthProofPaths(preservationReason, preservationProof),
   transientEmptyListItemPaths = transactionListTransientEmptyPaths(
+    preservationReason,
+    preservationProof
+  ),
+  transientEmptyBlockquotePaths = transactionBlockquoteListExitTransientPaths(
     preservationReason,
     preservationProof
   )
@@ -262,6 +357,8 @@ const semanticOptionsForReason = (
   // leaking `<br />`; only the existing dedicated legacy reason may ignore it.
   ignoreTrailingEmptyBlockquoteParagraph:
     preservationReason === 'trailing-empty-blockquote-paragraph-created',
+  ignoreTrailingEmptyBlockquoteParagraphPaths:
+    Array.isArray(transientEmptyBlockquotePaths) ? transientEmptyBlockquotePaths : [],
   ignoreTrailingEmptyListItemPaths:
     Array.isArray(transientEmptyListItemPaths) ? transientEmptyListItemPaths : [],
   ignoreTableColumnWidthPaths:
@@ -328,6 +425,25 @@ export function createLegacySourceIntegrityValidator({
         preservationProof
       )
       const transactionListTransientProofInvalid = transientEmptyListItemPaths === false
+      const transientEmptyBlockquotePaths = transactionBlockquoteListExitTransientPaths(
+        preservationReason,
+        preservationProof
+      )
+      const transactionBlockquoteTransientProofInvalid = transientEmptyBlockquotePaths === false
+      const inheritedBlockquotePaths = sourceSyncSemanticOptionsFromContext(
+        validationOptions?.inheritedSemanticContext,
+        expectedDoc
+      ).ignoreTrailingEmptyBlockquoteParagraphPaths
+      const proofBlockquotePaths = Array.isArray(transientEmptyBlockquotePaths)
+        ? activeTrailingEmptyBlockquotePaths(expectedDoc, transientEmptyBlockquotePaths)
+        : []
+      const combinedBlockquotePaths = activeTrailingEmptyBlockquotePaths(
+        expectedDoc,
+        [...inheritedBlockquotePaths, ...proofBlockquotePaths]
+      )
+      const nextSemanticContext = Object.freeze({
+        trailingEmptyBlockquoteParagraphPaths: combinedBlockquotePaths
+      })
       const expected = Array.isArray(tableColumnWidthPaths)
         ? expectedDoc
         : typeof canonical === 'string'
@@ -338,10 +454,12 @@ export function createLegacySourceIntegrityValidator({
         preservationReason,
         preservationProof,
         tableColumnWidthPaths,
-        transientEmptyListItemPaths
+        transientEmptyListItemPaths,
+        combinedBlockquotePaths
       )
       const semanticOk = !tableColumnWidthProofInvalid &&
         !transactionListTransientProofInvalid &&
+        !transactionBlockquoteTransientProofInvalid &&
         areSourceDocumentsEquivalent(parsed, expected, semanticOptions)
       const checkpointTrusted = checkpointStore.has(authoredSource, canonicalBaseline)
       const committedCheckpointOk = Boolean(
@@ -442,6 +560,7 @@ export function createLegacySourceIntegrityValidator({
 
       const semanticProofOk = !tableColumnWidthProofInvalid &&
         !transactionListTransientProofInvalid &&
+        !transactionBlockquoteTransientProofInvalid &&
         (semanticOk || committedCheckpointOk || transitionOk)
       const listProofOk = listSlotsMatch || committedCheckpointOk || listTransitionOk || localizedListProofOk
       const ok = semanticProofOk && listProofOk
@@ -467,6 +586,9 @@ export function createLegacySourceIntegrityValidator({
           localizedListProofOk,
           localizedListProofTrace,
           transactionListTransientProofInvalid,
+          transactionBlockquoteTransientProofInvalid,
+          inheritedBlockquoteTransientPaths: inheritedBlockquotePaths,
+          activeBlockquoteTransientPaths: combinedBlockquotePaths,
           preservationProof: preservationProof || null,
           validationSite,
           preservationReason,
@@ -487,7 +609,9 @@ export function createLegacySourceIntegrityValidator({
         listTransitionOk,
         localizedListProofOk,
         localizedListProofTrace,
-        transactionListTransientProofInvalid
+        transactionListTransientProofInvalid,
+        transactionBlockquoteTransientProofInvalid,
+        semanticContext: nextSemanticContext
       }
       return ok
         ? { ok: true, ...details }

@@ -3027,7 +3027,8 @@ export const preserveTransactionOwnedSingleEmptyOrderedBackspaceLift = ({
 export const preserveTransactionOwnedListSubtreeChange = ({
   source,
   previous,
-  next
+  next,
+  siblingParagraphJoin = null
 }) => {
   const rawSource = String(source || '')
   const rawPrevious = String(previous || '')
@@ -3089,6 +3090,49 @@ export const preserveTransactionOwnedListSubtreeChange = ({
       next: comparableNext
     })
   ]
+  const repairProvenSiblingParagraphJoin = (mapped) => {
+    if (
+      siblingParagraphJoin?.kind !== 'transaction-list-sibling-item-paragraph-join-proof' ||
+      siblingParagraphJoin?.listType !== 'bullet_list' ||
+      mapped?.reason !== 'diverged-nested-list-change'
+    ) return null
+
+    const sourceLines = normalizedSource.split('\n')
+    const previousLines = comparablePrevious.split('\n')
+    const nextLines = comparableNext.split('\n')
+    const mappedLines = normalize(mapped.markdown).split('\n')
+    if (
+      sourceLines.length !== 2 ||
+      previousLines.length !== 3 ||
+      nextLines.length !== 3 ||
+      mappedLines.length !== 2 ||
+      previousLines[1].trim() !== '' ||
+      nextLines[1].trim() !== ''
+    ) return null
+
+    const sourceFirst = sourceLines[0].match(/^([-+*])([ \t]+)(.+)$/)
+    const sourceSecond = sourceLines[1].match(/^([-+*])([ \t]+)(.+)$/)
+    const previousFirst = previousLines[0].match(/^([-+*])([ \t]+)(.+)$/)
+    const previousSecond = previousLines[2].match(/^([-+*])([ \t]+)(.+)$/)
+    const nextFirst = nextLines[0].match(/^([-+*])([ \t]+)(.+)$/)
+    const nextContinuation = nextLines[2].match(/^([ \t]+)(.+)$/)
+    const mappedContinuation = mappedLines[1].match(/^([ \t]+)(.+)$/)
+    if (
+      !sourceFirst || !sourceSecond || !previousFirst || !previousSecond ||
+      !nextFirst || !nextContinuation || !mappedContinuation ||
+      /^[-+*](?:[ \t]|$)/.test(nextLines[2]) ||
+      mappedLines[0] !== sourceLines[0] ||
+      mappedContinuation[2] !== sourceSecond[3] ||
+      mappedContinuation[1] !== nextContinuation[1]
+    ) return null
+
+    return Object.freeze({
+      ...mapped,
+      markdown: `${mappedLines[0]}\n\n${mappedLines[1]}`,
+      reason: 'diverged-sibling-list-item-paragraph-join'
+    })
+  }
+
   const contentLineCount = (value) => {
     const withoutTerminal = String(value || '').replace(/\n+$/, '')
     return withoutTerminal ? withoutTerminal.split('\n').length : 0
@@ -3096,7 +3140,8 @@ export const preserveTransactionOwnedListSubtreeChange = ({
   for (const attempt of attempts) {
     const result = attempt()
     if (result && result.preserved !== false && typeof result.markdown === 'string') {
-      const normalizedMapped = normalize(result.markdown)
+      const repaired = repairProvenSiblingParagraphJoin(result) || result
+      const normalizedMapped = normalize(repaired.markdown)
       // The source range ends at the final list-row byte; the untouched source
       // suffix owns the pre-existing separator before the next top-level block.
       // When the mapper appends one or more NEW rows at the subtree tail, its
@@ -3109,8 +3154,8 @@ export const preserveTransactionOwnedListSubtreeChange = ({
         contentLineCount(normalizedMapped) > contentLineCount(normalizedSource)
       ) ? 1 : 0
       return {
-        ...result,
-        markdown: restore(result.markdown),
+        ...repaired,
+        markdown: restore(repaired.markdown),
         trailingBoundaryNewlineGrowth,
         // The owner supplied the entire final list subtree, so a successful
         // bounded map consumes that complete local baseline.

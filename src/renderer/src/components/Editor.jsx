@@ -77,6 +77,7 @@ import {
   createListNestedSingleChildBulletOutdentTransactionSourceSyncOwner,
   createListNestedLastChildBulletOutdentTransactionSourceSyncOwner,
   createListNestedFirstChildBulletOutdentTransactionSourceSyncOwner,
+  createListNestedFirstOrderedParentJoinTransactionSourceSyncOwner,
   createListNestedBulletSplitTransactionSourceSyncOwner,
   createListNestedBulletJoinTransactionSourceSyncOwner,
   createListTaskCheckboxToggleTransactionSourceSyncOwner,
@@ -534,6 +535,7 @@ export default function Editor({
     })
 
     let crepe
+    let sourceSyncBridge = null
     const sourceSyncTransactionJournal = createSourceSyncTransactionJournal()
     const resolveTransactionMarkdownOffset = ({ markdown, pmPos, doc }) => {
       const remark = crepe.editor.ctx.get(remarkCtx)
@@ -544,7 +546,16 @@ export default function Editor({
       const serializer = crepe.editor.ctx.get(serializerCtx)
       const parsed = parser(markdown)
       const expectedCanonical = canonicalForSource(serializer(expectedDoc))
-      return areSourceDocumentsEquivalent(parsed, expectedDoc, semanticOptions) &&
+      const inheritedSemanticOptions = sourceSyncBridge?.getSemanticOptions(expectedDoc) || {}
+      const mergedSemanticOptions = {
+        ...inheritedSemanticOptions,
+        ...semanticOptions,
+        ignoreTrailingEmptyBlockquoteParagraphPaths: [
+          ...(inheritedSemanticOptions.ignoreTrailingEmptyBlockquoteParagraphPaths || []),
+          ...(semanticOptions.ignoreTrailingEmptyBlockquoteParagraphPaths || [])
+        ]
+      }
+      return areSourceDocumentsEquivalent(parsed, expectedDoc, mergedSemanticOptions) &&
         areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
           strictOrderedNumbers: true,
           previousMarkdown: canonicalMarkdownRef.current
@@ -581,6 +592,11 @@ export default function Editor({
       })
     const listNestedFirstChildBulletOutdentTransactionSourceSyncOwner =
       createListNestedFirstChildBulletOutdentTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
+    const listNestedFirstOrderedParentJoinTransactionSourceSyncOwner =
+      createListNestedFirstOrderedParentJoinTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
@@ -757,6 +773,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-nested-first-child-bullet-outdent-markdown-updated',
           'forced-flush': 'transaction-list-nested-first-child-bullet-outdent-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-nested-first-ordered-parent-join',
+        owner: listNestedFirstOrderedParentJoinTransactionSourceSyncOwner,
+        traceKey: '__hmListNestedFirstOrderedParentJoinTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-nested-first-ordered-parent-join-markdown-updated',
+          'forced-flush': 'transaction-list-nested-first-ordered-parent-join-forced-flush'
         })
       }),
       Object.freeze({
@@ -1493,7 +1519,7 @@ export default function Editor({
       checkpointStore: sourceIntegrityCheckpoints,
       getTrace: () => globalThis.__hmSourceIntegrityTrace
     })
-    const sourceSyncBridge = createEditorSourceSyncBridge({
+    sourceSyncBridge = createEditorSourceSyncBridge({
       checkpointStore: sourceIntegrityCheckpoints,
       getSource: () => lastMarkdownRef.current,
       getCanonical: () => canonicalMarkdownRef.current,
@@ -1546,7 +1572,8 @@ export default function Editor({
         const parser = crepe.editor.ctx.get(parserCtx)
         callbackDocumentEquivalent = Boolean(
           expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc, {
-            recordDifference: false
+            recordDifference: false,
+            ...sourceSyncBridge.getSemanticOptions(expectedDoc)
           })
         )
       } catch {
@@ -1686,7 +1713,8 @@ export default function Editor({
         const parser = crepe.editor.ctx.get(parserCtx)
         callbackDocumentEquivalent = Boolean(
           expectedDoc && areSourceDocumentsEquivalent(parser(canonical), expectedDoc, {
-            recordDifference: false
+            recordDifference: false,
+            ...sourceSyncBridge.getSemanticOptions(expectedDoc)
           })
         )
       } catch {

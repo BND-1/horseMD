@@ -1,7 +1,10 @@
 import { createLegacySourceSyncCandidateFromResult } from './legacy-owner.js'
 import { createSourceSyncCoordinator } from './coordinator.js'
 import { createSourceSyncCandidate } from './proof.js'
-import { createSourceSyncValidator } from './validator.js'
+import {
+  createSourceSyncValidator,
+  sourceSyncSemanticOptionsFromContext
+} from './validator.js'
 
 const sameDocument = (left, right) => {
   if (left === right) return true
@@ -49,7 +52,10 @@ export function createEditorSourceSyncBridge({
       candidate.reason,
       candidate.proof?.preservationProof || null,
       candidate.validationSite,
-      { trustCheckpoint: false }
+      {
+        trustCheckpoint: false,
+        inheritedSemanticContext: snapshot.semanticContext
+      }
     )
   })
 
@@ -300,6 +306,11 @@ export function createEditorSourceSyncBridge({
   return Object.freeze({
     getCoordinator,
     getSnapshot: () => getCoordinator().getSnapshot(),
+    getSemanticOptions: (expectedDoc = getExpectedDoc()) =>
+      sourceSyncSemanticOptionsFromContext(
+        getCoordinator().getSnapshot().semanticContext,
+        expectedDoc
+      ),
     synchronizeCurrent,
     prepare,
     prepareOwnedResult,

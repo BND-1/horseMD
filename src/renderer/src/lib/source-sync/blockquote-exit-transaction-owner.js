@@ -396,6 +396,148 @@ const classifyPendingBlockquoteExitJournal = ({ journal, expectedDoc }) => {
   })
 }
 
+const supportedList = (node) =>
+  node?.type?.name === 'bullet_list' || node?.type?.name === 'ordered_list'
+
+const plainEmptyListItem = (node) =>
+  node?.type?.name === 'list_item' &&
+  node.attrs?.checked == null &&
+  node.childCount === 1 &&
+  isSimpleParagraph(node.firstChild, { nonEmpty: false }) &&
+  node.firstChild.content.size === 0
+
+const classifyBlockquoteListExitPendingJournal = ({ journal, expectedDoc }) => {
+  const classification = classifySingleAnchoredSubtreeChange({
+    oldDoc: journal?.oldDoc,
+    newDoc: expectedDoc,
+    expectedType: 'blockquote',
+    reasonPrefix: 'blockquote-list-exit-pending'
+  })
+  if (!classification.ok) return classification
+  // This first repair owns the exact real failure: a top-level blockquote list
+  // whose final empty item is lifted into one trailing empty quote paragraph.
+  // Nested quote/list combinations remain separate until they are observed.
+  if (classification.nodePath?.length !== 1) {
+    return rejected('blockquote-list-exit-pending-not-top-level')
+  }
+  const beforeQuote = classification.previousEntry.node
+  const afterQuote = classification.nextEntry.node
+  if (
+    !sourceSyncAttrsEqual(beforeQuote.attrs, afterQuote.attrs) ||
+    beforeQuote.childCount < 1 ||
+    afterQuote.childCount !== beforeQuote.childCount + 1 ||
+    !isSimpleParagraph(afterQuote.lastChild, { nonEmpty: false }) ||
+    afterQuote.lastChild.content.size !== 0
+  ) return rejected('blockquote-list-exit-pending-shape')
+
+  const listIndex = beforeQuote.childCount - 1
+  const beforeList = beforeQuote.child(listIndex)
+  const afterList = afterQuote.child(listIndex)
+  if (
+    !supportedList(beforeList) ||
+    beforeList.type?.name !== afterList?.type?.name ||
+    !sourceSyncAttrsEqual(beforeList.attrs, afterList.attrs) ||
+    beforeList.childCount < 2 ||
+    afterList.childCount !== beforeList.childCount - 1 ||
+    !plainEmptyListItem(beforeList.lastChild)
+  ) return rejected('blockquote-list-exit-pending-list-shape')
+  for (let index = 0; index < listIndex; index += 1) {
+    if (beforeQuote.child(index).eq?.(afterQuote.child(index)) !== true) {
+      return rejected('blockquote-list-exit-pending-quote-prefix-changed')
+    }
+  }
+  for (let index = 0; index < afterList.childCount; index += 1) {
+    if (beforeList.child(index).eq?.(afterList.child(index)) !== true) {
+      return rejected('blockquote-list-exit-pending-list-prefix-changed')
+    }
+  }
+
+  const listPath = Object.freeze([...classification.nodePath, listIndex])
+  const removedIndex = beforeList.childCount - 1
+  const removedItemPath = Object.freeze([...listPath, removedIndex])
+  const removedParagraphPath = Object.freeze([...removedItemPath, 0])
+  const retainedParagraphPath = Object.freeze([...listPath, removedIndex - 1, 0])
+  const transientParagraphPath = Object.freeze([...classification.nodePath, afterQuote.childCount - 1])
+  const listEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, listPath)
+  const removedEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, removedItemPath)
+  const removedParagraphEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, removedParagraphPath)
+  const retainedParagraphEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, retainedParagraphPath)
+  if (
+    !listEntry || !removedEntry || !removedParagraphEntry || !retainedParagraphEntry ||
+    retainedParagraphEntry.type !== 'paragraph' ||
+    !isSimpleParagraph(retainedParagraphEntry.node)
+  ) return recognizedRejection('blockquote-list-exit-pending-path')
+
+  const steps = []
+  for (const entry of journal.entries || []) {
+    for (let index = 0; index < (entry.steps?.length || 0); index += 1) {
+      steps.push({
+        step: entry.steps[index],
+        stepDoc: entry.stepDocs?.[index] || (index === 0 ? entry.beforeDoc : null)
+      })
+    }
+  }
+  if (steps.length !== 1) {
+    return recognizedRejection('blockquote-list-exit-pending-step-count')
+  }
+  const { step, stepDoc } = steps[0]
+  if (!sameSourceSyncDocument(stepDoc, journal.oldDoc)) {
+    return recognizedRejection('blockquote-list-exit-pending-step-document')
+  }
+  const slice = step?.slice
+  if (
+    step?.constructor?.name !== 'ReplaceAroundStep' ||
+    step.structure !== true ||
+    step.from !== removedEntry.beforePos ||
+    step.to !== listEntry.beforePos + listEntry.node.nodeSize ||
+    step.gapFrom !== removedEntry.contentStart ||
+    step.gapTo !== removedEntry.contentStart + removedEntry.node.content.size ||
+    step.insert !== 1 ||
+    !slice ||
+    slice.size !== 1 ||
+    slice.openStart !== 1 ||
+    slice.openEnd !== 0 ||
+    slice.content?.childCount !== 1 ||
+    slice.content.child(0)?.type?.name !== beforeList.type?.name ||
+    !sourceSyncAttrsEqual(slice.content.child(0)?.attrs, beforeList.attrs) ||
+    slice.content.child(0)?.childCount !== 0
+  ) return recognizedRejection('blockquote-list-exit-pending-step-contract')
+  let applied
+  try { applied = step.apply(stepDoc) } catch { applied = null }
+  if (applied?.failed || !applied?.doc || !sameSourceSyncDocument(applied.doc, expectedDoc)) {
+    return recognizedRejection('blockquote-list-exit-pending-step-result')
+  }
+
+  return Object.freeze({
+    ...classification,
+    beforeQuote,
+    afterQuote,
+    beforeList,
+    afterList,
+    listType: beforeList.type.name,
+    listIndex,
+    listPath,
+    removedIndex,
+    removedItemPath,
+    removedParagraphPath,
+    retainedParagraphPath,
+    retainedParagraphEntry,
+    transientParagraphPath,
+    step: Object.freeze({
+      name: step.constructor.name,
+      from: step.from,
+      to: step.to,
+      gapFrom: step.gapFrom,
+      gapTo: step.gapTo,
+      insert: step.insert,
+      structure: true,
+      sliceSize: slice.size,
+      openStart: slice.openStart,
+      openEnd: slice.openEnd
+    })
+  })
+}
+
 const classifyBlockquoteExitJournal = ({ journal, expectedDoc }) => {
   const base = classifyBlockquoteExit({ oldDoc: journal?.oldDoc, expectedDoc })
   if (!base.ok) return base
@@ -614,6 +756,84 @@ const quotePrefix = (value) => {
     : null
 }
 
+const quoteListRow = ({ source, line, listType }) => {
+  if (!line) return null
+  const raw = source.slice(line.start, line.end)
+  const match = raw.match(/^( {0,3}>[ \t]+)([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/)
+  if (!match) return null
+  const ordered = /^\d/.test(match[2])
+  if ((listType === 'ordered_list') !== ordered) return null
+  return Object.freeze({
+    line,
+    prefix: match[1],
+    token: match[2],
+    spacing: match[3],
+    body: match[4],
+    bodyStart: line.start + match[1].length + match[2].length + match[3].length
+  })
+}
+
+const resolveQuoteListTailRows = ({
+  markdown,
+  doc,
+  classification,
+  resolveMarkdownOffset
+}) => {
+  let rawAnchor
+  try {
+    rawAnchor = resolveMarkdownOffset({
+      markdown,
+      pmPos: classification.retainedParagraphEntry.contentStart,
+      doc,
+      topLevelIndex: classification.topLevelIndex,
+      paragraphIndex: 0
+    })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(rawAnchor)) return null
+  const retainedLine = lineAtOffset(markdown, rawAnchor)
+  const retained = quoteListRow({
+    source: markdown,
+    line: retainedLine,
+    listType: classification.listType
+  })
+  if (
+    !retained ||
+    rawAnchor < retained.bodyStart ||
+    rawAnchor > retained.line.end ||
+    !retained.line.eol
+  ) return null
+  const targetStart = retained.line.end + retained.line.eol.length
+  if (targetStart >= markdown.length) return null
+  const targetLine = lineAtOffset(markdown, targetStart)
+  if (!targetLine || targetLine.start !== targetStart) return null
+  const target = quoteListRow({
+    source: markdown,
+    line: targetLine,
+    listType: classification.listType
+  })
+  if (!target || target.prefix !== retained.prefix) return null
+  return Object.freeze({ retained, target })
+}
+
+const removeProvenQuoteListTailRow = ({ source, rows }) => {
+  const target = rows?.target
+  if (!target || !/^<br\s*\/?>$/i.test(target.body.trim())) return null
+  const end = target.line.end + target.line.eol.length
+  return Object.freeze({
+    markdown: source.slice(0, target.line.start) + source.slice(end),
+    range: Object.freeze({ start: target.line.start, end }),
+    row: Object.freeze({
+      prefix: target.prefix,
+      token: target.token,
+      spacing: target.spacing,
+      body: target.body,
+      eol: target.line.eol
+    })
+  })
+}
+
 const createOwnedPlan = ({
   boundary,
   markdown,
@@ -701,6 +921,86 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
     if (callbackDocumentEquivalent !== true) {
       return rejected('blockquote-exit-callback-document-mismatch', { deferred: true })
     }
+
+    const listExitPending = classifyBlockquoteListExitPendingJournal({ journal, expectedDoc })
+    if (listExitPending.ok) {
+      const sourceRows = resolveQuoteListTailRows({
+        markdown: journal.source,
+        doc: journal.oldDoc,
+        classification: listExitPending,
+        resolveMarkdownOffset
+      })
+      const previousRows = resolveQuoteListTailRows({
+        markdown: journal.canonical,
+        doc: journal.oldDoc,
+        classification: listExitPending,
+        resolveMarkdownOffset
+      })
+      if (!sourceRows || !previousRows) {
+        return recognizedRejection('blockquote-list-exit-pending-range-unmapped')
+      }
+      if (
+        !/^<br\s*\/?>$/i.test(previousRows.target.body.trim()) ||
+        sourceRows.target.token !== previousRows.target.token ||
+        sourceRows.target.prefix !== previousRows.target.prefix
+      ) return recognizedRejection('blockquote-list-exit-pending-previous-row-unproven')
+      const removed = removeProvenQuoteListTailRow({ source: journal.source, rows: sourceRows })
+      if (!removed) {
+        return recognizedRejection('blockquote-list-exit-pending-authored-row-unproven')
+      }
+      let semanticOk = false
+      try {
+        semanticOk = validateMarkdown({
+          markdown: removed.markdown,
+          expectedDoc,
+          semanticOptions: {
+            ignoreTrailingEmptyBlockquoteParagraphPaths: [listExitPending.nodePath]
+          }
+        }) === true
+      } catch {
+        return recognizedRejection('blockquote-list-exit-pending-semantic-validator-threw')
+      }
+      if (!semanticOk) {
+        return recognizedRejection('blockquote-list-exit-pending-semantic-document-mismatch')
+      }
+      const proof = Object.freeze({
+        kind: 'transaction-blockquote-list-exit-pending-proof',
+        journalId: journal.journalId,
+        family: BLOCKQUOTE_EXIT_TRANSACTION_FAMILY,
+        mode: 'list-exit-pending',
+        topLevelIndex: listExitPending.topLevelIndex,
+        nodePath: listExitPending.nodePath,
+        listPath: listExitPending.listPath,
+        listType: listExitPending.listType,
+        removedIndex: listExitPending.removedIndex,
+        removedItemPath: listExitPending.removedItemPath,
+        removedParagraphPath: listExitPending.removedParagraphPath,
+        retainedParagraphPath: listExitPending.retainedParagraphPath,
+        transientParagraphPath: listExitPending.transientParagraphPath,
+        step: listExitPending.step,
+        rawReplacement: removed.range,
+        removedSourceRow: removed.row,
+        chainLength: journal.transactionCount,
+        stepDetails: journal.stepDetails,
+        transactionJournal: verified.proof,
+        sourceDigest: sourceSyncDigest(journal.source),
+        previousCanonicalDigest: sourceSyncDigest(journal.canonical),
+        canonicalDigest: sourceSyncDigest(canonical),
+        markdownDigest: sourceSyncDigest(removed.markdown),
+        callbackDocumentEquivalent: true,
+        snapshotMatched: true,
+        documentMatched: true
+      })
+      return createOwnedPlan({
+        boundary,
+        markdown: removed.markdown,
+        canonical,
+        expectedDoc,
+        proof,
+        reason: 'trailing-empty-blockquote-paragraph-after-list-exit'
+      })
+    }
+    if (listExitPending.recognized === true) return listExitPending
 
     const pending = classifyPendingBlockquoteExitJournal({ journal, expectedDoc })
     if (pending.ok) {

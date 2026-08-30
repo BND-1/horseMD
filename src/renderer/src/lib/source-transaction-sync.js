@@ -222,6 +222,7 @@ const semanticJson = (node, {
   ignoreTrailingEmptyListItemParagraph = false,
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure = false,
   ignoreTrailingEmptyBlockquoteParagraph = false,
+  ignoreTrailingEmptyBlockquoteParagraphPaths = [],
   ignoreTrailingEmptyListItemPaths = [],
   ignoreTableColumnWidthPaths = []
 } = {}) => {
@@ -240,6 +241,17 @@ const semanticJson = (node, {
       .filter((path) =>
         Array.isArray(path) &&
         path.length >= 2 &&
+        path.every((index) => Number.isInteger(index) && index >= 0)
+      )
+      .map((path) => path.join('.'))
+  )
+  const ignoredTrailingEmptyBlockquoteParagraphPaths = new Set(
+    (Array.isArray(ignoreTrailingEmptyBlockquoteParagraphPaths)
+      ? ignoreTrailingEmptyBlockquoteParagraphPaths
+      : [])
+      .filter((path) =>
+        Array.isArray(path) &&
+        path.length >= 1 &&
         path.every((index) => Number.isInteger(index) && index >= 0)
       )
       .map((path) => path.join('.'))
@@ -363,9 +375,12 @@ const semanticJson = (node, {
       }
       next.content = compact
     }
+    const ignoreTrailingEmptyBlockquoteAtOwnedPath =
+      next.type === 'blockquote' &&
+      ignoredTrailingEmptyBlockquoteParagraphPaths.has(path.join('.'))
     if (
       next.type === 'blockquote' &&
-      ignoreTrailingEmptyBlockquoteParagraph &&
+      (ignoreTrailingEmptyBlockquoteParagraph || ignoreTrailingEmptyBlockquoteAtOwnedPath) &&
       Array.isArray(next.content) &&
       next.content.length >= 2
     ) {
@@ -380,7 +395,16 @@ const semanticJson = (node, {
       const trailingEmpty = trailing?.type === 'paragraph' && !trailing?.content?.length
       const previousTextParagraph =
         previousChild?.type === 'paragraph' && Array.isArray(previousChild.content) && previousChild.content.length > 0
-      if (trailingEmptyParagraphs === 1 && trailingEmpty && previousTextParagraph) {
+      const previousList =
+        previousChild?.type === 'bullet_list' || previousChild?.type === 'ordered_list'
+      if (
+        trailingEmptyParagraphs === 1 &&
+        trailingEmpty &&
+        (
+          (ignoreTrailingEmptyBlockquoteParagraph && previousTextParagraph) ||
+          (ignoreTrailingEmptyBlockquoteAtOwnedPath && previousList)
+        )
+      ) {
         next.content = next.content.slice(0, -1)
       }
     }

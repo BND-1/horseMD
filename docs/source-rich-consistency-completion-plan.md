@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.165`
+> 当前源码版本：`0.13.166`
 > 分支：`fix/rs-41-rich-source-divergence`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -44,7 +44,7 @@
 | B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
 | C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
 | D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
-| E | 退役 list legacy owners | **进行中：0.13.151–0.13.165 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep + task end-Enter empty sibling；下一步 sentinel fill** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E | 退役 list legacy owners | **进行中：0.13.151–0.13.165 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep + task end-Enter empty sibling；0.13.166 又按真实人工 trace 收口 blockquote list-exit、nested ordered parent-join 与既有 list-subtree bullet paragraph-join mapper；sentinel fill 等仍未完成** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
 | F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
 | G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
 | H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
