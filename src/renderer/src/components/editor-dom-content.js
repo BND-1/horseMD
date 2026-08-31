@@ -52,7 +52,14 @@ export function mountEditorContentBindings({
       wrapper.appendChild(fragment)
       materializeCopiedSoftBreaks(wrapper)
       const plain = copiedPlainText(wrapper, selection.toString())
-      inlineRichStyles(wrapper)
+      // A mid-list selection clones <li> without its list wrapper. Whether the
+      // items were ordered is only visible in the LIVE dom — inspect it before
+      // styling so the re-wrapped clipboard fragment keeps its numbering.
+      const selectionOrderedLists = Boolean(
+        selection.anchorNode?.parentElement?.closest('ol') ||
+        selection.focusNode?.parentElement?.closest('ol')
+      )
+      inlineRichStyles(wrapper, { selectionOrderedLists })
       let serialized = ''
       if (!view.state.selection.empty) {
         try {

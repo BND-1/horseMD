@@ -17,9 +17,15 @@ const COPY_STYLES = {
   A: 'color:#0969da;text-decoration:underline;',
   BLOCKQUOTE: 'border-left:4px solid #d0d7de;padding-left:14px;color:#57606a;margin:0.6em 0;',
   PRE: 'background:#f6f8fa;padding:14px 16px;border-radius:8px;overflow:auto;font-family:Consolas,Monaco,monospace;font-size:0.9em;line-height:1.5;margin:0.6em 0;',
-  UL: 'padding-left:1.6em;margin:0.6em 0;',
-  OL: 'padding-left:1.6em;margin:0.6em 0;',
-  LI: 'margin:0.3em 0;line-height:1.7;',
+  // WeChat's editor strips list CSS and re-flows <ol> markers as hanging
+  // boxes, which pushes the number onto its own line and the text below it.
+  // `list-style-position:inside` draws the marker INSIDE the li's line box
+  // (it survives sanitizers that drop external/unknown CSS), and the
+  // explicit display:list-item keeps <li> rendering as a list item even
+  // where the surrounding <ol>/<ul> styles are discarded.
+  UL: 'padding-left:1.6em;margin:0.6em 0;list-style-position:inside;',
+  OL: 'padding-left:1.6em;margin:0.6em 0;list-style-position:inside;list-style-type:decimal;',
+  LI: 'margin:0.3em 0;line-height:1.7;display:list-item;list-style-position:inside;',
   TABLE: 'border-collapse:collapse;margin:0.6em 0;',
   TH: 'border:1px solid #d0d7de;padding:6px 12px;background:#f6f8fa;font-weight:700;text-align:left;',
   TD: 'border:1px solid #d0d7de;padding:6px 12px;',
@@ -52,7 +58,7 @@ export function copiedPlainText(root, fallback = '') {
   return text || fallback
 }
 
-export function inlineRichStyles(root) {
+export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {
   root.querySelectorAll('*').forEach((el) => {
     // strip editor-only attributes
     el.removeAttribute('class')
@@ -75,4 +81,38 @@ export function inlineRichStyles(root) {
     const style = COPY_STYLES[tag]
     if (style) el.setAttribute('style', style)
   })
+  wrapOrphanListItems(root, { selectionOrderedLists })
+}
+
+// A mid-list selection clones the <li> elements WITHOUT their <ol>/<ul>
+// wrapper (the wrapper node sits outside the cloned range). Bare <li> pasted
+// into WeChat loses the ordered marker entirely — the engine shows a disc or
+// nothing, and any surviving marker wraps onto its own line. Re-wrap each
+// consecutive same-parent run of wrapper-less items in an <ol>/<ul> carrying
+// the same inline styles.
+const wrapOrphanListItems = (root, { selectionOrderedLists = false } = {}) => {
+  const orphans = [...root.querySelectorAll('li')].filter((li) => !li.closest('ol,ul'))
+  if (!orphans.length) return
+  // Group by parent + DOM adjacency: a run ends when the next orphan's
+  // previous sibling isn't the previous orphan (non-list content between).
+  const runs = []
+  for (const li of orphans) {
+    const lastRun = runs.at(-1)
+    const previous = lastRun?.at(-1)
+    if (lastRun && li.parentElement === previous?.parentElement && li.previousElementSibling === previous) {
+      lastRun.push(li)
+    } else {
+      runs.push([li])
+    }
+  }
+  for (const run of runs) {
+    // The cloned <li> lost its <ol>/<ul> ancestor, so the wrapper type must
+    // come from the LIVE selection the caller inspected (a partial ordered
+    // list copy must stay numbered — a <ul> wrapper would render bullets).
+    const ordered = selectionOrderedLists
+    const wrapper = document.createElement(ordered ? 'ol' : 'ul')
+    wrapper.setAttribute('style', COPY_STYLES[ordered ? 'OL' : 'UL'])
+    run[0].before(wrapper)
+    run.forEach((li) => wrapper.appendChild(li))
+  }
 }

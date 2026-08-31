@@ -4638,6 +4638,15 @@ body.hm-full-width .source-editor {
   display: grid;
   gap: 3px;
 }
+/* A failed connection submit marks the offending field(s) instead of
+   resetting the whole form — highlight them and show the reason inline. */
+.sync-field-invalid input {
+  border-color: #e5484d;
+}
+.sync-field-error {
+  color: #e5484d;
+  font-size: 12px;
+}
 .sync-field-label {
   color: var(--text);
   font-size: 12px;

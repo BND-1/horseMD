@@ -231,6 +231,46 @@ const replaceKatexWithMathml = (root) => {
     const fallback = mathmlFromLatex(doc, inline?.dataset?.value || '', { display: false })
     if (fallback) katex.replaceWith(fallback)
   })
+  materializeHtmlBlockMath(root)
+}
+
+// A raw-HTML table block (renderHtmlNodeView, `.hm-html-block`) renders its
+// bytes verbatim — `$x^2$` inside a cell stays literal text by design, because
+// the node round-trips the original HTML through attrs.value. But the EXPORT
+// is display-only: formulas the author clearly meant as math should render
+// there. Walk text nodes inside html-block table cells and swap each
+// `$...$` / `$$...$$` run for KaTeX MathML. Only the export clone changes;
+// the editor DOM and the saved Markdown keep the literal bytes.
+const INLINE_MATH_TEXT = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g
+const materializeHtmlBlockMath = (root) => {
+  const doc = root.ownerDocument
+  root.querySelectorAll('.hm-html-block table, table.hm-html-block-table').forEach((table) => {
+    const walker = doc.createTreeWalker(table, NodeFilter.SHOW_TEXT)
+    const targets = []
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (INLINE_MATH_TEXT.test(node.nodeValue || '')) targets.push(node)
+      INLINE_MATH_TEXT.lastIndex = 0
+    }
+    targets.forEach((textNode) => {
+      const text = textNode.nodeValue
+      const fragment = doc.createDocumentFragment()
+      let cursor = 0
+      INLINE_MATH_TEXT.lastIndex = 0
+      let match
+      while ((match = INLINE_MATH_TEXT.exec(text))) {
+        const latex = (match[1] != null ? match[1] : match[2] || '').trim()
+        const math = latex ? mathmlFromLatex(doc, latex, { display: match[1] != null }) : null
+        if (!math) continue
+        if (match.index > cursor) fragment.appendChild(doc.createTextNode(text.slice(cursor, match.index)))
+        fragment.appendChild(math)
+        cursor = match.index + match[0].length
+      }
+      if (cursor) {
+        if (cursor < text.length) fragment.appendChild(doc.createTextNode(text.slice(cursor)))
+        textNode.replaceWith(fragment)
+      }
+    })
+  })
 }
 
 const flattenCodeMirrorBlocks = (clone) => {

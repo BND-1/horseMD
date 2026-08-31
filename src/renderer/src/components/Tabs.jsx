@@ -37,6 +37,27 @@ export default function Tabs({
   // On touch there's no hover to reveal the close ✕, so show it always and use a
   // clear ✕ (the unsaved state is shown in the bottom bar, not as a tab dot).
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
+  const scrollRef = useRef(null)
+
+  // A plain wheel over the tab strip scrolls it horizontally: trackpads send a
+  // vertical delta (Shift+wheel is the OS-level escape hatch, but the strip is
+  // itself horizontal, so steering the wheel at it should just work). Only
+  // intercept when the strip can actually scroll that way, so a wheel over the
+  // tabs keeps scrolling the document when the strip is fully expanded.
+  useEffect(() => {
+    const strip = scrollRef.current
+    if (!strip) return
+    const onWheel = (event) => {
+      if (event.defaultPrevented || event.ctrlKey) return
+      const canScroll = strip.scrollWidth > strip.clientWidth
+      const wheelX = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      if (!canScroll || wheelX) return
+      strip.scrollLeft += event.deltaY
+      event.preventDefault()
+    }
+    strip.addEventListener('wheel', onWheel, { passive: false })
+    return () => strip.removeEventListener('wheel', onWheel)
+  }, [])
 
   // When the active tab changes (opened a new file, switched, or restored a
   // session), the tab strip may have scrolled it out of view once the tabs
@@ -67,7 +88,7 @@ export default function Tabs({
 
   return (
     <div className="tabs">
-      <div className="tabs-scroll">
+      <div className="tabs-scroll" ref={scrollRef}>
         {tabs.map((tab, index) => {
           const dirty = isTabDirty(tab)
           const isLeft = tab.id === activeId
