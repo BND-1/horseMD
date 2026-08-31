@@ -54,6 +54,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HorseMD-windows-exe-${{ github.run_number }}
-          path: dist/*.exe
+          # latest.yml + the .exe.blockmap are the electron-updater feed files:
+          # the release workflow's electron-builder upload skips them when the
+          # tag's release already exists as published (not draft), so this
+          # artifact is the recovery source for a complete release.
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
           if-no-files-found: error
           retention-days: 7
