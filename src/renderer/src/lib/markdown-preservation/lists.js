@@ -398,9 +398,19 @@ export const preserveGeneratedBulletMarkers = (source, markdown) => {
     const uninterruptedFromPrevious = previous &&
       previous.indent === nextIndent &&
       /^(?:\r?\n)$/.test(markdown.slice(previous.end, nextLine.start))
+    // A nested EMPTY marker row is serialized with one structural blank line
+    // before it (RS-64: CommonMark reads a bare nested marker as continuation
+    // text without that separator). The Tab-sink inheritance must accept that
+    // separator too, or it is dead code for exactly its target shape — the
+    // new empty nested row — and a typed `-` leaks Crepe's `*` (0.13.183
+    // trace 12:33:45).
+    const separatorFromPrevious = previous
+      ? markdown.slice(previous.end, nextLine.start)
+      : ''
     const newlyNestedFromPrevious = previous &&
       previous.indent < nextIndent &&
-      /^(?:\r?\n)$/.test(markdown.slice(previous.end, nextLine.start))
+      (/^(?:\r?\n)$/.test(separatorFromPrevious) ||
+        /^\r?\n\r?\n$/.test(separatorFromPrevious))
     // Tab creates a child bullet list without a literal `-`/`+` input token,
     // so there is no input-rule intent to restore.  While the child has no
     // authored source row yet, inherit its parent bullet spelling rather than
