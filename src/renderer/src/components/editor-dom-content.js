@@ -51,7 +51,6 @@ export function mountEditorContentBindings({
       const wrapper = document.createElement('div')
       wrapper.appendChild(fragment)
       materializeCopiedSoftBreaks(wrapper)
-      const plain = copiedPlainText(wrapper, selection.toString())
       // A mid-list selection clones <li> without its list wrapper. Whether the
       // items were ordered is only visible in the LIVE dom — inspect it before
       // styling so the re-wrapped clipboard fragment keeps its numbering.
@@ -60,6 +59,10 @@ export function mountEditorContentBindings({
         selection.focusNode?.parentElement?.closest('ol')
       )
       inlineRichStyles(wrapper, { selectionOrderedLists })
+      // Plain text must be derived AFTER the clipboard transform: Milkdown's
+      // in-item marker span ("1.") becomes its own line in the raw clone, so
+      // text-only paste targets showed the number split from its text.
+      const plain = copiedPlainText(wrapper, selection.toString())
       let serialized = ''
       if (!view.state.selection.empty) {
         try {

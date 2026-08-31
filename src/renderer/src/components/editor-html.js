@@ -1,4 +1,5 @@
 // Raw-HTML rendering for Milkdown's `html` node + block-type conversion.
+import katex from 'katex'
 
 // Tags we render as real DOM instead of escaped source. Split into block vs
 // inline so the node view returns the right wrapper element (a block <div> or an
@@ -13,6 +14,64 @@ const INLINE_TAGS =
 
 const BLOCK_RE = new RegExp(`^\\s*<(${BLOCK_TAGS})[\\s/>]`, 'i')
 const INLINE_RE = new RegExp(`^\\s*<(${INLINE_TAGS})[\\s/>]`, 'i')
+
+// `$$…$$` first (display), then single-line `$…$`. Currency-like prose ("花了他
+// $5 和 $6") only matches when BOTH dollars sit on the same line with no `$`
+// between — the same heuristic the GFM math inline node lives with.
+const MATH_TEXT_RE = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g
+
+// Replace every math run in a text node with a rendered KaTeX span. KaTeX's
+// default HTML+MathML output matches what the GFM math inline node view uses,
+// so table-cell formulas look identical to paragraph math. Render failures
+// (unknown macros) leave the literal text in place rather than erroring.
+const renderMathTextNodes = (root) => {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.nodeValue && node.nodeValue.includes('$')
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP
+  })
+  const targets = []
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) targets.push(node)
+  targets.forEach((textNode) => {
+    const text = textNode.nodeValue
+    MATH_TEXT_RE.lastIndex = 0
+    if (!MATH_TEXT_RE.test(text)) return
+    MATH_TEXT_RE.lastIndex = 0
+    const fragment = document.createDocumentFragment()
+    let cursor = 0
+    let match
+    while ((match = MATH_TEXT_RE.exec(text))) {
+      const display = match[1] != null
+      const latex = (display ? match[1] : match[2] || '').trim()
+      let span = null
+      try {
+        span = document.createElement('span')
+        span.className = 'hm-html-block-math'
+        span.innerHTML = katex.renderToString(latex, {
+          throwOnError: false,
+          displayMode: display
+        })
+      } catch {
+        span = null
+      }
+      if (!span) continue
+      if (match.index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)))
+      fragment.appendChild(span)
+      cursor = match.index + match[0].length
+    }
+    if (cursor > 0) {
+      if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)))
+      textNode.replaceWith(fragment)
+    }
+  })
+}
+
+const renderMathInHtmlBlock = (dom) => {
+  dom.querySelectorAll('td, th, p, li, figcaption, summary').forEach((cell) => {
+    renderMathTextNodes(cell)
+  })
+}
 
 // Strip <script>/<style> and inline event handlers so rendering local HTML can't
 // run code. Tables/fragments parse correctly inside a <template>.
@@ -71,6 +130,12 @@ export function renderHtmlNodeView(node) {
   dom.setAttribute('data-type', 'html')
   dom.contentEditable = 'false'
   dom.innerHTML = sanitizeHtml(value)
+  // Raw-HTML table blocks carry formulas as literal `$x_1$` text — most MD
+  // editors render math inside HTML tables, so materialize each `$…$` /
+  // `$$…$$` run into KaTeX HTML at node-view build time. Render-only: the
+  // node still round-trips the original bytes through attrs.value, so the
+  // saved Markdown is untouched.
+  if (isBlock && hasTable) renderMathInHtmlBlock(dom)
   return { dom, ignoreMutation: () => true, stopEvent: () => false }
 }
 
