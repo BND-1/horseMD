@@ -77,6 +77,7 @@
 | [mobile-usage.md](./mobile-usage.md) | 移动端**使用说明**(安装、界面、保存/导出等操作) |
 | [user-guide-maintenance.md](./user-guide-maintenance.md) | 面向用户的图文教程站、截图与发布维护规范 |
 | [user-guide-feature-coverage.md](./user-guide-feature-coverage.md) | 用户可见功能、代码所有者、教程页面与发布前核对状态矩阵 |
+| [release-v0.13.187.md](./release-v0.13.187.md) | v0.13.187 发布说明：事务证据链一致性收口、HTML 表格公式渲染、微信列表复制、云同步表单、标签滚轮与安装产物 |
 | [release-v0.13.29.md](./release-v0.13.29.md) | v0.13.29 发布说明、安装产物、完整原文保真验证与关联 Issue |
 | [release-v0.12.46.md](./release-v0.12.46.md) | v0.12.46 发布说明、安装产物、验证记录与关联 Issue |
 | [release-v0.12.47.md](./release-v0.12.47.md) | v0.12.47 紧急修复发布说明、跨编辑器核验与安装产物 |
