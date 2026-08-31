@@ -76,20 +76,75 @@ const onlyItemChildChanged = (beforeItem, afterItem, childIndex) => {
 }
 
 const classifyListItemParagraphJournal = ({ journal, expectedDoc }) => {
-  const classification = classifySingleAnchoredSubtreeChange({
+  let classification = classifySingleAnchoredSubtreeChange({
     oldDoc: journal?.oldDoc,
     newDoc: expectedDoc,
     expectedType: 'list_item',
     reasonPrefix: 'list-item-paragraph'
   })
+  // A nested item's edit also marks every ANCESTOR list_item as changed (the
+  // ancestor contains the changed child), so the anchored classifier reports
+  // the item AND each ancestor item. Pick the DEEPEST candidate whose OWN
+  // direct paragraph children contain exactly one changed simple paragraph —
+  // that is the item the user actually edited. Ancestor "changes" are then
+  // fully explained by that leaf, which the per-step neighbour proof below
+  // re-verifies positionally.
+  if (
+    !classification.ok &&
+    classification.reason === 'list-item-paragraph-anchored-target-count' &&
+    Array.isArray(classification.proof?.candidatePaths)
+  ) {
+    const paths = [...classification.proof.candidatePaths]
+      .sort((left, right) => right.length - left.length)
+    for (const path of paths) {
+      if (path.length < 2) continue
+      const itemEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, path)
+      const nextEntry = sourceSyncNodeEntryAtPath(expectedDoc, path)
+      if (
+        itemEntry?.type !== 'list_item' || nextEntry?.type !== 'list_item' ||
+        itemEntry.node.attrs?.checked != null
+      ) continue
+      const before = itemChildren(itemEntry.node)
+      const after = itemChildren(nextEntry.node)
+      if (before.length !== after.length) continue
+      const changedIndex = []
+      for (let index = 0; index < before.length; index += 1) {
+        if (before[index].node?.eq?.(after[index]?.node) !== true) changedIndex.push(index)
+      }
+      if (changedIndex.length !== 1) continue
+      const previousParagraph = before[changedIndex[0]].node
+      const nextParagraph = after[changedIndex[0]].node
+      if (
+        !isSimpleParagraph(previousParagraph, { nonEmpty: true }) ||
+        !isSimpleParagraph(nextParagraph) ||
+        !sourceSyncAttrsEqual(previousParagraph.attrs, nextParagraph.attrs) ||
+        previousParagraph.textContent === nextParagraph.textContent
+      ) continue
+      classification = Object.freeze({
+        ok: true,
+        topLevelIndex: path[0],
+        previousEntry: itemEntry,
+        nextEntry,
+        nodePath: Object.freeze([...path]),
+        targetDepth: path.length
+      })
+      break
+    }
+  }
   if (!classification.ok) return classification
 
   const itemPath = classification.nodePath
-  // Initial migration intentionally owns only items directly under one
-  // top-level list. Nested item text remains fail-closed until its ancestor
-  // ownership/marker contract is migrated as a separate family.
-  if (itemPath.length !== 2) {
-    return rejected('list-item-paragraph-path-not-top-level-item', {
+  // E0 P3b(2) (0.13.186 trace 15:48): text edits inside a NESTED list item
+  // had no focused owner — the generic mapper refuses depth>1 textblocks and
+  // legacy diverged-list mappers refuse authored-compact vs canonical-loose
+  // documents, so per-character Backspace chains inside a nested item fell
+  // entirely to warnings. The proof below is depth-agnostic by construction
+  // (path-bound step replay against the exact item), so items at ANY nesting
+  // depth are owned here. The one constraint kept from the top-level era:
+  // the item's DIRECT list parent must be stable (checked below), which for
+  // a nested item is its own bullet_list/ordered_list.
+  if (itemPath.length < 2) {
+    return rejected('list-item-paragraph-path-not-list-item', {
       proof: { itemPath }
     })
   }
@@ -239,6 +294,146 @@ const classifyListItemParagraphJournal = ({ journal, expectedDoc }) => {
   })
 }
 
+// Terminal-state bounded patch for a NESTED item paragraph (see the call site
+// for why the per-step mapper is not used at depth). Mirrors the blockquote
+// families' publish shape: resolve the paragraph's authored row, prove its
+// body decodes to the pre-edit paragraph text, then splice the FINAL text in
+// place. The marker prefix, indent, EOL and every other byte stay authored.
+const escapedBoundaryOrNone = ({ raw, text, offset }) => {
+  const source = String(raw || '')
+  const expected = String(text || '')
+  const target = Number(offset)
+  if (!Number.isInteger(target) || target < 0 || target > expected.length) return null
+  let rawIndex = 0
+  let textIndex = 0
+  let boundary = target === 0 ? 0 : null
+  const escapable = /[\\`*{}\[\]()#+\-.!_>~|]/
+  while (textIndex < expected.length) {
+    if (rawIndex >= source.length) return null
+    const expectedChar = expected[textIndex]
+    if (source[rawIndex] === expectedChar) {
+      rawIndex += 1
+    } else if (
+      source[rawIndex] === '\\' && rawIndex + 1 < source.length &&
+      source[rawIndex + 1] === expectedChar && escapable.test(expectedChar)
+    ) {
+      rawIndex += 2
+    } else {
+      return null
+    }
+    textIndex += 1
+    if (textIndex === target) boundary = rawIndex
+  }
+  if (rawIndex !== source.length || boundary == null) return null
+  return boundary
+}
+
+const planNestedItemParagraphPatch = ({
+  journal,
+  classification,
+  canonical,
+  expectedDoc,
+  resolveMarkdownOffset,
+  validateMarkdown
+}) => {
+  const paragraphPath = [...classification.itemPath, classification.paragraphIndex]
+  const paragraphEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, paragraphPath)
+  if (!paragraphEntry) return null
+  let rawOffset
+  try {
+    rawOffset = resolveMarkdownOffset({
+      markdown: journal.source,
+      pmPos: paragraphEntry.contentStart,
+      doc: journal.oldDoc,
+      topLevelIndex: classification.topLevelIndex,
+      role: 'nested-item-paragraph-target'
+    })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(rawOffset)) return null
+  // Locate the authored row containing that offset (works for bullet and
+  // ordered markers at any indent).
+  let lineStart = rawOffset
+  while (lineStart > 0 && journal.source[lineStart - 1] !== '\n' && journal.source[lineStart - 1] !== '\r') lineStart -= 1
+  let lineEnd = rawOffset
+  while (lineEnd < journal.source.length && journal.source[lineEnd] !== '\n' && journal.source[lineEnd] !== '\r') lineEnd += 1
+  const lineText = journal.source.slice(lineStart, lineEnd)
+  const markerMatch = lineText.match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))([ \t]+)(.*)$/)
+  if (!markerMatch) return null
+  const bodyStart = lineStart + markerMatch[1].length + markerMatch[2].length + markerMatch[3].length
+  const bodyEnd = lineEnd
+  const rowBody = journal.source.slice(bodyStart, bodyEnd)
+  const previousText = classification.previousParagraph.textContent
+  // The row body must decode to the PRE-EDIT paragraph text (escaped forms
+  // allowed) — this is the byte anchor that keeps the splice local.
+  const boundary = escapedBoundaryOrNone({ raw: rowBody, text: previousText, offset: previousText.length })
+  if (!Number.isFinite(boundary)) return null
+  const nextText = classification.nextParagraph.textContent
+  const markdown = journal.source.slice(0, bodyStart) + nextText + journal.source.slice(bodyEnd)
+  if (markdown === journal.source) return null
+  let valid = false
+  try {
+    valid = validateMarkdown({ markdown, expectedDoc }) === true
+  } catch {
+    return null
+  }
+  if (!valid) return null
+  const proof = Object.freeze({
+    kind: 'transaction-list-item-paragraph-proof',
+    journalId: journal.journalId,
+    family: LIST_ITEM_PARAGRAPH_TRANSACTION_FAMILY,
+    topLevelIndex: classification.topLevelIndex,
+    nodePath: Object.freeze([...classification.itemPath]),
+    listPath: classification.listPath,
+    itemIndex: classification.itemPath[1],
+    paragraphIndex: classification.paragraphIndex,
+    listType: classification.previousList?.type?.name || null,
+    previousText,
+    nextText,
+    emptied: nextText.length === 0,
+    chainLength: journal.transactionCount,
+    stepDetails: journal.stepDetails,
+    sourceDigest: sourceSyncDigest(journal.source),
+    previousCanonicalDigest: sourceSyncDigest(journal.canonical),
+    canonicalDigest: sourceSyncDigest(canonical),
+    markdownDigest: sourceSyncDigest(markdown),
+    mapperReason: 'nested-terminal-row-patch',
+    callbackDocumentEquivalent: true,
+    snapshotMatched: true,
+    documentMatched: true
+  })
+  const result = Object.freeze({
+    markdown,
+    preserved: true,
+    reason: 'list-item-paragraph-text-change',
+    integrityProof: proof
+  })
+  return Object.freeze({
+    ok: true,
+    decision: 'owned',
+    owner: SOURCE_SYNC_OWNERS.TRANSACTION,
+    family: LIST_ITEM_PARAGRAPH_TRANSACTION_FAMILY,
+    boundary: LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
+    reason: result.reason,
+    baseRevision: journal.baseRevision,
+    baseSourceDigest: journal.baseSourceDigest,
+    baseCanonicalDigest: journal.baseCanonicalDigest,
+    proof,
+    result,
+    canonical,
+    expectedDoc,
+    publication: Object.freeze({
+      result,
+      canonical,
+      expectedDoc,
+      validationSite: LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
+      boundary: LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
+      notifyChange: true
+    })
+  })
+}
+
 const createOwnedPlan = ({ boundary, markdown, canonical, expectedDoc, proof }) => {
   const result = Object.freeze({
     markdown,
@@ -328,6 +523,27 @@ export function createListItemParagraphTransactionSourceSyncOwner({
     if (!classification.ok) return classification
     const transactions = transactionsFromSourceSyncTransactionJournal(journal)
     if (!transactions.length) return rejected('list-item-paragraph-step-count')
+
+    // E0 P3b(2): NESTED items publish through a terminal-state bounded row
+    // patch. The per-step generic mapper anchors nested rows one visible
+    // character off (indent handling in the block-level offset mapper), and
+    // its byte-ownership proof cannot pass there; the classification above
+    // already proved the ENTIRE journal is a chain of plain-text ReplaceSteps
+    // inside this one paragraph, so splicing the paragraph's final text into
+    // its proven authored row is equivalent and depth-safe. Top-level items
+    // keep the historical per-step mapper path (byte-proven for years).
+    if (classification.itemPath.length > 2) {
+      const nestedPlan = planNestedItemParagraphPatch({
+        journal,
+        classification,
+        canonical,
+        expectedDoc,
+        resolveMarkdownOffset,
+        validateMarkdown
+      })
+      if (nestedPlan) return nestedPlan
+      return rejected('list-item-paragraph-nested-row-unproven')
+    }
 
     let mapped
     try {

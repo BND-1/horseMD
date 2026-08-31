@@ -1038,6 +1038,33 @@ export const preserveChangedLineRegion = ({
   if (!sourceRegion) return null
 
   let replacementText = transformReplacement(next.slice(nextRegion.start, nextRegion.end))
+  // A canonical replacement spliced verbatim into an authored row rewrites
+  // untouched author spelling: `- 当用户…` became `* 当用户…` (0.13.186
+  // trace 15:48:45 — committed byte damage on a row the user never touched).
+  // When both the replaced source region and the replacement are list rows of
+  // the same kind at the same indent, keep the AUTHORED marker prefix and take
+  // only the canonical body. Single-row only: a multi-row replacement brings
+  // its own structure and stays canonical.
+  {
+    const sourceSlice = source.slice(sourceRegion.start, sourceRegion.end)
+    const singleRow = (value) => {
+      const lines = String(value || '').split('\n').filter((line) => line.trim())
+      return lines.length === 1 ? lines[0] : null
+    }
+    const markerOf = (line) => String(line || '').match(/^(\s*)((?:[-+*])|(?:\d{1,9}[.)]))([ \t]+)(.*)$/)
+    const sourceRow = singleRow(sourceSlice)
+    const replacementRow = singleRow(replacementText)
+    const sourceMarker = sourceRow && markerOf(sourceRow)
+    const replacementMarker = replacementRow && markerOf(replacementRow)
+    if (
+      sourceMarker &&
+      replacementMarker &&
+      sourceMarker[1] === replacementMarker[1] &&
+      /^\d/.test(sourceMarker[2]) === /^\d/.test(replacementMarker[2])
+    ) {
+      replacementText = sourceMarker[1] + sourceMarker[2] + sourceMarker[3] + replacementMarker[4]
+    }
+  }
   // Tail zero-width insertion: canonical ends with a blank separator before a
   // new block (`\n\n`), but the authored file may end with a single line
   // ending (user style). Splicing the replacement directly would glue the new

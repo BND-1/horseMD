@@ -62,7 +62,12 @@ const classify = ({ journal, expectedDoc }) => {
     let entryHadTextStep = false
     let entryDoc = entry.beforeDoc
     for (let stepIndex = 0; stepIndex < entry.steps.length; stepIndex += 1) {
-      if (splitStep) return recognizedRejection('nested-bullet-split-extra-step-after-terminal')
+      // 0.13.187 trace 17:09: an ORDERED nested split (`- 1. 甲乙` + Enter)
+      // appends a sibling-marker RELABEL ReplaceAroundStep after the terminal
+      // split — a shape this bullet family cannot represent, but one legacy
+      // has owned for years. "Not my shape" must be a plain rejection, not a
+      // recognized fail-closed (which blocked legacy and warned).
+      if (splitStep) return rejected('nested-bullet-split-extra-step-after-terminal')
       const step = entry.steps[stepIndex]
       const stepDoc = entry.stepDocs?.[stepIndex] || (stepIndex === 0 ? entry.beforeDoc : null)
       if (!stepDoc || !sameSourceSyncDocument(stepDoc, entryDoc)) {

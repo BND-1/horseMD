@@ -1357,9 +1357,27 @@ const authoredTopLevelListBlocks = (markdown) => {
 }
 
 const applyStableListRowTextDelta = ({ sourceRow, previousRow, nextRow }) => {
-  const sourceContent = sourceRow.text.slice(sourceRow.marker.prefixEnd)
-  const previousContent = previousRow.text.slice(previousRow.marker.prefixEnd)
-  const nextContent = nextRow.text.slice(nextRow.marker.prefixEnd)
+  // `markdownLines` keeps the CR of a CRLF line inside `line.text`, and the
+  // marker's `(\s+)` spacing group then swallows it (`- \r`, prefixEnd=3).
+  // Split the trailing CR off the CONTENT before diffing, and splice it back
+  // AFTER the new text: without this, a fill of an authored empty item on a
+  // CRLF file emitted `- \r死了暖风机` — the mid-line CR broke the row into
+  // an empty item plus a separate paragraph (0.13.186 trace 15:52) and the
+  // validator correctly fail-closed on it.
+  const trailingCr = (row) => {
+    const raw = row.text.slice(row.marker.prefixEnd)
+    return raw.endsWith('\r') ? raw.slice(0, -1) : raw
+  }
+  const sourceContent = trailingCr(sourceRow)
+  const previousContent = trailingCr(previousRow)
+  const nextContent = trailingCr(nextRow)
+  // The marker prefix slice must not keep the CR the spacing group
+  // swallowed (`- \r`, prefixEnd=3): the terminator is re-appended by
+  // adaptCanonicalRegionToSource's trailing-CR rule, never inline here
+  // (a literal `\r` inside the replacement would be EOL-converted into a
+  // spurious blank line).
+  const rowPrefix = sourceRow.text.slice(0, sourceRow.marker.prefixEnd)
+  const sourcePrefix = rowPrefix.endsWith('\r') ? rowPrefix.slice(0, -1) : rowPrefix
   const sourceView = unescapedPunctuationView(sourceContent)
   const previousView = unescapedPunctuationView(previousContent)
   const nextView = unescapedPunctuationView(nextContent)
@@ -1369,7 +1387,7 @@ const applyStableListRowTextDelta = ({ sourceRow, previousRow, nextRow }) => {
   // intentionally removes punctuation escapes for ordinary text deltas, but
   // doing that for the entire newly-filled body changes Markdown structure.
   if (!previousContent.trim() && /^\s*\d{1,9}\\[.)]\s*$/.test(nextContent)) {
-    return sourceRow.text.slice(0, sourceRow.marker.prefixEnd) + nextContent
+    return sourcePrefix + nextContent
   }
   // After the ordered input rule's transient `1. ` frame, typing ordinary
   // body text makes Crepe serialize the same bullet item back as the literal
@@ -1387,7 +1405,7 @@ const applyStableListRowTextDelta = ({ sourceRow, previousRow, nextRow }) => {
     previousTransientOrdered[1] === nextEscapedOrderedLiteral[1] &&
     previousTransientOrdered[2] === nextEscapedOrderedLiteral[2]
   ) {
-    return sourceRow.text.slice(0, sourceRow.marker.prefixEnd) + nextContent
+    return sourcePrefix + nextContent
   }
 
   const { start, previousEnd, nextEnd } = commonChange(previousView.text, nextView.text)
@@ -1397,7 +1415,7 @@ const applyStableListRowTextDelta = ({ sourceRow, previousRow, nextRow }) => {
   const content = sourceContent.slice(0, rawStart) +
     nextView.text.slice(start, nextEnd) +
     sourceContent.slice(rawEnd)
-  return sourceRow.text.slice(0, sourceRow.marker.prefixEnd) + content
+  return sourcePrefix + content
 }
 
 const preserveOrdinalBatchedListRows = ({ source, previous, next, requireMultiple }) => {
@@ -2115,8 +2133,12 @@ export const preserveEmptyListItemTextChange = ({
         const authoredNextContent = /^\s*\d{1,9}\\[.)]\s*$/.test(nextContent)
           ? nextContent
           : canonicalTextToSource(nextContent)
-        const replacement = sourceRow.text.slice(0, sourceRow.marker.prefixEnd) +
-          authoredNextContent
+        // Local CR-stripped prefix (sourcePrefix belongs to a different
+        // function's scope): a CRLF row's marker prefix keeps its CR out of
+        // the replacement; the row terminator re-appends it.
+        const localPrefixRow = sourceRow.text.slice(0, sourceRow.marker.prefixEnd)
+        const localPrefix = localPrefixRow.endsWith('\r') ? localPrefixRow.slice(0, -1) : localPrefixRow
+        const replacement = localPrefix + authoredNextContent
         return {
           markdown: source.slice(0, sourceRow.start) + replacement + source.slice(sourceRow.end),
           preserved: true,

@@ -4,6 +4,7 @@ import { EditorState } from '@milkdown/prose/state'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { pmPosToMarkdownOffset } from '../src/renderer/src/components/editor-source-map.js'
+import { sourceSyncNodeEntryAtPath } from '../src/renderer/src/lib/source-sync/top-level-subtree.js'
 import { mapPlainTextTransactionsToSource } from '../src/renderer/src/lib/source-transaction-sync.js'
 import {
   LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
@@ -195,17 +196,56 @@ const expected = '\uFEFF- 管理层\r\n- \r\n- 4. 技术部\r\n'
 }
 
 {
+  // E0 P3b(2): nested item text edits are now OWNED (0.13.186 trace 15:48 —
+  // per-character Backspace chains inside a nested item had no owner and
+  // warned on every keystroke). The publish is a terminal-state row patch
+  // bounded to the proven authored row.
   const nestedDoc = document(bullet(item('parent', {
     children: [paragraph('parent'), bullet(item('child'))]
   })))
-  const start = textStart(nestedDoc, [0, 0, 1, 0])
-  const transaction = EditorState.create({ schema, doc: nestedDoc }).tr.insertText('X', start + 5)
+  // Authoritative paragraph content start (no hand-rolled position math).
+  const contentStartAt = (path) =>
+    sourceSyncNodeEntryAtPath(nestedDoc, path).contentStart
+  const cs = contentStartAt([0, 0, 1, 0, 0])
+  const transaction = EditorState.create({ schema, doc: nestedDoc }).tr.insertText('X', cs + 5)
   const { plan } = planFor({
     source: '- parent\n  - child\n', canonical: '* parent\n\n  * child\n', oldDoc: nestedDoc,
-    transactions: [transaction], nextCanonical: '* parent\n\n  * childX\n', revision: 903
+    transactions: [transaction], nextCanonical: '* parent\n\n  * childX\n', revision: 903,
+    validateMarkdown: ({ markdown }) => markdown === '- parent\n  - childX\n'
   })
-  assert.equal(plan.ok, false)
-  assert.match(plan.reason, /^list-item-paragraph-/)
+  assert.equal(plan.ok, true, JSON.stringify(plan))
+  assert.equal(plan.result.markdown, '- parent\n  - childX\n')
+  assert.equal(plan.proof.mapperReason, 'nested-terminal-row-patch')
+
+  // The full user scenario: delete every character one transaction at a time
+  // (the journal coalesces them into one chain) — zero warnings expected.
+  let state = EditorState.create({ schema, doc: nestedDoc })
+  const deletes = []
+  for (let index = 0; index < 5; index += 1) {
+    const tr = state.tr.delete(cs + 4 - index, cs + 5 - index)
+    deletes.push(tr)
+    state = state.apply(tr)
+  }
+  const deleted = planFor({
+    source: '- parent\n  - child\n', canonical: '* parent\n\n  * child\n', oldDoc: nestedDoc,
+    transactions: deletes, nextCanonical: '* parent\n\n  *\n', revision: 904,
+    validateMarkdown: ({ markdown }) => markdown === '- parent\n  - \n'
+  })
+  assert.equal(deleted.plan.ok, true, JSON.stringify(deleted.plan))
+  assert.equal(deleted.plan.result.markdown, '- parent\n  - \n')
+
+  // A parent-row edit still goes through the historical top-level mapper
+  // path (not the nested patch).
+  const parentCs = contentStartAt([0, 0, 0, 0])
+  // +5 stays INSIDE the paragraph text (a +6 end-of-paragraph insert creates a second
+  // paragraph in this schema — a structural shape this family correctly rejects).
+  const foreign = EditorState.create({ schema, doc: nestedDoc }).tr.insertText('Y', parentCs + 5)
+  const foreignPlan = planFor({
+    source: '- parent\n  - child\n', canonical: '* parent\n\n  * child\n', oldDoc: nestedDoc,
+    transactions: [foreign], nextCanonical: '* parentY\n\n  * child\n', revision: 905
+  })
+  assert.equal(foreignPlan.plan.ok, true)
+  assert.notEqual(foreignPlan.plan.proof.mapperReason, 'nested-terminal-row-patch')
 }
 
 {

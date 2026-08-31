@@ -3070,6 +3070,24 @@ export default function Editor({
             })
           }
           if (preserved.preserved === false) {
+            // STRUCTURAL (E0, 0.13.186 trace 15:48): a blocked preservation
+            // whose candidate IS the current source introduces no byte
+            // change — there is nothing new to commit and nothing new to warn
+            // about. The visible PM edit stays pending exactly like any
+            // unmapped result (a later callback or forced flush retries the
+            // cumulative delta); warning here reported a divergence the
+            // candidate itself proves was not introduced. This fired five
+            // times in a row during a nested-item Backspace chain.
+            if (
+              preserved.markdown === lastMarkdownRef.current &&
+              preserved.blocked === true
+            ) {
+              traceEditorEvent('no-op-preserve-held', {
+                reason: preserved.reason || null
+              })
+              userEditUntil = Date.now() + 1000
+              return
+            }
             const scratchFallback = scratchCanonicalCandidate(
               preserved.reason || 'unmapped-source-change'
             )

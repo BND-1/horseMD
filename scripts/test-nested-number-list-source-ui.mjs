@@ -57,7 +57,7 @@ async function openApp(profile, appPort, content) {
   const app = await launchBuiltElectron({
     profileDir: join(root, profile),
     port: appPort,
-    appArgs: [file]
+    appArgs: [file, process.env.HM_TRACE ? '--horsemd-input-trace' : null].filter(Boolean)
   })
   await waitFor(
     () => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)`),
