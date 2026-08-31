@@ -121,6 +121,32 @@
 - 前文列表 marker/空行等 formatting drift不再导致局部引用/list transaction误报；
 - 本节 P0–P9 全部打勾，门禁和独立安装/trace人工验收均通过。
 
+### E0 复盘（2026-08-31 收官，0.13.169 → 0.13.184，提交 f117a33 + dcb6ddc）
+
+用户真实乱测驱动的 E0 主线已完成（P1、P2、P3a/b/c、P3d–P3o 全落盘）。复盘提炼出的可复用教训：
+
+**架构层面（哪些做法被证明是对的）**
+
+1. **journal-first 归因闭环**：每次用户说"触发"，第一动作永远是拉 `$TMPDIR/horsemd-input-trace-<pid>.jsonl` 的 evidence dump（journal 步链 + coordinator 发布序列 + integrity candidate/canonical 尾文本），先定位 FIRST DIVERGENCE 再动代码。本轮 16 轮触发全部靠这个闭环一次归因，零盲改。
+2. **警告分层经受住了考验**：已存盘文件严格 fail-closed（作者字节受保护）+ scratch canonical 兜底（无作者字节可保护）的双层契约没有再制造误报，也没有漏掉真实错误。P3j 的"兜底必过完整校验"是关键——兜底不是逃生门，是第二证明路径。
+3. **pending-text chain 合同收敛了 IME 复杂度**：把"0..N 笔文本步 + 唯一终态结构步"抽成公共合同后，三个 split family（blockquote/顶层段落/嵌套列表）各自只写 topology 和 patch，不再各自猜 IME。新增 family 的边际成本从"重写识别逻辑"降到"写形状匹配"。
+
+**踩坑记录（以后不要再犯）**
+
+1. **recognized 边界要精确到"证明进行到哪一步"**：P3b 实事故——链重放阶段的拒绝标了 `recognized`（fail-closed），结果 blockquote 段落的 IME+Enter（不同 slice 形状）走同一分支被劫持，别的家族绿测变红。规则：**只有"终态结构步已定位且属于本家族"之后的拒绝才 recognized**；之前的拒绝说明"不是我的形状"，必须落回 legacy。
+2. **形状匹配要对准正确的文档快照**：pending-text 链存在时，`journal.oldDoc` 是链前快照，而 left/right 文本描述的是链后（split 前）的词。对着 oldDoc 匹配必然 candidateCount=0。规则：**形状匹配对 pre-split doc（终态步所在 entry 的 beforeDoc）**。
+3. **PM `ResolvedPos.index(depth)` 在交替嵌套上与 child-path 约定错位**：`index(d)` 数的是 depth d 节点**内部**的孩子索引，不是 node(d) 在 node(d-1) 里的索引。列表这种 doc>list>item>list>item>para 交替结构要按节点身份遍历推导 path，不能直接用 index()。
+4. **单测先行暴露继承饿死**：P3o 第一版要求"unused source 行"，被 text 匹配消费后饿死，5 个单测全红后改成"只读拼写不消费行"。marker 继承类修复必须覆盖：目标形状 + 紧/松分隔 + 三种拼写（`-`/`*`/`+`）各保持 + 无父列表不继承 + 上一修复不回归。
+5. **死分支要靠真实 trace 发现**：P3p 的 Tab 继承分支要求"恰好一个换行"分隔，但嵌套空行必须带结构性空行（RS-64），分支对目标形状永远不可达——单测如果只测紧分隔永远发现不了。**写继承/分隔类逻辑时，先从真实 trace 抄 serializer 的实际输出形状**。
+6. **合成 ClipboardEvent/insertText 不能完全复刻原生输入**：粘贴竞态（P3n）和输入规则（E2E harness 打不出 `-`+空格）在 headless 下时序不同。回归要靠"真实 CDP keydown/imeSetComposition"型测试（库里已有 human-input 模式），合成事件只能做内容级验证。
+
+**遗留（不阻塞，已记录）**
+
+- P3b(2)：直接在嵌套空项输入文字的 focused owner（generic mapper 因 depth>1 空文本块拒绝；P3b(1) 后触发面已收窄）。
+- 既有失败清单：`test:rs-41-source-sync` UI raw paste 的 `-`→`*`（owner 认领层）、`test:list-item-literal-marker-source-ui`（10 连击 marker）。P8 门禁前单独归因。
+- 已知产品限制：斜杠菜单在列表项内不打开（SlashProvider 深层门控，UI 层）。
+- 用户实测残留的 `*` 存量字节：旧版本写入磁盘的拼写，新版不再产生新的；需要用户在源码模式手动统一。
+
 ## 4. 阶段 A：0.13.148 可复现检查点
 
 ### 范围
