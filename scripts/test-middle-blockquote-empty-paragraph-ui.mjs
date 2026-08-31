@@ -130,7 +130,13 @@ try {
   assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `RS-65 Enter showed warning: ${JSON.stringify(afterEnter.toasts)}`)
   assert.equal(
     afterEnter.integrity.some((entry) =>
-      entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' &&
+      // E0 P3: the quote Enter is now owned by the blockquote-split family
+      // (trailing empty right paragraph via the exact nodePath transient);
+      // the legacy reason remains accepted for shapes it still owns.
+      (
+        entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' ||
+        entry.preservationReason === 'blockquote-paragraph-split'
+      ) &&
       entry.ok === true && entry.semanticOk === true
     ),
     true,

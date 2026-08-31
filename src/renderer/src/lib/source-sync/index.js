@@ -43,6 +43,8 @@ export {
 export {
   PLAIN_PARAGRAPH_TRANSACTION_BOUNDARY,
   PLAIN_PARAGRAPH_TRANSACTION_FAMILY,
+  PLAIN_PARAGRAPH_SPLIT_TRANSACTION_BOUNDARY,
+  PLAIN_PARAGRAPH_SPLIT_TRANSACTION_FAMILY,
   createPlainParagraphTransactionSourceSyncOwner
 } from './plain-paragraph-transaction-owner.js'
 export {

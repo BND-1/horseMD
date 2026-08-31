@@ -61,6 +61,19 @@ const isClosedPlainTextSlice = (slice) => {
   return plain
 }
 
+// E0 P3d: repeated Enter over an already-published trailing transient leaves
+// SEVERAL consecutive editor-owned empty paragraphs at the quote's tail. The
+// authored `>` bytes cannot encode ANY of them; the proof-owned semantic
+// bridge collapses the whole run. A split therefore counts as trailing not
+// only at the quote's last child, but whenever EVERY paragraph after the
+// split index is an empty paragraph.
+const trailingEmptySuffix = (children, splitIndex) =>
+  splitIndex < children.length &&
+  children.slice(splitIndex + 1).every((entry) => {
+    const node = entry?.node ?? entry
+    return node?.type?.name === 'paragraph' && node.content?.size === 0
+  })
+
 const findSplitIndex = (beforeQuote, afterQuote) => {
   const before = quoteChildren(beforeQuote)
   const after = quoteChildren(afterQuote)
@@ -70,10 +83,17 @@ const findSplitIndex = (beforeQuote, afterQuote) => {
     const original = before[index]?.node
     const left = after[index]?.node
     const right = after[index + 1]?.node
+    // Enter at the very end of a quote paragraph leaves an empty right
+    // paragraph. Authored `> ` separator bytes cannot encode it, so it enters
+    // the path-scoped transient ONLY when every paragraph after the split is
+    // also empty (a trailing run with a nonempty left sibling). An empty
+    // right paragraph before a nonempty sibling has no provable raw/semantic
+    // contract and stays unowned.
+    const trailingSplit = trailingEmptySuffix(before, index)
     if (
       !isSimpleParagraph(original) ||
       !isSimpleParagraph(left) ||
-      !isSimpleParagraph(right) ||
+      !isSimpleParagraph(right, { nonEmpty: !trailingSplit }) ||
       !sourceSyncAttrsEqual(original.attrs, left.attrs) ||
       !sourceSyncAttrsEqual(original.attrs, right.attrs)
     ) continue
@@ -101,6 +121,11 @@ const quoteMatchesPhase = ({
   ) return false
   const original = quoteChildren(originalQuote)
   const current = quoteChildren(quote)
+  // Mirrors findSplitIndex: the post-split right paragraph may be empty only
+  // when every original paragraph after the split index is empty — the
+  // whole trailing run then carries the path-scoped transient until the user
+  // fills or exits it.
+  const trailingSplit = trailingEmptySuffix(original, splitIndex)
   if (!splitSeen) {
     if (current.length !== original.length) return false
     return current.every((entry, index) => {
@@ -114,8 +139,12 @@ const quoteMatchesPhase = ({
   if (current.length !== original.length + 1) return false
   return current.every((entry, index) => {
     if (index < splitIndex) return entry.node?.eq?.(original[index].node) === true
-    if (index === splitIndex || index === splitIndex + 1) {
+    if (index === splitIndex) {
       return isSimpleParagraph(entry.node) &&
+        sourceSyncAttrsEqual(entry.node.attrs, original[splitIndex].node.attrs)
+    }
+    if (index === splitIndex + 1) {
+      return isSimpleParagraph(entry.node, { nonEmpty: !trailingSplit }) &&
         sourceSyncAttrsEqual(entry.node.attrs, original[splitIndex].node.attrs)
     }
     return entry.node?.eq?.(original[index - 1].node) === true
@@ -155,6 +184,7 @@ const classifyBlockquoteSplitJournal = ({ journal, expectedDoc }) => {
     })
   }
   const splitIndex = candidates[0]
+  const trailingSplit = trailingEmptySuffix(quoteChildren(originalQuote), splitIndex)
   const originalParagraph = quoteChildren(originalQuote)[splitIndex]?.node
   const finalChildren = quoteChildren(finalQuote)
   const leftParagraph = finalChildren[splitIndex]?.node
@@ -243,7 +273,10 @@ const classifyBlockquoteSplitJournal = ({ journal, expectedDoc }) => {
           slice.openEnd !== 1 ||
           slice.content?.childCount !== 2 ||
           $from.parentOffset <= 0 ||
-          $from.parentOffset >= $from.parent.content.size
+          // A middle split keeps text on both sides. Splitting at the paragraph
+          // END (the common Enter) is ownable only for the trailing child —
+          // anywhere else the empty right paragraph has no transient contract.
+          ($from.parentOffset >= $from.parent.content.size && !trailingSplit)
         ) return rejected('blockquote-split-structural-shape')
         let splitNodesValid = true
         slice.content.forEach?.((node) => {
@@ -293,6 +326,7 @@ const classifyBlockquoteSplitJournal = ({ journal, expectedDoc }) => {
     originalQuote,
     finalQuote,
     splitIndex,
+    trailingSplit,
     originalParagraph,
     leftParagraph,
     rightParagraph,
@@ -456,9 +490,21 @@ export function createBlockquoteSplitTransactionSourceSyncOwner({
     const markdown = journal.source.slice(0, line.start) +
       replacement +
       journal.source.slice(line.end)
+    // A trailing split leaves an empty paragraph the authored `> ` separator
+    // bytes cannot encode. Bridge it with the exact-quote-path transient —
+    // the same revision-bound semantic context the emptied-paragraph family
+    // uses — instead of leaking `<br />` or falling back to whole-doc rewrite.
+    const trailingEmptySplit = classification.trailingSplit === true &&
+      classification.rightParagraph?.content?.size === 0
     let semanticOk = false
     try {
-      semanticOk = validateMarkdown({ markdown, expectedDoc }) === true
+      semanticOk = validateMarkdown({
+        markdown,
+        expectedDoc,
+        semanticOptions: trailingEmptySplit
+          ? { ignoreTrailingEmptyBlockquoteParagraphPaths: [classification.nodePath] }
+          : {}
+      }) === true
     } catch {
       return recognizedRejection('blockquote-split-semantic-validator-threw')
     }
@@ -478,6 +524,8 @@ export function createBlockquoteSplitTransactionSourceSyncOwner({
       previousText: oldText,
       leftText: classification.leftParagraph.textContent,
       rightText: classification.rightParagraph.textContent,
+      trailingEmptySplit,
+      transientBlockquotePath: trailingEmptySplit ? classification.nodePath : null,
       prefix,
       blankPrefix,
       eol: line.eol,

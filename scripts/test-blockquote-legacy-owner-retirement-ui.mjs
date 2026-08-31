@@ -11,7 +11,12 @@ const profile = join(root, 'profile')
 const port = Number(process.env.CDP_PORT || 15420 + (process.pid % 40))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
 const originalText = 'quoted alpha'
-const editedText = `${originalText}*`
+// E0 P3e: a bare trailing `*` round-trips as literal text and now PUBLISHES
+// through the owned final-state patch. Typing `*e*` is converted by
+// Milkdown's input rule into a REAL emphasis mark — the paragraph is no
+// longer plain, so the family rejects it (not-simple-plain) and the retired
+// legacy branch stays blocked. textContent loses the star bytes.
+const editedText = `${originalText}e`
 const fixture = '\uFEFFbefore\r\n\r\n > quoted alpha\r\n\r\nafter\r\n'
 const warningPattern = /检测到富文本与源码不一致|源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
@@ -118,7 +123,7 @@ try {
   app = await openApp()
   await clearDiagnostics(app)
   await focusEndOfQuote(app)
-  await typeTextLikeUser(app.send, '*', { delayMs: 30 })
+  await typeTextLikeUser(app.send, '*e*', { delayMs: 30 })
   await waitFor(() => app.evaluate(`(() => {
     const editor = ${visibleEditor()}
     return [...(editor?.querySelectorAll('blockquote p') || [])]
@@ -130,7 +135,7 @@ try {
   const blocked = state.owner.filter((entry) =>
     entry.phase === 'plan' &&
     entry.family === 'blockquote-paragraph-text-replace' &&
-    entry.reason === 'syntax-sensitive-insert'
+    entry.reason === 'blockquote-paragraph-not-simple-plain'
   )
   assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
   assert.equal(blocked.every((entry) =>
@@ -159,7 +164,7 @@ try {
     'recognized quote rejection overwrote the authored file')
 
   completed = true
-  console.log('PASS blockquote legacy retirement UI: a physical syntax-sensitive quote edit is recognized, blocks generic legacy fallback, remains visible in rich mode, warns, and leaves source/disk untouched')
+  console.log('PASS blockquote legacy retirement UI: a mark-producing quote edit is recognized, blocks generic legacy fallback, remains visible in rich mode, warns, and leaves source/disk untouched (literal round-trip text publishes via the owned final-state patch instead)')
 } finally {
   if (app) await stopBuiltElectron(app, { removeProfile: true })
   if (completed) await rm(root, { recursive: true, force: true })

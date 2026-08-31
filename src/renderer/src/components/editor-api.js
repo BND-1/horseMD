@@ -289,7 +289,7 @@ export function createEditorApi({
         return null
       }
       if (typeof publishSourceSyncResult === 'function') {
-        const coordinated = publishSourceSyncResult({
+        let coordinated = publishSourceSyncResult({
           result: preserved,
           canonical,
           expectedDoc: viewRef.current?.state.doc,
@@ -297,6 +297,51 @@ export function createEditorApi({
           notifyChange: false,
           boundary: 'forced-flush'
         })
+        if (!coordinated?.ok && generatedScratchRef?.current) {
+          // STRUCTURAL (E0, 0.13.176 trace 04:32): in a generated scratch
+          // document the source bytes are editor-derived — there is no
+          // authored file to protect. When a trusted local-mapper result
+          // fails validation, retry once with the serializer canonical
+          // (still validated by the coordinator) instead of pausing sync
+          // with a sticky warning. Existing files keep fail-closed.
+          // Marker-friendly first, raw canonical as the guaranteed floor:
+          // 1) try preserving the user's typed bullet spelling (`-`/`+`) on
+          //    top of the canonical — keeps scratch docs interoperable with
+          //    other Markdown tools that diff on marker spelling;
+          // 2) if that transform fails validation (0.13.177 trace 04:46: it
+          //    can carry stray separator lines), fall back to the RAW
+          //    canonical — the one spelling guaranteed to re-parse to the
+          //    current document.
+          const markerPreserving = preserveGeneratedBulletMarkers(
+            lastMarkdownRef.current,
+            canonical
+          )
+          const canonicalFallback = {
+            markdown: markerPreserving !== canonical ? markerPreserving : canonical,
+            preserved: true,
+            reason: 'generated-scratch-flush'
+          }
+          const retry = publishSourceSyncResult({
+            result: canonicalFallback,
+            canonical,
+            expectedDoc: viewRef.current?.state.doc,
+            validationSite: 'editor-api-flush',
+            notifyChange: false,
+            boundary: 'forced-flush'
+          })
+          if (retry?.ok) {
+            if (Array.isArray(globalThis.__hmFlushTrace)) {
+              globalThis.__hmFlushTrace.push({
+                phase: 'scratch-canonical-fallback',
+                trigger: coordinated?.reason || 'source-document-mismatch',
+                from: preserved?.reason || null
+              })
+            }
+            clearPendingRichFlush?.()
+            return retry.publication.markdown
+          }
+          coordinated = retry
+        }
         if (!coordinated?.ok) {
           const reason = coordinated?.reason || 'source-document-mismatch'
           if (Array.isArray(globalThis.__hmFlushTrace)) {

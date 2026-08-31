@@ -287,29 +287,34 @@ const runScenario = async ({ name, mode, immediateFlush, port }) => {
         `${name} first Enter transient failed: ${JSON.stringify(transient.integrity)}`)
       assert.equal(transient.toasts.some((text) => warningPattern.test(text)), false,
         `${name} first Enter transient warned: ${JSON.stringify(transient.toasts)}`)
+      // E0 P3: the first Enter at the end of the quote's last paragraph is
+      // owned ATOMICALLY by the blockquote-split family (trailing empty right
+      // paragraph + exact nodePath transient). The exit family below still
+      // owns the subsequent exit chain after clearDiagnostics.
       const pending = transient.preserve.find((entry) =>
-        entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
+        entry.reason === 'blockquote-paragraph-split' &&
         entry.preserved === true &&
-        entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof'
+        entry.integrityProof?.kind === 'transaction-blockquote-split-proof'
       )
       assert.ok(pending,
-        `${name} first Enter bypassed exit pending owner: ${JSON.stringify(transient.preserve)}`)
-      assert.equal(pending.integrityProof.mode, 'pending')
+        `${name} first Enter bypassed the split owner: ${JSON.stringify(transient.preserve)}`)
+      assert.equal(pending.integrityProof.trailingEmptySplit, true)
+      assert.equal(pending.integrityProof.rightText, '')
       assert.deepEqual(pending.integrityProof.nodePath, [1, 0, 1])
       assert.equal(pending.integrityProof.chainLength, 1)
       assert.equal(transient.integrity.some((entry) =>
-        entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' &&
+        entry.preservationReason === 'blockquote-paragraph-split' &&
         entry.semanticOk === true &&
         entry.listSlotsMatch === true &&
         entry.ok === true
-      ), true, `${name} pending candidate was not fully equivalent: ${JSON.stringify(transient.integrity)}`)
+      ), true, `${name} split candidate was not fully equivalent: ${JSON.stringify(transient.integrity)}`)
       assert.equal(transient.coordinator.some((entry) =>
         entry.phase === 'published' &&
         entry.owner === 'transaction' &&
-        entry.family === 'blockquote-paragraph-exit' &&
-        entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
-        entry.boundary === 'transaction-blockquote-exit-markdown-updated'
-      ), true, `${name} pending phase bypassed Coordinator: ${JSON.stringify(transient.coordinator)}`)
+        entry.family === 'blockquote-paragraph-split' &&
+        entry.reason === 'blockquote-paragraph-split' &&
+        entry.boundary === 'transaction-blockquote-split-markdown-updated'
+      ), true, `${name} split phase bypassed Coordinator: ${JSON.stringify(transient.coordinator)}`)
       await clearDiagnostics(app)
     }
     await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: immediateFlush ? 1 : 5 })

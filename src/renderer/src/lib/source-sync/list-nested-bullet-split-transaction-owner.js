@@ -36,7 +36,131 @@ const classify = ({ journal, expectedDoc }) => {
   if (!journal?.oldDoc || !expectedDoc || !Array.isArray(journal.entries)) {
     return rejected('nested-bullet-split-document-missing')
   }
-  const before = topLevelSourceSyncEntries(journal.oldDoc)
+
+  // E0 P3b (0.13.180 trace 09:47): a Chinese IME commit landing in the target
+  // nested item followed by an IMMEDIATE Enter is ONE journal — 0..N closed
+  // plain-text ReplaceSteps inside the target item's paragraph, then exactly
+  // one terminal splitListItem structural ReplaceStep (sliceSize 4, open 2/2)
+  // owning its transaction alone. Replay the chain first to (a) verify every
+  // pre-terminal step touches only text inside ONE nested item paragraph and
+  // (b) locate the PRE-SPLIT document. The shape match then runs against
+  // that pre-split doc, so leftText+rightText compares against what the user
+  // actually split. With no text steps (the historical single-transaction
+  // shape) preSplitDoc IS journal.oldDoc and every later check is unchanged.
+  const textEntryStats = []
+  let splitEntry = null
+  let splitStep = null
+  let splitStepDoc = null
+  let textTargetPath = null
+  let currentDoc = journal.oldDoc
+  for (let entryIndex = 0; entryIndex < journal.entries.length; entryIndex += 1) {
+    const entry = journal.entries[entryIndex]
+    if (!sameSourceSyncDocument(entry.beforeDoc, currentDoc)) {
+      return rejected('nested-bullet-split-chain-mismatch')
+    }
+    if (!entry.steps?.length) return rejected('nested-bullet-split-step-count')
+    let entryHadTextStep = false
+    let entryDoc = entry.beforeDoc
+    for (let stepIndex = 0; stepIndex < entry.steps.length; stepIndex += 1) {
+      if (splitStep) return recognizedRejection('nested-bullet-split-extra-step-after-terminal')
+      const step = entry.steps[stepIndex]
+      const stepDoc = entry.stepDocs?.[stepIndex] || (stepIndex === 0 ? entry.beforeDoc : null)
+      if (!stepDoc || !sameSourceSyncDocument(stepDoc, entryDoc)) {
+        return rejected('nested-bullet-split-step-document')
+      }
+      const isTerminalSplit =
+        step?.constructor?.name === 'ReplaceStep' && step.structure === true &&
+        step.from === step.to &&
+        Number(step.slice?.size || 0) === 4 &&
+        step.slice?.openStart === 2 && step.slice?.openEnd === 2
+      if (!isTerminalSplit) {
+        if (
+          step?.constructor?.name !== 'ReplaceStep' || step.structure === true ||
+          !Number.isFinite(step.from) || !Number.isFinite(step.to) ||
+          step.slice?.openStart || step.slice?.openEnd
+        ) return rejected('nested-bullet-split-step-shape')
+        let slicePlain = true
+        step.slice?.content?.forEach?.((child) => {
+          if (!child?.isText || (child.marks?.length || 0) > 0) slicePlain = false
+        })
+        if (!slicePlain) return rejected('nested-bullet-split-step-shape')
+        let $from
+        let $to
+        try {
+          $from = stepDoc.resolve(step.from)
+          $to = stepDoc.resolve(step.to)
+        } catch {
+          return rejected('nested-bullet-split-step-range-unresolvable')
+        }
+        if (!$from.sameParent?.($to) || $from.parent?.type?.name !== 'paragraph') {
+          return rejected('nested-bullet-split-text-outside-target-paragraph')
+        }
+        // Every text step must land in the SAME nested item paragraph: a
+        // five-level path [top, parentItem, nestedList, item, paragraph].
+        // Derive child indices by node identity — ResolvedPos.index(depth)
+        // counts the child BELOW the depth, which is off-by-one for the
+        // alternating list nesting this family targets.
+        if ($from.depth !== 5) {
+          return rejected('nested-bullet-split-text-outside-target-paragraph')
+        }
+        const candidatePath = []
+        for (let depth = 1; depth <= 5; depth += 1) {
+          const parent = $from.node(depth - 1)
+          const child = $from.node(depth)
+          let childIndex = -1
+          parent.forEach?.((node, offset, index) => {
+            if (node === child) childIndex = index
+          })
+          if (childIndex < 0) {
+            return rejected('nested-bullet-split-text-outside-target-paragraph')
+          }
+          candidatePath.push(childIndex)
+        }
+        const candidateEntry = sourceSyncNodeEntryAtPath(stepDoc, candidatePath.slice(0, -1))
+        if (
+          !candidateEntry || candidateEntry.type !== 'list_item' ||
+          candidatePath[4] !== 0
+        ) return rejected('nested-bullet-split-text-outside-target-paragraph')
+        if (textTargetPath) {
+          if (JSON.stringify(textTargetPath) !== JSON.stringify(candidatePath)) {
+            return rejected('nested-bullet-split-text-outside-target-paragraph')
+          }
+        } else {
+          textTargetPath = candidatePath
+        }
+        entryHadTextStep = true
+      } else {
+        // The terminal split must own its transaction alone.
+        if (entry.steps.length !== 1 || stepIndex !== 0) {
+          return rejected('nested-bullet-split-terminal-transaction-shape')
+        }
+        splitEntry = entry
+        splitStep = step
+        splitStepDoc = stepDoc
+      }
+      let applied
+      try { applied = step.apply(stepDoc) } catch { applied = null }
+      if (applied?.failed || !applied?.doc) {
+        return rejected('nested-bullet-split-step-apply-failed')
+      }
+      entryDoc = applied.doc
+    }
+    if (entryHadTextStep) textEntryStats.push(entryIndex)
+    if (!sameSourceSyncDocument(entryDoc, entry.afterDoc)) {
+      return rejected('nested-bullet-split-transaction-result-mismatch')
+    }
+    currentDoc = entry.afterDoc
+  }
+  if (!splitStep) return rejected('nested-bullet-split-terminal-missing')
+  if (!sameSourceSyncDocument(currentDoc, expectedDoc)) {
+    return rejected('nested-bullet-split-final-document-mismatch')
+  }
+  const step = splitStep
+  const stepDoc = splitStepDoc
+
+  // Shape match against the PRE-SPLIT document.
+  const preSplitDoc = splitEntry.beforeDoc
+  const before = topLevelSourceSyncEntries(preSplitDoc)
   const after = topLevelSourceSyncEntries(expectedDoc)
   if (before.length !== after.length) return rejected('nested-bullet-split-top-level-count')
   const changed = before
@@ -135,27 +259,15 @@ const classify = ({ journal, expectedDoc }) => {
   }
   const match = candidates[0]
 
-  if (journal.transactionCount !== 1 || journal.stepCount !== 1 || journal.entries.length !== 1) {
-    return recognizedRejection('nested-bullet-split-transaction-count')
-  }
-  const entry = journal.entries[0]
-  const step = entry.steps?.[0]
-  const stepDoc = entry.stepDocs?.[0] || entry.beforeDoc
-  if (
-    !sameSourceSyncDocument(entry.beforeDoc, journal.oldDoc) ||
-    !sameSourceSyncDocument(stepDoc, journal.oldDoc) ||
-    !sameSourceSyncDocument(entry.afterDoc, expectedDoc)
-  ) return recognizedRejection('nested-bullet-split-step-document')
-  if (
-    step?.constructor?.name !== 'ReplaceStep' || step.structure !== true ||
-    !Number.isFinite(step.from) || step.from !== step.to ||
-    Number(step.slice?.size || 0) !== 4 ||
-    step.slice?.openStart !== 2 || step.slice?.openEnd !== 2
-  ) return recognizedRejection('nested-bullet-split-step-shape')
-
   const targetPath = [topLevelIndex, match.parentIndex, 1, match.targetIndex]
   const paragraphPath = [...targetPath, 0]
-  const paragraphEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, paragraphPath)
+  // Pending text must have landed in the SAME paragraph the split divided.
+  if (
+    textTargetPath &&
+    JSON.stringify(textTargetPath) !== JSON.stringify(paragraphPath)
+  ) return rejected('nested-bullet-split-text-outside-target-paragraph')
+
+  const paragraphEntry = sourceSyncNodeEntryAtPath(preSplitDoc, paragraphPath)
   const sliceContent = step.slice?.content
   const sliceLeft = sliceContent?.childCount === 2 ? sliceContent.child(0) : null
   const sliceRight = sliceContent?.childCount === 2 ? sliceContent.child(1) : null
@@ -174,8 +286,8 @@ const classify = ({ journal, expectedDoc }) => {
 
   let applied
   try { applied = step.apply(stepDoc) } catch { applied = null }
-  if (applied?.failed || !applied?.doc || !sameSourceSyncDocument(applied.doc, expectedDoc)) {
-    return recognizedRejection('nested-bullet-split-step-result')
+  if (applied?.failed || !applied?.doc) {
+    return rejected('nested-bullet-split-step-apply-failed')
   }
 
   return Object.freeze({
@@ -186,6 +298,11 @@ const classify = ({ journal, expectedDoc }) => {
     targetIndex: match.targetIndex,
     targetPath: Object.freeze(targetPath),
     paragraphPath: Object.freeze(paragraphPath),
+    pendingTextChain: Object.freeze({
+      textStepCount: textEntryStats.length,
+      textTransactionCount: textEntryStats.length
+    }),
+    preSplitDoc,
     leftPath: Object.freeze([topLevelIndex, match.parentIndex, 1, match.targetIndex]),
     rightPath: Object.freeze([topLevelIndex, match.parentIndex, 1, match.targetIndex + 1]),
     previousText: match.previousText,
@@ -276,16 +393,25 @@ const escapedPlainTextBoundary = ({ raw, text, offset }) => {
   return boundary
 }
 
-const patchAuthoredSplit = ({ source, resolved, classification }) => {
+const patchAuthoredSplit = ({ source, resolved, classification, oldText }) => {
   const { row } = resolved
   if (
     row.indent !== '  ' || row.spacing !== ' ' ||
     (row.eol !== '\n' && row.eol !== '\r\n')
   ) return null
+  // E0 P3b: with pending text before the terminal split, `classification.previousText`
+  // is the post-chain pre-split word while the authored row still holds the
+  // PRE-CHAIN word. The boundary proof runs against the OLD text (what
+  // journal.source encodes); the caller splices the final left/right spelling.
+  const textForBoundary = classification.pendingTextChain?.textStepCount > 0
+    ? String(oldText || '')
+    : classification.previousText
   const rawBoundary = escapedPlainTextBoundary({
     raw: row.body,
-    text: classification.previousText,
-    offset: classification.splitOffset
+    text: textForBoundary,
+    offset: classification.pendingTextChain?.textStepCount > 0
+      ? textForBoundary.length
+      : classification.splitOffset
   })
   if (!Number.isFinite(rawBoundary)) return null
   const insertionAt = row.bodyStart + rawBoundary
@@ -376,11 +502,45 @@ export function createListNestedBulletSplitTransactionSourceSyncOwner({
       resolveMarkdownOffset
     })
     if (!resolved) return recognizedRejection('nested-bullet-split-range-unmapped')
-    const patched = patchAuthoredSplit({ source: journal.source, resolved, classification })
+    // The old-doc paragraph text is what journal.source encodes.
+    const oldParagraphEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, classification.paragraphPath)
+    const oldText = oldParagraphEntry?.node?.textContent ?? ''
+    const patched = patchAuthoredSplit({
+      source: journal.source,
+      resolved,
+      classification,
+      oldText
+    })
     if (!patched) return recognizedRejection('nested-bullet-split-source-row-unproven')
+    // E0 P3b: with pending text preceding the terminal split, the authored
+    // row still holds the PRE-CHAIN word while leftText/rightText describe
+    // the post-chain pre-split word. Replacing only the boundary cannot
+    // represent the text change; splice the row's whole body with the final
+    // left/right spelling (the same terminal-state bounded patch shape the
+    // blockquote families use). Without pending text the rewrite is byte
+    // identical to the historical insertion-only patch.
+    let publishMarkdown = patched.markdown
+    let bodyRewrite = null
+    if (classification.pendingTextChain.textStepCount > 0) {
+      const { row } = resolved
+      // Row body must decode to the OLD paragraph text for the rewrite to be
+      // anchored on proven bytes.
+      const bodyMatches = row.body === oldText ||
+        escapedPlainTextBoundary({ raw: row.body, text: oldText, offset: oldText.length }) === row.body.length
+      if (!oldParagraphEntry || !bodyMatches) {
+        return recognizedRejection('nested-bullet-split-old-row-unmapped')
+      }
+      const newBody = `${classification.leftText}${row.eol}${row.indent}${row.token}${row.spacing}${classification.rightText}`
+      publishMarkdown = journal.source.slice(0, row.bodyStart) + newBody + journal.source.slice(row.contentEnd)
+      bodyRewrite = Object.freeze({
+        start: row.bodyStart,
+        end: row.contentEnd,
+        replacement: newBody
+      })
+    }
 
     let valid = false
-    try { valid = validateMarkdown({ markdown: patched.markdown, expectedDoc }) === true } catch { valid = false }
+    try { valid = validateMarkdown({ markdown: publishMarkdown, expectedDoc }) === true } catch { valid = false }
     if (!valid) return recognizedRejection('nested-bullet-split-source-invalid')
 
     const proof = Object.freeze({
@@ -402,18 +562,20 @@ export function createListNestedBulletSplitTransactionSourceSyncOwner({
       step: classification.step,
       stepDetails: journal.stepDetails,
       chainLength: journal.transactionCount,
+      pendingTextChain: classification.pendingTextChain,
       transactionJournal: verified.proof,
       sourceRow: patched.sourceRow,
       rawInsertion: Object.freeze({ at: patched.insertionAt, text: patched.insertion }),
+      pendingBodyRewrite: bodyRewrite,
       sourceDigest: sourceSyncDigest(journal.source),
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
-      markdownDigest: sourceSyncDigest(patched.markdown),
+      markdownDigest: sourceSyncDigest(publishMarkdown),
       callbackDocumentEquivalent: true,
       snapshotMatched: true,
       documentMatched: true
     })
-    return createOwnedPlan({ boundary, markdown: patched.markdown, canonical, expectedDoc, proof })
+    return createOwnedPlan({ boundary, markdown: publishMarkdown, canonical, expectedDoc, proof })
   }
 
   return Object.freeze({

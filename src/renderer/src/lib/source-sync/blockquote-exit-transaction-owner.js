@@ -984,6 +984,60 @@ const resolvePendingEmptyBlockquoteRow = ({
   })
 }
 
+// E0 P3: after the split family PUBLISHES the trailing empty quote paragraph,
+// a later exit journal starts from that transient baseline. An empty paragraph
+// has no visible character to disambiguate which authored `>` line owns it
+// (the publication leaves a bare separator line plus the emptied marker line),
+// so the generic position mapper can land on the separator and orphan the
+// emptied marker as a second quote block. Resolve the transient run
+// structurally: anchor on the previous NONEMPTY sibling's mapped line and
+// collect the consecutive bare quote-marker lines that follow it.
+const resolveTrailingTransientQuoteRun = ({
+  source,
+  doc,
+  quoteEntry,
+  paragraphIndex,
+  topLevelIndex,
+  resolveMarkdownOffset
+}) => {
+  if (paragraphIndex < 1 || !quoteEntry?.node) return null
+  const previous = quoteEntry.node.child(paragraphIndex - 1)
+  if (!isSimpleNonemptyTextblock(previous)) return null
+  const previousTextStart = paragraphContentStart(quoteEntry, paragraphIndex - 1)
+  let previousRawEnd
+  try {
+    previousRawEnd = resolveMarkdownOffset({
+      markdown: source,
+      pmPos: previousTextStart + previous.textContent.length,
+      doc,
+      topLevelIndex,
+      paragraphIndex: paragraphIndex - 1
+    })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(previousRawEnd)) return null
+  let line = lineAtOffset(source, previousRawEnd)
+  if (!line || previousRawEnd < line.start || previousRawEnd > line.end) return null
+  let firstLine = null
+  let lastLine = null
+  for (let guard = 0; guard < 64; guard += 1) {
+    const next = line.end + actualLineEolLength(source, line)
+    if (next <= line.end || next > source.length) break
+    const nextLine = lineAtOffset(source, next)
+    if (!nextLine || nextLine.start !== next) break
+    // quotePrefix only matches a BARE marker line (indent + '>' + spaces), so
+    // this both stops at the quote's raw-region end and at any unmapped
+    // nonempty quote paragraph.
+    if (!quotePrefix(source.slice(nextLine.start, nextLine.end))) break
+    if (!firstLine) firstLine = nextLine
+    lastLine = nextLine
+    line = nextLine
+  }
+  if (!firstLine || !lastLine) return null
+  return Object.freeze({ firstLine, lastLine })
+}
+
 const quoteListRow = ({ source, line, listType }) => {
   if (!line) return null
   const raw = source.slice(line.start, line.end)
@@ -1233,7 +1287,16 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
         resolveMarkdownOffset
       })
       if (!sourceRows || !previousRows) {
-        return recognizedRejection('blockquote-list-exit-pending-range-unmapped')
+        // 0.13.175 trace (04:03:17): a quote-NESTED ordered list's empty-item
+        // exit matched this family's doc shape, but the raw row resolver only
+        // maps the quote's DIRECT `> N. text` rows — positions inside the
+        // nested list come back unmapped. An unmapped range means the family
+        // could not PROVE ownership, so release the journal to the legacy
+        // path (whose candidate still goes through whole-document
+        // validation — a genuinely bad candidate fails closed there). Row
+        // CONTENT mismatches below remain recognized fail-closed: those DID
+        // locate the rows and found them divergent.
+        return rejected('blockquote-list-exit-pending-range-unmapped')
       }
       if (
         !/^<br\s*\/?>$/i.test(previousRows.target.body.trim()) ||
@@ -1488,11 +1551,47 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
     if (journal.source.slice(rawStart, rawEnd) !== textValue) {
       return recognizedRejection('blockquote-exit-raw-text-mismatch')
     }
-    const line = lineAtOffset(journal.source, rawStart)
-    if (!line || rawEnd !== line.end) {
+    const textLine = lineAtOffset(journal.source, rawStart)
+    if (!textLine || rawEnd !== textLine.end) {
       return recognizedRejection('blockquote-exit-not-single-line')
     }
-    const prefixRaw = journal.source.slice(line.start, rawStart)
+    // E0 P3: the split family PUBLISHES the trailing empty quote paragraph as
+    // bare `>` marker lines in the authored source. The exit CONSUMES that
+    // editor-owned slot — replacing the marker run with the exited line keeps
+    // the authored bytes byte-for-byte compatible and prevents repeated
+    // Enter/exit cycles from accumulating bare markers. staged mode trims the
+    // transient out of sourceQuote, so anchor structurally on the empty
+    // paragraph that follows it; a coalesced journal whose exiting paragraph
+    // IS the empty one has no visible character to disambiguate its own line,
+    // so it resolves structurally as well. Without a published run (the
+    // pre-P3 staged flow, or coalesced exits of a nonempty paragraph) the
+    // insertion stays right after the mapped text line.
+    const transientParagraphIndex = textValue === ''
+      ? paragraphIndex
+      : (classification.mode === 'staged' ? paragraphIndex + 1 : -1)
+    let line = textLine
+    let prefixRaw = journal.source.slice(textLine.start, rawStart)
+    let replaceFrom = textLine.end + (textLine.end < journal.source.length ? textLine.eol.length : 0)
+    let replaceTo = replaceFrom
+    if (transientParagraphIndex >= 0) {
+      const run = resolveTrailingTransientQuoteRun({
+        source: journal.source,
+        doc: journal.oldDoc,
+        quoteEntry,
+        paragraphIndex: transientParagraphIndex,
+        topLevelIndex: classification.topLevelIndex,
+        resolveMarkdownOffset
+      })
+      if (textValue === '' && !run) {
+        return recognizedRejection('blockquote-exit-transient-row-unproven')
+      }
+      if (run) {
+        line = run.lastLine
+        prefixRaw = journal.source.slice(run.lastLine.start, run.lastLine.end)
+        replaceFrom = run.firstLine.start
+        replaceTo = run.lastLine.end + actualLineEolLength(journal.source, run.lastLine)
+      }
+    }
     const prefix = quotePrefix(prefixRaw)
     if (!prefix) return recognizedRejection('blockquote-exit-prefix-unowned')
     if (classification.parentType === 'doc' && prefix.indent) {
@@ -1501,14 +1600,14 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
     const exitedPrefix = classification.parentType === 'list_item'
       ? prefix.indent
       : ''
-    const insertionOffset = line.end + (line.end < journal.source.length ? line.eol.length : 0)
+    const insertionOffset = replaceFrom
     const insertion = line.eol +
       exitedPrefix +
       classification.finalInsertedParagraph.textContent +
       line.eol
-    const markdown = journal.source.slice(0, insertionOffset) +
+    const markdown = journal.source.slice(0, replaceFrom) +
       insertion +
-      journal.source.slice(insertionOffset)
+      journal.source.slice(replaceTo)
 
     let semanticOk = false
     try {

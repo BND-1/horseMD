@@ -231,6 +231,60 @@ const planFor = ({
 }
 
 {
+  // 0.13.169 manual trace: Backspace deletes the ONLY character of the
+  // trailing quote paragraph. The family owns the bounded delete — the
+  // author's `> ` marker bytes stay and no serializer `<br />` is written.
+  const source = '> alpha\n>\n> ‘\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('‘')]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 1)
+  const emptied = state.tr.delete(pos, pos + 1)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [emptied],
+    nextCanonical: '> alpha\n>\n> <br />\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, true, `emptied trailing paragraph rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'blockquote-paragraph-emptied')
+  assert.equal(plan.result.markdown, '> alpha\n>\n> \n')
+  assert.equal(plan.proof.emptiedParagraph, true)
+  assert.equal(plan.proof.previousText, '‘')
+  assert.equal(plan.proof.nextText, '')
+  assert.deepEqual(plan.proof.transientBlockquotePath, [0])
+  assert.equal(plan.proof.pendingTextChain.textStepCount, 1)
+  assert.equal(plan.proof.pendingTextChain.textTransactionCount, 1)
+}
+
+{
+  // IME-style chain: the trailing paragraph is emptied across MULTIPLE plain
+  // text transactions before any structural command arrives.
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 1)
+  const first = state.tr.delete(pos, pos + 1)
+  state = state.apply(first)
+  const second = state.tr.delete(pos, pos + 3)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [first, second],
+    nextCanonical: '> alpha\n>\n> <br />\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, true, `gradual emptied chain rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'blockquote-paragraph-emptied')
+  assert.equal(plan.result.markdown, '> alpha\n>\n> \n')
+  assert.equal(plan.proof.pendingTextChain.textStepCount, 2)
+  assert.equal(plan.proof.pendingTextChain.textTransactionCount, 2)
+}
+
+{
+  // Emptying the ONLY paragraph of a quote has no provable raw/semantic
+  // contract (a bare authored `>` cannot round-trip the empty paragraph), so
+  // the family must fail closed — recognized rejection, legacy blocked.
   const source = '> alpha\n'
   const oldDoc = document(quote('alpha'))
   const state = EditorState.create({ schema, doc: oldDoc })
@@ -243,7 +297,54 @@ const planFor = ({
     nextCanonical: '> <br />\n',
     revision: 43
   })
-  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-nonempty')
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'blockquote-paragraph-emptied-single-child')
+  // NOT recognized: the legacy paragraph-emptied path has owned this shape
+  // correctly for years (`>\n>\n` publication) and must stay available
+  // (goal-matrix A2: type→delete in a single-paragraph quote).
+  assert.equal(plan.recognized === true, false)
+}
+
+{
+  // Emptying a MIDDLE quote paragraph is equally unprovable: the authored
+  // `>` separator lines cannot encode an empty paragraph before a sibling.
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 0)
+  const emptied = state.tr.delete(pos, pos + 5)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [emptied],
+    nextCanonical: '> <br />\n>\n> beta\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'blockquote-paragraph-emptied-not-trailing')
+  assert.equal(plan.recognized, true)
+}
+
+{
+  // A structural step after the delete-to-empty is NOT this family's chain:
+  // the pending-text proof must reject it and leave the journal to the
+  // structural owners.
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 1)
+  const removal = state.tr.delete(pos, pos + 4)
+  state = state.apply(removal)
+  const split = state.tr.split(pos)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [removal, split],
+    nextCanonical: '> alpha\n>\n> <br />\n>\n> <br />\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, false)
+  assert.notEqual(plan.reason, 'blockquote-paragraph-emptied')
 }
 
 {
@@ -315,7 +416,7 @@ const planFor = ({
     nextCanonical: '> **alpha**\n',
     revision: 47
   })
-  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-nonempty')
+  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-plain')
 }
 
 {
@@ -334,7 +435,7 @@ const planFor = ({
     nextCanonical: '> # alphaX\n',
     revision: 48
   })
-  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-nonempty')
+  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-plain')
 }
 
 {
@@ -376,11 +477,14 @@ const planFor = ({
     nextCanonical: '> alphaX\n',
     revision: 49
   })
-  assert.equal(plan.reason, 'raw-block-text-mismatch')
+  assert.equal(plan.reason, 'blockquote-paragraph-raw-text-mismatch')
   assert.equal(plan.recognized, true)
 }
 
 {
+  // A trailing single `*` re-parses as literal text (no unmatched emphasis),
+  // so the final-state patch publishes the authored byte as-is; the semantic
+  // validator on the final candidate replaced the per-step syntax guard.
   const source = '> alpha\n'
   const oldDoc = document(quote('alpha'))
   const state = EditorState.create({ schema, doc: oldDoc })
@@ -393,8 +497,8 @@ const planFor = ({
     nextCanonical: '> alpha\\*\n',
     revision: 50
   })
-  assert.equal(plan.reason, 'syntax-sensitive-insert')
-  assert.equal(plan.recognized, true)
+  assert.equal(plan.ok, true, `literal star rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.markdown, '> alpha*\n')
 }
 
 {
@@ -457,7 +561,56 @@ const planFor = ({
     nextCanonical: '> * itemX\n',
     revision: 53
   })
-  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-nonempty')
+  assert.equal(plan.reason, 'blockquote-paragraph-not-simple-plain')
 }
 
-console.log('PASS blockquote paragraph transaction owner: one direct non-empty plain paragraph maps by PM ReplaceStep while prefix/BOM/EOL survive and empty, split, marks, nested, multi-paragraph, neighbour, syntax, mismatch and stale cases fail closed')
+{
+  // E0 (0.13.171 trace): typing "1" then "." inside the quote passes through
+  // an instant where the paragraph text is EXACTLY a list marker. Those bytes
+  // re-parse as an ordered list inside a `> ` line, so no bounded patch can
+  // be valid yet — hold the journal for the next transaction instead of
+  // failing closed.
+  const source = '> alpha\n>\n> 1\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('1')]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 1)
+  const dotted = state.tr.insertText('.', pos + 1)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [dotted],
+    nextCanonical: '> alpha\n>\n> 1\\.\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'blockquote-paragraph-syntax-pending')
+  assert.equal(plan.deferred, true)
+  assert.equal(plan.holdJournal, true)
+  assert.equal(plan.recognized === true, false)
+}
+
+{
+  // The NEXT characters resolve the marker. The deferred "." transaction is
+  // still in the held journal, so the resuming journal carries BOTH steps and
+  // publishes "1.x" atomically through the normal owned path.
+  const source = '> alpha\n>\n> 1\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('1')]))
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const pos = directParagraphTextPos(oldDoc, 0, 1)
+  const dotted = state.tr.insertText('.', pos + 1)
+  state = state.apply(dotted)
+  const resolved = state.tr.insertText('x', pos + 2)
+  const { plan } = planFor({
+    source,
+    oldDoc,
+    transactions: [dotted, resolved],
+    nextCanonical: '> alpha\n>\n> 1.x\n',
+    revision: 43
+  })
+  assert.equal(plan.ok, true, `marker-resolved text rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'blockquote-paragraph-text-change')
+  assert.equal(plan.result.markdown, '> alpha\n>\n> 1.x\n')
+  assert.equal(plan.proof.chainLength, 2)
+}
+
+console.log('PASS blockquote paragraph transaction owner: one direct non-empty plain paragraph maps by PM ReplaceStep while prefix/BOM/EOL survive and empty, split, marks, nested, multi-paragraph, neighbour, syntax, mismatch and stale cases fail closed; bare marker instants hold the journal')

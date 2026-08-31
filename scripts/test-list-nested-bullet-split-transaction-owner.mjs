@@ -296,8 +296,143 @@ const orderedPlan = startOwner.plan({
 assert.equal(orderedPlan.ok, false)
 assert.equal(orderedPlan.recognized, false)
 
+// E0 P3b (0.13.180 trace 09:47): Chinese IME commit into the target nested
+// item followed by an IMMEDIATE Enter is one journal — text ReplaceSteps
+// inside the target paragraph, then the terminal splitListItem. The owner
+// must prove the chain and publish the same bounded row patch.
+{
+  const paragraphPath = [1, 1, 1, 0, 0]
+  const paragraphEntry = sourceSyncNodeEntryAtPath(oldDoc, paragraphPath)
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const transactions = []
+  // IME-shaped composition: replace the whole word progressively —
+  // "gamma" → "ga" (composition) → "gab" (commit), all inside the target.
+  transactions.push(state.tr.insertText('ga', paragraphEntry.contentStart, paragraphEntry.contentStart + 5))
+  state = state.apply(transactions[0])
+  transactions.push(state.tr.insertText('b', paragraphEntry.contentStart + 2))
+  state = state.apply(transactions[1])
+  const split = captureSplit(state.doc, paragraphPath, 3)
+  assert.equal(split.handled, true)
+  transactions.push(split.transaction)
+  const journal = createSourceSyncTransactionJournal()
+  let checkpoint = null
+  let currentDoc = oldDoc
+  for (const transaction of transactions) {
+    const captured = journal.captureOrAdvance({
+      checkpoint,
+      snapshot: createSourceSyncSnapshot({
+        revision: 171,
+        source,
+        canonical: previous,
+        doc: oldDoc,
+        owner: 'fixture',
+        family: 'fixture'
+      }),
+      transactions: [transaction],
+      oldDoc: currentDoc,
+      newDoc: transaction.doc
+    })
+    assert.equal(captured.ok, true, captured.reason)
+    checkpoint = captured.checkpoint
+    currentDoc = transaction.doc
+  }
+  const expectedDoc = split.transaction.doc
+  const chainSnapshot = createSourceSyncSnapshot({
+    revision: 171,
+    source,
+    canonical: previous,
+    doc: oldDoc,
+    owner: 'fixture',
+    family: 'fixture'
+  })
+  // Final texts: "gab" | "" (split at end after the IME replacement).
+  const chainExpected = '﻿before\r\n\r\n+ alpha\r\n+ beta\r\n  + gab\r\n  + \r\n  + delta\r\n+ omega\r\n\r\nafter\r\n'
+  const chainOwner = createListNestedBulletSplitTransactionSourceSyncOwner({
+    resolveMarkdownOffset: ({ pmPos, markdown }) =>
+      pmPos === sourceSyncNodeEntryAtPath(oldDoc, paragraphPath).contentStart
+        ? markdown.indexOf('gamma')
+        : -1,
+    validateMarkdown: ({ markdown, expectedDoc: doc }) =>
+      markdown === chainExpected && doc.eq(expectedDoc)
+  })
+  const chainPlan = chainOwner.plan({
+    journal: checkpoint,
+    activeJournal: checkpoint,
+    snapshot: chainSnapshot,
+    currentSource: source,
+    currentCanonical: previous,
+    canonical: 'chain-canonical',
+    expectedDoc,
+    callbackDocumentEquivalent: true
+  })
+  assert.equal(chainPlan.ok, true, JSON.stringify(chainPlan))
+  assert.equal(chainPlan.result.markdown, chainExpected)
+  assert.deepEqual(chainPlan.proof.pendingTextChain, { textStepCount: 2, textTransactionCount: 2 })
+  assert.equal(chainPlan.proof.leftText, 'gab')
+  assert.equal(chainPlan.proof.rightText, '')
+
+  // Negative: a text step OUTSIDE the target paragraph (sibling item) must
+  // stay fail-closed instead of being swallowed into the chain.
+  const outsideState = EditorState.create({ schema, doc: oldDoc })
+  const outsideTransactions = []
+  const siblingEntry = sourceSyncNodeEntryAtPath(oldDoc, [1, 0, 0])
+  outsideTransactions.push(outsideState.tr.insertText('X', siblingEntry.contentStart))
+  const outsideSplit = captureSplit(
+    outsideState.apply(outsideTransactions[0]).doc,
+    paragraphPath,
+    2
+  )
+  assert.equal(outsideSplit.handled, true)
+  outsideTransactions.push(outsideSplit.transaction)
+  const outsideJournal = createSourceSyncTransactionJournal()
+  let outsideCheckpoint = null
+  let outsideDocCursor = oldDoc
+  for (const transaction of outsideTransactions) {
+    const captured = outsideJournal.captureOrAdvance({
+      checkpoint: outsideCheckpoint,
+      snapshot: createSourceSyncSnapshot({
+        revision: 172,
+        source,
+        canonical: previous,
+        doc: oldDoc,
+        owner: 'fixture',
+        family: 'fixture'
+      }),
+      transactions: [transaction],
+      oldDoc: outsideDocCursor,
+      newDoc: transaction.doc
+    })
+    assert.equal(captured.ok, true, captured.reason)
+    outsideCheckpoint = captured.checkpoint
+    outsideDocCursor = transaction.doc
+  }
+  const outsidePlan = chainOwner.plan({
+    journal: outsideCheckpoint,
+    activeJournal: outsideCheckpoint,
+    snapshot: createSourceSyncSnapshot({
+      revision: 172,
+      source,
+      canonical: previous,
+      doc: oldDoc,
+      owner: 'fixture',
+      family: 'fixture'
+    }),
+    currentSource: source,
+    currentCanonical: previous,
+    canonical: 'outside-canonical',
+    expectedDoc: outsideSplit.transaction.doc,
+    callbackDocumentEquivalent: true
+  })
+  assert.equal(outsidePlan.ok, false)
+  // A foreign text step means the journal is NOT this family's shape — a
+  // plain rejection so legacy stays available (the blockquote families hit
+  // this same branch with quote-paragraph text + a slice-2 split).
+  assert.equal(outsidePlan.recognized, false)
+  assert.equal(outsidePlan.reason, 'nested-bullet-split-text-outside-target-paragraph')
+}
+
 assert.throws(
   () => createListNestedBulletSplitTransactionSourceSyncOwner({ resolveMarkdownOffset: () => 0 }),
   /requires validateMarkdown/
 )
-console.log('PASS nested bullet split transaction owner: middle/end splitListItem uses one exact ReplaceStep at paragraph contentStart+splitOffset, raw byte boundary preserves authored backslash escapes while inserting only EOL+indent+marker+spacing; middle nested index works, unsafe row/wrong Step fail closed, start/task/ordered remain separate')
+console.log('PASS nested bullet split transaction owner: middle/end splitListItem uses one exact ReplaceStep at paragraph contentStart+splitOffset, raw byte boundary preserves authored backslash escapes while inserting only EOL+indent+marker+spacing; middle nested index works, unsafe row/wrong Step fail closed, start/task/ordered remain separate; IME pending-text + terminal Enter chain publishes the same bounded patch while foreign text steps fail closed')

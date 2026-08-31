@@ -3,6 +3,7 @@ import { Schema } from '@milkdown/prose/model'
 import { EditorState } from '@milkdown/prose/state'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
+import { areSourceDocumentsEquivalent } from '../src/renderer/src/lib/source-transaction-sync.js'
 import { pmPosToMarkdownOffset } from '../src/renderer/src/components/editor-source-map.js'
 import {
   BLOCKQUOTE_SPLIT_TRANSACTION_BOUNDARY,
@@ -241,7 +242,7 @@ const planFor = ({
   assert.equal(plan.proof.splitIndex, 1)
 }
 
-for (const [label, offset] of [['start', 0], ['end', 5]]) {
+for (const [label, offset] of [['start', 0]]) {
   const source = '> alpha\n'
   const oldDoc = document(quote('alpha'))
   const state = EditorState.create({ schema, doc: oldDoc })
@@ -251,7 +252,7 @@ for (const [label, offset] of [['start', 0], ['end', 5]]) {
     canonical: source,
     oldDoc,
     transactions: [split],
-    nextCanonical: label === 'start' ? '>\n>\n> alpha\n' : '> alpha\n>\n>\n',
+    nextCanonical: '>\n>\n> alpha\n',
     revision: 63 + offset
   })
   assert.equal(plan.ok, false)
@@ -260,6 +261,139 @@ for (const [label, offset] of [['start', 0], ['end', 5]]) {
     true,
     `${label} split was not rejected narrowly: ${plan.reason}`
   )
+}
+
+{
+  // Enter at the very end of the quote's paragraph (0.13.170 trace): the new
+  // empty trailing paragraph is owned via the path-scoped transient — the
+  // authored `> ` separator bytes survive and no `<br />` leaks.
+  const source = '> alpha\n'
+  const oldDoc = document(quote('alpha'))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const split = state.tr.split(paragraphTextStart(oldDoc, 0) + 5)
+  const { plan } = planFor({
+    source,
+    canonical: source,
+    oldDoc,
+    transactions: [split],
+    nextCanonical: '> alpha\n>\n>\n',
+    revision: 68
+  })
+  assert.equal(plan.ok, true, `trailing split rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'blockquote-paragraph-split')
+  assert.equal(plan.result.markdown, '> alpha\n>\n> \n')
+  assert.equal(plan.proof.kind, 'transaction-blockquote-split-proof')
+  assert.equal(plan.proof.trailingEmptySplit, true)
+  assert.deepEqual(plan.proof.transientBlockquotePath, [0])
+  assert.equal(plan.proof.leftText, 'alpha')
+  assert.equal(plan.proof.rightText, '')
+  assert.equal(plan.proof.splitOffset, 5)
+}
+
+{
+  // Same trailing split, but with a production-shaped semantic validator:
+  // the owner's transient option must be SUFFICIENT for parse-vs-doc
+  // equivalence (parsed markdown drops the trailing `> ` paragraph).
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const split = state.tr.split(paragraphTextStart(oldDoc, 0, 1) + 'beta'.length)
+  const { plan } = planFor({
+    source,
+    canonical: source,
+    oldDoc,
+    transactions: [split],
+    nextCanonical: '> alpha\n>\n> beta\n>\n>\n',
+    revision: 69,
+    validateMarkdown: ({ markdown, expectedDoc, semanticOptions = {} }) => {
+      assert.equal(markdown, '> alpha\n>\n> beta\n>\n> \n')
+      const parsed = document(quote([paragraph('alpha'), paragraph('beta')]))
+      return areSourceDocumentsEquivalent(parsed, expectedDoc, semanticOptions) &&
+        !areSourceDocumentsEquivalent(parsed, expectedDoc, {})
+    }
+  })
+  assert.equal(plan.ok, true, `trailing split failed real semantic bridge: ${JSON.stringify(plan)}`)
+  assert.equal(plan.proof.trailingEmptySplit, true)
+  assert.equal(plan.proof.leftText, 'beta')
+}
+
+{
+  // 0.13.170 trace (16:39:14): a pending text edit in the LAST quote
+  // paragraph followed by an immediate Enter at its end is ONE journal —
+  // the whole chain publishes as a single bounded patch.
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const pos = paragraphTextStart(oldDoc, 0, 1)
+  const typed = state.tr.insertText('X', pos + 'beta'.length)
+  state = state.apply(typed)
+  const split = state.tr.split(pos + 'betaX'.length)
+  const { plan } = planFor({
+    source,
+    canonical: source,
+    oldDoc,
+    transactions: [typed, split],
+    nextCanonical: '> alpha\n>\n> betaX\n>\n>\n',
+    revision: 70
+  })
+  assert.equal(plan.ok, true, `pending text + trailing split rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.markdown, '> alpha\n>\n> betaX\n>\n> \n')
+  assert.equal(plan.proof.leftText, 'betaX')
+  assert.equal(plan.proof.rightText, '')
+  assert.equal(plan.proof.trailingEmptySplit, true)
+  assert.equal(plan.proof.chainLength, 2)
+}
+
+{
+  // Enter at the end of a NON-trailing quote child leaves an empty paragraph
+  // before a sibling — no transient contract exists there; fail closed.
+  const source = '> alpha\n>\n> beta\n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta')]))
+  const state = EditorState.create({ schema, doc: oldDoc })
+  const split = state.tr.split(paragraphTextStart(oldDoc, 0, 0) + 'alpha'.length)
+  const { plan } = planFor({
+    source,
+    canonical: source,
+    oldDoc,
+    transactions: [split],
+    nextCanonical: '> alpha\n>\n>\n>\n> beta\n',
+    revision: 71
+  })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'blockquote-split-target-count')
+}
+
+{
+  // P3d (0.13.171 user trace): pending text + Enter at the end of the last
+  // NONEMPTY paragraph while a trailing empty transient is already published.
+  // The whole trailing empty RUN rides the proof-owned transient.
+  const source = '> alpha\n>\n> beta\n>\n> \n'
+  const oldDoc = document(quote([paragraph('alpha'), paragraph('beta'), paragraph()]))
+  let state = EditorState.create({ schema, doc: oldDoc })
+  const pos = paragraphTextStart(oldDoc, 0, 1)
+  const typed = state.tr.insertText('X', pos + 'beta'.length)
+  state = state.apply(typed)
+  const split = state.tr.split(pos + 'betaX'.length)
+  const { plan } = planFor({
+    source,
+    canonical: source,
+    oldDoc,
+    transactions: [typed, split],
+    nextCanonical: '> alpha\n>\n> betaX\n>\n> <br />\n>\n> <br />\n',
+    revision: 73,
+    validateMarkdown: ({ markdown, expectedDoc, semanticOptions = {} }) => {
+      assert.equal(markdown, '> alpha\n>\n> betaX\n>\n> \n>\n> \n')
+      const parsed = document(quote([paragraph('alpha'), paragraph('betaX')]))
+      return areSourceDocumentsEquivalent(parsed, expectedDoc, semanticOptions) &&
+        !areSourceDocumentsEquivalent(parsed, expectedDoc, {})
+    }
+  })
+  assert.equal(plan.ok, true, `trailing-run split rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.reason, 'blockquote-paragraph-split')
+  assert.equal(plan.proof.trailingEmptySplit, true)
+  assert.equal(plan.proof.leftText, 'betaX')
+  assert.equal(plan.proof.rightText, '')
+  assert.equal(plan.proof.chainLength, 2)
 }
 
 {
@@ -437,4 +571,4 @@ assert.throws(
   /requires validateMarkdown/
 )
 
-console.log('PASS blockquote split transaction owner: journal-proven middle Enter and rapid follow-up patch one authored quote line while BOM/CRLF/prefix/neighbours survive and empty, cross-child, marks, mismatch, semantic and stale cases fail closed')
+console.log('PASS blockquote split transaction owner: journal-proven middle and trailing Enter (incl. pending text chains) patch one authored quote line while BOM/CRLF/prefix/neighbours survive and empty-left, non-trailing empty-right, cross-child, marks, mismatch, semantic and stale cases fail closed')

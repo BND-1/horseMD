@@ -308,6 +308,27 @@ const semanticJson = (node, {
     }
     if (Array.isArray(next.content)) {
       next.content = next.content.map((child, index) => visit(child, [...path, index]))
+      // Merge adjacent text runs with identical marks: ProseMirror splits
+      // text at potential mark boundaries (e.g. a lone `~` inside pasted
+      // Markdown) while the raw parse keeps them as one run — same visible
+      // text, same marks, different node counts. Concatenation is their
+      // canonical form, so merge before comparing (0.13.179 paste trace:
+      // content[N].content 12 vs 14 nodes with byte-identical text).
+      const merged = []
+      for (const child of next.content) {
+        const previous = merged[merged.length - 1]
+        if (
+          previous &&
+          child?.type === 'text' &&
+          previous.type === 'text' &&
+          JSON.stringify(previous.marks || null) === JSON.stringify(child.marks || null)
+        ) {
+          previous.text = String(previous.text || '') + String(child.text || '')
+          continue
+        }
+        merged.push(child)
+      }
+      next.content = merged
     }
     if (
       next.type === 'paragraph' &&
@@ -406,20 +427,23 @@ const semanticJson = (node, {
         trailingEmptyParagraphs += 1
       }
       const trailing = next.content.at(-1)
-      const previousChild = next.content.at(-2)
+      // The child BEFORE the trailing empty run — with several consecutive
+      // editor-owned empties (repeated Enter over a published transient,
+      // E0 P3d) the previous NONEMPTY sibling is not content.at(-2).
+      const previousChild = next.content[next.content.length - 1 - trailingEmptyParagraphs]
       const trailingEmpty = trailing?.type === 'paragraph' && !trailing?.content?.length
       const previousTextParagraph =
         previousChild?.type === 'paragraph' && Array.isArray(previousChild.content) && previousChild.content.length > 0
       const previousList =
         previousChild?.type === 'bullet_list' || previousChild?.type === 'ordered_list'
-      if (
-        trailingEmptyParagraphs === 1 &&
-        trailingEmpty &&
-        (
-          (ignoreTrailingEmptyBlockquoteParagraph && previousTextParagraph) ||
-          (ignoreTrailingEmptyBlockquoteAtOwnedPath && (previousTextParagraph || previousList))
-        )
-      ) {
+      // The legacy boolean stays exactly-one; a proof-owned path collapses the
+      // WHOLE consecutive run (mirroring the list_item empty-paragraph
+      // collapse above) because authored `>` bytes cannot encode any of them.
+      const legacySingle = ignoreTrailingEmptyBlockquoteParagraph &&
+        trailingEmptyParagraphs === 1 && previousTextParagraph
+      const ownedRun = ignoreTrailingEmptyBlockquoteAtOwnedPath &&
+        trailingEmptyParagraphs >= 1 && (previousTextParagraph || previousList)
+      if (trailingEmpty && (legacySingle || ownedRun)) {
         if (ignoreSingleTrailingSpaceAtOwnedPath && previousTextParagraph) {
           const lastText = previousChild.content.at(-1)
           const text = lastText?.type === 'text' ? String(lastText.text || '') : ''
@@ -429,13 +453,16 @@ const semanticJson = (node, {
               ...lastText,
               text: text.slice(0, -1)
             }
-            next.content[next.content.length - 2] = {
+            next.content[next.content.length - 1 - trailingEmptyParagraphs] = {
               ...previousChild,
               content: previousContent
             }
           }
         }
-        next.content = next.content.slice(0, -1)
+        next.content = next.content.slice(
+          0,
+          next.content.length - (ownedRun ? trailingEmptyParagraphs : 1)
+        )
       }
     }
     if (Array.isArray(next.marks)) next.marks = next.marks.map((mark) => visit(mark, path))

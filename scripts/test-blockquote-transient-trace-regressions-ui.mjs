@@ -242,19 +242,25 @@ await mkdir(root, { recursive: true })
     await sleep(1000)
     const state = await snapshot(app)
     assertClean(state, 'quote rapid-text+Enter')
+    // E0 P3: the WHOLE physical chain (one ReplaceStep per character plus the
+    // terminal split) now publishes as ONE bounded patch via the split family
+    // — that IS the atomic pending-text mapping this scenario was written to
+    // demand from the exit-pending path.
     const publication = state.preserve.find((entry) =>
-      entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
-      entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof' &&
-      entry.integrityProof?.mappedPreSplitText === true
+      entry.reason === 'blockquote-paragraph-split' &&
+      entry.integrityProof?.kind === 'transaction-blockquote-split-proof' &&
+      entry.integrityProof?.trailingEmptySplit === true
     )
     assert.ok(publication, `rapid text+Enter did not atomically map pending text: ${JSON.stringify(state)}`)
-    assert.equal(publication.integrityProof.preSplitTextStepCount > 0, true)
-    assert.equal(publication.integrityProof.textChangeMode, 'suffix')
+    assert.equal(publication.integrityProof.chainLength >= 6, true,
+      'split publication did not retain the full character chain')
+    assert.equal(publication.integrityProof.leftText, 'quote-imerapid')
+    assert.equal(publication.integrityProof.rightText, '')
     assert.equal(state.coordinator.some((entry) =>
       entry.phase === 'published' &&
       entry.owner === 'transaction' &&
-      entry.family === 'blockquote-paragraph-exit' &&
-      entry.reason === 'trailing-empty-blockquote-paragraph-created'
+      entry.family === 'blockquote-paragraph-split' &&
+      entry.reason === 'blockquote-paragraph-split'
     ), true, `rapid text+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
     assert.equal(await toggleSource(app), true, 'could not inspect rapid text+Enter source')
     finalSource = await waitFor(() => visibleSource(app), 'rapid text+Enter source did not open')

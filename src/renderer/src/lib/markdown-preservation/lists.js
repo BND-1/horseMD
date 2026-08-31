@@ -409,6 +409,39 @@ export const preserveGeneratedBulletMarkers = (source, markdown) => {
     if (!preserveMarker && nextMarker === '*' && (uninterruptedFromPrevious || newlyNestedFromPrevious)) {
       preserveMarker = compatibleMarker(previous.marker, nextMarker)
     }
+    // Enter at the end of a nested item exits to a NEW EMPTY row at a
+    // SHALLOWER indent (e.g. `  * child` → new top-level empty bullet). The
+    // previous sibling is deeper, so neither inheritance above applies and a
+    // typed `-` used to flicker to the serializer default `*` until the next
+    // edit re-matched by text. The new row is still empty and carries no
+    // text anchor of its own; inherit the authored spelling of the nearest
+    // PRECEDING canonical row at the SAME indent (looking it up by position
+    // in the source list). Inheritance reads the spelling only — the source
+    // row is NOT consumed, because its text-matched counterpart already used
+    // it and the spelling legitimately describes the whole level.
+    if (!preserveMarker && nextMarker === '*' && !listText(nextLine).trim()) {
+      for (let back = index - 1; back >= 0; back -= 1) {
+        const backLine = nextLines[back]
+        if (!backLine) break
+        const backIndent = backLine.match[1].length
+        if (backIndent > nextIndent) continue
+        if (backIndent < nextIndent) break
+        // The nearest same-indent canonical row's authored spelling — find it
+        // in the source by exact text (this row was proven to exist above us
+        // with a stable spelling), else by the last source row at this indent.
+        const backText = listText(backLine)
+        const byText = sourceByText
+          .get(`${nextIndent} ${backText}`)
+          ?.find((candidate) => candidate.match[1].length === nextIndent)
+        const sameLevelSource = byText ||
+          sourceLines.filter((candidate) => candidate.match[1].length === nextIndent).at(-1)
+        if (sameLevelSource) {
+          const inherited = compatibleMarker(sameLevelSource.match[2], nextMarker)
+          if (inherited) preserveMarker = inherited
+        }
+        break
+      }
+    }
     if (preserveMarker && preserveMarker !== nextMarker) {
       replacements.push({
         start: nextLine.start + nextIndent,

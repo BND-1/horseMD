@@ -71,8 +71,13 @@ const resolveMarkdownOffset = ({ markdown, pmPos, doc }) => {
 
 const validateMarkdown = ({ markdown, expectedDoc }) => {
   const actual = markdown.replace(/\r\n|\r/g, '\n').replace(/\n+$/, '').split('\n\n')
+    .filter((block) => block !== '')
   const expected = []
-  expectedDoc.forEach((node) => expected.push(node.textContent || ''))
+  // Mirror production: top-level empty paragraphs are editor-owned transients
+  // the semantic comparator ignores.
+  expectedDoc.forEach((node) => {
+    if ((node.textContent || '') !== '') expected.push(node.textContent)
+  })
   return JSON.stringify(actual) === JSON.stringify(expected)
 }
 
@@ -301,4 +306,122 @@ assert.equal(owner.plan({
   callbackDocumentEquivalent: false
 }).reason, 'plain-paragraph-callback-document-mismatch')
 
-console.log('PASS plain paragraph transaction owner: shared journal replay owns rapid ReplaceStep chains and rejects syntax, structural, list and stale families')
+// --- E0 P3c: the terminal top-level split family (IME pending text + Enter) ---
+
+const splitOwner = createPlainParagraphTransactionSourceSyncOwner({
+  requireTerminalSplit: true,
+  resolveMarkdownOffset,
+  validateMarkdown
+})
+const splitJournalFactory = createSourceSyncTransactionJournal()
+const planSplit = ({ transactions, canonical = 'canonical\n' }) => {
+  const snap = createSourceSyncSnapshot({
+    revision: 21,
+    source,
+    canonical: source,
+    doc: oldDoc
+  })
+  let checkpoint = null
+  let currentDoc = oldDoc
+  for (const transaction of transactions) {
+    const captured = splitJournalFactory.captureOrAdvance({
+      checkpoint,
+      snapshot: snap,
+      transactions: [transaction],
+      oldDoc: currentDoc,
+      newDoc: transaction.doc
+    })
+    assert.equal(captured.ok, true)
+    checkpoint = captured.checkpoint
+    currentDoc = transaction.doc
+  }
+  return splitOwner.plan({
+    journal: checkpoint,
+    activeJournal: checkpoint,
+    snapshot: snap,
+    currentSource: source,
+    currentCanonical: source,
+    canonical,
+    expectedDoc: currentDoc,
+    callbackDocumentEquivalent: true
+  })
+}
+const insertAt = (before, paragraphIndex, offset, value) => {
+  const range = paragraphRange(before, paragraphIndex)
+  return transactionForStep(
+    before,
+    new ReplaceStep(
+      range.start + offset,
+      range.start + offset,
+      new Slice(Fragment.from(schema.text(value)), 0, 0)
+    )
+  )
+}
+const splitAt = (before, paragraphIndex, offset) => transactionForStep(
+  before,
+  new ReplaceStep(
+    paragraphRange(before, paragraphIndex).start + offset,
+    paragraphRange(before, paragraphIndex).start + offset,
+    new Slice(Fragment.from([paragraph(), paragraph()]), 1, 1),
+    true
+  )
+)
+
+{
+  // 0.13.170 16:38:54 trace: a pending text chain (one committed IME run is
+  // enough to model it) followed by an IMMEDIATE Enter at the paragraph end.
+  const typed = insertAt(oldDoc, 0, 'alpha'.length, 'X')
+  const split = splitAt(typed.doc, 0, 'alphaX'.length)
+  const plan = planSplit({ transactions: [typed, split] })
+  assert.equal(plan.ok, true, `terminal split rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.decision, 'owned')
+  assert.equal(plan.family, 'plain-paragraph-terminal-split')
+  assert.equal(plan.boundary, 'transaction-plain-paragraph-split')
+  assert.equal(plan.result.reason, 'plain-paragraph-split')
+  assert.equal(plan.proof.kind, 'transaction-plain-paragraph-split-proof')
+  assert.equal(plan.proof.terminalSplit, true)
+  assert.equal(plan.proof.chainLength, 2)
+  // Minimal separator: the authored blank boundary after the paragraph is
+  // already present, so the split adds NO extra bytes; the editor-owned
+  // empty paragraph itself is not serialized (top-level empties transient).
+  assert.equal(plan.result.markdown, 'alphaX\n\nbeta\n')
+}
+
+{
+  // A pure text journal is NOT this family — it stays with the existing
+  // plain-paragraph authority paths.
+  const typed = insertAt(oldDoc, 0, 'alpha'.length, 'X')
+  const plan = planSplit({ transactions: [typed] })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'phase1-terminal-split-missing')
+}
+
+{
+  // A structural step that is not the FINAL step stays out of contract.
+  const split = splitAt(oldDoc, 0, 'alpha'.length)
+  const typed = insertAt(split.doc, 2, 0, 'Z')
+  const plan = planSplit({ transactions: [split, typed] })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'phase1-structural-step')
+}
+
+{
+  // Two structural steps in one journal: the first is already non-terminal,
+  // so it rejects before a second could ever be accepted.
+  const split = splitAt(oldDoc, 0, 'alpha'.length)
+  const splitAgain = splitAt(split.doc, 2, 'beta'.length)
+  const plan = planSplit({ transactions: [split, splitAgain] })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'phase1-structural-step')
+}
+
+{
+  // Enter at the paragraph START leaves an empty LEFT paragraph — no mapper
+  // contract, fail closed.
+  const split = splitAt(oldDoc, 0, 0)
+  const plan = planSplit({ transactions: [split] })
+  assert.equal(plan.ok, false)
+  assert.equal(plan.reason, 'phase1-result-empty-paragraph')
+}
+
+console.log('PASS plain paragraph transaction owner: shared journal replay owns rapid ReplaceStep chains and the IME+Enter terminal split while rejecting no-split, mid-chain structural, double-structural, empty-left, syntax, list and stale families')

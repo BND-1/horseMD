@@ -724,6 +724,16 @@ export default function Editor({
     // Structural families share one revision-bound journal and one publication
     // loop. Adding quote/table ownership means registering another focused owner
     // here, not adding a new markdownUpdated/forced-flush canonical branch.
+    // Narrow focused family for pending-text chains that end in ONE terminal
+    // top-level split (0.13.170 16:38:54: IME commit + immediate Enter). Pure
+    // text journals never match it, so existing paragraph authority paths are
+    // untouched. Declared before the registry below, which dispatches it.
+    const plainParagraphSplitTransactionSourceSyncOwner =
+      createPlainParagraphTransactionSourceSyncOwner({
+        requireTerminalSplit: true,
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const structuralTransactionSourceSyncOwners = Object.freeze([
       Object.freeze({
         key: 'list-nested-empty-bullet-tail-indent',
@@ -954,6 +964,16 @@ export default function Editor({
         })
       }),
       Object.freeze({
+        key: 'plain-paragraph-split',
+        owner: plainParagraphSplitTransactionSourceSyncOwner,
+        traceKey: '__hmPlainParagraphTransactionTrace',
+        generatedScratchEligible: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-plain-paragraph-split-markdown-updated',
+          'forced-flush': 'transaction-plain-paragraph-split-forced-flush'
+        })
+      }),
+      Object.freeze({
         key: 'blockquote-paragraph',
         owner: blockquoteParagraphTransactionSourceSyncOwner,
         traceKey: '__hmBlockquoteTransactionTrace',
@@ -1062,6 +1082,24 @@ export default function Editor({
         })
       })
     ])
+    // A user-test session launched with `--horsemd-input-trace` keeps the
+    // in-page evidence arrays alive from the start, so a reported
+    // first-divergence can be read back (CDP attach, or the on-warning dump
+    // below) instead of requiring a fresh instrumented repro. Normal builds
+    // never initialize these arrays; every consumer stays push-only.
+    if (window.api?.inputTraceEnabled === true) {
+      for (const key of [
+        '__hmPreserveLog',
+        '__hmSourceIntegrityTrace',
+        '__hmSourceIntegrityDiffTrace',
+        '__hmSourceSyncCoordinatorTrace',
+        '__hmSourceSyncTransactionJournalTrace',
+        '__hmFlushTrace',
+        ...new Set(structuralTransactionSourceSyncOwners.map((entry) => entry.traceKey))
+      ]) {
+        if (!Array.isArray(globalThis[key])) globalThis[key] = []
+      }
+    }
     const plainParagraphTransactionSourceSyncOwner =
       createPlainParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -1561,6 +1599,35 @@ export default function Editor({
       if (lastSourceSyncWarning?.signature === signature && now - lastSourceSyncWarning.at < 1500) return
       lastSourceSyncWarning = { signature, at: now }
       traceEditorEvent('source-sync-integrity-failure', { reason: signature })
+      // Persist the in-page decision evidence next to the input log so a
+      // user-test divergence can be diagnosed after the app quits. Doc-shaped
+      // fields (parsed/expected/candidate) are dropped — digests, reasons,
+      // steps and proofs are what locate a first-divergence.
+      if (window.api?.inputTraceEnabled === true) {
+        const tail = (key, size) => (Array.isArray(globalThis[key]) ? globalThis[key].slice(-size) : [])
+        traceEditorEvent('source-sync-evidence-dump', {
+          reason: signature,
+          diff: tail('__hmSourceIntegrityDiffTrace', 6),
+          preserve: tail('__hmPreserveLog', 12).map(({ source, previous, next, markdown, ...entry }) => entry),
+          integrity: tail('__hmSourceIntegrityTrace', 12).map((entry) => ({
+            ok: entry?.ok,
+            semanticOk: entry?.semanticOk,
+            listSlotsMatch: entry?.listSlotsMatch,
+            preservationReason: entry?.preservationReason,
+            validationSite: entry?.validationSite,
+            candidateTail: String(entry?.candidate || '').slice(-300),
+            canonicalTail: String(entry?.canonical || '').slice(-300)
+          })),
+          coordinator: tail('__hmSourceSyncCoordinatorTrace', 12),
+          journal: tail('__hmSourceSyncTransactionJournalTrace', 12),
+          flush: tail('__hmFlushTrace', 8),
+          owners: Object.fromEntries(
+            [...new Set(structuralTransactionSourceSyncOwners.map((entry) => entry.traceKey))]
+              .map((key) => [key, tail(key, 12)])
+              .filter(([, entries]) => entries.length > 0)
+          )
+        })
+      }
       fireToast(tRef.current('save.sourceSyncMismatch'), { sticky: true })
     }
 
@@ -2259,6 +2326,54 @@ export default function Editor({
               ownedStructuralTransaction
             )
             if (retiredLegacyFailure) {
+              // STRUCTURAL (E0): in scratch, a retired family's unprovable
+              // rejection must not strand the doc — the serializer canonical
+              // is an acceptable fallback source (validated) when there are no
+              // authored bytes to protect. Existing files stay fail-closed.
+              if (generatedScratchRef.current) {
+                try {
+                  const markerPreserving = preserveGeneratedBulletMarkers(
+                    lastMarkdownRef.current,
+                    canonical
+                  )
+                  const scratchCandidate = {
+                    preserved: true,
+                    markdown: markerPreserving !== canonical ? markerPreserving : canonical,
+                    reason: 'generated-scratch-canonical-fallback',
+                    integrityProof: null
+                  }
+                  const scratchPrepared = sourceSyncBridge.prepare({
+                    result: scratchCandidate,
+                    canonical,
+                    expectedDoc: viewRef.current?.state.doc,
+                    validationSite: 'generated-scratch-canonical-fallback',
+                    boundary: 'markdown-updated'
+                  })
+                  if (scratchPrepared?.validation?.ok === true) {
+                    const coordinatedFallback = sourceSyncBridge.publishPrepared(
+                      scratchPrepared,
+                      { notifyChange: true }
+                    )
+                    if (coordinatedFallback?.ok) {
+                      traceEditorEvent('scratch-canonical-fallback', {
+                        trigger: retiredLegacyFailure,
+                        site: 'retired-structural'
+                      })
+                      transactionSourcePendingPublish = false
+                      transactionSourcePendingDoc = null
+                      transactionSourceBlockHints = []
+                      transactionSourceQuarantined = false
+                      wholeDocumentReplacementPending = null
+                      clearRichFlushPending()
+                      pendingSourceSyncTransactionJournal = null
+                      userEditUntil = Date.now() + 1000
+                      return
+                    }
+                  }
+                } catch {
+                  /* fall through to the fail-closed warning */
+                }
+              }
               reportSourceSyncFailure(retiredLegacyFailure)
               userEditUntil = Date.now() + 1000
               return
@@ -2402,18 +2517,41 @@ export default function Editor({
                   expectedDoc: currentDoc
                 })
             if (!ownership.ok) {
-              reportSourceSyncFailure(ownership.reason || 'document-replacement-owner-rejected')
-              userEditUntil = Date.now() + 1000
-              return
-            }
+              // STRUCTURAL (E0, 0.13.179 + P3n 0.13.181 traces): a
+              // multi-transaction paste lets the first transaction's callback
+              // publish and advance the baseline BEFORE this retry runs, so
+              // the token is provably stale/unproven against the CURRENT
+              // state — on scratch AND on saved files. Release the token and
+              // fall through to the normal preserve pipeline below, which
+              // fully validates its candidate before committing: it publishes
+              // the pasted content when it can prove the mapping and fails
+              // closed with a precise reason when it cannot. Warning here
+              // reported a race the pipeline had already (or could still)
+              // resolve correctly.
+              pendingRawMarkdownPasteRef.current = null
+              wholeDocumentReplacementPending = null
+              traceEditorEvent(generatedScratchRef.current
+                ? 'scratch-paste-token-released'
+                : 'paste-token-released-committed-baseline', {
+                stage: 'plan',
+                reason: ownership.reason || null
+              })
+            } else {
             const coordinatedReplacement = sourceSyncBridge.publishOwned({ ownership })
             if (!coordinatedReplacement?.ok) {
-              reportSourceSyncFailure(
-                coordinatedReplacement?.reason || 'source-document-mismatch'
-              )
-              userEditUntil = Date.now() + 1000
-              return
-            }
+              // Same release-and-fall-through contract as the plan failure
+              // above: a stale live document at publish time is the same
+              // multi-transaction race. The preserve pipeline below owns the
+              // validated publication (or the fail-closed warning).
+              pendingRawMarkdownPasteRef.current = null
+              wholeDocumentReplacementPending = null
+              traceEditorEvent(generatedScratchRef.current
+                ? 'scratch-paste-token-released'
+                : 'paste-token-released-committed-baseline', {
+                stage: 'publish',
+                reason: coordinatedReplacement?.reason || null
+              })
+            } else {
             transactionSourcePendingPublish = false
             transactionSourcePendingDoc = null
             transactionSourceBlockHints = []
@@ -2425,6 +2563,8 @@ export default function Editor({
             pendingSourceSyncTransactionJournal = null
             userEditUntil = Date.now() + 1000
             return
+          }
+          }
           }
           let preserved
           if (generatedScratchRef.current) {
@@ -2767,6 +2907,37 @@ export default function Editor({
               validationSite,
               boundary: 'markdown-updated'
             })
+          // STRUCTURAL (E0, 0.13.176): a generated scratch document has no
+          // authored bytes on disk — its source is editor-derived. When every
+          // preservation path fails validation, the serializer canonical is an
+          // acceptable fallback source (it still goes through full
+          // coordinator validation). At worst marker spelling flips in the
+          // unsaved buffer; pausing sync with a sticky warning instead blocks
+          // the user's flow. Existing files keep the strict fail-closed warn.
+          const scratchCanonicalCandidate = (triggerReason) => {
+            if (!generatedScratchRef.current) return null
+            // Marker-friendly first: preserve the user's typed bullet spelling
+            // (`-`/`+`) on top of the canonical so scratch docs stay
+            // interoperable with other Markdown tools; the raw canonical (the
+            // spelling guaranteed to re-parse to this doc) is the floor when
+            // the transform fails validation.
+            const markerPreserving = preserveGeneratedBulletMarkers(
+              lastMarkdownRef.current,
+              canonical
+            )
+            const candidate = {
+              preserved: true,
+              markdown: markerPreserving !== canonical ? markerPreserving : canonical,
+              reason: 'generated-scratch-canonical-fallback',
+              integrityProof: null
+            }
+            const prepared = prepareSourceSyncCandidate(
+              candidate,
+              'generated-scratch-canonical-fallback'
+            )
+            if (prepared?.validation?.ok !== true) return null
+            return { candidate, prepared, triggerReason }
+          }
           if (preserved.preserved !== false) {
             preparedSourceSync = prepareSourceSyncCandidate(preserved, 'primary-preserved')
             const integrity = preparedSourceSync.validation
@@ -2820,19 +2991,30 @@ export default function Editor({
               })()
               if (!postFallbackOk) {
                 const reason = integrity.reason || 'source-document-mismatch'
-                preserved = {
-                  ...preserved,
-                  preserved: false,
-                  reason,
-                  markdown: lastMarkdownRef.current
+                const scratchFallback = scratchCanonicalCandidate(reason)
+                if (scratchFallback) {
+                  preserved = scratchFallback.candidate
+                  preparedSourceSync = scratchFallback.prepared
+                  traceEditorEvent('scratch-canonical-fallback', {
+                    trigger: reason,
+                    site: 'primary-preserved',
+                    from: preserved?.reason || null
+                  })
+                } else {
+                  preserved = {
+                    ...preserved,
+                    preserved: false,
+                    reason,
+                    markdown: lastMarkdownRef.current
+                  }
+                  reportSourceSyncFailure(reason)
+                  traceEditorEvent('markdown-sync-integrity', {
+                    reason,
+                    source: lastMarkdownRef.current,
+                    candidate: candidateMarkdown,
+                    canonical
+                  })
                 }
-                reportSourceSyncFailure(reason)
-                traceEditorEvent('markdown-sync-integrity', {
-                  reason,
-                  source: lastMarkdownRef.current,
-                  candidate: candidateMarkdown,
-                  canonical
-                })
               } else {
                 preparedSourceSync = postFallbackPrepared
               }
@@ -2888,6 +3070,30 @@ export default function Editor({
             })
           }
           if (preserved.preserved === false) {
+            const scratchFallback = scratchCanonicalCandidate(
+              preserved.reason || 'unmapped-source-change'
+            )
+            if (scratchFallback) {
+              const coordinatedFallback = sourceSyncBridge.publishPrepared(
+                scratchFallback.prepared,
+                { notifyChange: true }
+              )
+              if (coordinatedFallback?.ok) {
+                traceEditorEvent('scratch-canonical-fallback', {
+                  trigger: scratchFallback.triggerReason,
+                  site: 'unmapped-preserve'
+                })
+                transactionSourcePendingPublish = false
+                transactionSourcePendingDoc = null
+                transactionSourceBlockHints = []
+                transactionSourceQuarantined = false
+                wholeDocumentReplacementPending = null
+                clearRichFlushPending()
+                pendingSourceSyncTransactionJournal = null
+                userEditUntil = Date.now() + 1000
+                return
+              }
+            }
             reportSourceSyncFailure(preserved.reason || 'unmapped-source-change')
             // The visible ProseMirror transaction is still real, but its raw
             // Markdown ownership is ambiguous. Keep every pending intent and
@@ -2913,6 +3119,28 @@ export default function Editor({
           )
           if (!coordinated?.ok) {
             const reason = coordinated?.reason || 'source-document-mismatch'
+            const scratchFallback = scratchCanonicalCandidate(reason)
+            if (scratchFallback) {
+              const coordinatedFallback = sourceSyncBridge.publishPrepared(
+                scratchFallback.prepared,
+                { notifyChange: true }
+              )
+              if (coordinatedFallback?.ok) {
+                traceEditorEvent('scratch-canonical-fallback', {
+                  trigger: reason,
+                  site: 'publish-prepared'
+                })
+                transactionSourcePendingPublish = false
+                transactionSourcePendingDoc = null
+                transactionSourceBlockHints = []
+                transactionSourceQuarantined = false
+                wholeDocumentReplacementPending = null
+                clearRichFlushPending()
+                pendingSourceSyncTransactionJournal = null
+                userEditUntil = Date.now() + 1000
+                return
+              }
+            }
             reportSourceSyncFailure(reason)
             userEditUntil = Date.now() + 1000
             return

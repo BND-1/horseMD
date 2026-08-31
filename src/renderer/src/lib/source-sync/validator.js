@@ -287,10 +287,22 @@ const activeTrailingEmptyBlockquotePaths = (expectedDoc, paths) => {
       if (child?.type !== 'paragraph' || (child.content?.length || 0) !== 0) break
       trailingEmptyParagraphs += 1
     }
-    const previous = content.at(-2)
+    // The child BEFORE the trailing empty run — with several consecutive
+    // editor-owned empties (E0 P3d) the previous nonempty sibling is not
+    // content.at(-2).
+    const previous = content[content.length - 1 - trailingEmptyParagraphs]
+    // Activation must mirror semanticJson's owned-path rule, which collapses
+    // the WHOLE consecutive trailing empty run after a nonempty text
+    // paragraph or a list (paths only ever enter this set from a
+    // proof-validated publication; the shape gates — a nonempty sibling
+    // before the run — stay intact).
+    const previousList =
+      previous?.type === 'bullet_list' || previous?.type === 'ordered_list'
+    const previousTextParagraph =
+      previous?.type === 'paragraph' && (previous.content?.length || 0) > 0
     if (
-      trailingEmptyParagraphs === 1 &&
-      (previous?.type === 'bullet_list' || previous?.type === 'ordered_list')
+      trailingEmptyParagraphs >= 1 &&
+      (previousList || previousTextParagraph)
     ) {
       seen.add(key)
       active.push(Object.freeze([...path]))
@@ -309,7 +321,183 @@ export const sourceSyncSemanticOptionsFromContext = (semanticContext, expectedDo
   })
 }
 
-const transactionBlockquoteListExitTransientPaths = (preservationReason, preservationProof) => {
+// E0 (0.13.172 trace): in a GENERATED SCRATCH document the source bytes are
+// editor-generated, so a quote-tail run of empty paragraphs is an
+// editor-owned transient by construction — the serializer expresses it as
+// `<br />` while the scratch source carries bare `>` lines, and neither can
+// re-parse into paragraphs. For the scratch canonical/flush validation sites
+// ONLY, derive the transient paths from the expected document's SHAPE (same
+// rule as activation: ≥2 children, trailing empty run, nonempty text/list
+// sibling before the run). Every other comparison stays strict, and
+// proof-derived paths remain the mechanism for non-scratch validations.
+const SCRATCH_SHAPE_BRIDGE_REASONS = new Set([
+  'generated-scratch-canonical',
+  'generated-scratch-flush'
+])
+// 0.13.174 trace (03:46:16/03:46:40): whole-doc scratch comparisons failed
+// with the ONLY difference being a run of empty list items — the slot-level
+// comparator already treats those as equivalent (listSlotsMatch:true) while
+// the JSON compare does not. A scratch source is editor-derived (there is no
+// independent author), so a stale empty row self-heals on the next full
+// canonical publication. For scratch reasons ONLY, collapse consecutive
+// empty list items to one on BOTH sides before comparing; every non-empty
+// item, ordering, nesting and all other blocks stay strictly compared.
+const collapseEmptyListItemRuns = (node) => {
+  if (!node || typeof node.nodeSize !== 'number') return node
+  const type = node.type?.name
+  if (type === 'bullet_list' || type === 'ordered_list') {
+    const children = []
+    node.forEach((child) => { children.push(child) })
+    const kept = []
+    let changed = false
+    for (const child of children) {
+      const emptyItem = child.childCount === 1 &&
+        child.child(0).type?.name === 'paragraph' &&
+        child.child(0).content.size === 0
+      const prev = kept[kept.length - 1]
+      if (emptyItem && prev && prev.childCount === 1 &&
+        prev.child(0).type?.name === 'paragraph' &&
+        prev.child(0).content.size === 0) {
+        changed = true
+        continue
+      }
+      kept.push(child)
+    }
+    if (!changed) return node
+    return node.copy(kept)
+  }
+  if (!node.childCount) return node
+  const mapped = []
+  let changed = false
+  node.forEach((child) => {
+    const next = collapseEmptyListItemRuns(child)
+    if (next !== child) changed = true
+    mapped.push(next)
+  })
+  if (!changed) return node
+  return node.copy(mapped)
+}
+const shapeDerivedTrailingEmptyBlockquotePaths = (expectedDoc) => {
+  const paths = []
+  const visit = (node, path) => {
+    if (!node?.type) return
+    if (node.type.name === 'blockquote') {
+      const children = []
+      node.forEach?.((child, _offset, index) => { children[index] = child })
+      let trailingEmptyParagraphs = 0
+      for (let index = children.length - 1; index >= 0; index -= 1) {
+        const child = children[index]
+        if (child?.type?.name !== 'paragraph' || child.content.size > 0) break
+        trailingEmptyParagraphs += 1
+      }
+      const previous = children[children.length - 1 - trailingEmptyParagraphs]
+      const previousList =
+        previous?.type?.name === 'bullet_list' || previous?.type?.name === 'ordered_list'
+      const previousTextParagraph =
+        previous?.type?.name === 'paragraph' && previous.content.size > 0
+      if (
+        children.length >= 2 &&
+        trailingEmptyParagraphs >= 1 &&
+        (previousList || previousTextParagraph)
+      ) {
+        paths.push(Object.freeze([...path]))
+      }
+    }
+    node.forEach?.((child, _offset, index) => visit(child, [...path, index]))
+  }
+  visit(expectedDoc, [])
+  return Object.freeze(paths)
+}
+
+// Same scratch-only rationale for LIST ITEMS: a list item's trailing empty
+// paragraph is editor-owned and unrepresentable without `<br />`. Strict
+// shape — exactly ONE trailing empty paragraph after a NONEMPTY text
+// paragraph (the generic ignoreTrailingEmptyListItemParagraph shape) — so
+// the derived path stays as narrow as the legacy allowlist.
+const shapeDerivedTrailingEmptyListItemPaths = (expectedDoc) => {
+  const paths = []
+  const visit = (node, path) => {
+    if (!node?.type) return
+    if (node.type.name === 'list_item') {
+      const children = []
+      node.forEach?.((child, _offset, index) => { children[index] = child })
+      const last = children[children.length - 1]
+      const previous = children[children.length - 2]
+      const trailingEmpty =
+        last?.type?.name === 'paragraph' && last.content.size === 0
+      const previousTextParagraph =
+        previous?.type?.name === 'paragraph' && previous.content.size > 0
+      if (children.length >= 2 && trailingEmpty && previousTextParagraph) {
+        paths.push(Object.freeze([...path]))
+      }
+    }
+    node.forEach?.((child, _offset, index) => visit(child, [...path, index]))
+  }
+  visit(expectedDoc, [])
+  return Object.freeze(paths)
+}
+
+const transactionBlockquoteTransientPaths = (preservationReason, preservationProof) => {
+  if (preservationReason === 'blockquote-paragraph-emptied') {
+    const nodePath = preservationProof?.nodePath
+    if (
+      preservationProof?.kind !== 'transaction-blockquote-paragraph-proof' ||
+      preservationProof?.family !== 'blockquote-paragraph-text-replace' ||
+      preservationProof?.emptiedParagraph !== true ||
+      preservationProof?.nextText !== '' ||
+      typeof preservationProof?.previousText !== 'string' ||
+      preservationProof.previousText.length === 0 ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      !Array.isArray(nodePath) || nodePath.length < 1 ||
+      !nodePath.every((index) => Number.isInteger(index) && index >= 0) ||
+      !Array.isArray(preservationProof?.stepDetails) ||
+      preservationProof.stepDetails.length < 1 ||
+      !preservationProof.stepDetails.every((step) =>
+        step?.name === 'ReplaceStep' && step?.structure !== true
+      )
+    ) return false
+    return [nodePath]
+  }
+  if (
+    preservationProof?.kind === 'transaction-blockquote-paragraph-proof' &&
+    preservationProof?.emptiedParagraph === true
+  ) return false
+
+  // Enter at the end of a quote's last paragraph publishes an authored `> `
+  // trailing line the parser drops; the editor-owned empty paragraph behind it
+  // is admitted only through this exact proof (E0 P3 trailing split).
+  if (
+    preservationReason === 'blockquote-paragraph-split' &&
+    preservationProof?.trailingEmptySplit === true
+  ) {
+    const nodePath = preservationProof?.nodePath
+    if (
+      preservationProof?.kind !== 'transaction-blockquote-split-proof' ||
+      preservationProof?.family !== 'blockquote-paragraph-split' ||
+      preservationProof?.rightText !== '' ||
+      typeof preservationProof?.leftText !== 'string' ||
+      preservationProof.leftText.length === 0 ||
+      !Number.isInteger(preservationProof?.splitIndex) ||
+      preservationProof.splitIndex < 0 ||
+      preservationProof?.transactionJournal?.snapshotMatched !== true ||
+      preservationProof?.transactionJournal?.documentMatched !== true ||
+      !Array.isArray(nodePath) || nodePath.length < 1 ||
+      !nodePath.every((index) => Number.isInteger(index) && index >= 0) ||
+      !Array.isArray(preservationProof?.stepDetails) ||
+      preservationProof.stepDetails.length < 1 ||
+      !preservationProof.stepDetails.some((step) =>
+        step?.name === 'ReplaceStep' && step?.structure === true
+      )
+    ) return false
+    return [nodePath]
+  }
+  if (
+    preservationProof?.kind === 'transaction-blockquote-split-proof' &&
+    preservationProof?.trailingEmptySplit === true &&
+    preservationReason !== 'blockquote-paragraph-split'
+  ) return false
+
   if (preservationReason !== 'trailing-empty-blockquote-paragraph-after-list-exit') {
     return preservationProof?.kind === 'transaction-blockquote-list-exit-pending-proof'
       ? false
@@ -355,7 +543,7 @@ const semanticOptionsForReason = (
     preservationReason,
     preservationProof
   ),
-  transientEmptyBlockquotePaths = transactionBlockquoteListExitTransientPaths(
+  transientEmptyBlockquotePaths = transactionBlockquoteTransientPaths(
     preservationReason,
     preservationProof
   )
@@ -363,13 +551,19 @@ const semanticOptionsForReason = (
   // Backspace on a newly-created empty bullet can briefly leave one
   // editor-owned empty paragraph at the end of the preceding/parent list item.
   // Keep the exact legacy allowlist while Phase A only extracts lifecycle.
+  // `typed-bullet-input-rule` (+ its fallback) joins the allowlist: the
+  // marker-bridge publication itself leaves the same single trailing empty
+  // paragraph after a text paragraph, which authored bytes cannot encode
+  // (goal-matrix B2: `1. ` items + empty-item Backspace exit).
   ignoreTrailingEmptyListItemParagraph:
     preservationReason === 'empty-list-item-removed' ||
     preservationReason === 'diverged-empty-ordered-backspace-lift' ||
     preservationReason === 'nested-empty-list-item-removed' ||
     preservationReason === 'trailing-list-item-paragraph-emptied' ||
     preservationReason === 'empty-task-item-merged-to-continuation' ||
-    preservationReason === 'empty-list-item-merged-after-nested-list',
+    preservationReason === 'empty-list-item-merged-after-nested-list' ||
+    preservationReason === 'typed-bullet-input-rule' ||
+    preservationReason === 'typed-bullet-input-rule-fallback',
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure:
     preservationReason === 'empty-list-item-merged-after-nested-list',
   ignoreEmptyListItemParagraphBeforeNestedStructure:
@@ -432,7 +626,11 @@ export function createLegacySourceIntegrityValidator({
     }
     try {
       const parser = getParser()
-      const parsed = parser(markdown)
+      const rawParsed = parser(markdown)
+      const scratchBridge = SCRATCH_SHAPE_BRIDGE_REASONS.has(preservationReason)
+      // Scratch-only symmetric normalization: consecutive empty list items
+      // collapse to one on BOTH sides (see collapseEmptyListItemRuns).
+      const parsed = scratchBridge ? collapseEmptyListItemRuns(rawParsed) : rawParsed
       const expectedMarkdown = typeof canonical === 'string'
         ? canonical
         : canonicalForSource(getSerializer()(expectedDoc))
@@ -446,7 +644,7 @@ export function createLegacySourceIntegrityValidator({
         preservationProof
       )
       const transactionListTransientProofInvalid = transientEmptyListItemPaths === false
-      const transientEmptyBlockquotePaths = transactionBlockquoteListExitTransientPaths(
+      const transientEmptyBlockquotePaths = transactionBlockquoteTransientPaths(
         preservationReason,
         preservationProof
       )
@@ -458,24 +656,40 @@ export function createLegacySourceIntegrityValidator({
       const proofBlockquotePaths = Array.isArray(transientEmptyBlockquotePaths)
         ? activeTrailingEmptyBlockquotePaths(expectedDoc, transientEmptyBlockquotePaths)
         : []
+      const shapeBlockquotePaths = SCRATCH_SHAPE_BRIDGE_REASONS.has(preservationReason)
+        ? shapeDerivedTrailingEmptyBlockquotePaths(expectedDoc)
+        : []
       const combinedBlockquotePaths = activeTrailingEmptyBlockquotePaths(
         expectedDoc,
-        [...inheritedBlockquotePaths, ...proofBlockquotePaths]
+        [...inheritedBlockquotePaths, ...proofBlockquotePaths, ...shapeBlockquotePaths]
       )
       const nextSemanticContext = Object.freeze({
         trailingEmptyBlockquoteParagraphPaths: combinedBlockquotePaths
       })
-      const expected = Array.isArray(tableColumnWidthPaths)
+      const resolvedExpected = Array.isArray(tableColumnWidthPaths)
         ? expectedDoc
         : typeof canonical === 'string'
           ? parser(canonical)
           : expectedDoc
+      const expected = scratchBridge
+        ? collapseEmptyListItemRuns(resolvedExpected)
+        : resolvedExpected
       const canonicalBaseline = getCanonicalBaseline?.()
+      // Scratch candidates additionally bridge LIST-ITEM trailing empties by
+      // the same strict shape (goal-matrix B4: Shift-Tab outdent left an
+      // editor-owned empty paragraph inside the item). Proof-derived paths
+      // stay the mechanism everywhere else; a false proof keeps failing.
+      const scratchListItemPaths = SCRATCH_SHAPE_BRIDGE_REASONS.has(preservationReason) &&
+        Array.isArray(transientEmptyListItemPaths)
+        ? shapeDerivedTrailingEmptyListItemPaths(expectedDoc)
+        : []
       const semanticOptions = semanticOptionsForReason(
         preservationReason,
         preservationProof,
         tableColumnWidthPaths,
-        transientEmptyListItemPaths,
+        Array.isArray(transientEmptyListItemPaths)
+          ? [...transientEmptyListItemPaths, ...scratchListItemPaths]
+          : transientEmptyListItemPaths,
         combinedBlockquotePaths
       )
       const semanticOk = !tableColumnWidthProofInvalid &&

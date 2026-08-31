@@ -210,7 +210,12 @@ async function main() {
     assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `RS-57 integrity failure after Enter: ${JSON.stringify(afterEnter)}`)
     assert.ok(
       afterEnter.integrity.some((entry) =>
-        entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' &&
+        // E0 P3: the quote Enter may now be owned by the blockquote-split
+        // family instead of the legacy transient reason.
+        (
+          entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' ||
+          entry.preservationReason === 'blockquote-paragraph-split'
+        ) &&
         entry.ok === true && entry.semanticOk === true
       ),
       `missing RS-57 dedicated integrity proof: ${JSON.stringify(afterEnter.integrity)}`
@@ -222,13 +227,21 @@ async function main() {
       `RS-57 did not capture IME transactions while generated scratch was composing: ${JSON.stringify(afterEnter.journal)}`
     )
     const focusedPublication = afterEnter.preserve.find((entry) =>
-      entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
-      entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof'
+      // E0 P3: the scratch IME chain + immediate Enter is owned atomically by
+      // the split family; the exit-pending proof remains for its own shapes.
+      (
+        (entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
+          entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof') ||
+        (entry.reason === 'blockquote-paragraph-split' &&
+          entry.integrityProof?.kind === 'transaction-blockquote-split-proof')
+      )
     )
     assert.ok(focusedPublication, `RS-57 Enter bypassed focused blockquote owner: ${JSON.stringify(afterEnter)}`)
     assert.equal(
       afterEnter.blockquote.some((entry) =>
-        entry.phase === 'published' && entry.family === 'blockquote-paragraph-exit'
+        entry.phase === 'published' &&
+        (entry.family === 'blockquote-paragraph-exit' ||
+          entry.family === 'blockquote-paragraph-split')
       ),
       true,
       `RS-57 focused blockquote owner did not publish in generated scratch: ${JSON.stringify(afterEnter.blockquote)}`
