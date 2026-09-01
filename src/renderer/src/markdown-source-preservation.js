@@ -2510,6 +2510,24 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     }
   }
 
+  // Multi-block delete guard (0.13.191 trace 05:23/05:27): a bulk selection
+  // delete spanning whole blocks reaches this mapper as a "text delta" whose
+  // replacement is empty; the splice can only remove part of the span, the
+  // candidate keeps blocks the canonical dropped, and validation warns. A
+  // localized TEXT change is never a pure deletion across a blank-line block
+  // boundary — fail closed so the no-op hold (or a future selection owner,
+  // P5c) handles the cumulative delta instead.
+  if (
+    !String(replacement || '').trim() &&
+    /[ \t]*\r?\n[ \t]*\r?\n/.test(previous.slice(start, previousEnd))
+  ) {
+    return {
+      markdown: sourceMarkdown,
+      preserved: false,
+      reason: 'localized-multi-block-delete'
+    }
+  }
+
   return {
     markdown: withoutStandaloneEmptyBlockLines(
       sourceMarkdown.slice(0, rawStart) +

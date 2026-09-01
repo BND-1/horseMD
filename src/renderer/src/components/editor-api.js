@@ -285,7 +285,15 @@ export function createEditorApi({
       // the cumulative delta. Returning null prevents source mode or save from
       // presenting the stale authored bytes as if the visible edit had synced.
       if (preserved.preserved === false) {
-        reportSourceSyncFailure?.(preserved.reason || 'unmapped-source-change')
+        // STRUCTURAL (E0, 0.13.191 trace 05:23): a failure whose candidate IS
+        // the current source introduces no byte change — warning here reported
+        // a divergence the candidate itself proves was not introduced (the
+        // markdownUpdated loop holds the same shape silently). Keep the flush
+        // failed (return null) so stale bytes are never presented as synced;
+        // only the warning is suppressed, exactly like the callback path.
+        if (preserved.markdown !== lastMarkdownRef.current) {
+          reportSourceSyncFailure?.(preserved.reason || 'unmapped-source-change')
+        }
         return null
       }
       if (typeof publishSourceSyncResult === 'function') {
