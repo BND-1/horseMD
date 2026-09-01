@@ -2461,6 +2461,20 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     }) || { markdown: sourceMarkdown, preserved: false, reason: 'unmapped-change' }
   }
 
+  // CRLF guard (0.13.188 trace 00:49): a visible insertion mapped to a line
+  // end can land BETWEEN the `\r` and its `\n` (`题解\r|啊我发的\n`). The lone
+  // `\r` then re-parses as its own line break, splitting the row and failing
+  // validation — every edit on a CRLF document warned. The visible stream
+  // treats `\r\n` as one terminator: any mapped boundary inside that pair
+  // steps back to before the `\r`.
+  const crlfSafeBoundary = (markdown, offset) => {
+    if (offset > 0 && markdown[offset] === '\n' && markdown[offset - 1] === '\r') return offset - 1
+    return offset
+  }
+  rawStart = crlfSafeBoundary(sourceMarkdown, rawStart)
+  rawEnd = crlfSafeBoundary(sourceMarkdown, rawEnd)
+  if (rawStart > rawEnd) rawStart = rawEnd
+
   return {
     markdown: withoutStandaloneEmptyBlockLines(
       sourceMarkdown.slice(0, rawStart) +
