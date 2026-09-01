@@ -2475,6 +2475,41 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   rawEnd = crlfSafeBoundary(sourceMarkdown, rawEnd)
   if (rawStart > rawEnd) rawStart = rawEnd
 
+  // Fence guard (0.13.189 traces 02:22 / 03:16 / 03:21): Backspace below a
+  // fenced code block that deletes INTO the block maps as a visible-text
+  // delta — but fence lines carry NO visible characters, so the splice range
+  // steps over some fence bytes and keeps others. The committed source then
+  // held an ODD number of ``` markers (an unterminated block swallows every
+  // following paragraph in source mode — the user's "文字融入代码块"), or
+  // glued the closing fence onto the row above (`…（可选）````). A localized
+  // text change must never touch a fenced region: when the raw range touches
+  // a fence line or sits inside a fenced block, fail closed so the
+  // established code-block owners take the transition instead.
+  {
+    const fenceLine = (text) => /^ {0,3}(?:`{3,}|~{3,})/.test(text.replace(/\r$/, ''))
+    const rangeTouchesFence = (() => {
+      let inside = false
+      for (const line of markdownLines(sourceMarkdown)) {
+        const isFence = fenceLine(line.text)
+        if (isFence) {
+          if (rawStart <= line.start && line.start < rawEnd) return true
+          inside = !inside
+          continue
+        }
+        if (inside && rawStart < line.end && rawEnd > line.start) return true
+      }
+      return false
+    })()
+    const replacementHasFence = /`{3,}|~{3,}/.test(String(replacement || ''))
+    if (rangeTouchesFence || replacementHasFence) {
+      return {
+        markdown: sourceMarkdown,
+        preserved: false,
+        reason: 'localized-fence-crossing'
+      }
+    }
+  }
+
   return {
     markdown: withoutStandaloneEmptyBlockLines(
       sourceMarkdown.slice(0, rawStart) +
