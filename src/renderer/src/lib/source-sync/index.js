@@ -83,6 +83,11 @@ export {
   createCodeBlockExitTransactionSourceSyncOwner
 } from './code-block-exit-transaction-owner.js'
 export {
+  CODE_BLOCK_BOUNDARY_JOIN_TRANSACTION_BOUNDARY,
+  CODE_BLOCK_BOUNDARY_JOIN_TRANSACTION_FAMILY,
+  createCodeBlockBoundaryJoinTransactionSourceSyncOwner
+} from './code-block-boundary-join-transaction-owner.js'
+export {
   CODE_BLOCK_PARAGRAPH_TRANSACTION_BOUNDARY,
   CODE_BLOCK_PARAGRAPH_TRANSACTION_FAMILY,
   createCodeBlockParagraphTransactionSourceSyncOwner

@@ -213,6 +213,8 @@
     "test:source-sync-transaction-journal-provenance": "node scripts/test-source-sync-transaction-journal-provenance.mjs",
     "test:plain-paragraph-transaction-owner": "node scripts/test-plain-paragraph-transaction-owner.mjs",
     "test:code-block-transaction-owner": "node scripts/test-code-block-transaction-owner.mjs",
+    "test:code-block-boundary-join-transaction-owner": "node scripts/test-code-block-boundary-join-transaction-owner.mjs",
+    "test:code-block-boundary-join-ui": "node scripts/test-code-block-boundary-join-ui.mjs",
     "test:code-block-legacy-owner-retirement": "node scripts/test-code-block-legacy-owner-retirement.mjs",
     "test:code-block-legacy-owner-retirement-ui": "node scripts/test-code-block-legacy-owner-retirement-ui.mjs",
     "test:code-block-exit-keybinding": "node scripts/test-code-block-exit-keybinding.mjs",

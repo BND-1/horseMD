@@ -64,6 +64,7 @@ import {
   createBlockquoteParagraphTransactionSourceSyncOwner,
   createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockExitTransactionSourceSyncOwner,
+  createCodeBlockBoundaryJoinTransactionSourceSyncOwner,
   createCodeBlockParagraphTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
@@ -651,6 +652,17 @@ export default function Editor({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
         validateMarkdown: validateTransactionMarkdown
       })
+    // Boundary join (0.13.193, trace-23324): Backspace at the start of a
+    // paragraph that neighbors a fenced code block merges the two nodes —
+    // the paragraph text joins the code block's last line (code-absorbs-
+    // paragraph) or vice versa. The legacy localized mapper is fence-blind
+    // and its 0.13.190 fence guard fail-closes this shape, so without this
+    // owner the source never syncs (stale ``` visible in source mode).
+    const codeBlockBoundaryJoinTransactionSourceSyncOwner =
+      createCodeBlockBoundaryJoinTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const emptyCodeBlockUnpackTransactionSourceSyncOwner =
       createEmptyCodeBlockUnpackTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -911,6 +923,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-item-paragraph-markdown-updated',
           'forced-flush': 'transaction-list-item-paragraph-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'code-block-boundary-join',
+        owner: codeBlockBoundaryJoinTransactionSourceSyncOwner,
+        traceKey: '__hmCodeBlockTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-code-block-boundary-join-markdown-updated',
+          'forced-flush': 'transaction-code-block-boundary-join-forced-flush'
         })
       }),
       Object.freeze({
