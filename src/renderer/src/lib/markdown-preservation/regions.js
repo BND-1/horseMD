@@ -400,6 +400,43 @@ export const preserveLocallyAlignedTextChange = ({
   let rawEnd = rawOffsetAtVisible(source, endVisible)
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
 
+  // An insertion whose editor position sits AFTER an invisible syntax delimiter
+  // (a closing inline-code backtick, `**`, `~~`) that ends at the line end
+  // collapses onto the delimiter itself: the delimiter byte carries no visible
+  // index, so both "before" and "after" round-trip to the same backward-
+  // affinity position (0.13.194 trace-79495: typing after a whole-paragraph
+  // inline-code span spliced INSIDE the span, and validation failed closed).
+  // Recover the lost side from the canonical delta itself: when the previous
+  // canonical places the change at/after the closing delimiter, re-anchor the
+  // insertion past every invisible-syntax byte of that line's tail. The line's
+  // visible text still pins the location, so this cannot drift to another line.
+  if (
+    start === previousEnd &&
+    nextEnd > start &&
+    rawStart === rawEnd &&
+    previousStartLine.start === previousEndLine.start &&
+    start === previousEndLine.end
+  ) {
+    const previousTail = previous.slice(previousEndLine.start, start)
+    const closingMatch = /(?:`+|\*\*|__|~~)[ \t]*$/.exec(previousTail)
+    if (closingMatch) {
+      const sourceLine = lineAt(source, rawStart)
+      // A CRLF document leaves the CR inside the line tail; it is not syntax.
+      const sourceTail = source.slice(sourceLine.start, sourceLine.end)
+        .replace(/\r$/, '')
+      const sourceClosing = /(?:`+|\*\*|__|~~)[ \t]*$/.exec(sourceTail)
+      if (
+        sourceClosing &&
+        sourceVisibleIndex(sourceTail).text ===
+          sourceVisibleIndex(previousTail).text &&
+        rawStart <= sourceLine.start + sourceClosing.index
+      ) {
+        rawStart = sourceLine.start + sourceClosing.index + sourceClosing[0].length
+        rawEnd = rawStart
+      }
+    }
+  }
+
   // Markdown trailing spaces are intentionally absent from the visible stream.
   // For a pure insertion at the canonical line's raw end, a backward-affinity
   // visible position therefore maps to the byte before those spaces. Inserting

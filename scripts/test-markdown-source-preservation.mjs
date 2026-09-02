@@ -225,6 +225,56 @@ assert.equal(
   'an insertion explicitly before the trailing space must not be shifted past it'
 )
 
+// 0.13.194 / trace-79495: typing after a whole-paragraph inline-code span. The
+// closing delimiter ends the line, so its byte carries no visible index and
+// the collapsed backward-affinity position mapped the insertion INSIDE the
+// span (semantic validation then failed closed). The insertion must land
+// strictly after the authored closing delimiter, in LF and CRLF documents.
+{
+  const spanLine = '`练达是整个体系运转顺畅后的人格状态与处事境界，不是终点，而是动态平衡。`'
+  for (const [label, eol] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+    const source = `# 聚合${eol}${eol}${spanLine}${eol}${eol}### next${eol}`
+    const previous = `# 聚合\n\n${spanLine}\n\n### next\n`
+    const next = `# 聚合\n\n${spanLine}兰芳\n\n### next\n`
+    const change = commonChange(previous, next)
+    const appended = preserveLocallyAlignedTextChange({
+      source, previous, next, ...change
+    })
+    assert.equal(
+      appended?.reason,
+      'locally-aligned-change',
+      `${label}: typing after an inline-code span must stay locally aligned`
+    )
+    assert.equal(
+      appended.markdown,
+      source.replace(spanLine, `${spanLine}兰芳`),
+      `${label}: appended text must land after the closing delimiter, not inside the span`
+    )
+  }
+  // The same recovery covers a bold span ending the line, and must NOT move a
+  // genuinely inside-span insertion.
+  const boldSource = '**重要结论**\n'
+  const boldNext = '**重要结论**后记\n'
+  const boldChange = commonChange(boldSource, boldNext)
+  const boldAppended = preserveLocallyAlignedTextChange({
+    source: boldSource, previous: boldSource, next: boldNext, ...boldChange
+  })
+  assert.equal(boldAppended?.markdown, boldNext, 'bold span at line end must also recover the outside position')
+
+  const insideSource = '`abc`\n'
+  const insideNext = '`abXc`\n'
+  const insideChange = commonChange(insideSource, insideNext)
+  const insideInsert = preserveLocallyAlignedTextChange({
+    source: insideSource, previous: insideSource, next: insideNext, ...insideChange
+  })
+  assert.equal(
+    insideInsert?.markdown,
+    insideNext,
+    'an insertion inside the code text must stay inside the span'
+  )
+}
+
+
 // RS-59 / PID 97146 trace line 70: an authored standalone literal dash is
 // represented as `\\-`. After filling that formerly-empty paragraph, typing
 // more text makes canonical rewrite the same paragraph as `-【】`. If an earlier
