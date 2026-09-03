@@ -232,7 +232,17 @@ const flatListItemRows = (blockText) => {
       if (follower && follower.indent > row.indent) continue
 
     }
-    rows.push({ token: row.token, text: row.text, indent: row.indent, raw: row.raw })
+    // A continuation row separated by a blank line is its own PARAGRAPH inside
+    // the item (remark-stringify's loose-item spelling); a single newline is a
+    // lazy/soft continuation of the same paragraph. The authored-source patch
+    // must replicate that separator or the row re-parses as one paragraph.
+    rows.push({
+      token: row.token,
+      text: row.text,
+      indent: row.indent,
+      raw: row.raw,
+      blankBefore: i > 0 && parsed[i - 1] === null
+    })
   }
   return rows
 }
@@ -2555,11 +2565,20 @@ export const preserveDivergedNestedListChange = ({
         // A final Backspace lifts the outer bullet item into an indented
         // continuation of the preceding item. Keep the text and replace only
         // the authored marker prefix with the canonical continuation indent.
+        // When the canonical separates that continuation with a BLANK line it
+        // is its own PARAGRAPH inside the item (trace-48689 04:41:38: the
+        // join left [paragraph, paragraph] in one item); replicating only the
+        // indent would produce a lazy continuation that re-parses as a single
+        // paragraph and drift from the document. Insert the blank line too.
         const rawStart = sourceList.start + row.start + applyOffset
         const rawEnd = sourceList.start + row.contentStart + applyOffset
         const continuationIndent = ' '.repeat(Math.max(1, Number(nextItem.indent) || row.indent + 2))
-        output = output.slice(0, rawStart) + continuationIndent + output.slice(rawEnd)
-        applyOffset += continuationIndent.length - (rawEnd - rawStart)
+        const continuationSeparator = nextItem.blankBefore ? eol : ''
+        output = output.slice(0, rawStart) +
+          continuationSeparator +
+          continuationIndent +
+          output.slice(rawEnd)
+        applyOffset += continuationSeparator.length + continuationIndent.length - (rawEnd - rawStart)
       }
       if (prevItem.text !== nextItem.text) {
         const rowText = row.text

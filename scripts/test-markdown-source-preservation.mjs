@@ -305,6 +305,72 @@ assert.equal(
   assert.equal(plain.markdown, plainNext)
 }
 
+// 0.13.196 / trace-48689 04:41:38: on a diverged list (authored compact `-`
+// rows vs canonical padded `*` rows), Backspace at a row start joins it into
+// the item above as a SECOND PARAGRAPH — canonical spells that continuation
+// with a blank line plus indent. The lift patch replaced only the marker with
+// the indent, so the row re-parsed as a lazy single paragraph and validation
+// failed closed with the source stuck. The blank separator must be carried.
+{
+  const joinedSource = [
+    '### 3. 聚合物微粒','',
+    '- **分类**：模拟藤壶胶中的疏水排开策略；不含藤壶蛋白。',
+    '- **关键制备**：水相含 30 wt% AA；微粒与硅油按 1:1 混成膏。',
+    '- 氢键；NHS 酯与组织胺基形成共价连接，实现与凝血无关的快速封合。',
+    '- **用途与证据**：大鼠肝脏模型；15 s 内形成封合。','',
+    '### 4. 下一节',''
+  ].join('\n')
+  const previousRows = [
+    '* **分类**：模拟藤壶胶中的疏水排开策略；不含藤壶蛋白。',
+    '* **关键制备**：水相含 30 wt% AA；微粒与硅油按 1:1 混成膏。',
+    '* 氢键；NHS 酯与组织胺基形成共价连接，实现与凝血无关的快速封合。',
+    '* **用途与证据**：大鼠肝脏模型；15 s 内形成封合。'
+  ]
+  const joinedPrevious = ['### 3. 聚合物微粒','', previousRows.join('\n\n'), '', '### 4. 下一节',''].join('\n')
+  const joinedNextRows = [...previousRows]
+  joinedNextRows[1] = joinedNextRows[1].replace(/混成膏。$/, '混成膏。')
+  const joinedNext = [
+    '### 3. 聚合物微粒','',
+    previousRows[0],'',
+    '* **关键制备**：水相含 30 wt% AA；微粒与硅油按 1:1 混成膏。','',
+    '  氢键；NHS 酯与组织胺基形成共价连接，实现与凝血无关的快速封合。','',
+    '* **用途与证据**：大鼠肝脏模型；15 s 内形成封合。','',
+    '### 4. 下一节',''
+  ].join('\n')
+  const joined = preserveRichMarkdownSource(joinedSource, joinedPrevious, joinedNext)
+  assert.equal(joined.preserved, true, 'diverged join must be owned')
+  assert.equal(
+    /混成膏。\n\n  氢键；NHS/.test(joined.markdown),
+    true,
+    `paragraph continuation must carry the blank line: ${JSON.stringify(joined.markdown.slice(joined.markdown.indexOf('混成膏'), joined.markdown.indexOf('混成膏') + 60))}`
+  )
+  assert.equal(joined.markdown.includes('- 氢键；'), false, 'the lifted row must lose its own marker')
+  assert.equal(/- \*\*用途与证据\*\*/.test(joined.markdown), true, 'sibling rows stay untouched')
+  // Re-parse proof: the joined item is TWO paragraphs, matching ProseMirror.
+  {
+    const { default: remarkParse } = await import('remark-parse')
+    const { unified } = await import('unified')
+    const tree = unified().use(remarkParse).parse(joined.markdown)
+    const list = tree.children.find((node) => node.type === 'list' && JSON.stringify(node).includes('氢键；NHS'))
+    const item = (list?.children || []).find((child) => JSON.stringify(child).includes('氢键；NHS'))
+    assert.equal(
+      (item?.children || []).map((child) => child.type).join(','),
+      'paragraph,paragraph',
+      'the joined item must re-parse as two paragraphs'
+    )
+  }
+  // Negative: a canonical LAZY continuation (single newline, no blank line)
+  // keeps the single-newline separator — no blank line may be invented.
+  {
+    const lazyNext = joinedNext.replace('混成膏。\n\n  氢键', '混成膏。\n  氢键')
+    const lazy = preserveRichMarkdownSource(joinedSource, joinedPrevious, lazyNext)
+    if (lazy?.preserved) {
+      assert.equal(/混成膏。\n\n  氢键/.test(lazy.markdown), false,
+        'lazy continuation must not gain a blank line')
+    }
+  }
+}
+
 
 // RS-59 / PID 97146 trace line 70: an authored standalone literal dash is
 // represented as `\\-`. After filling that formerly-empty paragraph, typing
@@ -2906,8 +2972,8 @@ const nestedOuterMarkerRemoved = preserveRichMarkdownSource(
 assert.equal(nestedOuterMarkerRemoved.reason, 'diverged-nested-list-change')
 assert.equal(
   nestedOuterMarkerRemoved.markdown,
-  '- 1. 管理层（总经理）\n  综合行政部\n- 3. 人力资源部\n',
-  'lifting the outer bullet must retain its text as the preceding item continuation'
+  '- 1. 管理层（总经理）\n\n  综合行政部\n- 3. 人力资源部\n',
+  'lifting the outer bullet must retain its text as the preceding item continuation (blank line mirrors the canonical paragraph separator)'
 )
 
 const nestedWrapperCollapsedWithoutSourceChange = preserveRichMarkdownSource(
