@@ -274,6 +274,37 @@ assert.equal(
   )
 }
 
+// 0.13.195 / trace-94539 03:15:35: Shift+Enter (hardbreak callback still
+// pending) followed by a multi-paragraph paste. The generic block insertion
+// opened a NEW block after the anchor — losing the hardbreak continuation —
+// and dropped the serializer's `<br />` placeholder, so re-parsing drifted
+// from the document and validation failed closed with the source stuck.
+// The continuation must splice inline at the anchor's content end, without
+// placeholders (they never reach authored source), keeping the authored EOL.
+{
+  const previousCanonical = '前文\n\n根据项目梳理，做以下分析：\n\n2、周期层\n\n后文\n'
+  const nextCanonical = '前文\n\n根据项目梳理，做以下分析：\\\n1、定义层\n\n先明确几个核心概念：\n\n<br />\n\n2、周期层\n\n后文\n'
+  for (const [label, authoredSource, want] of [
+    ['LF', previousCanonical,
+      '前文\n\n根据项目梳理，做以下分析：\\\n1、定义层\n\n先明确几个核心概念：\n\n2、周期层\n\n后文\n'],
+    ['CRLF', '前文\r\n\r\n根据项目梳理，做以下分析：\r\n\r\n2、周期层\r\n\r\n后文\r\n',
+      '前文\r\n\r\n根据项目梳理，做以下分析：\\\r\n1、定义层\r\n\r\n先明确几个核心概念：\r\n\r\n2、周期层\r\n\r\n后文\r\n']
+  ]) {
+    const result = preserveRichMarkdownSource(authoredSource, previousCanonical, nextCanonical)
+    assert.equal(result.preserved, true, `${label}: continuation insertion must be owned`)
+    assert.equal(result.reason, 'middle-continuation-inserted',
+      `${label}: expected the continuation reason, got ${result.reason}`)
+    assert.equal(result.markdown, want,
+      `${label}: hardbreak continuation must splice inline at the anchor line`)
+  }
+
+  // Plain multi-paragraph paste without a hardbreak keeps the block path.
+  const plainNext = '前文\n\n根据项目梳理，做以下分析：\n\n1、定义层\n\n先明确几个核心概念：\n\n2、周期层\n\n后文\n'
+  const plain = preserveRichMarkdownSource(previousCanonical, previousCanonical, plainNext)
+  assert.equal(plain.reason, 'middle-block-inserted')
+  assert.equal(plain.markdown, plainNext)
+}
+
 
 // RS-59 / PID 97146 trace line 70: an authored standalone literal dash is
 // represented as `\\-`. After filling that formerly-empty paragraph, typing

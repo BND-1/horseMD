@@ -1379,6 +1379,58 @@ export const preserveMiddleEmptyBlock = ({
   }
 
   if (directBlockInsertion) {
+    // Inline-continuation insertion (0.13.195, trace-94539 03:15:35):
+    // Shift+Enter followed by a multi-paragraph paste. The pending hardbreak
+    // was never published, so the authored anchor line carries no trailing
+    // `\` while the canonical anchor line does, and the first pasted line
+    // continues that paragraph. The generic splice below opens a NEW block
+    // after the anchor instead — losing the hardbreak and the trailing
+    // `<br />` placeholder, so re-parsing drifts from the document and
+    // validation fails closed with the source never syncing. Splice the
+    // complete canonical continuation (hardbreak byte + continuing line +
+    // new blocks + placeholders) at the authored anchor's content end.
+    // `lineAt`-sourced anchors carry only {start,end}; read the tail bytes
+    // from the document instead of a `.text` field that may not exist.
+    const anchorTail = (doc, line) =>
+      String(doc.slice(line.start, line.end) || '').replace(/\r$/, '')
+    const nextHardbreak = /\\[ \t]*$/.exec(anchorTail(next, nextBefore))
+    const sourceHardbreak = /\\[ \t]*$/.exec(anchorTail(source, sourceBefore))
+    const continuationPrefix = next.slice(nextBefore.end, nextBefore.end + 2)
+    if (
+      nextHardbreak &&
+      !sourceHardbreak &&
+      sourceBeforeContentEnd < sourceAfter.start &&
+      /^\r?\n[^\r\n]/.test(continuationPrefix)
+    ) {
+      const crLength = next.slice(nextBefore.end - 1, nextBefore.end) === '\r' ? 1 : 0
+      const continuationStart = nextBefore.end - crLength - nextHardbreak[0].length
+      // The serializer's empty-paragraph `<br />` placeholders never reach
+      // authored source (hard post-condition in preserveRichMarkdownSource);
+      // the comparator bridges an editor-owned empty paragraph against the
+      // plain blank separator instead. Emit the continuation without the
+      // placeholder lines and re-attach the block separator explicitly.
+      const continuationBody = withoutStandaloneEmptyBlockLines(
+        next.slice(continuationStart, nextAfter.start)
+      )
+        .replace(/(?:\r\n|\r|\n)+$/, '')
+      const continuationEol = lineEndingNear(source, sourceBeforeContentEnd)
+      const adapted = continuationBody.replace(/\r\n?|\n/g, continuationEol)
+      if (Array.isArray(globalThis.__hmParagraphTrace)) {
+        globalThis.__hmParagraphTrace.push({
+          phase: 'middle-result',
+          reason: 'middle-continuation-inserted',
+          region: adapted.slice(0, 120)
+        })
+      }
+      return {
+        markdown: source.slice(0, sourceBeforeContentEnd) +
+          adapted +
+          continuationEol.repeat(2) +
+          source.slice(sourceAfter.start),
+        preserved: true,
+        reason: 'middle-continuation-inserted'
+      }
+    }
     const previousGap = previous.slice(previousBefore.end, previousAfter.start)
     const insertionAfterGap = nextGap.startsWith(previousGap)
     const insertionBeforeGap = nextGap.endsWith(previousGap)
