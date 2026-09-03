@@ -8,6 +8,10 @@ import {
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
 import './editor-table-click.js' // side effect: single click in a table cell places the caret
+import {
+  applySerializerStyleToRemark,
+  createSerializerStyleHolder
+} from '../lib/serializer-style.js'
 import { TextSelection } from '@milkdown/prose/state'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
@@ -1576,6 +1580,7 @@ export default function Editor({
       onSourceTransactions: handleSourceTransactions
     })
     crepeRef.current = crepe
+    const serializerStyleHolder = createSerializerStyleHolder(firstContent)
 
     // Keep a small exact set of source/canonical pairs that have already been
     // proven or were created directly by opening the author's file. The store
@@ -3215,6 +3220,19 @@ export default function Editor({
             return
           }
 
+          // P7 root fix: mirror the authored list spelling in the serializer
+          // (bullet, ordered delimiter, loose/tight, hard-break, strong). The
+          // serializer's defaults (`*`, padded, `1)`) made every authored
+          // compact `-`/`1.` document permanently diverge from its own
+          // canonical form, which is the structural source of the whole
+          // "diverged list" warning family. Style application is per editor
+          // instance; source-mode replaceMarkdown() re-detects on new bytes.
+          try {
+            const styledRemark = crepe.editor.ctx.get(remarkCtx)
+            applySerializerStyleToRemark(styledRemark, serializerStyleHolder)
+          } catch {
+            /* keep the stock serializer if the context is unavailable */
+          }
         // Milkdown stores the ProseMirror view in its context — `editor.view`
         // does not exist in this version, which previously left `view`
         // undefined and silently disabled every view-dependent feature.
@@ -3462,6 +3480,7 @@ export default function Editor({
           lastMarkdownRef,
           canonicalMarkdownRef,
           programmaticReplaceRef,
+          serializerStyleHolder,
           hasPendingRichFlush: () => richFlushPending,
           clearPendingRichFlush: clearRichFlushPending,
           generatedScratchRef,

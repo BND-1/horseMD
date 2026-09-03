@@ -123,7 +123,7 @@ const main = async () => {
     if (await toggleSource(app)) {
       const source = await waitFor(() => visibleSource(app), 'source textarea missing')
       await sleep(400)
-      if (!/分析：\\\r?\n1、定义层/.test(source)) {
+      if (!/分析：(?:\\|  )\r?\n1、定义层/.test(source)) {
         throw new Error(`source lost the hardbreak continuation: ${JSON.stringify(source.slice(0, 120))}`)
       }
       if (!source.includes('先明确几个核心概念：')) {
@@ -141,7 +141,7 @@ const main = async () => {
     await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not complete')
     await sleep(300)
     const disk = await readFile(file, 'utf8')
-    if (!/分析：\\\r\n1、定义层/.test(disk)) {
+    if (!/分析：(?:\\|  )\r?\n1、定义层/.test(disk)) {
       throw new Error(`disk lost the continuation: ${JSON.stringify(disk.slice(0, 120))}`)
     }
     for (let index = 0; index < disk.length; index += 1) {

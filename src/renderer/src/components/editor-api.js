@@ -32,6 +32,7 @@ export function createEditorApi({
   lastMarkdownRef,
   canonicalMarkdownRef,
   programmaticReplaceRef,
+  serializerStyleHolder,
   hasPendingRichFlush,
   clearPendingRichFlush,
   generatedScratchRef,
@@ -157,6 +158,10 @@ export function createEditorApi({
       }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
       lastMarkdownRef.current = source
+      // Source mode just handed us freshly authored bytes: the serializer's
+      // list style must follow THIS spelling, or the next rich edit would
+      // diverge from it again (P7).
+      serializerStyleHolder?.setFrom?.(source)
       clearPendingRichFlush?.()
       if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
