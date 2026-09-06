@@ -8,12 +8,26 @@
 //   - Uncontrolled textarea: defaultValue + liveContentRef/liveTimersRef/commitLive
 //     (no per-keystroke value re-set).
 //   - Split: panes are flex siblings; visibility is display/order, NO re-parenting.
-import Editor from '../Editor.jsx'
+// P8b shell-first startup: the editor stack (Milkdown/ProseMirror/CodeMirror,
+// several MB) is a lazy chunk, so the app shell paints as soon as the small
+// main bundle evaluates. The editor mounts inside Suspense — until the chunk
+// arrives a static pane skeleton shows, then the existing loading skeleton and
+// chunked-load flow take over exactly as before.
+const Editor = lazy(() => import('../Editor.jsx'))
 import { Icon } from '../icons.jsx'
 import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
 import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
-import { useRef } from 'react'
+import { Suspense, lazy, useRef } from 'react'
+
+const editorChunkFallback = (
+  <div className="editor-skeleton" aria-hidden="true">
+    <div className="skel-line skel-title" />
+    <div className="skel-line" style={{ width: '84%' }} />
+    <div className="skel-line" style={{ width: '71%' }} />
+    <div className="skel-line skel-gap" style={{ width: '58%' }} />
+  </div>
+)
 
 export default function EditorArea({
   tabs,
@@ -259,6 +273,7 @@ export default function EditorArea({
               onFocusCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
               onMouseDownCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
             >
+              <Suspense fallback={editorChunkFallback}>
               <Editor
                 tabId={`${tab.id}:${tab.reloadNonce}`}
                 initialContent={tab.content}
@@ -298,6 +313,7 @@ export default function EditorArea({
                 onStructureChange={() => setRichDocVersion((v) => v + 1)}
                 onLoadingChange={(loading) => setTabRichLoading(tab.id, loading)}
               />
+              </Suspense>
             </div>
           )
         }

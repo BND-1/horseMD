@@ -796,7 +796,10 @@ ipcMain.handle('update:check', async () => {
     // as an instant crash on open). net.fetch goes through Chromium's resolver,
     // which fails gracefully instead of crashing.
     const res = await net.fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' }
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' },
+      // Notify-only check: never let a stalled network (api.github.com is
+      // unreachable on some connections) hold the request open — bail early.
+      signal: AbortSignal.timeout(8000)
     })
     if (!res.ok) return { ok: false }
     const data = await res.json()
