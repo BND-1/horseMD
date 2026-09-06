@@ -13,7 +13,7 @@
 // non-empty selection, inside code blocks, when the content isn't mathy (so
 // prose like `$5` / `$HOME` doesn't trigger a preview), and on blur.
 import { Plugin } from '@milkdown/prose/state'
-import katex from 'katex'
+import { loadKatex } from '../lib/katex-lazy.js'
 import { inlineMathAtCaret } from './editor-inline-math.js'
 
 // Chars that signal the content is actually math (not prose). Without one of
@@ -35,14 +35,29 @@ function unclosedMathContent(textBeforeCaret) {
 let tip = null
 let innerEditListenersMounted = false
 
+// KaTeX is lazy-loaded (P8: keep it out of the eagerly parsed main chunk).
+// The raw text renders immediately as a placeholder; a monotonically
+// increasing token drops stale renders — while the chunk loads the user keeps
+// typing, and only the newest content may own the tip.
+let renderToken = 0
 const renderKatex = (target, content) => {
   if (!content) return false
-  try {
-    target.innerHTML = katex.renderToString(content, { throwOnError: false, displayMode: false })
-    return true
-  } catch {
-    return false
-  }
+  const token = ++renderToken
+  target.textContent = content
+  loadKatex()
+    .then((katex) => {
+      if (token !== renderToken) return
+      try {
+        target.innerHTML = katex.renderToString(content, {
+          throwOnError: false,
+          displayMode: false
+        })
+      } catch {
+        /* keep the raw-text placeholder */
+      }
+    })
+    .catch(() => {})
+  return true
 }
 
 const placeTip = (target, left, top) => {

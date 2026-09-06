@@ -1,5 +1,5 @@
 // Raw-HTML rendering for Milkdown's `html` node + block-type conversion.
-import katex from 'katex'
+import { loadKatex } from '../lib/katex-lazy.js'
 
 // Tags we render as real DOM instead of escaped source. Split into block vs
 // inline so the node view returns the right wrapper element (a block <div> or an
@@ -38,32 +38,46 @@ const renderMathTextNodes = (root) => {
     MATH_TEXT_RE.lastIndex = 0
     if (!MATH_TEXT_RE.test(text)) return
     MATH_TEXT_RE.lastIndex = 0
-    const fragment = document.createDocumentFragment()
-    let cursor = 0
+    const matches = []
     let match
     while ((match = MATH_TEXT_RE.exec(text))) {
       const display = match[1] != null
       const latex = (display ? match[1] : match[2] || '').trim()
-      let span = null
-      try {
-        span = document.createElement('span')
-        span.className = 'hm-html-block-math'
-        span.innerHTML = katex.renderToString(latex, {
-          throwOnError: false,
-          displayMode: display
-        })
-      } catch {
-        span = null
+      if (latex) matches.push({ index: match.index, end: match.index + match[0].length, latex, display })
+    }
+    if (!matches.length) return
+    // KaTeX is lazy-loaded (P8). The raw `$…$` text stays visible until the
+    // chunk resolves, then each run is materialized in one pass. The node view
+    // reports ignoreMutation, so filling after it returned is safe; a detached
+    // text node (view rebuilt meanwhile) is skipped.
+    loadKatex().then((katex) => {
+      if (!textNode.isConnected) return
+      const fragment = document.createDocumentFragment()
+      let cursor = 0
+      for (const m of matches) {
+        let span = null
+        try {
+          span = document.createElement('span')
+          span.className = 'hm-html-block-math'
+          span.innerHTML = katex.renderToString(m.latex, {
+            throwOnError: false,
+            displayMode: m.display
+          })
+        } catch {
+          span = null
+        }
+        if (!span) continue
+        if (m.index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, m.index)))
+        fragment.appendChild(span)
+        cursor = m.end
       }
-      if (!span) continue
-      if (match.index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)))
-      fragment.appendChild(span)
-      cursor = match.index + match[0].length
-    }
-    if (cursor > 0) {
-      if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)))
-      textNode.replaceWith(fragment)
-    }
+      if (cursor > 0) {
+        if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)))
+        textNode.replaceWith(fragment)
+      }
+    }).catch(() => {
+      /* KaTeX unavailable — the literal $…$ text remains, which round-trips fine */
+    })
   })
 }
 

@@ -1,4 +1,4 @@
-import katex from 'katex'
+import { loadKatex } from '../lib/katex-lazy.js'
 import { renderMermaidForExport } from './editor-mermaid.js'
 
 const EXPORT_PREVIEW_DEADLINE_MS = 12000
@@ -27,9 +27,10 @@ const cleanMathForExport = (math, { display } = {}) => {
   return copy
 }
 
-const mathmlFromLatex = (doc, latex, { display } = {}) => {
+const mathmlFromLatex = async (doc, latex, { display } = {}) => {
   if (!latex) return null
   try {
+    const katex = await loadKatex()
     const tpl = doc.createElement('template')
     tpl.innerHTML = katex.renderToString(latex, {
       throwOnError: false,
@@ -78,10 +79,10 @@ const sanitizeGeneratedSvg = (svg) => {
   return svg
 }
 
-const materializeLatexPreview = (block) => {
+const materializeLatexPreview = async (block) => {
   const doc = block.ownerDocument
   const math = block.querySelector('.preview-panel math') ||
-    mathmlFromLatex(doc, codeBlockText(block), { display: true })
+    await mathmlFromLatex(doc, codeBlockText(block), { display: true })
   if (!math) return false
   const wrapper = doc.createElement('figure')
   wrapper.appendChild(math.tagName?.toLowerCase() === 'math'
@@ -118,13 +119,15 @@ const CODE_PREVIEW_EXPORTERS = [
   }
 ]
 
-const materializeCodePreviewsForExport = (clone, mermaidPreviews) => {
+const materializeCodePreviewsForExport = async (clone, mermaidPreviews) => {
   const blocks = [...clone.querySelectorAll('.milkdown-code-block')]
-  blocks.forEach((block, index) => {
+  for (const [index, block] of blocks.entries()) {
     const language = codeBlockLanguage(block)
     const exporter = CODE_PREVIEW_EXPORTERS.find((candidate) => candidate.matches(language))
-    exporter?.materialize(block, index, { mermaidPreviews })
-  })
+    // materialize may be async (KaTeX is lazy-loaded, P8) — await in block
+    // order so replacements don't race.
+    await exporter?.materialize(block, index, { mermaidPreviews })
+  }
 }
 
 const materializeTaskListsForExport = (clone) => {
@@ -215,23 +218,23 @@ const resolveMermaidPreviews = async (root) => {
   return previews
 }
 
-const replaceKatexWithMathml = (root) => {
+const replaceKatexWithMathml = async (root) => {
   const doc = root.ownerDocument
   root.querySelectorAll('.katex-display').forEach((display) => {
     const math = display.querySelector('math')
     if (math) display.replaceWith(cleanMathForExport(math, { display: true }))
   })
-  root.querySelectorAll('.katex').forEach((katex) => {
+  for (const katex of [...root.querySelectorAll('.katex')]) {
     const math = katex.querySelector('math')
     if (math) {
       katex.replaceWith(cleanMathForExport(math))
-      return
+      continue
     }
     const inline = katex.closest("span[data-type='math_inline']")
-    const fallback = mathmlFromLatex(doc, inline?.dataset?.value || '', { display: false })
+    const fallback = await mathmlFromLatex(doc, inline?.dataset?.value || '', { display: false })
     if (fallback) katex.replaceWith(fallback)
-  })
-  materializeHtmlBlockMath(root)
+  }
+  await materializeHtmlBlockMath(root)
 }
 
 // A raw-HTML table block (renderHtmlNodeView, `.hm-html-block`) renders its
@@ -242,16 +245,16 @@ const replaceKatexWithMathml = (root) => {
 // `$...$` / `$$...$$` run for KaTeX MathML. Only the export clone changes;
 // the editor DOM and the saved Markdown keep the literal bytes.
 const INLINE_MATH_TEXT = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g
-const materializeHtmlBlockMath = (root) => {
+const materializeHtmlBlockMath = async (root) => {
   const doc = root.ownerDocument
-  root.querySelectorAll('.hm-html-block table, table.hm-html-block-table').forEach((table) => {
+  for (const table of [...root.querySelectorAll('.hm-html-block table, table.hm-html-block-table')]) {
     const walker = doc.createTreeWalker(table, NodeFilter.SHOW_TEXT)
     const targets = []
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       if (INLINE_MATH_TEXT.test(node.nodeValue || '')) targets.push(node)
       INLINE_MATH_TEXT.lastIndex = 0
     }
-    targets.forEach((textNode) => {
+    for (const textNode of targets) {
       const text = textNode.nodeValue
       const fragment = doc.createDocumentFragment()
       let cursor = 0
@@ -259,7 +262,7 @@ const materializeHtmlBlockMath = (root) => {
       let match
       while ((match = INLINE_MATH_TEXT.exec(text))) {
         const latex = (match[1] != null ? match[1] : match[2] || '').trim()
-        const math = latex ? mathmlFromLatex(doc, latex, { display: match[1] != null }) : null
+        const math = latex ? await mathmlFromLatex(doc, latex, { display: match[1] != null }) : null
         if (!math) continue
         if (match.index > cursor) fragment.appendChild(doc.createTextNode(text.slice(cursor, match.index)))
         fragment.appendChild(math)
@@ -269,8 +272,8 @@ const materializeHtmlBlockMath = (root) => {
         if (cursor < text.length) fragment.appendChild(doc.createTextNode(text.slice(cursor)))
         textNode.replaceWith(fragment)
       }
-    })
-  })
+    }
+  }
 }
 
 const flattenCodeMirrorBlocks = (clone) => {
@@ -358,12 +361,12 @@ export async function createPdfSourceFromEditor(root) {
     images.push({ placeholder, src })
   })
 
-  materializeCodePreviewsForExport(clone, mermaidPreviews)
+  await materializeCodePreviewsForExport(clone, mermaidPreviews)
   materializeTaskListsForExport(clone)
   materializeTableLayoutsForExport(root, clone)
   stripEditorOnlyForExport(clone)
   flattenCodeMirrorBlocks(clone)
-  replaceKatexWithMathml(clone)
+  await replaceKatexWithMathml(clone)
   stripEditorAttributes(clone)
 
   const headings = [...clone.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading, index) => {
