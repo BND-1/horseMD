@@ -30,9 +30,10 @@ jobs:
           # --verify-tag fails the job if the tag vanished; ignore "already
           # exists" so reruns are safe.
           gh release create "$TAG" --draft --verify-tag \
+            --repo BND-1/horseMD \
             --title "HorseMD ${TAG#v}" \
             --notes "Pending release notes." || \
-          gh release view "$TAG" > /dev/null
+          gh release view "$TAG" --repo BND-1/horseMD > /dev/null
 
   release:
     needs: init-release
