@@ -13,7 +13,29 @@ permissions:
   contents: write
 
 jobs:
+  # Create the single draft release up front. When the three platform builders
+  # started concurrently with no existing draft, each electron-builder created
+  # ITS OWN draft and the 14 assets split 5+9 across two same-named releases
+  # (v0.13.199). With one draft already present every builder reuses it.
+  init-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          # --verify-tag fails the job if the tag vanished; ignore "already
+          # exists" so reruns are safe.
+          gh release create "$TAG" --draft --verify-tag \
+            --title "HorseMD ${TAG#v}" \
+            --notes "Pending release notes." || \
+          gh release view "$TAG" > /dev/null
+
   release:
+    needs: init-release
     strategy:
       fail-fast: false
       matrix:
