@@ -113,6 +113,14 @@ body.light {
   --code-border: #ddd9d2;
   --code-block-bg: #2a2730;
   --code-block-border: rgba(0, 0, 0, 0.25);
+  /* Line numbers in CodeMirror code blocks. Every built-in theme's code-block
+     background is dark, so one shared pale-ink ramp works; alpha is high
+     enough to read (the old 0.36 was ~2.4:1 contrast — "看不清" across every
+     theme) while staying clearly subordinate to the code itself. Themes and
+     custom CSS can override this single variable. */
+  --code-linenum: rgba(238, 233, 244, 0.58);
+  --code-linenum-active: rgba(238, 233, 244, 0.95);
+  --code-linenum-border: rgba(255, 255, 255, 0.12);
   --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Semantic */
@@ -5859,16 +5867,21 @@ body.hm-preserve-soft-breaks
 .milkdown .cm-editor .cm-content {
   padding: 0 16px;
 }
-.milkdown .cm-editor .cm-gutters {
+/* Selector depth beats Crepe's code-mirror.css (`.milkdown
+   .milkdown-code-block .cm-gutters`, 0-3-0): the editor chunk is lazily
+   loaded (P8b), so Crepe's stylesheet is injected AFTER app.css and wins any
+   equal-specificity tie — its light --crepe-color-surface gutter under pale
+   line numbers made them unreadable in every theme. */
+.milkdown .milkdown-code-block .cm-editor .cm-gutters {
   background: var(--code-block-bg);
   border: none;
-  color: rgba(238, 233, 244, 0.4);
+  color: var(--code-linenum);
   user-select: none;
   -webkit-user-select: none;
   margin-right: 12px;
   padding: 0;
 }
-.milkdown .cm-editor .cm-lineNumbers .cm-gutterElement {
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement {
   min-width: 2.4ch;
   padding: 0 0.95em 0 0.5em;
   text-align: right;
@@ -5878,12 +5891,12 @@ body.hm-preserve-soft-breaks
   font-size: 1em;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   line-height: 1.6;
-  color: rgba(238, 233, 244, 0.36);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--code-linenum);
+  border-right: 1px solid var(--code-linenum-border);
   background: transparent;
 }
-.milkdown .cm-editor .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter {
-  color: rgba(238, 233, 244, 0.9);
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter {
+  color: var(--code-linenum-active);
   background: rgba(255, 255, 255, 0.05);
 }
 /* The plain (non-CodeMirror) code block keeps its tinted look; only the
