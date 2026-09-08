@@ -16,6 +16,7 @@ export const MENU_COMMAND_IDS = new Set([
   'tab.close',
   'view.commandPalette',
   'view.showOutline',
+  'view.globalSearch',
   'view.toggleSource',
   'view.cycleTheme',
   'editor.find'
@@ -39,6 +40,7 @@ export const MENU_COMMAND_ALIASES = {
   closeTab: 'tab.close',
   palette: 'view.commandPalette',
   toggleOutline: 'view.showOutline',
+  globalSearch: 'view.globalSearch',
   toggleSource: 'view.toggleSource',
   toggleTheme: 'view.cycleTheme',
   find: 'editor.find'
@@ -54,6 +56,7 @@ export const DEFAULT_MENU_ACCELERATORS = {
   'tab.close': 'CmdOrCtrl+W',
   'view.commandPalette': 'CmdOrCtrl+P',
   'view.showOutline': 'CmdOrCtrl+Shift+L',
+  'view.globalSearch': 'CmdOrCtrl+Shift+F',
   'view.toggleSource': 'CmdOrCtrl+/',
   'view.cycleTheme': 'CmdOrCtrl+Shift+T',
   'editor.find': 'CmdOrCtrl+F'

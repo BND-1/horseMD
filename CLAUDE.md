@@ -60,6 +60,10 @@ src/main/pandoc-export.js Pandoc detect/select/export + save dialog + error mapp
 src/main/pandoc-core.js   Pandoc format whitelist, version parse, args (pure)
 src/main/subprocess.js    no-shell subprocess: timeout→kill→SIGKILL, 64 KiB stderr cap
 src/main/export-prefs.js  per-file export save-dir remembering (userData/export-prefs.json)
+src/main/globalsearch.js workspace search IPC (search:workspace): scans roots via listMarkdownFiles,
+                       mtime-validated content cache, latest-request-only caps
+src/main/globalsearch-core.js pure search logic (multi-term AND, occIdx aligned with find.js
+                       matchIndices, snippet ranges, caps) — locked by scripts/test-global-search.mjs
 src/main/ai/              AI Phase 0 pure logic: context-snapshot (sha256 revision) + change-proposal
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
@@ -87,6 +91,10 @@ src/renderer/src/
   components/editor-review-decorations.js  CriticMarkup scan + Decoration construction
   components/editor-review-card.js     review card DOM + edit/navigation actions
   components/editor-{html,images,copy,highlight,mermaid,tablebreak,math,math-preview,autolink,frontmatter,md-paste,toolbar,toolbar-autohide,block-controls,chunked-parse,codeblock-eager,codeblock-tab,source-caret,link-labels}.js  other Editor helpers
+  components/GlobalSearchPanel.jsx  workspace search sidebar pane (third sidebarMode 'search', issue #120)
+  hooks/useGlobalSearch.js   search state (debounce + stale-drop) + result-jump: source tabs land the
+                          FindBar on the exact occurrence (occIdx), rich tabs restoreMarkdownOffset
+                          then pick the nearest highlighted range
   hooks/useWorkspace.js multi-root workspace state + directory watchers
   hooks/useSidebarTree.js file-tree loading, expansion + active-file following
   hooks/useSourceModeSwitch.js per-tab source mode + rich/source sync + anchor restore
@@ -433,6 +441,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (`CSS.highlights` + `Highlight`), not `window.find` — it searches only the
   editor body (rich `view.dom` / source `<textarea>`), never UI text, and paints
   ranges without mutating the DOM. See `hooks/useFindReplace.js` and `find.js`.
+- **Global search** (issue #120): the sidebar's third mode (`sidebarMode
+  'search'`, ActivityBar button, `Mod+Shift+F`). Space-separated keywords are
+  AND-matched per file in the main process (`search:workspace` reuses the
+  sidebar's `listMarkdownFiles` scope + `isRestrictedWatchRoot` guard, with an
+  mtime-validated content cache). Clicking a result opens the file and lands
+  the in-document FindBar on that occurrence: source/plain tabs jump by
+  `occIdx` (globalsearch-core counts occurrences with the EXACT find.js
+  `matchIndices` semantics — case-insensitive, non-overlapping — so the index
+  is exact), rich tabs call `restoreMarkdownOffset(fileOffset)` then pick the
+  nearest highlighted range at/before the caret. Untitled tabs carry
+  `path: null` — path comparisons must tolerate it.
 - **File watcher must stay crash-proof.** chokidar recursively watching a tree
   with permission-protected paths throws a flood of `EACCES`/`EAGAIN`/`EBUSY`
   that, left unhandled, `abort()`s the whole main process on launch. The trap:

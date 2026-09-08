@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.201",
+  "version": "0.13.202",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -342,7 +342,9 @@
     "test:hardbreak-paste-continuation-ui": "node scripts/test-hardbreak-paste-continuation-ui.mjs",
     "test:serializer-style": "node scripts/test-serializer-style.mjs",
     "test:serializer-style-follow-doc-ui": "node scripts/test-serializer-style-follow-doc-ui.mjs",
-    "test:custom-theme-style-order-ui": "node scripts/test-custom-theme-style-order-ui.mjs"
+    "test:custom-theme-style-order-ui": "node scripts/test-custom-theme-style-order-ui.mjs",
+    "test:global-search": "node scripts/test-global-search.mjs",
+    "test:global-search-ui": "node scripts/test-global-search-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

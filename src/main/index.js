@@ -11,6 +11,7 @@ import { registerFileSystemIpc } from './filesystem.js'
 import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
 import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { registerWatcherIpc } from './watchers.js'
+import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -337,6 +338,10 @@ registerDocumentIpc(ipcMain, {
 })
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
+
+// Workspace-wide content search (issue #120) — same markdownPattern so the
+// search scope is exactly what the sidebar tree shows.
+registerGlobalSearchIpc(ipcMain, { markdownPattern: MD_RE })
 
 registerSyncWorkspaceIpc(ipcMain, {
   getUserDataPath: () => app.getPath('userData'),
@@ -913,6 +918,7 @@ function buildMenu() {
         // Ctrl/Cmd+B remains the editor's standard bold shortcut (#67).
         { label: 'Toggle Sidebar', click: menuCmd('toggleSidebar') },
         { label: 'Toggle Outline', accelerator: menuAccelerator('view.showOutline'), click: menuCmd('toggleOutline') },
+        { label: 'Global Search', accelerator: menuAccelerator('view.globalSearch'), click: menuCmd('globalSearch') },
         { label: 'Toggle Source Mode', accelerator: menuAccelerator('view.toggleSource'), click: menuCmd('toggleSource') },
         { type: 'separator' },
         { label: 'Toggle Theme', accelerator: menuAccelerator('view.cycleTheme'), click: menuCmd('toggleTheme') },

@@ -138,9 +138,9 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 43)
+assert.equal(COMMAND_DEFINITIONS.length, 44)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 4)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 28)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 29)
 const codeExitCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'editor.code.exit')
 assert.ok(codeExitCommand)
 assert.deepEqual(codeExitCommand.defaultKeybindings, ['Mod+Enter'])

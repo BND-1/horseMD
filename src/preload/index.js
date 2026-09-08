@@ -48,6 +48,9 @@ const api = {
   classifyDroppedPaths: (paths) => ipcRenderer.invoke('fs:classifyPaths', paths),
   setShowHidden: (val) => ipcRenderer.invoke('settings:setShowHidden', val),
 
+  // Workspace-wide content search (issue #120).
+  searchWorkspace: (request) => ipcRenderer.invoke('search:workspace', request),
+
   // Sync workspaces: the renderer can register an explicitly selected root,
   // but never receives registry paths or arbitrary network/credential access.
   syncListWorkspaces: () => ipcRenderer.invoke('sync:workspaceList'),

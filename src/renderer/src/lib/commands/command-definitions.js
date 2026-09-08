@@ -44,6 +44,7 @@ export const LEGACY_COMMAND_ALIASES = {
   toggleSidebar: 'view.toggleSidebar',
   toggleFiles: 'view.showFiles',
   toggleOutline: 'view.showOutline',
+  globalSearch: 'view.globalSearch',
   toggleSource: 'view.toggleSource',
   toggleTheme: 'view.cycleTheme',
   find: 'editor.find',
@@ -222,6 +223,16 @@ export const COMMAND_DEFINITIONS = [
     category: COMMAND_CATEGORIES.VIEW,
     context: COMMAND_CONTEXTS.APP,
     defaultKeybindings: ['Mod+Shift+L'],
+    electronAccelerator: true,
+    palette: true
+  },
+  {
+    id: 'view.globalSearch',
+    handler: 'globalSearch',
+    titleKey: 'cmd.globalSearch',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Shift+F'],
     electronAccelerator: true,
     palette: true
   },

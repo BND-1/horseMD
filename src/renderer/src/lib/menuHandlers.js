@@ -34,6 +34,7 @@ const COMMAND_PALETTE_ICONS = {
   'view.toggleSidebar': 'sidebar',
   'view.showFiles': 'folder',
   'view.showOutline': 'outline',
+  'view.globalSearch': 'search',
   'view.toggleSource': 'code',
   'view.cycleTheme': 'moon',
   'editor.find': 'search',
@@ -165,6 +166,10 @@ export function createMenuHandlers({
     },
     toggleFiles: () => {
       setSidebarMode('files')
+      setSidebarOpen(true)
+    },
+    globalSearch: () => {
+      setSidebarMode('search')
       setSidebarOpen(true)
     },
     toggleSource,

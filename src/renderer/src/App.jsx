@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Outline from './components/Outline.jsx'
+import GlobalSearchPanel from './components/GlobalSearchPanel.jsx'
 import FloatingOutline from './components/FloatingOutline.jsx'
 import StatusBar from './components/StatusBar.jsx'
 import SaveFab from './components/SaveFab.jsx'
@@ -40,6 +41,7 @@ import { isTabDirty } from './lib/tab-state.js'
 import { applyCustomTheme, applyUserCss } from './customThemes.js'
 import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
+import { useGlobalSearch } from './hooks/useGlobalSearch.js'
 import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
@@ -857,6 +859,20 @@ export default function App() {
     })
   findStateRef.current = { open: find.open, query: find.query }
 
+  // Workspace-wide search (issue #120) — the third sidebar mode. Jump lands
+  // the in-document FindBar on the clicked match (see useGlobalSearch).
+  const { query: searchQuery, setQuery: setSearchQuery, results: searchResults, jumpToMatch } = useGlobalSearch({
+    roots: folderRoots,
+    openPaths,
+    tabsRef,
+    editorApis,
+    editorHostRef,
+    waitForEditorApi,
+    setFind,
+    runFind,
+    findInputRef
+  })
+
   // In split view, target the pane you're actually editing (last focused), as
   // long as it's one of the two visible panes; otherwise the active (left) tab.
   const pickEditableId = () => {
@@ -1063,6 +1079,7 @@ export default function App() {
         onHome={() => handlers.current.home()}
         onFiles={() => handlers.current.toggleFiles()}
         onOutline={() => handlers.current.toggleOutline()}
+        onSearch={() => handlers.current.globalSearch()}
         onSettings={openSettingsTab}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />
@@ -1127,6 +1144,16 @@ export default function App() {
                 syncSupported={syncWorkspaces.supported}
                 syncFolderPaths={syncWorkspaces.registered.map((entry) => entry.rootPath)}
                 onEnableSyncFolder={enableSyncFolder}
+              />
+            ) : sidebarMode === 'search' ? (
+              <GlobalSearchPanel
+                query={searchQuery}
+                onQuery={setSearchQuery}
+                results={searchResults}
+                t={t}
+                onJump={jumpToMatch}
+                onAddFolder={openFolder}
+                hasRoots={folderRoots.length > 0}
               />
             ) : (
               <Outline

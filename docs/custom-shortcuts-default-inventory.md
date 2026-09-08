@@ -11,6 +11,13 @@
 | file.saveAs | cmd.saveAs | file | document | Mod+Shift+S | ⌘⇧S | Ctrl+Shift+S | CmdOrCtrl+Shift+S | CmdOrCtrl+Shift+S | Electron menu | 是 |
 | file.attach | cmd.attachFile | file | document |  |  |  |  |  | Electron menu | 是 |
 | file.exportPdf | cmd.exportPdf | file | document | Mod+Shift+E | ⌘⇧E | Ctrl+Shift+E | CmdOrCtrl+Shift+E | CmdOrCtrl+Shift+E | Electron menu | 是 |
+| file.exportHtml | cmd.exportHtml | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocDocx | cmd.exportPandocDocx | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocEpub | cmd.exportPandocEpub | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocLatex | cmd.exportPandocLatex | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocOdt | cmd.exportPandocOdt | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocRtf | cmd.exportPandocRtf | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocTxt | cmd.exportPandocTxt | file | document |  |  |  |  |  | Electron menu | 是 |
 | tab.close | cmd.closeTab | file | document | Mod+W | ⌘W | Ctrl+W | CmdOrCtrl+W | CmdOrCtrl+W | Electron menu | 是 |
 | tab.next | cmd.nextTab | view | app | Ctrl+Tab | ⌃Tab | Ctrl+Tab |  |  | Renderer | 是 |
 | tab.previous | cmd.previousTab | view | app | Ctrl+Shift+Tab | ⌃⇧Tab | Ctrl+Shift+Tab |  |  | Renderer | 是 |
@@ -18,6 +25,7 @@
 | view.toggleSidebar | cmd.sidebar | view | app | Mod+Shift+B | ⌘⇧B | Ctrl+Shift+B |  |  | Renderer | 是 |
 | view.showFiles | cmd.files | view | app |  |  |  |  |  | Renderer | 是 |
 | view.showOutline | cmd.outline | view | app | Mod+Shift+L | ⌘⇧L | Ctrl+Shift+L | CmdOrCtrl+Shift+L | CmdOrCtrl+Shift+L | Electron menu | 是 |
+| view.globalSearch | cmd.globalSearch | view | app | Mod+Shift+F | ⌘⇧F | Ctrl+Shift+F | CmdOrCtrl+Shift+F | CmdOrCtrl+Shift+F | Electron menu | 是 |
 | view.toggleSource | cmd.source | view | document | Mod+Slash | ⌘/ | Ctrl+/ | CmdOrCtrl+/ | CmdOrCtrl+/ | Electron menu | 是 |
 | view.cycleTheme | cmd.theme | view | app | Mod+Shift+T | ⌘⇧T | Ctrl+Shift+T | CmdOrCtrl+Shift+T | CmdOrCtrl+Shift+T | Electron menu | 是 |
 | editor.find | cmd.find | editor | document | Mod+F | ⌘F | Ctrl+F | CmdOrCtrl+F | CmdOrCtrl+F | Electron menu | 是 |
@@ -25,6 +33,7 @@
 | editor.bold | cmd.bold | editor | editor | Mod+B | ⌘B | Ctrl+B |  |  | Editor | 否 |
 | editor.italic | cmd.italic | editor | editor | Mod+I | ⌘I | Ctrl+I |  |  | Editor | 否 |
 | editor.highlight | cmd.highlight | editor | editor | Mod+Alt+H | ⌘⌥H | Ctrl+Alt+H |  |  | Editor | 否 |
+| editor.code.exit | Exit Code Block | editor | editor | Mod+Enter | ⌘Enter | Ctrl+Enter |  |  | Editor | 否 |
 | editor.block.paragraph | block.paragraph | editor | editor | Mod+0 | ⌘0 | Ctrl+0 |  |  | Editor | 是 |
 | editor.block.h1 | block.h1 | editor | editor | Mod+1 | ⌘1 | Ctrl+1 |  |  | Editor | 是 |
 | editor.block.h2 | block.h2 | editor | editor | Mod+2 | ⌘2 | Ctrl+2 |  |  | Editor | 是 |
