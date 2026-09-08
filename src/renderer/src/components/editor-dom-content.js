@@ -9,6 +9,7 @@ import {
   materializeCopiedSoftBreaks
 } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
+import { attachPlainTextDropHandler } from './editor-drop-text.js'
 import { hasStructuredWebHtml } from './editor-web-paste.js'
 
 export function mountEditorContentBindings({
@@ -225,6 +226,11 @@ export function mountEditorContentBindings({
       }
     }, prepareRawMarkdownPaste, markUserEdit)
   )
+  // Plain-text drops insert literal text at the drop point — without this,
+  // ProseMirror's html-flavored block insertion splits the host textblock
+  // (trace-61614: a `<br />` drop split a list item into [empty, text] and
+  // spawned unround-trippable empty blocks → source-sync warning).
+  cleanups.push(attachPlainTextDropHandler(view, markUserEdit))
   cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onImageClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onMermaidClick, true))

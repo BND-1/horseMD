@@ -87,7 +87,10 @@ export function mountEditorInputTrace({ host, view, cleanups }) {
   })
   const onDrop = (event) => log('drop', {
     types: [...(event.dataTransfer?.types || [])],
-    text: event.dataTransfer?.getData('text/plain') || ''
+    text: event.dataTransfer?.getData('text/plain') || '',
+    // The html flavor decides how ProseMirror's drop inserts (block split vs
+    // inline) — trace-61614 had to re-derive it from the PM shape.
+    html: (event.dataTransfer?.getData('text/html') || '').slice(0, 300)
   })
   const onPointerDown = (event) => log('pointerdown', {
     button: event.button,
