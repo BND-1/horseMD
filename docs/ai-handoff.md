@@ -1,6 +1,25 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-08-31。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-08。
+
+## ⚡ 最新状态（2026-09-08，覆盖下方旧快照）
+
+**先读 [`handoff-0-13-201-session.md`](./handoff-0-13-201-session.md)** —— 它是
+0.13.188 → 0.13.201 的完整会话存档（源码一致性收尾 P5d-P7、启动性能 P8/P8b、
+行号可读性、自定义主题 CSS 顺序、v0.13.199/v0.13.200 发版与发布流水线加固、
+用户工作方式、harness 踩坑、既有失败清单）。要点：
+
+- 当前安装 `/Applications/HorseMD.app` = **0.13.201**（未发布，等用户验证自定义主题修复后发版）
+- 已发布 v0.13.199 / v0.13.200（GitHub，14 资产 + feed）
+- **P7 序列化风格跟随文档**是架构级变更：canonical 镜像作者列表拼写，"分歧家族"警告从源头消除
+- **懒加载 CSS 顺序家族**是 P8b 的伴生回归（三例：行号、自定义主题、以及未来任何编辑器 CSS
+  规则都要考虑注入顺序不定）——修法是升 specificity 或 owned-style MutationObserver 垫底
+- 发布流程：tag push → CI（init-release 前置 job 防 draft 分裂）→ 单一 draft 14 资产 →
+  `gh release edit` 写说明发布；gh 命令要显式 `-R BND-1/horseMD`
+- trace 归因捷径：`markdown-sync` 事件自带全量 source/previousCanonical/canonical/markdown 字节，
+  直接提取做 Node 复现比搭 E2E 快
+
+以下为历史快照（E0 时代，2026-08-31），保留作背景：
 
 ## 0. 当前状态快照
 
