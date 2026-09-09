@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { COMMAND_CATEGORIES, COMMAND_DEFINITIONS, getCommandHandler, resolveCommandId } from '../src/renderer/src/lib/commands/command-definitions.js'
 import { DEFAULT_MENU_ACCELERATORS, defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from '../src/main/menu-keybindings.js'
 import { assertValidCommandDefinitions, validateCommandDefinitions } from '../src/renderer/src/lib/commands/command-registry.js'
-import { buildElectronAcceleratorPayload } from '../src/renderer/src/lib/commands/electron-accelerators.js'
+import { buildElectronAcceleratorPayload, buildGlobalAcceleratorPayload } from '../src/renderer/src/lib/commands/electron-accelerators.js'
 import { findKeybindingConflicts } from '../src/renderer/src/lib/commands/keybinding-conflicts.js'
 import { getReservedKeybindingReason, isAlwaysReservedKeybinding, isReservedKeybinding } from '../src/renderer/src/lib/commands/keybinding-reserved.js'
 import { getCommandShortcut, labelWithShortcut } from '../src/renderer/src/lib/commands/shortcut-labels.js'
@@ -85,6 +85,18 @@ assert.equal(buildElectronAcceleratorPayload({
   ...effective,
   'file.save': []
 })['file.save'], null)
+// Global (OS-level) commands are registered by main via globalShortcut, so they
+// must NOT also appear in the Electron menu accelerator payload (double trigger).
+assert.equal(buildElectronAcceleratorPayload(effective)['window.toggleVisibility'], undefined)
+assert.equal(buildGlobalAcceleratorPayload(effective)['window.toggleVisibility'], 'Alt+M')
+assert.equal(buildGlobalAcceleratorPayload({
+  ...effective,
+  'window.toggleVisibility': ['Ctrl+Shift+H']
+})['window.toggleVisibility'], 'Ctrl+Shift+H')
+assert.equal(buildGlobalAcceleratorPayload({
+  ...effective,
+  'window.toggleVisibility': []
+})['window.toggleVisibility'], null)
 
 const state = setCommandKeybindings({ overrides: {} }, 'file.save', ['Ctrl+Alt+S'])
 assert.deepEqual(state.overrides['file.save'], ['Ctrl+Alt+S'])
@@ -138,9 +150,9 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 44)
+assert.equal(COMMAND_DEFINITIONS.length, 45)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 4)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 29)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 30)
 const codeExitCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'editor.code.exit')
 assert.ok(codeExitCommand)
 assert.deepEqual(codeExitCommand.defaultKeybindings, ['Mod+Enter'])

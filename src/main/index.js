@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
@@ -20,6 +20,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
+// Pre-sync default for the global show/hide accelerator. The renderer owns the
+// real default (command-definitions.js → 'window.toggleVisibility') and pushes
+// the user's effective binding as soon as it mounts; this only covers the gap.
+const DEFAULT_TOGGLE_WINDOW_SHORTCUT = 'Alt+M'
+// OS-level shortcuts must be registered here (globalShortcut), but the binding
+// itself is user-configurable in the renderer. The renderer may only bind
+// commands in this whitelist — anything else in the payload is ignored, so a
+// compromised renderer cannot hook arbitrary system-wide keys.
+const GLOBAL_COMMANDS = {
+  'window.toggleVisibility': () => toggleMainWindow()
+}
 const backgroundTestMode = process.argv.includes('--horsemd-test-background')
 const inputTraceEnabled = process.argv.includes('--horsemd-input-trace')
 
@@ -33,6 +44,15 @@ let allowClose = false
 let isQuitting = false
 let localFontGrant = null
 let rendererReady = false
+// Tray icon that keeps the app reachable while the window is hidden. Held in a
+// module variable so it isn't garbage-collected (which would remove the icon).
+let tray = null
+// Settings › General "close to tray". The renderer owns the persisted value and
+// pushes it here on mount; until then the default keeps the window alive.
+let closeToTray = true
+// Registered OS-level accelerators: command id -> accelerator. Rebuilt whenever
+// the renderer pushes the user's effective keybindings.
+let globalShortcuts = new Map()
 
 const inputTracePath = () => join(app.getPath('temp'), `horsemd-input-trace-${process.pid}.jsonl`)
 let inputTraceQueue = Promise.resolve()
@@ -153,6 +173,135 @@ function extractArgs(argv) {
   return { files, folders }
 }
 
+// ---- Tray / show-hide window ---------------------------------------------
+// "Close to tray" keeps the app running when the window is closed: the window is
+// hidden instead, and the tray icon (or the global Alt+M shortcut) brings it
+// back. A real quit still goes through the renderer's unsaved-changes confirm.
+function trayIconPath() {
+  // Packaged: electron-builder copies build/icons/32x32.png -> <resources>/icons.
+  const packaged = join(process.resourcesPath, 'icons', '32x32.png')
+  if (existsSync(packaged)) return packaged
+  // Dev: app.getAppPath() is the project root.
+  return join(app.getAppPath(), 'build', 'icons', '32x32.png')
+}
+
+// The native application menu is English-only, but the tray is the one surface
+// a user sees while the window is hidden — follow the OS locale there.
+function trayLabels() {
+  const zh = String(app.getLocale?.() || '').toLowerCase().startsWith('zh')
+  return zh
+    ? { toggle: '显示 / 隐藏 HorseMD', quit: '退出 HorseMD' }
+    : { toggle: 'Show / Hide HorseMD', quit: 'Quit HorseMD' }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function hideMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide()
+}
+
+function toggleMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return
+  }
+  // Visible AND focused -> hide. Anything else (hidden, minimized, or behind
+  // another window) -> bring it to the front.
+  if (!mainWindow.isMinimized() && mainWindow.isVisible() && mainWindow.isFocused()) {
+    hideMainWindow()
+  } else {
+    showMainWindow()
+  }
+}
+
+// Tray "Quit". The window is shown first so the renderer's unsaved-changes
+// confirm (a page dialog) is visible; isQuitting makes the window 'close'
+// handler treat it as a quit instead of another hide-to-tray.
+function quitApp() {
+  isQuitting = true
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    app.quit()
+    return
+  }
+  showMainWindow()
+  mainWindow.close()
+}
+
+// The tray menu mirrors the current global accelerator, so it stays correct
+// after the user rebinds (or clears) the show/hide shortcut.
+function rebuildTrayMenu() {
+  if (!tray) return
+  const labels = trayLabels()
+  const accelerator = globalShortcuts.get('window.toggleVisibility') || ''
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: labels.toggle, accelerator: accelerator || undefined, click: () => toggleMainWindow() },
+    { type: 'separator' },
+    { label: labels.quit, click: () => quitApp() }
+  ]))
+}
+
+function createTray() {
+  if (tray) return
+  let image = null
+  try {
+    const iconPath = trayIconPath()
+    if (existsSync(iconPath)) image = nativeImage.createFromPath(iconPath)
+  } catch {
+    /* fall through — no usable icon means no tray */
+  }
+  if (!image || image.isEmpty()) return
+  tray = new Tray(image)
+  tray.setToolTip('HorseMD')
+  rebuildTrayMenu()
+  // Windows/Linux: a plain left click toggles the window (right click still
+  // opens the context menu). macOS shows the menu on click, per platform norms.
+  if (process.platform !== 'darwin') tray.on('click', () => toggleMainWindow())
+}
+
+// Replace the whole set of app-owned global accelerators. Called once at startup
+// with the default and again whenever the renderer's effective keybindings
+// change. Returns the accelerators that actually registered plus the command ids
+// the OS/another app already owns (the settings UI warns about those).
+function applyGlobalShortcuts(payload) {
+  for (const accelerator of globalShortcuts.values()) {
+    try {
+      globalShortcut.unregister(accelerator)
+    } catch {
+      /* already released (e.g. a later registration failed) — ignore */
+    }
+  }
+  globalShortcuts = new Map()
+  const unregistered = []
+  for (const [commandId, accelerator] of Object.entries(payload || {})) {
+    const action = GLOBAL_COMMANDS[commandId]
+    if (!action) continue
+    if (typeof accelerator !== 'string' || !accelerator.trim() || accelerator.length > 80) continue
+    let registered = false
+    try {
+      registered = globalShortcut.register(accelerator, action)
+    } catch {
+      /* invalid accelerator string — leave the command unbound */
+      registered = false
+    }
+    if (registered) globalShortcuts.set(commandId, accelerator)
+    else unregistered.push(commandId)
+  }
+  rebuildTrayMenu()
+  return {
+    ok: true,
+    accelerators: Object.fromEntries(globalShortcuts),
+    unregistered
+  }
+}
+
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     if (app.isReady()) createWindow()
@@ -247,7 +396,9 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (allowClose) return
     e.preventDefault()
-    sendToRenderer('app-close-request')
+    // Closing to the tray keeps the app (and every open tab) alive, so the
+    // renderer only has to flush pending edits — no unsaved-changes confirm.
+    sendToRenderer('app-close-request', { closeToTray: closeToTray && !isQuitting })
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -304,11 +455,17 @@ app.whenReady().then(() => {
     allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
   )
   createWindow()
+  createTray()
+  // Pre-sync default; the renderer replaces it with the user's effective binding
+  // ('window:setGlobalShortcuts') as soon as it has loaded the keybinding store.
+  applyGlobalShortcuts({ 'window.toggleVisibility': DEFAULT_TOGGLE_WINDOW_SHORTCUT })
   if (inputTraceEnabled) {
     console.log(`HorseMD input trace: ${inputTracePath()}`)
   }
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) focusMainWindow()
+    // macOS dock click: also restores a window that was hidden to the tray (the
+    // window still exists, it's just not visible), and recreates a closed one.
+    showMainWindow()
   })
 })
 
@@ -324,8 +481,16 @@ app.on('before-quit', () => {
   isQuitting = true
 })
 
+// Global accelerators are process-wide; release them on the way out so a
+// relaunch (or another app) can register the same combination again.
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // With close-to-tray on, the window is hidden rather than closed, so this
+  // only fires for a real quit — or when the user turned close-to-tray off.
+  if (process.platform !== 'darwin' && !closeToTray) app.quit()
 })
 
 // ----------------------------- IPC: file system -----------------------------
@@ -767,6 +932,30 @@ ipcMain.handle('window:toggleMaximize', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
+// Settings › General. The preference itself is persisted by the renderer; main
+// only needs the live value.
+ipcMain.handle('window:setCloseToTray', (event, value) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
+  closeToTray = value !== false
+  return { ok: true, closeToTray }
+})
+// Command palette ("Show / Hide Window"): the renderer can't hide/show its own
+// window, so it asks main — the same toggle the tray icon and global shortcut use.
+ipcMain.handle('window:toggleVisibility', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
+  toggleMainWindow()
+  return { ok: true }
+})
+// Custom keybindings › global commands. The renderer resolves the user's
+// effective binding and sends { commandId: electronAccelerator }; only the
+// whitelisted GLOBAL_COMMANDS are accepted. `unregistered` reports combinations
+// the OS/another app already owns so the settings UI can warn about them.
+ipcMain.handle('window:setGlobalShortcuts', (event, payload) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, accelerators: {}, unregistered: [] }
+  }
+  return applyGlobalShortcuts(payload)
+})
 // This is intentionally a narrow bridge to Electron's existing View menu role.
 // DevTools remains desktop-only and renderer code never receives Node access.
 ipcMain.handle('window:toggleDevTools', (event) => {
@@ -776,12 +965,21 @@ ipcMain.handle('window:toggleDevTools', (event) => {
 })
 
 // The renderer confirmed it's safe to close (no unsaved changes, or the user
-// chose to discard). If a quit is underway (Cmd/Ctrl+Q), quit the whole app;
-// otherwise just close the window (macOS keeps the app running).
+// chose to discard). A real quit quits the whole app; with close-to-tray on a
+// plain close only hides the window (and `allowClose` stays false so the next
+// close goes through the same confirm path again).
 ipcMain.on('app:confirm-close', () => {
+  if (isQuitting) {
+    allowClose = true
+    app.quit()
+    return
+  }
+  if (closeToTray) {
+    hideMainWindow()
+    return
+  }
   allowClose = true
-  if (isQuitting) app.quit()
-  else mainWindow?.close()
+  mainWindow?.close()
 })
 // The user cancelled the close. Clear the quit intent so a later window-close
 // (e.g. the macOS traffic light) isn't mistaken for a quit.

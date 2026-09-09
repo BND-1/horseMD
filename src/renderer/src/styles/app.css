@@ -5201,6 +5201,20 @@ body.hm-full-width .source-editor {
   color: var(--faint);
   font-size: 12px;
 }
+/* Marks commands registered as OS-level (globalShortcut) shortcuts — they also
+   fire while the window is hidden to the tray. Drawn as a pseudo-element so the
+   row title's text content stays exactly the command name (aria + UI tests). */
+.settings-shortcut-title[data-badge]::after {
+  content: attr(data-badge);
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
 .settings-shortcut-conflict {
   margin: 0 0 14px;
   padding: 9px 12px;

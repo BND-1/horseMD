@@ -390,6 +390,12 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "build/icons/32x32.png",
+        "to": "icons/32x32.png"
+      }
+    ],
     "icon": "build/icon.ico",
     "publish": [
       {

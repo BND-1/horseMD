@@ -285,6 +285,8 @@ const capabilities = {
   folderWorkspace: false, // iOS sandbox; Android SAF comes later
   watch: false,
   windowControls: false,
+  closeToTray: false,
+  globalShortcuts: false,
   devtools: false,
   pdfExport: false, // no print-to-PDF save dialog on mobile
   htmlExport: false,
@@ -387,6 +389,9 @@ export function makeCapacitorApi() {
     windowClose: async () => {},
     windowIsMaximized: async () => false,
     windowToggleDevTools: async () => false,
+    setCloseToTray: async () => ({ ok: false, closeToTray: false }),
+    toggleWindowVisibility: async () => ({ ok: false }),
+    setGlobalShortcuts: async () => ({ ok: false, accelerators: {}, unregistered: [] }),
 
     // update check — wired up later (CSP/network)
     checkUpdate: async () => null,
