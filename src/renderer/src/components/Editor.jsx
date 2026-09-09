@@ -69,6 +69,7 @@ import {
   createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockExitTransactionSourceSyncOwner,
   createCodeBlockBoundaryJoinTransactionSourceSyncOwner,
+  createCrossFenceSpanTransactionSourceSyncOwner,
   createCodeBlockParagraphTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
@@ -683,6 +684,24 @@ export default function Editor({
     const codeBlockInfoTransactionSourceSyncOwner = createCodeBlockInfoTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    // Cross-fence block-span replacement (P5c, trace-86199 12:37): selection
+    // deletes / undo restores spanning a fenced code block. The localized
+    // mappers' fence guard correctly refuses these, and the legacy fallback
+    // then holds a no-op — the committed source silently stops tracking the
+    // editor. This owner replaces the whole changed top-level window
+    // (table-free spans only; 1:1 code content edits stay with the code
+    // family above) using the P7 style-following serializer.
+    const crossFenceSpanTransactionSourceSyncOwner =
+      createCrossFenceSpanTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        serializeNodes: (nodes) => {
+          const serializer = crepe.editor.ctx.get(serializerCtx)
+          const schema = nodes?.[0]?.type?.schema || viewRef.current?.state.schema
+          if (!serializer || !schema?.nodes?.doc) return null
+          return serializer(schema.nodes.doc.create(null, nodes))
+        },
+        validateMarkdown: validateTransactionMarkdown
+      })
     const blockquoteParagraphTransactionSourceSyncOwner =
       createBlockquoteParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -987,6 +1006,19 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-code-block-info-markdown-updated',
           'forced-flush': 'transaction-code-block-info-forced-flush'
+        })
+      }),
+      // Broad span owner — registered AFTER the whole focused code-block
+      // family so their tighter shapes get first claim (especially the 1:1
+      // code content edit this owner explicitly declines).
+      Object.freeze({
+        key: 'cross-fence-span',
+        owner: crossFenceSpanTransactionSourceSyncOwner,
+        traceKey: '__hmCrossFenceSpanTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-cross-fence-span-markdown-updated',
+          'forced-flush': 'transaction-cross-fence-span-forced-flush'
         })
       }),
       Object.freeze({
