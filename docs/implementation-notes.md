@@ -358,9 +358,9 @@ CodeMirror 默认带 `highlightActiveLine`，进入代码块/打开时会给光�
 
 **根因**：Milkdown BlockEdit 的 hover 服务没有用真实的 `event.clientX` 命中块，而是以编辑器水平中点和当前 `clientY` 反查所在块。因此只要鼠标处于同一文本行的任意横向位置，都会被解释为“悬浮该块”。
 
-**修复**：`editor-block-handle-guard.js` 在 Crepe 原有 ProseMirror plugins 之前注册 `pointermove` guard。只有编辑器左侧 36px 块操作热区将事件交给 BlockEdit；正文区域主动收起已显示的 `.milkdown-block-handle` 并停止该次 plugin 事件。该 guard 不改 Markdown、selection 或 table DOM listener，因此表格、文本选择和左侧块操作保持原行为。
+**修复（0.13.204 再收口）**：早期 guard 把 ProseMirror 左边界向右 36px 当作“左侧热区”，但 ProseMirror 本身 `padding: 0`，所以这 36px 实际就是段首正文。现在 `editor-block-handle-guard.js` 改为监听 `.editor-host` 的真实左侧 padding：只有 `editor-host.left <= clientX < ProseMirror.left` 的 gutter 会主动调用 Milkdown 同一个 `BlockService.mousemoveCallback()` 计算 active block；正文内任意横向位置都只会收起操作条。列表圆点、编号和待办标记继续作为显式呼出目标。该 guard 不改 Markdown、selection 或 table DOM listener。
 
-**回归**：`npm run test:inline-html-block-handle-ui` 用真实 Electron 加载包含 `<font color=#F36208>` 和带背景色 `<span>` 的列表，分别断言行内 HTML、普通正文不会显示拖拽柄，左侧热区仍会显示。
+**回归**：`npm run test:inline-html-block-handle-ui` 验证行内 HTML、普通正文不会显示操作条而真实左侧 gutter 仍会显示；`npm run test:block-handle-gutter-ui` 额外把普通段落 `ProseMirror.left + 4px` 锁为“不呼出”，防止再次把段首正文误当 gutter。
 
 ### bug 18b：窄布局的块操作条存在多个位置并遮挡正文
 
@@ -368,9 +368,9 @@ CodeMirror 默认带 `highlightActiveLine`，进入代码块/打开时会给光�
 
 **根因**：Milkdown BlockProvider 默认以每个 active block 自己的 `getBoundingClientRect()` 为 Floating UI 锚点，而列表、嵌套列表、标题和段落的左边界天然不同。此前 HorseMD 又在 Provider 异步写入 `left/top` 后，通过 MutationObserver、ResizeObserver 和 `translate` 做二次纠偏，形成两个坐标所有者；Milkdown 的 200ms 节流与位置动画会让两套写入顺序不确定，所以表现为偶发跳位和“两个悬浮位置”。
 
-**最终方案**：使用 Crepe 官方 `Feature.BlockEdit.blockHandle.getPosition/getOffset` 配置，在 Provider 计算阶段保留 active block 的纵向矩形，但把横向锚点统一替换为 ProseMirror 正文左边界。HorseMD 的插件只过滤正文误触发、处理离开与滚动隐藏，不再写任何位置样式。双按钮收敛为 58px，完整容纳在既有 60px 编辑器留白中，仍保持横向布局。
+**最终方案**：使用 Crepe 官方 `Feature.BlockEdit.blockHandle.getPosition/getOffset` 配置，在 Provider 计算阶段保留 active block 的纵向矩形，但把横向锚点统一替换为 ProseMirror 正文左边界。HorseMD 的插件只过滤/转发触发事件、处理离开与滚动隐藏，不再二次写坐标。双按钮固定为 28px + 2px gap + 28px = 58px，完整容纳在 60px 编辑器留白中。0.13.204 进一步修复 P8b 懒加载后的 CSS 顺序回归：Crepe 后加载的 `block-edit.css` 曾以同优先级把按钮恢复为 32px×2（66px）并设置 `transition: all`，窄布局下 Floating UI 因 60px gutter 放不下会自动 flip 到正文侧；HorseMD 现用更高 specificity 固定 28px 尺寸和仅 `opacity` 动画，不再依赖样式加载顺序。
 
-**回归**：`npm run test:block-handle-gutter-ui` 使用真实 CDP 鼠标事件覆盖 4 种布局、标题/正文/三级列表/有序列表/待办列表、圆点到按钮的移动，以及视觉位置与点击命中层一致性。本次修复额外使用独立 Electron 进程连续执行 10 轮。
+**回归**：`npm run test:block-handle-gutter-ui` 使用真实 CDP 鼠标事件覆盖 4 种布局、标题/正文/三级列表/有序列表/待办列表、列表标记到按钮的移动，以及视觉位置与点击命中层一致性；同时断言整条操作栏始终 58px、单按钮 28px、`transition-property: opacity`，并检查段首正文绝不呼出。
 
 ## bug 19：点击表格单元格出现刺眼的选中线框
 

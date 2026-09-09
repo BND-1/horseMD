@@ -5,9 +5,11 @@ description: 在 HorseMD 中设置标题、粗体、斜体、高亮、列表和�
 
 # 文字与段落格式
 
-<span class="version-badge">适用于 HorseMD v0.13.125</span>
+<span class="version-badge">适用于 HorseMD v0.13.204</span>
 
 HorseMD 支持直接输入 Markdown 语法，也支持选区工具栏、快捷键和斜杠菜单。
+
+桌面端富文本模式中，将鼠标移到正文左侧留白会显示“新增段落”加号和拖拽柄；列表也可以从圆点、编号或待办标记处唤起同一操作条。操作条始终位于正文左侧，不会因为鼠标经过段首文字、普通正文或行内高亮内容而突然出现。
 
 ## 段落类型
 

@@ -2718,15 +2718,15 @@ body.hm-full-width .editor-skeleton {
 /* The operation bar uses one fixed editor-edge rail (configured through
    BlockProvider in editor-crepe-setup.js). Two compact 28px controls fit the
    editor's 60px leading gutter in every desktop width preset. */
-.milkdown .milkdown-block-handle {
+.editor-host .milkdown .milkdown-block-handle {
   transition: opacity 0.15s var(--ease-out);
 }
-.milkdown .milkdown-block-handle .operation-item {
+.editor-host .milkdown .milkdown-block-handle .operation-item {
   width: 28px;
   height: 28px;
   padding: 4px;
 }
-.milkdown .milkdown-block-handle .operation-item svg {
+.editor-host .milkdown .milkdown-block-handle .operation-item svg {
   width: 20px;
   height: 20px;
 }

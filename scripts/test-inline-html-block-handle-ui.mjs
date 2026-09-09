@@ -54,7 +54,7 @@ async function main() {
         return {
           inlineHtml: { x: atom.left + atom.width / 2, y: atom.top + atom.height / 2 },
           plainText: { x: plain.left + plain.width / 2, y: plain.top + plain.height / 2 },
-          gutter: { x: editorRect.left + 8, y: atom.top + atom.height / 2 }
+          gutter: { x: editorRect.left - 8, y: atom.top + atom.height / 2 }
         }
       })()`)
       if (points) break

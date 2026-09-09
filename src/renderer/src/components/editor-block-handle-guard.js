@@ -1,7 +1,7 @@
+import { blockServiceInstance } from '@milkdown/kit/plugin/block'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 
 const blockHandleGuardKey = new PluginKey('hm-block-handle-gutter')
-const HANDLE_TRIGGER_WIDTH = 36
 
 const findHandle = (view) => {
   const root = view.dom.closest('.milkdown') || view.dom.parentElement
@@ -13,13 +13,18 @@ const hideHandle = (view) => {
   if (handle) handle.dataset.show = 'false'
 }
 
-const isHandleTrigger = (view, event) => {
+const isEditorGutterTrigger = (view, event, triggerRoot) => {
+  if (!(triggerRoot instanceof Element)) return false
   const editorRect = view.dom.getBoundingClientRect()
-  const inEditorRail = event.clientX >= editorRect.left &&
-    event.clientX <= editorRect.left + HANDLE_TRIGGER_WIDTH
-  if (inEditorRail) return true
+  const rootRect = triggerRoot.getBoundingClientRect()
+  return event.clientX >= rootRect.left &&
+    event.clientX < editorRect.left &&
+    event.clientY >= editorRect.top &&
+    event.clientY <= editorRect.bottom
+}
 
-  // A nested marker sits to the right of the editor-level rail. Keep list
+const isListMarkerTrigger = (event) => {
+  // A nested marker sits to the right of the editor-level gutter. Keep list
   // bullets/numbers as natural reveal targets, but only within their painted
   // rectangle; the operation bar itself still renders on the one shared rail.
   const target = event.target instanceof Element ? event.target : null
@@ -47,27 +52,49 @@ export const getBlockHandlePosition = ({ active, editorDom }) => {
 
 /**
  * Crepe's block service deliberately resolves a block from the vertical mouse
- * coordinate even when the pointer is over inline text. HorseMD exposes the
- * affordance only at the editor's leading edge. This plugin filters visibility
- * only; it never changes handle coordinates or layout.
+ * coordinate even when the pointer is over inline text. HorseMD therefore
+ * listens on the editor host and forwards only the real leading gutter to that
+ * service. Text inside ProseMirror never doubles as a reveal target; list
+ * markers remain explicit in-editor targets. This plugin filters visibility
+ * only and never changes handle coordinates or document state.
  */
-export function createBlockHandleGutterPlugin() {
+export function createBlockHandleGutterPlugin(ctx) {
   return new Plugin({
     key: blockHandleGuardKey,
     view(view) {
       let handleAllowed = false
       const root = view.dom.closest('.milkdown') || view.dom.parentElement
+      const triggerRoot = view.dom.closest('.editor-host') || root || view.dom
       const scrollPort = view.dom.closest('.editor-scroll')
+      let blockService = null
+      try {
+        blockService = ctx.get(blockServiceInstance.key)
+      } catch {
+        // Fail closed if BlockEdit has not installed its service yet.
+      }
 
       const onPointerMove = (event) => {
-        handleAllowed = isHandleTrigger(view, event)
-        if (handleAllowed) return
+        const target = event.target instanceof Element ? event.target : null
+        if (target?.closest('.milkdown-block-handle')) {
+          handleAllowed = true
+          return
+        }
 
-        // Do not stop this event: table handles and other node views also own
-        // pointermove interactions below ProseMirror. Milkdown may schedule its
-        // block handle later, so hide now and let the observer reject that
-        // delayed visibility write without consuming another feature's event.
-        hideHandle(view)
+        const gutterTrigger = isEditorGutterTrigger(view, event, triggerRoot)
+        handleAllowed = gutterTrigger || isListMarkerTrigger(event)
+        if (!handleAllowed) {
+          // Do not stop this event: table handles and other node views also own
+          // pointermove interactions below ProseMirror. Milkdown may schedule its
+          // block handle later, so hide now and let the observer reject that
+          // delayed visibility write without consuming another feature's event.
+          hideHandle(view)
+          return
+        }
+
+        // Pointer events in the real host gutter never reach ProseMirror's
+        // handleDOMEvents. Feed only their Y coordinate into the same Milkdown
+        // service so active-block lookup remains single-sourced.
+        if (gutterTrigger) blockService?.mousemoveCallback(view, event)
       }
       const onPointerLeave = (event) => {
         if (event.relatedTarget instanceof Element &&
@@ -86,9 +113,8 @@ export function createBlockHandleGutterPlugin() {
         }
       })
 
-      view.dom.addEventListener('pointermove', onPointerMove, true)
-      view.dom.addEventListener('pointerleave', onPointerLeave, true)
-      root?.addEventListener('pointerleave', onPointerLeave, true)
+      triggerRoot.addEventListener('pointermove', onPointerMove, true)
+      triggerRoot.addEventListener('pointerleave', onPointerLeave, true)
       scrollPort?.addEventListener('scroll', onScroll, { passive: true })
       root && observer.observe(root, {
         subtree: true,
@@ -99,9 +125,8 @@ export function createBlockHandleGutterPlugin() {
       return {
         destroy() {
           observer.disconnect()
-          view.dom.removeEventListener('pointermove', onPointerMove, true)
-          view.dom.removeEventListener('pointerleave', onPointerLeave, true)
-          root?.removeEventListener('pointerleave', onPointerLeave, true)
+          triggerRoot.removeEventListener('pointermove', onPointerMove, true)
+          triggerRoot.removeEventListener('pointerleave', onPointerLeave, true)
           scrollPort?.removeEventListener('scroll', onScroll)
         }
       }

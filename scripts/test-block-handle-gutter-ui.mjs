@@ -66,16 +66,19 @@ const revealTarget = async (app, selector, text, xMode = 'trigger') => {
     const node = [...pm.querySelectorAll(spec.selector)]
       .find((candidate) => candidate.textContent.trim() === spec.text)
     const pmRect = pm.getBoundingClientRect()
+    const hostRect = pm.closest('.editor-host')?.getBoundingClientRect()
     const rect = node.getBoundingClientRect()
     const marker = spec.xMode === 'marker'
       ? node.closest('li')?.querySelector('.label-wrapper')
       : null
     const markerRect = marker?.getBoundingClientRect()
     const x = spec.xMode === 'trigger'
-      ? pmRect.left + 4
-      : spec.xMode === 'marker'
-        ? markerRect.left + markerRect.width / 2
-        : Math.max(pmRect.left + 48, rect.left + rect.width / 2)
+      ? Math.max((hostRect?.left ?? pmRect.left - 60) + 2, pmRect.left - 8)
+      : spec.xMode === 'content-start'
+        ? pmRect.left + 4
+        : spec.xMode === 'marker'
+          ? markerRect.left + markerRect.width / 2
+          : Math.max(pmRect.left + 48, rect.left + rect.width / 2)
     return {
       x,
       y: spec.xMode === 'marker'
@@ -90,6 +93,7 @@ const getVisibleHandle = (evaluate) => evaluate(`(() => {
     .find((node) => node.dataset.show === 'true')
   if (!handle) return null
   const rect = handle.getBoundingClientRect()
+  const style = getComputedStyle(handle)
   const controls = [...handle.querySelectorAll('.operation-item')]
     .map((node) => {
       const controlRect = node.getBoundingClientRect()
@@ -111,6 +115,7 @@ const getVisibleHandle = (evaluate) => evaluate(`(() => {
     top: rect.top,
     bottom: rect.bottom,
     width: rect.width,
+    transitionProperty: style.transitionProperty,
     controls
   }
 })()`)
@@ -125,7 +130,20 @@ const assertSafeRail = (handle, targets, context) => {
     `operation bar overlaps editor content in ${context}: ${JSON.stringify({ handle, targets })}`
   )
   assert.equal(handle.controls.length, 2, `operation bar lost a control in ${context}`)
+  assert.ok(
+    Math.abs(handle.width - 58) <= 0.5,
+    `operation bar lost its 58px gutter contract in ${context}: ${JSON.stringify(handle)}`
+  )
+  assert.equal(
+    handle.transitionProperty,
+    'opacity',
+    `operation bar transition was overridden in ${context}: ${JSON.stringify(handle)}`
+  )
   handle.controls.forEach((control, index) => {
+    assert.ok(
+      Math.abs(control.right - control.left - 28) <= 0.5,
+      `control ${index} lost its 28px size in ${context}: ${JSON.stringify({ handle, control })}`
+    )
     assert.ok(
       control.left >= targets.scrollLeft + 1 &&
         control.right <= targets.scrollRight - 1 &&
@@ -241,6 +259,19 @@ async function main() {
         null,
         `inline HTML text revealed the block operation bar in ${layout.name}`
       )
+      const paragraphStart = await revealTarget(
+        app,
+        'p',
+        'An ordinary paragraph stays editable.',
+        'content-start'
+      )
+      await moveTo(app, paragraphStart)
+      assert.equal(
+        await getVisibleHandle(app.evaluate),
+        null,
+        `paragraph-opening text revealed the block operation bar in ${layout.name}`
+      )
+
       const ordinaryText = await revealTarget(
         app,
         'p',

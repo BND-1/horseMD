@@ -194,7 +194,7 @@ export function createConfiguredCrepe({
 
     ctx.update(prosePluginsCtx, (plugins) => [
       createStrikeGuardPlugin(),
-      createBlockHandleGutterPlugin(),
+      createBlockHandleGutterPlugin(ctx),
       ...plugins,
       tableBreakKeymap(),
       createInlineCodeEditingPlugin({
