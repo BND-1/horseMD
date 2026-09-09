@@ -568,6 +568,7 @@ export default function App() {
     markRichEditPending,
     closeTab,
     closeOthers,
+    closeRight,
     renameTabFile,
     commitTabRename,
     duplicateTabFile,
@@ -1104,6 +1105,7 @@ export default function App() {
         onClose={closeTab}
         onNew={newTab}
         onCloseOthers={closeOthers}
+        onCloseRight={closeRight}
         onOpenRight={openRight}
         onRename={renameTabFile}
         onDuplicate={duplicateTabFile}
