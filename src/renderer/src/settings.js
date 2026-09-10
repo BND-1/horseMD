@@ -175,7 +175,9 @@ export const DEFAULT_SETTINGS = {
   restoreSession: true,
   // Desktop: closing the window hides it to the system tray instead of quitting,
   // so the app keeps running in the background (tray icon / Alt+M restore it).
-  closeToTray: true,
+  // Default off — "close quits" stays the long-standing behavior; the tray is
+  // opt-in from Settings › General.
+  closeToTray: false,
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false,
@@ -251,7 +253,7 @@ export function loadSettings() {
       selectionToolbar: raw.selectionToolbar !== false,
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
-      closeToTray: raw.closeToTray !== false,
+      closeToTray: raw.closeToTray === true,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',

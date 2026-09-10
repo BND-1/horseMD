@@ -2,7 +2,7 @@ import { LANGS } from '../../i18n.jsx'
 import Toggle from '../ui/Toggle.jsx'
 
 export default function GeneralSettings({ lang, setLang, settings, onUpdateSettings, t }) {
-  const closeToTray = settings.closeToTray !== false
+  const closeToTray = settings.closeToTray === true
   const supportsTray = window.api?.capabilities?.closeToTray === true
 
   return (
