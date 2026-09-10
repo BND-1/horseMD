@@ -251,7 +251,20 @@ const appendRawVisible = (out, raw, base = 0) => {
 // source. Build a lightweight "visible source text" buffer plus a visible-char →
 // raw-char map so a rich caret snippet can land on the textarea char that renders
 // that same visible text.
+//
+// The index is pure in `md`, and the legacy list mappers query it per changed
+// block/row — on the redis-doc profile that re-built the full-document map per
+// row and dominated a 128s preserve call. Cache by string identity (capped LRU;
+// V8 caches the hash on the string, so same-reference lookups are O(1)). The
+// {text, map} result is treated as read-only by every caller.
+const visibleIndexCache = new Map()
 const sourceVisibleIndex = (md) => {
+  const cached = visibleIndexCache.get(md)
+  if (cached) {
+    visibleIndexCache.delete(md)
+    visibleIndexCache.set(md, cached)
+    return cached
+  }
   const out = { text: '', map: [] }
   if (!md) return out
   const referenceLabels = new Set(
@@ -348,6 +361,10 @@ const sourceVisibleIndex = (md) => {
       referenceLabels
     )
   }
+  if (visibleIndexCache.size >= 8) {
+    visibleIndexCache.delete(visibleIndexCache.keys().next().value)
+  }
+  visibleIndexCache.set(md, out)
   return out
 }
 

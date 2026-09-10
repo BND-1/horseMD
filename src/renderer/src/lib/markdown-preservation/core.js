@@ -341,7 +341,21 @@ export const isTableLine = (line) => line.includes('|')
 
 export const listMarker = (line) => line.match(/^(\s*)(?:[-+*]|\d{1,9}[.)])(?=[ \t]+|$)/)
 
+// Identity-keyed cache: during one preserve call the same source/canonical
+// strings are re-lined by every list block's mapper pass (lists.js calls this
+// ~20×). A capped LRU keyed by the string itself turns that O(blocks × doc)
+// re-splitting into one split per distinct string (redis-doc profile:
+// preserveRichMarkdownSource 128s → the line pass alone was 40%+ of it).
+// Line objects are treated as read-only by every caller (verified: no
+// property assignments on them anywhere in markdown-preservation).
+const markdownLinesCache = new Map()
 export const markdownLines = (markdown) => {
+  const cached = markdownLinesCache.get(markdown)
+  if (cached) {
+    markdownLinesCache.delete(markdown)
+    markdownLinesCache.set(markdown, cached)
+    return cached
+  }
   const lines = []
   let start = 0
   while (start <= markdown.length) {
@@ -351,6 +365,10 @@ export const markdownLines = (markdown) => {
     if (next < 0) break
     start = next + 1
   }
+  if (markdownLinesCache.size >= 8) {
+    markdownLinesCache.delete(markdownLinesCache.keys().next().value)
+  }
+  markdownLinesCache.set(markdown, lines)
   return lines
 }
 

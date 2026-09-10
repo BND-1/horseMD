@@ -407,6 +407,7 @@ function createWindow() {
   mainWindow.on('maximize', emitMaxState)
   mainWindow.on('unmaximize', emitMaxState)
 
+
   // Warn about unsaved changes before the window closes (macOS traffic light,
   // the custom Windows close button, Cmd/Ctrl+Q). The dirty state lives in the
   // renderer, so defer the close and ask it; it calls back via 'app:confirm-close'

@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.206",
+  "version": "0.13.207",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -347,7 +347,8 @@
     "test:global-search-ui": "node scripts/test-global-search-ui.mjs",
     "test:plain-text-drop-ui": "node scripts/test-plain-text-drop-ui.mjs",
     "test:cross-fence-span-transaction-owner": "node scripts/test-cross-fence-span-transaction-owner.mjs",
-    "test:cross-fence-span-ui": "node scripts/test-cross-fence-span-ui.mjs"
+    "test:cross-fence-span-ui": "node scripts/test-cross-fence-span-ui.mjs",
+    "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

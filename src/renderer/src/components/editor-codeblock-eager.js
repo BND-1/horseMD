@@ -16,6 +16,16 @@
 // anchoring (or the selection/anchor interaction) to mishandle → no jump, pure
 // scroll OR selection.
 //
+// BLOCK-COUNT CAP (issue #126, redis reference doc): eager mounting creates
+// one live CodeMirror per fenced block, all at parse time. A 333k-char doc
+// with 394 fences slid UNDER the heavy-doc textarea threshold (>400k chars)
+// and wedged the renderer at 200%+ CPU with ~1GB RSS on open. Documents whose
+// fenced-block count exceeds EAGER_CODE_BLOCK_LIMIT fall back to Milkdown's
+// native lazy mount (the #25 jump can still occur on those docs — strictly
+// better than an unusable editor). The mode is chosen per editor instance
+// before Crepe parses (chooseCodeBlockMountMode), and blocks created later
+// inherit the live mode.
+//
 // WHY A PROTOTYPE MODIFICATION (not a nodeView override): the clean path is
 // architecturally blocked in this Milkdown version — `nodeViewCtx` can ADD new
 // node views (html/frontmatter) but cannot OVERRIDE an existing component view
@@ -23,17 +33,11 @@
 // `editorViewOptionsCtx.nodeViews` is spread LAST into EditorView, so setting it
 // would overwrite EVERY component node view (image-block, tables, lists) — not
 // viable. CodeMirrorBlock IS exported, so we modify its prototype directly: a
-// SURGICAL change to TWO lazy-mount methods, in our code, documented here — not
-// the global IntersectionObserver hack, not a node_modules edit. If Milkdown
-// later adds a config flag (or renames these methods), revisit.
+// SURGICAL change to the mount lifecycle, in our code, documented here. If
+// Milkdown later adds a config flag (or renames these methods), revisit.
 //
-// Trade-off: CodeMirror editors for every code block are created at parse time
-// (one-time open cost). Fine for typical docs; the heavy-doc textarea fallback
-// (>400k chars / >50k lines, paths.js isHeavyDoc) covers extreme cases. All
-// CodeMirrorBlock behavior is preserved (language detection, copy button, mermaid
-// renderPreview chain, in-block search) — only the mount lifecycle changes.
-// `destroy()` cleans up directly (app.unmount + cm.destroy, NOT via teardown), so
-// block deletion is unaffected.
+// `destroy()` cleans up directly (app.unmount + cm.destroy, NOT via teardown),
+// so block deletion is unaffected.
 import { CodeMirrorBlock } from '@milkdown/components/code-block'
 
 // Guard against Milkdown API drift: if a future @milkdown/components bump
@@ -49,6 +53,31 @@ if (
 }
 
 const proto = CodeMirrorBlock.prototype
+const originalRenderPlaceholder = proto.renderPlaceholder
+const originalScheduleTeardown = proto.scheduleTeardown
+
+// Eager by default (#25); block-count-heavy documents switch to lazy before
+// their Crepe instance parses (chooseCodeBlockMountMode).
+let eagerMountEnabled = true
+
+export const setCodeBlockEagerMount = (enabled) => {
+  eagerMountEnabled = enabled !== false
+}
+
+// Count fenced-code blocks (opening fence lines / 2; tolerates indented
+// fences and both markers).
+export const countFencedCodeBlocks = (markdown) => {
+  if (!markdown) return 0
+  const fenceLines = String(markdown).match(/^[ \t]{0,3}(`{3,}|~{3,})/gm)
+  return Math.floor((fenceLines ? fenceLines.length : 0) / 2)
+}
+
+// Beyond this many fenced blocks the eager mode's cost (one live CodeMirror
+// per block, all mounted at parse) outweighs the #25 stability win.
+export const EAGER_CODE_BLOCK_LIMIT = 40
+
+export const chooseCodeBlockMountMode = (markdown) =>
+  setCodeBlockEagerMount(countFencedCodeBlocks(markdown) <= EAGER_CODE_BLOCK_LIMIT)
 
 // (1) Mount the CodeMirror editor EAGERLY at construction instead of showing a
 //     placeholder + waiting for the IntersectionObserver. renderPlaceholder() is
@@ -56,13 +85,16 @@ const proto = CodeMirrorBlock.prototype
 //     languageConf/readOnlyConf/forwardUpdate are all assigned — so
 //     initializeCodeMirror() (idempotent via its `initialized` guard) is safe to
 //     call here, and the observer's later "isIntersecting" callback is a no-op.
-proto.renderPlaceholder = function eagerRenderPlaceholder() {
+proto.renderPlaceholder = function adaptiveRenderPlaceholder(...args) {
+  if (!eagerMountEnabled) return originalRenderPlaceholder.apply(this, args)
   this.initializeCodeMirror()
 }
 
 // (2) Never tear the editor down once mounted → its height never reverts to the
 //     placeholder (the source of the delta). destroy() still cleans up directly,
-//     so this doesn't leak on block deletion.
-proto.scheduleTeardown = function noOpTeardown() {
+//     so this doesn't leak on block deletion. In lazy mode (block-heavy docs)
+//     the original teardown keeps memory bounded.
+proto.scheduleTeardown = function adaptiveScheduleTeardown(...args) {
+  if (!eagerMountEnabled) return originalScheduleTeardown.apply(this, args)
   /* intentional no-op — keep mounted so height stays stable (#25) */
 }

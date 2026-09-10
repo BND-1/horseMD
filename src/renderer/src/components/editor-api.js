@@ -10,6 +10,7 @@ import {
   preserveRichMarkdownSource
 } from '../markdown-source-preservation.js'
 import { normalizeDisplayMath } from './editor-math.js'
+import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
@@ -157,6 +158,10 @@ export function createEditorApi({
         generatedScratchRef.current = false
       }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
+      // Re-choose the code-block mount mode for the incoming document: pasting
+      // a block-heavy document into a small one must not eager-mount hundreds
+      // of CodeMirror instances (issue #126).
+      chooseCodeBlockMountMode(next)
       lastMarkdownRef.current = source
       // Source mode just handed us freshly authored bytes: the serializer's
       // list style must follow THIS spelling, or the next rich edit would

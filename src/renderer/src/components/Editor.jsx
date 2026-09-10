@@ -7,6 +7,7 @@ import {
   serializerCtx
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
+import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js' // #126 cap: lazy mount for block-heavy docs
 import './editor-table-click.js' // side effect: single click in a table cell places the caret
 import {
   applySerializerStyleToRemark,
@@ -1598,7 +1599,14 @@ export default function Editor({
 
     crepe = createConfiguredCrepe({
       host,
-      defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent)),
+      // Decide the code-block mount mode BEFORE Crepe parses: block-heavy
+      // documents (issue #126, 394-fence redis doc) must not eager-mount a
+      // CodeMirror per fence.
+      defaultValue: (() => {
+        const normalized = normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent))
+        chooseCodeBlockMountMode(normalized)
+        return normalized
+      })(),
       getT: (key) => tRef.current(key),
       persistImage,
       notify: fireToast,
