@@ -659,9 +659,9 @@ export default function App() {
   }, [settings.showHiddenFiles, bumpRefresh, folderRoots])
 
   // Keep main's close-to-tray behavior in sync with the persisted preference
-  // (main defaults to on, so a disabled preference must reach it on every start).
+  // (opt-in: both sides default to off, so this only pushes explicit choices).
   useEffect(() => {
-    window.api.setCloseToTray?.(settings.closeToTray !== false)
+    window.api.setCloseToTray?.(settings.closeToTray === true)
   }, [settings.closeToTray])
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move

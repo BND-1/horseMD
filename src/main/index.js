@@ -48,8 +48,9 @@ let rendererReady = false
 // module variable so it isn't garbage-collected (which would remove the icon).
 let tray = null
 // Settings › General "close to tray". The renderer owns the persisted value and
-// pushes it here on mount; until then the default keeps the window alive.
-let closeToTray = true
+// pushes it here on mount. Default OFF on both sides: "close quits" stays the
+// long-standing behavior; the tray is opt-in from Settings › General.
+let closeToTray = false
 // Registered OS-level accelerators: command id -> accelerator. Rebuilt whenever
 // the renderer pushes the user's effective keybindings.
 let globalShortcuts = new Map()
@@ -258,12 +259,30 @@ function createTray() {
     /* fall through — no usable icon means no tray */
   }
   if (!image || image.isEmpty()) return
-  tray = new Tray(image)
+  // Linux without a system tray (headless / some Wayland sessions) makes the
+  // Tray constructor itself throw — the app must still start (the watcher
+  // EACCES lesson: environment variance can never abort launch).
+  try {
+    tray = new Tray(image)
+  } catch {
+    tray = null
+    return
+  }
   tray.setToolTip('HorseMD')
   rebuildTrayMenu()
   // Windows/Linux: a plain left click toggles the window (right click still
   // opens the context menu). macOS shows the menu on click, per platform norms.
   if (process.platform !== 'darwin') tray.on('click', () => toggleMainWindow())
+}
+
+function destroyTray() {
+  if (!tray) return
+  try {
+    tray.destroy()
+  } catch {
+    /* already gone */
+  }
+  tray = null
 }
 
 // Replace the whole set of app-owned global accelerators. Called once at startup
@@ -455,7 +474,9 @@ app.whenReady().then(() => {
     allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
   )
   createWindow()
-  createTray()
+  // The tray icon exists only while "close to tray" is enabled — the renderer
+  // pushes the preference on mount, which (re)creates or destroys it below.
+  // Default off: no tray icon for users who never opt in.
   // Pre-sync default; the renderer replaces it with the user's effective binding
   // ('window:setGlobalShortcuts') as soon as it has loaded the keybinding store.
   applyGlobalShortcuts({ 'window.toggleVisibility': DEFAULT_TOGGLE_WINDOW_SHORTCUT })
@@ -936,7 +957,9 @@ ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 // only needs the live value.
 ipcMain.handle('window:setCloseToTray', (event, value) => {
   if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
-  closeToTray = value !== false
+  closeToTray = value === true
+  if (closeToTray) createTray()
+  else destroyTray()
   return { ok: true, closeToTray }
 })
 // Command palette ("Show / Hide Window"): the renderer can't hide/show its own
