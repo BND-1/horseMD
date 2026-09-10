@@ -37,6 +37,7 @@ const COMMAND_PALETTE_ICONS = {
   'view.globalSearch': 'search',
   'view.toggleSource': 'code',
   'view.cycleTheme': 'moon',
+  'window.toggleVisibility': 'monitor',
   'editor.find': 'search',
   'editor.replace': 'replace',
   'review.add': 'review',
@@ -174,6 +175,9 @@ export function createMenuHandlers({
     },
     toggleSource,
     toggleTheme: cycleTheme,
+    // Main owns the window: hiding/showing it from the renderer is a round trip
+    // through the preload bridge (also used by the command palette).
+    toggleWindowVisibility: () => window.api.toggleWindowVisibility?.(),
     find: () => {
       // Leave the Home page so find acts on the visible document, not a hidden one.
       // openFind pre-fills the search with the current selection (if any).
@@ -237,14 +241,16 @@ export function useGlobalKeys({
     const onOpenFolderEvt = () => openFolder()
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
-    const offClose = window.api.onAppCloseRequest?.(() => {
+    const offClose = window.api.onAppCloseRequest?.((payload) => {
       // Flush textarea edits still inside the per-tab debounce window, then write
       // the session — so a recent keystroke isn't lost on quit.
       commitAllLive()
       flushPendingRichEdits?.()
       flushSession()
       const dirty = tabsRef.current.some(isTabDirty)
-      if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+      // Closing to the tray only hides the window: every tab stays alive, so
+      // there is nothing to lose and no confirm is needed.
+      if (payload?.closeToTray || !dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
         window.api.confirmAppClose()
       } else {
         window.api.cancelAppClose?.()

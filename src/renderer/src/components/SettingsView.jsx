@@ -21,6 +21,7 @@ export default function SettingsView({
   onSetKeybindings,
   onResetCommandKeybindings,
   onResetAllKeybindings,
+  globalShortcutStatus,
   cloudSync,
   syncWorkspaces,
   folderRoots,
@@ -103,6 +104,7 @@ export default function SettingsView({
             onSetKeybindings={onSetKeybindings}
             onResetCommand={onResetCommandKeybindings}
             onResetAll={onResetAllKeybindings}
+            globalShortcutStatus={globalShortcutStatus}
             t={t}
           />
         )}

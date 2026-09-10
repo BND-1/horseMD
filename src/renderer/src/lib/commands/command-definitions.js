@@ -257,6 +257,24 @@ export const COMMAND_DEFINITIONS = [
     palette: true
   },
   {
+    // Unlike the other commands this one is NOT an Electron menu accelerator:
+    // it is registered in the main process with globalShortcut so it also works
+    // while the window is hidden to the tray. The renderer still owns the
+    // binding (recording, persistence, conflicts) and pushes the resolved
+    // accelerator to main; see buildGlobalAcceleratorPayload + the
+    // 'window:setGlobalShortcuts' IPC.
+    id: 'window.toggleVisibility',
+    handler: 'toggleWindowVisibility',
+    titleKey: 'cmd.toggleWindow',
+    fallbackTitle: 'Show / Hide Window',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Alt+M'],
+    globalAccelerator: true,
+    capability: 'globalShortcuts',
+    palette: true
+  },
+  {
     id: 'editor.find',
     handler: 'find',
     titleKey: 'cmd.find',

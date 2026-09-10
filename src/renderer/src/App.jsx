@@ -58,7 +58,7 @@ import { usePandocExport } from './hooks/usePandocExport.js'
 import { useKeybindings } from './hooks/useKeybindings.js'
 import { useSystemColorScheme } from './hooks/useSystemColorScheme.js'
 import { useDropOpen } from './hooks/useDropOpen.js'
-import { buildElectronAcceleratorPayload } from './lib/commands/electron-accelerators.js'
+import { buildElectronAcceleratorPayload, buildGlobalAcceleratorPayload } from './lib/commands/electron-accelerators.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
 import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
 import { createReviewActions } from './lib/reviewActions.js'
@@ -658,6 +658,12 @@ export default function App() {
     if (folderRoots.length) bumpRefresh()
   }, [settings.showHiddenFiles, bumpRefresh, folderRoots])
 
+  // Keep main's close-to-tray behavior in sync with the persisted preference
+  // (main defaults to on, so a disabled preference must reach it on every start).
+  useEffect(() => {
+    window.api.setCloseToTray?.(settings.closeToTray !== false)
+  }, [settings.closeToTray])
+
   // Show a tab in the right (split) pane. If it's currently the active tab, move
   // the left pane to a different tab so the two panes differ.
   const openRight = useCallback((id) => {
@@ -921,6 +927,19 @@ export default function App() {
   } = useKeybindings()
   useEffect(() => {
     window.api.setMenuKeybindings?.(buildElectronAcceleratorPayload(effectiveKeybindings))
+  }, [effectiveKeybindings])
+  // OS-level commands (show/hide window) are registered by the main process with
+  // globalShortcut, so the resolved binding has to be pushed there too. The reply
+  // names any combination the OS/another app already owns — the keyboard settings
+  // page surfaces that instead of failing silently.
+  const [globalShortcutStatus, setGlobalShortcutStatus] = useState(null)
+  useEffect(() => {
+    window.api
+      .setGlobalShortcuts?.(buildGlobalAcceleratorPayload(effectiveKeybindings))
+      .then((res) => {
+        if (res?.ok) setGlobalShortcutStatus({ accelerators: res.accelerators, unregistered: res.unregistered })
+      })
+      .catch(() => {})
   }, [effectiveKeybindings])
   handlers.current = createMenuHandlers({
     pickEditableId,
@@ -1294,6 +1313,7 @@ export default function App() {
               onSetKeybindings={setKeybindings}
               onResetCommandKeybindings={resetCommandKeybindings}
               onResetAllKeybindings={resetAllKeybindings}
+              globalShortcutStatus={globalShortcutStatus}
               cloudSync={syncWorkspaces.supported}
               syncWorkspaces={syncWorkspaces}
               folderRoots={folderRoots}
