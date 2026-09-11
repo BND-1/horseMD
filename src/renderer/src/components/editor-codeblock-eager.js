@@ -54,7 +54,6 @@ if (
 
 const proto = CodeMirrorBlock.prototype
 const originalRenderPlaceholder = proto.renderPlaceholder
-const originalScheduleTeardown = proto.scheduleTeardown
 
 // Eager by default (#25); block-count-heavy documents switch to lazy before
 // their Crepe instance parses (chooseCodeBlockMountMode).
@@ -90,11 +89,14 @@ proto.renderPlaceholder = function adaptiveRenderPlaceholder(...args) {
   this.initializeCodeMirror()
 }
 
-// (2) Never tear the editor down once mounted → its height never reverts to the
-//     placeholder (the source of the delta). destroy() still cleans up directly,
-//     so this doesn't leak on block deletion. In lazy mode (block-heavy docs)
-//     the original teardown keeps memory bounded.
-proto.scheduleTeardown = function adaptiveScheduleTeardown(...args) {
-  if (!eagerMountEnabled) return originalScheduleTeardown.apply(this, args)
-  /* intentional no-op — keep mounted so height stays stable (#25) */
+// (2) Never tear the editor down once mounted → its height never reverts to
+//     the placeholder (the source of the delta). destroy() still cleans up
+//     directly, so this doesn't leak on block deletion. Applies to lazy mode
+//     too: the 5s off-screen teardown was the only timer-driven layout
+//     mutation in the scroll path — during trackpad momentum its height
+//     reverts kept the content shifting after the user stopped scrolling
+//     (user report on the 394-block doc). Memory stays bounded by the blocks
+//     actually visited.
+proto.scheduleTeardown = function adaptiveScheduleTeardown() {
+  /* intentional no-op in BOTH modes — keep mounted so height stays stable (#25) */
 }
