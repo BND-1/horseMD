@@ -533,3 +533,20 @@ Markdown 表格渲染更紧凑：去掉单元格内段落的 margin 和 Crepe �
 - 冲突保留双方版本；同步删除进入本地或远端 `.horsemd/trash/`，不直接永久删除。
 
 **验证**：`test-sync-plan`、`test-sync-engine`、`test-sync-workspaces`、`test-sync-credentials`、`test-webdav-provider`、`test-webdav-apache`、`test-webdav-electron-sync`、`test-s3-provider`、`test-s3-electron-sync`。其中后两条真实服务测试分别使用本机 Apache DAV 与 MinIO，以及两个隔离 Electron profile。
+
+---
+
+## 43. 华为 VRP 代码块语言与命令补全
+
+代码块语言选择器新增 **VRP**（华为 VRP 设备配置）。` ```vrp ` 与 ` ```huawei ` 围栏按 VRP 语法着色：命令关键字（`system-view`、`interface`、`undo`…）、接口名（`Vlanif10`、`GigabitEthernet0/0/1`）、IPv4/MAC 地址、`#` 注释、`[Huawei-…]` 视图提示符各用不同 token。写网络割接/配置说明时不再是一片无色的纯文本。
+
+在 VRP 代码块内输入命令开头（`sys`、`int`、`acl`、`vlan`…）会弹出命令补全，`Ctrl+Space` 列出全部命令。补全表含约 110 条常用 VRP 命令与 8 个多行配置片段模板（`vlan-access` / `vlan-trunk` / `vlanif` / `static-route` / `ospf` / `ssh` / `acl` / `dhcp`）；选中模板会插入整段配置，并把需要填写的位置（接口编号、VLAN、IP、密码等）**自动选中**，直接输入即可替换。斜杠菜单输入 `/vrp` 也能直接插入 VRP 代码块。补全只在 VRP 代码块内生效，其它语言代码块行为不变。
+
+**实现**：
+
+- `editor-vrp-language.js`：手写 CodeMirror `StreamLanguage`（VRP 无现成语言包，`@codemirror/legacy-modes` 也没有），经 `codeBlockConfig.languages` 注册 —— 与内置 Mermaid 语言同一条通道，未改任何原型或用私有 API。`LanguageDescription` 的 `name` 是 `VRP`、`alias` 含 `vrp`/`huawei`/`vrpcfg`/`vrp-config`：Milkdown 的 `LanguageLoader` 只按 **alias** 精确匹配围栏信息串，而语言选择器写回的是 `name`，所以小写 name 必须同时出现在 alias 里。
+- `editor-vrp-commands.js`：纯数据 + 纯函数（命令/模板表、`«»` 占位符解析、前缀优先过滤），不依赖 CodeMirror，便于无头回归。
+- `editor-vrp-completions.js`：`autocompletion` 挂在语言的 `LanguageSupport` 上（因此只在 VRP 代码块生效）；`selectOnOpen: false`，避免打完命令按 Enter 被补全截胡；模块经 `import()` 懒加载，不进编辑器首屏（构建产物为独立 chunk）。
+- `editor-slash-menu.js`：`LANGUAGES` 表新增 `['vrp', ['vrp', 'huawei', 'vrpcfg']]`。
+
+**验证**：`npm run test:vrp-language`（纯 Node：tokenizer 断言 + 补全表契约 + 过滤排序）、`npm run test:vrp-codeblock-ui`（真实已构建应用 + CDP：围栏到达代码块且选择器显示 vrp、VRP token 计算颜色 ≥3 种即确实着色、输入 `sys` 弹出含 `system-view` 的补全菜单、同样输入在 javascript 代码块不弹菜单）。桌面与移动端共用渲染层，移动端键盘补全同样可用。

@@ -38,6 +38,7 @@ import { createTaskListInputPlugin } from './editor-task-list.js'
 import { createSourceTransactionDispatch } from './editor-source-transactions.js'
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
+import { vrpLanguage } from './editor-vrp-language.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import { imageBlockMarkdownSchema } from './editor-image-markdown.js'
@@ -59,6 +60,10 @@ const mermaidLanguage = LanguageDescription.of({
     return new LanguageSupport(StreamLanguage.define(() => ({ token: () => null })))
   }
 })
+
+// `vrpLanguage` (editor-vrp-language.js) is the same shape but a real language:
+// Huawei VRP highlighting plus in-block command snippets. The picker lists it as
+// "VRP"; ```vrp / ```huawei fences resolve through its aliases.
 
 export function applyImageText(ctx, tt) {
   try {
@@ -179,7 +184,7 @@ export function createConfiguredCrepe({
       const prevRender = v.renderPreview
       return {
         ...v,
-        languages: [mermaidLanguage, ...(v.languages || [])],
+        languages: [vrpLanguage, mermaidLanguage, ...(v.languages || [])],
         renderPreview: (language, text, setPreview) => {
           if ((language || '').toLowerCase() === 'mermaid') {
             return mermaidRender(language, text, setPreview)
