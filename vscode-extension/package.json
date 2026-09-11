@@ -1,15 +1,14 @@
 {
-  "name": "horsemd-preview",
+  "name": "horsemd",
   "displayName": "HorseMD",
   "description": "Warm WYSIWYG Markdown editor with HorseMD themes — opens .md files directly in Milkdown Crepe.",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publisher": "horsemd",
   "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Previewers",
     "Other"
   ],
   "main": "./src/extension.js",
@@ -56,7 +55,7 @@
     "configuration": {
       "title": "HorseMD",
       "properties": {
-        "horsemdPreview.theme": {
+        "horsemd.theme": {
           "type": "string",
           "default": "auto",
           "enum": [
@@ -79,14 +78,14 @@
           ],
           "description": "Theme for the HorseMD editor."
         },
-        "horsemdPreview.fontSize": {
+        "horsemd.fontSize": {
           "type": "number",
           "default": 16,
           "minimum": 12,
           "maximum": 24,
           "description": "Base font size in pixels."
         },
-        "horsemdPreview.contentWidth": {
+        "horsemd.contentWidth": {
           "type": "string",
           "default": "standard",
           "enum": [
@@ -103,25 +102,25 @@
           ],
           "description": "Content width preset."
         },
-        "horsemdPreview.showOutline": {
+        "horsemd.showOutline": {
           "type": "boolean",
           "default": true,
           "description": "Show the outline sidebar."
         },
-        "horsemdPreview.autoSave": {
+        "horsemd.autoSave": {
           "type": "boolean",
-          "default": true,
-          "description": "Auto-save changes from the WYSIWYG editor."
+          "default": false,
+          "description": "Auto-save file on each edit from the WYSIWYG editor."
         }
       }
     }
   },
-  "scripts": {},
-  "dependencies": {
-    "@traptitech/markdown-it-katex": "^3.6.0",
-    "highlight.js": "^11.10.0",
-    "katex": "^0.16.11",
-    "markdown-it": "^14.1.0",
-    "markdown-it-task-lists": "^2.1.1"
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@milkdown/crepe": "^7.6.5",
+    "esbuild": "^0.28.2",
+    "katex": "^0.16.11"
   }
 }

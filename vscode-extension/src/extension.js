@@ -1,6 +1,7 @@
 // HorseMD VSCode extension — WYSIWYG editor via Custom Editor API.
-// Opening a .md file directly opens the Milkdown Crepe editor (no command needed).
+// Opening a .md file opens the Milkdown Crepe editor (no command needed).
 // Edits sync to the TextDocument; VSCode handles save/dirty state.
+// All resources bundled locally — no CDN dependency.
 
 const vscode = require('vscode')
 const fs = require('fs')
@@ -14,16 +15,15 @@ class HorsemdEditorProvider {
     return { uri, dispose() {} }
   }
 
-  async resolveCustomEditor(document, panel, token) {
+  async resolveCustomEditor(document, panel) {
     const key = document.uri.toString()
 
-    // Webview options — per-document localResourceRoots for images
     panel.webview.options = {
       enableScripts: true,
       localResourceRoots: getLocalResourceRoots(document.uri)
     }
 
-    const cfg = vscode.workspace.getConfiguration('horsemdPreview')
+    const cfg = vscode.workspace.getConfiguration('horsemd')
 
     // Read initial content from the TextDocument
     let initialContent = ''
@@ -34,59 +34,67 @@ class HorsemdEditorProvider {
       try { initialContent = fs.readFileSync(document.uri.fsPath, 'utf8') } catch {}
     }
 
-    panel.webview.html = getHtml(panel.webview, {
-      theme: cfg.get('theme') || 'auto',
-      fontSize: cfg.get('fontSize') || 16,
-      contentWidth: cfg.get('contentWidth') || 'standard',
-      showOutline: cfg.get('showOutline') !== false,
-      content: initialContent
-    })
+    panel.webview.html = getHtml(panel.webview)
 
     const state = {
+      ready: false,
+      pendingInit: {
+        content: initialContent,
+        theme: cfg.get('theme') || 'auto',
+        fontSize: cfg.get('fontSize') || 16,
+        contentWidth: cfg.get('contentWidth') || 'standard',
+        showOutline: cfg.get('showOutline') !== false,
+      },
       isWebviewEditing: false,
       pendingEdit: null,
       disposed: false,
-      debounceTimer: null
+      debounceTimer: null,
+      saveTimer: null,
     }
     docStates.set(key, { panel, state })
 
     // ===== Webview → Document =====
     const msgDisposable = panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type === 'ready') {
-        // Content was passed inline in HTML; nothing to do
+        state.ready = true
+        panel.webview.postMessage({ type: 'init', ...state.pendingInit })
+        state.pendingInit = null
       } else if (msg.type === 'edit') {
-        if (state.disposed) return
+        if (state.disposed || !state.ready) return
         if (state.isWebviewEditing) { state.pendingEdit = msg.markdown; return }
         state.isWebviewEditing = true
         try {
           await updateDocument(document.uri, msg.markdown)
-          // Process queued edits
           while (state.pendingEdit && !state.disposed) {
             const pending = state.pendingEdit
             state.pendingEdit = null
             await updateDocument(document.uri, pending)
           }
-          // Auto-save if configured
-          if (cfg.get('autoSave') !== false) {
-            try {
-              const doc = await vscode.workspace.openTextDocument(document.uri)
-              await doc.save()
-            } catch {}
+          // Debounced auto-save (off by default; 2s delay when on)
+          if (cfg.get('autoSave') === true) {
+            clearTimeout(state.saveTimer)
+            state.saveTimer = setTimeout(async () => {
+              if (state.disposed) return
+              try {
+                const doc = await vscode.workspace.openTextDocument(document.uri)
+                await doc.save()
+              } catch {}
+            }, 2000)
           }
         } catch {}
-        setTimeout(() => { state.isWebviewEditing = false }, 200)
+        state.isWebviewEditing = false
       } else if (msg.type === 'switchTheme') {
-        await vscode.workspace.getConfiguration('horsemdPreview').update('theme', msg.theme, vscode.ConfigurationTarget.Global)
+        await vscode.workspace.getConfiguration('horsemd').update('theme', msg.theme, vscode.ConfigurationTarget.Global)
         for (const { panel: p } of docStates.values()) p.webview.postMessage({ type: 'theme', theme: msg.theme })
       } else if (msg.type === 'toggleOutline') {
         for (const { panel: p } of docStates.values()) p.webview.postMessage({ type: 'toggleOutline' })
       }
     })
 
-    // ===== Document → Webview (external edits, text editor, undo/redo) =====
+    // ===== Document → Webview (external edits, undo/redo) =====
     const changeDisposable = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() !== key) return
-      if (state.isWebviewEditing || state.disposed) return
+      if (state.isWebviewEditing || state.disposed || !state.ready) return
       clearTimeout(state.debounceTimer)
       state.debounceTimer = setTimeout(() => {
         if (state.disposed) return
@@ -97,7 +105,6 @@ class HorsemdEditorProvider {
       }, 150)
     })
 
-    // VSCode color theme change
     const themeDisposable = vscode.window.onDidChangeActiveColorTheme(() => {
       if (!state.disposed) panel.webview.postMessage({ type: 'colorThemeChanged' })
     })
@@ -105,6 +112,7 @@ class HorsemdEditorProvider {
     panel.onDidDispose(() => {
       state.disposed = true
       clearTimeout(state.debounceTimer)
+      clearTimeout(state.saveTimer)
       msgDisposable.dispose()
       changeDisposable.dispose()
       themeDisposable.dispose()
@@ -123,6 +131,8 @@ async function updateDocument(uri, markdown) {
 
 function getLocalResourceRoots(uri) {
   const roots = [vscode.Uri.file(path.dirname(uri.fsPath))]
+  const extDir = vscode.Uri.file(path.join(__dirname, '..'))
+  roots.push(extDir)
   const ws = vscode.workspace.workspaceFolders
   if (ws) roots.push(ws[0].uri)
   return roots
@@ -160,7 +170,7 @@ function activate(context) {
       { placeHolder: 'Select HorseMD theme' }
     )
     if (!pick) return
-    await vscode.workspace.getConfiguration('horsemdPreview').update('theme', pick.id, vscode.ConfigurationTarget.Global)
+    await vscode.workspace.getConfiguration('horsemd').update('theme', pick.id, vscode.ConfigurationTarget.Global)
     for (const { panel } of docStates.values()) panel.webview.postMessage({ type: 'theme', theme: pick.id })
   }
 
@@ -174,198 +184,34 @@ function activate(context) {
   )
 }
 
-function getHtml(webview, opts) {
+function getHtml(webview) {
   const csp = webview.cspSource
   const nonce = getNonce()
-  const cdn = 'https://cdn.jsdelivr.net'
-  const crepeVarsCss = cdn + '/npm/@milkdown/crepe@7/style/vars.css'
-  const crepeCss = cdn + '/npm/@milkdown/crepe@7/style/all.css'
-  const katexCss = cdn + '/npm/katex@0.16.11/dist/katex.min.css'
-  const crepeEsm = cdn + '/npm/@milkdown/crepe@7/+esm'
 
-  // Escape content for safe embedding in a JS template literal
-  const contentEsc = String(opts.content || '')
-    .replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$')
+  const editorJs = webview.asWebviewUri(vscode.Uri.file(
+    path.join(__dirname, '..', 'media', 'editor.js')
+  ))
+  const editorCss = webview.asWebviewUri(vscode.Uri.file(
+    path.join(__dirname, '..', 'media', 'editor.css')
+  ))
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: ${csp} blob:; style-src 'unsafe-inline' ${csp} ${cdn}; script-src 'unsafe-inline' 'unsafe-eval' ${cdn}; font-src data: ${csp} ${cdn}; worker-src 'none';">
-  <link rel="stylesheet" href="${crepeVarsCss}">
-  <link rel="stylesheet" href="${crepeCss}">
-  <link rel="stylesheet" href="${katexCss}">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: ${csp} blob:; style-src 'unsafe-inline' ${csp}; script-src ${csp}; font-src data: ${csp};">
+  <link rel="stylesheet" href="${editorCss}">
   <style>${getThemeCSS()}</style>
 </head>
-<body data-vscode-theme-kind="" class="light">
+<body class="vscode-body">
   <div id="hm-app">
-    <aside id="hm-outline" class="hm-outline${opts.showOutline ? '' : ' hm-hidden'}"></aside>
+    <aside id="hm-outline" class="hm-outline"></aside>
     <main id="hm-scroll" class="hm-scroll">
       <div id="editor"></div>
     </main>
   </div>
-  <script nonce="${nonce}">
-    window.__vscode = acquireVsCodeApi();
-    window.__horsemd = ${JSON.stringify({ theme: opts.theme, fontSize: opts.fontSize, contentWidth: opts.contentWidth, showOutline: opts.showOutline })};
-    window.__horsemd_content = \`${contentEsc}\`;
-  </script>
-  <script nonce="${nonce}" type="module">
-    import { Crepe, CrepeFeature } from '${crepeEsm}';
-
-    const vscode = window.__vscode;
-    const opts = window.__horsemd;
-    let crepe = null;
-    let suppressUpdate = false;
-    let lastMd = '';
-
-    // ===== Theme =====
-    const THEME_CLASSES = ['light', 'dark', 'theme-morandi', 'theme-morandi-rose', 'theme-morandi-blue', 'theme-morandi-dark'];
-    const THEMES = [
-      { id: 'light', base: 'light', cls: '' },
-      { id: 'dark', base: 'dark', cls: '' },
-      { id: 'morandi', base: 'light', cls: 'theme-morandi' },
-      { id: 'morandi-rose', base: 'light', cls: 'theme-morandi-rose' },
-      { id: 'morandi-blue', base: 'light', cls: 'theme-morandi-blue' },
-      { id: 'morandi-dark', base: 'dark', cls: 'theme-morandi-dark' }
-    ];
-
-    function applyTheme(themeId) {
-      document.body.classList.remove(...THEME_CLASSES);
-      let resolved = themeId;
-      if (themeId === 'auto') {
-        const kind = document.body.getAttribute('data-vscode-theme-kind') || '';
-        resolved = kind.includes('dark') || kind.includes('high-contrast') ? 'dark' : 'light';
-      }
-      const theme = THEMES.find(t => t.id === resolved) || THEMES[0];
-      document.body.classList.add(theme.base);
-      if (theme.cls) document.body.classList.add(theme.cls);
-    }
-
-    let currentTheme = opts.theme || 'auto';
-    applyTheme(currentTheme);
-
-    if (opts.fontSize) document.documentElement.style.setProperty('--hm-font-size', opts.fontSize + 'px');
-    if (opts.contentWidth) {
-      const widths = { compact: '680px', standard: '820px', wide: '1040px', full: 'none' };
-      document.documentElement.style.setProperty('--hm-content-width', widths[opts.contentWidth] || '820px');
-    }
-
-    new MutationObserver(() => {
-      if (currentTheme === 'auto') applyTheme('auto');
-    }).observe(document.body, { attributes: true, attributeFilter: ['data-vscode-theme-kind'] });
-
-    // ===== Outline =====
-    let scrollSpyRaf = 0;
-    let scrollSpyCleanup = null;
-
-    function generateOutline() {
-      const headings = document.querySelectorAll('#editor h1, #editor h2, #editor h3, #editor h4, #editor h5, #editor h6');
-      const nav = document.getElementById('hm-outline');
-      if (!nav) return;
-      if (!headings.length) { nav.innerHTML = '<p class="hm-outline-empty">No headings</p>'; return; }
-      const items = [];
-      headings.forEach((h, i) => {
-        if (!h.id) h.id = 'hm-heading-' + (i + 1);
-        items.push({ id: h.id, level: parseInt(h.tagName[1]), text: h.textContent.trim() });
-      });
-      nav.innerHTML = '<nav>' + items.map(item =>
-        '<a href="#' + item.id + '" class="hm-outline-item hm-outline-l' + item.level + '" data-target="' + item.id + '">' +
-        item.text.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])) + '</a>'
-      ).join('') + '</nav>';
-      nav.querySelectorAll('a').forEach(a => {
-        a.addEventListener('click', e => {
-          e.preventDefault();
-          const el = document.getElementById(a.dataset.target);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-      });
-      setupScrollSpy(headings);
-    }
-
-    function setupScrollSpy(headings) {
-      if (scrollSpyCleanup) scrollSpyCleanup();
-      const scroll = document.getElementById('hm-scroll');
-      const links = document.querySelectorAll('.hm-outline-item');
-      function onScroll() {
-        cancelAnimationFrame(scrollSpyRaf);
-        scrollSpyRaf = requestAnimationFrame(() => {
-          let activeIdx = 0;
-          const scrollTop = scroll.scrollTop;
-          for (let i = 0; i < headings.length; i++) {
-            if (headings[i].offsetTop - 80 <= scrollTop) activeIdx = i;
-          }
-          links.forEach((l, i) => l.classList.toggle('hm-active', i === activeIdx));
-        });
-      }
-      scroll.addEventListener('scroll', onScroll, { passive: true });
-      scrollSpyCleanup = () => scroll.removeEventListener('scroll', onScroll);
-      onScroll();
-    }
-
-    // ===== Init Crepe =====
-    try {
-      crepe = new Crepe({
-        root: '#editor',
-        defaultValue: window.__horsemd_content || '',
-        features: {
-          [CrepeFeature.SelectionTooltip]: true,
-          [CrepeFeature.SlashCommand]: true,
-          [CrepeFeature.BlockEdit]: true,
-          [CrepeFeature.CodeMirror]: true,
-          [CrepeFeature.Table]: true,
-          [CrepeFeature.InlineCode]: true,
-          [CrepeFeature.LinkTooltip]: true,
-          [CrepeFeature.Latex]: true,
-          [CrepeFeature.Cursor]: false,
-        }
-      });
-
-      await crepe.create();
-      lastMd = window.__horsemd_content || '';
-      generateOutline();
-
-      // Poll for content changes → send to host
-      setInterval(async () => {
-        if (suppressUpdate) return;
-        try {
-          const md = await crepe.getMarkdown();
-          if (md !== lastMd) {
-            lastMd = md;
-            vscode.postMessage({ type: 'edit', markdown: md });
-            generateOutline();
-          }
-        } catch {}
-      }, 300);
-
-      vscode.postMessage({ type: 'ready' });
-    } catch (err) {
-      document.getElementById('editor').innerHTML =
-        '<pre style="padding:2em;color:#c93b3b;font-family:monospace;white-space:pre-wrap">Failed to load Milkdown Crepe:\\n' +
-        (err.message || err) + '\\n\\nCheck network connection to ${cdn}</pre>';
-    }
-
-    // ===== Messages from host =====
-    window.addEventListener('message', (event) => {
-      const msg = event.data;
-      if (msg.type === 'update' && crepe) {
-        if (msg.content !== lastMd) {
-          suppressUpdate = true;
-          try { crepe.setMarkdown(msg.content); } catch {}
-          lastMd = msg.content;
-          generateOutline();
-          setTimeout(() => { suppressUpdate = false; }, 200);
-        }
-      } else if (msg.type === 'theme') {
-        currentTheme = msg.theme;
-        applyTheme(msg.theme);
-      } else if (msg.type === 'colorThemeChanged') {
-        if (currentTheme === 'auto') applyTheme('auto');
-      } else if (msg.type === 'toggleOutline') {
-        document.getElementById('hm-outline').classList.toggle('hm-hidden');
-      }
-    });
-  </script>
+  <script nonce="${nonce}" src="${editorJs}"></script>
 </body>
 </html>`
 }
@@ -382,18 +228,18 @@ body { font-family: var(--font-write); color: var(--text); background: var(--bg)
 :root {
   --font-write: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace;
-  --radius-sm: 5px; --radius-md: 8px;
+  --radius-sm: 5px; --radius-md: 8px; --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --dur-fast: 0.14s; --shadow-float: 0 4px 16px rgba(0,0,0,0.12); --editor-block-space: 1.35em; --editor-block-radius: var(--radius-md); --editor-subtle-surface: var(--code-bg); --editor-para-spacing: 0.8em; --hover: var(--hover-elevated);
 }
 
 /* Theme palettes (from HorseMD app.css) */
-body.light { --bg:#ebe7e0; --bg-elevated:#faf8f5; --bg-sidebar:#e3dfd7; --bg-editor:#fdfbf7; --text:#2a2620; --text-strong:#0f0d0a; --muted:#5a5650; --faint:#8a867e; --border:#c8c4bc; --border-soft:#ddd9d2; --hover-elevated:#f0ede5; --code-bg:#f2efe8; --code-border:#ddd9d2; --code-block-bg:#2a2730; --code-block-border:rgba(0,0,0,0.25); --accent:#c86b35; --accent-strong:#a04f22; --accent-soft:rgba(200,107,53,0.15); --danger:#c93b3b; }
-body.dark { --bg:#16130e; --bg-elevated:#1e1a16; --bg-sidebar:#191512; --bg-editor:#1d1914; --text:#d0c8bc; --text-strong:#f2ebe0; --muted:#8a8378; --faint:#6a655c; --border:#3a3630; --border-soft:#302c28; --hover-elevated:#2e2a24; --code-bg:#24201c; --code-border:#3a3630; --code-block-bg:#100e0b; --code-block-border:rgba(255,255,255,0.06); --accent:#e69055; --accent-strong:#ffb080; --accent-soft:rgba(230,144,85,0.18); --danger:#ff7070; }
+body.light, body.vscode-light.light { --bg:#ebe7e0; --bg-elevated:#faf8f5; --bg-sidebar:#e3dfd7; --bg-editor:#fdfbf7; --text:#2a2620; --text-strong:#0f0d0a; --muted:#5a5650; --faint:#8a867e; --border:#c8c4bc; --border-soft:#ddd9d2; --hover-elevated:#f0ede5; --code-bg:#f2efe8; --code-border:#ddd9d2; --code-block-bg:#2a2730; --code-block-border:rgba(0,0,0,0.25); --code-linenum:#8a867e; --code-linenum-border:rgba(255,255,255,0.08); --code-linenum-active:#c8c4bc; --accent:#c86b35; --accent-strong:#a04f22; --accent-soft:rgba(200,107,53,0.15); --danger:#c93b3b; }
+body.dark, body.vscode-dark.dark { --bg:#16130e; --bg-elevated:#1e1a16; --bg-sidebar:#191512; --bg-editor:#1d1914; --text:#d0c8bc; --text-strong:#f2ebe0; --muted:#8a8378; --faint:#6a655c; --border:#3a3630; --border-soft:#302c28; --hover-elevated:#2e2a24; --code-bg:#24201c; --code-border:#3a3630; --code-block-bg:#100e0b; --code-block-border:rgba(255,255,255,0.06); --code-linenum:#6a655c; --code-linenum-border:rgba(255,255,255,0.06); --code-linenum-active:#8a8378; --accent:#e69055; --accent-strong:#ffb080; --accent-soft:rgba(230,144,85,0.18); --danger:#ff7070; }
 body.theme-morandi { --bg:#e7e8e2; --bg-elevated:#f3f4ef; --bg-sidebar:#dfe1d9; --bg-editor:#f6f7f2; --text:#3a3d35; --text-strong:#23261f; --muted:#6c6f63; --faint:#97998d; --border:#c5c8bc; --border-soft:#d9dbd0; --hover-elevated:#ecede6; --code-bg:#eceee6; --code-border:#d9dbd0; --code-block-bg:#2a2730; --code-block-border:rgba(0,0,0,0.25); --accent:#7d8a6a; --accent-strong:#5f6b4e; --accent-soft:rgba(125,138,106,0.16); --danger:#b3645f; }
 body.theme-morandi-rose { --bg:#ece5e2; --bg-elevated:#f6f1ef; --bg-sidebar:#e5ddd9; --bg-editor:#f8f4f2; --text:#423a37; --text-strong:#271f1c; --muted:#70645f; --faint:#9c918b; --border:#ccc1bc; --border-soft:#ddd4cf; --hover-elevated:#efe8e5; --code-bg:#efe8e5; --code-border:#ddd4cf; --code-block-bg:#2a2730; --code-block-border:rgba(0,0,0,0.25); --accent:#a8807b; --accent-strong:#855e59; --accent-soft:rgba(168,128,123,0.18); --danger:#b85c57; }
 body.theme-morandi-blue { --bg:#e4e7ea; --bg-elevated:#f1f3f5; --bg-sidebar:#dce0e4; --bg-editor:#f5f7f8; --text:#383d42; --text-strong:#1f242a; --muted:#656d74; --faint:#939ba2; --border:#c2c8ce; --border-soft:#d6dade; --hover-elevated:#eaedf0; --code-bg:#e9edf0; --code-border:#d6dade; --code-block-bg:#2a2730; --code-block-border:rgba(0,0,0,0.25); --accent:#7e94a6; --accent-strong:#5d7385; --accent-soft:rgba(126,148,166,0.18); --danger:#b3645f; }
 body.theme-morandi-dark { --bg:#21242b; --bg-elevated:#282c34; --bg-sidebar:#23262d; --bg-editor:#262a31; --text:#c3c7cd; --text-strong:#e7eaef; --muted:#878c95; --faint:#5f636b; --border:#3a3f49; --border-soft:#313640; --hover-elevated:#2e333c; --code-bg:#2b2f37; --code-border:#3a3f49; --code-block-bg:#16191f; --code-block-border:rgba(255,255,255,0.06); --accent:#92a3b8; --accent-strong:#aebfd2; --accent-soft:rgba(146,163,184,0.18); --danger:#cf7a76; }
 
-/* Crepe color variables (from app.css lines 5752-5789) */
+/* Crepe color variables */
 body.light .milkdown { --crepe-color-background:var(--bg-editor); --crepe-color-on-background:var(--text); --crepe-color-surface:#fffbf7; --crepe-color-surface-low:#f5f3ef; --crepe-color-on-surface:var(--text-strong); --crepe-color-on-surface-variant:var(--muted); --crepe-color-outline:var(--border); --crepe-color-primary:var(--accent); --crepe-color-secondary:var(--accent-soft); --crepe-color-on-secondary:var(--accent-strong); --crepe-color-inverse:var(--text-strong); --crepe-color-on-inverse:var(--bg-editor); --crepe-color-inline-code:#b6587a; --crepe-color-error:var(--danger); --crepe-color-hover:var(--hover-elevated); --crepe-color-selected:var(--accent-soft); --crepe-color-inline-area:var(--code-bg); }
 body.dark .milkdown { --crepe-color-background:var(--bg-editor); --crepe-color-on-background:var(--text); --crepe-color-surface:#24201c; --crepe-color-surface-low:#1e1a17; --crepe-color-on-surface:var(--text-strong); --crepe-color-on-surface-variant:var(--muted); --crepe-color-outline:var(--border); --crepe-color-primary:var(--accent); --crepe-color-secondary:var(--accent-soft); --crepe-color-on-secondary:var(--accent-strong); --crepe-color-inverse:#f0ebe6; --crepe-color-on-inverse:#16130e; --crepe-color-inline-code:#e89cb3; --crepe-color-error:var(--danger); --crepe-color-hover:var(--hover-elevated); --crepe-color-selected:var(--accent-soft); --crepe-color-inline-area:var(--code-bg); }
 body.theme-morandi .milkdown, body.theme-morandi-rose .milkdown, body.theme-morandi-blue .milkdown { --crepe-color-background:var(--bg-editor); --crepe-color-on-background:var(--text); --crepe-color-surface:var(--bg-elevated); --crepe-color-surface-low:var(--hover-elevated); --crepe-color-on-surface:var(--text-strong); --crepe-color-on-surface-variant:var(--muted); --crepe-color-outline:var(--border); --crepe-color-primary:var(--accent); --crepe-color-secondary:var(--accent-soft); --crepe-color-on-secondary:var(--accent-strong); --crepe-color-inverse:var(--text-strong); --crepe-color-on-inverse:var(--bg-editor); --crepe-color-inline-code:#b6587a; --crepe-color-error:var(--danger); --crepe-color-hover:var(--hover-elevated); --crepe-color-selected:var(--accent-soft); --crepe-color-inline-area:var(--code-bg); }
@@ -419,13 +265,8 @@ body.theme-morandi-dark .milkdown { --crepe-color-background:var(--bg-editor); -
 .milkdown .ProseMirror code { font-family:var(--font-mono); font-size:0.9em; background:var(--code-bg); border:1px solid var(--code-border); border-radius:var(--radius-sm); padding:0.12em 0.34em; }
 .milkdown .ProseMirror pre { background:var(--code-block-bg); border:1px solid var(--code-block-border); border-radius:var(--radius-md); padding:1em 1.1em; overflow:auto; margin:1.2em 0; font-family:var(--font-mono); line-height:1.55; }
 .milkdown .ProseMirror pre code { background:transparent; border:none; padding:0; color:#e8e3d8; }
-.milkdown .ProseMirror table { border-collapse:collapse; width:100%; margin:1.35em 0; }
-.milkdown .ProseMirror th,.milkdown .ProseMirror td { border:none; border-bottom:1px solid var(--border-soft); padding:0.5em 0.75em; text-align:left; }
-.milkdown .ProseMirror th { background:var(--code-bg); font-weight:600; }
-.milkdown .ProseMirror tr:last-child td { border-bottom:none; }
 
-/* Lists — Crepe renders markers in .label-wrapper, NOT through ::marker.
-   Without display:flex on .list-item, label and text stack vertically (marker above text). */
+/* Lists — Crepe renders markers in .label-wrapper, NOT through ::marker */
 .milkdown .ProseMirror ul,.milkdown .ProseMirror ol { padding-left:0.25em; margin:1em 0; list-style:none; }
 .milkdown .ProseMirror .milkdown-list-item-block > .list-item { display:flex; align-items:flex-start; gap:8px; }
 .milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper { width:20px; flex:0 0 20px; height:calc(1.8em + 8px); color:var(--hm-list-marker-color); display:flex; align-items:center; }
@@ -443,11 +284,97 @@ body.theme-morandi-dark .milkdown { --crepe-color-background:var(--bg-editor); -
 .milkdown .ProseMirror .task-list-item label { cursor:pointer; flex:1; }
 .milkdown .ProseMirror .task-list-item.checked label { text-decoration:line-through; color:var(--muted); }
 
-.milkdown .ProseMirror hr { border:0; border-top:1px solid var(--border-soft); margin:2.2em 0; }
-.milkdown .ProseMirror img { max-width:100%; height:auto; border-radius:var(--radius-md); margin:1.4em auto; display:block; }
 .milkdown .katex-display { max-width:100%; overflow-x:auto; padding:4px 2px; }
 .milkdown .katex { color:inherit; font-size:1.05em; }
 
+
+/* CodeMirror code blocks — dark surface, readable selection */
+.milkdown .ProseMirror pre code, .milkdown .ProseMirror pre, .milkdown .cm-editor, .milkdown .cm-editor .cm-content, .milkdown .cm-editor .cm-line { font-family: var(--font-mono); font-feature-settings: normal; font-variant-ligatures: none; font-variant-east-asian: normal; }
+.milkdown .ProseMirror pre code::selection { background: var(--accent-soft); }
+.milkdown .cm-editor .cm-selectionBackground, .milkdown .cm-editor.cm-focused .cm-selectionBackground, .milkdown .cm-editor ::selection { background: var(--accent-soft) !important; }
+.milkdown .cm-editor .cm-content ::selection { color: inherit; }
+.milkdown .cm-editor .cm-activeLine, .milkdown .cm-editor .cm-activeLineGutter { background: transparent; }
+.milkdown .cm-editor { background: var(--code-block-bg) !important; border: 1px solid var(--code-block-border); border-radius: var(--editor-block-radius); margin: calc(var(--editor-para-spacing) * 0.6) 0; font-size: 0.92em; }
+.milkdown .cm-editor .cm-scroller { padding: 14px 0; line-height: 1.6; }
+.milkdown .cm-editor .cm-content { padding: 0 16px; }
+.milkdown .milkdown-code-block .cm-editor .cm-gutters { background: var(--code-block-bg); border: none; color: var(--code-linenum); user-select: none; -webkit-user-select: none; margin-right: 12px; padding: 0; }
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement { min-width: 2.4ch; padding: 0 0.95em 0 0.5em; text-align: right; font-size: 1em; font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); line-height: 1.6; color: var(--code-linenum); border-right: 1px solid var(--code-linenum-border); background: transparent; }
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter { color: var(--code-linenum-active); background: rgba(255,255,255,0.05); }
+
+/* Inline code */
+.milkdown .ProseMirror code:not(pre code) { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: var(--radius-sm); padding: 2px 6px; font-size: 0.88em; color: var(--accent-strong); font-family: var(--font-mono); line-height: 1.4; }
+
+/* Tables — full styling from app.css */
+.milkdown .milkdown-table-block { max-width: 100%; margin: var(--editor-block-space) 0; contain: inline-size; }
+.milkdown .milkdown-table-block > div > .cell-handle[data-show='false'] { display: none; }
+.milkdown .milkdown-table-block .table-wrapper { max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; contain: inline-size layout paint; -webkit-overflow-scrolling: touch; }
+.milkdown .ProseMirror .milkdown-table-block table.children { table-layout: auto; width: max-content; min-width: 0; }
+.milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-widths='true'], .milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-preview='true'] { table-layout: fixed; }
+.milkdown .ProseMirror table { border-collapse: collapse; width: 100%; margin: var(--editor-block-space) 0; overflow: hidden; border-radius: var(--editor-block-radius); border: 1px solid var(--border-soft); font-size: 0.95em; background: color-mix(in srgb, var(--editor-subtle-surface) 88%, var(--accent) 4%); }
+.milkdown .ProseMirror .milkdown-table-block table { margin: 0; }
+.milkdown .ProseMirror th, .milkdown .ProseMirror td { border: none; border-bottom: 1px solid var(--border-soft); padding: 0.28em 0.6em; line-height: 1.4; text-align: left; vertical-align: top; overflow-wrap: break-word; word-break: break-word; }
+.milkdown .ProseMirror .milkdown-table-block th, .milkdown .ProseMirror .milkdown-table-block td { min-width: 6rem; max-width: 20rem; box-sizing: border-box; }
+.milkdown .ProseMirror .milkdown-table-block th > p, .milkdown .ProseMirror .milkdown-table-block td > p { margin: 0; padding: 0; line-height: inherit; }
+.milkdown .ProseMirror th { background: color-mix(in srgb, var(--editor-subtle-surface), var(--text) 9%); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-strong); }
+.milkdown .ProseMirror tr:last-child td { border-bottom: none; }
+.milkdown .ProseMirror-selectednode { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-radius: var(--radius-sm); }
+.milkdown .milkdown-table-block.ProseMirror-selectednode, .milkdown .milkdown-table-block .ProseMirror-selectednode, .milkdown .milkdown-table-block th:has(.ProseMirror-selectednode), .milkdown .milkdown-table-block td:has(.ProseMirror-selectednode) { outline: none; }
+.milkdown .milkdown-image-block.ProseMirror-selectednode, .milkdown .milkdown-image-inline.ProseMirror-selectednode, .milkdown .milkdown-image-inline.selected { outline: none !important; }
+.milkdown .milkdown-image-block.selected > .image-wrapper::before { display: none !important; }
+.milkdown .milkdown-table-block .line-handle { opacity: 1 !important; background: color-mix(in srgb, var(--accent) 84%, transparent); }
+.milkdown .milkdown-table-block .line-handle .add-button { display: grid !important; width: 22px !important; height: 22px !important; place-items: center; padding: 0 !important; border: 1px solid var(--border); border-radius: 50% !important; background: var(--bg-elevated); box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 16%, transparent); transition: transform 0.14s var(--ease-out), background 0.14s var(--ease-out), color 0.14s var(--ease-out), border-color 0.14s var(--ease-out); }
+.milkdown .milkdown-table-block .line-handle .add-button:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); transform: translateY(-50%) translateX(-50%) scale(1.08); }
+.milkdown .milkdown-table-block .line-handle[data-role='x-line-drag-handle'] .add-button:hover { transform: translateX(-50%) translateY(-50%) scale(1.08); }
+.milkdown .milkdown-table-block .line-handle .add-button svg { width: 14px; height: 14px; }
+
+/* Horizontal rule */
+.milkdown .ProseMirror hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--border-soft), transparent); margin: 2.35em 0; }
+
+/* Images */
+.milkdown .ProseMirror img { max-width: 100%; max-height: none; height: auto; border-radius: var(--editor-block-radius); margin: var(--editor-block-space) auto; display: block; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+
+/* Emphasis */
+.milkdown .ProseMirror strong { font-weight: 600; color: var(--text-strong); }
+.milkdown .ProseMirror em { font-style: italic; }
+
+/* ==highlight== marks */
+.milkdown .ProseMirror mark.hm-highlight, .milkdown .ProseMirror mark { color: inherit; padding: 0.05em 0.15em; border-radius: 2px; -webkit-text-decoration-line: none; text-decoration-line: none; }
+.milkdown .ProseMirror mark.hm-hl-yellow { background: #fff3a3; }
+.milkdown .ProseMirror mark.hm-hl-red { background: #ffc6c6; }
+.milkdown .ProseMirror mark.hm-hl-blue { background: #bcd9ff; }
+body.dark .milkdown .ProseMirror mark.hm-hl-yellow { background: #7a6c12; }
+body.dark .milkdown .ProseMirror mark.hm-hl-red { background: #7a3434; }
+body.dark .milkdown .ProseMirror mark.hm-hl-blue { background: #2f4a6b; }
+
+/* Frontmatter card */
+.hm-frontmatter-wrap { margin: 0 0 1.25em; }
+.hm-frontmatter { border: 1px solid var(--border-soft); border-radius: 6px; background: var(--bg-elevated); overflow: hidden; font-size: 0.9em; }
+.hm-frontmatter-head { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 0 10px 0 13px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-strong); background: color-mix(in srgb, var(--accent-soft) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent); }
+.hm-frontmatter-title { line-height: 1; }
+.hm-frontmatter-action { min-height: 22px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; cursor: pointer; }
+.hm-frontmatter-action:hover, .hm-frontmatter-action:focus-visible { color: var(--accent-strong); background: var(--hover); outline: none; }
+.hm-frontmatter-grid { display: grid; grid-template-columns: max-content 1fr; gap: 0; margin: 0; padding: 8px 14px; }
+.hm-frontmatter-grid dt { grid-column: 1; color: var(--muted); font-weight: 500; padding: 3px 16px 3px 0; white-space: nowrap; }
+.hm-frontmatter-grid dd { grid-column: 2; margin: 0; padding: 3px 0; color: var(--text); word-break: break-word; }
+.hm-frontmatter-raw { margin: 0; padding: 10px 14px; font-family: var(--font-mono); font-size: 12.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.hm-frontmatter-input { display: block; box-sizing: border-box; width: 100%; min-height: 88px; margin: 0; padding: 10px 13px; border: 0; border-radius: 0; outline: 0; resize: vertical; background: transparent; color: var(--text); font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; }
+.hm-frontmatter-input:focus { background: color-mix(in srgb, var(--accent-soft) 18%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* HTML blocks */
+.hm-html-block { margin: 0.6em 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; contain: inline-size layout paint; -webkit-overflow-scrolling: touch; white-space: normal; }
+.hm-html-block pre { white-space: pre; }
+.milkdown .ProseMirror .hm-html-block table { border-collapse: collapse; table-layout: auto; width: max-content; min-width: 100%; max-width: 100%; }
+.milkdown .ProseMirror .hm-html-block table[width] { width: unset; }
+.milkdown .ProseMirror .hm-html-block th, .milkdown .ProseMirror .hm-html-block td { min-width: 0; max-width: 24rem; border: 1px solid var(--border); padding: 6px 12px; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: break-word; word-break: break-word; }
+.hm-html-block th { background: var(--hover-elevated, var(--border-soft)); font-weight: 700; }
+.hm-html-block img { max-width: 100%; }
+.hm-html-table-block table img { width: 100%; height: auto; }
+.hm-html-inline { display: inline; }
+
+/* Math preview tooltip */
+.hm-math-preview { position: fixed; z-index: 60; pointer-events: none; max-width: 420px; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border-soft); border-radius: var(--radius-md); box-shadow: var(--shadow-float); color: var(--text); font-size: 0.95em; line-height: 1.4; }
+.hm-math-preview .katex { color: inherit; font-size: 1.05em; }
+.milkdown .milkdown-latex-inline-edit .hm-inline-math-clear { margin-left: 6px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 5px 8px; }
 /* Outline sidebar */
 #hm-outline { width:240px; flex-shrink:0; overflow-y:auto; border-right:1px solid var(--border-soft); background:var(--bg-sidebar,var(--bg)); padding:16px 8px 16px 12px; }
 #hm-outline nav { display:flex; flex-direction:column; gap:1px; }

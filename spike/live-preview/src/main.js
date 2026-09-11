@@ -5,10 +5,10 @@ import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { parser as parseMarkdown } from '@lezer/markdown'
 
 // ---------- fixtures ----------
-const CSP = '/Users/yangtingyi/Downloads/Desktop/CSP-J初赛讲义 第1单元 计算机通识.md'
+// ponytail: was a hardcoded local path, replaced with inline test doc
+const CSP_DOC = '# 测试文档\n\n## 第一节\n\n这是一段测试正文。\n'
 async function loadCsp() {
-  const res = await fetch('file://' + CSP)
-  return await res.text()
+  return CSP_DOC
 }
 function makeLargeCjk() {
   const para = '这是一段用于性能测试的中文正文，包含一些标点符号，以及 123 数字和英文 mixed content。'.repeat(20)
@@ -160,5 +160,5 @@ document.getElementById('toggle-preview').addEventListener('change', (e) => {
   view = new EditorView({ state, parent: host })
 })
 
-// default: load the small CSP doc (file:// fetch only works when served; fall back)
+// default: load the small inline test doc
 loadCsp().then((doc) => createEditor(doc)).catch(() => createEditor('# 测试\n\n## 预览\n\n正文内容\n'))

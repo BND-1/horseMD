@@ -1,3 +1,4 @@
 node_modules
-webview
-.vscode
+src
+scripts
+*.md

@@ -1,59 +1,60 @@
-# HorseMD Preview for VSCode
+# HorseMD for VSCode
 
-A warm Markdown preview extension porting HorseMD's signature themes and rendering
-pipeline to Visual Studio Code.
+A warm WYSIWYG Markdown editor porting HorseMD's signature themes and Milkdown Crepe editing experience to Visual Studio Code. Opening a `.md` file directly opens the visual editor — no preview pane, no split view.
 
 ## Features
 
-* **6 HorseMD themes**: Warm Light / Warm Dark, plus four Morandi palettes (Sage,
-  Rose, Mist, Dusk). Or follow VSCode's color theme automatically.
-* **LaTeX math** ($E=mc^2$ and $\int f$) rendered with KaTeX.
-* **Mermaid diagrams** rendered live from CDN.
-* **Syntax-highlighted code blocks** with atom-one-dark tokens on a dark surface
-  in every theme — matching HorseMD's look.
+* **WYSIWYG editing** — Milkdown Crepe editor opens directly for `.md` / `.markdown` / `.mdx` files via the Custom Editor API.
+* **6 HorseMD themes** — Warm Light / Warm Dark, plus four Morandi palettes (Sage, Rose, Mist, Dusk). Or follow VSCode's color theme automatically.
+* **LaTeX math** (`$E=mc^2$` and `$$\int f$$`) rendered with KaTeX.
+* **Syntax-highlighted code blocks** via CodeMirror.
 * **GFM tables, task lists, blockquotes, images** — full GitHub-Flavored Markdown.
-* **Outline sidebar** with scroll spy — click headings to jump, current section
-  highlighted on scroll.
-* **Live update** — pre view refreshes as you type (150 ms debounce) and on
-  external file saves.
-* **Front matter** displayed as a metadata block above the document.
+* **Outline sidebar** with scroll spy — click headings to jump, current section highlighted on scroll.
+* **Live sync** — edits in the visual editor sync to the underlying TextDocument; external edits sync back.
 * **Content width presets** — compact / standard / wide / full.
+* **Fully local** — all editor assets (Crepe, KaTeX CSS, KaTeX fonts) are bundled in the extension. No CDN, no network required.
 
 ## Commands
 
-| Command                           | Keybinding                             |
-| --------------------------------- | -------------------------------------- |
-| HorseMD: Open Preview             | `Ctrl+Alt+V` / `Cmd+Alt+V`             |
-| HorseMD: Open Preview to the Side | `Ctrl+Alt+Shift+V` / `Cmd+Alt+Shift+V` |
-| HorseMD: Switch Theme             | —                                      |
-| HorseMD: Toggle Outline           | `Ctrl+Alt+O` / `Cmd+Alt+O`             |
+| Command                  | Keybinding                        |
+| ------------------------ | --------------------------------- |
+| HorseMD: Switch Theme    | —                                 |
+| HorseMD: Toggle Outline  | `Ctrl+Alt+O` / `Cmd+Alt+O`        |
 
 ## Settings
 
 ```json
 {
-  "horsemdPreview.theme": "auto",
-  "horsemdPreview.fontSize": 16,
-  "horsemdPreview.contentWidth": "standard",
-  "horsemdPreview.showOutline": true
+  "horsemd.theme": "auto",
+  "horsemd.fontSize": 16,
+  "horsemd.contentWidth": "standard",
+  "horsemd.showOutline": true,
+  "horsemd.autoSave": false
 }
 ```
 
 ## Architecture
 
-The extension renders Markdown in the extension host (Node.js) using
-`markdown-it` + KaTeX + highlight.js — all CommonJS, no bundler needed.
-The webview is a thin display layer that injects theme CSS and lazy-loads
-Mermaid from CDN. KaTeX CSS is also loaded from CDN.
+The extension bundles Milkdown Crepe and KaTeX CSS locally using esbuild (no bundler at runtime). The webview receives a single `editor.js` (IIFE) and `editor.css`.
 
-````
+```
 extension host (Node.js)
-  └─ markdown-it → HTML → webview.postMessage
-                                           ↓
+  └─ registerCustomEditorProvider → provide HTML + local resource URIs
+                                          ↓
 webview (browser)
-  └─ inject CSS → display HTML → outline + scroll spy
-  └─ lazy-load mermaid from CDN → render ```mermaid blocks
-````
+  └─ load editor.js (local) → init Crepe → markdownUpdated event → postMessage edit
+  └─ receive update messages from host → setMarkdown (external edits)
+```
+
+Content is passed via `postMessage`, not inline scripts — CSP allows only `script-src ${cspSource}` (no `unsafe-inline`, no `unsafe-eval`, no CDN).
+
+## Build
+
+```bash
+cd vscode-extension
+npm install
+npm run build    # esbuild → media/editor.js + media/editor.css
+```
 
 ## License
 

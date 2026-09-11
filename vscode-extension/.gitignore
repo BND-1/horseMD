@@ -1,4 +1,3 @@
-*.vsix
 node_modules/
+*.vsix
 test-*.js
-package-lock.json
