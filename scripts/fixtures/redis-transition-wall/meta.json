@@ -1,0 +1,13 @@
+{
+ "incident": "trace-62663 (0.13.209 live session) 13:55:57Z + 16:46Z clusters",
+ "reason": "source-document-mismatch",
+ "gesture": "Backspace chain: delete chars in nested item -> empty item removed -> joinBackward(13479-13481 slice=0 structural) -> more typing (阿道夫你是否都能理解)",
+ "failingCandidates": [
+  "empty-paragraph-before-fence-removed",
+  "middle-block-before-authored-fence"
+ ],
+ "ok": "semanticProofOk && listProofOk; listSlotsMatch=true; semanticOk=false (chronic inline asymmetry); transitionOk=false",
+ "attribution": "transition equivalence wall: parse(authored bytes) != parse(canonical bytes) at inline level (autolink brackets huangz(https://..) vs huangz(<https://..>), mark splits). Any structural edit whose semanticTransition window touches an asymmetric spot fails areSourceDocumentTransitionsEquivalent -> semanticProofOk false -> ok false -> warning. Windows in clean areas pass (diverged-nested-list-change ok:true earlier).",
+ "pMState": "canonical carries 5 scattered editor-owned <br /> empty paragraphs (from deletion publications) - normalized away at doc top level, NOT the driver",
+ "candidateNote": "evening cluster: candidate === source (no-op rejected); 16:46 cluster: real candidates rejected"
+}
