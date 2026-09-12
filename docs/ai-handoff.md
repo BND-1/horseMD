@@ -2,7 +2,22 @@
 
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-08。
 
-## ⚡ 最新状态（2026-09-08，覆盖下方旧快照）
+## ⚡ 最新状态（2026-09-12，覆盖下方旧快照）
+
+**下一会话的第一任务（用户指定，硬性要求"修完后改任何功能都不能再触发"）：**
+读 [`handoff-ime-loose-item-split.md`](./handoff-ime-loose-item-split.md) + 账本
+**P6e** 条目——松散列表项续行内的 IME 结构性段落分裂 owner（trace-38723，
+2026-09-12 10:16:37 `source-list-structure-mismatch`）。证据三元组 + journal +
+离线复现器已永久化在 `scripts/fixtures/ime-loose-item-split/`。
+
+其它近期状态：已发布 v0.13.205（cross-fence span 修复）；main 上还有未发布的
+0.13.206（关闭到托盘，PR #129 合并 + maintainer 三处调整）与 0.13.207（#126 大文档
+性能双根因修复：CodeMirror eager 封顶 + legacy preserve O(n²) 缓存；以及触控板滚动
+停手漂移的 teardown 禁用）。安装版 = 0.13.207+，带 trace。
+
+---
+
+## 上一状态（2026-09-08）
 
 **先读 [`handoff-0-13-201-session.md`](./handoff-0-13-201-session.md)** —— 它是
 0.13.188 → 0.13.201 的完整会话存档（源码一致性收尾 P5d-P7、启动性能 P8/P8b、

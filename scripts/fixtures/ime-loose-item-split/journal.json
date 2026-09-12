@@ -1,0 +1,734 @@
+{
+ "incident": "trace-38723 2026-09-12T10:16:37Z source-list-structure-mismatch",
+ "journal": [
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-1",
+   "baseRevision": 0,
+   "batchCount": 6,
+   "transactionCount": 6,
+   "stepCount": 6,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15500,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15501,
+     "to": 15501,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15502,
+     "to": 15502,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15504,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15505,
+     "to": 15505,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15507,
+     "structure": false,
+     "sliceSize": 6
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-1",
+   "baseRevision": 0,
+   "batchCount": 7,
+   "transactionCount": 7,
+   "stepCount": 7,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15500,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15501,
+     "to": 15501,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15502,
+     "to": 15502,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15504,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15505,
+     "to": 15505,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15507,
+     "structure": false,
+     "sliceSize": 6
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15510,
+     "to": 15510,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-1",
+   "baseRevision": 0,
+   "batchCount": 8,
+   "transactionCount": 8,
+   "stepCount": 8,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15500,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15501,
+     "to": 15501,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15502,
+     "to": 15502,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15504,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15505,
+     "to": 15505,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15507,
+     "structure": false,
+     "sliceSize": 6
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15510,
+     "to": 15510,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-1",
+   "baseRevision": 0,
+   "batchCount": 9,
+   "transactionCount": 9,
+   "stepCount": 9,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15500,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15501,
+     "to": 15501,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15502,
+     "to": 15502,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15504,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15505,
+     "to": 15505,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15507,
+     "structure": false,
+     "sliceSize": 6
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15510,
+     "to": 15510,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-1",
+   "baseRevision": 0,
+   "batchCount": 10,
+   "transactionCount": 10,
+   "stepCount": 10,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15500,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15501,
+     "to": 15501,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15502,
+     "to": 15502,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15504,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15505,
+     "to": 15505,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15504,
+     "to": 15507,
+     "structure": false,
+     "sliceSize": 6
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15510,
+     "to": 15510,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15500,
+     "to": 15516,
+     "structure": false,
+     "sliceSize": 8
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-2",
+   "baseRevision": 1,
+   "batchCount": 1,
+   "transactionCount": 1,
+   "stepCount": 1,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15508,
+     "to": 15508,
+     "structure": true,
+     "sliceSize": 4
+    }
+   ],
+   "generatedScratch": false,
+   "composing": false
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 1,
+   "transactionCount": 1,
+   "stepCount": 1,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 2,
+   "transactionCount": 2,
+   "stepCount": 2,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15513,
+     "to": 15513,
+     "structure": false,
+     "sliceSize": 1
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 3,
+   "transactionCount": 3,
+   "stepCount": 3,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15513,
+     "to": 15513,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 4,
+   "transactionCount": 4,
+   "stepCount": 4,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15513,
+     "to": 15513,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15516,
+     "to": 15516,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 5,
+   "transactionCount": 5,
+   "stepCount": 5,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15513,
+     "to": 15513,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15516,
+     "to": 15516,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15518,
+     "to": 15518,
+     "structure": false,
+     "sliceSize": 2
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  },
+  {
+   "phase": "capture",
+   "ok": true,
+   "reason": null,
+   "journalId": "source-sync-journal-3",
+   "baseRevision": 2,
+   "batchCount": 6,
+   "transactionCount": 6,
+   "stepCount": 6,
+   "stepDetails": [
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15512,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15513,
+     "to": 15513,
+     "structure": false,
+     "sliceSize": 1
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15514,
+     "to": 15514,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15516,
+     "to": 15516,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15518,
+     "to": 15518,
+     "structure": false,
+     "sliceSize": 2
+    },
+    {
+     "name": "ReplaceStep",
+     "from": 15512,
+     "to": 15520,
+     "structure": false,
+     "sliceSize": 4
+    }
+   ],
+   "generatedScratch": false,
+   "composing": true
+  }
+ ],
+ "preserve": [
+  {
+   "preserved": true,
+   "reason": "uniquely-anchored-text-change",
+   "integrityProof": null
+  },
+  {
+   "preserved": true,
+   "reason": "middle-block-before-authored-fence",
+   "integrityProof": null
+  },
+  {
+   "preserved": true,
+   "reason": "locally-aligned-change",
+   "integrityProof": null
+  }
+ ],
+ "integrity": [
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "committed-source-baseline",
+   "validationSite": "",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "uniquely-anchored-text-change",
+   "validationSite": "primary-preserved",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": true,
+   "semanticOk": false,
+   "listSlotsMatch": true,
+   "preservationReason": "middle-block-before-authored-fence",
+   "validationSite": "editor-api-flush",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": false,
+   "semanticOk": false,
+   "listSlotsMatch": false,
+   "preservationReason": "locally-aligned-change",
+   "validationSite": "primary-preserved",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  },
+  {
+   "ok": false,
+   "semanticOk": false,
+   "listSlotsMatch": false,
+   "preservationReason": "locally-aligned-change",
+   "validationSite": "before-input-rule-fallback",
+   "candidateTail": "/documentation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(https://github.com/huangz1990/redis)\n\n由 白菜 (https://github.com/iminto)进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：waitfox@qq.com \n\n# 捐赠\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持\n<img src=\"alipay.png\" style=\"zoom: 55%;\" />\n",
+   "canonicalTail": "entation) 的中文翻译版。\n\n文档大部分中文翻译内容来自：huangz(<https://github.com/huangz1990/redis>)\n\n由 白菜 (<https://github.com/iminto)>进行了版本更新 ，加入了Redis 4和Redis 5更新的新内容，并完成了MarkDown文件和PDF制作。\n\n如果文档有误或需要加入追新，请联系我：<waitfox@qq.com>\n\n# 捐赠\n\n跟踪文档更新和制作PDF需要花费一定的精力和时间，如果你愿意的话，可以通过捐赠支持 <img src=\"alipay.png\" style=\"zoom: 55%;\" />\n"
+  }
+ ],
+ "coordinator": [
+  {
+   "phase": "published",
+   "revision": 1,
+   "owner": "legacy",
+   "family": "legacy-preservation",
+   "reason": "uniquely-anchored-text-change",
+   "boundary": "markdown-updated"
+  },
+  {
+   "phase": "published",
+   "revision": 2,
+   "owner": "legacy",
+   "family": "legacy-preservation",
+   "reason": "middle-block-before-authored-fence",
+   "boundary": "forced-flush"
+  }
+ ]
+}

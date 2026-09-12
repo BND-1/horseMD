@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Known Issues
+- **在松散列表项的缩进续行段落内用输入法输入且中途触发段落分裂时，可能出现一次「富文本与源码不一致」警告（内容无损，保存安全）** — trace-38723（2026-09-12）：文字变更正常发布，但 IME 组合中的结构性段落分裂暂无专有同步单元，源码基线会落后于编辑器直至下次成功同步；fail-closed 保证源码/磁盘不会被写坏。修复排期与证据见 [`docs/handoff-ime-loose-item-split.md`](./docs/handoff-ime-loose-item-split.md)。
 - **富文本 / 源码长会话仍可能分叉（P0）** — 0.13.47 的 `/code` 原子同步修复通过了家族矩阵、多轮持久化和代码块专项，但安装包人工验收仍能在真实长文档中复现：建立代码块后继续多轮编辑，富文本新增内容可能没有完整进入源码或磁盘；保存既可能暂停，也可能执行成功但内容仍不一致。该问题尚未关闭，禁止把当前候选描述为稳定修复。接手记录见 [`docs/rich-source-divergence-incident-0.13.47.md`](./docs/rich-source-divergence-incident-0.13.47.md)。
 
 ### Added
