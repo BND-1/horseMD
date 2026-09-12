@@ -563,7 +563,14 @@ const semanticOptionsForReason = (
     preservationReason === 'empty-task-item-merged-to-continuation' ||
     preservationReason === 'empty-list-item-merged-after-nested-list' ||
     preservationReason === 'typed-bullet-input-rule' ||
-    preservationReason === 'typed-bullet-input-rule-fallback',
+    preservationReason === 'typed-bullet-input-rule-fallback' ||
+    // P7b (trace-62663 joinBackward): the join consumes an empty sibling and
+    // leaves exactly one editor-owned trailing empty paragraph in the
+    // preceding item after its text paragraph — the same unencodable
+    // transient as the reasons above. Without the grant the candidate (whose
+    // bytes are already correct) fails both the semantic and transition
+    // channels on a diverged document.
+    preservationReason === 'empty-paragraph-before-fence-removed',
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure:
     preservationReason === 'empty-list-item-merged-after-nested-list',
   ignoreEmptyListItemParagraphBeforeNestedStructure:

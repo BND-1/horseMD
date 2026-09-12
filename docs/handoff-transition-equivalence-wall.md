@@ -1,10 +1,11 @@
-# 交接：分歧大文档的 transition 等价性墙（trace-62663 第三族，未修）
+# 交接：分歧大文档的 transition 等价性墙（trace-62663 第三族）——✅ 已完成（0.13.210，2026-09-13）
 
-> 状态：**已完整归因，未修**。这是 2026-09-12 晚用户实机连续触发的第三族；
-> 前两族（P6e 填充 owner 的 callbackDocumentEquivalent 硬门、mermaid
-> StreamLanguage spec 误用）已在 0.13.208/0.13.209 修复并各自有常驻回归。
-> 证据在 `scripts/fixtures/redis-transition-wall/`（source / candidate /
-> canonical / previous-canonical / published-markdown + meta.json）。
+> **状态：已修复（三层按层，非补丁）。** 最终记录见账本条目（搜 **P7b 已完成**）。
+> 本文件保留原始归因。修法采用方向 A（transition 内联归一化），且重放 E2E 又暴露并修复了
+> 两个伴生根因：`diverged-visible-delete` 的 affinity 方向错误（吞围栏行）与
+> `empty-paragraph-before-fence-removed` 的尾空段许可缺失。常驻门禁：
+> `test:transition-inline-textual`（Node 合同）+ `test:redis-joinbackward-replay-ui`
+> （事故全链重放）+ `test:redis-line1-replay-ui`。
 
 ## 事故（trace-62663 = 0.13.209 带日志实机会话）
 

@@ -225,7 +225,16 @@ const semanticJson = (node, {
   ignoreTrailingEmptyBlockquoteParagraphPaths = [],
   ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths = [],
   ignoreTrailingEmptyListItemPaths = [],
-  ignoreTableColumnWidthPaths = []
+  ignoreTableColumnWidthPaths = [],
+  // Transition-channel mode (P7b, trace-62663): flatten inline mark
+  // containers (link/strong/emphasis) to their text and drop text marks, so
+  // a changed-window comparison on a chronically diverged document asks
+  // "same structural edit + same visible text" instead of re-litigating the
+  // document's pre-existing inline-form divergence (autolink brackets,
+  // serializer mark splits). Applied symmetrically to both sides of the
+  // transition; the full-document areSourceDocumentsEquivalent channel and
+  // the strict list-slot gate keep their exact semantics.
+  inlineTextual = false
 } = {}) => {
   if (!node?.toJSON) return null
   const ignoredTableColumnWidthPaths = new Set(
@@ -308,6 +317,21 @@ const semanticJson = (node, {
     }
     if (Array.isArray(next.content)) {
       next.content = next.content.map((child, index) => visit(child, [...path, index]))
+      if (inlineTextual) {
+        // Flatten inline mark containers to their text and strip text marks.
+        // Atoms (inline code, images, inline math, html) stay strict — they
+        // represent authored structure, not serializer form.
+        const flattenInline = (children) => children.flatMap((child) => {
+          if (
+            child?.type === 'link' || child?.type === 'strong' || child?.type === 'emphasis'
+          ) {
+            return flattenInline(Array.isArray(child.content) ? child.content : [])
+          }
+          if (child?.type === 'text') return [{ type: 'text', text: String(child.text || '') }]
+          return [child]
+        })
+        next.content = flattenInline(next.content)
+      }
       // Merge adjacent text runs with identical marks: ProseMirror splits
       // text at potential mark boundaries (e.g. a lone `~` inside pasted
       // Markdown) while the raw parse keeps them as one run — same visible
@@ -576,8 +600,14 @@ const firstSemanticDifference = (left, right, path = '$') => {
 }
 
 const semanticTransition = (before, after, options = {}) => {
-  const left = semanticJson(before, options)
-  const right = semanticJson(after, options)
+  // P7b (trace-62663): the transition channel compares CHANGED WINDOWS on a
+  // document whose authored bytes and serialized bytes already parse
+  // differently at inline spots. Inline form must not decide whether the two
+  // sides made "the same edit" — block structure and visible text must. Both
+  // sides are normalized symmetrically, so a genuine text/structure change on
+  // one side still fails the comparison.
+  const left = semanticJson(before, { ...options, inlineTextual: true })
+  const right = semanticJson(after, { ...options, inlineTextual: true })
   if (!left || !right || left.type !== 'doc' || right.type !== 'doc') return null
   const beforeContent = Array.isArray(left.content) ? left.content : []
   const afterContent = Array.isArray(right.content) ? right.content : []
