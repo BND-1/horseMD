@@ -298,7 +298,7 @@ assert.equal(planFor({
 assert.equal(planFor({
   source, canonical, oldDoc, transactions: deletes, nextCanonical: emptyCanonical,
   revision: 909, callbackDocumentEquivalent: false
-}).plan.reason, 'list-item-paragraph-callback-document-mismatch')
+}).plan.ok, true, 'must publish despite a non-equivalent callback canonical')
 assert.equal(planFor({
   source, canonical, oldDoc, transactions: deletes, nextCanonical: emptyCanonical,
   revision: 910, activeJournal: null

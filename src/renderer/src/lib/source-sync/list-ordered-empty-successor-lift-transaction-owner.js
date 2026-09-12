@@ -286,9 +286,6 @@ export function createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('ordered-successor-lift-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('ordered-successor-lift-callback-document-mismatch', { deferred: true })
-    }
 
     const topology = classifyTopology({ oldDoc: journal.oldDoc, expectedDoc })
     if (!topology.ok) return topology
@@ -375,7 +372,7 @@ export function createListOrderedEmptySuccessorLiftTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

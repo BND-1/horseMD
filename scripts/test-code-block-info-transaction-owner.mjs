@@ -281,7 +281,7 @@ const callbackMismatch = owner.plan({
   expectedDoc: secondState.doc,
   callbackDocumentEquivalent: false
 })
-assert.equal(callbackMismatch.reason, 'code-block-info-callback-document-mismatch')
+assert.equal(callbackMismatch.ok, true, 'must publish despite a non-equivalent callback canonical')
 assert.notEqual(callbackMismatch.recognized, true)
 
 const staleSnapshot = createSourceSyncSnapshot({

@@ -555,8 +555,7 @@ const canonical = [
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
   })
-  assert.equal(deferred.reason, 'table-column-alignment-callback-document-mismatch')
-  assert.equal(deferred.deferred, true)
+  assert.equal(deferred.ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 624,

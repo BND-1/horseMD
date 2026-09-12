@@ -304,9 +304,6 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('list-empty-item-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('list-empty-item-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -374,7 +371,7 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(removed.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

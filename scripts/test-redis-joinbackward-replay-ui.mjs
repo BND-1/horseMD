@@ -145,6 +145,16 @@ try {
   let state = await collect(app)
   assertClean(state, 'after fill')
 
+  // 2b. Keep IME-editing the now-filled row (trace-89456 stall shape: the
+  // in-row composition replacement previously fell to legacy and stalled the
+  // whole chain with visible-stream no-op holds; the list-item-paragraph
+  // owner must now publish it).
+  await caretAtEnd(app, '的韩国')
+  await imeCommit(app, ' de', '的韩国地')
+  await sleep(1500)
+  state = await collect(app)
+  assertClean(state, 'after in-row retype')
+
   // 3. Type === then delete it back (trace: transient punctuation).
   await typeTextLikeUser(app.send, '===', { delayMs: 60 })
   await sleep(900)
@@ -156,8 +166,8 @@ try {
   state = await collect(app)
   assertClean(state, 'after === deletion')
 
-  // 5. Delete 的韩国 char by char.
-  await backspace(app, 3)
+  // 5. Delete 的韩国地 char by char.
+  await backspace(app, 4)
   state = await collect(app)
   assertClean(state, 'after text deletion')
 

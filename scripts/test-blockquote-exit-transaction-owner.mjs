@@ -600,7 +600,7 @@ const nestedExit = exitAndType({ oldDoc: nestedDoc, quotePath: nestedPath })
     canonical: topNextCanonical,
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'blockquote-exit-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 112,

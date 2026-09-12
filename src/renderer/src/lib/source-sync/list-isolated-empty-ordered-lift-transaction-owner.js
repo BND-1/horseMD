@@ -342,9 +342,6 @@ export function createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner({ r
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('isolated-ordered-lift-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('isolated-ordered-lift-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -455,7 +452,7 @@ export function createListIsolatedEmptyOrderedLiftTransactionSourceSyncOwner({ r
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(replaced.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

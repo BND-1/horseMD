@@ -731,9 +731,6 @@ export function createTableColumnDeleteTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('table-column-delete-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('table-column-delete-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyTableColumnDeleteJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -788,7 +785,7 @@ export function createTableColumnDeleteTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

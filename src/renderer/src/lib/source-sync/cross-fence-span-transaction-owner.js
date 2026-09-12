@@ -199,10 +199,6 @@ export function createCrossFenceSpanTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('cross-fence-span-live-snapshot-stale', { reset: true })
     }
-    if (!callbackDocumentEquivalent) {
-      return rejected('cross-fence-span-callback-document-mismatch')
-    }
-
     const window = changedTopLevelWindow(journal.oldDoc, expectedDoc)
     const oldWindow = windowBlocks(journal.oldDoc, window.oldWindowStart, window.oldWindowEnd)
     const newWindow = windowBlocks(expectedDoc, window.newWindowStart, window.newWindowEnd)
@@ -360,7 +356,7 @@ export function createCrossFenceSpanTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

@@ -399,7 +399,7 @@ const planNestedItemParagraphPatch = ({
     canonicalDigest: sourceSyncDigest(canonical),
     markdownDigest: sourceSyncDigest(markdown),
     mapperReason: 'nested-terminal-row-patch',
-    callbackDocumentEquivalent: true,
+    callbackDocumentEquivalent: callbackDocumentEquivalent === true,
     snapshotMatched: true,
     documentMatched: true
   })
@@ -515,9 +515,6 @@ export function createListItemParagraphTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('list-item-paragraph-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('list-item-paragraph-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyListItemParagraphJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -596,7 +593,7 @@ export function createListItemParagraphTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(mapped.markdown),
       mapperReason: mapped.reason || null,
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

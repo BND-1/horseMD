@@ -304,7 +304,7 @@ assert.equal(owner.plan({
   canonical: expected,
   expectedDoc: second.doc,
   callbackDocumentEquivalent: false
-}).reason, 'plain-paragraph-callback-document-mismatch')
+}).ok, true, 'must publish despite a non-equivalent callback canonical')
 
 // --- E0 P3c: the terminal top-level split family (IME pending text + Enter) ---
 

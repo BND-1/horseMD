@@ -216,7 +216,7 @@ assert.equal(owner.plan({
   canonical: nextCanonical,
   expectedDoc: secondState.doc,
   callbackDocumentEquivalent: false
-}).reason, 'code-block-callback-document-mismatch')
+}).ok, true, 'must publish despite a non-equivalent callback canonical')
 
 const staleSnapshot = createSourceSyncSnapshot({
   revision: 10,

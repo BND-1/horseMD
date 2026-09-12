@@ -494,9 +494,6 @@ export function createListNestedBulletSplitTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('nested-bullet-split-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('nested-bullet-split-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -576,7 +573,7 @@ export function createListNestedBulletSplitTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(publishMarkdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

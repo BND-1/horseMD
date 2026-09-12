@@ -327,7 +327,7 @@ const planFor = ({
     revision: 1008,
     callbackDocumentEquivalent: false
   })
-  assert.equal(plan.reason, 'code-block-exit-callback-document-mismatch')
+  assert.equal(plan.ok, true, 'must publish despite a non-equivalent callback canonical')
   assert.notEqual(plan.recognized, true)
 }
 

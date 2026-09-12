@@ -317,9 +317,7 @@ const planChain = ({
 
 {
   const { plan } = planChain({ revision: 1211, callbackDocumentEquivalent: false, validateMarkdown: () => true })
-  assert.equal(plan.reason, 'code-block-paragraph-callback-document-mismatch')
-  assert.equal(plan.recognized, false)
-  assert.equal(plan.deferred, true)
+  assert.equal(plan.ok, true, 'must publish despite a non-equivalent callback canonical')
 }
 
 {

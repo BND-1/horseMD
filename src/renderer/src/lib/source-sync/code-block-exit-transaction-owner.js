@@ -389,8 +389,6 @@ export function createCodeBlockExitTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('code-block-exit-live-snapshot-stale', { reset: true })
     }
-    if (!callbackDocumentEquivalent) return rejected('code-block-exit-callback-document-mismatch')
-
     const classification =
       journal.oldDoc?.childCount === expectedDoc.childCount
         ? classifyStaged(journal, expectedDoc)
@@ -503,7 +501,7 @@ export function createCodeBlockExitTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

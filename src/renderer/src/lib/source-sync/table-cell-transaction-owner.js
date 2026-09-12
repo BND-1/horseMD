@@ -316,9 +316,6 @@ export function createTableCellTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('table-cell-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('table-cell-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyTableCellJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -375,7 +372,7 @@ export function createTableCellTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(mapped.markdown),
       mapperReason: mapped.reason || null,
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

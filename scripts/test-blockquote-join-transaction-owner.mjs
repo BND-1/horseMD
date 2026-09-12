@@ -409,7 +409,7 @@ const planFor = ({
     canonical: '> alphabeta\n',
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'blockquote-join-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 90,

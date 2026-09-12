@@ -360,7 +360,7 @@ const oldDoc = document(table([
     canonical: canonical.replace('| same | alpha |', '| same | alphaX |'),
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'table-cell-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 132,
