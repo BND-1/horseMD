@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.208",
+  "version": "0.13.209",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -350,6 +350,7 @@
     "test:cross-fence-span-transaction-owner": "node scripts/test-cross-fence-span-transaction-owner.mjs",
     "test:cross-fence-span-ui": "node scripts/test-cross-fence-span-ui.mjs",
     "test:ime-loose-item-split-ui": "node scripts/test-ime-loose-item-split-ui.mjs",
+    "test:redis-line1-replay-ui": "node scripts/test-redis-line1-replay-ui.mjs",
     "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs"
   },
   "dependencies": {

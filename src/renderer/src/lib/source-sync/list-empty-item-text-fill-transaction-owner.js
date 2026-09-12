@@ -298,9 +298,17 @@ export function createListEmptyItemTextFillTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('empty-item-fill-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('empty-item-fill-callback-document-mismatch', { deferred: true })
-    }
+    // NO callbackDocumentEquivalent gate. Trace 51037 (0.13.208 live session):
+    // parse(callback canonical) ≢ expectedDoc is CHRONIC on documents with
+    // pre-existing serializer/parser round-trip asymmetry (e.g. the redis doc's
+    // autolink brackets) — the gate made this owner defer forever exactly on
+    // the diverged documents it exists for, handing publication to the legacy
+    // locally-aligned mapper (drifted placement → warning). Safety here does
+    // not come from that flag: the journal checkpoint already binds
+    // journal.expectedDoc === expectedDoc (verified above), and the final
+    // validateMarkdown gate parses the candidate against expectedDoc. The
+    // canonical string is committed as-is, the same baseline legacy would
+    // advance — with correct bytes.
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return rejected(classification.reason, { proof: classification.proof })
@@ -378,7 +386,7 @@ export function createListEmptyItemTextFillTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(filled.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

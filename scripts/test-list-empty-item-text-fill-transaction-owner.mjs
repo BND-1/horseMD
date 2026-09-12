@@ -317,7 +317,7 @@ const nestedChildItem = planFor({
 })
 plainRejection('item with nested list', nestedChildItem.plan, 'empty-item-fill-item-shape')
 
-// 9. Stale journal / deferred callback.
+// 9. Stale journal.
 const stale = planFor({
   oldDoc: incidentOldDoc,
   fillSteps: incidentFill,
@@ -327,14 +327,22 @@ const stale = planFor({
 })
 assert.equal(stale.plan.reset, true, 'stale journal must reset')
 
-const deferred = planFor({
+// 9b. Trace 51037 (live 0.13.208 session): on documents with pre-existing
+// serializer/parser round-trip asymmetry, parse(callback canonical) ≢
+// expectedDoc on EVERY callback. The owner must still publish — the journal
+// checkpoint binds expectedDoc and validateMarkdown gates the bytes; the old
+// hard gate deferred forever on exactly the diverged documents the owner
+// exists for, handing publication to the drifted legacy mapper.
+const asymCallback = planFor({
   oldDoc: incidentOldDoc,
   fillSteps: incidentFill,
   source: incidentSource,
   canonicalBaseline: incidentPrevious,
   callbackDocumentEquivalent: false
 })
-assert.equal(deferred.plan.deferred, true, 'callback mismatch must defer')
+assert.equal(asymCallback.plan.ok, true, JSON.stringify(asymCallback.plan))
+assert.equal(asymCallback.plan.result.markdown, incidentExpected)
+assert.equal(asymCallback.plan.proof.callbackDocumentEquivalent, false)
 
 // ---------------------------------------------------------------------------
 // Post-recognition failures: recognized fail-closed (legacy must not be
