@@ -163,6 +163,7 @@ const LANGUAGES = [
   ['dart', ['dart']],
   ['markdown', ['markdown', 'md']],
   ['mermaid', ['mermaid', 'mmd']],
+  ['vrp', ['vrp', 'huawei', 'vrpcfg']],
   ['diff', ['diff', 'patch']],
   ['dockerfile', ['dockerfile']],
   ['graphql', ['graphql']]

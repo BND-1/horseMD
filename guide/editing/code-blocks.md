@@ -5,15 +5,23 @@ description: 插入带语言高亮的代码块，使用 CodeMirror 编辑和复�
 
 # 代码块
 
-<span class="version-badge">适用于 HorseMD v0.13.29</span>
+<span class="version-badge">适用于 HorseMD v0.13.208</span>
 
 ## 插入代码块
 
-输入三个反引号，或通过斜杠菜单搜索“代码”。输入 `/javascript`、`/python`、`/json` 等语言名称，可以直接插入已设置语言的代码块。
+输入三个反引号，或通过斜杠菜单搜索“代码”。输入 `/javascript`、`/python`、`/json`、`/vrp` 等语言名称，可以直接插入已设置语言的代码块。
 
 代码块使用 CodeMirror 编辑器，提供语法高亮和独立选区。按 Tab 会在当前光标位置插入制表符；Shift+Tab 保持代码块缩进操作。
 
 代码块左侧显示**行号**：行号列紧贴代码块左边缘、与代码行等高，右侧有分隔竖线，行号不可选中。导出 PDF 时代码块也会带上同样的行号。
+
+## 华为 VRP 配置片段
+
+语言选择器里的 **VRP** 是给华为设备配置片段准备的语言。代码块的语言标记写 `vrp` 或 `huawei` 即按 VRP 语法着色：`system-view`、`interface`、`undo` 等命令、接口名（`Vlanif10`、`GigabitEthernet0/0/1`）、IPv4/MAC 地址、`#` 注释和 `[Huawei-…]` 视图提示符分别使用不同颜色。
+
+在 VRP 代码块里输入命令开头（`sys`、`int`、`acl`、`vlan` …）会弹出命令补全，按 `Ctrl+Space` 可列出全部命令。补全表里还内置了八个多行配置片段：`vlan-access 模板`、`vlan-trunk 模板`、`vlanif 模板`、`static-route 模板`、`ospf 模板`、`ssh 模板`、`acl 模板`、`dhcp 模板`；选中后会一次插入整段配置，并把需要填写的位置（接口编号、VLAN、IP、密码等）**自动选中**，直接输入即可替换。斜杠菜单输入 `/vrp` 也能直接插入 VRP 代码块。
+
+补全只在 VRP 代码块内生效，其它语言的代码块行为不变。
 
 ## 复制与编辑
 
