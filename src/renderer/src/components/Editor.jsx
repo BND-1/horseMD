@@ -95,6 +95,7 @@ import {
   createListEmptyItemFirstLiftTransactionSourceSyncOwner,
   createListEmptyItemTailRemoveTransactionSourceSyncOwner,
   createListEmptyItemRemoveTransactionSourceSyncOwner,
+  createListEmptyItemTextFillTransactionSourceSyncOwner,
   createListItemParagraphTransactionSourceSyncOwner,
   createListSubtreeTransactionSourceSyncOwner,
   createPlainParagraphTransactionSourceSyncOwner,
@@ -653,6 +654,17 @@ export default function Editor({
       createListEmptyItemRemoveTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset
       })
+    // Trace 38723 (0.13.207, 2026-09-12 10:16): an IME composition filling the
+    // empty sibling item a loose-item split just published. The empty marker
+    // row contributes zero visible characters, so the generic locally-aligned
+    // mapper drifts the insertion into the previous paragraph and the strict
+    // gate fail-closes (warning, source stops tracking). This owner fills the
+    // authored empty marker row byte-preservingly.
+    const listEmptyItemTextFillTransactionSourceSyncOwner =
+      createListEmptyItemTextFillTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const codeBlockParagraphTransactionSourceSyncOwner =
       createCodeBlockParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -929,6 +941,16 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-list-empty-item-remove-markdown-updated',
           'forced-flush': 'transaction-list-empty-item-remove-forced-flush'
+        })
+      }),
+      Object.freeze({
+        key: 'list-empty-item-text-filled',
+        owner: listEmptyItemTextFillTransactionSourceSyncOwner,
+        traceKey: '__hmListEmptyItemTextFillTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-empty-item-text-filled-markdown-updated',
+          'forced-flush': 'transaction-list-empty-item-text-filled-forced-flush'
         })
       }),
       Object.freeze({

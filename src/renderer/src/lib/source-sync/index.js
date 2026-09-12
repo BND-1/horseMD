@@ -188,6 +188,11 @@ export {
   createListEmptyItemRemoveTransactionSourceSyncOwner
 } from './list-empty-item-remove-transaction-owner.js'
 export {
+  LIST_EMPTY_ITEM_TEXT_FILL_TRANSACTION_BOUNDARY,
+  LIST_EMPTY_ITEM_TEXT_FILL_TRANSACTION_FAMILY,
+  createListEmptyItemTextFillTransactionSourceSyncOwner
+} from './list-empty-item-text-fill-transaction-owner.js'
+export {
   LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
   LIST_ITEM_PARAGRAPH_TRANSACTION_FAMILY,
   createListItemParagraphTransactionSourceSyncOwner

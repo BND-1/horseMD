@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.207",
+  "version": "0.13.208",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -254,6 +254,7 @@
     "test:source-sync-list-conversion-snapshot-owner": "node scripts/test-source-sync-list-conversion-snapshot-owner.mjs",
     "test:list-subtree-transaction-owner": "node scripts/test-list-subtree-transaction-owner.mjs",
     "test:list-empty-item-remove-transaction-owner": "node scripts/test-list-empty-item-remove-transaction-owner.mjs",
+    "test:list-empty-item-text-fill-transaction-owner": "node scripts/test-list-empty-item-text-fill-transaction-owner.mjs",
     "test:list-empty-item-remove-transaction-ui": "node scripts/test-list-empty-item-remove-transaction-ui.mjs",
     "test:list-empty-item-remove-legacy-retirement-ui": "node scripts/test-list-empty-item-remove-legacy-retirement-ui.mjs",
     "test:list-empty-item-tail-remove-transaction-owner": "node scripts/test-list-empty-item-tail-remove-transaction-owner.mjs",
@@ -348,6 +349,7 @@
     "test:plain-text-drop-ui": "node scripts/test-plain-text-drop-ui.mjs",
     "test:cross-fence-span-transaction-owner": "node scripts/test-cross-fence-span-transaction-owner.mjs",
     "test:cross-fence-span-ui": "node scripts/test-cross-fence-span-ui.mjs",
+    "test:ime-loose-item-split-ui": "node scripts/test-ime-loose-item-split-ui.mjs",
     "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs"
   },
   "dependencies": {

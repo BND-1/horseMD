@@ -4,16 +4,17 @@
 
 ## ⚡ 最新状态（2026-09-12，覆盖下方旧快照）
 
-**下一会话的第一任务（用户指定，硬性要求"修完后改任何功能都不能再触发"）：**
-读 [`handoff-ime-loose-item-split.md`](./handoff-ime-loose-item-split.md) + 账本
-**P6e** 条目——松散列表项续行内的 IME 结构性段落分裂 owner（trace-38723，
-2026-09-12 10:16:37 `source-list-structure-mismatch`）。证据三元组 + journal +
-离线复现器已永久化在 `scripts/fixtures/ime-loose-item-split/`。
+**P6e 已完成（0.13.208，当日闭环）**：松散列表项续行 IME 分裂后填充空 sibling 项的
+focused owner `list-empty-item-text-filled`（账本搜 **P6e 已完成**；原始归因证据在
+[`handoff-ime-loose-item-split.md`](./handoff-ime-loose-item-split.md) +
+`scripts/fixtures/ime-loose-item-split/`）。用户硬性要求"改任何功能都不能再触发"已
+机制化：goal-matrix 常驻新增 B6 场景（45/45）+ 专项 E2E `test:ime-loose-item-split-ui`
+（真 IME 复刻事故手势）。已知既有失败（非本改动）：`test:list-subtree-transaction-owner`。
 
 其它近期状态：已发布 v0.13.205（cross-fence span 修复）；main 上还有未发布的
-0.13.206（关闭到托盘，PR #129 合并 + maintainer 三处调整）与 0.13.207（#126 大文档
-性能双根因修复：CodeMirror eager 封顶 + legacy preserve O(n²) 缓存；以及触控板滚动
-停手漂移的 teardown 禁用）。安装版 = 0.13.207+，带 trace。
+0.13.206（关闭到托盘，PR #129 合并 + maintainer 三处调整）、0.13.207（#126 大文档
+性能双根因修复 + 触控板滚动停手漂移的 teardown 禁用）与 0.13.208（P6e）。安装版 =
+0.13.207+，带 trace。
 
 ---
 

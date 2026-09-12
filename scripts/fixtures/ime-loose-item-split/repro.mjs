@@ -28,5 +28,5 @@ console.log(JSON.stringify({
   preserved: result.preserved,
   reason: result.reason,
   markdownLength: result.markdown?.length ?? null,
-  note: 'pre-owner baseline: locally-aligned-change publishes text only; the structural split stays unencoded'
+  note: 'legacy-mapper baseline (drifted placement, correctly rejected by the strict gate). The fix lives in the transaction registry: the list-empty-item-text-filled owner preempts this call for the fill journal — see test:list-empty-item-text-fill-transaction-owner + test:ime-loose-item-split-ui'
 }, null, 1))
