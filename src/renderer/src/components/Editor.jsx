@@ -2356,7 +2356,7 @@ export default function Editor({
     // too, and we must ignore them so tab.content isn't spammed with partial
     // docs. Only real user edits propagate.
     crepe.on((api) => {
-      api.markdownUpdated((_ctx, md) => {
+      const handleMarkdownUpdatedImpl = (_ctx, md) => {
         const canonical = canonicalForSource(md)
         if (programmaticReplaceRef.current) {
           wholeDocumentReplacementPending = null
@@ -3276,6 +3276,72 @@ export default function Editor({
             })
           }
           userEditUntil = Date.now() + 1000
+        }
+      }
+      // Typing-yield scheduling (P7c-latency, user report 2026-09-13): on a
+      // large document the sync pipeline (canonicalize + preserve + validate,
+      // ~1s+ measured on the 333K redis doc) runs on every markdownUpdated
+      // and saturates the main thread BETWEEN keystrokes — the user types and
+      // characters appear only after ~90ms+ per-key lag. IME composition
+      // already defers the whole callback for exactly this reason; extend the
+      // same policy to plain typing, ADAPTIVELY: only when the last pipeline
+      // run exceeded SYNC_DEFER_THRESHOLD_MS (small docs never defer), and
+      // only while the user is actively editing. The trailing idle timer
+      // processes the LATEST markdown (later callbacks reschedule it), with a
+      // hard cap so continuous typing still syncs periodically. Journals
+      // accumulate across revisions by design, and forced-flush boundaries
+      // (mode switch, save, export) process immediately — correctness is
+      // unchanged, only WHEN the idle-time pipeline runs.
+      let markdownSyncLastMs = 0
+      let markdownSyncDeferTimer = null
+      let markdownSyncDeferSince = 0
+      const SYNC_DEFER_THRESHOLD_MS = 150
+      const SYNC_DEFER_IDLE_MS = 600
+      const SYNC_DEFER_MAX_MS = 5000
+      const runMarkdownSyncPipeline = (md) => {
+        const started = performance.now()
+        try {
+          handleMarkdownUpdatedImpl(null, md)
+        } finally {
+          markdownSyncLastMs = performance.now() - started
+        }
+      }
+      api.markdownUpdated((_ctx, md) => {
+        // Cold start: the FIRST callback on a large document must not pay the
+        // full pipeline synchronously just to learn it is heavy (CPU profile
+        // of the redis doc: whole-doc remark reparse dominates). Seed the
+        // metric from the document size; a real measurement replaces it after
+        // the first deferred run.
+        if (markdownSyncLastMs === 0 && md && md.length > 100000) {
+          markdownSyncLastMs = 1000
+        }
+        const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS
+        const activelyEditing = ready && !appending &&
+          !pendingRawMarkdownPasteRef.current && !wholeDocumentReplacementPending &&
+          !programmaticReplaceRef.current && !viewRef.current?.composing &&
+          hasRecentUserEdit()
+        if (heavyDocPipeline && activelyEditing) {
+          const overdue = markdownSyncDeferSince > 0 &&
+            Date.now() - markdownSyncDeferSince >= SYNC_DEFER_MAX_MS
+          if (!overdue) {
+            if (markdownSyncDeferTimer) clearTimeout(markdownSyncDeferTimer)
+            else markdownSyncDeferSince = Date.now()
+            markdownSyncDeferTimer = setTimeout(() => {
+              markdownSyncDeferTimer = null
+              markdownSyncDeferSince = 0
+              if (!viewRef.current) return
+              runMarkdownSyncPipeline(md)
+            }, SYNC_DEFER_IDLE_MS)
+            return
+          }
+          markdownSyncDeferSince = 0
+        }
+        runMarkdownSyncPipeline(md)
+      })
+      cleanups.push(() => {
+        if (markdownSyncDeferTimer) {
+          clearTimeout(markdownSyncDeferTimer)
+          markdownSyncDeferTimer = null
         }
       })
     })
