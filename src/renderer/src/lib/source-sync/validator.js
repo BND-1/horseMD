@@ -570,7 +570,13 @@ const semanticOptionsForReason = (
     // transient as the reasons above. Without the grant the candidate (whose
     // bytes are already correct) fails both the semantic and transition
     // channels on a diverged document.
-    preservationReason === 'empty-paragraph-before-fence-removed',
+    preservationReason === 'empty-paragraph-before-fence-removed' ||
+    // P7b(3) (trace-26116 tight replay): the transaction subtree owner
+    // publishes the identical bounded empty-row delete when the preceding
+    // item carries a continuation paragraph (a shape the dedicated tail
+    // owner's single-paragraph classification declines); its expected side
+    // carries the same exactly-one lifted trailing empty paragraph.
+    preservationReason === 'transaction-list-subtree',
   ignoreTrailingEmptyListItemParagraphAfterNestedStructure:
     preservationReason === 'empty-list-item-merged-after-nested-list',
   ignoreEmptyListItemParagraphBeforeNestedStructure:

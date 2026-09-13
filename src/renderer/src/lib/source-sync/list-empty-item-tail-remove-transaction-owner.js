@@ -350,7 +350,17 @@ const removeAuthoredTailRow = ({ source, sourceList, removedIndex, listType }) =
   const previousBreakEnd = previous.end < source.length && source[previous.end] === '\n'
     ? previous.end + 1
     : previous.end
-  if (previousBreakEnd !== row.start) return null
+  // The empty tail row must still belong to the same list: everything between
+  // the previous marker row and it stays INSIDE the previous item — blank
+  // lines and indented continuation lines only (trace-26116: the preceding
+  // item carried an indented continuation paragraph, so physical marker-row
+  // adjacency never held, this owner deferred a shape it had already
+  // classified, legacy was blocked by legacyRetired, and the user saw a
+  // warning). A gap line with top-level content means a different block sits
+  // between: reject. The patch itself is unchanged (delete row + EOL only).
+  if (previousBreakEnd > row.start) return null
+  const gapLines = source.slice(previousBreakEnd, row.start).split(/\r\n|\n/).slice(0, -1)
+  if (gapLines.some((line) => line.trim() && !/^[ \t]{2,}\S/.test(line))) return null
 
   const eol = lineEndingNear(source, row.start)
   const rowEnd = row.end < source.length && source[row.end] === '\n'

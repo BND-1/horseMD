@@ -402,9 +402,11 @@ const loosePlan = owner.plan({
   expectedDoc,
   callbackDocumentEquivalent: true
 })
-assert.equal(loosePlan.ok, false)
-assert.equal(loosePlan.recognized, true, 'loose authored tail rows must fail closed after PM family recognition')
-assert.equal(loosePlan.reason, 'list-empty-item-tail-authored-row-unproven')
+// trace-26116: a blank-line (or indented-continuation) gap between the
+// previous marker row and the empty tail row is still the same list — the
+// owner must publish the bounded delete instead of deferring a classified
+// shape (legacyRetired blocked the fallback and the user saw a warning).
+assert.equal(loosePlan.ok, true, 'loose authored tail rows must publish the bounded delete')
 
 const badStep = { ...step, from: step.from - 1, apply: () => ({ doc: expectedDoc }) }
 const badTx = { ...fakeTransaction, steps: [badStep] }
