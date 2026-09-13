@@ -1,0 +1,8 @@
+{
+ "incident": "trace-97626 (0.13.211 live session) 04:53Z cluster",
+ "reason": "visible-stream-mismatch (per-keystroke no-op holds from the FIRST edit after fresh open) + final source-document-mismatch on middle-empty-block-created validation",
+ "gesture": "user retyped + deleted an IME-filled row (啊教科文部放大镜看 backspaced away), then joinBackward at the item boundary",
+ "attribution": "fresh-open baseline carries 295 line-opcodes of divergence (127 extra blank lines accumulated from days of split publications + chronic escapes). First edit (insert one empty sibling) never publishes: the middle-empty-block-created candidate eventually produced but fails validation (semanticOk chronic-false, transition failed). Journal accumulates from revision 0 (chain 21).",
+ "latency": "per-callback pipeline ~1.4s on this doc (serialize ~600ms + preserve 626ms offline-measured) saturating the main thread between keystrokes (~90ms/keystroke input lag); trace jsonl itself wrote ~1MB/callback (86MB for 162 events) — thinned in 0.13.211+ to lengths-only unless failed.",
+ "repro": "node: preserveRichMarkdownSource(source, previous, canonical) -> visible-stream-mismatch preserved:false (626ms)"
+}

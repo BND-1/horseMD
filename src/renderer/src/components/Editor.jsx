@@ -2779,12 +2779,19 @@ export default function Editor({
           let pendingInputCanonicalOffset = null
           let consumedInputIntentForIntegrity = null
           traceEditorEvent('markdown-sync', {
-            canonical,
-            previousCanonical: canonicalMarkdownRef.current,
-            source: lastMarkdownRef.current,
+            // Doc bytes (4 × ~333KB on large files) go over IPC and to disk
+            // on EVERY callback — that alone dominated per-keystroke cost in
+            // traced sessions (~1MB/callback). Lengths always; full bytes
+            // only for FAILED preserves (the next successful publish is
+            // reconstructable from journal state, and failures get a full
+            // evidence dump anyway).
+            canonical: preserved?.preserved === false ? canonical : null,
+            canonicalLength: canonical?.length ?? 0,
+            previousCanonical: preserved?.preserved === false ? canonicalMarkdownRef.current : null,
+            source: preserved?.preserved === false ? lastMarkdownRef.current : null,
             preserved: preserved?.preserved !== false,
             reason: preserved?.reason || null,
-            markdown: preserved?.markdown ?? null
+            markdown: preserved?.preserved === false ? (preserved?.markdown ?? null) : null
           })
           const currentView = viewRef.current
           const selectionInList = (() => {
