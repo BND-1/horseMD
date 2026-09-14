@@ -119,6 +119,17 @@ function getTextblockGroupKey(state, pos) {
 // documents that use no review markup free of the per-text-node work.
 const REVIEW_OPENER_PATTERN = /\{(?:\+\+|--|~~|==|>>)/
 
+// Raw and parsed CriticMarkup both require an opening brace in this block.
+// PM nodes are immutable; cache only this content property, never positions
+// or selection-dependent decorations. Edits create a fresh node automatically.
+const reviewStartByTextblock = new WeakMap()
+const mayContainReview = (node) => {
+  if (!reviewStartByTextblock.has(node)) {
+    reviewStartByTextblock.set(node, node.textContent.includes('{'))
+  }
+  return reviewStartByTextblock.get(node)
+}
+
 function getRevealRange(state, pos, textLength) {
   const nodeStart = pos
   const nodeEnd = pos + textLength
@@ -327,6 +338,7 @@ export function collectReviewDecorations(state, pluginState) {
   }
 
   state.doc.descendants((node, pos, parent) => {
+    if (node.isTextblock && !mayContainReview(node)) return false
     if (!node.isText || !node.text) return true
     const groupKey = groupKeyFor(pos, parent)
 
