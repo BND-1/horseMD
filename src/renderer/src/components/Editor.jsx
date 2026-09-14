@@ -56,6 +56,7 @@ import {
 } from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
+import { createEditorTransactionTracer } from './editor-transaction-trace.js'
 import {
   areSourceDocumentsEquivalent,
   formatWholeDocumentReplacementSource,
@@ -1276,23 +1277,9 @@ export default function Editor({
       }
     }
 
+    const traceSourceTransactions = createEditorTransactionTracer()
     const handleSourceTransactions = (transactions, oldState, newState) => {
-      traceEditorEvent('prosemirror-transactions', {
-        transactions: (transactions || []).map((transaction) => ({
-          docChanged: transaction?.docChanged || false,
-          selection: {
-            anchor: transaction?.selection?.anchor ?? null,
-            head: transaction?.selection?.head ?? null,
-            from: transaction?.selection?.from ?? null,
-            to: transaction?.selection?.to ?? null
-          },
-          steps: (transaction?.steps || []).map((step) => step?.toJSON?.() || {
-            type: step?.constructor?.name || 'unknown'
-          })
-        })),
-        oldDoc: oldState?.doc?.toJSON?.() || null,
-        newDoc: newState?.doc?.toJSON?.() || null
-      })
+      traceSourceTransactions(transactions, oldState?.doc, newState?.doc)
       // Keep a captured list-input anchor attached to its ProseMirror block
       // even when markdownUpdated is deferred and the user has already moved
       // on to another block. Looking only at the *current* selection loses the
