@@ -2,7 +2,7 @@
 
 > 建立日期：2026-08-29
 > 当前源码版本：`0.13.220`（本轮仅本地提交，未发布）
-> 分支：`main`；实际安装应用本轮未替换，仍为 `0.13.216`
+> 分支：`main`；后续已按用户授权安装 `0.13.220` 并带输入日志启动（本次 PID `38670`）
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
 ## 本轮接手：真实 Redis 首发 + 同步调度 + 映射开销
@@ -31,7 +31,9 @@
 
 本轮扩展运行 `test:redis-tight-backspace-replay-ui` 仍出现 bs1/bs2/bs3 的内部 integrity 拒绝，最终保存正确、无toast，旧脚本返回PASS。**按本计划 first-divergence 标准，此项未通过严格验收**；这与既有 P7c held 候选工单一致，不因本轮四个提交而消失。下一步应先把该链的第一处拒绝固定为严格失败测试，再完善证明/受验证的 bounded fallback，不能删除校验或依赖后续自愈。本轮没有实现通用 fallback、没有关闭其它 legacy迁移工作，也未声称全量旧测试全部通过。
 
-接手原文 SHA-256：`2edc209aea4539d8849acac242f1f6e507c93babbf9bd59dcb21eb2a02cf7025`。本轮不修改或再次规范化原文，不删除历史34条untracked，不 push/release，不替换安装应用。新源码不可用旧应用验收。
+接手原文 SHA-256：`2edc209aea4539d8849acac242f1f6e507c93babbf9bd59dcb21eb2a02cf7025`。代码修复轮次未修改或再次规范化原文，未删除历史34条untracked，未 push/release；当时未替换安装应用。
+
+后续用户明确授权安装并强制退出旧测试进程，现已重新打包安装 0.13.220，旧 PID25389 及其 helper 已退出，新 PID38670 运行 `/Applications/HorseMD.app`，argv 含 `--horsemd-input-trace` 和 Redis 测试文件路径。新日志 `/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-38670.jsonl` 已实际非空，旧日志保留；安装版 app.asar 与本次产物哈希一致，Redis 原文安装期间未变。后续交付需完成“验证、小步提交、重新打包安装、trace 启动、实际版本/PID/日志核验”再请用户真人测试；本次安装不表示 P7c 或全局 P0 已关闭。
 
 ## 1. 最终完成定义
 

@@ -4,7 +4,15 @@
 
 ## 当前接手检查点：0.13.220（覆盖下方历史快照）
 
-**源码 main = 0.13.220；本轮四个代码提交仅在本地，未 push、未发布。实际安装及用户运行的 `/Applications/HorseMD.app` 本轮未替换，仍为 0.13.216。不能请用户拿旧应用验收新代码。全局 P0 未关闭。**
+**源码 main = 0.13.220；代码提交仅在本地，未 push、未发布。后续安装已完成：`/Applications/HorseMD.app` 现为刚重新打包的 0.13.220，已带 `--horsemd-input-trace` 和 Redis 文件参数启动，供用户真人测试。全局 P0 未关闭。**
+
+### 当前安装与真人测试入口
+
+用户明确要求：本机 HorseMD 修复通过必要验证、小步提交后，要继续重新打包、安装新版本、带输入日志启动，再交给用户测试，不能停在源码或隔离 E2E。用户说明当前均为测试、没有正式文件，并明确授权本次强制退出旧进程；这一授权不得泛化为删除文件、清空用户配置、操作其它应用或正式生产环境。
+
+本次旧主进程 25389 及其 HorseMD helper 已精确强制退出；新主进程 **38670** 的命令行为 `/Applications/HorseMD.app/Contents/MacOS/HorseMD --horsemd-input-trace /Users/yangtingyi/Downloads/redis命令参考与功能文档.md`。日志实际存在且非空：`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-38670.jsonl`，包含 `input-trace-mounted` 与 ProseMirror 事务事件。旧 PID 日志保留。
+
+构建使用 `CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -- --publish never`，本机 arm64 应用来自 `dist/mac-arm64/HorseMD.app`。安装版与新打包版的 `app.asar` SHA-256 均为 `5957d1a39ebb9e3533f9cce1245c32fe3049a23128ae8ead87134186490fed25`，并确认包含新同步修复标记；Redis 原文哈希在安装期间未变。安装验证执行记录：`task_408273e47da20a70`、`task_d2d2d0d7a9c728f6`。PID 是本次启动的检查点，下次读日志前需核对实际进程。
 
 - `61176a4` / 0.13.217：取消被即时同步取代的旧定时任务。直接执行生产调度代码的虚拟时钟回归在旧版重现 `B → A` 倒序，修复后通过。
 - `93af63e` / 0.13.218：延迟任务在执行时序列化当前 PM 文档，强制刷新/成功发布取消旧任务，IME 中间态与已处理状态不再重复发布。8 个调度合同通过。
