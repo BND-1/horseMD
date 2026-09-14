@@ -2,7 +2,22 @@
 
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-08。
 
-## 当前接手检查点：0.13.220（覆盖下方历史快照）
+## 当前检查点：0.13.222 已安装带日志（覆盖下方历史）
+
+**用户反馈Redis仍慢后，已用同一全文做trace开/关CPU与长任务剖析；不再将无日志20键中位数作为用户版本流畅的证据。**
+
+- `0fc68c8` / 0.13.221：关闭日志时不再构造事务全文JSON；大文档日志改为不可变节点引用，可精确还原每一步。相同24键带日志新增写入55.5MB→0.487MB，输入p50 68→35ms。
+- `332a32d` / 0.13.222：无评阅文本块跳过逐键全文段落定位；1000段零marker测试doc.resolve 1000→0。带日志全文24键p50 17ms、p95 22ms，42条连续文档快照还原通过。
+
+**并未整体解决：停顿后的整篇同步长任务仍约1932ms。**CPU主因已定位到普通正文legacy同步的批量列表匹配和完整性校验全文解析，不能通过关闭校验、无限延后或要求用户留在源码模式解决。下一工作项优先该长任务预算与正确的局部/重复工作优化，P7c和全局P0也继续保持未关闭。细节及证据目录见 `docs/performance-large-doc.md` 顶部。
+
+本轮已通过日志还原、评阅扫描、评阅卡片真实UI、协调器、8项调度、39/39保真探针、Redis IME/退格/源码/磁盘/冷重开、相邻IME回归及desktop/mobile构建。测试均用隔离副本，原文件未改。旧review UI需先用测试helper启动9222隔离实例，直接执行而无实例的连接失败不是产品回归。
+
+**实际安装**：`/Applications/HorseMD.app` = 0.13.222，当前主进程 **47637**，argv含 `--horsemd-input-trace` 和 `Downloads/redis命令参考与功能文档.md`。新日志 `/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-47637.jsonl` 已非空。安装asar与刚打包产物SHA-256一致：`0af4155fef6bcb97964a02303f1b81a1e0df9adbf6b7703a63d9e5b10b1d0705`。旧38670及helpers已精确强制退出，旧日志保留，安装期间原文哈希未变；未推送或发布。
+
+**日志读取变化**：大文档事务事件为 `pm-node-refs-v1`，包含traceId/docNodes/oldDocRef/newDocRef。分析时从当前PID日志开头按顺序用 `createTransactionTraceDecoder()`（`src/renderer/src/components/editor-transaction-trace.js`）还原，再查看first divergence。不得把不同编辑器的事件拼接为同一链；缺字典时报错，不能猜测文档。其它输入/完整性诊断事件未取消。
+
+## 上一安装检查点：0.13.220（历史）
 
 **源码 main = 0.13.220；代码提交仅在本地，未 push、未发布。后续安装已完成：`/Applications/HorseMD.app` 现为刚重新打包的 0.13.220，已带 `--horsemd-input-trace` 和 Redis 文件参数启动，供用户真人测试。全局 P0 未关闭。**
 
