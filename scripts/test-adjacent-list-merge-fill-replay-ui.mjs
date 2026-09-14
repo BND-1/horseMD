@@ -103,6 +103,27 @@ try {
   const fillFails = state.owner.filter((e) => e.phase === 'plan' && e.ok === false && /row-count/.test(e.reason || ''))
   assert.equal(fillFails.length, 0, `owner row-count proof failed: ${JSON.stringify(state.owner)}`)
 
+  // trace-21168 continuation: Enter (split the filled item) then Backspace
+  // (remove the fresh empty item) — the tail-remove owner's row proof with
+  // the same merged-adjacency state.
+  await caretAtEnd(app, '你快乐')
+  await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 20 })
+  await sleep(2200)
+  await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 60 })
+  await sleep(2000)
+  await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 20 })
+  await sleep(2200)
+  await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 60 })
+  await sleep(2000)
+  const tailState = await collect(app)
+  assert.equal(
+    tailState.toasts.some((t) => warningPattern.test(t)),
+    false,
+    `tail warning: ${JSON.stringify(tailState.toasts)}`
+  )
+  const tailFails = tailState.integrity.filter((e) => e.ok === false && /tail-row-count/.test(e.reason || ''))
+  assert.equal(tailFails.length, 0, `tail owner row-count failed: ${JSON.stringify(tailState.owner)}`)
+
   await waitFor(() => app.evaluate(`Boolean(document.querySelector('.hm-save-fab'))`), 'save fab missing')
   await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
   await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not finish')

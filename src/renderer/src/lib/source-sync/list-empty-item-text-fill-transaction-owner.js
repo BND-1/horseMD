@@ -6,8 +6,8 @@ import { sourceSyncDigest } from './snapshot.js'
 import {
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
-  sourceSyncNodeEntryAtPath
-} from './top-level-subtree.js'
+  sourceSyncNodeEntryAtPath,
+  mergedAdjacentSameKindListCounts} from './top-level-subtree.js'
 import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
 
 export const LIST_EMPTY_ITEM_TEXT_FILL_TRANSACTION_FAMILY = 'list-empty-item-text-filled'
@@ -340,35 +340,9 @@ export function createListEmptyItemTextFillTransactionSourceSyncOwner({
     // same merge semantics: sum the child counts of the target list node and
     // its adjacent same-kind siblings, and offset the target item's row index
     // by every item in the preceding adjacent same-kind lists.
-    const mergedListCounts = (() => {
-      const list = listEntry?.node
-      if (!list) return { itemCount: 0, mergedItemIndex: null }
-      const listType = list.type?.name
-      let itemCount = list.childCount
-      let precedingItems = 0
-      let orderList = list
-      const parentPath = target.listPath.slice(0, -1)
-      const selfIndex = target.listPath[target.listPath.length - 1]
-      const parent = parentPath.length
-        ? sourceSyncNodeEntryAtPath(journal.oldDoc, parentPath)?.node
-        : journal.oldDoc
-      if (parent && Number.isInteger(selfIndex)) {
-        for (let index = selfIndex - 1; index >= 0; index -= 1) {
-          const sibling = parent.child(index)
-          if (sibling?.type?.name !== listType) break
-          itemCount += sibling.childCount
-          precedingItems += sibling.childCount
-          orderList = sibling
-        }
-        for (let index = selfIndex + 1; index < parent.childCount; index += 1) {
-          const sibling = parent.child(index)
-          if (sibling?.type?.name !== listType) break
-          itemCount += sibling.childCount
-        }
-      }
-      return { itemCount, mergedItemIndex: target.itemIndex + precedingItems, orderList }
-    })()
-    const { itemCount, mergedItemIndex, orderList } = mergedListCounts
+    const mergedListCounts = mergedAdjacentSameKindListCounts(journal.oldDoc, target.listPath)
+    const { itemCount, orderList } = mergedListCounts
+    const mergedItemIndex = target.itemIndex + (mergedListCounts.precedingItems || 0)
     if (
       itemCount < 1 || mergedItemIndex == null ||
       sourceList.rows.length !== itemCount ||
