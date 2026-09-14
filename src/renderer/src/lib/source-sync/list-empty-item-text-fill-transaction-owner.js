@@ -332,26 +332,73 @@ export function createListEmptyItemTextFillTransactionSourceSyncOwner({
       return recognizedRejection('empty-item-fill-range-unmapped')
     }
     const listEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, target.listPath)
-    const itemCount = listEntry?.node?.childCount || 0
+    // The source scanner (listBlockAt) models CommonMark: blank-separated
+    // ADJACENT same-kind lists parse as ONE list, while the live ProseMirror
+    // doc holds input-rule/Enter-created lists as SEPARATE nodes (trace-14865:
+    // an input-rule item above an existing list made the merged block count 5
+    // rows vs the single PM node's 2 items). The PM-side count must apply the
+    // same merge semantics: sum the child counts of the target list node and
+    // its adjacent same-kind siblings, and offset the target item's row index
+    // by every item in the preceding adjacent same-kind lists.
+    const mergedListCounts = (() => {
+      const list = listEntry?.node
+      if (!list) return { itemCount: 0, mergedItemIndex: null }
+      const listType = list.type?.name
+      let itemCount = list.childCount
+      let precedingItems = 0
+      let orderList = list
+      const parentPath = target.listPath.slice(0, -1)
+      const selfIndex = target.listPath[target.listPath.length - 1]
+      const parent = parentPath.length
+        ? sourceSyncNodeEntryAtPath(journal.oldDoc, parentPath)?.node
+        : journal.oldDoc
+      if (parent && Number.isInteger(selfIndex)) {
+        for (let index = selfIndex - 1; index >= 0; index -= 1) {
+          const sibling = parent.child(index)
+          if (sibling?.type?.name !== listType) break
+          itemCount += sibling.childCount
+          precedingItems += sibling.childCount
+          orderList = sibling
+        }
+        for (let index = selfIndex + 1; index < parent.childCount; index += 1) {
+          const sibling = parent.child(index)
+          if (sibling?.type?.name !== listType) break
+          itemCount += sibling.childCount
+        }
+      }
+      return { itemCount, mergedItemIndex: target.itemIndex + precedingItems, orderList }
+    })()
+    const { itemCount, mergedItemIndex, orderList } = mergedListCounts
     if (
-      itemCount < 1 ||
+      itemCount < 1 || mergedItemIndex == null ||
       sourceList.rows.length !== itemCount ||
       canonicalList.rows.length !== itemCount
-    ) return recognizedRejection('empty-item-fill-row-count')
-    if (target.itemIndex >= sourceList.rows.length) {
-      return recognizedRejection('empty-item-fill-row-count')
+    ) {
+      return recognizedRejection('empty-item-fill-row-count', { proof: {
+        itemCount,
+        mergedItemIndex,
+        sourceRowCount: sourceList.rows.length,
+        canonicalRowCount: canonicalList.rows.length,
+        sourceBlock: sourceList.block,
+        canonicalBlock: canonicalList.block,
+        itemIndex: target.itemIndex,
+        listPath: target.listPath
+      } })
     }
-    const canonicalRow = canonicalList.rows[target.itemIndex]
+    if (mergedItemIndex >= sourceList.rows.length) {
+      return recognizedRejection('empty-item-fill-row-count', { proof: { mergedItemIndex, itemCount } })
+    }
+    const canonicalRow = canonicalList.rows[mergedItemIndex]
     if (!/^<br\s*\/?>$/i.test((canonicalRow?.body || '').trim())) {
       return recognizedRejection('empty-item-fill-canonical-row-not-empty')
     }
     const filled = fillAuthoredRow({
       source: journal.source,
-      row: sourceList.rows[target.itemIndex],
+      row: sourceList.rows[mergedItemIndex],
       text: target.finalText,
       kind: target.listKind,
-      list: listEntry.node,
-      itemIndex: target.itemIndex
+      list: orderList,
+      itemIndex: mergedItemIndex
     })
     if (!filled) return recognizedRejection('empty-item-fill-authored-row-unproven')
 

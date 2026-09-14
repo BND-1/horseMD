@@ -248,6 +248,28 @@ assert.equal(firstEmptyFill.plan.result.markdown, '- 甲\n- 乙\n')
 assert.equal(firstEmptyFill.plan.proof.itemIndex, 0)
 
 // ---------------------------------------------------------------------------
+// 4b. Adjacent same-kind PM list nodes (trace-14865): the input rule creates
+// a SEPARATE single-item list above an existing one while CommonMark (and
+// the source scanner) merge blank-separated same-kind lists. The proof must
+// count the merged view and offset the target row index accordingly.
+// ---------------------------------------------------------------------------
+const adjOldDoc = document(
+  bulletList(bulletItem('前一项')),
+  bulletList(bulletItem(''), bulletItem('后一项'))
+)
+const adjFill = planFor({
+  oldDoc: adjOldDoc,
+  fillSteps: (doc) => {
+    const start = sourceSyncNodeEntryAtPath(doc, [1, 0, 0]).contentStart
+    return [textTransaction(doc, start, '新')]
+  },
+  source: '前文\n\n- 前一项\n\n- \n\n- 后一项\n\n尾文\n',
+  canonicalBaseline: '前文\n\n- 前一项\n\n- <br />\n\n- 后一项\n\n尾文\n'
+})
+assert.equal(adjFill.plan.ok, true, JSON.stringify(adjFill.plan))
+assert.equal(adjFill.plan.result.markdown, '前文\n\n- 前一项\n\n- 新\n\n- 后一项\n\n尾文\n')
+
+// ---------------------------------------------------------------------------
 // Chain-stage misses: plain rejections (recognized must stay false so other
 // families and legacy remain available).
 // ---------------------------------------------------------------------------
