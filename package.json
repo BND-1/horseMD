@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.219",
+  "version": "0.13.220",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "build:mobile": "vite build --config vite.mobile.config.mjs",
     "shortcuts:inventory": "node scripts/export-shortcut-inventory.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
+    "test:source-map-scope": "node scripts/test-editor-source-map-scope.mjs",
     "test:mode-switch-raw-offset-ui": "node scripts/test-mode-switch-raw-offset-ui.mjs",
     "test:codeblock-scroll-stability-ui": "node scripts/test-codeblock-scroll-stability-ui.mjs",
     "test:markdown-preservation": "node scripts/test-markdown-source-preservation.mjs",

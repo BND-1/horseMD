@@ -55,6 +55,7 @@ import {
   restoreTypedBulletMarker
 } from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
+import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
 import {
   areSourceDocumentsEquivalent,
   formatWholeDocumentReplacementSource,
@@ -547,9 +548,10 @@ export default function Editor({
     let crepe
     let sourceSyncBridge = null
     const sourceSyncTransactionJournal = createSourceSyncTransactionJournal()
+    const transactionMarkdownOffsets = createScopedMarkdownOffsetResolver()
     const resolveTransactionMarkdownOffset = ({ markdown, pmPos, doc }) => {
       const remark = crepe.editor.ctx.get(remarkCtx)
-      return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
+      return transactionMarkdownOffsets.resolve({ markdown, pmPos, doc, remark })
     }
     const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
@@ -1729,7 +1731,7 @@ export default function Editor({
       if (trace.length > 100) trace.shift()
     }
 
-    const publishPendingStructuralTransaction = ({
+    const publishPendingStructuralTransactionImpl = ({
       canonical,
       expectedDoc,
       site = 'markdown-updated',
@@ -1876,6 +1878,8 @@ export default function Editor({
         reason: 'transaction-family-unowned'
       }
     }
+    const publishPendingStructuralTransaction = (options) =>
+      transactionMarkdownOffsets.run(() => publishPendingStructuralTransactionImpl(options))
     const planPendingPlainParagraphTransaction = ({
       canonical,
       expectedDoc,
