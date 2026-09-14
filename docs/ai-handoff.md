@@ -2,7 +2,24 @@
 
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-08。
 
-## ⚡ 最新状态（2026-09-14 深夜，覆盖下方旧快照）
+## 当前接手检查点：0.13.220（覆盖下方历史快照）
+
+**源码 main = 0.13.220；本轮四个代码提交仅在本地，未 push、未发布。实际安装及用户运行的 `/Applications/HorseMD.app` 本轮未替换，仍为 0.13.216。不能请用户拿旧应用验收新代码。全局 P0 未关闭。**
+
+- `61176a4` / 0.13.217：取消被即时同步取代的旧定时任务。直接执行生产调度代码的虚拟时钟回归在旧版重现 `B → A` 倒序，修复后通过。
+- `93af63e` / 0.13.218：延迟任务在执行时序列化当前 PM 文档，强制刷新/成功发布取消旧任务，IME 中间态与已处理状态不再重复发布。8 个调度合同通过。
+- `373bb4e` / 0.13.219：嵌套列表正文 helper 遗漏 `callbackDocumentEquivalent` 参数而在 proof 构造时抛 ReferenceError。只补参数传递，true/false 仍只是证据，不重新设置硬门；嵌套插入/连续删除和相邻 owner 合同通过。
+- `eac0a75` / 0.13.220：单次 structural owner publication 作用域复用原 PM→Markdown mapper，最多4项，按源码/PM文档/remark实例隔离，finally 清理，不跨 revision。新增 `test:source-map-scope`。
+
+**取证重点**：实际用户进程 PID 25389 带 `--horsemd-input-trace`；其 trace 第193行尾空项报警 `list-empty-item-tail-previous-row-not-empty` 只是下游。第194行 evidence dump 中更早的 journal-6 已在正文删除 `粉色分 → 粉色` 时出现新候选与旧 canonical 错位并被拒。不要为消除末尾报警而放宽 tail owner。新增 `test:redis-delete-tail-replay-ui` 使用真实 Redis 原文的隔离副本，动态 Enter 建项 + 中文 IME + 4次退格；每步无 integrity/coordinator 拒绝，源码全字节、磁盘与 fresh-profile 冷重开通过。
+
+**原文件保护**：`~/Downloads/redis命令参考与功能文档.md`，508802 bytes / 333584 chars / 13107 lines；接手 SHA-256 为 `2edc209aea4539d8849acac242f1f6e507c93babbf9bd59dcb21eb2a02cf7025`。本轮只读原文，测试只写独立临时副本。历史34条 untracked 清单未清理。
+
+**性能证据**：全文映射微基准8次请求，parse 8→1，单次测量1389→166ms；它使用完整 Redis Markdown + 两块 PM 目标模型，不是完整编辑器帧耗时。无 trace 的20键输入测试 p50 单次对照37→33ms；不可把该结果当作已消除长期卡顿。原位置映射13组、源码保真测试、39/39 probes、desktop/mobile build均通过。
+
+**仍未完成**：P7c fallback owner 未实施。`test:redis-tight-backspace-replay-ui` 在本轮扩展回归仍打印 bs1/bs2/bs3 内部 integrity 拒绝，虽最终磁盘正确且无 toast、脚本 exit 0，仍不满足 first-divergence 为零；不能写成严格验收通过。继续区分 recognized fail-closed 与后续恢复，不隐藏错误。下一步首先固定该链的首个 held 拒绝为严格失败测试，再补证明或 bounded fallback；实际应用换包后仍需真人长会话验证。本轮没有重新验证旧清单中所有既有失败。
+
+## 历史快照（2026-09-14 深夜，0.13.216）
 
 **状态：P6e→P7h 九连修完成，0.13.216 已装机带日志运行（用户验收循环中）。**
 用户在 redis 大文档（已规范化，备份 `Downloads/redis命令参考与功能文档.backup-20260913.md`）上

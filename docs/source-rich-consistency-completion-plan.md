@@ -1,9 +1,37 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.169`
-> 分支：`fix/rs-41-rich-source-divergence`
+> 当前源码版本：`0.13.220`（本轮仅本地提交，未发布）
+> 分支：`main`；实际安装应用本轮未替换，仍为 `0.13.216`
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
+
+## 本轮接手：真实 Redis 首发 + 同步调度 + 映射开销
+
+四个独立本地提交已完成，**不等于全局 P0 或 P7c 已关闭**：
+
+| 版本 | 提交 | 内容 | 本轮验证 |
+| --- | --- | --- | --- |
+| 0.13.217 | `61176a4` | 即时同步取消旧尾沿定时任务，阻止 B 后再次处理旧 A | 旧生产代码虚拟时钟先失败、修复后通过；Coordinator；desktop build |
+| 0.13.218 | `93af63e` | 延迟执行使用当前 PM 文档；强制刷新与成功发布取消旧任务 | 8个调度合同；真实 Redis 副本动态 Enter/IME/4次退格逐步零拒绝；源码全字节/磁盘/冷重开；相邻 IME |
+| 0.13.219 | `373bb4e` | nested paragraph proof 缺失参数导致 ReferenceError | 原 owner 合同从抛异常转绿；true/false 证据值回归；相邻 tail owner |
+| 0.13.220 | `eac0a75` | 一次 structural publication 内复用 bounded source map，finally 释放 | scope 隔离/异常/淘汰/偏移等值；原映射13组；实际 Redis 严格链和相邻列表合并；无trace输入基准 |
+
+### 首次分歧与回归证据
+
+- 现场用户 app 为 `/Applications/HorseMD.app` 0.13.216，PID 25389，argv 含 `--horsemd-input-trace`。当前文件位于 `$(getconf DARWIN_USER_TEMP_DIR)/horsemd-input-trace-25389.jsonl`，接手读取共200行、89528566 bytes。
+- 第193行 `list-empty-item-tail-previous-row-not-empty` 不是独立起因。第194行 evidence dump 展示更早 journal-6 正文删除 `粉色分 → 粉色` 的候选正确但 canonical 仍旧，触发 `source-document-mismatch`，之后的尾空项拒绝沿用已失配基线。没有通过放宽 tail 证明修补末尾报警。
+- 新增 `scripts/test-redis-delete-tail-replay-ui.mjs`。`REDIS_INPUT_PATH` 可指向原 Redis 文档，只读原文并复制到测试临时目录；不是在用户文件上自动输入。预置列表控制组未复现，动态 Enter 建项 + IME 填充 + 退格链在旧版重现相同候选/旧 canonical 错位。修复后逐步无拒绝，完整源码和磁盘等于只包含预期编辑的全文，fresh-profile 重开正确，原文件未改。
+- 验证执行：`task_eedff7b0c022d281`、`task_bd8e046d30a7c327`；综合源码保真/39探针/desktop+mobile 构建为 `task_43db31833c6c0091`，均 exit 0。注意下面对旧 tight 回归的例外判定。
+
+### 性能证据边界
+
+原 Redis 为508802 bytes、333584 chars、13107 lines。`test:source-map-scope` 在完整 Markdown + 两块 PM 目标模型上测8次位置查询，全文parse 8→1、单次1389→166ms，偏移逐项等值。缓存只覆盖一次 structural owner 发布；没有替换原映射算法，也不跨callback/revision缓存。该比值不能外推为整机或打字提速倍数。无trace20键的输入事件延迟p50单次37→33ms，只能说明该样本未回退，长期帧延迟和输入法混合操作仍需实测。
+
+### 未关闭项与下一检查点
+
+本轮扩展运行 `test:redis-tight-backspace-replay-ui` 仍出现 bs1/bs2/bs3 的内部 integrity 拒绝，最终保存正确、无toast，旧脚本返回PASS。**按本计划 first-divergence 标准，此项未通过严格验收**；这与既有 P7c held 候选工单一致，不因本轮四个提交而消失。下一步应先把该链的第一处拒绝固定为严格失败测试，再完善证明/受验证的 bounded fallback，不能删除校验或依赖后续自愈。本轮没有实现通用 fallback、没有关闭其它 legacy迁移工作，也未声称全量旧测试全部通过。
+
+接手原文 SHA-256：`2edc209aea4539d8849acac242f1f6e507c93babbf9bd59dcb21eb2a02cf7025`。本轮不修改或再次规范化原文，不删除历史34条untracked，不 push/release，不替换安装应用。新源码不可用旧应用验收。
 
 ## 1. 最终完成定义
 
