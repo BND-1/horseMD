@@ -2,19 +2,50 @@
 
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-08。
 
-## ⚡ 最新状态（2026-09-12，覆盖下方旧快照）
+## ⚡ 最新状态（2026-09-14 深夜，覆盖下方旧快照）
 
-**P6e 已完成（0.13.208，当日闭环）**：松散列表项续行 IME 分裂后填充空 sibling 项的
-focused owner `list-empty-item-text-filled`（账本搜 **P6e 已完成**；原始归因证据在
-[`handoff-ime-loose-item-split.md`](./handoff-ime-loose-item-split.md) +
-`scripts/fixtures/ime-loose-item-split/`）。用户硬性要求"改任何功能都不能再触发"已
-机制化：goal-matrix 常驻新增 B6 场景（45/45）+ 专项 E2E `test:ime-loose-item-split-ui`
-（真 IME 复刻事故手势）。已知既有失败（非本改动）：`test:list-subtree-transaction-owner`。
+**状态：P6e→P7h 九连修完成，0.13.216 已装机带日志运行（用户验收循环中）。**
+用户在 redis 大文档（已规范化，备份 `Downloads/redis命令参考与功能文档.backup-20260913.md`）上
+持续真实编辑触发警告/卡顿，每轮 = 读 trace → 根因层修复（无补丁）→ E2E 重放 → 装机带
+`--horsemd-input-trace` 交还用户。账本条目 P6e/P6e(2)/P7b/P7b(2)/P7b(3)/P7d/P7e/P7f/P7g/P7h
+全部"已完成"，细节以账本为准（`docs/source-rich-consistency-completion-plan.md`）。
 
-其它近期状态：已发布 v0.13.205（cross-fence span 修复）；main 上还有未发布的
-0.13.206（关闭到托盘，PR #129 合并 + maintainer 三处调整）、0.13.207（#126 大文档
-性能双根因修复 + 触控板滚动停手漂移的 teardown 禁用）与 0.13.208（P6e）。安装版 =
-0.13.207+，带 trace。
+## 版本轨迹（本会话，全部已推送 main，**0.13.206–0.13.216 均未发版**，上一发布 v0.13.205）
+
+- 0.13.208 P6e：空项填充 focused owner `list-empty-item-text-filled`
+- 0.13.209 P6e(2)：删 fill owner 的 callbackDocumentEquivalent 错层硬门（+mermaid StreamLanguage spec 修复 dfb5f3a）
+- 0.13.210 P7b：transition 通道内联文本化（`semanticJson` 的 `inlineTextual`，仅 transition 用）+ `diverged-visible-delete` 边界镜像（affinity 按 canonical 是否跨行）+ `empty-paragraph-before-fence-removed` 尾空段许可
+- 0.13.211 P7b(2)：**36 个 owner 统一删除该硬门**（proof 字段改记真值；22 套合同负例翻转为正例）
+- 0.13.211+（9a6d644）：trace 瘦身——markdown-sync 只在 preserve **失败**时携带全字节
+- P7d（cce3bc8）：redis 文档一次性格式规范化（分歧债 295 处清零；3 个非 ASCII URL 链接用唯一上下文锚点恢复；备份在 Downloads）
+- 0.13.212 P7b(3)：`removeAuthoredTailRow` 邻接证明放宽（间隔属前项即认：空行+缩进续行）+ 规范化文件去除独立 `<br />` 行（facade 系统不变量）+ `transaction-list-subtree` 尾空段许可
+- 0.13.213 P7e：打字延迟三层——**自适应打字让路调度**（markdownUpdated 包装：>150ms 且活跃编辑 → 600ms 空闲尾沿、5s 硬顶、md>100K 冷启动播种；journal 按 revision 积累、forced-flush 即时）+ review 装饰组键按父 memoize + 无 CriticMarkup 起始符跳过扫描；实测 p50 90-117ms→31-36ms
+- 0.13.214 P7f：cross-fence 窗口改用 `areSourceSyncNodesSemanticallyEqual`（label-only relabel 不再膨胀窗口）
+- 0.13.215 P7g + 0.13.216 P7h：**CommonMark 相邻同类列表合并语义**进入空项家族行数证明——共享 helper `mergedAdjacentSameKindListCounts`（top-level-subtree.js），四个 owner 全修：fill/remove 合并计数+索引偏移；tail 有**后**相邻同类列表时普通拒绝（让位 interior）；first-lift 有**前**相邻同类列表时普通拒绝；tail 用 `classification.listPath`（blockquote 变体）
+
+## 常驻测试（每轮修改后跑相关子集）
+
+- `test:list-empty-item-text-fill-transaction-owner`（16 合同含 4b 相邻合并）/ 其余三个空项 owner 合同
+- `test:transition-inline-textual`（7 合同）/ `test:cross-fence-span-transaction-owner`（12）
+- 事故重放 E2E：`test:redis-line1-replay-ui`、`test:redis-joinbackward-replay-ui`、`test:redis-tight-backspace-replay-ui`、`test:ordered-relabel-enter-replay-ui`、`test:adjacent-list-merge-fill-replay-ui`（含 21168 尾段）、`test:ime-loose-item-split-ui`
+- `test:redis-typing-latency-ui`（**无 trace** 运行，p50 ≤45ms 门禁）/ `test:markdown-preservation` / `test:review` / goal-matrix（45 检查点，B6=松散项 IME 分裂+填充）
+- 既有失败（干净树复现，非本会话回归）：`test:source-transaction-sync`（blockquote-list transient 断言）、`test:list-subtree-transaction-owner`、`test-empty-code-block-backspace-transaction-owner`（index.js 缺导出，draft owner 未接线）
+
+## 未做（P7c，下会话候选）
+
+1. **兜底 owner**（用户批准的三层边界：内容错→报警拦住；风格归一→非阻塞提示可见；正常→无感；候选仍过全部 semantic/list-slot 校验）——具体工单 = 重放中的 held 候选（字节正确但证明不足、后续发布兜住、用户无感）
+2. 打字让路调度微调 + 空闲管线成本（`pmPosToMarkdownOffset` 每次调用重建全文 mapper——可按 run memoize）
+3. 发版：0.13.206–0.13.216 累积（托盘 #129 + #126 性能 + 滚动漂移 + 本会话九连修）
+
+## 操作要点（本会话踩坑沉淀）
+
+- 用户报"触发了"→ 读 `$(getconf DARWIN_USER_TEMP_DIR)/horsemd-input-trace-<pid>.jsonl`；失败事件 `markdown-sync-integrity` 只在 preserve 失败时带字节；owner 路径失败看 evidence dump 的 owners 尾（带 reason/recognized）
+- 装机流程：`CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir` → 杀全部旧进程（**孤儿进程会让单实例转发到旧版本，用户测的窗口可能根本不是新代码**——本轮真实事故）→ `rm -rf /Applications/HorseMD.app && cp -R dist/mac-arm64/HorseMD.app /Applications/` → `nohup .../MacOS/HorseMD --horsemd-input-trace &`
+- CDP 测量用 `--remote-debugging-port=24999`；trivial evaluate 挂起多半撞上空闲管线窗口（重读即可），勿误判 renderer 挂死
+- trace 的 timestamp 不可靠（CDP 字段错位），阶段对齐用接收时刻
+- E2E 测延迟必须**不带 trace**（插桩 ~40ms/键）
+- 修一个 owner 触发的形状时，先 grep 全家族同款证明模式（P7h 教训：同状态会依次打爆每个 owner）
+- 深夜连续触发的"又一族"先看是不是同一语义状态的下一实例
 
 ---
 
