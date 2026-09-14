@@ -333,6 +333,7 @@ const planNestedItemParagraphPatch = ({
   classification,
   canonical,
   expectedDoc,
+  callbackDocumentEquivalent = false,
   resolveMarkdownOffset,
   validateMarkdown
 }) => {
@@ -535,6 +536,7 @@ export function createListItemParagraphTransactionSourceSyncOwner({
         classification,
         canonical,
         expectedDoc,
+        callbackDocumentEquivalent,
         resolveMarkdownOffset,
         validateMarkdown
       })

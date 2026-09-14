@@ -216,6 +216,15 @@ const expected = '\uFEFF- 管理层\r\n- \r\n- 4. 技术部\r\n'
   assert.equal(plan.ok, true, JSON.stringify(plan))
   assert.equal(plan.result.markdown, '- parent\n  - childX\n')
   assert.equal(plan.proof.mapperReason, 'nested-terminal-row-patch')
+  assert.equal(plan.proof.callbackDocumentEquivalent, true)
+  const callbackDifferent = planFor({
+    source: '- parent\n  - child\n', canonical: '* parent\n\n  * child\n', oldDoc: nestedDoc,
+    transactions: [transaction], nextCanonical: '* parent\n\n  * childX\n', revision: 906,
+    callbackDocumentEquivalent: false,
+    validateMarkdown: ({ markdown }) => markdown === '- parent\n  - childX\n'
+  })
+  assert.equal(callbackDifferent.plan.ok, true, 'callback equality is evidence, not a nested owner gate')
+  assert.equal(callbackDifferent.plan.proof.callbackDocumentEquivalent, false)
 
   // The full user scenario: delete every character one transaction at a time
   // (the journal coalesces them into one chain) — zero warnings expected.
