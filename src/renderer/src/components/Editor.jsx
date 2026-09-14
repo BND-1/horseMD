@@ -3299,6 +3299,12 @@ export default function Editor({
       const SYNC_DEFER_IDLE_MS = 600
       const SYNC_DEFER_MAX_MS = 5000
       const runMarkdownSyncPipeline = (md) => {
+        // An immediate callback supersedes the queued trailing callback too.
+        // Otherwise the hard-cap / programmatic path publishes B, then the
+        // still-live timer processes its older captured A against B's state.
+        if (markdownSyncDeferTimer) clearTimeout(markdownSyncDeferTimer)
+        markdownSyncDeferTimer = null
+        markdownSyncDeferSince = 0
         const started = performance.now()
         try {
           handleMarkdownUpdatedImpl(null, md)

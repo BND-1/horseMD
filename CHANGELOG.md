@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **0.13.217 大文档延迟同步定时任务不再倒序执行** — 达到连续输入的即时同步上限或进入程序化同步分支时，先取消旧的尾沿定时任务，防止新内容处理后旧 Markdown 再次运行。新增直接执行生产调度代码的虚拟时钟回归，覆盖硬上限、即时分支、最新尾沿与销毁。未放宽源码完整性校验；Redis 长会话 P0 仍以真实首次分歧回归为准。
+
 ### Known Issues
 - **富文本 / 源码长会话仍可能分叉（P0）** — 0.13.47 的 `/code` 原子同步修复通过了家族矩阵、多轮持久化和代码块专项，但安装包人工验收仍能在真实长文档中复现：建立代码块后继续多轮编辑，富文本新增内容可能没有完整进入源码或磁盘；保存既可能暂停，也可能执行成功但内容仍不一致。该问题尚未关闭，禁止把当前候选描述为稳定修复。接手记录见 [`docs/rich-source-divergence-incident-0.13.47.md`](./docs/rich-source-divergence-incident-0.13.47.md)。
 
