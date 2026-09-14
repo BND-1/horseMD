@@ -649,6 +649,19 @@ export const areSourceDocumentTransitionsEquivalent = (
   return JSON.stringify(sourceTransition) === JSON.stringify(expectedTransition)
 }
 
+// Top-level blocks whose only delta is a serializer-internal list attr
+// (label / listType / spread) are NOT document changes - the comparator
+// already ignores those attrs everywhere. Owners computing changed windows
+// use this so an ordered-list relabel run (Enter splitting item 1 of a huge
+// list re-labels every successor, trace-9817) cannot balloon the window.
+export const areSourceSyncNodesSemanticallyEqual = (left, right) => {
+  if (!left || !right) return left === right
+  if (left.eq?.(right) === true) return true
+  const a = semanticJson(left)
+  const b = semanticJson(right)
+  return a && b && JSON.stringify(a) === JSON.stringify(b)
+}
+
 export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => {
   const left = semanticJson(parsed, options)
   const right = semanticJson(expected, options)
