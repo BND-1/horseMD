@@ -309,6 +309,7 @@ export default function Editor({
     let richFlushPending = false
     let pendingRichBlockKey = null
     let richDirtyReconcileTimer = 0
+    let cancelDeferredMarkdownSync = () => {}
     let transactionSourcePendingPublish = false
     let transactionSourcePendingDoc = null
     let transactionSourceBlockHints = []
@@ -393,6 +394,7 @@ export default function Editor({
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const clearRichFlushPending = () => {
+      cancelDeferredMarkdownSync()
       richFlushPending = false
       pendingRichBlockKey = null
     }
@@ -2015,6 +2017,7 @@ export default function Editor({
       expectedDoc,
       notifyChange = false
     } = {}) => {
+      cancelDeferredMarkdownSync()
       const structuralResult = publishPendingStructuralTransaction({
         canonical,
         expectedDoc,
@@ -3298,13 +3301,14 @@ export default function Editor({
       const SYNC_DEFER_THRESHOLD_MS = 150
       const SYNC_DEFER_IDLE_MS = 600
       const SYNC_DEFER_MAX_MS = 5000
-      const runMarkdownSyncPipeline = (md) => {
-        // An immediate callback supersedes the queued trailing callback too.
-        // Otherwise the hard-cap / programmatic path publishes B, then the
-        // still-live timer processes its older captured A against B's state.
+      cancelDeferredMarkdownSync = () => {
         if (markdownSyncDeferTimer) clearTimeout(markdownSyncDeferTimer)
         markdownSyncDeferTimer = null
         markdownSyncDeferSince = 0
+      }
+      const runMarkdownSyncPipeline = (md) => {
+        // Immediate execution and forced flush invalidate older queued work.
+        cancelDeferredMarkdownSync()
         const started = performance.now()
         try {
           handleMarkdownUpdatedImpl(null, md)
@@ -3335,8 +3339,17 @@ export default function Editor({
             markdownSyncDeferTimer = setTimeout(() => {
               markdownSyncDeferTimer = null
               markdownSyncDeferSince = 0
-              if (!viewRef.current) return
-              runMarkdownSyncPipeline(md)
+              const view = viewRef.current
+              if (!view || view.composing || !richFlushPending) return
+              // PM may have advanced since Milkdown supplied this callback,
+              // even before its next callback arrives. Pair candidate bytes
+              // and expectedDoc from the SAME live document at execution time.
+              try {
+                const currentMarkdown = crepe.editor.ctx.get(serializerCtx)(view.state.doc)
+                runMarkdownSyncPipeline(currentMarkdown)
+              } catch {
+                reportSourceSyncFailure('deferred-source-serialization-failed')
+              }
             }, SYNC_DEFER_IDLE_MS)
             return
           }
@@ -3344,12 +3357,7 @@ export default function Editor({
         }
         runMarkdownSyncPipeline(md)
       })
-      cleanups.push(() => {
-        if (markdownSyncDeferTimer) {
-          clearTimeout(markdownSyncDeferTimer)
-          markdownSyncDeferTimer = null
-        }
-      })
+      cleanups.push(() => cancelDeferredMarkdownSync())
     })
 
     const runCreate = () =>

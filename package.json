@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.217",
+  "version": "0.13.218",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -354,6 +354,7 @@
     "test:redis-joinbackward-replay-ui": "node scripts/test-redis-joinbackward-replay-ui.mjs",
     "test:redis-tight-backspace-replay-ui": "node scripts/test-redis-tight-backspace-replay-ui.mjs",
     "test:markdown-sync-scheduling": "node scripts/test-markdown-sync-scheduling.mjs",
+    "test:redis-delete-tail-replay-ui": "node scripts/test-redis-delete-tail-replay-ui.mjs",
     "test:redis-typing-latency-ui": "node scripts/test-redis-typing-latency-ui.mjs",
     "test:ordered-relabel-enter-replay-ui": "node scripts/test-ordered-relabel-enter-replay-ui.mjs",
     "test:adjacent-list-merge-fill-replay-ui": "node scripts/test-adjacent-list-merge-fill-replay-ui.mjs",

@@ -25,7 +25,11 @@ const createHarness = () => {
     pendingRawMarkdownPasteRef: { current: null },
     wholeDocumentReplacementPending: null,
     programmaticReplaceRef: flags,
-    viewRef: { current: { composing: false } },
+    viewRef: { current: { composing: false, state: { doc: { text: '' } } } },
+    serializerCtx: 'serializer',
+    crepe: { editor: { ctx: { get: () => (doc) => doc.text } } },
+    richFlushPending: true,
+    cancelDeferredMarkdownSync: () => {},
     hasRecentUserEdit: () => true,
     handleMarkdownUpdatedImpl: (_ctx, md) => { calls.push(md[0]); clock += 200 },
     api: { markdownUpdated: (fn) => { callback = fn } },
@@ -39,7 +43,13 @@ const createHarness = () => {
       timer.fn()
     }
   }
-  return { calls, timers, flags, cleanups, send: (letter) => callback(null, letter.repeat(100001)), advance: (ms) => { clock += ms }, fireTimers }
+  const mutate = (letter) => { context.viewRef.current.state.doc = { text: letter.repeat(100001) } }
+  return {
+    calls, timers, flags, cleanups, mutate, context,
+    cancel: () => context.cancelDeferredMarkdownSync(),
+    send: (letter) => { mutate(letter); callback(null, letter.repeat(100001)) },
+    advance: (ms) => { clock += ms }, fireTimers
+  }
 }
 
 for (const mode of ['hard-cap', 'programmatic-boundary']) {
@@ -63,4 +73,25 @@ destroyed.send('A')
 destroyed.cleanups.forEach((cleanup) => cleanup())
 destroyed.fireTimers()
 assert.deepEqual(destroyed.calls, [], 'destroyed editor must not run deferred sync')
-console.log('PASS markdown scheduling: hard-cap, immediate boundary, latest trailing callback, teardown')
+const advanced = createHarness()
+advanced.send('A')
+advanced.mutate('B')
+advanced.fireTimers()
+assert.deepEqual(advanced.calls, ['B'], 'deferred sync must serialize the current document, not captured A')
+const flushed = createHarness()
+flushed.send('A')
+flushed.cancel()
+flushed.mutate('B')
+flushed.fireTimers()
+assert.deepEqual(flushed.calls, [], 'forced flush must invalidate earlier callback')
+for (const condition of ['committed', 'composition']) {
+  const h = createHarness()
+  h.send('A')
+  if (condition === 'committed') h.context.richFlushPending = false
+  else h.context.viewRef.current.composing = true
+  h.fireTimers()
+  assert.deepEqual(h.calls, [], `${condition}: must not publish a deferred snapshot`)
+}
+assert.match(source, /const clearRichFlushPending = \(\) => \{\s*cancelDeferredMarkdownSync\(\)/)
+assert.match(source, /const publishPendingTransactionJournal = \([\s\S]*?\} = \{\}\) => \{\s*cancelDeferredMarkdownSync\(\)/)
+console.log('PASS markdown scheduling: 8 cases including hard-cap, immediate, trailing, teardown, live freshness, flush cancellation, committed state, IME guard')
