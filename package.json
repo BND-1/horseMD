@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.222",
+  "version": "0.13.223",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -27,6 +27,8 @@
     "test:source-map-scope": "node scripts/test-editor-source-map-scope.mjs",
     "test:transaction-trace": "node scripts/test-editor-transaction-trace.mjs",
     "test:review-scan-budget": "node scripts/test-review-scan-budget.mjs",
+    "test:unchanged-source-result": "node scripts/test-unchanged-source-result.mjs",
+    "test:unchanged-source-reconcile-ui": "node scripts/test-unchanged-source-reconcile-ui.mjs",
     "profile:redis-interaction": "node scripts/profile-redis-interaction.mjs",
     "test:mode-switch-raw-offset-ui": "node scripts/test-mode-switch-raw-offset-ui.mjs",
     "test:codeblock-scroll-stability-ui": "node scripts/test-codeblock-scroll-stability-ui.mjs",

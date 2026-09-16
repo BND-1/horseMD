@@ -57,6 +57,7 @@ import {
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
 import { createEditorTransactionTracer } from './editor-transaction-trace.js'
+import { reconcileUnchangedSourceResult } from '../lib/source-sync/unchanged-source-result.js'
 import {
   areSourceDocumentsEquivalent,
   formatWholeDocumentReplacementSource,
@@ -2769,6 +2770,13 @@ export default function Editor({
               canonical
             )
           }
+          preserved = reconcileUnchangedSourceResult({
+            result: preserved,
+            source: lastMarkdownRef.current,
+            canonical,
+            expectedDoc: viewRef.current?.state.doc,
+            parseMarkdown: (value) => crepe.editor.ctx.get(parserCtx)(value)
+          })
           const preservedBeforeInputRule = preserved
           let pendingInputCanonicalOffset = null
           let consumedInputIntentForIntegrity = null

@@ -1,5 +1,5 @@
 import { TextSelection, NodeSelection } from '@milkdown/prose/state'
-import { commandsCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
+import { commandsCtx, parserCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
@@ -25,6 +25,7 @@ import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
 import { settleEditorMarkdown } from '../lib/editor-flush-settle.js'
 import { publishPendingSourceSyncJournalForFlush } from '../lib/source-sync/flush-journal.js'
 import { retiredLegacySourceSyncFailureReason } from '../lib/source-sync/legacy-owner.js'
+import { reconcileUnchangedSourceResult } from '../lib/source-sync/unchanged-source-result.js'
 
 export function createEditorApi({
   viewRef,
@@ -279,6 +280,13 @@ export function createEditorApi({
           canonical
         )
       }
+      preserved = reconcileUnchangedSourceResult({
+        result: preserved,
+        source: lastMarkdownRef.current,
+        canonical,
+        expectedDoc: viewRef.current?.state.doc,
+        parseMarkdown: (value) => crepe.editor.ctx.get(parserCtx)(value)
+      })
       if (Array.isArray(globalThis.__hmFlushTrace)) {
         globalThis.__hmFlushTrace.push({
           phase: 'flush-result',
