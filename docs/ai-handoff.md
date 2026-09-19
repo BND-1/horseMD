@@ -4,7 +4,16 @@
 
 ## 当前检查点：0.13.224 表格清空/再填写已验证（覆盖下方历史）
 
-源码0.13.224，表格修复提交`80e8fef`。此处记录代码与验证基线；实际安装版本、PID及发布附件必须现场核验，不能沿用下方历史PID。
+源码0.13.224，表格修复提交`80e8fef`，版本标签`v0.13.224`指向文档提交`777ae2b`。已完成本机安装和GitHub测试版发布；后续仍须现场核验运行PID，不能沿用下方历史记录。
+
+### 2026-09-19 实际交付检查点
+
+- `/Applications/HorseMD.app`已安装0.13.224，新主进程`21331`，argv含`--horsemd-input-trace`。日志`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-21331.jsonl`已产生并顺序解码通过。旧`80436`及三个helper已精确强制退出，旧trace保留；用户配置未清理，安装前后Redis原文件哈希相同。
+- 安装asar与本地新包SHA-256一致：`e8d9c906a42a18305b1cd5a705108d6cc8b9086c5d1ae8c54227cdc4998f033b`；包内0.13.224、表格修复标记及trace参数已核验。旧应用备份位于系统临时目录`horsemd-previous-app-sse7fqso/HorseMD.app`。
+- GitHub测试版已公开：`https://github.com/BND-1/horseMD/releases/tag/v0.13.224`，`draft=false`、`prerelease=true`，未设为Latest；稳定版Latest仍为v0.13.205。原生构建run `35444210508`的Windows、macOS、Ubuntu全部成功；15个附件含各平台包、更新元数据和SHA256SUMS。
+- 本地Windows x64包：`dist/windows-test-0.13.224-x64/HorseMD Setup 0.13.224.exe`，142427160 bytes，SHA-256 `f7ee1d934e1708bb0618b3e7417df67fbf270b1eb8d47e3bb093261e2347ec30`。它是Mac交叉构建并通过归档/PE检查的本地测试包，与GitHub Windows原生构建包是同版本不同构建，不能混用校验值。
+- GitHub Windows原生包：`HorseMD-Setup-0.13.224.exe`，135089268 bytes，SHA-256 `1bc37f24af3071bf9fcb39ca67e2f82d62635ff1c5c91e25313053226a80c3fd`。未进行Windows真机交互验收，仍建议测试副本。
+- 本轮构建、安装和发布核验记录保留在忽略目录`dist/release-0.13.224/`，不是待提交源码；本机DMG通过hdiutil校验，EXE归档通过7-Zip检查，未清理任何历史未跟踪文件。
 
 **first divergence**：0.13.223、PID80436的trace第2867行删除表格“否”；第2871行legacy `localized-change`生成坏候选，第2872–2875行完整性拒绝。表格owner原先只接受前后都非空，删空时退出，通用映射错误扩大重排范围并拼坏后续行。不是Redis卡顿，也不是上轮列表空段落问题。
 
