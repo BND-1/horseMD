@@ -4,13 +4,13 @@
 
 ## 当前检查点：0.13.224 表格清空/再填写已验证（覆盖下方历史）
 
-源码0.13.224，表格修复提交`80e8fef`，版本标签`v0.13.224`指向文档提交`777ae2b`。已完成本机安装和GitHub测试版发布；后续仍须现场核验运行PID，不能沿用下方历史记录。
+源码0.13.224，表格修复提交`80e8fef`，版本标签`v0.13.224`指向文档提交`777ae2b`。已完成本机安装；2026-09-19按用户明确要求将GitHub同一版本提升为正式版并设为Latest。标签及15个附件未变，后续仍须现场核验运行PID，不能沿用下方历史记录。
 
 ### 2026-09-19 实际交付检查点
 
 - `/Applications/HorseMD.app`已安装0.13.224，新主进程`21331`，argv含`--horsemd-input-trace`。日志`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-21331.jsonl`已产生并顺序解码通过。旧`80436`及三个helper已精确强制退出，旧trace保留；用户配置未清理，安装前后Redis原文件哈希相同。
 - 安装asar与本地新包SHA-256一致：`e8d9c906a42a18305b1cd5a705108d6cc8b9086c5d1ae8c54227cdc4998f033b`；包内0.13.224、表格修复标记及trace参数已核验。旧应用备份位于系统临时目录`horsemd-previous-app-sse7fqso/HorseMD.app`。
-- GitHub测试版已公开：`https://github.com/BND-1/horseMD/releases/tag/v0.13.224`，`draft=false`、`prerelease=true`，未设为Latest；稳定版Latest仍为v0.13.205。原生构建run `35444210508`的Windows、macOS、Ubuntu全部成功；15个附件含各平台包、更新元数据和SHA256SUMS。
+- GitHub正式版已公开：`https://github.com/BND-1/horseMD/releases/tag/v0.13.224`，`draft=false`、`prerelease=false`；已通过`releases/latest`核验Latest为v0.13.224。此前同版本曾为预发布，本次只调整发布状态和文案，15个附件的ID、大小及摘要均未变。原生构建run `35444210508`的Windows、macOS、Ubuntu全部成功；15个附件含各平台包、更新元数据和SHA256SUMS。
 - 本地Windows x64包：`dist/windows-test-0.13.224-x64/HorseMD Setup 0.13.224.exe`，142427160 bytes，SHA-256 `f7ee1d934e1708bb0618b3e7417df67fbf270b1eb8d47e3bb093261e2347ec30`。它是Mac交叉构建并通过归档/PE检查的本地测试包，与GitHub Windows原生构建包是同版本不同构建，不能混用校验值。
 - GitHub Windows原生包：`HorseMD-Setup-0.13.224.exe`，135089268 bytes，SHA-256 `1bc37f24af3071bf9fcb39ca67e2f82d62635ff1c5c91e25313053226a80c3fd`。未进行Windows真机交互验收，仍建议测试副本。
 - 本轮构建、安装和发布核验记录保留在忽略目录`dist/release-0.13.224/`，不是待提交源码；本机DMG通过hdiutil校验，EXE归档通过7-Zip检查，未清理任何历史未跟踪文件。
@@ -23,7 +23,7 @@
 
 **补齐上轮**：`aec97ac` / 0.13.223已提交并装机，解决源码已与当前PM等价却继续held的问题，双解析和严格列表校验后才推进基线。上一Windows包在`dist/windows-test-0.13.223-x64/`，不含本次表格修复。
 
-**仍未关闭**：全局P0、P7c与Redis约1.9秒整篇同步长任务；不能用局部回归通过代表全局完成。历史未跟踪文件保留，测试只写隔离副本。发布按测试版标注。
+**仍未关闭**：全局P0、P7c与Redis约1.9秒整篇同步长任务；不能用局部回归通过代表全局完成。历史未跟踪文件保留，测试只写隔离副本。用户已明确要求正式发布，发布渠道变更不代表上述问题已修复，已知限制继续保留在发布说明。
 
 ## 历史检查点：0.13.222 已安装带日志
 

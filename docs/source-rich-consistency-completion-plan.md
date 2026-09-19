@@ -1,7 +1,7 @@
 # HorseMD 源码 / 富文本一致性最终收口计划
 
 > 建立日期：2026-08-29
-> 当前源码版本：`0.13.224`（GitHub预发布测试版已公开，非稳定Latest）
+> 当前源码版本：`0.13.224`（GitHub正式版已公开，已设为Latest；已知P0/P7c和性能问题仍未关闭）
 > 分支：`main`；表格修复`80e8fef`，标签`v0.13.224`指向`777ae2b`。本机已装0.13.224，核验时PID`21331`带trace；下次仍需现场查询。
 > 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
 
@@ -14,7 +14,7 @@
 
 ### 交付核验
 
-2026-09-19完成Mac本地安装、trace解码，以及GitHub run `35444210508`各原生平台构建。`v0.13.224`公开为prerelease，15个附件齐全，稳定Latest仍为v0.13.205。Windows另有本地交叉构建EXE，与GitHub原生包校验值不同；详见`docs/ai-handoff.md`。Windows真机交互验收未做，全局P0/P7c/Redis长停顿仍不关闭。
+2026-09-19完成Mac本地安装、trace解码，以及GitHub run `35444210508`各原生平台构建。`v0.13.224`最初为预发布；随后按用户明确要求提升为正式版，已核验`draft=false`、`prerelease=false`及Latest=v0.13.224。15个附件的ID、大小和摘要保持不变。Windows另有本地交叉构建EXE，与GitHub原生包校验值不同；详见`docs/ai-handoff.md`。Windows真机交互验收未做，全局P0/P7c/Redis长停顿仍不关闭。
 
 ## 历史检查点：逐键开销改善，长任务仍未收口
 
