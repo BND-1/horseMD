@@ -1,6 +1,6 @@
 # Issue #139 换行互操作修复方案
 
-建立日期：2026-09-23。续接日期：2026-09-24。起点：本地/安装版0.13.226。当前源码0.13.231；A–D已分开本地提交，E已完成纯函数与完整应用验收，相邻回归、交接与安装正在收尾，未对外发布。
+建立日期：2026-09-23。续接日期：2026-09-24。起点：本地/安装版0.13.226。当前源码0.13.231；A–E已分开本地提交，完整应用与相邻回归通过；已安装到/Applications/HorseMD.app并带trace启动，未对外发布。
 
 ## 证据与范围
 
@@ -67,7 +67,11 @@ C的完整应用矩阵新增`css-numbered-LF`后严格失败：`1\\. LEFT`原本
 - B / 0.13.228：`86747a7`，HTML列表多段边界。
 - C / 0.13.229：`b98d786`，外部HTML样式换行。
 - D / 0.13.230：`e323811`，精确源码基线的必要编号转义。
-- E / 0.13.231：本轮完成代码与14项合同、完整源码保真和39项探针；旧0.13.195断言保持且通过。
+- E / 0.13.231：`0dadefb`，14项合同、完整源码保真和39项探针；旧0.13.195断言保持且通过。
 - 当前构建完整DOM合同34/34通过：`horsemd-139-dom-8bi58U/result.json`。
 - 当前构建完整应用矩阵26/26通过：`horsemd-139-ui-oEAdDe/result.json`（系统临时目录）。覆盖真实全选复制、反向选区、LF/CRLF、HTML样式/加粗/链接/重置/编号、Markdown、Enter/Shift+Enter；源码逐字、磁盘EOL、fresh-profile冷重开与零first-divergence均通过。
-- 其余相邻回归和本机安装待本轮实际结果；全局P0/P7c、Redis长同步任务不因本次剪贴板修复关闭。
+- 相邻回归全部通过：context-copy及UI、issue-98复制/撤销及会话设置、soft-break-ui、editor-style-cascade-ui、custom-theme-style-order-ui、build:mobile及guide:check；桌面build已通过。仅保留既有KaTeX静态/动态导入与大chunk构建警告。
+- 已安装包再次通过4项抽验：全选复制LF/CRLF（`horsemd-139-ui-IoUeJq`）、加粗CSS换行CRLF（`horsemd-139-ui-dDA9md`）、中间Shift+Enter CRLF（`horsemd-139-ui-XuZ1mL`），证据均在系统临时目录。
+- 本机安装：`/Applications/HorseMD.app` 0.13.231；PID`63500`带`--horsemd-input-trace`，日志`horsemd-input-trace-63500.jsonl`已产生。257个包内构建文件与验证out一致；asar SHA-256：`5b5541bb412a74869fef5b2578cf9f49b93ce84e312d4f1219a45c5a574edd9d`。
+- 旧45544及三个helper精确退出，旧应用备份`horsemd-before-0.13.231-dwh11hb0/HorseMD.app`；用户配置、旧trace、历史34条untracked保留，Redis原文安装前后哈希相同。机器核验记录在`dist/local-0.13.231/install-verification.json`。
+- 未push、未发布、未关闭Issue；Windows原生联测和反馈者原始样例仍待取得。全局P0/P7c、Redis长同步任务不因本次剪贴板修复关闭。

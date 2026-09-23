@@ -1,21 +1,36 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-23。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-24。
 
-## 2026-09-23 当前本地源码与安装版：0.13.226，尚未提交/发布
+## 2026-09-24 当前源码与本机安装版：0.13.231，已提交，未推送/发布
+
+**#139 换行互操作**已按方案拆成五个独立补丁：`92ca6a7` / 0.13.227修复混合列表选区纯文本换行；`86747a7` / 0.13.228保留HTML列表后续段落；`b98d786` / 0.13.229转换外部HTML明确的white-space换行；`e323811` / 0.13.230保留精确源码基线中必要的编号文字转义；`0dadefb` / 0.13.231让既有中间续行分支同时识别反斜杠及两个以上空格。前序字体和右键复制已在`ef7c7ff`建立0.13.226检查点；方案/失败合同提交`4f45a90`。完整方案见[issue-139-line-break-interoperability-plan.md](./issue-139-line-break-interoperability-plan.md)。
+
+**验证已完成**：14项硬换行边界、完整源码保真、39/39探针、编号文字合同；34/34剪贴板DOM合同；26/26真实应用LF/CRLF矩阵（复制、粘贴、源码逐字、磁盘EOL、fresh-profile冷重开、零first divergence）；原右键复制、122行全量/65行部分代码、复制撤销、会话恢复、软换行显示、六级标题/自定义CSS及主题；桌面/移动端构建和guide:check均通过。保留原0.13.195回归断言，没有绕过协调器或放宽完整性校验。已安装包再次抽验LF/CRLF全选复制、css-bold-CRLF和shift-enter-CRLF，4场景通过。
+
+### 当前实际安装与日志
+
+- `/Applications/HorseMD.app`为0.13.231 Apple Silicon本地构建；新主进程`63500`，argv含`--horsemd-input-trace`。当前日志`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-63500.jsonl`已落盘并可解析。下次用户说触发时仍须重新查当前PID，从对应日志的first divergence定位，不沿用历史PID。
+- 新包`dist/local-0.13.231/mac-arm64/HorseMD.app`，257个构建文件与已验证out逐字一致；安装后asar SHA-256：`5b5541bb412a74869fef5b2578cf9f49b93ce84e312d4f1219a45c5a574edd9d`。
+- 旧进程`45544/45551/45552/45553`已精确退出。旧应用备份：`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-before-0.13.231-dwh11hb0/HorseMD.app`。用户配置、旧trace及历史34条untracked保留；Redis原文件安装前后SHA-256相同。
+- 安装与核验记录：`dist/local-0.13.231/install-local.py`、`install-verification.json`。本轮未push、未创建Release、未回复/关闭Issue。线上最后已知版本仍为0.13.224，查询最新线上状态应另行实时核验。
+
+**边界与未完成问题**：本轮是在macOS实际应用验证，LF/CRLF不是Windows原生剪贴板联测；#139反馈者的原始文档/对端软件仍未取得。未携带的外部CSS/class无法确定的排版、纯文本连续空行数量、关闭软换行显示后的复制偏好没有扩大修改。全局一致性P0/P7c、Redis约1.9秒同步长任务及table.css具体原CSS问题仍开放。输入阶段已经丢信息时，后续源码/富文本一致并不代表导入保真，必须保留输入期语义断言。
+
+## 历史检查点：2026-09-23 0.13.226本地验证与安装
 
 - **0.13.225 字体/基础CSS顺序修复**：干净配置真实构建复现标题Noto Serif/serif、H1字重400/42px；原因是懒加载Editor.css晚于app.css，frame/reset覆盖同优先级规则。把4个Crepe CSS导入从Editor.jsx移至main.jsx、固定在app.css之前；JS仍懒加载，不提高选择器优先级，不加!important。`test:editor-style-cascade-ui`修复前失败、修复后通过：H1–H6共用文档字体、字重700/600、H1默认36px，改字体和20px正文后H1为45px；用户CSS启动/晚到样式/停用恢复、源码和磁盘全文不变。原`test:custom-theme-style-order-ui`也通过。详见`docs/editor-style-cascade.md`。
 - **0.13.226 右键复制**：上一轮代码本轮已完成单测及基本真实UI回归：正文正反选、列表、单元格、空选区禁用、122行虚拟代码整选、源码/磁盘不变；`test:issue-98-ui`（含65行键盘部分复制/撤销、会话设置）、`test:selection-toolbar-ui`通过。此前长代码测试点击了屏幕外代码行，已改为真实可见行并增加焦点断言，未修改产品以绕过失败。
-- **安装前补测已完成**：2026-09-23用户要求重装后，重新执行0.13.226的`build`、`test:context-copy`、完整`test:context-copy-ui`（含65行部分选区右键复制、只读预览仅复制）、`test:editor-style-cascade-ui`、`test:custom-theme-style-order-ui`、`build:mobile`和`guide:check`，全部成功。复制证据目录`horsemd-context-copy-ORLWtB`，字体证据目录`horsemd-style-cascade-qQWBsZ`，均位于系统临时目录。原先未运行的扩展断言现已实际通过；仍待Git小步提交，未推送或创建Release。
+- **安装前补测已完成**：2026-09-23用户要求重装后，重新执行0.13.226的`build`、`test:context-copy`、完整`test:context-copy-ui`（含65行部分选区右键复制、只读预览仅复制）、`test:editor-style-cascade-ui`、`test:custom-theme-style-order-ui`、`build:mobile`和`guide:check`，全部成功。复制证据目录`horsemd-context-copy-ORLWtB`，字体证据目录`horsemd-style-cascade-qQWBsZ`，均位于系统临时目录。原先未运行的扩展断言已实际通过；此历史检查点随后以`ef7c7ff`提交，未推送或创建Release。
 - **table.css反馈边界**：用户补充是自定义CSS相关。已复现并修复基础样式晚加载导致的真实字体覆盖，测试了用户片段表格属性的启动与晚到覆盖顺序；尚无该用户CSS或截图，不能断言所有“table.css”反馈均同因。未删除/隐藏文件、未改主题扫描或相对@import加载规则。
-- **保护状态**：已读git diff --check通过，全部本轮改动仍在工作区；原历史34条untracked保留，本轮新增源码、测试及根因记录均未提交。没有改源码同步或保存算法，全局P0/P7c和Redis长同步任务继续开放。
+- **历史保护状态**：0.13.226验收时git diff --check通过，改动当时仍在工作区，随后统一建立`ef7c7ff`检查点；原历史34条untracked保留。字体/右键复制本身没有改源码同步或保存算法，全局P0/P7c和Redis长同步任务继续开放。
 
 ### 2026-09-23 0.13.226本机安装核验
 
 - 应用路径`/Applications/HorseMD.app`，Apple Silicon包，安装后主进程`45544`，命令行含`--horsemd-input-trace`。新日志`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-45544.jsonl`已实际产生，初始化JSONL可读；下次触发仍应重新查询当前PID，不永久沿用此号码。
 - 构建产物`dist/local-0.13.226/mac-arm64/HorseMD.app`与安装包内257个构建文件逐字一致（仅跳过Finder的`.DS_Store`元数据）。安装后asar SHA-256为`64b05dc67e772ac5c8484d2778c45b0c6bb04b59b4ef22ce2af42ea554c2f4fc`；复制入口及trace支持已核验。
 - 旧应用保留在`/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-before-0.13.226-sc9r0tiw/HorseMD.app`。实际安装时未发现仍在运行的旧应用进程，不能声称本轮杀死了历史PID。用户配置、旧日志与历史untracked未清理；Redis原文安装前后SHA-256相同。
-- 可审计安装脚本及机器核验记录保留在忽略目录`dist/local-0.13.226/install-local.py`、`install-verification.json`。本次仅本地重装，0.13.226尚未提交/推送/线上发布；全局P0/P7c、Redis长同步任务仍开放。
+- 可审计安装脚本及机器核验记录保留在忽略目录`dist/local-0.13.226/install-local.py`、`install-verification.json`。此处为0.13.226历史安装记录，随后已由`ef7c7ff`提交并在本机升级到0.13.231；未推送/线上发布，全局P0/P7c、Redis长同步任务仍开放。
 
 ## 历史已交付基线：0.13.224 表格清空/再填写已验证
 
