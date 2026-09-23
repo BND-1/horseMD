@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.230",
+  "version": "0.13.231",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
     "shortcuts:inventory": "node scripts/export-shortcut-inventory.mjs",
+    "test:issue-139-hardbreak-boundary": "node scripts/test-issue-139-hardbreak-boundary.mjs",
     "test:issue-139-ordered-literal": "node scripts/test-issue-139-ordered-literal.mjs",
     "test:issue-139-ui": "node scripts/test-issue-139-line-breaks-ui.mjs",
     "test:issue-139-dom": "node scripts/test-issue-139-clipboard-dom.mjs",
