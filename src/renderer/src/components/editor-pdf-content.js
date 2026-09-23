@@ -1,5 +1,6 @@
 import { loadKatex } from '../lib/katex-lazy.js'
 import { renderMermaidForExport } from './editor-mermaid.js'
+import { materializeCopiedSoftBreaks } from './editor-copy.js'
 
 const EXPORT_PREVIEW_DEADLINE_MS = 12000
 const EXPORT_CODE = Symbol('complete export code block')
@@ -343,6 +344,9 @@ const stripEditorAttributes = (clone) => {
 export async function createPdfSourceFromEditor(root, { codeBlocks } = {}) {
   if (!root) return null
   const clone = root.cloneNode(true)
+  if (root.ownerDocument.body.classList.contains('hm-preserve-soft-breaks')) {
+    materializeCopiedSoftBreaks(clone)
+  }
   // Freeze full model contents before the first await. Virtualized CodeMirror
   // DOM is only a viewport and may omit both the middle and the last line.
   if (codeBlocks) {

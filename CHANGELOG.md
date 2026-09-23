@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.233] - 2026-09-24
+
+### Fixed
+- **导出保持可见普通换行** — 按当前“保留源码单换行”设置，在导出副本中将显示用软换行物化为br；不更改编辑器和源文件。完整代码及软换行导出专项通过，PNG功能独立验收。
+
 ## [0.13.232] - 2026-09-24
 
 ### Fixed
