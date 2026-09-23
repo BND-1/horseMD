@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.232] - 2026-09-24
+
+### Fixed
+- **长代码导出完整性** — 共享PDF/HTML导出快照在任何异步处理前读取完整ProseMirror代码节点，不再将CodeMirror当前可见行当成全文；包括代码尾部、空行及语言标记。123行代码专项回归修复前失败、修复后通过，原文不变；普通换行的独立失败用例仍待下一项修复。
+
 ## [0.13.231] - 2026-09-24
 
 ### Fixed

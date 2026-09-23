@@ -2,6 +2,7 @@ import { loadKatex } from '../lib/katex-lazy.js'
 import { renderMermaidForExport } from './editor-mermaid.js'
 
 const EXPORT_PREVIEW_DEADLINE_MS = 12000
+const EXPORT_CODE = Symbol('complete export code block')
 
 const stripEditorOnlyForExport = (clone) => {
   clone
@@ -45,12 +46,14 @@ const mathmlFromLatex = async (doc, latex, { display } = {}) => {
 }
 
 const codeBlockText = (block) => {
+  if (block[EXPORT_CODE]) return block[EXPORT_CODE].text
   const lines = [...block.querySelectorAll('.cm-line')].map((line) => line.textContent)
   if (lines.length) return lines.join('\n').replace(/\n+$/, '')
   return (block.textContent || '').replace(/^\s*LaTeX\s*/, '').replace(/\s*复制\s*/, '').trim()
 }
 
 const codeBlockLanguage = (block) => {
+  if (block[EXPORT_CODE]) return block[EXPORT_CODE].language.toLowerCase()
   const codeMirrorLanguage = block.querySelector('.cm-content')?.dataset?.language?.trim() || ''
   const pickerLanguage = block.querySelector('.language-button')?.textContent?.trim() || ''
   return (codeMirrorLanguage || pickerLanguage).toLowerCase()
@@ -279,7 +282,10 @@ const materializeHtmlBlockMath = async (root) => {
 const flattenCodeMirrorBlocks = (clone) => {
   const doc = clone.ownerDocument
   clone.querySelectorAll('.cm-editor').forEach((cm) => {
-    const lines = [...cm.querySelectorAll('.cm-line')].map((line) => line.textContent)
+    const fullCode = cm.closest('.milkdown-code-block')?.[EXPORT_CODE]
+    const lines = fullCode
+      ? fullCode.text.split('\n')
+      : [...cm.querySelectorAll('.cm-line')].map((line) => line.textContent)
     const pre = doc.createElement('pre')
     // Keep the line-number spans' classes through stripEditorAttributes, which
     // removes every class unless the element sits inside [data-hm-pdf-preserve].
@@ -334,9 +340,16 @@ const stripEditorAttributes = (clone) => {
     .forEach((element) => element.removeAttribute('data-hm-pdf-preserve'))
 }
 
-export async function createPdfSourceFromEditor(root) {
+export async function createPdfSourceFromEditor(root, { codeBlocks } = {}) {
   if (!root) return null
   const clone = root.cloneNode(true)
+  // Freeze full model contents before the first await. Virtualized CodeMirror
+  // DOM is only a viewport and may omit both the middle and the last line.
+  if (codeBlocks) {
+    const blocks = [...clone.querySelectorAll('.milkdown-code-block')]
+    if (blocks.length !== codeBlocks.length) throw new Error('Export code-block snapshot is not ready; please retry.')
+    blocks.forEach((block, index) => { block[EXPORT_CODE] = codeBlocks[index] })
+  }
   const imageSources = [...root.querySelectorAll('img')].map((image) =>
     image.currentSrc || image.getAttribute('src') || ''
   )

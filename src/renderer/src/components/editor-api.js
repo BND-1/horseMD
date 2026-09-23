@@ -54,7 +54,11 @@ export function createEditorApi({
   const getPdfSource = async () => {
     const v = viewRef.current
     if (!v) return null
-    return createPdfSourceFromEditor(v.dom)
+    const codeBlocks = []
+    v.state.doc.descendants((node) => {
+      if (node.type.name === 'code_block') codeBlocks.push({ text: node.textContent, language: String(node.attrs.language || '') })
+    })
+    return createPdfSourceFromEditor(v.dom, { codeBlocks })
   }
 
   const serializeCurrentDocument = () => {
