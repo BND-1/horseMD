@@ -47,7 +47,7 @@ const sourceView = async app => {
   return wait(() => app.evaluate('[...document.querySelectorAll("textarea.source-editor")].find(n=>n.offsetParent)?.value ?? null'), 'source view missing')
 }
 const inspect = app => app.evaluate(`(() => {
-  const e=${editor};return {html:e.innerHTML, paragraphs:[...e.querySelectorAll('p')].map(n=>n.innerHTML),
+  const e=${editor};return {preserve:(window.__hmPreserveLog||[]).slice(-12),diff:(window.__hmSourceIntegrityDiffTrace||[]).slice(-3),html:e.innerHTML, paragraphs:[...e.querySelectorAll('p')].map(n=>n.innerHTML),
     failures:(window.__hmSourceIntegrityTrace||[]).filter(n=>n.ok===false).map(n=>({reason:n.preservationReason,site:n.validationSite}))}
 })()`)
 const results = []
@@ -96,11 +96,14 @@ try {
       {id:'css-div', html:'<div style="white-space:pre-line">LEFT\nRIGHT</div>', expected:'LEFT  \nRIGHT'},
       {id:'css-link', html:'<p style="white-space:pre-wrap"><a href="https://example.com">LEFT</a>\nRIGHT</p>', expected:'[LEFT](https://example.com)  \nRIGHT'},
       {id:'css-reset', html:'<p style="white-space:pre-wrap">LEFT<span style="white-space:normal">\nRIGHT</span></p>', expected:'LEFT RIGHT'},
+      {id:'css-numbered', plain:'1. LEFT\nRIGHT', html:'<p style="white-space:pre-wrap">1. LEFT\nRIGHT</p>', expected:'1\\. LEFT  \nRIGHT'},
+      {id:'markdown', plain:'# PASTED\n\nLEFT\nRIGHT', expected:'# PASTED\n\nLEFT\nRIGHT'},
       {id:'enter', key:true, expected:'LEFT\n\nRIGHT'},
       {id:'shift-enter', key:true, shift:true, expected:'LEFT  \nRIGHT'}
     ]
     for (const eol of ['\n','\r\n']) for (const item of cases) {
       const id=item.id+(eol==='\n'?'-LF':'-CRLF'), file=join(root,id+'.md')
+      if (process.env.CASE_ID && process.env.CASE_ID !== id) continue
       const original=['# AUDIT','',item.key?'LEFT':'ANCHOR','','TAIL',''].join(eol)
       await writeFile(file, original)
       let app = await open(file,id+'-edit')
@@ -110,6 +113,8 @@ try {
         else await app.evaluate(`(() => {const e=${editor},d=new DataTransfer();d.setData('text/plain',${JSON.stringify((item.plain||'LEFT\nRIGHT').replace(/\n/g,eol))});${item.html?'d.setData("text/html",'+JSON.stringify(item.html.replace(/\n/g,eol))+');':''}e.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:d}))})()`)
         await sleep(750)
         const before = await inspect(app)
+        await writeFile(join(root,id+'-before.json'),JSON.stringify(before,null,2))
+        if (before.failures.length) console.log('FIRST_DIVERGENCE',JSON.stringify({id,...before}))
         assert.deepEqual(before.failures, [], id+' first divergence')
         const raw = await sourceView(app)
         const expected = '# AUDIT\n\n'+item.expected+'\n\nTAIL\n'

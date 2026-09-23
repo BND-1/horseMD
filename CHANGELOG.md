@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.229] - 2026-09-23
+
+### Fixed
+- **#139 保留外部HTML通过white-space表达的换行** — 在脱离页面的剪贴板副本里，按明确的pre/pre-wrap/pre-line/break-spaces声明及继承关系将实际换行转成br，保留加粗、链接等内联结构；normal/nowrap/initial重置、普通HTML源码缩进、pre/code及内部PM切片保持既有语义。Markdown候选路由同时检查这些可见换行，不因编号文字抢占富HTML。完整34项DOM合同通过，应用级LF/CRLF保存与重开回归继续独立验收；未改同步校验或批量重写原文换行。
+
 ## [0.13.228] - 2026-09-23
 
 ### Fixed

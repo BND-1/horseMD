@@ -13,7 +13,7 @@
 import { Slice, Fragment } from '@milkdown/prose/model'
 import { startsAsMermaid } from './editor-mermaid.js'
 import { normalizeDisplayMath } from './editor-math.js'
-import { hasStructuredWebHtml } from './editor-web-paste.js'
+import { hasStructuredWebHtml, normalizeWebPasteHtml } from './editor-web-paste.js'
 
 function looksLikeMarkdown(text) {
   if (/^#{1,6}\s/m.test(text)) return true
@@ -103,7 +103,10 @@ const insertMermaidBesideCodeBlock = (view, target, body) => {
 // structure in that HTML. For example, a WeChat fallback such as "1. ..."
 // must not replace a real heading, bold mark, or image from text/html.
 function rawMarkdownCoversStructuredHtml(text, html) {
-  const has = (pattern) => pattern.test(html)
+  // Include CSS-encoded line breaks when deciding whether the text fallback
+  // covers HTML structure. A numbered line must not steal a styled HTML paste.
+  const normalizedHtml = normalizeWebPasteHtml(html)
+  const has = (pattern) => pattern.test(normalizedHtml)
   if (has(/<h[1-6](?:\s|>)/i) && !/^#{1,6}\s/m.test(text)) return false
   if (has(/<(?:ul|li)(?:\s|>)/i) && !/^[-*+]\s/m.test(text)) return false
   if (has(/<(?:ol)(?:\s|>)/i) && !/^\d+\.\s/m.test(text)) return false

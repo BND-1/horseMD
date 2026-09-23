@@ -2,6 +2,8 @@
 // paragraphs. ProseMirror ignores those unsupported wrappers, which can merge
 // several copied paragraphs into one. Convert only leaf block wrappers; real
 // structures such as lists, tables, quotes and nested layout groups stay intact.
+import { materializeStyledPasteBreaks } from './editor-paste-whitespace.js'
+
 const BLOCK_TAGS = new Set([
   'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET',
   'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -27,14 +29,19 @@ export function hasStructuredWebHtml(html) {
   if (!html || !/<[a-z][\s\S]*>/i.test(html)) return false
   const template = document.createElement('template')
   template.innerHTML = html
-  return !!template.content.querySelector(STRUCTURED_WEB_SELECTOR)
+  return !!template.content.querySelector(STRUCTURED_WEB_SELECTOR) ||
+    materializeStyledPasteBreaks(template.content) > 0
 }
 
 export function normalizeWebPasteHtml(html) {
-  if (!html || !/<(?:section|div|img)(?:\s|>)/i.test(html)) return html
+  if (!html || !/<[a-z][\s\S]*>/i.test(html)) return html
 
   const template = document.createElement('template')
   template.innerHTML = html
+
+  // Internal ProseMirror slices already encode their whitespace contract.
+  if (template.content.querySelector('[data-pm-slice]')) return html
+  materializeStyledPasteBreaks(template.content)
 
   // WeChat lazy-loads article images from data-src. The copied fragment can
   // retain data-src without a src, which ProseMirror then drops as an invalid
