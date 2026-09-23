@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.230] - 2026-09-23
+
+### Fixed
+- **#139 编号外观的HTML文字段落不再误变有序列表** — 扩展回归发现，粘贴入模已正确保留硬换行，但exact-canonical-baseline写回删除了必要的`1\.`保护转义。现在仅在精确基线可证明的完整行上下文保留编号分隔符转义；普通行内、小数、未完成输入及已有列表正文保持既有行为。没有改SourceSyncCoordinator或放宽校验。新增编号合同、完整源码保真及39/39探针通过。
+
 ## [0.13.229] - 2026-09-23
 
 ### Fixed

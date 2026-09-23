@@ -48,6 +48,12 @@ C（0.13.229）：聚焦HTML剪贴板的white-space换行转换，并保持marks
 - CommonMark 0.31.2：https://spec.commonmark.org/0.31.2/#soft-line-breaks （软换行显示差异不是擅自改写作者源码的理由。）
 - 实际依赖：node_modules/prosemirror-view/src/clipboard.ts；外部HTML的parseSlice默认不保留普通文本换行，转换必须在HTML入模之前完成。
 
+## 扩展回归发现：D（0.13.230）必要编号转义
+
+C的完整应用矩阵新增`css-numbered-LF`后严格失败：`1\\. LEFT`原本是合法段落canonical，exact-canonical-baseline调用fresh标点恢复时删除反斜杠，候选重解析为ordered_list，而PM仍为paragraph。证据：临时目录`horsemd-139-ui-c4FMuU/css-numbered-LF-before.json`。这不是CSS输入转换错误，也没有绕过现有校验。
+
+新增独立D：仅在source===previous的精确基线分支，向转换器传递可证明的物理行前缀，保护1至9位数字后的点/右括号+空白。默认fresh转换行为不变；初版全局保护曾被既有“列表中2.文字不加多余转义”测试阻止，已收窄并重跑完整保真通过。新增6类保护、普通行内/小数/未完成输入/代码HTML负例和full-candidate重放，39/39探针通过。局部词法保护修改不涉及Coordinator、保存算法或校验放宽。
+
 ## 实施与验收记录
 
 待执行，完成后逐项记录真实commit、版本、测试结果和装机证据。全局P0/P7c、Redis长同步任务不因本次剪贴板修复关闭。
