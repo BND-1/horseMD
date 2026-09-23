@@ -54,55 +54,53 @@ export function copiedPlainText(root, fallback = '') {
     if (text) return text
   }
   if (!root.querySelector('br')) return fallback
-  const probe = root.cloneNode(true)
+  return readClipboardProbe(root.cloneNode(true)) || fallback
+}
+
+// Read layout only for the selected clipboard clone. In particular, innerText
+// preserves BR, paragraph, table and PRE boundaries that textContent erases.
+const readClipboardProbe = (probe) => {
   probe.setAttribute(
     'style',
     'position:fixed;left:-100000px;top:0;width:1000px;white-space:normal;'
   )
   probe.setAttribute('aria-hidden', 'true')
   document.body.appendChild(probe)
-  const text = probe.innerText
-  probe.remove()
-  return text || fallback
+  try {
+    return probe.innerText
+  } finally {
+    probe.remove()
+  }
 }
 
 const listAwarePlainText = (root) => {
-  const lines = []
-  const INDENT = '  '
-  const walk = (parent, depth) => {
-    let orderedIndex = 0
-    for (const child of [...parent.childNodes]) {
-      if (child.nodeType === Node.TEXT_NODE) continue
-      if (child.nodeType !== Node.ELEMENT_NODE) continue
-      const tag = child.tagName
-      if (tag === 'OL' || tag === 'UL') {
-        walk(child, depth + 1)
-        continue
-      }
-      if (tag === 'LI') {
-        const isOrdered = parent.tagName === 'OL'
-        orderedIndex += 1
-        const own = [...child.childNodes].filter((node) =>
-          !(node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'OL' || node.tagName === 'UL')))
-        const text = own.map((node) => node.textContent || '').join('').trim()
-        const marker = isOrdered ? `${orderedIndex}. ` : '- '
-        lines.push(`${INDENT.repeat(Math.max(0, depth - 1))}${marker}${text}`)
-        child.querySelectorAll(':scope > ol, :scope > ul').forEach((nested) => walk(nested, depth))
-        continue
-      }
-      // Editor scaffolding wrappers (data-v-app / content-dom divs) hold the
-      // lists inside — keep descending instead of flattening their text; a
-      // wrapper with no list inside is ordinary block content.
-      if (child.querySelector('ol, ul, li')) {
-        walk(child, depth)
-      } else {
-        const text = (child.textContent || '').trim()
-        if (text) lines.push(text)
-      }
+  const probe = root.cloneNode(true)
+  // Chromium omits CSS list markers from innerText. Materialize only those
+  // markers in a second clone; leave all selected content in document order.
+  // The HTML clipboard and live DOM must never receive these text prefixes.
+  const integer = (value, fallback) => /^-?\d+$/.test(value || '') ? Number(value) : fallback
+  probe.querySelectorAll('ol, ul').forEach((list) => {
+    const items = [...list.children].filter((node) => node.tagName === 'LI')
+    const ordered = list.tagName === 'OL'
+    const step = list.hasAttribute('reversed') ? -1 : 1
+    let ordinal = integer(list.getAttribute('start'), step < 0 ? items.length : 1)
+    let depth = 0
+    for (let parent = list.parentElement; parent && parent !== probe; parent = parent.parentElement) {
+      if (parent.tagName === 'UL' || parent.tagName === 'OL') depth += 1
     }
-  }
-  walk(root, 0)
-  return lines.join('\n')
+    items.forEach((item) => {
+      ordinal = integer(item.getAttribute('value'), ordinal)
+      const prefix = document.createElement('span')
+      prefix.style.whiteSpace = 'pre'
+      prefix.textContent = `${'  '.repeat(depth)}${ordered ? `${ordinal}. ` : '- '}`
+      // A preserved first paragraph must not put the prefix on its own line.
+      const first = item.firstElementChild
+      const target = first?.tagName === 'P' && !item.firstChild?.nodeValue?.trim() ? first : item
+      target.prepend(prefix)
+      ordinal += step
+    })
+  })
+  return readClipboardProbe(probe)
 }
 
 export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {

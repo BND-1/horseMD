@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.226",
+  "version": "0.13.227",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
     "shortcuts:inventory": "node scripts/export-shortcut-inventory.mjs",
+    "test:issue-139-dom": "node scripts/test-issue-139-clipboard-dom.mjs",
     "test:context-copy": "node scripts/test-editor-context-copy.mjs",
     "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
     "test:editor-style-cascade-ui": "node scripts/test-editor-style-cascade-ui.mjs",

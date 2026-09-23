@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.227] - 2026-09-23
+
+### Fixed
+- **#139 混合列表选区的纯文本换行** — 含列表的复制副本不再通过textContent拼接文字。只在二次临时副本中物化列表标记，并读取实际br、段落、表格及pre边界；正文与列表同选时不再丢换行，嵌套先后顺序和选区两端文字保持。9项针对性DOM合同通过，HTML多段列表与CSS换行粘贴为后续独立修复；不修改原文件和同步算法。
+
 ## [0.13.226] - 2026-09-23
 
 ### Added
