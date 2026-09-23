@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.228] - 2026-09-23
+
+### Fixed
+- **#139 HTML列表复制不再合并多个段落** — 列表复制只展开首段让其与编号同行，保留后继段落、引用、代码与嵌套列表；不再把所有块包装拆成连续文字。4项HTML结构合同通过，复制副本之外的富文本、源码与保存链路不变。
+
 ## [0.13.227] - 2026-09-23
 
 ### Fixed

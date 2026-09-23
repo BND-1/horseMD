@@ -153,20 +153,23 @@ const unwrapScaffoldingContainers = (root) => {
 // <li><div><div data-content-dom><p>text</p></div></div></li>. The marker is
 // positioned INSIDE the li's first line box (list-style-position:inside), so a
 // BLOCK-level <p> first child puts the marker on a line of its own — that is
-// exactly the WeChat paste bug ("1." alone, text below). Unwrap every li's
-// element children down to inline content: the paragraph's inline nodes move
-// directly into the li, preserving marks/links/inline code.
+// exactly the WeChat paste bug ("1." alone, text below). Only the FIRST
+// paragraph is unwrapped. Later paragraphs, quotes and code blocks must retain
+// their boundaries; flattening every block concatenated unrelated text (#139).
 const flattenListItemContents = (root) => {
   root.querySelectorAll('li').forEach((li) => {
-    // Repeat until the li's children are text/inline only (nested lists keep
-    // their own <ul>/<ol>, which must stay block-level).
+    // Lift the node-view layout wrappers, never arbitrary semantic blocks.
     for (let pass = 0; pass < 5; pass += 1) {
-      const blockChild = [...li.children].find((child) =>
-        child.tagName !== 'UL' && child.tagName !== 'OL' && !INLINE_TAGS.has(child.tagName))
+      const blockChild = [...li.children].find((child) => child.tagName === 'DIV')
       if (!blockChild) break
       const parent = blockChild.parentElement
       while (blockChild.firstChild) parent.insertBefore(blockChild.firstChild, blockChild)
       blockChild.remove()
+    }
+    const firstBlock = [...li.children].find((child) => !INLINE_TAGS.has(child.tagName))
+    if (firstBlock?.tagName === 'P') {
+      while (firstBlock.firstChild) li.insertBefore(firstBlock.firstChild, firstBlock)
+      firstBlock.remove()
     }
     // Milkdown draws its OWN marker ("1.", "•") as the first inline span of
     // the item. The clipboard fragment is a real <ol>/<ul>, whose numbering
