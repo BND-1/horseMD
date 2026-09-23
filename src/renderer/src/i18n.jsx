@@ -712,6 +712,8 @@ export const STRINGS = {
 
     // editor
     'editor.placeholder': 'Type / for commands, or just start writing…',
+    'editor.copy': 'Copy',
+    'editor.copyFailed': 'Could not copy this selection. Select the content again and try Ctrl/Cmd+C.',
     'code.copy': 'Copy',
     'code.copied': 'Copied',
     'frontmatter.edit': 'Edit YAML',
@@ -1438,6 +1440,8 @@ export const STRINGS = {
     'workspace.removeFolder': '从工作区移除',
 
     'editor.placeholder': '输入 / 唤起命令，或开始写…',
+    'editor.copy': '复制',
+    'editor.copyFailed': '未能复制该选区，请重新选中内容后使用 Ctrl/Cmd+C。',
     'code.copy': '复制',
     'code.copied': '已复制',
     'frontmatter.edit': '编辑 YAML',

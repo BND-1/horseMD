@@ -14,12 +14,6 @@ import {
   createSerializerStyleHolder
 } from '../lib/serializer-style.js'
 import { TextSelection } from '@milkdown/prose/state'
-import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/frame.css'
-import '@milkdown/crepe/theme/common/link-tooltip.css'
-// Latex feature styles + the KaTeX stylesheet it @imports (needed for $$…$$
-// block-math preview + inline $…$ to render with correct fonts/layout).
-import '@milkdown/crepe/theme/common/latex.css'
 import { BLOCK_TYPES } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
@@ -3923,6 +3917,23 @@ export default function Editor({
             left: Math.min(ctxMenu.x, window.innerWidth - 210),
             top: Math.max(8, Math.min(ctxMenu.y, window.innerHeight - 360))
           }}>
+            <button
+              className="block-menu-item"
+              data-context-copy
+              disabled={!ctxMenu.copySelection}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const copied = ctxMenu.copySelection?.copy() === true
+                setCtxMenu(null)
+                if (!copied) fireToast(t('editor.copyFailed'))
+              }}
+            >
+              <span className="block-menu-short" aria-hidden="true">⧉</span>
+              <span className="block-menu-name">{t('editor.copy')}</span>
+              <span className="block-menu-sc">{window.api?.platform === 'darwin' ? '⌘C' : 'Ctrl+C'}</span>
+            </button>
+            {!ctxMenu.copyOnly && (<>
+            <div className="block-menu-divider" />
             {ctxMenu.showTextFormatting && (
               <>
                 <div className="block-menu-submenu-parent">
@@ -4068,6 +4079,7 @@ export default function Editor({
                 </button>
               </>
             )}
+            </>)}
           </div>
         </>
       )}

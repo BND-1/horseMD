@@ -7,6 +7,7 @@ import {
   topLevelCodeBlockForDom
 } from './editor-code-block-exit.js'
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
+import { captureEditorContextCopy } from './editor-context-copy.js'
 import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
@@ -169,11 +170,14 @@ export function mountEditorInteractionBindings({
   }
   const onContextMenu = (event) => {
     if (window.api?.platform === 'ios' || window.api?.platform === 'android') return
-    // The source+preview right pane is intentionally a viewer. Suppress the
-    // app menu there so formatting, review and block operations cannot imply
-    // that preview content is editable.
-    if (isReadOnly?.()) {
+    const copySelection = captureEditorContextCopy(viewRef.current || view, event.target)
+    // Preview remains read-only. CodeMirror owns non-empty code selections:
+    // do not collapse them into a neighbouring ProseMirror caret to open a menu.
+    if (isReadOnly?.() || copySelection?.kind === 'code') {
       event.preventDefault()
+      setCtxMenu(copySelection ? {
+        x: event.clientX, y: event.clientY, copySelection, copyOnly: true
+      } : null)
       return
     }
     // A selection update can make Crepe refresh a table node view. Its internal
@@ -290,16 +294,17 @@ export function mountEditorInteractionBindings({
           listConversion,
           blockPos,
           blockListConvertible,
+          copySelection,
           showTextFormatting,
           selection: showTextFormatting
             ? { anchor: activeSelection.anchor, head: activeSelection.head }
             : null
         })
       } else {
-        setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, showTextFormatting: false, selection: null })
+        setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, copySelection, showTextFormatting: false, selection: null })
       }
     } else {
-      setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, showTextFormatting: false, selection: null })
+      setCtxMenu({ x: event.clientX, y: event.clientY, listConversion, blockPos, blockListConvertible, copySelection, showTextFormatting: false, selection: null })
     }
     // The view update and its node-view DOM work can span two animation frames.
     // Restore twice rather than using a fixed timeout, and only for the table
