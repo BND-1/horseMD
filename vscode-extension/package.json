@@ -1,0 +1,126 @@
+{
+  "name": "horsemd",
+  "displayName": "HorseMD",
+  "description": "Warm WYSIWYG Markdown editor with HorseMD themes — opens .md files directly in Milkdown Crepe.",
+  "version": "0.4.0",
+  "publisher": "horsemd",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onCustomEditor:horsemd.editor"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "horsemd.editor",
+        "displayName": "HorseMD",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          },
+          {
+            "filenamePattern": "*.mdx"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "horsemd.switchTheme",
+        "title": "HorseMD: Switch Theme"
+      },
+      {
+        "command": "horsemd.toggleOutline",
+        "title": "HorseMD: Toggle Outline"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "horsemd.toggleOutline",
+        "key": "ctrl+alt+o",
+        "mac": "cmd+alt+o",
+        "when": "editorLangId == markdown"
+      }
+    ],
+    "configuration": {
+      "title": "HorseMD",
+      "properties": {
+        "horsemd.theme": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "light",
+            "dark",
+            "morandi",
+            "morandi-rose",
+            "morandi-blue",
+            "morandi-dark"
+          ],
+          "enumDescriptions": [
+            "Follow VSCode color theme",
+            "Warm Light 暖光",
+            "Warm Dark 暖夜",
+            "Morandi Sage 莫兰迪·灰绿",
+            "Morandi Rose 莫兰迪·豆沙",
+            "Morandi Mist 莫兰迪·雾蓝",
+            "Morandi Dusk 莫兰迪·暮"
+          ],
+          "description": "Theme for the HorseMD editor."
+        },
+        "horsemd.fontSize": {
+          "type": "number",
+          "default": 16,
+          "minimum": 12,
+          "maximum": 24,
+          "description": "Base font size in pixels."
+        },
+        "horsemd.contentWidth": {
+          "type": "string",
+          "default": "standard",
+          "enum": [
+            "compact",
+            "standard",
+            "wide",
+            "full"
+          ],
+          "enumDescriptions": [
+            "680px",
+            "820px",
+            "1040px",
+            "No limit"
+          ],
+          "description": "Content width preset."
+        },
+        "horsemd.showOutline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the outline sidebar."
+        },
+        "horsemd.autoSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-save file on each edit from the WYSIWYG editor."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@milkdown/crepe": "^7.6.5",
+    "esbuild": "^0.28.2",
+    "katex": "^0.16.11"
+  }
+}
