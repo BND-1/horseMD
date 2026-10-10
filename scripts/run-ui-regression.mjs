@@ -97,6 +97,14 @@ const sessions = [
 
 const standalone = [
   {
+    name: 'Find/replace match options: pure matcher logic',
+    script: 'scripts/test-find-modes.mjs'
+  },
+  {
+    name: 'Find/replace match options: rich + source UI regression',
+    script: 'scripts/test-find-modes-ui.mjs'
+  },
+  {
     name: 'Transaction-first source sync: atomic plain-text mapper',
     script: 'scripts/test-source-transaction-sync.mjs'
   },
