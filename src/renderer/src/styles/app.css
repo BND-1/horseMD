@@ -6195,7 +6195,9 @@ body.hm-preserve-soft-breaks
   justify-content: center;
   padding: 8px 4px;
 }
-.milkdown .milkdown-code-block .preview svg { height: auto; }
+/* KaTeX draws tall symbols (√, wide accents) as inline-size SVGs; height:auto
+   would collapse them, so keep the rule scoped to non-KaTeX SVGs (Mermaid). */
+.milkdown .milkdown-code-block .preview svg:not(.katex svg) { height: auto; }
 .milkdown .katex-display {
   padding: 4px 2px;
 }
