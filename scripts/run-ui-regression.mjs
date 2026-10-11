@@ -141,6 +141,10 @@ const standalone = [
     script: 'scripts/test-single-tilde-strike-ui.mjs'
   },
   {
+    name: 'URL typing: bare URLs and <url> save byte-exact without a pause',
+    script: 'scripts/test-url-typing-ui.mjs'
+  },
+  {
     name: 'Context copy: tables copy as tab-separated rows with clean HTML',
     script: 'scripts/test-context-copy-ui.mjs'
   },
@@ -310,13 +314,31 @@ if (await exists(realComputerDoc)) {
   console.warn(`[ui-regression] skip real computer document: ${realComputerDoc}`)
 }
 
+// HM_KEEP_GOING=1 runs everything and reports every failure at the end; the
+// default stops at the first failure.
+const keepGoing = process.env.HM_KEEP_GOING === '1'
+const failed = []
+const attempt = async (name, run) => {
+  try {
+    await run()
+  } catch (error) {
+    if (!keepGoing) throw error
+    failed.push(name)
+    console.error(`KEEPGOING-FAIL ${name} ${error?.message || error}`)
+  }
+}
+
 for (const session of sessions) {
-  await runSession(session)
+  await attempt(session.name, () => runSession(session))
 }
 
 for (const item of standalone) {
   console.log(`\n[ui-regression] ${item.name}`)
-  await runNode(item.script, [], item.env)
+  await attempt(item.name, () => runNode(item.script, [], item.env))
 }
 
+if (failed.length) {
+  console.error(`KEEPGOING-SUMMARY failed=${JSON.stringify(failed)}`)
+  process.exit(1)
+}
 console.log(`\nPASS UI regression: ${sessions.length} sessions + ${standalone.length} standalone`)

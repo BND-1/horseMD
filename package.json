@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.244",
+  "version": "0.13.245",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -31,6 +31,7 @@
     "test:context-copy": "node scripts/test-editor-context-copy.mjs",
     "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
     "test:single-tilde-ui": "node scripts/test-single-tilde-strike-ui.mjs",
+    "test:url-typing-ui": "node scripts/test-url-typing-ui.mjs",
     "test:editor-style-cascade-ui": "node scripts/test-editor-style-cascade-ui.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
     "test:source-map-scope": "node scripts/test-editor-source-map-scope.mjs",

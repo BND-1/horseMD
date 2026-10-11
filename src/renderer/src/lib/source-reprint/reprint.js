@@ -56,11 +56,46 @@ const markEq = (left, right) => {
 }
 const sameMarkSet = (left, right) => left.length === right.length && left.every((mark, index) => markEq(mark, right[index]))
 
+// A GFM autolink literal (`https://a.com`, `www.a.com`, `a@b.com`) has no
+// plain-text spelling: the same bytes are a link after parsing and plain text
+// while typed (design doc §5). Inline content compares with such links
+// unmarked, so a typed URL keeps its source bytes instead of being reprinted.
+const isAutolinkLiteral = (node, mark) => {
+  if (mark.type.name !== 'link' || mark.attrs?.title) return false
+  const text = node.text
+  const href = String(mark.attrs?.href || '')
+  return (/^https?:\/\/\S+$/i.test(text) && href === text) ||
+    (/^www\.\S+$/i.test(text) && href === `http://${text}`) ||
+    (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text) && href === `mailto:${text}`)
+}
+const inlineRunsModuloAutolinks = (block) => {
+  const runs = []
+  block.forEach((child) => {
+    if (!child.isText) { runs.push({ node: child }); return }
+    const marks = child.marks.filter((mark) => !isAutolinkLiteral(child, mark))
+    const previous = runs[runs.length - 1]
+    if (previous && previous.marks && sameMarkSet(previous.marks, marks)) previous.text += child.text
+    else runs.push({ text: child.text, marks })
+  })
+  return runs
+}
+const sameInlineModuloAutolinks = (left, right) => {
+  const a = inlineRunsModuloAutolinks(left)
+  const b = inlineRunsModuloAutolinks(right)
+  return a.length === b.length && a.every((run, index) => {
+    const other = b[index]
+    if (run.node || other.node) return Boolean(run.node && other.node) && sameNode(run.node, other.node)
+    return run.text === other.text && sameMarkSet(run.marks, other.marks)
+  })
+}
+
 // Structural equality minus editor-only attrs (recursive).
 export function sameNode(left, right) {
   if (left === right) return true
   if (!left || !right) return false
   if (left.eq(right)) return true
+  if (left.isTextblock && right.isTextblock && left.type === right.type && !left.type.spec.code &&
+      attrsEqual(left, right) && sameInlineModuloAutolinks(left, right)) return true
   if (!attrsEqual(left, right) || left.childCount !== right.childCount) return false
   if (left.isText) return left.text === right.text && sameMarkSet(left.marks, right.marks)
   if (left.isLeaf) return true

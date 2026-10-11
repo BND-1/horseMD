@@ -1,3 +1,5 @@
+import { Plugin } from '@milkdown/prose/state'
+
 // Trim GFM autolink-literal links that greedily swallowed non-URL text.
 //
 // remark-gfm's autolink-literal extends a `www.`/`http://` URL across non-ASCII
@@ -59,4 +61,43 @@ function trimNonAsciiLinks(node) {
 
 export function remarkUnwrapNonAsciiAutolinks() {
   return (tree) => trimNonAsciiLinks(tree)
+}
+
+// Typing `<https://example.com>` (Typora behavior): the closing `>` turns the
+// bracketed URL into a link whose text is the URL, which Markdown spells back
+// as the same `<https://example.com>` autolink. Left as plain text it could
+// only be saved with escapes (`\<https://example.com\>`).
+const ANGLE_AUTOLINK = /<((?:https?|ftp):\/\/[^\s<>]+|mailto:[^\s<>]+)$/i
+
+export function createAngleAutolinkInputPlugin() {
+  return new Plugin({
+    props: {
+      handleTextInput(view, from, to, text) {
+        if (text !== '>' || from !== to) return false
+        const { state } = view
+        const link = state.schema.marks.link
+        const $from = state.doc.resolve(from)
+        if (!link || !$from.parent.isTextblock || $from.parent.type.spec.code) return false
+        if (!$from.parent.type.allowsMarkType(link)) return false
+        const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 500), $from.parentOffset, null, '\uFFFC')
+        const match = ANGLE_AUTOLINK.exec(before)
+        if (!match) return false
+        const start = from - match[0].length
+        // Only plain typed text: never rewrap an existing link or inline code.
+        let plain = true
+        state.doc.nodesBetween(start, from, (node) => {
+          if (node.isText && node.marks.some((mark) => mark.type === link || mark.type.spec.code)) plain = false
+        })
+        if (!plain) return false
+        const url = match[1]
+        const marks = $from.marks().filter((mark) => mark.type !== link)
+        view.dispatch(
+          state.tr
+            .replaceWith(start, from, state.schema.text(url, [...marks, link.create({ href: url })]))
+            .removeStoredMark(link)
+        )
+        return true
+      }
+    }
+  })
 }

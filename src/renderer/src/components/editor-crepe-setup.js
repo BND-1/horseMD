@@ -15,7 +15,7 @@ import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirro
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
 import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
-import { remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
+import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
@@ -214,6 +214,7 @@ export function createConfiguredCrepe({
 
     ctx.update(prosePluginsCtx, (plugins) => [
       createStrikeGuardPlugin(),
+      createAngleAutolinkInputPlugin(),
       createBlockHandleGutterPlugin(ctx),
       ...plugins,
       tableBreakKeymap(),

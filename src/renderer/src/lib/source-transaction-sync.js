@@ -368,6 +368,27 @@ const semanticJson = (node, {
       // Links join them: Milkdown's serializer moves edge spaces out of EVERY
       // mark run (`#moveSpaces`), so `[ a ](u)` is always written ` [a](u) `
       // by canonical and reprint alike (fuzz seeds 55/63/66).
+      // A GFM autolink literal has no "plain text" spelling: `https://a.com`
+      // typed as text and the link it parses back to are the same Markdown
+      // (escaping does not help — the autolink transform runs on the decoded
+      // text). Compare a link whose text IS its own autolinkable URL unmarked,
+      // so typing a URL no longer fails closed; it shows as a link on reopen,
+      // like Typora.
+      next.content = next.content.map((child) => {
+        if (child?.type !== 'text' || !Array.isArray(child.marks)) return child
+        const link = child.marks.find((mark) => mark?.type === 'link')
+        if (!link || link.attrs?.title) return child
+        const text = String(child.text || '')
+        const href = String(link.attrs?.href || '')
+        const literal =
+          (/^https?:\/\/\S+$/i.test(text) && href === text) ||
+          (/^www\.\S+$/i.test(text) && href === `http://${text}`) ||
+          (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text) && href === `mailto:${text}`)
+        if (!literal) return child
+        const marks = child.marks.filter((mark) => mark !== link)
+        const { marks: _dropped, ...rest } = child
+        return marks.length ? { ...rest, marks } : rest
+      })
       const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link'])
       next.content = next.content.flatMap((child) => {
         if (
