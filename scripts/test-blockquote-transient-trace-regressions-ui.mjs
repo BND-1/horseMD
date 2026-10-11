@@ -149,6 +149,11 @@ const openApp = async ({ file, profile, port, marker }) => {
       return Boolean(editor && (editor.textContent || '').includes(${JSON.stringify(marker)}))
     })()`), `${profile} editor did not mount`)
     await sleep(450)
+    // This test pins the focused transient OWNERS, which stay the fallback
+    // path behind the source reprint engine (docs/source-reprint-architecture.md
+    // R3); the engine's user-visible result for the same sequences is covered
+    // by test:rich-source-pause-families-ui.
+    await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
     return app
   } catch (error) {
     await stopBuiltElectron(app, { removeProfile: true })
@@ -180,25 +185,35 @@ await mkdir(root, { recursive: true })
     await sleep(1000)
     const state = await snapshot(app)
     assertClean(state, 'quote suffix+Enter')
-    const publication = state.preserve.find((entry) =>
+    // 0.13.235: the validator no longer treats a paragraph-END space as
+    // authored meaning, so the transaction-owned quote SPLIT may publish this
+    // shape too. Either focused owner is acceptable; the legacy owner is not,
+    // and the exit owner keeps its exact timing-shape proof.
+    const exitPublication = state.preserve.find((entry) =>
       entry.reason === 'trailing-empty-blockquote-paragraph-created' &&
       entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof'
     )
-    assert.ok(publication, `suffix+Enter bypassed pending owner: ${JSON.stringify(state)}`)
-    const proof = publication.integrityProof
-    const coalesced = proof.insertedSuffix === ' ' &&
-      proof.preSplitTextStepCount === 1 && proof.chainLength === 2 && proof.sourceUnchanged === false
-    const staged = proof.insertedSuffix === '' &&
-      proof.preSplitTextStepCount === 0 && proof.chainLength === 1 &&
-      proof.sourceUnchanged === true && proof.baselineSingleTrailingSpace === true
-    assert.equal(coalesced || staged, true,
-      `suffix+Enter used an unproven timing shape: ${JSON.stringify(proof)}`)
+    const splitPublication = state.preserve.find((entry) =>
+      entry.integrityProof?.kind === 'transaction-blockquote-split-proof'
+    )
+    assert.ok(exitPublication || splitPublication, `suffix+Enter bypassed the focused quote owners: ${JSON.stringify(state)}`)
+    if (exitPublication) {
+      const proof = exitPublication.integrityProof
+      const coalesced = proof.insertedSuffix === ' ' &&
+        proof.preSplitTextStepCount === 1 && proof.chainLength === 2 && proof.sourceUnchanged === false
+      const staged = proof.insertedSuffix === '' &&
+        proof.preSplitTextStepCount === 0 && proof.chainLength === 1 &&
+        proof.sourceUnchanged === true && proof.baselineSingleTrailingSpace === true
+      assert.equal(coalesced || staged, true,
+        `suffix+Enter used an unproven timing shape: ${JSON.stringify(proof)}`)
+    }
     assert.equal(state.coordinator.some((entry) =>
       entry.phase === 'published' &&
       entry.owner === 'transaction' &&
-      entry.family === 'blockquote-paragraph-exit' &&
-      entry.reason === 'trailing-empty-blockquote-paragraph-created'
+      (entry.family === 'blockquote-paragraph-exit' || entry.family === 'blockquote-paragraph-split')
     ), true, `suffix+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published' && entry.owner === 'legacy'), false,
+      'suffix+Enter reached the retired legacy owner')
     assert.equal(await toggleSource(app), true, 'could not inspect suffix+Enter source')
     finalSource = await waitFor(() => visibleSource(app), 'suffix+Enter source did not open')
     assert.equal(finalSource.includes('> quote-alpha '), true, `authored trailing space byte was not preserved: ${JSON.stringify(finalSource)}`)

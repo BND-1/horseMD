@@ -212,6 +212,12 @@ KEEP_PDF_ARTIFACTS=1 npm run test:pdf-table-layout-ui
 npm run test:background-ui
 ```
 
+### 富文本/源码一致性模糊测试
+
+`npm run fuzz:rich-source-ui`（`FUZZ_SEEDS`、`FUZZ_OPS`、`FUZZ_CHECKPOINT`、`FUZZ_OUT`、`FUZZ_FIXTURE`）随机驱动真实应用编辑，检测「不一致」暂停与保存后冷重开不一致。最小复现用 `scripts/lib/probe-session.mjs`。流程、已修家族与未修清单见 [`rich-source-fuzzing.md`](./rich-source-fuzzing.md)。相关永久回归：`test:rich-source-pause-families-ui`、`test:blockquote-inline-patch`、`test:remark-marker-bom-fix`、`test:editor-only-document`、`test:autosave-ui`。
+
+注意：源码模式切换是异步的（本机约 0.5s），UI 测试切换后要等待 textarea 出现再操作。
+
 ### 工具
 
 - `scripts/run-ui-regression.mjs` —— 串行编排真实 UI 回归，覆盖 PDF Studio、Review、Lightbox、表格、#57-#60、#66/#67、#93、#98、精确 raw-offset 与零等待输入、真实大文档模式切换、源码查找和 `电脑档案.md` 双向切换链路

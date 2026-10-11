@@ -1,3 +1,4 @@
+import { sameIgnoringHeadingIds } from './editor-only-document.js'
 import { createLegacySourceSyncCandidateFromResult } from './legacy-owner.js'
 import { createSourceSyncCoordinator } from './coordinator.js'
 import { createSourceSyncCandidate } from './proof.js'
@@ -265,7 +266,17 @@ export function createEditorSourceSyncBridge({
         validation: prepared.validation
       }
     }
-    if (!sameDocument(getExpectedDoc(), prepared.candidate.expectedDoc)) {
+    // Milkdown's heading-id sync dispatches an id-only transaction right after
+    // e.g. a raw Markdown paste of headings; ids have no Markdown encoding, so
+    // that must not make the (otherwise identical) live document "stale"
+    // (issue-77 paste test: the raw-paste owner lost to the canonical fallback,
+    // which re-spelled compact `# a\n## b` headings with blank lines).
+    const liveDoc = getExpectedDoc()
+    const candidateDoc = prepared.candidate.expectedDoc
+    if (
+      !sameDocument(liveDoc, candidateDoc) &&
+      !(liveDoc && candidateDoc && sameIgnoringHeadingIds(liveDoc, candidateDoc))
+    ) {
       return {
         ok: false,
         reason: 'source-sync-live-document-stale',
@@ -303,9 +314,30 @@ export function createEditorSourceSyncBridge({
     { notifyChange, boundary }
   )
 
+  // Editor-only document change (no Markdown encoding, e.g. Milkdown's
+  // trailing empty paragraph): advance the snapshot's doc while source and
+  // canonical stay byte-identical. The CALLER must already have proven that the
+  // unchanged source is semantically equivalent to `doc`.
+  const adoptEditorOnlyDocument = ({ doc, reason = 'editor-only-document' } = {}) => {
+    const currentSource = String(getSource() ?? '')
+    const currentCanonical = String(getCanonical() ?? '')
+    const snapshot = getCoordinator().getSnapshot()
+    if (snapshot.source !== currentSource || snapshot.canonical !== currentCanonical) return null
+    return getCoordinator().synchronize({
+      source: currentSource,
+      canonical: currentCanonical,
+      doc,
+      owner: 'editor-only',
+      family: 'editor-only-document',
+      reason,
+      trust: checkpointStore.has(currentSource, currentCanonical)
+    })
+  }
+
   return Object.freeze({
     getCoordinator,
     getSnapshot: () => getCoordinator().getSnapshot(),
+    adoptEditorOnlyDocument,
     getSemanticOptions: (expectedDoc = getExpectedDoc()) =>
       sourceSyncSemanticOptionsFromContext(
         getCoordinator().getSnapshot().semanticContext,

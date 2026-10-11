@@ -42,10 +42,13 @@ const closesFence = (line, fence) => {
 // equivalent to a blank line — never a hard group fence and never a real slot.
 const standaloneEmptyBlockLinePattern = /^\s*(?:[ \t]*>[ \t]*)*<br\s*\/?>\s*$/i
 
+// A lone U+200B is HorseMD's sentinel for an empty task body (`- [ ] ​`,
+// RS-50): GFM needs body content to keep the checkbox, but the item is empty
+// (fuzz seed 34, where canonical spells the same item `- [ ] <br />`).
 const isEmptyItemText = (text) => {
   const value = String(text || '')
     .replace(/<br\s*\/?>/gi, '')
-    .replace(/[ \t]+/g, '')
+    .replace(/[ \t\u200B]+/g, '')
   return value === ''
 }
 

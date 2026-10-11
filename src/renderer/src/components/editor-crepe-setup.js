@@ -10,6 +10,7 @@ import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
+import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
@@ -42,6 +43,10 @@ import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import { imageBlockMarkdownSchema } from './editor-image-markdown.js'
 import { remarkStripLeadingSpaceSentinel } from '../lib/markdown-leading-space.js'
+import remarkCjkFriendly from 'remark-cjk-friendly'
+import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
+import { safeTrailingWhitespaceTextHandler } from '../lib/remark-text-handler.js'
+import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import {
   createStrikeGuardPlugin,
   createSubstitutionLiveReconstructPlugin,
@@ -156,6 +161,10 @@ export function createConfiguredCrepe({
     // in editor-slash-menu.js replaces it. Feature.BlockEdit stays enabled so
     // the block drag/add handle (.milkdown-block-handle) is preserved.
     disableCrepeSlash(ctx)
+    // Typora parity: only `~~x~~` is strikethrough. remark-gfm's default also
+    // accepts a single tilde pair, so prose ranges such as `约 5~30 行……4~7 千行`
+    // rendered the text between the two tildes struck through.
+    ctx.set(remarkGFMPlugin.options.key, { ...ctx.get(remarkGFMPlugin.options.key), singleTilde: false })
     ctx.update(editorViewOptionsCtx, (options) => ({
       ...options,
       dispatchTransaction: createSourceTransactionDispatch(onSourceTransactions),
@@ -229,13 +238,15 @@ export function createConfiguredCrepe({
       }),
       createMermaidSplitPlugin(),
       createSubstitutionLiveReconstructPlugin(),
-      createMathBlockPromotionPlugin()
+      createMathBlockPromotionPlugin(),
+      createListTypeSyncPlugin()
     ])
 
     ctx.update(remarkStringifyOptionsCtx, (opts) => ({
       ...opts,
       handlers: {
         ...(opts?.handlers || {}),
+        text: safeTrailingWhitespaceTextHandler,
         break: tableCellBreakHandler,
         highlight: highlightStringifyHandler
       }
@@ -243,6 +254,11 @@ export function createConfiguredCrepe({
 
     ctx.update(remarkPluginsCtx, (plugins) => [
       ...plugins,
+      // CJK-friendly emphasis (Typora parity): `这是**「重点」**内容` is bold.
+      // Plain CommonMark flanking rules treat CJK punctuation like ASCII
+      // punctuation and leave the asterisks literal.
+      { plugin: remarkCjkFriendly, options: undefined },
+      { plugin: remarkFixMarkerOffsetForBom, options: undefined },
       { plugin: remarkStripLeadingSpaceSentinel, options: undefined },
       { plugin: remarkNormalizeCodeOnlyLinkLabels, options: undefined },
       { plugin: remarkPreserveLiteralTripleBacktickTextBlocks, options: undefined },

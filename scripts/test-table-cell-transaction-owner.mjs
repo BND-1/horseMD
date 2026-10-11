@@ -197,7 +197,13 @@ const oldDoc = document(table([
     nextCanonical: canonical,
     revision: 122
   })
-  assert.equal(plan.reason, 'table-cell-anchored-target-count')
+  // 0.13.235: two cells of one table edited in one journal are owned by the
+  // structural multi-cell slot mapper (was: anchored-target-count → legacy).
+  assert.equal(plan.ok, true, JSON.stringify(plan))
+  assert.equal(plan.proof.mapperReason, 'table-cells-slot-text-change')
+  assert.equal(plan.proof.changedCells.length, 2)
+  assert.equal(plan.result.markdown.split('\n').length, source.split('\n').length)
+  assert.equal(plan.result.markdown.includes('sameX'), true, plan.result.markdown)
 }
 
 {
@@ -280,7 +286,12 @@ for (const targetPath of [[0, 1, 1], [0, 0, 1], [0, 2, 0], [0, 2, 2]]) {
     nextCanonical: canonical.replace('| same | alpha |', '| same | alpha\\| |'),
     revision: 125
   })
-  assert.equal(plan.reason, 'syntax-sensitive-insert')
+  // 0.13.235: the plain-text step mapper still refuses the raw pipe, but the
+  // structural slot fallback owns it with the pipe escaped — a raw `|` would
+  // split the cell, so no candidate ever carries it unescaped.
+  assert.equal(plan.ok, true, JSON.stringify(plan))
+  assert.equal(plan.proof.mapperReason, 'table-cell-slot-text-change')
+  assert.equal(plan.result.markdown.includes('alpha\\|'), true, plan.result.markdown)
 }
 
 {

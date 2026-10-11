@@ -133,6 +133,11 @@ const openApp = async ({ file, profile, reopen = false }) => {
       return Boolean(editor && (editor.textContent || '').includes('quote-two') && (editor.textContent || '').includes('after'))
     })()`), `${profile} editor did not mount`)
     await sleep(450)
+    // This test pins the focused transient OWNERS, which stay the fallback
+    // path behind the source reprint engine (docs/source-reprint-architecture.md
+    // R3); the engine's user-visible result for the same sequences is covered
+    // by test:rich-source-pause-families-ui.
+    await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
     return app
   } catch (error) {
     await stopBuiltElectron(app, { removeProfile: true })
@@ -213,19 +218,24 @@ try {
   const afterBulletBackspace = await snapshot(app)
   console.log('AFTER_BULLET_BACKSPACE:', JSON.stringify(afterBulletBackspace))
   assertClean(afterBulletBackspace, 'bullet Backspace after quote-list exit')
+  // 0.13.235: the first quote-list Enter now maps exactly (it used to fail and
+  // leave the document diverged), so the bullet join may take the ordinary
+  // list-subtree mapper instead of the diverged-document sibling-join mapper.
+  // Either must be the proof-gated transaction owner.
   const bulletJoinPublication = afterBulletBackspace.preserve.find((entry) =>
     entry.reason === 'transaction-list-subtree' &&
-    entry.integrityProof?.kind === 'transaction-list-subtree-proof' &&
-    entry.integrityProof?.mapperReason === 'diverged-sibling-list-item-paragraph-join'
+    entry.integrityProof?.kind === 'transaction-list-subtree-proof'
   )
   assert.ok(
     bulletJoinPublication,
     `bullet Backspace did not use proof-gated list-subtree mapping: ${JSON.stringify(afterBulletBackspace)}`
   )
-  assert.equal(
-    bulletJoinPublication.integrityProof.siblingParagraphJoin?.kind,
-    'transaction-list-sibling-item-paragraph-join-proof'
-  )
+  if (bulletJoinPublication.integrityProof.mapperReason === 'diverged-sibling-list-item-paragraph-join') {
+    assert.equal(
+      bulletJoinPublication.integrityProof.siblingParagraphJoin?.kind,
+      'transaction-list-sibling-item-paragraph-join-proof'
+    )
+  }
   assert.equal(afterBulletBackspace.coordinator.some((entry) =>
     entry.phase === 'published' &&
     entry.owner === 'transaction' &&

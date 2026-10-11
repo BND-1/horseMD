@@ -228,36 +228,59 @@ async function verifyHorizontalGesture(send, evaluate, label, touch = false) {
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
   })()`)
   if (!point) throw new Error(`${label}: wide table gesture target not found`)
-  if (touch) {
-    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
-    await send('Input.dispatchTouchEvent', {
-      type: 'touchStart',
-      touchPoints: [{ x: point.x + 80, y: point.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }]
-    })
-    for (let i = 1; i <= 6; i++) {
+  // Chromium occasionally does not turn the emulated touch sequence into a
+  // scroll gesture at all (seen ~1 in 4 runs on a loaded machine, with the
+  // table laid out correctly and the touch point inside it), and the scroll is
+  // applied some frames after touchEnd. Poll, and repeat the gesture.
+  let scrollLeft = 0
+  for (let gesture = 0; gesture < 3 && scrollLeft <= 0; gesture++) {
+    if (touch) {
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
       await send('Input.dispatchTouchEvent', {
-        type: 'touchMove',
-        touchPoints: [{ x: point.x + 80 - i * 30, y: point.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }]
+        type: 'touchStart',
+        touchPoints: [{ x: point.x + 80, y: point.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }]
       })
-      await sleep(30)
+      for (let i = 1; i <= 6; i++) {
+        await send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x: point.x + 80 - i * 30, y: point.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }]
+        })
+        await sleep(30)
+      }
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    } else {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseWheel',
+        x: point.x,
+        y: point.y,
+        deltaX: 360,
+        deltaY: 0
+      })
     }
-    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-  } else {
-    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
-    await send('Input.dispatchMouseEvent', {
-      type: 'mouseWheel',
-      x: point.x,
-      y: point.y,
-      deltaX: 360,
-      deltaY: 0
-    })
+    for (let attempt = 0; attempt < 20 && scrollLeft <= 0; attempt++) {
+      await sleep(100)
+      scrollLeft = await evaluate(`(() => {
+        const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+        return rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')?.scrollLeft || 0
+      })()`)
+    }
   }
-  await sleep(150)
-  const scrollLeft = await evaluate(`(() => {
-    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    return rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')?.scrollLeft || 0
-  })()`)
-  if (scrollLeft <= 0) throw new Error(`${label}: horizontal gesture did not move the table`)
+  if (scrollLeft <= 0) {
+    const diagnostic = await evaluate(`(() => {
+      const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const wrapper = rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')
+      const hit = document.elementFromPoint(${point.x}, ${point.y})
+      return {
+        hit: hit ? hit.tagName + '.' + hit.className : null, inWrapper: !!hit?.closest('.table-wrapper'),
+        clientWidth: wrapper?.clientWidth, scrollWidth: wrapper?.scrollWidth,
+        overflowX: wrapper ? getComputedStyle(wrapper).overflowX : null,
+        tables: rich?.querySelectorAll('.milkdown-table-block').length,
+        toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent)
+      }
+    })()`)
+    throw new Error(`${label}: horizontal gesture did not move the table ${JSON.stringify(diagnostic)}`)
+  }
 }
 
 async function verifyWideTableAutoWrap(evaluate, label) {

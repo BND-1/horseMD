@@ -108,7 +108,21 @@ export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
     return { content, mtimeMs: stat.mtimeMs }
   })
 
-  ipcMain.handle('fs:writeFile', async (_event, path, content) => {
+  ipcMain.handle('fs:writeFile', async (_event, path, content, options) => {
+    // Auto-save passes the mtime HorseMD last read/wrote. Refuse (instead of
+    // silently overwriting) when the file has since been changed by another
+    // app or removed — an explicit Save is the only path allowed to clobber.
+    const expected = options?.expectedMtimeMs
+    if (typeof expected === 'number') {
+      let current
+      try {
+        current = await fs.stat(path)
+      } catch (error) {
+        if (error?.code === 'ENOENT') return { conflict: 'missing' }
+        throw error
+      }
+      if (current.mtimeMs > expected) return { conflict: 'modified', mtimeMs: current.mtimeMs }
+    }
     await fs.writeFile(path, content, 'utf8')
     const stat = await fs.stat(path)
     return { mtimeMs: stat.mtimeMs }

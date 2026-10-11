@@ -227,17 +227,11 @@ const owner = makeOwner()
   })
   assert.equal(bulletJoinPlan.ok, true, `bullet sibling paragraph join rejected: ${JSON.stringify(bulletJoinPlan)}`)
   assert.equal(bulletJoinPlan.result.markdown, bulletJoinExpected)
-  assert.equal(bulletJoinPlan.proof.mapperReason, 'diverged-sibling-list-item-paragraph-join')
-  assert.equal(
-    bulletJoinPlan.proof.siblingParagraphJoin?.kind,
-    'transaction-list-sibling-item-paragraph-join-proof'
-  )
-  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.retainedItemPath, [1, 0])
-  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.removedItemPath, [1, 1])
-  assert.deepEqual(bulletJoinPlan.proof.siblingParagraphJoin.movedParagraphPath, [1, 0, 1])
-  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.name, 'ReplaceStep')
-  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.structure, true)
-  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin.step.sliceSize, 0)
+  // The generic diverged-list mapper now mirrors the blank separator itself
+  // (efdfa08), so the old sibling-join REPAIR step (and its reason/proof) no
+  // longer exists; the exact bytes above are the contract.
+  assert.equal(bulletJoinPlan.proof.mapperReason, 'diverged-nested-list-change')
+  assert.equal(bulletJoinPlan.proof.siblingParagraphJoin, null)
 
   const bulletJoinCrLfSource = bulletJoinSource.replace(/\n/g, '\r\n')
   const bulletJoinCrLfPrevious = bulletJoinPrevious.replace(/\n/g, '\r\n')
@@ -269,8 +263,12 @@ const owner = makeOwner()
     next: '* bullet-alpha\n\n  bullet-beta'
   })
   assert.equal(rawWithoutProof?.reason, 'diverged-nested-list-change')
-  assert.equal(rawWithoutProof?.markdown, '- bullet-alpha\n  bullet-beta',
-    'the raw mapper must not insert a paragraph boundary without transaction proof')
+  // efdfa08 deliberately mirrors the canonical blank separator: without it,
+  // `- a\n  b` is a lazy continuation (ONE paragraph with a soft break), which
+  // contradicts the canonical's two paragraphs. The semantic validator still
+  // gates every published candidate.
+  assert.equal(rawWithoutProof?.markdown, '- bullet-alpha\n\n  bullet-beta',
+    'the raw mapper mirrors the canonical paragraph boundary inside the item')
 }
 
 {

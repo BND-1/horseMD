@@ -37,6 +37,8 @@ export function createEditorApi({
   serializerStyleHolder,
   hasPendingRichFlush,
   clearPendingRichFlush,
+  recordSourceSnapshot = null,
+  publishReprint = null,
   generatedScratchRef,
   getGeneratedScratchMarkdown,
   canonicalForSource,
@@ -49,6 +51,7 @@ export function createEditorApi({
   validateSourceCandidate,
   publishSourceSyncResult,
   publishPendingTransactionJournal,
+  rescueReprint,
   reportSourceSyncFailure
 }) {
   const getPdfSource = async () => {
@@ -162,6 +165,13 @@ export function createEditorApi({
       if (generatedScratchRef && source !== lastMarkdownRef.current) {
         generatedScratchRef.current = false
       }
+      // Both sides of a source-mode replacement are proven (doc, source)
+      // pairs; rich undo/redo across this replacement restores them exactly
+      // (history-source-restore.js). The pre-replacement pair is only valid
+      // when no rich edit is still waiting to be serialized.
+      if (!hasPendingRichFlush?.()) {
+        recordSourceSnapshot?.({ doc: viewRef.current?.state.doc, source: lastMarkdownRef.current })
+      }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
       // Re-choose the code-block mount mode for the incoming document: pasting
       // a block-heavy document into a small one must not eager-mount hundreds
@@ -175,6 +185,7 @@ export function createEditorApi({
       clearPendingRichFlush?.()
       if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
+      recordSourceSnapshot?.({ doc: viewRef.current?.state.doc, source })
       const canonical = canonicalForSource(serializeCurrentDocument())
       canonicalMarkdownRef.current = canonical
       onStructureChange?.()
@@ -186,6 +197,16 @@ export function createEditorApi({
       console.error('Replace markdown failed', err)
       return false
     }
+  }
+
+  // reportSourceSyncFailure first tries the degraded source reprint (the last
+  // resort before a pause) and returns true when that published.
+  const failOrRescue = (reason) => {
+    if (reportSourceSyncFailure?.(reason) === true) {
+      clearPendingRichFlush?.()
+      return lastMarkdownRef.current
+    }
+    return null
   }
 
   const flushMarkdown = ({ force = false } = {}) => {
@@ -201,10 +222,22 @@ export function createEditorApi({
       // optimization: a node view can have a visible transaction even if an
       // edit-intent event was missed or an asynchronous callback is delayed.
       if (!force && !hasPendingRichFlush?.()) return lastMarkdownRef.current
+      // An unforced flush during IME composition would sync uncommitted
+      // candidate text; keep the pending flag and let compositionend publish.
+      if (!force && viewRef?.current?.composing) return lastMarkdownRef.current
       // Saves and source-mode switches can occur before Milkdown publishes its
       // delayed markdownUpdated callback. Serialize the current ProseMirror
       // document instead of reading Crepe's potentially stale cached snapshot.
       const canonical = canonicalForSource(serializeCurrentDocument())
+      // Source reprint (R3) is the primary path; null means "not expressible
+      // or not verified" and the established journal/legacy path runs.
+      if (!generatedScratchRef?.current) {
+        const reprinted = publishReprint?.({ canonical })
+        if (typeof reprinted === 'string') {
+          clearPendingRichFlush?.()
+          return reprinted
+        }
+      }
       // A pending transaction journal owns the live PM revision even when the
       // serialized Markdown is byte-identical to the committed canonical. This
       // is required for editor-only metadata such as table column widths: GFM
@@ -221,10 +254,7 @@ export function createEditorApi({
         return ownedTransaction.markdown
       }
       const retiredLegacyFailure = retiredLegacySourceSyncFailureReason(ownedTransaction)
-      if (retiredLegacyFailure) {
-        reportSourceSyncFailure?.(retiredLegacyFailure)
-        return null
-      }
+      if (retiredLegacyFailure) return failOrRescue(retiredLegacyFailure)
       if (canonical === canonicalMarkdownRef.current) {
         // A cached canonical snapshot is not proof that the authored source is
         // still equivalent: an earlier callback may have advanced the baseline
@@ -239,8 +269,7 @@ export function createEditorApi({
           'committed-source-baseline'
         )
         if (committedIntegrity && committedIntegrity.ok === false) {
-          reportSourceSyncFailure?.(committedIntegrity.reason || 'source-document-mismatch')
-          return null
+          return failOrRescue(committedIntegrity.reason || 'source-document-mismatch')
         }
         clearPendingRichFlush?.()
         return lastMarkdownRef.current
@@ -314,7 +343,16 @@ export function createEditorApi({
         // failed (return null) so stale bytes are never presented as synced;
         // only the warning is suppressed, exactly like the callback path.
         if (preserved.markdown !== lastMarkdownRef.current) {
-          reportSourceSyncFailure?.(preserved.reason || 'unmapped-source-change')
+          return failOrRescue(preserved.reason || 'unmapped-source-change')
+        }
+        // Last resort without a warning: the source reprint, verified against
+        // the editor document, may still express the edit (fuzz seed 79: a
+        // pending list input intent had skipped it, then Save found no path
+        // and asked for a recovery copy).
+        const rescued = rescueReprint?.({ canonical })
+        if (typeof rescued === 'string') {
+          clearPendingRichFlush?.()
+          return rescued
         }
         return null
       }
@@ -380,8 +418,7 @@ export function createEditorApi({
               reason
             })
           }
-          reportSourceSyncFailure?.(reason)
-          return null
+          return failOrRescue(reason)
         }
         clearPendingRichFlush?.()
         return coordinated.publication.markdown
@@ -406,8 +443,7 @@ export function createEditorApi({
             reason: integrity.reason || 'source-document-mismatch'
           })
         }
-        reportSourceSyncFailure?.(integrity.reason || 'source-document-mismatch')
-        return null
+        return failOrRescue(integrity.reason || 'source-document-mismatch')
       }
       lastMarkdownRef.current = preserved.markdown
       canonicalMarkdownRef.current = canonical

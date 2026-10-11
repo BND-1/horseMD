@@ -1,5 +1,5 @@
 import { mapPlainTextTransactionsToSource } from '../source-transaction-sync.js'
-import { mapTableCellEmptyTransition } from './table-cell-empty-transition.js'
+import { mapTableCellEmptyTransition, mapTableCellBySlot, mapTableCellsBySlot } from './table-cell-empty-transition.js'
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
 import {
@@ -42,6 +42,13 @@ const nodeAtPath = (doc, path) => {
 
 const isTableCellType = (name) => name === 'table_cell' || name === 'table_header'
 
+// In-cell line breaks (Enter in a cell → `hardbreak`, serialized as `<br>`)
+// are part of the plain cell contract since 0.13.235; the plain-text step
+// mapper still refuses them and the structural slot mapper spells them.
+const isCellLineBreak = (node) =>
+  (node?.type?.name === 'hardbreak' || node?.type?.name === 'hard_break') &&
+  (node.marks?.length || 0) === 0
+
 const isSimpleParagraph = (node) => {
   if (
     node?.type?.name !== 'paragraph' ||
@@ -49,6 +56,7 @@ const isSimpleParagraph = (node) => {
   ) return false
   let simple = true
   node.forEach?.((child) => {
+    if (isCellLineBreak(child)) return
     if (!child?.isText || (child.marks?.length || 0) > 0) simple = false
   })
   return simple
@@ -59,6 +67,7 @@ const isClosedPlainTextSlice = (slice) => {
   if (slice.openStart || slice.openEnd) return false
   let plain = true
   slice.content.forEach?.((node) => {
+    if (isCellLineBreak(node)) return
     if (!node?.isText || (node.marks?.length || 0) > 0) plain = false
   })
   return plain
@@ -239,6 +248,96 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
   })
 }
 
+// Several cells of ONE top-level table changed text within one journal
+// (type, Tab, type before a publication point). Proves: exactly one top-level
+// block differs and it is a table on both sides; table/row/cell types, attrs
+// and grid shape are identical; every changed cell is one plain paragraph
+// (text + in-cell line breaks) on both sides; every journal step is a
+// non-structural ReplaceStep with a closed text/break slice.
+const classifyMultiCellJournal = ({ journal, expectedDoc }) => {
+  const oldDoc = journal?.oldDoc
+  if (!oldDoc || !expectedDoc || oldDoc.childCount !== expectedDoc.childCount) {
+    return rejected('table-cells-top-level-count')
+  }
+  let topLevelIndex = -1
+  for (let index = 0; index < oldDoc.childCount; index++) {
+    if (oldDoc.child(index).eq(expectedDoc.child(index))) continue
+    if (topLevelIndex >= 0) return rejected('table-cells-top-level-change-count')
+    topLevelIndex = index
+  }
+  if (topLevelIndex < 0) return rejected('table-cells-no-change')
+  const oldTable = oldDoc.child(topLevelIndex)
+  const newTable = expectedDoc.child(topLevelIndex)
+  if (oldTable.type.name !== 'table' || newTable.type.name !== 'table') return rejected('table-cells-not-table')
+  if (!sourceSyncAttrsEqual(oldTable.attrs, newTable.attrs) || oldTable.childCount !== newTable.childCount) {
+    return rejected('table-cells-table-shape')
+  }
+  const changedCells = []
+  let padded = false
+  // prosemirror-tables' fixTables pads a short authored row with empty cells
+  // in the same batch as the first edit inside that table (fuzz seeds 34/35:
+  // irregular table left by a source edit). Such trailing empty cells have no
+  // source bytes — the authored row stays short — so they are not changes.
+  const isEmptyPaddingCell = (cell) =>
+    cell.childCount === 1 && cell.child(0).type.name === 'paragraph' && cell.child(0).content.size === 0
+  for (let rowIndex = 0; rowIndex < oldTable.childCount; rowIndex++) {
+    const oldRow = oldTable.child(rowIndex)
+    const newRow = newTable.child(rowIndex)
+    if (
+      oldRow.type.name !== newRow.type.name ||
+      !sourceSyncAttrsEqual(oldRow.attrs, newRow.attrs) ||
+      oldRow.childCount > newRow.childCount
+    ) return rejected('table-cells-row-shape')
+    for (let cellIndex = oldRow.childCount; cellIndex < newRow.childCount; cellIndex++) {
+      if (!isEmptyPaddingCell(newRow.child(cellIndex))) return rejected('table-cells-row-shape')
+      padded = true
+    }
+    for (let cellIndex = 0; cellIndex < oldRow.childCount; cellIndex++) {
+      const oldCell = oldRow.child(cellIndex)
+      const newCell = newRow.child(cellIndex)
+      if (oldCell.eq(newCell)) continue
+      if (
+        oldCell.type.name !== newCell.type.name ||
+        !sourceSyncAttrsEqual(oldCell.attrs, newCell.attrs) ||
+        oldCell.childCount !== 1 || newCell.childCount !== 1 ||
+        !isSimpleParagraph(oldCell.child(0)) || !isSimpleParagraph(newCell.child(0)) ||
+        !sourceSyncAttrsEqual(oldCell.child(0).attrs, newCell.child(0).attrs)
+      ) return rejected('table-cells-cell-not-plain')
+      changedCells.push(Object.freeze({ rowIndex, cellIndex }))
+    }
+  }
+  if (changedCells.length < (padded ? 1 : 2)) return rejected('table-cells-change-count')
+  const isPaddingSlice = (slice) => {
+    if (!padded || !slice?.content?.childCount || slice.openStart || slice.openEnd) return false
+    let only = true
+    slice.content.forEach((node) => {
+      if (!/^table_(cell|header)$/.test(node.type?.name || '') || !isEmptyPaddingCell(node)) only = false
+    })
+    return only
+  }
+  // fixTables follows the insertion with a setNodeMarkup (ReplaceAroundStep)
+  // on the new cell; accept it only when it re-marks an empty padding cell.
+  const isPaddingMarkup = (step, stepDoc) => {
+    if (!padded || step?.constructor?.name !== 'ReplaceAroundStep' || !stepDoc) return false
+    if (step.insert !== 1 || step.gapFrom !== step.from + 1 || step.gapTo !== step.to - 1) return false
+    const node = stepDoc.nodeAt(step.from)
+    return Boolean(node && node.nodeSize === step.to - step.from &&
+      /^table_(cell|header)$/.test(node.type.name) && isEmptyPaddingCell(node))
+  }
+  for (const entry of journal.entries || []) {
+    for (const [index, step] of (entry.steps || []).entries()) {
+      const stepDoc = entry.stepDocs?.[index] || (index === 0 ? entry.beforeDoc : null)
+      if (isPaddingMarkup(step, stepDoc)) continue
+      if (step?.constructor?.name !== 'ReplaceStep') return rejected('table-cells-step-contract')
+      if (isPaddingSlice(step.slice) && step.from === step.to) continue
+      if (step.structure === true || !isClosedPlainTextSlice(step.slice)) {
+        return rejected('table-cells-step-contract')
+      }
+    }
+  }
+  return Object.freeze({ ok: true, topLevelIndex, oldTable, newTable, changedCells: Object.freeze(changedCells) })
+}
+
 const createOwnedPlan = ({ boundary, markdown, canonical, expectedDoc, proof }) => {
   const result = Object.freeze({
     markdown,
@@ -322,7 +421,44 @@ export function createTableCellTransactionSourceSyncOwner({
     }
 
     const classification = classifyTableCellJournal({ journal, expectedDoc })
-    if (!classification.ok) return classification
+    if (!classification.ok) {
+      if (!/anchored-target-count$/.test(classification.reason || '')) return classification
+      const multi = classifyMultiCellJournal({ journal, expectedDoc })
+      if (!multi.ok) return rejected(classification.reason, { proof: Object.freeze({ multiCellReason: multi.reason }) })
+      let mappedMulti = null
+      try {
+        mappedMulti = mapTableCellsBySlot({
+          source: journal.source,
+          oldTable: multi.oldTable,
+          newTable: multi.newTable,
+          changedCells: multi.changedCells,
+          expectedDoc,
+          validateMarkdown
+        })
+      } catch {
+        mappedMulti = null
+      }
+      if (!mappedMulti?.ok) return rejected(mappedMulti?.reason || 'table-cells-mapper-rejected')
+      const multiProof = Object.freeze({
+        kind: 'transaction-table-cell-proof',
+        journalId: journal.journalId,
+        family: TABLE_CELL_TRANSACTION_FAMILY,
+        topLevelIndex: multi.topLevelIndex,
+        changedCells: multi.changedCells,
+        chainLength: journal.transactionCount,
+        stepDetails: journal.stepDetails,
+        transactionJournal: verified.proof,
+        sourceDigest: sourceSyncDigest(journal.source),
+        previousCanonicalDigest: sourceSyncDigest(journal.canonical),
+        canonicalDigest: sourceSyncDigest(canonical),
+        markdownDigest: sourceSyncDigest(mappedMulti.markdown),
+        mapperReason: mappedMulti.reason,
+        callbackDocumentEquivalent: callbackDocumentEquivalent === true,
+        snapshotMatched: true,
+        documentMatched: true
+      })
+      return createOwnedPlan({ boundary, markdown: mappedMulti.markdown, canonical, expectedDoc, proof: multiProof })
+    }
     const transactions = transactionsFromSourceSyncTransactionJournal(journal)
     if (!transactions.length) return rejected('table-cell-step-count')
 
@@ -354,7 +490,27 @@ export function createTableCellTransactionSourceSyncOwner({
       return rejected(`table-cell-mapper-threw:${error?.name || 'Error'}`)
     }
     if (!mapped?.ok || typeof mapped.markdown !== 'string') {
-      return rejected(mapped?.reason || 'table-cell-mapper-rejected')
+      // Position-mapped anchoring failed (e.g. raw-block-text-mismatch in a
+      // CJK table). Fall back to locating the cell's raw slot structurally.
+      let slotted = null
+      try {
+        slotted = mapTableCellBySlot({
+          journal,
+          classification,
+          expectedDoc,
+          resolveMarkdownOffset,
+          validateMarkdown,
+          tableNode: sourceSyncNodeEntryAtPath(journal.oldDoc, classification.tablePath)?.node
+        })
+      } catch {
+        slotted = null
+      }
+      if (!slotted?.ok) {
+        return rejected(mapped?.reason || 'table-cell-mapper-rejected', {
+          proof: slotted ? Object.freeze({ slotReason: slotted.reason }) : null
+        })
+      }
+      mapped = slotted
     }
 
     const proof = Object.freeze({

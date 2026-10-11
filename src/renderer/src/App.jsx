@@ -46,6 +46,7 @@ import { useOutline } from './hooks/useOutline.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
+import { useAutoSave } from './hooks/useAutoSave.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useDocPositions } from './hooks/useDocPositions.js'
 import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
@@ -613,6 +614,8 @@ export default function App() {
     setSidebarOpen,
     initialFolderRoots: initialFolderRoots
   })
+
+  useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
 
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
   const addDroppedFolder = useCallback((path) => {

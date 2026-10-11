@@ -38,7 +38,10 @@ export function captureEditorContextCopy(view, target, {
 
   const browserSelection = document.getSelection()
   let selection = view.state.selection
-  if (browserSelection && !browserSelection.isCollapsed) {
+  // A cell selection keeps the DOM selection on one cell only; rebuilding a
+  // TextSelection from it would copy that single cell.
+  const cellSelection = typeof selection.forEachCell === 'function'
+  if (!cellSelection && browserSelection && !browserSelection.isCollapsed) {
     // A selection in a different mounted tab must never be copied by this menu.
     if (!view.dom.contains(browserSelection.anchorNode) ||
         !view.dom.contains(browserSelection.focusNode)) return null

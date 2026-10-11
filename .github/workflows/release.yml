@@ -92,7 +92,17 @@ jobs:
           echo "Found: $DEB_FILE"
           echo "Size: $(stat -c%s "$DEB_FILE") bytes"
           dpkg-deb --info "$DEB_FILE"
-          echo "✅ .deb artifact is valid"
+          # #143: postinst must make chrome-sandbox root-owned SUID, otherwise
+          # Ubuntu 24.04+ (restricted unprivileged userns) crashes on launch.
+          CTRL_DIR=$(mktemp -d)
+          dpkg-deb --control "$DEB_FILE" "$CTRL_DIR"
+          grep -q "chown root:root '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"
+          grep -q "chmod 4755 '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"
+          if grep -q "chmod 0755 '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"; then
+            echo "::error::postinst still downgrades chrome-sandbox to 0755"
+            exit 1
+          fi
+          echo "✅ .deb artifact is valid (postinst sets SUID chrome-sandbox)"
 
       # Linux: electron-builder's default draft-publish SKIPS when the release
       # is already published (existingType=release vs publishingType=draft), so

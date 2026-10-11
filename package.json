@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.233",
+  "version": "0.13.244",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "test:issue-139-dom": "node scripts/test-issue-139-clipboard-dom.mjs",
     "test:context-copy": "node scripts/test-editor-context-copy.mjs",
     "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
+    "test:single-tilde-ui": "node scripts/test-single-tilde-strike-ui.mjs",
     "test:editor-style-cascade-ui": "node scripts/test-editor-style-cascade-ui.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
     "test:source-map-scope": "node scripts/test-editor-source-map-scope.mjs",
@@ -243,6 +244,15 @@
     "test:empty-code-block-unpack-transaction-ui": "node scripts/test-empty-code-block-backspace-transaction-ui.mjs",
     "test:code-block-info-transaction-ui": "node scripts/test-code-block-info-transaction-ui.mjs",
     "test:blockquote-paragraph-transaction-owner": "node scripts/test-blockquote-paragraph-transaction-owner.mjs",
+    "test:blockquote-inline-patch": "node scripts/test-blockquote-inline-patch.mjs",
+    "test:remark-marker-bom-fix": "node scripts/test-remark-marker-bom-fix.mjs",
+    "test:editor-only-document": "node scripts/test-editor-only-document.mjs",
+    "test:history-source-restore": "node scripts/test-history-source-restore.mjs",
+    "test:top-level-block-removal-owner": "node scripts/test-top-level-block-removal-owner.mjs",
+    "test:remark-text-handler": "node scripts/test-remark-text-handler.mjs",
+    "test:rich-source-pause-families-ui": "node scripts/test-rich-source-pause-families-ui.mjs",
+    "test:source-reprint-ui": "node scripts/test-source-reprint-ui.mjs",
+    "fuzz:rich-source-ui": "node scripts/fuzz-rich-source-ui.mjs",
     "test:blockquote-legacy-owner-retirement": "node scripts/test-blockquote-legacy-owner-retirement.mjs",
     "test:blockquote-legacy-owner-retirement-ui": "node scripts/test-blockquote-legacy-owner-retirement-ui.mjs",
     "test:blockquote-split-transaction-owner": "node scripts/test-blockquote-split-transaction-owner.mjs",
@@ -344,6 +354,7 @@
     "test:source-transaction-sync-ui": "node scripts/test-transaction-source-sync-ui.mjs && TRANSACTION_CRLF=1 CDP_PORT=10135 node scripts/test-transaction-source-sync-ui.mjs && TRANSACTION_CRLF=1 TRANSACTION_BOM=1 CDP_PORT=10136 node scripts/test-transaction-source-sync-ui.mjs",
     "test:list-intent-cross-block-ui": "node scripts/test-list-intent-cross-block-ui.mjs",
     "test:save-reopen-smoke-ui": "node scripts/test-save-reopen-smoke-ui.mjs",
+    "test:autosave-ui": "node scripts/test-autosave-ui.mjs",
     "test:family-matrix-ui": "FAMILY_FILES=\"/Users/yangtingyi/vibe_everything/置身钉内/123321.md,/Users/yangtingyi/Desktop/HorseMD-0.13.33-引用后输入手测.md,/Users/yangtingyi/vibe_everything/置身钉内/反馈.md,/Users/yangtingyi/vibe_everything/置身钉内/11111.md\" node scripts/test-family-matrix-ui.mjs",
     "test:family-multicycle-ui": "node scripts/test-family-multicycle-ui.mjs && TRANSACTION_PRIMARY=1 CDP_PORT=10180 node scripts/test-family-multicycle-ui.mjs",
     "test:tail-fence-ui": "TAIL_FENCE_SLASH=1 TAIL_FENCE_SLASH_SETTLE_MS=40 TAIL_FENCE_CONTINUOUS=1 CDP_PORT=9910 node scripts/test-tail-fence-ui.mjs && TAIL_FENCE_SLASH=1 TAIL_FENCE_SLASH_SETTLE_MS=350 TAIL_FENCE_CONTINUOUS=1 CDP_PORT=9912 node scripts/test-tail-fence-ui.mjs",
@@ -395,6 +406,7 @@
     "mermaid": "^11.15.0",
     "pdfjs-dist": "^4.10.38",
     "pinyin-pro": "^3.28.1",
+    "remark-cjk-friendly": "^2.3.2",
     "remark-frontmatter": "^5.0.0",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5"
@@ -512,6 +524,9 @@
           "mimeType": "text/markdown"
         }
       ]
+    },
+    "deb": {
+      "afterInstall": "build/linux/after-install.tpl"
     },
     "nsis": {
       "oneClick": false,

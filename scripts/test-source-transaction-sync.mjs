@@ -601,9 +601,28 @@ assert.equal(
       ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths: [[0]]
     }
   ),
-  false,
-  'exact pending quote proof must not erase two trailing spaces that can encode a Markdown hard break'
+  true,
+  // 0.13.235: spaces at the very END of a paragraph never encode a hard break
+  // in CommonMark (a break needs following text in the same paragraph), so
+  // they are stripped on parse and are not authored meaning. Spaces before an
+  // in-paragraph break node stay strict (see the hard-break check below).
+  'trailing spaces at a paragraph end are Markdown-nonsemantic, even two of them'
 )
+{
+  const withBreak = schema.nodes.doc.create(null, [
+    schema.nodes.paragraph.create(null, [schema.text('a  '), schema.nodes.hard_break?.create?.() || schema.nodes.hardbreak?.create?.(), schema.text('b')].filter(Boolean))
+  ])
+  const withoutSpaces = schema.nodes.doc.create(null, [
+    schema.nodes.paragraph.create(null, [schema.text('a'), schema.nodes.hard_break?.create?.() || schema.nodes.hardbreak?.create?.(), schema.text('b')].filter(Boolean))
+  ])
+  if (withBreak.firstChild.childCount === 3) {
+    assert.equal(
+      areSourceDocumentsEquivalent(withBreak, withoutSpaces),
+      false,
+      'spaces before an in-paragraph break remain strict'
+    )
+  }
+}
 
 // A list exit inside a blockquote creates the same unrepresentable trailing
 // empty quote paragraph, but the previous child is a list rather than text.
@@ -657,8 +676,20 @@ assert.equal(
     quoteListWithTwoTrailingEmpty,
     { ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]] }
   ),
+  true,
+  // E0 P3d (f117a33): a PROOF-OWNED path collapses the whole run of trailing
+  // empty quote paragraphs (repeated Enter over a published transient) —
+  // authored `>` bytes cannot encode any of them.
+  'proof-owned blockquote-list path collapses the whole trailing empty run'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteListWithoutTrailingEmpty,
+    quoteListWithTwoTrailingEmpty,
+    { ignoreTrailingEmptyBlockquoteParagraph: true }
+  ),
   false,
-  'blockquote-list transient allowance must reject two trailing empty paragraphs'
+  'the legacy (non-path) blockquote allowance stays exactly one trailing empty paragraph after text'
 )
 
 // A trusted baseline may already have a stable serializer/source divergence.

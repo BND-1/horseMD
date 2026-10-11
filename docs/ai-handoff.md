@@ -1,8 +1,89 @@
 # HorseMD AI 接手手册
 
-> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-09-24。
+> 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-10-06。
 
-## 2026-09-24 当前源码与本机安装版：0.13.231，已提交，未推送/发布
+## 接手第一步（2026-10-06）
+
+1. 当前工作：**富文本/源码不一致暂停持续收口**（用户最高优先级，#136）。手册：[`rich-source-fuzzing.md`](./rich-source-fuzzing.md)，§5 是按优先级的未修清单，§3 是分诊流程。
+2. 状态：0.13.234–0.13.236 全部在工作区**未提交**（自动保存、#138 分屏、#143 deb、18 个暂停家族、测试修复）。用户尚未要求提交；建议分三个提交：自动保存与保存竞态 / #138 分屏 / 一致性修复与测试（#143 deb 可并入第三个或单列）。
+3. 本机已安装 0.13.236（PID 会变，现场查）。改动前先 `npm run build`，修后按 `rich-source-fuzzing.md` §6 回归，交付前升 patch 版本并按本文安装流程重装。
+
+## 2026-10-06 0.13.238：源码重打印引擎成为主路径（已安装本机，未提交/推送/发布）
+
+- 用户否决补丁式修法后批准新架构：[`docs/source-reprint-architecture.md`](./source-reprint-architecture.md)（设计、影子数据、规则演进全在此）。引擎 `src/renderer/src/lib/source-reprint/`；`Editor.jsx publishReprint` 为主路径，原 owners/legacy 为备用，`reportSourceSyncFailure` 内做降级救援，最后才暂停。
+- 新增通用规则：canonical 忠实性闸门（validator）、`source-reprint` 候选直接比对编辑器文档、列宽/软换行前空格/段首软换行/换行上的 marks/尾随空引用段/编辑器补的空单元格等“无编码”状态（设计文档 §5）、列表项类型同步插件 `lib/list-type-sync.js`。
+- 验证：`test:source-reprint-ui` 51 例、pause families 19 例、纯函数 110 个全过；UI 全量仅已知 EOF 换行失败；29 个随机 seed（200 步）**零 CORRUPT**，10 个全程无暂停，其余为如实暂停（Markdown 表达不了的状态或尚未覆盖的列表重组）。
+- 已安装 0.13.238，`app.asar` SHA-256 `4b73f4ce3f02407e2280c8f13beaea1893ab40592187b94eb2884a60e5196a1f`，PID 93842 带 trace；0.13.237 备份 `$TMPDIR/HorseMD.app.before-0.13.238`。
+- 下一步（R3→R4）：复核剩余暂停（列表/段落重组 seed 35/37/39/46、空有序子项打断段落 seed 16 等）；用户真实文档长期观察 `__hmSourceReprintTrace`；之后逐步删除被引擎覆盖的 owner。
+
+## 2026-10-06 0.13.237：撤销跨源码编辑、分隔线、段首空格写错源码（已安装本机，未提交/推送/发布）
+
+- **发现并修复真实写错源码（CORRUPT）**：段落开头 Tab/4 个空格且段内有行内代码 → 保存后重开成缩进代码块。根因 Milkdown 默认 `text` 序列化 fast path 对以空白结尾的文本跳过全部转义（`1. `/`# `/`- `/`> ` 同理）。修法 `lib/remark-text-handler.js`；校验器新增 canonical 结构守卫（`validator.js topLevelStructureSignature`，忽略空文本块、image-block≈paragraph、合并相邻同类列表）。
+- 其余：撤销/重做落到已记录文档按原字节恢复（`history-source-restore.js`）；`top-level-block-removal` owner（选中分隔线删除/覆盖输入）；不规则表格（validator 补齐、槽位映射接受短行、单元格 owner 接受 fixTables 补格、单元格末尾换行非语义）；拆段新段以空格开头写哨兵；markdownUpdated 对未变文档不再重跑 legacy（rs-41 粘贴丢 EOF 换行，0.13.236 已存在）。详见 `docs/rich-source-fuzzing.md` §4/§5。
+- 验证：110 个纯函数测试全过；UI 全量（keep-going）仅已知 `test-paragraph-source-preservation-ui`（EOF 换行）失败；`test:rich-source-pause-families-ui` 18 例全过；seed 36 200 步无暂停/损坏，31/35/28/37 大幅推进，均无损坏。`build:mobile`、`guide:check`、`dist:dir` 通过。
+- 已安装 `/Applications/HorseMD.app` 0.13.237，`app.asar` SHA-256 `9a9d77254d393a8a186ab7336f6ad63ac108203a6a9cf5c2deb4e2c3d012efc7`，以 `--horsemd-input-trace` 启动；0.13.236 备份在 `$TMPDIR/HorseMD.app.before-0.13.237`。
+- 新工具：`scripts/lib/fuzz-triage.mjs`（报告摘要）、`scripts/lib/probe-*.mjs`（最小复现脚本）。孤儿测试 `test-source-sync-programmatic-source-authority.mjs`、`test-source-sync-publication-boundaries.mjs` 未注册且引用已不存在的 API，与本轮无关。
+
+## 2026-10-06 0.13.236：既有失败基本清零（已安装本机，未提交/推送/发布）
+
+在 0.13.235 基础上继续修：
+- **引用末尾空格+Enter**：校验器把段落/标题**末尾**空白视为非语义（CommonMark 段落结尾空格必被剥离，两空格只有后面还有文字才是硬换行；代码块不变）。`test-blockquote-transient-trace-regressions-ui` 由失败转通过。
+- **引用内列表 Enter（CRLF+BOM）**：旧映射把新行粘到上一行末尾（`quote-two> 3. …`）；canonical 在行首插入整行时越过一个作者行尾。`test-blockquote-list-exit-backspace-chain-ui` 转通过。
+- **Markdown 粘贴原样保留**：raw paste owner 在 dispatch 内发布时 live doc 仍是旧状态，必然 stale → 退回 canonical 拼写（紧凑标题被插空行）。bridge 的 `getExpectedDoc` 在该发布期间读 `newState.doc`。
+- **HTML/网页粘贴**：粘贴后 Milkdown 标题 id 同步使整篇替换 token 失效 → 旧映射生成 `# # 标题`。替换 owner 与 bridge 的文档比较忽略仅标题 id 的差异。
+- issue-77 测试：源码切换为异步，测试改为等待 textarea。
+- 三个纯函数既有失败均为**有意设计变更后未更新的断言**（list-subtree 修复步骤被 efdfa08 取代、5e95321 去掉 deferred 门、E0 P3d 整段折叠尾部空段），已按设计更新并写明理由。
+
+**回归**：全部纯函数测试通过；UI 套件 5 会话 + 40 独立项，仅剩 `test-paragraph-source-preservation-ui`（文件无末尾换行时在末尾回车+输入会多一个 `\n`：末尾拆分用最小分隔符后原 EOF 换行数不可恢复；只差一个换行，非内容错误，未修）。
+
+**安装**：`/Applications/HorseMD.app` 0.13.236，asar SHA-256 `7c678291af60a1ee1f8628b2e55ac48cecc2c7ea17efdf55168e0b7e74f52bdf`，PID 81693 带 trace，lsof 核实映射新 asar；0.13.235 备份在 `$TMPDIR/HorseMD.app.before-0.13.236`。
+
+**仍开放**：fuzz seed 36（表格相关 unmapped-table-change 仅保存时暴露）、seed 28（源码编辑后撤销整篇替换再改列表）、seed 16、段落末尾粘贴 Markdown 回退 canonical 拼写（无警告）、相邻同类列表在 Markdown 中会合并（可考虑第二个列表用 `1)`）。
+
+## 2026-10-03 富文本/源码不一致专项：0.13.235 已安装本机，未提交/推送/发布
+
+用户明确：「不能让用户保存一堆错乱的源码」，此问题值得花时间测试和修正。
+
+**方法**：新增 `scripts/fuzz-rich-source-ui.mjs`（`npm run fuzz:rich-source-ui`，`FUZZ_SEEDS`/`FUZZ_OPS`/`FUZZ_CHECKPOINT`/`FUZZ_FIXTURE`）。真实 Electron 后台 CDP，逐字输入（含 `Input.imeSetComposition` 中文 IME）、点击、Enter/Backspace/Delete/Tab、选区覆盖、撤销重做、加粗、源码往返与源码编辑、保存。两个独立判据：①PAUSE＝出现「不一致/保存已暂停/恢复副本」提示；②CORRUPT＝保存后冷启动（新 profile）重开的 PM 文档 ≠ 保存前编辑器文档（忽略无 Markdown 编码的空段落、首尾空白、id/spread/label/colwidth）。同一 seed 确定性复现，失败时落盘 op 日志与 trace 尾部。
+
+**结论**：首批（旧构建）6/6 seed 在 6–106 步内暂停、0 次真正写错源码——fail-closed 守住了“不写错”，问题在于暂停过于频繁（#136）。修复后单 seed 可跑到 150 步以上。
+
+**已修家族**（均有纯函数 + 真实 UI 回归，`test:rich-source-pause-families-ui` 12 例逐字/保存/冷重开）：
+- 引用段落含粗体/斜体/代码/链接或多行（软换行、惰性续行）时每次按键都暂停 → blockquote owner 新增局部内联补丁（自行对齐去前缀原始行；共享 `pmPosToMarkdownOffset` 在引用续行忽略 `> ` 前缀并会坍缩到块首）。`*e*` 输入规则以 `*e*` 拼写。
+- 表格单元格边缘空格（GFM 会裁剪）→ 校验器忽略单元格首尾空白；表格位于文件末尾时 Milkdown trailing 段落被并入下一 journal → 作为 editor-only 文档变化吸收。
+- 表格单元格定位：`mapTableCellBySlot` 按内容定位表格并只改目标槽位字节；单元格内 Enter（`<br>`）、`|` 自动转义均可映射。旧路径会把整行/分隔行改写（`| --- |`→`| - |`）或拼坏单元格。
+- 段落在行内标记旁/内部 Enter（`、|`code``、`**bo|ld**`）→ 以 canonical 输出为准关闭/重开分隔符。
+- 行首空格哨兵（U+200B，与 Typora 一致）在删除空格后残留 → 出口处移除孤立哨兵；输入行首空格后 Backspace 合并段落的多块删除 → 证明为纯合并时允许。
+- **BOM 文件格式丢失（潜在）**：Milkdown `remarkMarker` 在含 BOM 文件中把所有 `*`/`_` marker 读成前一个字符，canonical 输出把强调符号变成空格。`remarkFixMarkerOffsetForBom` 修复（与插件顺序无关）。
+- 校验器：粗体/斜体段首尾空白视为非语义（`** word**` 非法，序列化器会移出）。
+
+**追加修复（同版）**：Enter 在行内代码/粗体内部（自动关闭再重开分隔符）；嵌套列表在空格前 Enter（新项补行首哨兵）；表格同一 journal 内多个单元格修改（`mapTableCellsBySlot`）；**journal 局部性**：事务触及与待发布 journal 不相交的顶层块时先强制发布（`markUserEdit` 依赖 DOM 事件，漏掉 CodeMirror/IME/撤销）；Milkdown `syncHeadingIdPlugin` 在标题编辑后单独派发的 id 事务按 editor-only 吸收（否则下一处编辑与标题拼成双块 journal → 静默滞留到保存才弹恢复副本）。
+
+**安装核验**：`/Applications/HorseMD.app` 0.13.235，asar SHA-256 `fefa097a5ff1a6bae45a8be45918e8facb9a57c3994e598d6173a0a5c687e0d5`，主进程 PID 16610 带 `--horsemd-input-trace`（日志在首次编辑后生成 `$TMPDIR/horsemd-input-trace-16610.jsonl`）。旧 0.13.234 备份在 `$TMPDIR/HorseMD.app.before-0.13.235`。注意：安装时第一次 kill 因变量带尾随空格失败，新启动被单实例转发给旧进程——已精确结束旧 PID 后重启并以 lsof 核实映射的是新 asar。
+
+**回归**：完整 UI 套件 5 会话 + 37 独立项、全部纯函数测试，仅既有失败（见 memory 记录的清单）；`test:rich-source-pause-families-ui` 13 例、`test:blockquote-inline-patch`、`test:remark-marker-bom-fix`、`test:editor-only-document`、表格单元格 owner 单测通过。fuzz：seed 平均可连续编辑步数由约 50 提升到 100+，未发现真正写错源码（唯一 CORRUPT 为 CommonMark 无法区分的相邻同类列表合并）。
+
+**仍开放**：引用内列表 Enter（`test-blockquote-list-exit-backspace-chain-ui` 既有失败）、引用末尾空格+Enter（`test-blockquote-transient-trace-regressions-ui` 既有失败）、源码编辑后撤销跨整篇替换再改列表（fuzz seed 28）、表格表头 Mod+B+退格（seed 16）、`f117a33` 引入的文件末尾追加段落多出换行。最新 fuzz 结果见 `/tmp/horsemd-fuzz/batch*`（临时目录，不入库）。
+
+## 2026-10-02 当前源码与本机安装版：0.13.234（Mac mini 新环境），未提交/推送/发布
+
+**机器变更**：开发机换为 Mac mini（用户 `yangtingyi_macmini`，仓库 `~/vibe_the_wrold/horseMD`，**1080p 非 Retina、DPR=1**）。下文所有 `/Users/yangtingyi/vibe_everything/...`、`/var/folders/4y/...`、历史 PID 均属旧机器，不可沿用；`run-ui-regression` 中两份"真实大文档"在本机不存在会被跳过。
+
+**本轮改动（0.13.234）**：
+- **#136 自动保存**（`hooks/useAutoSave.js`，设置 › 文件与图片，`settings.autoSaveDelay` 0/3/10/60 秒，**默认关闭**）：停止输入 N 秒后、或窗口失焦时，对有路径的脏标签走与 Cmd/Ctrl+S 相同的 `saveTab` 路径（`{auto:true}` 静默模式）。自动模式绝不：弹保存对话框、写恢复副本、归档粘贴图片（`data:`/`paste-images` 链接需手动保存一次）、覆盖外部已修改/删除的文件（`fs:writeFile` 新增 `expectedMtimeMs` 守卫，冲突时该标签暂停到 mtime 变化）。
+- **保存竞态修复**（手动保存同样受益）：`writeTab` 原先以写盘后的最新 `t.content` 作为 `savedContent`，写盘期间的输入会被误标为已保存（关闭时不再提示）；现以实际写入字节为准，`pendingRichEdit` 改在 `saveTab` 解析 live markdown 时清除。
+- **#138 分屏 + 源码模式右栏消失**：`EditorArea.jsx` 富文本栏可见性自 `606bfc6`（2026-08-04）起误用 `!sourceMode`（作用于所有栏），左栏切源码时右栏文档被隐藏；改为 `!(sourceMode && isLeft)`。
+- **#143 Linux deb 启动即崩**：新增 `build/linux/after-install.tpl`（`deb.afterInstall`），始终 `chown root:root` + `chmod 4755 chrome-sandbox`；`release.yml` 校验 postinst。**尚未在 Ubuntu 实机验证**（本机无 Docker/Linux）。
+- 测试修复：`test-issues-57-60-ui`（#58 用例仍按 0.13.27 前的空反引号对语义输入 + 0.25px 亚像素点击在 DPR=1 落空）；`run-ui-regression` 把自启动应用的表格测试移入 standalone（原与 session 同端口，自 2026-08-18 起必失败）。
+
+**验证**：新增 `npm run test:autosave-ui`（默认关闭、设置页开启、富文本/源码防抖、外部修改不覆盖、手动保存后恢复）2/2 通过；save-reopen smoke、task-list 持久化、source-sync recovery、flush settle、session restore、70-72 通过；`build`、`build:mobile`、`guide:check` 通过。已安装 `/Applications/HorseMD.app` 0.13.234（asar SHA-256 `a2192a36eb980b17aca55df56842d96d7f6d12dc78a89fc925381a1ce5a6b47e`），带 `--horsemd-input-trace` 启动。
+
+**既有失败（HEAD 6db9097 同样失败，非本轮引入，未修）**：
+- `test-source-transaction-sync.mjs`：`blockquote-list transient allowance must reject two trailing empty paragraphs`，bisect 首个坏提交 `f117a33`（E0 收官）。需判断是语义有意变更（测试过期）还是 fail-closed 缺口。
+- `test-issue-77-source-preservation-ui.mjs`：`Could not focus source editor for source/rich chain`。
+- `test-paragraph-source-preservation-ui.mjs`：`an immediate rich/source switch lost or flattened the new paragraph`——源码保真相关，优先排查。
+
+## 2026-09-24 历史检查点：0.13.231，已提交，未推送/发布
 
 **#139 换行互操作**已按方案拆成五个独立补丁：`92ca6a7` / 0.13.227修复混合列表选区纯文本换行；`86747a7` / 0.13.228保留HTML列表后续段落；`b98d786` / 0.13.229转换外部HTML明确的white-space换行；`e323811` / 0.13.230保留精确源码基线中必要的编号文字转义；`0dadefb` / 0.13.231让既有中间续行分支同时识别反斜杠及两个以上空格。前序字体和右键复制已在`ef7c7ff`建立0.13.226检查点；方案/失败合同提交`4f45a90`。完整方案见[issue-139-line-break-interoperability-plan.md](./issue-139-line-break-interoperability-plan.md)。
 

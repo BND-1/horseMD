@@ -413,7 +413,9 @@ const nextCanonical = nextCanonicalLines.join('\n')
   const owner = createOwner()
   const deferred = owner.plan({ journal: captured.journal, activeJournal: captured.journal, snapshot: captured.snapshot, currentSource: source, currentCanonical: canonical, canonical: nextCanonical, expectedDoc: captured.expectedDoc, callbackDocumentEquivalent: false })
   assert.equal(deferred.ok, true, 'must publish despite a non-equivalent callback canonical')
-  assert.equal(deferred.deferred, true)
+  // 5e95321 removed the wrong-layer callbackDocumentEquivalent gate from every
+  // focused owner; a non-equivalent callback no longer marks the plan deferred.
+  assert.notEqual(deferred.deferred, true)
 
   const staleSnapshot = createSourceSyncSnapshot({ revision: 527, source, canonical, doc: captured.expectedDoc })
   const stale = owner.plan({ journal: captured.journal, activeJournal: captured.journal, snapshot: staleSnapshot, currentSource: source, currentCanonical: canonical, canonical: nextCanonical, expectedDoc: captured.expectedDoc, callbackDocumentEquivalent: true })

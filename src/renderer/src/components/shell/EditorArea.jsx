@@ -269,7 +269,11 @@ export default function EditorArea({
               key={`rich:${tab.id}:${tab.reloadNonce}`}
               className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}${isSourceRichSplit ? ' hm-source-rich-right' : ''}`}
               ref={setEditorHost}
-              style={{ display: inView && !sourceMode ? undefined : 'none', order: isSourceRichSplit ? 3 : order, flex: isSourceRichSplit ? undefined : paneFlex }}
+              // Source mode replaces only the LEFT (active) pane with its
+              // textarea; the right document of a two-document split stays
+              // rich (#138 — hiding it on `sourceMode` alone blanked the
+              // right pane whenever the left switched to source).
+              style={{ display: inView && !(sourceMode && isLeft) ? undefined : 'none', order: isSourceRichSplit ? 3 : order, flex: isSourceRichSplit ? undefined : paneFlex }}
               onFocusCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
               onMouseDownCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
             >

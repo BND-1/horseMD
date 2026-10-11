@@ -19,6 +19,9 @@ export const PAGE_WIDTH_PRESETS = [
   { id: 'full', width: 'full' }
 ]
 
+// Auto-save inactivity delays offered in Settings › Files (seconds; 0 = off).
+export const AUTO_SAVE_DELAYS = [0, 3, 10, 60]
+
 // Editor body font size (px). Applies only to the document content, not the app
 // chrome (tabs / sidebar / status bar).
 export const FONT_SIZE_MIN = 12
@@ -173,6 +176,11 @@ export const DEFAULT_SETTINGS = {
   // Disabling this affects startup only; files explicitly passed by the OS or
   // command line still open normally.
   restoreSession: true,
+  // Auto-save (#136): seconds of editing inactivity before a dirty, already
+  // saved-to-disk document is written in place (also flushed when the window
+  // loses focus). 0 = off. Untitled tabs, external-change conflicts and
+  // unmappable rich edits are never auto-saved — see hooks/useAutoSave.js.
+  autoSaveDelay: 0,
   // Desktop: closing the window hides it to the system tray instead of quitting,
   // so the app keeps running in the background (tray icon / Alt+M restore it).
   // Default off — "close quits" stays the long-standing behavior; the tray is
@@ -253,6 +261,7 @@ export function loadSettings() {
       selectionToolbar: raw.selectionToolbar !== false,
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
+      autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,
       closeToTray: raw.closeToTray === true,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',

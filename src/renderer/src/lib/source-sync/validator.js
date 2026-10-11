@@ -1,6 +1,7 @@
 import {
   areSourceDocumentTransitionsEquivalent,
-  areSourceDocumentsEquivalent
+  areSourceDocumentsEquivalent,
+  areSourceDocumentsEquivalentWithLiteralEmphasis
 } from '../source-transaction-sync.js'
 import {
   areMarkdownListSlotTransitionsEquivalent,
@@ -311,6 +312,22 @@ const activeTrailingEmptyBlockquotePaths = (expectedDoc, paths) => {
   return Object.freeze(active)
 }
 
+// Top-level block types, ignoring empty textblocks (editor-only empty
+// paragraphs, the synthetic empty title of a new document) and merging
+// adjacent same-type lists (Markdown cannot keep them apart; lossless).
+// Crepe's image-block is the parsed form of a paragraph holding one image.
+export const topLevelStructureSignature = (doc) => {
+  const types = []
+  doc?.forEach?.((node) => {
+    let type = node?.type?.name || 'unknown'
+    if (node?.isTextblock && node.content?.size === 0) return
+    if (type === 'image-block') type = 'paragraph'
+    if ((type === 'bullet_list' || type === 'ordered_list') && types[types.length - 1] === type) return
+    types.push(type)
+  })
+  return types.join(',')
+}
+
 export const sourceSyncSemanticOptionsFromContext = (semanticContext, expectedDoc) => {
   const activePaths = activeTrailingEmptyBlockquotePaths(
     expectedDoc,
@@ -438,6 +455,17 @@ const shapeDerivedTrailingEmptyListItemPaths = (expectedDoc) => {
 }
 
 const transactionBlockquoteTransientPaths = (preservationReason, preservationProof) => {
+  // Source reprint (docs/source-reprint-architecture.md §5): the editor's
+  // trailing empty quote paragraph has no encoding. The proof names the
+  // blockquotes; activeTrailingEmptyBlockquotePaths re-checks each against
+  // the expected document's actual shape.
+  if (preservationReason === 'source-reprint') {
+    const paths = preservationProof?.trailingEmptyBlockquotePaths
+    if (!Array.isArray(paths) || !paths.length) return null
+    if (!paths.every((path) => Array.isArray(path) && path.length >= 1 &&
+      path.every((index) => Number.isInteger(index) && index >= 0))) return false
+    return paths
+  }
   if (preservationReason === 'blockquote-paragraph-emptied') {
     const nodePath = preservationProof?.nodePath
     if (
@@ -601,6 +629,48 @@ const semanticOptionsForReason = (
  * Later transaction families can call the generic candidate validator above;
  * during Phase A every legacy reason and proof keeps its existing semantics.
  */
+// The editor document without editor-only empty paragraphs inside list
+// items and quotes (design §5: no Markdown encoding). Milkdown prints such a
+// paragraph as `- <br />` + lazy text, which list-slot reading cannot follow
+// (fuzz seed 75), so source-reprint slot checks read this form instead.
+export const withoutEmptyContainerParagraphs = (node) => {
+  if (!node || node.isLeaf) return node
+  // A spaces-only paragraph has no encoding either (seed 77: `1.`).
+  if (node.isTextblock) {
+    let blank = node.type.name === 'paragraph' && node.content.size > 0
+    node.forEach((inline) => { if (!inline.isText || /[^ \t]/.test(inline.text)) blank = false })
+    if (blank) return node.copy(node.content.constructor.empty)
+    // Soft breaks at the start/end of a text block have no encoding either
+    // (`-` + newline + `  text` is the item `- text`; seed 120).
+    const inlines = []
+    node.forEach((inline) => inlines.push(inline))
+    const soft = (inline) => /^hard_?break$/.test(inline?.type?.name || '') && inline.attrs?.isInline === true
+    if (inlines.some((inline) => !soft(inline))) {
+      while (soft(inlines[0])) inlines.shift()
+      while (soft(inlines[inlines.length - 1])) inlines.pop()
+    }
+    return inlines.length === node.childCount ? node : node.copy(node.content.constructor.fromArray(inlines))
+  }
+  const children = []
+  node.forEach((child) => children.push(withoutEmptyContainerParagraphs(child)))
+  // Crepe also spells an empty paragraph as one holding only line breaks
+  // (its `<br />` placeholder).
+  const isEmpty = (child) => {
+    if (child.type.name !== 'paragraph') return false
+    let empty = true
+    child.forEach((inline) => { if (!/^hard_?break$/.test(inline.type.name)) empty = false })
+    return empty
+  }
+  const container = node.type.name === 'list_item' || node.type.name === 'blockquote'
+  // An empty FIRST paragraph followed by a nested block (`-` + nested list)
+  // is how Markdown spells an empty item: keep that one.
+  const removable = (child, index) => isEmpty(child) && !(index === 0 && children[1] && !children[1].isTextblock)
+  const kept = container && children.some((child) => !isEmpty(child))
+    ? children.filter((child, index) => !removable(child, index))
+    : children
+  return node.copy(node.content.constructor.fromArray(kept))
+}
+
 export function createLegacySourceIntegrityValidator({
   getParser,
   getSerializer,
@@ -679,7 +749,12 @@ export function createLegacySourceIntegrityValidator({
       const nextSemanticContext = Object.freeze({
         trailingEmptyBlockquoteParagraphPaths: combinedBlockquotePaths
       })
-      const resolvedExpected = Array.isArray(tableColumnWidthPaths)
+      // Source reprint candidates are compared with the editor document
+      // itself: a canonical that cannot express the document (a trailing
+      // in-cell `<br>`, Tab's leading spaces) must not reject a correct
+      // candidate or admit a wrong one (docs/source-reprint-architecture.md).
+      const resolvedExpected = Array.isArray(tableColumnWidthPaths) ||
+        (preservationReason === 'source-reprint' && expectedDoc)
         ? expectedDoc
         : typeof canonical === 'string'
           ? parser(canonical)
@@ -687,6 +762,17 @@ export function createLegacySourceIntegrityValidator({
       const expected = scratchBridge
         ? collapseEmptyListItemRuns(resolvedExpected)
         : resolvedExpected
+      // The candidate is compared with parse(canonical), so a canonical that
+      // cannot express the live document (e.g. Milkdown's text stringify fast
+      // path emitting four raw leading spaces → indented code, fuzz seed 36)
+      // would let an equally broken candidate pass. Require the canonical to
+      // keep the live document's top-level block structure.
+      const canonicalStructureOk = !(
+        expectedDoc &&
+        resolvedExpected !== expectedDoc &&
+        typeof expectedDoc.forEach === 'function' &&
+        topLevelStructureSignature(resolvedExpected) !== topLevelStructureSignature(expectedDoc)
+      )
       const canonicalBaseline = getCanonicalBaseline?.()
       // Scratch candidates additionally bridge LIST-ITEM trailing empties by
       // the same strict shape (goal-matrix B4: Shift-Tab outdent left an
@@ -696,7 +782,7 @@ export function createLegacySourceIntegrityValidator({
         Array.isArray(transientEmptyListItemPaths)
         ? shapeDerivedTrailingEmptyListItemPaths(expectedDoc)
         : []
-      const semanticOptions = semanticOptionsForReason(
+      const semanticOptionsBase = semanticOptionsForReason(
         preservationReason,
         preservationProof,
         tableColumnWidthPaths,
@@ -705,10 +791,40 @@ export function createLegacySourceIntegrityValidator({
           : transientEmptyListItemPaths,
         combinedBlockquotePaths
       )
-      const semanticOk = !tableColumnWidthProofInvalid &&
+      // A source-reprint candidate is compared with the editor document
+      // itself, which may carry column widths no Markdown can hold.
+      const semanticOptions = preservationReason === 'source-reprint'
+        ? { ...semanticOptionsBase, ignoreAllTableColumnWidths: true, ignoreEmptyContainerParagraphs: true }
+        : semanticOptionsBase
+      // parse(canonical) is only a trustworthy stand-in for the editor
+      // document when the canonical itself describes that document. When it
+      // does not (Markdown cannot spell the state: bold starting with `]`
+      // after a letter, fuzz seed 50), a candidate must match the editor
+      // document directly — otherwise a candidate as lossy as the canonical
+      // would be saved.
+      // Neither a canonical nor a candidate can carry column widths, so these
+      // two document-level checks ignore them.
+      const documentOptions = { ...semanticOptions, ignoreAllTableColumnWidths: true, recordDifference: false }
+      const canonicalFaithful = !(
+        expectedDoc &&
+        resolvedExpected !== expectedDoc &&
+        !areSourceDocumentsEquivalent(resolvedExpected, expectedDoc, documentOptions)
+      )
+      const candidateMatchesDocument = () => Boolean(
+        expectedDoc && areSourceDocumentsEquivalent(parsed, expectedDoc, documentOptions)
+      )
+      const semanticOk = canonicalStructureOk &&
+        !tableColumnWidthProofInvalid &&
         !transactionListTransientProofInvalid &&
         !transactionBlockquoteTransientProofInvalid &&
-        areSourceDocumentsEquivalent(parsed, expected, semanticOptions)
+        (
+          (areSourceDocumentsEquivalent(parsed, expected, semanticOptions) &&
+            (canonicalFaithful || candidateMatchesDocument())) ||
+          // Option A (Typora parity): a source-reprint candidate that spells
+          // unencodable bold/italic as literal delimiters, losing nothing else.
+          (preservationReason === 'source-reprint' && Boolean(expectedDoc) &&
+            areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, { ...semanticOptions, ignoreAllTableColumnWidths: true }))
+        )
       const checkpointTrusted = checkpointStore.has(authoredSource, canonicalBaseline)
       const committedCheckpointOk = Boolean(
         preservationReason === 'committed-source-baseline' &&
@@ -740,7 +856,7 @@ export function createLegacySourceIntegrityValidator({
       }
 
       const listSlotsMatch = areMarkdownListSlotsEquivalent(markdown, expectedMarkdown, {
-        strictOrderedNumbers: true,
+        strictOrderedNumbers: preservationReason !== 'source-reprint',
         strictNesting: true,
         previousMarkdown: canonicalBaseline
       })
@@ -809,8 +925,21 @@ export function createLegacySourceIntegrityValidator({
       const semanticProofOk = !tableColumnWidthProofInvalid &&
         !transactionListTransientProofInvalid &&
         !transactionBlockquoteTransientProofInvalid &&
-        (semanticOk || committedCheckpointOk || transitionOk)
-      const listProofOk = listSlotsMatch || committedCheckpointOk || listTransitionOk || localizedListProofOk
+        (semanticOk || committedCheckpointOk || (canonicalStructureOk && canonicalFaithful && transitionOk))
+      // List slots are read from the canonical TEXT. When canonical does not
+      // describe the editor document (Milkdown prints an item whose first
+      // child is empty as `- <br />` + lazy text, collapsing the rest of the
+      // list; fuzz seed 75), that text is no oracle: a source-reprint
+      // candidate has already been matched against the document itself.
+      let reprintDocumentProof = preservationReason === 'source-reprint' && !canonicalFaithful && semanticOk
+      if (!listSlotsMatch && !reprintDocumentProof && preservationReason === 'source-reprint' && semanticOk && expectedDoc) {
+        reprintDocumentProof = areMarkdownListSlotsEquivalent(
+          markdown,
+          canonicalForSource(getSerializer()(withoutEmptyContainerParagraphs(expectedDoc))),
+          { strictOrderedNumbers: false, strictNesting: true, previousMarkdown: canonicalBaseline }
+        )
+      }
+      const listProofOk = listSlotsMatch || committedCheckpointOk || listTransitionOk || localizedListProofOk || reprintDocumentProof
       const ok = semanticProofOk && listProofOk
       // Legacy direct callers historically use validation as their checkpoint
       // boundary, so trust remains the default. Coordinator candidates disable
@@ -826,6 +955,8 @@ export function createLegacySourceIntegrityValidator({
         trace.push({
           ok,
           semanticOk,
+          canonicalStructureOk,
+          canonicalFaithful,
           transitionOk,
           committedCheckpointOk,
           checkpointTrusted,

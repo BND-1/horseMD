@@ -53,8 +53,89 @@ export function copiedPlainText(root, fallback = '') {
     const text = listAwarePlainText(root)
     if (text) return text
   }
-  if (!root.querySelector('br')) return fallback
+  // Tables also go through layout: innerText separates cells with tabs and
+  // rows with newlines, while Selection.toString() put every cell on its own
+  // line between blank lines.
+  if (!root.querySelector('br, table')) return fallback
   return readClipboardProbe(root.cloneNode(true)) || fallback
+}
+
+// Milkdown's table block view renders drag handles, toolbar buttons and an
+// empty drag-preview table around the real <table>; a range clone carries all
+// of them. Keep only the content table, and lift each cell's paragraph so the
+// pasted cell has no paragraph margins (several paragraphs → <br>).
+export function cleanCopiedTables(root) {
+  root.querySelectorAll('[data-role$="drag-handle"], [data-display-type="tool"]')
+    .forEach((node) => node.remove())
+  wrapOrphanTableParts(root)
+  root.querySelectorAll('table').forEach((table) => {
+    if (table.querySelector('th, td')) return
+    const preview = table.closest('[data-direction]')
+    ;(preview && root.contains(preview) ? preview : table).remove()
+  })
+  root.querySelectorAll('th, td').forEach((cell) => {
+    const paragraphs = [...cell.children].filter((child) => child.tagName === 'P')
+    paragraphs.forEach((paragraph, index) => {
+      if (index) paragraph.before(document.createElement('br'))
+      while (paragraph.firstChild) paragraph.before(paragraph.firstChild)
+      paragraph.remove()
+    })
+  })
+}
+
+// A range that starts and ends inside one table clones its rows (or, within
+// one row, its cells) without the <table> ancestor. Re-wrap each consecutive
+// run so the clipboard still carries a table.
+const wrapOrphanTableParts = (root) => {
+  const wrapRuns = (selector, outside, build) => {
+    const runs = []
+    root.querySelectorAll(selector).forEach((node) => {
+      if (node.parentElement?.closest(outside)) return
+      const run = runs.at(-1)
+      if (run && run.at(-1).nextElementSibling === node) run.push(node)
+      else runs.push([node])
+    })
+    runs.forEach((run) => {
+      const { outer, inner } = build()
+      run[0].before(outer)
+      run.forEach((node) => inner.appendChild(node))
+    })
+  }
+  wrapRuns('th, td', 'tr', () => {
+    const outer = document.createElement('table')
+    const inner = outer.appendChild(document.createElement('tbody')).appendChild(document.createElement('tr'))
+    return { outer, inner }
+  })
+  wrapRuns('tr', 'table', () => {
+    const outer = document.createElement('table')
+    return { outer, inner: outer.appendChild(document.createElement('tbody')) }
+  })
+}
+
+// A ProseMirror CellSelection (mouse drag across cells) keeps the DOM
+// selection on one cell only, so a range clone would copy that single cell.
+// Rebuild the selected rectangle from the live cell elements instead.
+export function cloneSelectedCells(view) {
+  const selection = view.state.selection
+  if (typeof selection.forEachCell !== 'function') return null
+  const rows = new Map()
+  selection.forEachCell((_node, pos) => {
+    const cell = view.nodeDOM(pos)
+    const row = cell?.parentElement
+    if (!cell || !row) return
+    if (!rows.has(row)) rows.set(row, [])
+    rows.get(row).push(cell.cloneNode(true))
+  })
+  if (!rows.size) return null
+  const table = document.createElement('table')
+  const body = document.createElement('tbody')
+  table.appendChild(body)
+  rows.forEach((cells) => {
+    const tr = document.createElement('tr')
+    cells.forEach((cell) => tr.appendChild(cell))
+    body.appendChild(tr)
+  })
+  return table
 }
 
 // Read layout only for the selected clipboard clone. In particular, innerText
@@ -104,6 +185,7 @@ const listAwarePlainText = (root) => {
 }
 
 export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {
+  cleanCopiedTables(root)
   root.querySelectorAll('*').forEach((el) => {
     // strip editor-only attributes
     el.removeAttribute('class')

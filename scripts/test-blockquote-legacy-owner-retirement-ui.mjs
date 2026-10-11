@@ -11,12 +11,15 @@ const profile = join(root, 'profile')
 const port = Number(process.env.CDP_PORT || 15420 + (process.pid % 40))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
 const originalText = 'quoted alpha'
-// E0 P3e: a bare trailing `*` round-trips as literal text and now PUBLISHES
+// E0 P3e: a bare trailing `*` round-trips as literal text and PUBLISHES
 // through the owned final-state patch. Typing `*e*` is converted by
-// Milkdown's input rule into a REAL emphasis mark — the paragraph is no
-// longer plain, so the family rejects it (not-simple-plain) and the retired
-// legacy branch stays blocked. textContent loses the star bytes.
+// Milkdown's input rule into a REAL emphasis mark. Before 0.13.235 the family
+// failed closed on every marked quote paragraph (not-simple-plain → warning on
+// each keystroke); the localized inline patch now owns it and spells the
+// emphasised insertion with its delimiters. The retired generic legacy branch
+// must STILL never publish for this family.
 const editedText = `${originalText}e`
+const expectedDisk = '\uFEFFbefore\r\n\r\n > quoted alpha*e*\r\n\r\nafter\r\n'
 const fixture = '\uFEFFbefore\r\n\r\n > quoted alpha\r\n\r\nafter\r\n'
 const warningPattern = /检测到富文本与源码不一致|源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
@@ -132,39 +135,32 @@ try {
   await sleep(1400)
 
   const state = await snapshot(app)
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' &&
+  const ownerPublished = state.owner.some((entry) =>
     entry.family === 'blockquote-paragraph-text-replace' &&
-    entry.reason === 'blockquote-paragraph-not-simple-plain'
+    (entry.phase === 'published' || (entry.phase === 'plan' && entry.ok === true))
   )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) =>
-    entry.recognized === true && entry.legacyBlocked === true
-  ), true, JSON.stringify(blocked))
+  assert.equal(ownerPublished, true, `blockquote owner did not own the marked edit: ${JSON.stringify(state.owner.slice(-6))}`)
   assert.deepEqual(state.quoteTexts, [editedText],
-    `fail-closed edit disappeared from rich mode: ${JSON.stringify(state.quoteTexts)}`)
+    `edit disappeared from rich mode: ${JSON.stringify(state.quoteTexts)}`)
   assert.equal(state.preserve.some((entry) => [
-    'blockquote-paragraph-text-change',
     'diverged-tail-block-append',
     'structural-line-change',
     'visible-mismatch-line-change'
   ].includes(entry.reason)), false,
-  `recognized quote rejection reached legacy preservation: ${JSON.stringify(state.preserve)}`)
+  `quote edit reached legacy preservation: ${JSON.stringify(state.preserve)}`)
   assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    (entry.family === 'blockquote-paragraph-text-replace' || entry.owner === 'legacy')
-  ), false, `recognized quote rejection reached publication: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `fail-closed quote edit did not warn: ${JSON.stringify(state.toasts)}`)
-  assert.equal(state.sourceVisible, false,
-    'fail-closed callback exposed a stale source textarea')
-  assert.equal(state.saveVisible, true,
-    'visible rich edit did not remain marked as unsaved')
-  assert.equal(await readFile(file, 'utf8'), fixture,
-    'recognized quote rejection overwrote the authored file')
+    entry.phase === 'published' && entry.owner === 'legacy'
+  ), false, `quote edit was published by the retired legacy owner: ${JSON.stringify(state.coordinator)}`)
+  assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+    `owned quote edit still warned: ${JSON.stringify(state.toasts)}`)
+  assert.equal(await readFile(file, 'utf8'), fixture, 'callback wrote the file before an explicit save')
+  assert.equal(state.saveVisible, true, 'visible rich edit was not marked as unsaved')
+  await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
+  await waitFor(async () => (await readFile(file, 'utf8')) === expectedDisk,
+    'saved bytes did not keep BOM/CRLF/indent and spell the emphasis as *e*')
 
   completed = true
-  console.log('PASS blockquote legacy retirement UI: a mark-producing quote edit is recognized, blocks generic legacy fallback, remains visible in rich mode, warns, and leaves source/disk untouched (literal round-trip text publishes via the owned final-state patch instead)')
+  console.log('PASS blockquote legacy retirement UI: a mark-producing quote edit (*e* input rule) is owned by the blockquote family, never reaches the retired legacy owner, does not warn, and saves exact BOM/CRLF bytes with the emphasis spelled *e*')
 } finally {
   if (app) await stopBuiltElectron(app, { removeProfile: true })
   if (completed) await rm(root, { recursive: true, force: true })

@@ -4,6 +4,7 @@ import { copyToClipboard } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { resolveLocalLinkToFileUrl } from './editor-local-links.js'
 import {
+  cloneSelectedCells,
   copiedPlainText,
   inlineRichStyles,
   materializeCopiedSoftBreaks
@@ -45,25 +46,27 @@ export function mountEditorContentBindings({
 
   const onCopy = (event) => {
     const selection = window.getSelection()
-    if (!selection || selection.isCollapsed || !view.dom.contains(selection.anchorNode)) return
-    if (selection.anchorNode?.parentElement?.closest?.('.cm-editor')) return
+    const selectedCells = view.hasFocus() ? cloneSelectedCells(view) : null
+    if (!selectedCells) {
+      if (!selection || selection.isCollapsed || !view.dom.contains(selection.anchorNode)) return
+      if (selection.anchorNode?.parentElement?.closest?.('.cm-editor')) return
+    }
     try {
-      const fragment = selection.getRangeAt(0).cloneContents()
       const wrapper = document.createElement('div')
-      wrapper.appendChild(fragment)
+      wrapper.appendChild(selectedCells || selection.getRangeAt(0).cloneContents())
       materializeCopiedSoftBreaks(wrapper)
       // A mid-list selection clones <li> without its list wrapper. Whether the
       // items were ordered is only visible in the LIVE dom — inspect it before
       // styling so the re-wrapped clipboard fragment keeps its numbering.
       const selectionOrderedLists = Boolean(
-        selection.anchorNode?.parentElement?.closest('ol') ||
-        selection.focusNode?.parentElement?.closest('ol')
+        selection?.anchorNode?.parentElement?.closest('ol') ||
+        selection?.focusNode?.parentElement?.closest('ol')
       )
       inlineRichStyles(wrapper, { selectionOrderedLists })
       // Plain text must be derived AFTER the clipboard transform: Milkdown's
       // in-item marker span ("1.") becomes its own line in the raw clone, so
       // text-only paste targets showed the number split from its text.
-      const plain = copiedPlainText(wrapper, selection.toString())
+      const plain = copiedPlainText(wrapper, selection?.toString() || '')
       let serialized = ''
       if (!view.state.selection.empty) {
         try {

@@ -45,9 +45,61 @@ const defaultLabels = {
   input: 'YAML front matter'
 }
 
-// Build the visible card. Flat `key: value` lines → a definition grid; if there's
-// any complex YAML (lists, nesting, multiline), fall back to a code box so we
-// never misrender.
+// Parse the YAML subset the card can show as a key/value table: mappings
+// (nested by spaces, any depth) whose leaves are single-line scalars. Anything
+// else — sequences, block scalars (`|`, `>`), comments, tabs, multi-line
+// plain scalars, inconsistent indentation — returns null and the card falls
+// back to the raw code box, so it never misrenders (#144: `metadata:` +
+// indented `type: project`, common in agent SKILL.md / memory files, used to
+// drop the whole block into the code box).
+export function parseFrontmatterMapping(value) {
+  const root = []
+  const stack = [{ indent: -1, items: root, entry: null }]
+  for (const line of String(value || '').split('\n')) {
+    if (line.trim() === '') continue
+    // Same key/value shape the flat table always accepted (`key:` /
+    // `key: value` / `key:value`), now with leading-space nesting.
+    const match = /^( *)([A-Za-z0-9_.-]+):[ \t]?(.*)$/.exec(line)
+    if (!match) return null
+    const indent = match[1].length
+    const key = match[2]
+    const scalar = (match[3] ?? '').trimEnd()
+    if (/^[|>][+-]?\d*$/.test(scalar) || scalar.startsWith('#')) return null
+    while (stack[stack.length - 1].indent >= indent) stack.pop()
+    const parent = stack[stack.length - 1]
+    // A child line must sit under a key without its own value.
+    if (parent.entry && parent.entry.value !== '') return null
+    if (parent.entry && parent.childIndent != null && parent.childIndent !== indent) return null
+    if (parent.entry) parent.childIndent = indent
+    const entry = { key, value: scalar, children: [] }
+    parent.items.push(entry)
+    stack.push({ indent, items: entry.children, entry, childIndent: null })
+  }
+  return root.length ? root : null
+}
+
+const buildGrid = (entries) => {
+  const grid = document.createElement('dl')
+  grid.className = 'hm-frontmatter-grid'
+  for (const entry of entries) {
+    const dt = document.createElement('dt')
+    dt.textContent = entry.key
+    const dd = document.createElement('dd')
+    if (entry.children.length) {
+      const nested = buildGrid(entry.children)
+      nested.classList.add('hm-frontmatter-grid-nested')
+      dd.appendChild(nested)
+    } else {
+      dd.textContent = entry.value
+    }
+    grid.appendChild(dt)
+    grid.appendChild(dd)
+  }
+  return grid
+}
+
+// Build the visible card: a key/value table for mappings of scalars (nested
+// mappings render as an inner table), otherwise the raw code box.
 function buildCard(value, { editing = false, labels = defaultLabels, onToggle } = {}) {
   const card = document.createElement('div')
   card.className = 'hm-frontmatter'
@@ -80,30 +132,8 @@ function buildCard(value, { editing = false, labels = defaultLabels, onToggle } 
     return card
   }
 
-  const lines = (value || '').split('\n')
-  // "simple" = every non-blank line is a flat `key: value` (no indentation,
-  // list markers, quotes-only, etc.).
-  const simple = lines.every(
-    (l) => l.trim() === '' || /^[A-Za-z0-9_.-]+:\s?.*$/.test(l)
-  )
-  if (simple) {
-    const grid = document.createElement('dl')
-    grid.className = 'hm-frontmatter-grid'
-    for (const line of lines) {
-      const m = line.match(/^([A-Za-z0-9_.-]+):\s?(.*)$/)
-      if (!m) continue
-      const dt = document.createElement('dt')
-      dt.textContent = m[1]
-      const dd = document.createElement('dd')
-      dd.textContent = m[2]
-      grid.appendChild(dt)
-      grid.appendChild(dd)
-    }
-    if (grid.children.length) card.appendChild(grid)
-    else card.appendChild(rawBlock(value))
-  } else {
-    card.appendChild(rawBlock(value))
-  }
+  const entries = parseFrontmatterMapping(value)
+  card.appendChild(entries ? buildGrid(entries) : rawBlock(value))
   return card
 }
 

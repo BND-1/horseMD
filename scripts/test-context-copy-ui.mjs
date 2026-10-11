@@ -10,7 +10,7 @@ const file = join(root, 'copy.md')
 const code = Array.from({ length: 122 }, (_, i) => `const line${i} = ${i}`).join('\n')
 const source = ['# Context copy', '', 'First **bold** text.', '',
   '1. Only selected item', '', '| Key | Value |', '| --- | --- |',
-  '| example | selected cell |', '', '```javascript', code, '```', ''].join('\n')
+  '| example | selected cell |', '| other | row two |', '', '```javascript', code, '```', ''].join('\n')
 await writeFile(file, source)
 const app = await launchBuiltElectron({
   profileDir: join(root, 'profile'), cleanProfile: false,
@@ -72,6 +72,48 @@ try {
   const cell = await copyFromMenu(await select('td p', 'selected cell'))
   assert.equal(cell.plain, 'selected cell')
 
+  // Tables: one row per line, tab-separated cells; HTML keeps only the content
+  // table (no block-view handles/buttons/preview table, no <p> in cells).
+  const tablePlain = 'Key\tValue\nexample\tselected cell\nother\trow two'
+  const assertTableHtml = (html, label) => {
+    assert.doesNotMatch(html, /<button|<svg|data-role|data-direction/, `${label}: editor UI leaked into text/html`)
+    assert.doesNotMatch(html, /<t[dh][^>]*>\s*<p/, `${label}: cell kept paragraph margins`)
+    assert.equal((html.match(/<table/g) || []).length, 1, `${label}: expected one table`)
+    for (const text of ['Key', 'Value', 'example', 'selected cell', 'other', 'row two']) assert.match(html, new RegExp(`>${text}<`))
+  }
+  const cellPoint = (text) => app.evaluate(`(() => {
+    const n = [...(${editor}).querySelectorAll('td p, th p')].find(n => n.textContent === ${JSON.stringify(text)})
+    n.scrollIntoView({block:'center'}); const r = n.getBoundingClientRect()
+    return {x:r.left + r.width / 2, y:r.top + r.height / 2}
+  })()`)
+  const keyboardCopy = async () => {
+    await app.evaluate('globalThis.__contextCopyPayload = null')
+    await key('c', 67, process.platform === 'darwin' ? 4 : 2, ['copy'])
+    return waitFor(() => app.evaluate('globalThis.__contextCopyPayload'), 'Cmd/Ctrl+C did not copy')
+  }
+  await app.evaluate(`(() => {
+    const cells = [...(${editor}).querySelectorAll('td p, th p')]
+    const first = cells.find(n => n.textContent === 'Key'), last = cells.find(n => n.textContent === 'row two')
+    ;(${editor}).focus(); getSelection().setBaseAndExtent(first.firstChild, 0, last.firstChild, last.firstChild.length)
+  })()`)
+  await sleep(150)
+  const rangeTable = await keyboardCopy()
+  assert.equal(rangeTable.plain, tablePlain, 'range table copy put cells on separate lines')
+  assertTableHtml(rangeTable.html, 'range table copy')
+  // Mouse drag across cells = ProseMirror CellSelection; the DOM selection
+  // stays on the last cell only.
+  const from = await cellPoint('Key'), to = await cellPoint('row two')
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...from })
+  for (let i = 1; i <= 8; i++) await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1, x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...to })
+  await waitFor(() => app.evaluate(`(${editor}).querySelectorAll('.selectedCell').length === 6`), 'drag did not select 6 cells')
+  const dragged = await keyboardCopy()
+  assert.equal(dragged.plain, tablePlain, 'cell-selection copy lost cells')
+  assertTableHtml(dragged.html, 'cell-selection copy')
+  const draggedMenu = await copyFromMenu(await cellPoint('example'))
+  assert.equal(draggedMenu.plain, tablePlain, 'context-menu copy of a cell selection lost cells')
+  assertTableHtml(draggedMenu.html, 'cell-selection menu copy')
+
   // No selection: disabled Copy must not overwrite the clipboard.
   const emptyPoint = await select('p', 'First bold text.')
   await app.evaluate('getSelection().collapseToEnd()')
@@ -128,7 +170,7 @@ try {
   const raw = await waitFor(() => app.evaluate('[...document.querySelectorAll("textarea.source-editor")].find(n => n.offsetParent)?.value'), 'source mode missing')
   assert.equal(raw, source, 'copy changed source bytes')
   assert.equal(await readFile(file, 'utf8'), source, 'copy changed disk')
-  console.log('PASS context Copy UI: actual right-click/button, forward/reverse rich MIME, list/table, disabled empty selection, virtualized 122-line full/65-line partial code, read-only copy-only preview, source/disk unchanged')
+  console.log('PASS context Copy UI: actual right-click/button, forward/reverse rich MIME, list/table (range, cell drag, menu: tab-separated rows, clean HTML), disabled empty selection, virtualized 122-line full/65-line partial code, read-only copy-only preview, source/disk unchanged')
 } catch (error) {
   console.error('COPY_DIAGNOSTIC', await app.evaluate(`(() => {
     const e = ${editor}; const root = e?.querySelector('.cm-editor')

@@ -222,6 +222,9 @@ async function main() {
     // edit must become the rich editor's new raw baseline without canonicalizing
     // the earlier formatting.
     assert.equal(await toggleSource(evaluate), true, 'Could not open source mode for source/rich chain')
+    // The mode switch is asynchronous; wait for the textarea like the other
+    // source checks do instead of racing it.
+    await waitFor(() => visibleSource(evaluate), 'Source did not open for source/rich chain')
     const sourceEditorReady = await evaluate(`(() => {
       const textarea = [...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)
       if (!textarea) return false

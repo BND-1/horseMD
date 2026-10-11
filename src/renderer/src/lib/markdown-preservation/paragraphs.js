@@ -839,8 +839,81 @@ export const preserveParagraphSplit = ({
   }
   if (first < 0 || sourceVisibleText.indexOf(boundary, first + 1) >= 0) return null
   const sourceSplitVisible = first + before.length
-  const rawSplit = sourceRawFromVisibleIndex(source, sourceSplitVisible, 'forward')
+  let rawSplit = sourceRawFromVisibleIndex(source, sourceSplitVisible, 'forward')
   if (!Number.isFinite(rawSplit) || rawSplit <= 0 || rawSplit >= source.length) return null
+  // Between the two visible characters the source may hold inline markup:
+  // closing delimiters of the left span and/or opening delimiters of the right
+  // one (`、|`code``, `**a**|text`, `**a**|*b*`). 'forward' always splits after
+  // all of it, which put an opening backtick on the wrong side of the new
+  // paragraph boundary (fuzz 2026-10-02: Enter before inline code). The
+  // canonical serializer output shows how many delimiter chars close the left
+  // paragraph (just before the inserted separator) and open the right one
+  // (just after it); when the authored markup has the same total length,
+  // split after the closing part. The integrity validator still proves it.
+  const rawBack = sourceRawFromVisibleIndex(source, sourceSplitVisible, 'backward')
+  // Delimiter runs the canonical output places around the inserted separator:
+  // `closing` ends the left paragraph's spans, `opening` restarts the right's.
+  let closingRun = ''
+  let openingRun = ''
+  let openingWhitespace = 0
+  let openingWhitespaceEncoded = false
+  const separatorOffset = nextChanged.search(/\r|\n/)
+  if (separatorOffset >= 0) {
+    const separatorStart = start + separatorOffset
+    let separatorEnd = separatorStart
+    while (separatorEnd < next.length && /[\r\n]/.test(next[separatorEnd])) separatorEnd += 1
+    const delimiter = /[*_`~=]/
+    let closing = 0
+    while (
+      separatorStart - closing - 1 >= 0 &&
+      delimiter.test(next[separatorStart - closing - 1]) &&
+      next[separatorStart - closing - 2] !== '\\'
+    ) closing += 1
+    // The serializer moves whitespace that starts the right paragraph OUTSIDE
+    // the reopened span (` **word**`), since `** word**` is not emphasis.
+    // The text stringify handler encodes that leading space as `&#x20;` (a
+    // raw one would be stripped at the block start); count it as one space.
+    const openingEncoded = next.slice(separatorEnd).match(/^&#x(?:20|9);/i)?.[0].length || 0
+    let rawSpaces = 0
+    while (/[ \t]/.test(next[separatorEnd + openingEncoded + rawSpaces] || '')) rawSpaces += 1
+    const openingSpaces = (openingEncoded ? 1 : 0) + rawSpaces
+    const openingRawLength = openingEncoded + rawSpaces
+    let opening = 0
+    while (
+      separatorEnd + openingRawLength + opening < next.length &&
+      delimiter.test(next[separatorEnd + openingRawLength + opening])
+    ) opening += 1
+    closingRun = next.slice(separatorStart - closing, separatorStart)
+    openingRun = next.slice(separatorEnd + openingRawLength, separatorEnd + openingRawLength + opening)
+    openingWhitespace = openingSpaces
+    openingWhitespaceEncoded = openingEncoded > 0
+  }
+  let insertClosing = ''
+  let insertOpening = ''
+  if (Number.isFinite(rawBack) && rawBack < rawSplit) {
+    const authoredMarkup = source.slice(rawBack, rawSplit)
+    if (/^[*_`~=]+$/.test(authoredMarkup) && closingRun.length + openingRun.length === authoredMarkup.length) {
+      rawSplit = rawBack + closingRun.length
+    }
+  } else if (rawBack === rawSplit && (closingRun || openingRun) && closingRun === [...openingRun].reverse().join('')) {
+    // Splitting INSIDE a span (Enter within `inline code` or **bold**): no
+    // authored delimiter sits at the split point, so the span must be closed
+    // before the new boundary and reopened after it — exactly the runs the
+    // canonical serializer emitted. Mirror-symmetric runs only; the integrity
+    // validator still proves the result.
+    insertClosing = closingRun
+    insertOpening = openingRun
+  }
+  // Whitespace that begins the right paragraph must stay outside the reopened
+  // delimiter (`** word**` would not be emphasis). At a block start CommonMark
+  // strips a raw space, so when the canonical keeps it (`&#x20;**word**`) the
+  // source keeps it with the U+200B leading-space sentinel (Typora spelling).
+  let rightPrefix = ''
+  if ((insertOpening || openingWhitespaceEncoded) && openingWhitespace) {
+    const authoredSpaces = source.slice(rawSplit).match(/^[ \t]*/)[0]
+    if (authoredSpaces.length !== openingWhitespace) return null
+    rightPrefix = (openingWhitespaceEncoded ? LEADING_SPACE_SENTINEL : '') + authoredSpaces
+  }
 
   const eol = lineEndingNear(source, rawSplit)
   const authoredAroundSplit = source.slice(Math.max(0, rawSplit - 1), rawSplit + 1)
@@ -855,7 +928,10 @@ export const preserveParagraphSplit = ({
     }
   }
 
-  const markdown = source.slice(0, rawSplit) + eol + eol + source.slice(rawSplit)
+  const markdown = rightPrefix
+    ? source.slice(0, rawSplit) + insertClosing + eol + eol + rightPrefix + insertOpening +
+      source.slice(rawSplit + openingWhitespace)
+    : source.slice(0, rawSplit) + insertClosing + eol + eol + insertOpening + source.slice(rawSplit)
   return {
     markdown,
     preserved: true,

@@ -4,7 +4,7 @@ import { EditorState } from '@milkdown/kit/prose/state'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkFrontmatter from 'remark-frontmatter'
-import { updateFrontmatterValue } from '../src/renderer/src/components/editor-frontmatter.js'
+import { parseFrontmatterMapping, updateFrontmatterValue } from '../src/renderer/src/components/editor-frontmatter.js'
 
 const schema = new Schema({
   nodes: {
@@ -51,3 +51,25 @@ assert.deepEqual(
 )
 
 console.log('PASS frontmatter: rich-card edits update only the YAML atom and body separators remain Markdown')
+
+// #144: nested mappings of scalars render as a (nested) key/value table;
+// anything the table cannot show faithfully stays a raw code box.
+{
+  const shape = (entries) => entries.map((entry) => entry.children.length ? [entry.key, shape(entry.children)] : [entry.key, entry.value])
+  assert.deepEqual(shape(parseFrontmatterMapping('name: feed-index\ndescription: Cross-session index\nmetadata:\n  type: project')),
+    [['name', 'feed-index'], ['description', 'Cross-session index'], ['metadata', [['type', 'project']]]])
+  assert.deepEqual(shape(parseFrontmatterMapping('a:\n  b:\n    c: deep\n  d: x\ne: y')), [['a', [['b', [['c', 'deep']]], ['d', 'x']]], ['e', 'y']])
+  assert.deepEqual(shape(parseFrontmatterMapping('title: Hello\nurl:https://x.y\nempty:')), [['title', 'Hello'], ['url', 'https://x.y'], ['empty', '']])
+  for (const raw of [
+    'tags:\n  - a\n  - b',            // sequence
+    'note: |\n  line one',             // block scalar
+    'note: >-\n  folded',
+    '# comment\ntitle: x',            // comment
+    'title: a\n  continued',          // indented line under a valued key
+    'a:\n  b: 1\n   c: 2',            // inconsistent child indentation
+    '\ttab: x',                       // tab indentation
+    'just text'
+  ]) assert.equal(parseFrontmatterMapping(raw), null, `stays raw: ${JSON.stringify(raw)}`)
+  assert.equal(parseFrontmatterMapping(''), null)
+}
+console.log('PASS frontmatter mapping parser (#144): nested scalar mappings become a table; sequences/block scalars/comments/odd indentation stay raw')

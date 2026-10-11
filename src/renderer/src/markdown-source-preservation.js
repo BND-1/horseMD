@@ -67,6 +67,25 @@ import {
   replaceChangedTableBlock
 } from './lib/markdown-preservation/tables.js'
 
+// A leading-space sentinel (U+200B) exists only to keep a following authored
+// space from being eaten as indentation. Once an edit removes that space
+// (type " x" at a block start, then Backspace), the sentinel is orphaned: the
+// rich document no longer starts with whitespace, so the candidate fails the
+// integrity check and the user sees a mismatch pause (fuzz 2026-10-02, seed 26).
+// Drop a sentinel that sits at the start of a line's content (after quote /
+// list / task / heading prefixes) and is directly followed by non-whitespace —
+// but only on lines this edit produced, never on an authored line.
+const ORPHAN_SENTINEL_LINE = /^((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)])[ \t]+)*(?:\[[ xX]\][ \t]+)?(?:#{1,6}[ \t]+)?)\u200B(?=[^\s\u200B])/
+const withoutOrphanLeadingSpaceSentinels = (markdown, sourceMarkdown) => {
+  if (!markdown.includes('\u200B')) return markdown
+  const authoredLines = new Set(String(sourceMarkdown || '').split(/\r\n|\r|\n/))
+  return markdown.replace(/[^\r\n]*/g, (line) =>
+    line.includes('\u200B') && !authoredLines.has(line)
+      ? line.replace(ORPHAN_SENTINEL_LINE, '$1')
+      : line
+  )
+}
+
 export {
   replaceMarkdownFrontmatterBlock
 } from './lib/markdown-preservation/frontmatter.js'
@@ -291,8 +310,9 @@ export function preserveRichMarkdownSource(source, previousCanonical, nextCanoni
   // bugs kept tripping over). Normalize table cells separately: only a cell
   // whose sole content is `<br />` is empty; inline `text<br>text` stays intact.
   if (result && result.markdown != null) {
-    const withoutPlaceholders = withoutStandaloneEmptyBlockLines(
-      normalizeEmptyTableCells(result.markdown)
+    const withoutPlaceholders = withoutOrphanLeadingSpaceSentinels(
+      withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(result.markdown)),
+      sourceMarkdown
     )
     // Crepe may append a serializer blank line after the last edited block; the
     // file's terminal line-ending run is authored formatting and must not grow.
@@ -2414,6 +2434,30 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
       rawEnd = lineEndInsertion
     }
   }
+  {
+    // Whole-line insertion at a canonical LINE START (Enter at the end of a
+    // quote-list item adds `> 3. …\n` after the existing newline). The line
+    // break has no visible width, so the mapped source offset lands BEFORE the
+    // authored line ending and the new row was glued onto the previous line
+    // (`quote-two> 3. …`, fuzz/RS chain test). Step past exactly one authored
+    // line ending so the inserted row starts its own line.
+    if (
+      start === previousEnd &&
+      rawStart === rawEnd &&
+      start > 0 &&
+      previous[start - 1] === '\n' &&
+      /\n$/.test(replacement) &&
+      Number.isFinite(rawStart)
+    ) {
+      const ending = sourceMarkdown.startsWith('\r\n', rawStart)
+        ? 2
+        : (sourceMarkdown[rawStart] === '\n' || sourceMarkdown[rawStart] === '\r') ? 1 : 0
+      if (ending) {
+        rawStart += ending
+        rawEnd = rawStart
+      }
+    }
+  }
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) {
     return preserveChangedLineRegion({
       source: sourceMarkdown,
@@ -2527,10 +2571,26 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
     !String(replacement || '').trim() &&
     /[ \t]*\r?\n[ \t]*\r?\n/.test(previous.slice(start, previousEnd))
   ) {
-    return {
-      markdown: sourceMarkdown,
-      preserved: false,
-      reason: 'localized-multi-block-delete'
+    // Exception (0.13.235, fuzz seed 26): a Backspace JOIN of two blocks,
+    // optionally with deleted text, is safe to splice when the authored raw
+    // bytes being removed are nothing but blank-line/whitespace separators,
+    // leading-space sentinels and exactly the deleted visible text — i.e. no
+    // block syntax (#, >, list markers, fences) is inside the span. This is
+    // what blocked the join after a leading space had been typed: the source
+    // spells that space `\u200B ` while canonical spells `&#x20;`, so the
+    // exact-canonical-baseline shortcut no longer applied. The integrity
+    // validator still proves the candidate.
+    const deletedVisible = previousVisible.text
+      .slice(startVisible.visibleIndex, endVisible.visibleIndex)
+      .replace(/\s/g, '')
+    const deletedRaw = sourceMarkdown.slice(rawStart, rawEnd).replace(/[\s\u200B]/g, '')
+    const pureJoin = rawStart < rawEnd && deletedRaw === deletedVisible
+    if (!pureJoin) {
+      return {
+        markdown: sourceMarkdown,
+        preserved: false,
+        reason: 'localized-multi-block-delete'
+      }
     }
   }
 

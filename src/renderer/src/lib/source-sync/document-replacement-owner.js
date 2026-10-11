@@ -1,15 +1,20 @@
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
+import { sameIgnoringHeadingIds } from './editor-only-document.js'
 
 export const DOCUMENT_REPLACEMENT_BOUNDARIES = Object.freeze({
   RAW_MARKDOWN_PASTE: 'raw-markdown-paste',
   WHOLE_DOCUMENT: 'whole-document-replacement'
 })
 
+// Heading ids are editor-only (Milkdown's syncHeadingIdPlugin assigns them in
+// a separate transaction right after a paste), so an id-only difference must
+// not make a replacement token look stale.
 const sameDocument = (left, right) => {
   if (left === right) return true
   if (!left || !right) return false
-  return typeof left.eq === 'function' ? left.eq(right) : false
+  if (typeof left.eq !== 'function') return false
+  return left.eq(right) || sameIgnoringHeadingIds(left, right)
 }
 
 const rejected = (reason, proof = null) => Object.freeze({

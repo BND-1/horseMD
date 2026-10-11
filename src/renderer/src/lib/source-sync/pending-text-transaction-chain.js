@@ -20,6 +20,34 @@ const plainTextReplaceStep = (step) => Boolean(
   closedPlainTextSlice(step.slice)
 )
 
+// Inline-text contract (opt-in): like the plain contract, but the closed
+// slice may carry marks, and Add/RemoveMarkStep are allowed. Owners using it
+// must still confine every step to the owned textblock and prove the final
+// raw patch through the semantic validator.
+const closedTextSlice = (slice) => {
+  if (!slice || slice.size === 0 || slice.content?.size === 0) return true
+  if (slice.openStart || slice.openEnd) return false
+  let text = true
+  slice.content.forEach?.((node) => {
+    if (!node?.isText) text = false
+  })
+  return text
+}
+
+const inlineTextStep = (step) => {
+  const name = step?.constructor?.name
+  if (name === 'AddMarkStep' || name === 'RemoveMarkStep') {
+    return Number.isFinite(step.from) && Number.isFinite(step.to)
+  }
+  return Boolean(
+    name === 'ReplaceStep' &&
+    step.structure !== true &&
+    Number.isFinite(step.from) &&
+    Number.isFinite(step.to) &&
+    closedTextSlice(step.slice)
+  )
+}
+
 const stepProof = (step) => Object.freeze({
   name: step?.constructor?.name || 'UnknownStep',
   from: Number.isFinite(step?.from) ? step.from : null,
@@ -47,8 +75,10 @@ export function provePendingTextTransactionChain({
   matchTerminalStep = null,
   requireTerminal = false,
   requireTerminalOwnTransaction = true,
-  validateTextChain = null
+  validateTextChain = null,
+  allowInlineMarks = false
 } = {}) {
+  const textStepContract = allowInlineMarks ? inlineTextStep : plainTextReplaceStep
   if (!journal?.oldDoc || !expectedDoc || !Array.isArray(journal.entries)) {
     return rejected(`${reasonPrefix}-document-missing`)
   }
@@ -116,7 +146,7 @@ export function provePendingTextTransactionChain({
         })
         preTerminalDocument = stepDoc
       } else {
-        if (!plainTextReplaceStep(step)) {
+        if (!textStepContract(step)) {
           return rejected(`${reasonPrefix}-pre-terminal-step-contract`, {
             entryIndex,
             stepIndex,

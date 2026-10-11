@@ -2817,6 +2817,17 @@ body.hm-full-width .editor-skeleton {
   color: var(--text);
   word-break: break-word;
 }
+/* Nested mapping (#144): an inner key/value table inside the parent's value,
+   its first row aligned with the parent key. */
+.hm-frontmatter-grid-nested {
+  padding: 0;
+}
+.hm-frontmatter-grid dd:has(> .hm-frontmatter-grid-nested) {
+  padding: 0;
+}
+.hm-frontmatter-grid-nested dt {
+  padding-right: 12px;
+}
 .hm-frontmatter-raw {
   margin: 0;
   padding: 10px 14px;

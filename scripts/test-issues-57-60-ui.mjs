@@ -104,8 +104,10 @@ async function main() {
     throw new Error(`Dollar math editing lost content/focus: ${JSON.stringify(dollarMath)}`)
   }
 
-  // #58: an empty backtick pair enters inline-code mode. After closing it,
-  // clicking the rendered trailing edge and typing appends within the mark.
+  // #58: since 0.13.27 (RS-26) the opener stays literal until a single
+  // closing backtick follows non-empty content; only then does `ab` become
+  // inline code. Clicking the rendered trailing edge and typing appends
+  // within the mark.
   const inlinePoint = await pointForText('Inline target')
   if (!inlinePoint) throw new Error('Inline-code fixture paragraph not found')
   await click(send, inlinePoint.x, inlinePoint.y)
@@ -118,8 +120,8 @@ async function main() {
   await key(send, 'End', 'End', 35)
   await send('Input.insertText', { text: ' ' })
   await send('Input.insertText', { text: '`' })
-  await send('Input.insertText', { text: '`' })
-  await send('Input.insertText', { text: 'ab' })
+  await send('Input.insertText', { text: 'a' })
+  await send('Input.insertText', { text: 'b' })
   await send('Input.insertText', { text: '`' })
   await sleep(250)
   const codePoint = await evaluate(`(() => {
@@ -127,7 +129,7 @@ async function main() {
     if (!code) return null
     code.setAttribute('data-issue-58', '1')
     const rect = code.getBoundingClientRect()
-    return { x: rect.right - 0.25, y: rect.top + rect.height / 2 }
+    return { x: rect.right - 1, y: rect.top + rect.height / 2 }
   })()`)
   if (!codePoint) throw new Error('Inline code pair did not render')
   await click(send, codePoint.x, codePoint.y)

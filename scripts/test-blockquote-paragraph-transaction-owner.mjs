@@ -477,7 +477,11 @@ const planFor = ({
     nextCanonical: '> alphaX\n',
     revision: 49
   })
-  assert.equal(plan.reason, 'blockquote-paragraph-raw-text-mismatch')
+  // A source whose bytes do not carry the paragraph text still fails closed;
+  // the localized fallback cannot anchor the edit to a matching character.
+  assert.equal(plan.ok, false)
+  assert.equal(plan.recognized, true)
+  assert.equal(plan.reason, 'blockquote-paragraph-inline-range-unmapped')
   assert.equal(plan.recognized, true)
 }
 

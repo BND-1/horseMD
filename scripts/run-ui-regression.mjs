@@ -80,13 +80,6 @@ const sessions = [
     tests: [{ script: 'scripts/test-lightbox-ui.mjs' }]
   },
   {
-    name: 'Table scroll and table controls',
-    port: 9484,
-    profileDir: '/tmp/horsemd-ui-regression-table',
-    appArgs: [fixture('table-scroll.md')],
-    tests: [{ script: 'scripts/test-table-scroll-ui.mjs' }]
-  },
-  {
     name: 'Issues 66-67: split outline and bold/sidebar shortcuts',
     port: 9485,
     profileDir: '/tmp/horsemd-ui-regression-66-67',
@@ -96,6 +89,13 @@ const sessions = [
 ]
 
 const standalone = [
+  {
+    // Launches its own app (fixed 1280x820 viewport) on CDP_PORT, so it must
+    // not run inside a pre-launched session on the same port.
+    name: 'Table scroll and table controls',
+    script: 'scripts/test-table-scroll-ui.mjs',
+    env: { CDP_PORT: '9484' }
+  },
   {
     name: 'Transaction-first source sync: atomic plain-text mapper',
     script: 'scripts/test-source-transaction-sync.mjs'
@@ -123,6 +123,50 @@ const standalone = [
   {
     name: 'Real IME composition: committed CJK survives source switching',
     script: 'scripts/test-ime-source-fidelity-ui.mjs'
+  },
+  {
+    name: 'Rich/source pause families: quote marks/soft breaks, table cells, Enter before inline code',
+    script: 'scripts/test-rich-source-pause-families-ui.mjs'
+  },
+  {
+    name: 'Source reprint engine (R1): authored bytes survive structural reprint',
+    script: 'scripts/test-source-reprint-ui.mjs'
+  },
+  {
+    name: 'Empty paragraph source: emptied paragraph keeps its line (Typora parity)',
+    script: 'scripts/test-empty-paragraph-source-ui.mjs'
+  },
+  {
+    name: 'Single tilde: `5~30` ranges stay plain, only ~~x~~ strikes (Typora parity)',
+    script: 'scripts/test-single-tilde-strike-ui.mjs'
+  },
+  {
+    name: 'Context copy: tables copy as tab-separated rows with clean HTML',
+    script: 'scripts/test-context-copy-ui.mjs'
+  },
+  {
+    name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
+    script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
+  },
+  {
+    name: 'Blockquote list exit chain: Enter/exit/nested and bullet Backspace (CRLF+BOM)',
+    script: 'scripts/test-blockquote-list-exit-backspace-chain-ui.mjs'
+  },
+  {
+    name: 'Editor-only document changes and journal locality helpers (pure)',
+    script: 'scripts/test-editor-only-document.mjs'
+  },
+  {
+    name: 'Blockquote inline patch and BOM marker fix (pure)',
+    script: 'scripts/test-blockquote-inline-patch.mjs'
+  },
+  {
+    name: 'Remark marker offset in BOM files (pure)',
+    script: 'scripts/test-remark-marker-bom-fix.mjs'
+  },
+  {
+    name: 'Auto-save: settings enable, rich/source debounce, external-change guard',
+    script: 'scripts/test-autosave-ui.mjs'
   },
   {
     name: 'Diverged Markdown: paragraph and nested-list edits save directly without normalization',
@@ -272,7 +316,7 @@ for (const session of sessions) {
 
 for (const item of standalone) {
   console.log(`\n[ui-regression] ${item.name}`)
-  await runNode(item.script)
+  await runNode(item.script, [], item.env)
 }
 
 console.log(`\nPASS UI regression: ${sessions.length} sessions + ${standalone.length} standalone`)

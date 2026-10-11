@@ -226,6 +226,10 @@ const semanticJson = (node, {
   ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths = [],
   ignoreTrailingEmptyListItemPaths = [],
   ignoreTableColumnWidthPaths = [],
+  ignoreAllTableColumnWidths = false,
+  // Source reprint: an empty paragraph inside a quote or list item next to
+  // real content has no Markdown spelling, exactly like a top-level one.
+  ignoreEmptyContainerParagraphs = false,
   // Transition-channel mode (P7b, trace-62663): flatten inline mark
   // containers (link/strong/emphasis) to their text and drop text marks, so
   // a changed-window comparison on a chronically diverged document asks
@@ -234,7 +238,12 @@ const semanticJson = (node, {
   // serializer mark splits). Applied symmetrically to both sides of the
   // transition; the full-document areSourceDocumentsEquivalent channel and
   // the strict list-slot gate keep their exact semantics.
-  inlineTextual = false
+  inlineTextual = false,
+  // Typora parity for emphasis Markdown cannot spell (`**] ok**` after a
+  // letter, `**(**`): compare with strong/emphasis marks dropped and `*`/`_`
+  // removed from text. Only areSourceDocumentsEquivalentWithLiteralEmphasis
+  // uses it, together with a per-block "only delimiters were added" check.
+  literalEmphasis = false
 } = {}) => {
   if (!node?.toJSON) return null
   const ignoredTableColumnWidthPaths = new Set(
@@ -280,6 +289,13 @@ const semanticJson = (node, {
   const visit = (value, path = []) => {
     if (!value || typeof value !== 'object') return value
     const next = { ...value }
+    if (literalEmphasis && next.type === 'text') {
+      next.text = String(next.text || '').replace(/[*_]/g, '')
+      if (Array.isArray(next.marks)) {
+        next.marks = next.marks.filter((mark) => mark?.type !== 'strong' && mark?.type !== 'emphasis')
+        if (!next.marks.length) delete next.marks
+      }
+    }
     if (next.attrs) {
       next.attrs = { ...next.attrs }
       if (next.type === 'heading') {
@@ -302,6 +318,11 @@ const semanticJson = (node, {
         delete next.attrs.listType
         delete next.attrs.spread
       }
+      // Column widths have no Markdown encoding at all. Callers comparing
+      // against the live editor document (source reprint, the validator's
+      // canonical-faithfulness check) opt in to ignoring them everywhere;
+      // default callers keep the exact-path proof below.
+      if (ignoreAllTableColumnWidths && (next.type === 'table_cell' || next.type === 'table_header')) delete next.attrs.colwidth
       if (
         (next.type === 'table_cell' || next.type === 'table_header') &&
         ignoredTableColumnWidthPaths.has(path.join('.'))
@@ -338,6 +359,53 @@ const semanticJson = (node, {
       // text, same marks, different node counts. Concatenation is their
       // canonical form, so merge before comparing (0.13.179 paste trace:
       // content[N].content 12 vs 14 nodes with byte-identical text).
+      // Whitespace at the edge of a strong/emphasis run renders identically
+      // whether or not it carries the mark, and Markdown cannot open/close
+      // those delimiters next to whitespace (`** word**` is not bold), so the
+      // serializer moves it outside (` **word**`). Compare with edge
+      // whitespace moved out of runs whose marks are ONLY strong/emphasis.
+      // Code, strike, highlight and links keep their whitespace strict.
+      // Links join them: Milkdown's serializer moves edge spaces out of EVERY
+      // mark run (`#moveSpaces`), so `[ a ](u)` is always written ` [a](u) `
+      // by canonical and reprint alike (fuzz seeds 55/63/66).
+      const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link'])
+      next.content = next.content.flatMap((child) => {
+        if (
+          child?.type !== 'text' ||
+          !Array.isArray(child.marks) ||
+          !child.marks.length ||
+          !child.marks.every((mark) => invisibleOnWhitespace.has(mark?.type))
+        ) return [child]
+        const text = String(child.text || '')
+        const match = text.match(/^([ \t]*)([\s\S]*?)([ \t]*)$/)
+        // A run of ONLY whitespace in bold/italic (the text of `*x*` deleted
+        // down to its spaces) cannot be spelled at all: compare it unmarked
+        // (fuzz seeds 49/73).
+        if (match && !match[2] && text) {
+          const { marks, ...rest } = child
+          return [rest]
+        }
+        if (!match || (!match[1] && !match[3]) || !match[2]) return [child]
+        const { marks, ...rest } = child
+        return [
+          ...(match[1] ? [{ ...rest, text: match[1] }] : []),
+          { ...child, text: match[2] },
+          ...(match[3] ? [{ ...rest, text: match[3] }] : [])
+        ]
+      })
+      // Two adjacent lists of the same kind are one list in Markdown
+      // (CommonMark merges them across a blank line; seeds 122/132).
+      next.content = next.content.reduce((lists, child) => {
+        const previous = lists[lists.length - 1]
+        if (
+          previous && child && previous.type === child.type &&
+          (child.type === 'bullet_list' || child.type === 'ordered_list') &&
+          Array.isArray(previous.content) && Array.isArray(child.content)
+        ) {
+          lists[lists.length - 1] = { ...previous, content: [...previous.content, ...child.content] }
+        } else lists.push(child)
+        return lists
+      }, [])
       const merged = []
       for (const child of next.content) {
         const previous = merged[merged.length - 1]
@@ -354,6 +422,100 @@ const semanticJson = (node, {
       }
       next.content = merged
     }
+    if ((next.type === 'paragraph' || next.type === 'heading') && Array.isArray(next.content)) {
+      // A SOFT line break at the very start of a paragraph/heading has no
+      // Markdown spelling (a paragraph cannot begin with a newline) — Enter
+      // right before a soft break leaves the new paragraph starting with one
+      // (fuzz seed 38). Hard breaks stay strict: `<br>` can spell them.
+      const isSoftBreak = (child) =>
+        (child?.type === 'hardbreak' || child?.type === 'hard_break') && child.attrs?.isInline === true
+      if (next.content.some((child) => !isSoftBreak(child))) {
+        while (isSoftBreak(next.content[0])) next.content = next.content.slice(1)
+        // ...nor end with one (the newline is just the paragraph's end).
+        while (isSoftBreak(next.content.at(-1))) next.content = next.content.slice(0, -1)
+      }
+      // Spaces right before a line break cannot be stored (CommonMark strips
+      // them; two or more turn a soft break into a hard one): compare without
+      // them (fuzz seed 55).
+      const isAnyBreak = (child) => child?.type === 'hardbreak' || child?.type === 'hard_break'
+      next.content = next.content.map((child, index) => (
+        child?.type === 'text' && isAnyBreak(next.content[index + 1]) && /[ \t]+$/.test(child.text || '')
+          ? { ...child, text: child.text.replace(/[ \t]+$/, '') }
+          : child
+      )).filter((child) => !(child?.type === 'text' && child.text === ''))
+      // ...nor right after a soft break: CommonMark strips the leading
+      // whitespace of a paragraph continuation line (fuzz seed 67).
+      next.content = next.content.map((child, index) => (
+        child?.type === 'text' && isSoftBreak(next.content[index - 1]) && /^[ \t]+/.test(child.text || '')
+          ? { ...child, text: child.text.replace(/^[ \t]+/, '') }
+          : child
+      )).filter((child) => !(child?.type === 'text' && child.text === ''))
+    }
+    if (next.type === 'paragraph' && Array.isArray(next.content) &&
+      next.content.every((child) => child?.type === 'text' && /^[\u200B \t]*$/.test(String(child.text || ''))) &&
+      next.content.some((child) => String(child.text || '').includes('\u200B'))) {
+      // A paragraph holding only HorseMD's U+200B sentinel is an empty one
+      // (`- [ ] ​`: GFM needs body text to keep a task checkbox; seed 87).
+      delete next.content
+    }
+    if ((next.type === 'paragraph' || next.type === 'heading') && Array.isArray(next.content)) {
+      // Spaces/tabs at the very END of a paragraph or heading have no Markdown
+      // encoding: CommonMark strips them (two or more only mean a hard break
+      // when more text follows). A space typed just before Enter / at the end
+      // of a line is therefore not authored meaning. Code blocks keep theirs.
+      const last = next.content.at(-1)
+      if (last?.type === 'text' && /[ \t]+$/.test(String(last.text || ''))) {
+        const trimmed = String(last.text).replace(/[ \t]+$/, '')
+        if (trimmed) next.content[next.content.length - 1] = { ...last, text: trimmed }
+        else next.content = next.content.slice(0, -1)
+        if (!next.content.length) delete next.content
+      }
+    }
+    if ((next.type === 'table_cell' || next.type === 'table_header') && Array.isArray(next.content)) {
+      // GFM trims leading/trailing spaces and tabs of every cell on parse, so
+      // whitespace the user just typed at a cell edge (e.g. the space before
+      // the next word) has no Markdown encoding. Compare cell text without it;
+      // interior spacing, marks and every other cell stay strict.
+      const paragraphs = next.content.filter((child) =>
+        child?.type === 'paragraph' && Array.isArray(child.content)
+      )
+      const first = paragraphs[0]
+      const last = paragraphs.at(-1)
+      if (first?.content[0]?.type === 'text') {
+        first.content[0] = { ...first.content[0], text: String(first.content[0].text || '').replace(/^[ \t]+/, '') }
+      }
+      if (last?.content.at(-1)?.type === 'text') {
+        const index = last.content.length - 1
+        last.content[index] = { ...last.content[index], text: String(last.content[index].text || '').replace(/[ \t]+$/, '') }
+      }
+      for (const paragraph of paragraphs) {
+        paragraph.content = paragraph.content.filter((child) => !(child?.type === 'text' && child.text === ''))
+        if (!paragraph.content.length) delete paragraph.content
+      }
+    }
+    if (next.type === 'table' && Array.isArray(next.content)) {
+      // A row with fewer cells than the widest row is padded with empty cells
+      // when the document is built (prosemirror-tables fixTables), so authored
+      // `| a | b | extra` under a two-cell header and the canonical's padded
+      // rectangle open as the same table (fuzz seed 31: a source edit that
+      // appended text after a row made every later table edit pause). Pad both
+      // sides the same way; cell content and alignment stay strict.
+      const width = Math.max(0, ...next.content.map((row) => Array.isArray(row?.content) ? row.content.length : 0))
+      next.content = next.content.map((row) => {
+        const cells = Array.isArray(row?.content) ? row.content : []
+        if (!row || cells.length >= width || !cells.length) return row
+        const padded = [...cells]
+        for (let column = cells.length; column < width; column += 1) {
+          const model = next.content.find((other) => other?.content?.[column])?.content[column]
+          padded.push({
+            type: cells[0].type,
+            ...(model?.attrs ? { attrs: { ...model.attrs } } : {}),
+            content: [{ type: 'paragraph' }]
+          })
+        }
+        return { ...row, content: padded }
+      })
+    }
     if (
       next.type === 'paragraph' &&
       Array.isArray(next.content) &&
@@ -367,6 +529,27 @@ const semanticJson = (node, {
       // paragraph's entire content. Inline breaks surrounded by text remain
       // structurally strict.
       delete next.content
+    }
+    if (
+      ignoreEmptyContainerParagraphs &&
+      (next.type === 'blockquote' || next.type === 'list_item') &&
+      Array.isArray(next.content) &&
+      next.content.some((child) => !(child?.type === 'paragraph' && !child.content?.length))
+    ) {
+      next.content = next.content.filter((child) => !(child?.type === 'paragraph' && !child.content?.length))
+      // Lists that the removed empty paragraph kept apart are now adjacent:
+      // one list in Markdown (seed 122).
+      next.content = next.content.reduce((lists, child) => {
+        const previous = lists[lists.length - 1]
+        if (
+          previous && child && previous.type === child.type &&
+          (child.type === 'bullet_list' || child.type === 'ordered_list') &&
+          Array.isArray(previous.content) && Array.isArray(child.content)
+        ) {
+          lists[lists.length - 1] = { ...previous, content: [...previous.content, ...child.content] }
+        } else lists.push(child)
+        return lists
+      }, [])
     }
     if (next.type === 'list_item' && Array.isArray(next.content)) {
       const ignoreTrailingEmptyAtOwnedPath =
@@ -489,6 +672,9 @@ const semanticJson = (node, {
         )
       }
     }
+    // A line break carries no text, so marks on it (Mod+B then Enter leaves
+    // the stored bold mark on the break) are not visible meaning.
+    if ((next.type === 'hardbreak' || next.type === 'hard_break') && next.marks) delete next.marks
     if (Array.isArray(next.marks)) next.marks = next.marks.map((mark) => visit(mark, path))
     return next
   }
@@ -499,9 +685,21 @@ const semanticJson = (node, {
     // user is typing; the parser drops those nodes on reopen. Their exact byte
     // count is protected by source slots/hints, so semantic comparison ignores
     // only these top-level empty paragraphs (never nested quote/list content).
-    result.content = result.content.filter((child) => !(
-      child?.type === 'paragraph' && !child?.content?.length
-    ))
+    // A new document's synthetic empty title heading is editor-only too (the
+    // canonical strips it), and Crepe's image-block is the parsed form of a
+    // paragraph that holds a single image (web paste keeps the inline form).
+    result.content = result.content
+      .filter((child) => !(
+        (child?.type === 'paragraph' || child?.type === 'heading') && !child?.content?.length
+      ))
+      .map((child) => {
+        if (child?.type === 'image-block') return { type: 'image-unit', src: child.attrs?.src ?? null }
+        if (
+          child?.type === 'paragraph' && child.content?.length === 1 &&
+          child.content[0]?.type === 'image'
+        ) return { type: 'image-unit', src: child.content[0].attrs?.src ?? null }
+        return child
+      })
 
     // Markdown parsers intentionally merge adjacent same-kind lists even when
     // the authored source has a blank line between them. ProseMirror can keep
@@ -580,7 +778,12 @@ const firstSemanticDifference = (left, right, path = '$') => {
   }
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-      return { path, leftLength: left?.length, rightLength: right?.length }
+      // Compact type/text sketches of both sides so a length mismatch shows
+      // what was added or dropped.
+      const sketch = (items) => (items || []).map((item) => (
+        item?.type === 'text' ? JSON.stringify(item.text).slice(0, 40) : item?.type || String(item)
+      ))
+      return { path, leftLength: left?.length, rightLength: right?.length, leftItems: sketch(left).slice(0, 12), rightItems: sketch(right).slice(0, 12) }
     }
     for (let index = 0; index < left.length; index += 1) {
       const difference = firstSemanticDifference(left[index], right[index], `${path}[${index}]`)
@@ -679,6 +882,43 @@ export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => 
     if (globalThis.__hmSourceIntegrityDiffTrace.length > 20) globalThis.__hmSourceIntegrityDiffTrace.shift()
   }
   return equal
+}
+
+// Option A (user decision 2026-10-10, Typora parity): bold/italic whose
+// delimiters Markdown cannot open or close there (`a**] ok**`, `**(**`) is
+// written as-is; reopening shows the asterisks. Accept a candidate ONLY when
+// it equals the document with those marks dropped AND every text block of the
+// document is the candidate's text with nothing but `*`/`_` removed — no
+// authored character may be lost or reordered.
+export const areSourceDocumentsEquivalentWithLiteralEmphasis = (parsed, expected, options = {}) => {
+  if (!parsed?.descendants || !expected?.descendants) return false
+  if (!areSourceDocumentsEquivalent(parsed, expected, { ...options, literalEmphasis: true, recordDifference: false })) return false
+  const blocks = (doc) => {
+    const texts = []
+    doc.descendants((node) => {
+      if (!node.isTextblock) return true
+      const text = node.textContent.replace(/\u200B/g, '').trim()
+      if (text) texts.push(text)
+      return false
+    })
+    return texts
+  }
+  const left = blocks(parsed)
+  const right = blocks(expected)
+  if (left.length !== right.length) return false
+  let added = 0
+  for (let index = 0; index < left.length; index += 1) {
+    const candidate = left[index]
+    const authored = right[index]
+    let at = 0
+    for (const character of candidate) {
+      if (at < authored.length && character === authored[at]) { at += 1; continue }
+      if (character !== '*' && character !== '_') return false
+      added += 1
+    }
+    if (at !== authored.length) return false
+  }
+  return added > 0
 }
 
 export function mapPlainTextTransactionsToSource({

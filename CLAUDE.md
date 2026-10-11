@@ -39,7 +39,11 @@ electron-builder binaries download slowly:
 Builds are **unsigned**: Windows shows SmartScreen ("更多信息 → 仍要运行");
 macOS Gatekeeper blocks first launch (right-click → Open, or
 `xattr -dr com.apple.quarantine /Applications/HorseMD.app`). Linux users should
-install only the `.deb` from the official GitHub Release.
+install only the `.deb` from the official GitHub Release. Its postinst is our
+`build/linux/after-install.tpl` (`deb.afterInstall`), which always installs
+`chrome-sandbox` as `root:root 4755` — electron-builder's default probes
+`unshare` as root and leaves it 0755, which crashes on launch under Ubuntu
+24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this.
 
 ## Layout
 
@@ -306,6 +310,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `toggleHighlightCommand` MUST be in that array or Crepe init throws
   ("Context … not found"). The inline-code `inclusive:false` fix uses the same
   `extendSchema` pattern; a belt-and-suspenders post-create override is applied too.
+- **CJK-friendly emphasis** (`remark-cjk-friendly`, first in `remarkPluginsCtx`):
+  `这是**「重点」**内容` parses as bold, matching Typora. Plain CommonMark
+  flanking rules treat CJK punctuation like ASCII punctuation and leave the
+  asterisks literal, which also made the source reprint engine pause whenever a
+  user bolded text next to Chinese punctuation.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →
@@ -410,6 +419,73 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   immediate save or source switch can lose the last input after reopen.
   `saveTab()` must call `getMarkdownForTab()` and update `tabsRef` before writing;
   `commitAllLive()` alone covers only uncontrolled source textareas.
+- **Rich/source pause families (0.13.235)** — found by
+  `scripts/fuzz-rich-source-ui.mjs` (seeded real-Electron random editing; oracle =
+  live PM doc vs Save → cold reopen, plus mismatch toasts). Fixes, each locked by
+  `test:rich-source-pause-families-ui` + a pure test:
+  - Blockquote owner: quote paragraphs with marks or several `> `/lazy lines no
+    longer fail closed on every keystroke. `planInlineLocalizedPatch` diffs the
+    paragraph, aligns PM text to the paragraph's own prefix-stripped raw lines
+    (the shared `pmPosToMarkdownOffset` ignores continuation `> ` prefixes and
+    can collapse to the block start), verifies deleted raw bytes == deleted
+    text, tries literal / escaped / mark-delimiter-wrapped spellings (`*e*`
+    input rule), and validates on a BOM-less LF copy. Pure mark toggles stay
+    fail-closed; legacy stays blocked for the family.
+  - Validator (`semanticJson`): table-cell **edge** whitespace is ignored (GFM
+    trims it); interior text stays strict.
+  - Table cell owner: when position mapping fails it falls back to
+    `mapTableCellBySlot` — table found by content (header row + delimiter row +
+    every body row cell-for-cell), only the target slot's trimmed bytes change,
+    `|` always escaped, in-cell line breaks spelled `<br>` (hardbreak is now part
+    of the plain-cell contract). Use text-node concatenation, not
+    `textContent`: Milkdown's hardbreak has `leafText` "\n".
+  - Milkdown's trailing-paragraph append (doc ending in table/list/code/quote)
+    is adopted as an editor-only document change
+    (`isTrailingEmptyParagraphAppend` + `sourceSyncBridge.adoptEditorOnlyDocument`)
+    after validating source ≈ new doc, instead of becoming step 1 of the next
+    journal (which made every focused owner see two top-level changes).
+  - `preserveParagraphSplit`: Enter next to inline markup splits after the
+    closing delimiters and before the opening ones, using the canonical output
+    around the inserted separator as the oracle.
+  - **Journal locality + editor-only changes** (`lib/source-sync/editor-only-document.js`):
+    focused owners prove ONE top-level block, so `handleSourceTransactions`
+    publishes the pending journal (forced flush; dispatch runs before
+    `view.updateState`, so it sees exactly oldState) when a transaction touches
+    top-level blocks disjoint from the journal's changed range — `markUserEdit`'s
+    DOM-driven flush misses CodeMirror/IME/undo edits. Milkdown's
+    `syncHeadingIdPlugin` dispatches separate id-only `setNodeMarkup`
+    transactions after heading edits; `isHeadingIdOnlyChange` closes the
+    pending journal and adopts them as editor-only (ids have no Markdown).
+  - `remarkFixMarkerOffsetForBom`: Milkdown's `remarkMarker` reads
+    `file.value.charAt(offset)` where offsets exclude a BOM but `file.value`
+    includes it → every `*`/`_` marker in a BOM file was the char to its left
+    and canonical printed delimiters as spaces. The fix is order-independent.
+- **Source reprint engine is the primary rich→source path** (R3,
+  [`docs/source-reprint-architecture.md`](./docs/source-reprint-architecture.md)):
+  `reprint(source, editorDoc)` diffs `parse(source)` against the editor
+  document, keeps authored bytes of unchanged subtrees and the frames of changed
+  containers, patches text blocks at character/segment level, and is verified
+  **directly against the editor document** (never via canonical). Run order:
+  precise reprint → existing focused owners/legacy → degraded reprint (inside
+  `reportSourceSyncFailure`) → pause. Editor-only/no-encoding states are listed
+  once in the design doc §5 — extend that table, do not add per-gesture owners.
+  `globalThis.__hmSourceReprintPrimary = false` switches it off (owner tests do
+  this to pin the fallback path). Tests: `test:source-reprint-ui` (real Crepe,
+  `__hmSourceReprintHarness` under `--horsemd-input-trace`); fuzz reports carry
+  shadow stats; `scripts/lib/shadow-triage.mjs` summarizes them.
+- **Auto-save** (`hooks/useAutoSave.js`, `settings.autoSaveDelay` ∈ 0/3/10/60 s,
+  default **0 = off**, Settings › Files, #136): after N s of inactivity (and on
+  window blur) a dirty tab **with a path** is written via `saveTab(id, false,
+  { auto: true })` — the same live-markdown + source-sync integrity gate as
+  Cmd/Ctrl+S, but silent. Auto mode never: opens a dialog, writes a recovery
+  copy, relocates pasted images (`data:`/`paste-images` links wait for an
+  explicit save — that rewrite remounts the editor), or overwrites a file
+  changed/removed on disk (`fs:writeFile` `expectedMtimeMs` guard → `{conflict}`;
+  the tab is paused until its mtime changes). `writeTab` marks
+  `savedContent: written` (the bytes written, never the newer `t.content`), and
+  `saveTab` clears `pendingRichEdit` when it resolves the live markdown, not
+  after the write — so typing during an in-flight save keeps the tab dirty.
+  Locked by `npm run test:autosave-ui`.
 - **Image host** (`ImageHostButton` + `image:upload` IPC): a Typora-style custom
   command. Renderer reads the file bytes and calls main, which writes a temp file,
   runs `<command> "<file>"`, and returns the last http(s) URL it prints. Empty
@@ -579,6 +655,12 @@ focused tests and use `npm run test:ui-regression` for editor/PDF/UI changes;
 the suite currently covers seven sessions plus standalone regressions. Input
 rules and source-fidelity tests type one character at a time through
 `scripts/lib/human-input.mjs`. See [`docs/development.md`](./docs/development.md).
+
+Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`),
+reproduce with `scripts/lib/probe-session.mjs`, and follow
+[`docs/rich-source-fuzzing.md`](./docs/rich-source-fuzzing.md) (triage flow,
+fixed families with root causes, prioritized open list). UI tests must wait
+for the asynchronous source-mode switch before touching the textarea.
 
 On macOS, scripting `osascript "tell application \"Electron\""` can launch the
 generic `node_modules` Electron bundle. Automated regression must use

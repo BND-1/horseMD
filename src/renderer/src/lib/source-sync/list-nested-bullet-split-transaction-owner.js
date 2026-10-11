@@ -543,6 +543,23 @@ export function createListNestedBulletSplitTransactionSourceSyncOwner({
 
     let valid = false
     try { valid = validateMarkdown({ markdown: publishMarkdown, expectedDoc }) === true } catch { valid = false }
+    // Enter right before a space leaves the new item's text starting with
+    // whitespace, which `  - ` + ` B` cannot carry (CommonMark strips it).
+    // Spell it like a top-level item does: the leading-space sentinel after
+    // the marker (`  - \u200B B`). Only the inserted row changes.
+    if (!valid && /^[ \t]/.test(String(classification.rightText || ''))) {
+      const newRowBodyStart = bodyRewrite
+        ? publishMarkdown.indexOf(
+          `${resolved.row.eol}${resolved.row.indent}${resolved.row.token}${resolved.row.spacing}`,
+          bodyRewrite.start
+        ) + `${resolved.row.eol}${resolved.row.indent}${resolved.row.token}${resolved.row.spacing}`.length
+        : patched.insertionAt + patched.insertion.length
+      if (newRowBodyStart > 0) {
+        const withSentinel = publishMarkdown.slice(0, newRowBodyStart) + '\u200B' + publishMarkdown.slice(newRowBodyStart)
+        try { valid = validateMarkdown({ markdown: withSentinel, expectedDoc }) === true } catch { valid = false }
+        if (valid) publishMarkdown = withSentinel
+      }
+    }
     if (!valid) return recognizedRejection('nested-bullet-split-source-invalid')
 
     const proof = Object.freeze({

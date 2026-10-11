@@ -133,7 +133,10 @@ const placeCaretAtContinuationEnd = async (app, markerText) => {
   })()`)
   assert.equal(result?.ok, true, 'caret at continuation end failed')
 }
+// This test pins the focused-owner fallback; the source reprint engine
+// (primary since 0.13.237) would otherwise publish first.
 const clearDiagnostics = (app) => app.evaluate(`(() => {
+  globalThis.__hmSourceReprintPrimary = false
   window.__hmPreserveLog = []
   window.__hmSourceIntegrityTrace = []
   window.__hmSourceSyncCoordinatorTrace = []

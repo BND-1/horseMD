@@ -31,6 +31,9 @@ export async function launchBuiltElectron({
   executable = electronPath,
   entrypoint = 'out/main/index.cjs',
   background = true,
+  // Every test launch records the input trace (user rule): a failure must be
+  // diagnosable from horsemd-input-trace-<pid>.jsonl in the user temp dir.
+  inputTrace = process.env.HORSEMD_TEST_TRACE !== '0',
   env = process.env
 }) {
   if (cleanProfile && profileDir) await rm(profileDir, { recursive: true, force: true })
@@ -40,7 +43,8 @@ export async function launchBuiltElectron({
     `--remote-debugging-port=${port}`,
     ...(entrypoint ? [entrypoint] : []),
     ...(background ? ['--horsemd-test-background'] : []),
-    ...appArgs
+    ...appArgs,
+    ...(inputTrace && !appArgs.includes('--horsemd-input-trace') ? ['--horsemd-input-trace'] : [])
   ], {
     cwd,
     env,

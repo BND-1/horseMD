@@ -352,15 +352,34 @@ export function useFileOps({
     })
   }, [commitAllLive, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef, tRef])
 
-  const writeTab = useCallback(async (tab, targetPath) => {
+  // `auto` (auto-save) writes the document bytes only: it never relocates
+  // pasted images (that rewrite remounts the editor under the caret), never
+  // overwrites a file changed/removed on disk since `expectedMtimeMs`, and
+  // reports failures to the caller instead of toasting.
+  const writeTab = useCallback(async (tab, targetPath, { auto = false, expectedMtimeMs } = {}) => {
     try {
       // Move pasted images (base64 blobs / global paste-folder files) into the
       // doc's ./assets and rewrite links to relative paths, so the saved file is
       // clean and portable (Typora-style). No-op when there are none / on mobile.
-      const { content: written, changed } = window.api.inlineForSave
+      const { content: written, changed } = !auto && window.api.inlineForSave
         ? await window.api.inlineForSave(tab.content, targetPath)
         : { content: tab.content, changed: false }
-      const { mtimeMs } = await window.api.writeFile(targetPath, written)
+      const result = await window.api.writeFile(
+        targetPath,
+        written,
+        auto && typeof expectedMtimeMs === 'number' ? { expectedMtimeMs } : undefined
+      )
+      if (result?.conflict) return { conflict: result.conflict }
+      const { mtimeMs } = result
+      // Mark exactly the bytes that were written as saved. Typing that landed
+      // while the write was in flight must keep the tab dirty, so never adopt
+      // the newer `t.content` as savedContent. Mirror into tabsRef first so a
+      // watcher echo or close check in the same tick sees the new mtime.
+      tabsRef.current = tabsRef.current.map((t) =>
+        t.id === tab.id && !changed
+          ? { ...t, path: targetPath, title: baseName(targetPath), savedContent: written, mtimeMs }
+          : t
+      )
       setTabs((prev) =>
         prev.map((t) =>
           t.id === tab.id
@@ -377,11 +396,12 @@ export function useFileOps({
                   pendingRichEdit: false,
                   reloadNonce: t.reloadNonce + 1
                 }
-              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: t.content, mtimeMs, pendingRichEdit: false }
+              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: written, mtimeMs }
             : t
         )
       )
       bumpRefresh()
+      if (auto) return { ok: true }
       // On mobile, where files land in a system folder, confirm what + where —
       // sticky so the user can read the location before dismissing it.
       if (isMobile) {
@@ -396,17 +416,28 @@ export function useFileOps({
         // (Typora-style). Short-lived so it doesn't linger over writing.
         fireToast(tRef.current('save.saved'), { duration: 1500 })
       }
+      return { ok: true }
     } catch (e) {
+      // Auto-save reports to its scheduler, which de-duplicates the toast.
+      if (auto) return { error: e?.message || String(e) }
       // Never fail silently — surface the real error so saving is debuggable.
       fireToast(tRef.current('save.failed', { msg: e?.message || String(e) }), { sticky: true })
+      return { error: e?.message || String(e) }
     }
-  }, [isMobile, setTabs, bumpRefresh, tRef])
+  }, [isMobile, setTabs, bumpRefresh, tRef, tabsRef])
 
+  // `options.auto` is the auto-save path: it only ever writes an existing,
+  // saved-to-disk document in place, silently, and returns a result object
+  // ({ ok } | { skipped } | { conflict } | { error }) for useAutoSave.
   const saveTab = useCallback(
-    async (id, forceDialog = false) => {
+    async (id, forceDialog = false, { auto = false } = {}) => {
+      if (auto) {
+        const candidate = tabsRef.current.find((t) => t.id === id)
+        if (!candidate?.path || candidate.kind === 'settings' || isMobile) return { skipped: 'ineligible' }
+      }
       commitAllLive() // flush any textarea edits in the debounce window before reading
       let tab = tabsRef.current.find((t) => t.id === id)
-      if (!tab) return
+      if (!tab) return auto ? { skipped: 'missing' } : undefined
       // A rich ProseMirror transaction can already be visible while Milkdown's
       // markdownUpdated callback and React state are still one task behind.
       // Resolve the editor's current document before writing so an immediate
@@ -415,6 +446,10 @@ export function useFileOps({
         ? await getSettledMarkdownForTab(id)
         : getMarkdownForTab(id)
       if (currentMarkdown == null) {
+        // The rich document cannot be mapped to source safely right now. The
+        // integrity warning is already visible; auto-save just waits and never
+        // writes a recovery copy on the user's behalf.
+        if (auto) return { skipped: 'source-sync' }
         const recoveryMarkdown = getRecoveryMarkdownForTab?.(id)
         if (typeof recoveryMarkdown !== 'string') {
           fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
@@ -434,14 +469,30 @@ export function useFileOps({
         }
         return
       }
-      if (typeof currentMarkdown === 'string' && currentMarkdown !== tab.content) {
-        tab = { ...tab, content: currentMarkdown }
+      if (typeof currentMarkdown === 'string' && (currentMarkdown !== tab.content || tab.pendingRichEdit)) {
+        // The live document is now in `content`, so the pending-rich marker is
+        // resolved. Clearing it HERE (not after the write) lets an edit typed
+        // while the write is in flight re-mark the tab dirty.
+        tab = { ...tab, content: currentMarkdown, pendingRichEdit: false }
         tabsRef.current = tabsRef.current.map((item) => item.id === id ? tab : item)
-        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, content: currentMarkdown } : item))
+        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, content: currentMarkdown, pendingRichEdit: false } : item))
       }
       // Settings tabs aren't documents — ⌘S / the save button must never try to
       // write one to disk (it has no path and no real content).
-      if (tab.kind === 'settings') return
+      if (tab.kind === 'settings') return auto ? { skipped: 'ineligible' } : undefined
+      if (auto) {
+        if (!tab.path) return { skipped: 'ineligible' }
+        if (tab.content === tab.savedContent) return { skipped: 'clean' }
+        // Pasted images still parked as data: URLs or in the global paste
+        // folder are relocated by an explicit save, which remounts the editor.
+        // Never do that under the user's caret; leave it to Cmd/Ctrl+S.
+        // (Mirrors image:inlineForSave: data: URLs and file:// links into the
+        // app's paste-images folder; other local file:// images stay put.)
+        if (/!\[[^\]]*\]\((?:data:image\/|file:\/\/[^)\s]*\/paste-images\/)/i.test(tab.content)) {
+          return { skipped: 'pending-images' }
+        }
+        return writeTab(tab, tab.path, { auto: true, expectedMtimeMs: tab.mtimeMs ?? undefined })
+      }
       let target = tab.path
       if (!target || forceDialog) {
         // Mobile has no native save dialog: ask for a filename, then write into
@@ -454,7 +505,7 @@ export function useFileOps({
         target = await window.api.saveAs(tab.title.endsWith('.md') ? tab.title : tab.title + '.md')
         if (!target) return
       }
-      await writeTab(tab, target)
+      return writeTab(tab, target)
     },
     [
       commitAllLive,
@@ -486,9 +537,12 @@ export function useFileOps({
       if (!/\.(md|markdown|mdx)$/i.test(name)) name += '.md'
       const target = await window.api.saveAs(name)
       if (!target) return
+      if (tab.pendingRichEdit) {
+        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, pendingRichEdit: false } : item))
+      }
       await writeTab(tab, target)
     },
-    [commitAllLive, writeTab, tabsRef, setSaveNameState, tRef]
+    [commitAllLive, writeTab, tabsRef, setTabs, setSaveNameState, tRef]
   )
 
   // A file-tree or tab-menu export may target a document that has never mounted
