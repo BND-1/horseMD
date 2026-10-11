@@ -6,8 +6,8 @@ import {
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
   sourceSyncNodeEntryAtPath,
-  topLevelSourceSyncEntries
-} from './top-level-subtree.js'
+  topLevelSourceSyncEntries,
+  mergedAdjacentSameKindListCounts} from './top-level-subtree.js'
 import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
 
 export const LIST_EMPTY_ITEM_FIRST_LIFT_TRANSACTION_FAMILY = 'list-empty-item-first-lift'
@@ -308,9 +308,6 @@ export function createListEmptyItemFirstLiftTransactionSourceSyncOwner({ resolve
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('list-empty-item-first-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('list-empty-item-first-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -329,9 +326,19 @@ export function createListEmptyItemFirstLiftTransactionSourceSyncOwner({ resolve
     if (!sourceList || !previousList) {
       return recognizedRejection('list-empty-item-first-range-unmapped')
     }
+    // CommonMark merge semantics on the PM side (see the shared helper). The
+    // first-lift shape additionally requires the target's FIRST item to be
+    // the merged block's first — a preceding adjacent same-kind list means it
+    // is not; plain-reject so whichever family owns that shape can run.
+    const {
+      itemCount: mergedItemCount, precedingItems: mergedPrecedingItems
+    } = mergedAdjacentSameKindListCounts(journal.oldDoc, [classification.topLevelIndex])
+    if (mergedPrecedingItems > 0) {
+      return rejected('list-empty-item-first-not-merged-first')
+    }
     if (
-      sourceList.rows.length !== classification.previousList.childCount ||
-      previousList.rows.length !== classification.previousList.childCount
+      sourceList.rows.length !== mergedItemCount ||
+      previousList.rows.length !== mergedItemCount
     ) return recognizedRejection('list-empty-item-first-row-count')
 
     const previousRow = previousList.rows[0]
@@ -374,7 +381,7 @@ export function createListEmptyItemFirstLiftTransactionSourceSyncOwner({ resolve
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(removed.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

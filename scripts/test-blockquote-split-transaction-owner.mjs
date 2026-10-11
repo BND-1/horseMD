@@ -540,7 +540,7 @@ for (const [label, offset] of [['start', 0]]) {
     canonical: '> al\n>\n> pha\n',
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'blockquote-split-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 76,

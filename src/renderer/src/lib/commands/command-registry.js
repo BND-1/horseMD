@@ -30,6 +30,9 @@ export function validateCommandDefinitions(commands = COMMAND_DEFINITIONS) {
     if (command.electronAccelerator && !command.handler) {
       errors.push(`Electron command ${command.id} must map to a renderer handler`)
     }
+    if (command.globalAccelerator && !command.handler) {
+      errors.push(`Global command ${command.id} must map to a renderer handler`)
+    }
   }
 
   const conflicts = findKeybindingConflicts(getDefaultKeybindingMap(commands))

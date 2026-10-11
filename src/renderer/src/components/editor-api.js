@@ -1,5 +1,5 @@
 import { TextSelection, NodeSelection } from '@milkdown/prose/state'
-import { commandsCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
+import { commandsCtx, parserCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
@@ -10,6 +10,7 @@ import {
   preserveRichMarkdownSource
 } from '../markdown-source-preservation.js'
 import { normalizeDisplayMath } from './editor-math.js'
+import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
@@ -24,6 +25,7 @@ import { toggleLinkCommand } from '@milkdown/kit/component/link-tooltip'
 import { settleEditorMarkdown } from '../lib/editor-flush-settle.js'
 import { publishPendingSourceSyncJournalForFlush } from '../lib/source-sync/flush-journal.js'
 import { retiredLegacySourceSyncFailureReason } from '../lib/source-sync/legacy-owner.js'
+import { reconcileUnchangedSourceResult } from '../lib/source-sync/unchanged-source-result.js'
 
 export function createEditorApi({
   viewRef,
@@ -52,7 +54,11 @@ export function createEditorApi({
   const getPdfSource = async () => {
     const v = viewRef.current
     if (!v) return null
-    return createPdfSourceFromEditor(v.dom)
+    const codeBlocks = []
+    v.state.doc.descendants((node) => {
+      if (node.type.name === 'code_block') codeBlocks.push({ text: node.textContent, language: String(node.attrs.language || '') })
+    })
+    return createPdfSourceFromEditor(v.dom, { codeBlocks })
   }
 
   const serializeCurrentDocument = () => {
@@ -157,6 +163,10 @@ export function createEditorApi({
         generatedScratchRef.current = false
       }
       const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
+      // Re-choose the code-block mount mode for the incoming document: pasting
+      // a block-heavy document into a small one must not eager-mount hundreds
+      // of CodeMirror instances (issue #126).
+      chooseCodeBlockMountMode(next)
       lastMarkdownRef.current = source
       // Source mode just handed us freshly authored bytes: the serializer's
       // list style must follow THIS spelling, or the next rich edit would
@@ -274,6 +284,13 @@ export function createEditorApi({
           canonical
         )
       }
+      preserved = reconcileUnchangedSourceResult({
+        result: preserved,
+        source: lastMarkdownRef.current,
+        canonical,
+        expectedDoc: viewRef.current?.state.doc,
+        parseMarkdown: (value) => crepe.editor.ctx.get(parserCtx)(value)
+      })
       if (Array.isArray(globalThis.__hmFlushTrace)) {
         globalThis.__hmFlushTrace.push({
           phase: 'flush-result',

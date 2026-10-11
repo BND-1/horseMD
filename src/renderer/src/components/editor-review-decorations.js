@@ -114,6 +114,22 @@ function getTextblockGroupKey(state, pos) {
   }
 }
 
+// A CriticMarkup marker can only start with one of these openers. Text nodes
+// without any opener cannot contribute review parts; skipping their scan keeps
+// documents that use no review markup free of the per-text-node work.
+const REVIEW_OPENER_PATTERN = /\{(?:\+\+|--|~~|==|>>)/
+
+// Raw and parsed CriticMarkup both require an opening brace in this block.
+// PM nodes are immutable; cache only this content property, never positions
+// or selection-dependent decorations. Edits create a fresh node automatically.
+const reviewStartByTextblock = new WeakMap()
+const mayContainReview = (node) => {
+  if (!reviewStartByTextblock.has(node)) {
+    reviewStartByTextblock.set(node, node.textContent.includes('{'))
+  }
+  return reviewStartByTextblock.get(node)
+}
+
 function getRevealRange(state, pos, textLength) {
   const nodeStart = pos
   const nodeEnd = pos + textLength
@@ -302,10 +318,29 @@ export function collectReviewDecorations(state, pluginState) {
   const decorations = []
   const widgetParts = []
   const parentEntries = new Map()
+  // CPU profile of the 333K redis doc (typing, 2026-09-13): this walk is the
+  // dominant per-keystroke cost — doc.resolve from the root for EVERY text
+  // node (~30k nodes × resolve ≈ 300-430ms/keystroke, user-visible input
+  // lag). Two structural cuts, output-identical: the textblock group key is
+  // a property of the PARENT textblock, so resolve once per parent; and a
+  // text node without any CriticMarkup opener cannot produce review parts,
+  // so its scan is skipped. The parentEntries bookkeeping still records
+  // every text node — cross-node parsing needs the parent's full text.
+  const groupKeyByParent = new Map()
+  const groupKeyFor = (pos, parent) => {
+    if (!parent) return getTextblockGroupKey(state, pos)
+    let key = groupKeyByParent.get(parent)
+    if (key === undefined) {
+      key = getTextblockGroupKey(state, pos)
+      groupKeyByParent.set(parent, key)
+    }
+    return key
+  }
 
   state.doc.descendants((node, pos, parent) => {
+    if (node.isTextblock && !mayContainReview(node)) return false
     if (!node.isText || !node.text) return true
-    const groupKey = getTextblockGroupKey(state, pos)
+    const groupKey = groupKeyFor(pos, parent)
 
     if (parent) {
       const entries = parentEntries.get(parent) || []
@@ -313,7 +348,9 @@ export function collectReviewDecorations(state, pluginState) {
       parentEntries.set(parent, entries)
     }
 
-    addTextNodeReviewParts(node, pos, state, decorations, widgetParts, groupKey)
+    if (REVIEW_OPENER_PATTERN.test(node.text)) {
+      addTextNodeReviewParts(node, pos, state, decorations, widgetParts, groupKey)
+    }
     return true
   })
 

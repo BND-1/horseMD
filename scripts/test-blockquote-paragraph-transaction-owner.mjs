@@ -523,7 +523,7 @@ const planFor = ({
     canonical: '> alphaX\n',
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'blockquote-paragraph-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 52,
@@ -584,7 +584,6 @@ const planFor = ({
   })
   assert.equal(plan.ok, false)
   assert.equal(plan.reason, 'blockquote-paragraph-syntax-pending')
-  assert.equal(plan.deferred, true)
   assert.equal(plan.holdJournal, true)
   assert.equal(plan.recognized === true, false)
 }

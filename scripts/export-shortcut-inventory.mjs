@@ -11,6 +11,7 @@ function cell(value) {
 }
 
 function commandOwner(command) {
+  if (command.globalAccelerator) return 'Global (main)'
   if (command.electronAccelerator) return 'Electron menu'
   if (command.editorOwned) return 'Editor'
   if (command.handler) return 'Renderer'

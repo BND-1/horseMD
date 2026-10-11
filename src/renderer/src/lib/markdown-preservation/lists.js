@@ -1254,9 +1254,22 @@ const comparableListLine = (line) => {
   return unescapedPunctuationView(content).text
 }
 
-const comparableListText = (markdown) => markdown
-  .split('\n')
-  .map(comparableListLine)
+// Cached per-markdown comparable forms: the batched-list mapper asks for the
+// full document's comparable lines once per changed list block; the redis-doc
+// profile had this at ~24% of a 128s preserve call.
+const comparableLineCache = new Map()
+const comparableListLines = (markdown) => {
+  const cached = comparableLineCache.get(markdown)
+  if (cached) return cached
+  const value = markdown.split('\n').map(comparableListLine)
+  if (comparableLineCache.size >= 8) {
+    comparableLineCache.delete(comparableLineCache.keys().next().value)
+  }
+  comparableLineCache.set(markdown, value)
+  return value
+}
+
+const comparableListText = (markdown) => comparableListLines(markdown)
   .filter(Boolean)
   .join('\n')
 
@@ -1314,11 +1327,27 @@ const canonicalListSegmentForSource = ({ source, sourceList, canonical, offset }
   // deferred Crepe update includes the Enter transaction and its text together.
   // The authored next-list fence below is the real boundary we need here.
   const lines = markdownLines(canonical)
-  const candidates = lines
-    .map((line, index) => ({ line, index, comparable: comparableListLine(line.text) }))
-    .flatMap((candidate) => anchors
-      .filter((anchor) => anchor.text === candidate.comparable)
-      .map((anchor) => ({ ...candidate, sourceIndex: anchor.sourceIndex })))
+  const comparableByLine = comparableListLines(canonical)
+  // Anchor lookup by exact comparable text. The previous lines×anchors filter
+  // was O(lines × anchors) string compares per changed list block — on the
+  // redis doc (13k lines, hundreds of anchors) this loop alone was ~26% of
+  // the whole preserve call. A Map keeps anchor order per text, so the
+  // produced candidates are byte-identical to the old filter chain.
+  const anchorByText = new Map()
+  for (const anchor of anchors) {
+    const bucket = anchorByText.get(anchor.text)
+    if (bucket) bucket.push(anchor.sourceIndex)
+    else anchorByText.set(anchor.text, [anchor.sourceIndex])
+  }
+  const candidates = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const comparable = comparableByLine[index]
+    const bucket = comparable ? anchorByText.get(comparable) : null
+    if (!bucket) continue
+    for (const sourceIndex of bucket) {
+      candidates.push({ line: lines[index], index, comparable, sourceIndex })
+    }
+  }
   if (!candidates.length) return null
   const candidate = candidates.reduce((best, current) => {
     const distance = Number.isFinite(offset)

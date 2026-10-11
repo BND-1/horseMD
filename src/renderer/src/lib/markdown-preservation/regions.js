@@ -936,11 +936,22 @@ export const preserveDivergedVisibleDelete = ({
     visibleIndex: deleteStartVis,
     visibleAffinity: 'backward'
   })
+  // P7b E2E (redis joinBackward replay): the source-side raw range must not
+  // delete invisible layout the canonical deletion did not delete. A visible
+  // delta confined to one line (no EOL inside the canonical's deleted range)
+  // must map with 'backward' end affinity too — 'forward' would hop the
+  // invisible run after the deleted text (blank line + fence opener) and eat
+  // it, corrupting the candidate (the fence vanished; the strict semantic
+  // gate rejected it and the user saw a warning). Multi-line canonical
+  // deletions keep 'forward' so layout BETWEEN deleted blocks goes with them.
+  const canonicalDeletedRange = String(previous || '').slice(start, previousEnd)
+  const canonicalDeletionSpansLines = /\n/.test(canonicalDeletedRange)
   const rawEnd = rawOffsetAtVisible(source, {
     visibleIndex: deleteEndVis,
-    visibleAffinity: 'forward'
+    visibleAffinity: canonicalDeletionSpansLines ? 'forward' : 'backward'
   })
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
+  if (!canonicalDeletionSpansLines && /\n/.test(source.slice(rawStart, rawEnd))) return null
 
   // Verify the raw range actually deletes what the canonical deleted (after
   // list markers are stripped — the canonical keeps them as syntax while the

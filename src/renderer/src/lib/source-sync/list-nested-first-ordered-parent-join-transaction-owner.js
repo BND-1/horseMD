@@ -424,9 +424,6 @@ export function createListNestedFirstOrderedParentJoinTransactionSourceSyncOwner
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('nested-first-ordered-parent-join-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('nested-first-ordered-parent-join-callback-document-mismatch', { deferred: true })
-    }
 
     const topology = classifyTopology({ journal, expectedDoc })
     if (!topology.ok) return topology
@@ -472,7 +469,7 @@ export function createListNestedFirstOrderedParentJoinTransactionSourceSyncOwner
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(patched.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

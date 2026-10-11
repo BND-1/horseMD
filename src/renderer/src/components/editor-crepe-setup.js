@@ -56,7 +56,18 @@ const mermaidLanguage = LanguageDescription.of({
   alias: ['mermaid', 'mmd'],
   extensions: ['mmd', 'mermaid'],
   async load() {
-    return new LanguageSupport(StreamLanguage.define(() => ({ token: () => null })))
+    // StreamLanguage.define takes the stream-parser SPEC OBJECT ({token, ...}),
+    // and a no-op token MUST consume the stream (readToken throws "failed to
+    // advance" after 10 zero-width calls). The original factory-function spec
+    // left token undefined and crashed with "token is not a function" the
+    // moment a mermaid block's editor parsed — e.g. the welcome document's
+    // diagram, on every build up to and including 0.13.207.
+    return new LanguageSupport(StreamLanguage.define({
+      token: (stream) => {
+        stream.next()
+        return null
+      }
+    }))
   }
 })
 

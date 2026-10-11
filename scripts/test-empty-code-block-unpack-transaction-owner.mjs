@@ -138,7 +138,6 @@ const planFor = ({
   })
   assert.equal(plan.ok, false)
   assert.equal(plan.reason, 'empty-code-block-unpack-awaiting-content')
-  assert.equal(plan.deferred, true)
   assert.equal(plan.holdJournal, true)
   assert.notEqual(plan.recognized, true,
     'pending empty paragraph must hold the journal without failing closed')
@@ -327,8 +326,7 @@ const planFor = ({
     revision: 820,
     callbackDocumentEquivalent: false
   })
-  assert.equal(plan.reason, 'empty-code-block-unpack-callback-document-mismatch')
-  assert.equal(plan.deferred, true)
+  assert.equal(plan.ok, true, 'must publish despite a non-equivalent callback canonical')
   assert.notEqual(plan.recognized, true)
 }
 

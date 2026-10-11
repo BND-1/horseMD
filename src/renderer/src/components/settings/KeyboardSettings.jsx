@@ -38,6 +38,7 @@ export default function KeyboardSettings({
   onSetKeybindings,
   onResetCommand,
   onResetAll,
+  globalShortcutStatus,
   t
 }) {
   const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
@@ -149,17 +150,25 @@ export default function KeyboardSettings({
                   const configurable = command.configurable !== false
                   const rowIssue = conflict?.commandId === command.id ? conflict : reserved?.commandId === command.id ? reserved : null
                   const rowIssueMessage = shortcutIssueMessage(rowIssue, platform, t)
+                  // OS-level commands are registered with globalShortcut in the
+                  // main process; a combination the system or another app already
+                  // owns comes back in `unregistered` instead of failing silently.
+                  const isGlobal = command.globalAccelerator === true
+                  const globalUnavailable = isGlobal && (globalShortcutStatus?.unregistered || []).includes(command.id)
+                  const hasError = !!rowIssue || globalUnavailable
                   return (
-                    <div className={`settings-shortcut-row${rowIssue ? ' has-error' : ''}`} key={command.id}>
-                      <div className="settings-shortcut-title">{getCommandTitle(command, t)}</div>
+                    <div className={`settings-shortcut-row${hasError ? ' has-error' : ''}`} key={command.id}>
+                      <div className="settings-shortcut-title" data-badge={isGlobal ? t('settings.keyboardGlobalBadge') : undefined}>
+                        {getCommandTitle(command, t)}
+                      </div>
                       <div className="settings-shortcut-cell">
                         <div className="settings-shortcut-controls">
                           <button
                             type="button"
-                            className={`settings-shortcut-recorder${recordingId === command.id ? ' recording' : ''}${rowIssue ? ' error' : ''}`}
+                            className={`settings-shortcut-recorder${recordingId === command.id ? ' recording' : ''}${hasError ? ' error' : ''}`}
                             disabled={!configurable}
-                            aria-invalid={rowIssue ? 'true' : undefined}
-                            aria-describedby={rowIssue ? `shortcut-error-${command.id}` : undefined}
+                            aria-invalid={hasError ? 'true' : undefined}
+                            aria-describedby={hasError ? `shortcut-error-${command.id}` : undefined}
                             onClick={() => {
                               if (!configurable) return
                               setRecordingId(command.id)
@@ -197,6 +206,11 @@ export default function KeyboardSettings({
                         {rowIssue && (
                           <div className="settings-shortcut-inline-error" id={`shortcut-error-${command.id}`} role="alert">
                             {rowIssueMessage}
+                          </div>
+                        )}
+                        {globalUnavailable && (
+                          <div className="settings-shortcut-inline-error" id={`shortcut-error-${command.id}`} role="alert">
+                            {t('settings.keyboardGlobalShortcutFailed')}
                           </div>
                         )}
                       </div>

@@ -1,5 +1,39 @@
 # 大文档打开卡顿：根因分析与优化方案
 
+## 最新实测：0.13.220 → 0.13.222 的真实编辑链
+
+本文下方保留早期分析；当前实际 Redis 文件是 **508802 bytes / 333584 个字符 / 13107 行**，不是32万行。富文本流畅编辑仍是硬需求，不能以让用户停留源码模式代替解决。
+
+### 测试条件和此前验证缺口
+
+旧 `test:redis-typing-latency-ui` 只测关闭trace的20键 beforeinput→input 中位数，而实际交给用户的进程开启trace；也没有统计停止输入后的主线程长任务。这不足以证明用户版本流畅。
+
+新增 `scripts/profile-redis-interaction.mjs`：在原文件独立副本顶部加探针段落，使用相同全文、24次逐字符输入、90ms间隔，对照trace开关；记录beforeinput→input、下一次rAF代理、CDP往返、16ms定时器延迟、PerformanceObserver长任务及CPU profile。这些是隔离后台实例的测量，不是物理键盘到屏幕显示的完整延迟，也不是长期工作负载结论。每轮都校验磁盘全文只发生预期改动；trace逐事件解码并按编辑器ID检查连续文档快照。
+
+| 候选 | trace | 输入p50 / p95 | 输入阶段新增日志 | 停顿后最长任务 |
+| --- | --- | --- | --- | --- |
+| 0.13.220基线 | 关 | 37 / 43 ms | 0 | 1912 ms |
+| 0.13.220基线 | 开 | 68 / 74 ms | 55500901 bytes | 2048 ms |
+| 仅日志优化 | 开 | 35 / 37 ms | 486649 bytes | 1975 ms |
+| 日志 + 评阅扫描优化 | 开 | 17 / 22 ms | 486649 bytes | 1932 ms |
+
+以上为同机单轮对照，不外推为固定倍数。完整证据目录（本机临时目录保留）：`horsemd-redis-profile-MY94HA`（基线）、`horsemd-redis-profile-619W9T`（日志优化）、`horsemd-redis-profile-BnDC7k`（两项优化），位于系统临时目录中，各含JSON和cpuprofile。最后一组42条事务快照连续还原通过。
+
+### 已独立修复
+
+1. `0fc68c8` / 0.13.221：原事务回调先构造oldDoc/newDoc全文JSON，再进入trace开关，因此关日志也有开销；开日志还会重复IPC传输和写入。新helper关闭时零构造，大文档按不可变PM节点身份记录字典和引用，逐条精确还原；小文档保留旧字段，所有事件添加编辑器traceId。没有删去首次分歧所需的文档证据。
+2. `332a32d` / 0.13.222：评阅插件对无评阅正文每键执行全文位置定位。按不可变文本块缓存是否有`{`起始符，否定块直接跳过；有标记的块保留原始跨文本节点解析和所有批注行为。1000段合同doc.resolve从1000次到0；编辑后插入标记、嵌套批注及真实卡片编辑/取消/完成通过。
+
+### 尚未解决的长停顿（不能关闭）
+
+**约1.9秒主线程同步长任务仍在，不能将输入p50下降称为Redis整体流畅。**CPU采样指向 `handleMarkdownUpdatedImpl` 的普通正文legacy路径：批量列表保留逻辑反复定位并比较未编辑列表，同时 `createLegacySourceIntegrityValidator` 在候选/当前canonical/历史source/历史canonical之间多次做全文解析和比较。本轮没有通过删校验、提高延迟阈值或重新规范化用户原文来掩盖它。
+
+下一工作单应把“打字→短暂停顿→继续打字/切源码/立即保存”的主线程最长任务加入失败预算，再沿相同CPU调用链减少重复解析和未变列表匹配；任何缓存须绑定正确文档/解析上下文，任何局部转换仍须通过semantic、list-slot、revision校验。通用Worker拆分或局部权威转换需要独立验证，不能仅为降低耗时开启未验收的全局authority开关。P7c和全局源码一致性P0仍未关闭。
+
+复测命令：`TRACE_MODES=off,on REDIS_INPUT_PATH='<Redis原文件路径>' npm run profile:redis-interaction`。原文件只读，测试写入独立副本。大文档事务新格式为`pm-node-refs-v1`，后续分析必须从日志开头按顺序调用 `createTransactionTraceDecoder()`（`components/editor-transaction-trace.js`）；缺字典时明确报错，不把缺少inline oldDoc误判为未记录。
+
+---
+
 > 用户反馈：打开一个 **~32 万行 / 0.5 MB** 的 `.md` 文件非常卡。
 >
 > 根因是 ProseMirror 全量解析 + 全量 DOM，而当时的「大文档」判定恰好漏掉了「行数极多但有正常空行」的文件。优化分三档列出，P0 多数已落地（见各条 ✅）。

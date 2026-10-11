@@ -113,6 +113,15 @@ const api = {
   windowClose: () => ipcRenderer.invoke('window:close'),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
   windowToggleDevTools: () => ipcRenderer.invoke('window:toggleDevTools'),
+  // Settings › General: with close-to-tray on, closing the window hides it to
+  // the tray instead of quitting (tray icon / the show-hide shortcut bring it
+  // back).
+  setCloseToTray: (enabled) => ipcRenderer.invoke('window:setCloseToTray', enabled),
+  // Command palette + global keybindings: hide/show the window (main owns the
+  // window) and push the user's effective OS-level accelerators. Only command
+  // ids whitelisted in the main process are registered.
+  toggleWindowVisibility: () => ipcRenderer.invoke('window:toggleVisibility'),
+  setGlobalShortcuts: (accelerators) => ipcRenderer.invoke('window:setGlobalShortcuts', accelerators),
 
   // update check (notify-only)
   checkUpdate: () => ipcRenderer.invoke('update:check'),
@@ -154,6 +163,11 @@ const api = {
     folderWorkspace: true,
     watch: true,
     windowControls: true,
+    // Desktop-only: closing the window can hide it to the system tray, with a
+    // global shortcut to bring it back.
+    closeToTray: true,
+    // Desktop-only: OS-level (globalShortcut) commands such as show/hide window.
+    globalShortcuts: true,
     devtools: true,
     pdfExport: true,
     htmlExport: true,

@@ -326,6 +326,120 @@ async function groupB(port) {
   }
 }
 
+// Real IME composition via CDP: pinyin keystrokes update the composition text
+// (each dispatch is one PM pending-text transaction), then insertText commits
+// the CJK run — the same lifecycle as the user trace.
+const imeComposeAndCommit = async (app, pinyin, cjk) => {
+  const replacementId = `goal-ime-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+  for (let index = 0; index < pinyin.length; index += 1) {
+    const ch = pinyin[index]
+    const code = ch.charCodeAt(0)
+    const common = {
+      key: ch,
+      code: `Key${ch.toUpperCase()}`,
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code
+    }
+    await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...common })
+    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...common })
+    const value = pinyin.slice(0, index + 1)
+    await app.send('Input.imeSetComposition', {
+      text: value,
+      selectionStart: value.length,
+      selectionEnd: value.length,
+      replacementId,
+      location: 0
+    })
+    await sleep(18)
+  }
+  await app.send('Input.insertText', { text: cjk })
+  await sleep(40)
+}
+
+// P6e (trace-38723): a seeded incident shape — IME commit at the end of a
+// loose list item's indented continuation paragraph, Enter splits the item
+// into an empty top-level sibling, then a second IME composition fills that
+// empty row. Standing guard: any future change must keep this warning-free
+// (the focused list-empty-item-text-filled owner owns the fill).
+async function groupB6(port) {
+  const dir = join(root, 'b6')
+  await mkdir(dir, { recursive: true })
+  const file = join(dir, 'loose.md')
+  await writeFile(file, [
+    'intro text',
+    '',
+    '- 可用版本：',
+    '',
+    '  >= 2.6.0',
+    '',
+    '- 返回值：',
+    '',
+    '  执行加法操作之后 `field` 域的值。',
+    '',
+    '```bash',
+    'redis> HSET mykey field 10.50',
+    '```',
+    ''
+  ].join('\n'), 'utf8')
+  const app = await launchBuiltElectron({
+    profileDir: join(dir, 'profile'),
+    port,
+    appArgs: [file, '--horsemd-input-trace']
+  })
+  try {
+    await waitFor(() => app.evaluate(`(() =>
+      (${visibleEditor()}?.textContent || '').includes('返回值')
+    )()`), 'B6 fixture did not mount')
+    await sleep(2500)
+    await initDiag(app)
+    currentScenario = 'B6 loose continuation IME split + fill'
+    const placed = await app.evaluate(`(() => {
+      const editor = ${visibleEditor()}
+      const items = [...(editor?.querySelectorAll('ul') || [])]
+        .filter((node) => !node.parentElement?.closest('ul'))[0]
+        ?.querySelectorAll(':scope > .milkdown-list-item-block > li') || []
+      const item = [...items].find((candidate) => {
+        const p = candidate.querySelector(':scope > .children > .content-dom > p') || candidate.querySelector('p')
+        return (p?.textContent || '').includes('返回值')
+      })
+      const paragraphs = [...(item?.querySelectorAll(':scope > .children > .content-dom > p') || [])]
+      const p = paragraphs[paragraphs.length - 1]
+      // The LAST text node: the paragraph ends with plain text after an
+      // inline-code run and the caret must land at its true end.
+      const text = [...(p?.childNodes || [])].reverse().find((node) => node.nodeType === Node.TEXT_NODE)
+      if (!p || !text) return false
+      const range = document.createRange()
+      range.setStart(text, text.nodeValue.length)
+      range.collapse(true)
+      const selection = getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+      editor.focus()
+      document.dispatchEvent(new Event('selectionchange'))
+      return true
+    })()`)
+    if (placed !== true) {
+      record(false, 'B6 caret placement failed')
+      return
+    }
+    await imeComposeAndCommit(app, 'kaishi', '开始')
+    await sleep(500)
+    await checkpoint(app, 'B6 IME commit at continuation end')
+    await enter(app)
+    await sleep(900) // let the split publish its empty marker row first
+    await checkpoint(app, 'B6 Enter split → empty sibling')
+    await imeComposeAndCommit(app, 'sebufangjia', '色不放假')
+    await sleep(1000)
+    const filled = await app.evaluate(`(() =>
+      (${visibleEditor()}?.textContent || '').includes('色不放假')
+    )()`)
+    if (filled !== true) record(false, 'B6 fill text never landed')
+    await checkpoint(app, 'B6 IME fill of empty sibling')
+  } finally {
+    await stopBuiltElectron(app, { removeProfile: true })
+  }
+}
+
 const SLASH_FORMATS = [
   ['h1', '一级', 'h1'], ['h3', '三级', 'h3'], ['h5', '五级', 'h5'],
   ['quote', '引用', 'blockquote'], ['divider', '', 'hr'],
@@ -574,6 +688,7 @@ try {
   await mkdir(root, { recursive: true })
   await groupA(basePort)
   await groupB(basePort + 2)
+  await groupB6(basePort + 3)
   await groupC(basePort + 4)
   await groupC2(basePort + 5)
   await groupD(basePort + 6)

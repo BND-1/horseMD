@@ -6,8 +6,8 @@ import {
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
   sourceSyncNodeEntryAtPath,
-  topLevelSourceSyncEntries
-} from './top-level-subtree.js'
+  topLevelSourceSyncEntries,
+  mergedAdjacentSameKindListCounts} from './top-level-subtree.js'
 import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
 
 export const LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY = 'list-empty-item-tail-remove'
@@ -350,7 +350,17 @@ const removeAuthoredTailRow = ({ source, sourceList, removedIndex, listType }) =
   const previousBreakEnd = previous.end < source.length && source[previous.end] === '\n'
     ? previous.end + 1
     : previous.end
-  if (previousBreakEnd !== row.start) return null
+  // The empty tail row must still belong to the same list: everything between
+  // the previous marker row and it stays INSIDE the previous item — blank
+  // lines and indented continuation lines only (trace-26116: the preceding
+  // item carried an indented continuation paragraph, so physical marker-row
+  // adjacency never held, this owner deferred a shape it had already
+  // classified, legacy was blocked by legacyRetired, and the user saw a
+  // warning). A gap line with top-level content means a different block sits
+  // between: reject. The patch itself is unchanged (delete row + EOL only).
+  if (previousBreakEnd > row.start) return null
+  const gapLines = source.slice(previousBreakEnd, row.start).split(/\r\n|\n/).slice(0, -1)
+  if (gapLines.some((line) => line.trim() && !/^[ \t]{2,}\S/.test(line))) return null
 
   const eol = lineEndingNear(source, row.start)
   const rowEnd = row.end < source.length && source[row.end] === '\n'
@@ -483,12 +493,30 @@ export function createListEmptyItemTailRemoveTransactionSourceSyncOwner({ resolv
     if (!sourceList || !previousList) {
       return recognizedRejection('list-empty-item-tail-range-unmapped')
     }
+    // CommonMark merge semantics: the scanner's block spans blank-separated
+    // adjacent same-kind lists, so count the PM side merged as well (trace of
+    // the input-rule-created separate list node above an existing one).
+    const {
+      itemCount: mergedItemCount, precedingItems: mergedPrecedingItems, followingItems: mergedFollowingItems
+    } = mergedAdjacentSameKindListCounts(journal.oldDoc, classification.listPath || [classification.topLevelIndex])
+    // The item is the tail of ITS OWN list node but a following adjacent
+    // same-kind list means it is NOT the tail of the merged source block the
+    // scanner sees — that shape belongs to the interior-remove family. A
+    // plain rejection lets it run; recognizing here would hijack it.
+    if (mergedFollowingItems > 0) {
+      return rejected('list-empty-item-tail-not-merged-tail')
+    }
     if (
-      sourceList.rows.length !== classification.previousList.childCount ||
-      previousList.rows.length !== classification.previousList.childCount
-    ) return recognizedRejection('list-empty-item-tail-row-count')
+      sourceList.rows.length !== mergedItemCount ||
+      previousList.rows.length !== mergedItemCount
+    ) return recognizedRejection('list-empty-item-tail-row-count', { proof: {
+      mergedItemCount, sourceRowCount: sourceList.rows.length,
+      canonicalRowCount: previousList.rows.length,
+      listChildCount: classification.previousList.childCount,
+      topLevelIndex: classification.topLevelIndex
+    } })
 
-    const previousRow = previousList.rows[classification.removedIndex]
+    const previousRow = previousList.rows[classification.removedIndex + mergedPrecedingItems]
     if (
       !previousRow ||
       kindForToken(previousRow.token) !== (classification.listType === 'ordered_list' ? 'ordered' : 'bullet') ||
@@ -499,13 +527,13 @@ export function createListEmptyItemTailRemoveTransactionSourceSyncOwner({ resolv
       ? removeAuthoredQuoteTailRow({
         source: journal.source,
         sourceList,
-        removedIndex: classification.removedIndex,
+        removedIndex: classification.removedIndex + mergedPrecedingItems,
         listType: classification.listType
       })
       : removeAuthoredTailRow({
         source: journal.source,
         sourceList,
-        removedIndex: classification.removedIndex,
+        removedIndex: classification.removedIndex + mergedPrecedingItems,
         listType: classification.listType
       })
     if (!removed) return recognizedRejection('list-empty-item-tail-authored-row-unproven')
@@ -519,7 +547,7 @@ export function createListEmptyItemTailRemoveTransactionSourceSyncOwner({ resolv
       containerType: classification.containerType,
       listPath: classification.listPath,
       quoteChildIndex: classification.quoteChildIndex,
-      removedIndex: classification.removedIndex,
+      removedIndex: classification.removedIndex + mergedPrecedingItems,
       removedPath: classification.removedPath,
       transientEmptyListItemPath: classification.transientListItemPath,
       transientEmptyParagraphPath: classification.transientParagraphPath,

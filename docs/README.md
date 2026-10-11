@@ -9,6 +9,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [ai-handoff.md](./ai-handoff.md) | 新 AI / 新开发者接手手册：项目地图、用户习惯、风险区、测试矩阵、网站与发布规则 |
+| [issue-139-line-break-interoperability-plan.md](./issue-139-line-break-interoperability-plan.md) | #139 换行互操作方案、五项独立修复、LF/CRLF复制粘贴/保存冷重开矩阵及0.13.231本机安装证据 |
 | [architecture.md](./architecture.md) | 技术栈、进程模型、目录结构、关键模块与数据流 |
 | [features.md](./features.md) | 每个功能的用法 + 实现方式（对应到具体文件） |
 | [implementation-notes.md](./implementation-notes.md) | 开发过程中踩的坑、关键 bug 的根因与修法、设计决策 |

@@ -556,7 +556,7 @@ assert.equal(planWithJournal(owner, {
   canonical: next,
   expectedDoc: finalDoc,
   callbackDocumentEquivalent: false
-}).reason, 'list-subtree-callback-document-mismatch')
+}).ok, true, 'must publish despite a non-equivalent callback canonical')
 assert.equal(planWithJournal(owner, {
   snapshot: mainJournal.snapshot,
   checkpoint: mainJournal.checkpoint,

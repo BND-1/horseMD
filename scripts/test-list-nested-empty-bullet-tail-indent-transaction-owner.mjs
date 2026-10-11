@@ -308,7 +308,7 @@ assert.equal(owner.plan({
   canonical,
   expectedDoc: transaction.doc,
   callbackDocumentEquivalent: false
-}).reason, 'nested-empty-bullet-indent-callback-document-mismatch')
+}).ok, true, 'must publish despite a non-equivalent callback canonical')
 
 assert.throws(
   () => createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner({ resolveMarkdownOffset: () => 0 }),

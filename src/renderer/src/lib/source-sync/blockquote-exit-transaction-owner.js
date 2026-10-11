@@ -1512,9 +1512,6 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
       })
     }
 
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('blockquote-exit-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyBlockquoteExitJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -1649,7 +1646,7 @@ export function createBlockquoteExitTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

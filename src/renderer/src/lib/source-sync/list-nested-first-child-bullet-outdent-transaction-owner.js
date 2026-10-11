@@ -415,8 +415,6 @@ export function createListNestedFirstChildBulletOutdentTransactionSourceSyncOwne
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('nested-first-child-outdent-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) return rejected('nested-first-child-outdent-callback-document-mismatch', { deferred: true })
-
     const topology = classifyTopology({ journal, expectedDoc })
     if (!topology.ok) return topology
     const journalProof = classifyJournal({ journal, expectedDoc, topology })
@@ -457,7 +455,7 @@ export function createListNestedFirstChildBulletOutdentTransactionSourceSyncOwne
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(patched.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

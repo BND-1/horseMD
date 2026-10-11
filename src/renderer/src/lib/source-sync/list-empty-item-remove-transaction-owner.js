@@ -6,8 +6,8 @@ import {
   sameSourceSyncDocument,
   sourceSyncAttrsEqual,
   sourceSyncNodeEntryAtPath,
-  topLevelSourceSyncEntries
-} from './top-level-subtree.js'
+  topLevelSourceSyncEntries,
+  mergedAdjacentSameKindListCounts} from './top-level-subtree.js'
 import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
 
 export const LIST_EMPTY_ITEM_REMOVE_TRANSACTION_FAMILY = 'list-empty-item-remove'
@@ -304,9 +304,6 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('list-empty-item-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('list-empty-item-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -325,11 +322,21 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
     if (!sourceList || !previousList) {
       return recognizedRejection('list-empty-item-range-unmapped')
     }
+    // CommonMark merge semantics: the scanner's block spans blank-separated
+    // adjacent same-kind lists, so count the PM side merged as well (trace of
+    // the input-rule-created separate list node above an existing one).
+    const { itemCount: mergedItemCount, precedingItems: mergedPrecedingItems } =
+      mergedAdjacentSameKindListCounts(journal.oldDoc, [classification.topLevelIndex])
     if (
-      sourceList.rows.length !== classification.previousList.childCount ||
-      previousList.rows.length !== classification.previousList.childCount
-    ) return recognizedRejection('list-empty-item-row-count')
-    const previousRow = previousList.rows[classification.removedIndex]
+      sourceList.rows.length !== mergedItemCount ||
+      previousList.rows.length !== mergedItemCount
+    ) return recognizedRejection('list-empty-item-row-count', { proof: {
+      mergedItemCount, sourceRowCount: sourceList.rows.length,
+      canonicalRowCount: previousList.rows.length,
+      listChildCount: classification.previousList.childCount,
+      topLevelIndex: classification.topLevelIndex
+    } })
+    const previousRow = previousList.rows[classification.removedIndex + mergedPrecedingItems]
     if (
       !previousRow ||
       kindForToken(previousRow.token) !== (classification.listType === 'ordered_list' ? 'ordered' : 'bullet') ||
@@ -339,7 +346,7 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
     const removed = removeAuthoredRow({
       source: journal.source,
       sourceList,
-      removedIndex: classification.removedIndex,
+      removedIndex: classification.removedIndex + mergedPrecedingItems,
       listType: classification.listType
     })
     if (!removed) return recognizedRejection('list-empty-item-authored-row-unproven')
@@ -374,7 +381,7 @@ export function createListEmptyItemRemoveTransactionSourceSyncOwner({ resolveMar
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(removed.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

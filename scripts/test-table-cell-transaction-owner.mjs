@@ -234,7 +234,38 @@ const oldDoc = document(table([
     nextCanonical: canonical.replace('| same | alpha |', '| same |  |'),
     revision: 124
   })
-  assert.equal(plan.reason, 'table-cell-not-simple-nonempty')
+  assert.equal(plan.ok, true, `empty body cell rejected: ${JSON.stringify(plan)}`)
+  assert.equal(plan.result.markdown, source.replace('alpha', ''), 'only delete cell text; preserve padding, pipes, BOM and CRLF')
+}
+
+// A blank cell is a real row/column slot, not an unowned paragraph gap.
+// Cover separate publications and an IME-style batch crossing the empty state.
+for (const targetPath of [[0, 1, 1], [0, 0, 1], [0, 2, 0], [0, 2, 2]]) {
+  const at = textStart(oldDoc, targetPath)
+  const value = oldDoc.child(targetPath[0]).child(targetPath[1]).child(targetPath[2]).textContent
+  const originalState = EditorState.create({ schema, doc: oldDoc })
+  const deletion = originalState.tr.delete(at, at + value.length)
+  const emptyState = originalState.apply(deletion)
+  const emptyPlan = planFor({ source, canonical, oldDoc, transactions: [deletion], nextCanonical: canonical, revision: 1240 }).plan
+  assert.equal(emptyPlan.ok, true, `empty slot ${targetPath} rejected: ${JSON.stringify(emptyPlan)}`)
+  const emptySource = emptyPlan.result.markdown
+  const fill = emptyState.tr.insertText('是', at)
+  const filled = planFor({
+    source: emptySource, canonical, oldDoc: emptyState.doc,
+    transactions: [fill], nextCanonical: canonical, revision: 1241
+  }).plan
+  assert.equal(filled.ok, true, `refill ${targetPath} rejected: ${JSON.stringify(filled)}`)
+  const batched = planFor({
+    source, canonical, oldDoc, transactions: [deletion, fill],
+    nextCanonical: canonical, revision: 1242
+  }).plan
+  assert.equal(batched.ok, true, `empty/refill batch ${targetPath} rejected: ${JSON.stringify(batched)}`)
+  assert.equal(filled.result.markdown, batched.result.markdown, 'split vs batched publication must preserve the same source')
+  assert.equal(filled.result.markdown.replace('是', ''), emptySource, 'refill only inserts the cell value')
+  assert.equal(planFor({
+    source: emptySource, canonical, oldDoc: emptyState.doc, transactions: [fill],
+    nextCanonical: canonical, revision: 1243, validateMarkdown: () => false
+  }).plan.ok, false, 'empty-cell slot still requires semantic validation')
 }
 
 {
@@ -360,7 +391,7 @@ const oldDoc = document(table([
     canonical: canonical.replace('| same | alpha |', '| same | alphaX |'),
     expectedDoc: captured.expectedDoc,
     callbackDocumentEquivalent: false
-  }).reason, 'table-cell-callback-document-mismatch')
+  }).ok, true, 'must publish despite a non-equivalent callback canonical')
 
   const staleSnapshot = createSourceSyncSnapshot({
     revision: 132,
@@ -394,4 +425,4 @@ assert.throws(
   /requires validateMarkdown/
 )
 
-console.log('PASS table cell transaction owner: stable cell paths and journal ReplaceSteps patch one GFM cell text, preserve duplicate occurrence/table layout/BOM/CRLF/other cells, support header/body rows, and reject syntax, empty, marked, cross-cell, attrs/topology, mismatched, semantic and stale cases')
+console.log('PASS table cell transaction owner: stable cell paths and journal ReplaceSteps patch one GFM cell text, preserve duplicate occurrence/table layout/BOM/CRLF/other cells, support header/body rows plus empty/refill transitions, and reject syntax, marked, cross-cell, attrs/topology, mismatched, semantic and stale cases')

@@ -28,6 +28,7 @@
 | view.globalSearch | cmd.globalSearch | view | app | Mod+Shift+F | ⌘⇧F | Ctrl+Shift+F | CmdOrCtrl+Shift+F | CmdOrCtrl+Shift+F | Electron menu | 是 |
 | view.toggleSource | cmd.source | view | document | Mod+Slash | ⌘/ | Ctrl+/ | CmdOrCtrl+/ | CmdOrCtrl+/ | Electron menu | 是 |
 | view.cycleTheme | cmd.theme | view | app | Mod+Shift+T | ⌘⇧T | Ctrl+Shift+T | CmdOrCtrl+Shift+T | CmdOrCtrl+Shift+T | Electron menu | 是 |
+| window.toggleVisibility | cmd.toggleWindow | view | app | Alt+M | ⌥M | Alt+M |  |  | Global (main) | 是 |
 | editor.find | cmd.find | editor | document | Mod+F | ⌘F | Ctrl+F | CmdOrCtrl+F | CmdOrCtrl+F | Electron menu | 是 |
 | editor.replace | cmd.replace | editor | document | Mod+Alt+F | ⌘⌥F | Ctrl+Alt+F |  |  | Renderer | 是 |
 | editor.bold | cmd.bold | editor | editor | Mod+B | ⌘B | Ctrl+B |  |  | Editor | 否 |

@@ -2335,7 +2335,13 @@ function preserveRichMarkdownSourceCore(sourceMarkdown, previousCanonical, nextC
   })
   if (trailingExactLine) return trailingExactLine
   if (sourceMarkdown === previous) {
-    const translatedReplacement = canonicalFreshTextToSource(next.slice(start, nextEnd))
+    // This exact baseline gives a proven physical line prefix. Keep an escape
+    // that prevents a freshly pasted text paragraph from becoming a list,
+    // without mistaking a fragment inside an existing list for a new block.
+    const translatedReplacement = canonicalFreshTextToSource(next.slice(start, nextEnd), {
+      preserveOrderedPrefix: true,
+      initialLinePrefix: next.slice(lineAt(next, start).start, start)
+    })
     return {
       markdown: withoutStandaloneEmptyBlockLines(normalizeEmptyTableCells(
         sourceMarkdown.slice(0, start) +

@@ -88,6 +88,11 @@ export {
   createCodeBlockBoundaryJoinTransactionSourceSyncOwner
 } from './code-block-boundary-join-transaction-owner.js'
 export {
+  CROSS_FENCE_SPAN_TRANSACTION_BOUNDARY,
+  CROSS_FENCE_SPAN_TRANSACTION_FAMILY,
+  createCrossFenceSpanTransactionSourceSyncOwner
+} from './cross-fence-span-transaction-owner.js'
+export {
   CODE_BLOCK_PARAGRAPH_TRANSACTION_BOUNDARY,
   CODE_BLOCK_PARAGRAPH_TRANSACTION_FAMILY,
   createCodeBlockParagraphTransactionSourceSyncOwner
@@ -182,6 +187,11 @@ export {
   LIST_EMPTY_ITEM_REMOVE_TRANSACTION_FAMILY,
   createListEmptyItemRemoveTransactionSourceSyncOwner
 } from './list-empty-item-remove-transaction-owner.js'
+export {
+  LIST_EMPTY_ITEM_TEXT_FILL_TRANSACTION_BOUNDARY,
+  LIST_EMPTY_ITEM_TEXT_FILL_TRANSACTION_FAMILY,
+  createListEmptyItemTextFillTransactionSourceSyncOwner
+} from './list-empty-item-text-fill-transaction-owner.js'
 export {
   LIST_ITEM_PARAGRAPH_TRANSACTION_BOUNDARY,
   LIST_ITEM_PARAGRAPH_TRANSACTION_FAMILY,

@@ -504,9 +504,6 @@ export function createTableRowInsertTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('table-row-insert-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('table-row-insert-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyTableRowInsertJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -576,7 +573,7 @@ export function createTableRowInsertTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

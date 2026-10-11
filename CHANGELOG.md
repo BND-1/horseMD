@@ -6,10 +6,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.233] - 2026-09-24
+
+### Fixed
+- **导出保持可见普通换行** — 按当前“保留源码单换行”设置，在导出副本中将显示用软换行物化为br；不更改编辑器和源文件。完整代码及软换行导出专项通过，PNG功能独立验收。
+
+## [0.13.232] - 2026-09-24
+
+### Fixed
+- **长代码导出完整性** — 共享PDF/HTML导出快照在任何异步处理前读取完整ProseMirror代码节点，不再将CodeMirror当前可见行当成全文；包括代码尾部、空行及语言标记。123行代码专项回归修复前失败、修复后通过，原文不变；普通换行的独立失败用例仍待下一项修复。
+
+## [0.13.231] - 2026-09-24
+
+### Fixed
+- **#139 文档中间硬换行不会误写成新段落** — 既有中间续行分支同时识别反斜杠与两个以上空格的硬换行写法，保留同段续写、后续多段粘贴、占位清理以及LF/CRLF。撤回会绕过旧分支的提前返回，不修改旧回归的断言或放宽同步校验。新增14项边界合同、完整源码保真、39/39探针及编号文字保护通过；整轮34项DOM与26项LF/CRLF应用矩阵、相邻复制/字体主题回归、两端构建及教程检查通过。0.13.231已本机安装带trace，安装包抽验通过；尚未对外发布，Windows原生联测未完成。
+
+## [0.13.230] - 2026-09-23
+
+### Fixed
+- **#139 编号外观的HTML文字段落不再误变有序列表** — 扩展回归发现，粘贴入模已正确保留硬换行，但exact-canonical-baseline写回删除了必要的`1\.`保护转义。现在仅在精确基线可证明的完整行上下文保留编号分隔符转义；普通行内、小数、未完成输入及已有列表正文保持既有行为。没有改SourceSyncCoordinator或放宽校验。新增编号合同、完整源码保真及39/39探针通过。
+
+## [0.13.229] - 2026-09-23
+
+### Fixed
+- **#139 保留外部HTML通过white-space表达的换行** — 在脱离页面的剪贴板副本里，按明确的pre/pre-wrap/pre-line/break-spaces声明及继承关系将实际换行转成br，保留加粗、链接等内联结构；normal/nowrap/initial重置、普通HTML源码缩进、pre/code及内部PM切片保持既有语义。Markdown候选路由同时检查这些可见换行，不因编号文字抢占富HTML。完整34项DOM合同通过，应用级LF/CRLF保存与重开回归继续独立验收；未改同步校验或批量重写原文换行。
+
+## [0.13.228] - 2026-09-23
+
+### Fixed
+- **#139 HTML列表复制不再合并多个段落** — 列表复制只展开首段让其与编号同行，保留后继段落、引用、代码与嵌套列表；不再把所有块包装拆成连续文字。4项HTML结构合同通过，复制副本之外的富文本、源码与保存链路不变。
+
+## [0.13.227] - 2026-09-23
+
+### Fixed
+- **#139 混合列表选区的纯文本换行** — 含列表的复制副本不再通过textContent拼接文字。只在二次临时副本中物化列表标记，并读取实际br、段落、表格及pre边界；正文与列表同选时不再丢换行，嵌套先后顺序和选区两端文字保持。9项针对性DOM合同通过，HTML多段列表与CSS换行粘贴为后续独立修复；不修改原文件和同步算法。
+
+## [0.13.226] - 2026-09-23
+
+### Added
+- **选区右键复制** — 桌面富文本右键菜单首项增加“复制”，保留原选区并复用既有HTML/纯文本/Markdown复制通道；非空代码选区交给CodeMirror完整模型，预览区仅开放复制。空选区禁用，陈旧文档拒绝复制，不改写文档。选区/焦点单测、真实右键、反向选区、列表、表格、122行虚拟代码、源码与磁盘不变，以及原复制/撤销和浮动工具栏回归通过。
+
+## [0.13.225] - 2026-09-23
+
+### Fixed
+- **恢复标题黑体与内置排版优先级** — 将编辑器基础CSS固定在应用入口、先于HorseMD样式加载，避免懒加载编辑器的frame/reset/table样式随后覆盖标题字体、字重和字号。编辑器JavaScript仍保持懒加载，不强制覆盖用户主题或CSS片段。真实构建已验证六级标题、正文、字体/字号设置、用户CSS启动加载/晚到样式/停用恢复，以及源码与磁盘全文不变。
+
+## [0.13.224] - 2026-09-19
+
+> 正式发布版本。升级前建议备份重要文档；全局源码/富文本一致性 P0、P7c 及 Redis 停顿后的整篇同步长任务仍未关闭。
+
+### Fixed
+- **0.13.224 表格单元格删空、中文输入法重新填写保持原始行列边界** — 表格专属事务现在涵盖纯文本单元格从非空到空、从空到非空及同批次跨空状态；每一步仍须证明只有同一个单元格发生变化，再按作者原始管道边界替换文字，不重排整张表。避免删掉“否”后通用映射重排表格并损坏后续行。真实故障文档的普通回调/立即切源码、IME填回“是”、源码全文逐字比较、列数、保存与独立配置冷重开通过；错误语义和陈旧事务仍拒绝。
+- **0.13.223 删除列表内空段落后，已等价的源码不再无限搁置** — trace-47637 的首发不是末尾跨围栏警告，而是原源码已与删除后的完整PM文档一致却仍被legacy标记为unmapped。普通回调与强制刷新现在共享无字节变更候选恢复：源码及回调canonical分别解析后都须与当前PM等价，并通过严格列表编号/嵌套检查，随后仍经原协调器验证和发布。真实报告副本的退格、后续另一列表连续回车、源码全字节、保存与冷重开通过；不等价或陈旧候选仍拒绝。全局P0和Redis同步长停顿不因此关闭。
+- **0.13.222 无评阅文本块不再逐键重复定位** — 评阅扫描先按不可变PM文本块检查是否存在语法起始符，不可能包含评阅的块直接跳过；只缓存内容属性，不缓存位置或选区。1000段无评阅合同的doc.resolve从1000次降到0；标记新增、嵌套批注、替换及评阅卡片编辑/取消/完成UI通过。带日志Redis全文24键p50 17ms、p95 22ms，42条事务快照逐条还原通过；约1.9秒同步长任务仍待优化。
+- **0.13.221 减少输入追踪对大文档编辑的干扰** — 关闭追踪时不再预先构造两份全文JSON；开启时，大文档使用可精确还原的不可变节点字典，小文档保持旧格式。相同Redis全文24键带日志对照：新增日志55.5MB→0.487MB，输入p50 68→35ms；同期约2秒同步长任务仍未消除。逐事件还原、缺失引用拒绝及Redis IME/源码/保存/冷重开回归通过，源同步校验未放宽。
+- **0.13.220 单次结构事务复用源码位置映射，减少全文重复解析** — 引入最多4项、按 Markdown 字节/PM 文档/remark 实例隔离的同步作用域缓存，离开本次发布即释放，异常路径同样清理，不跨 revision 复用。实际 Redis 全文的8次位置请求微基准解析8→1、1389ms→166ms，偏移逐项相等；该基准使用两块 PM 目标模型，不是整机编辑速度。无 trace 的20键输入延迟单次对照 p50 37→33ms，不代表稳定的端到端加速结论；实际 Redis 源码/磁盘/冷重开回归仍通过。
+- **0.13.219 嵌套列表正文同步不再因证据参数缺失抛异常** — 回归发现 nested paragraph helper 使用未传入的 `callbackDocumentEquivalent`，在构造 proof 时抛出 ReferenceError。显式传递该值并默认 false，测试覆盖 true/false 均为诊断证据、不恢复旧硬门。原嵌套插入、连续删除清空、相邻尾空项及协调器测试通过。
+- **0.13.218 延迟同步使用执行时的当前文档，并在强制刷新后使旧任务失效** — Redis 实机 trace-25389 的尾空项警告之前，列表正文删除已出现新候选与旧 canonical 错位。尾沿现在序列化当前 ProseMirror 文档；强制刷新与成功发布取消过期任务，IME 中间态及已处理状态不重复发布。实际 Redis 副本的 Enter/IME/四次退格、源码全字节、磁盘及冷重开回归通过，8 项调度合同和相邻 IME 回归通过。未修改用户原文件，未放宽完整性校验；全局 P0 仍待持续真人验收。
+- **0.13.217 大文档延迟同步定时任务不再倒序执行** — 达到连续输入的即时同步上限或进入程序化同步分支时，先取消旧的尾沿定时任务，防止新内容处理后旧 Markdown 再次运行。新增直接执行生产调度代码的虚拟时钟回归，覆盖硬上限、即时分支、最新尾沿与销毁。未放宽源码完整性校验；Redis 长会话 P0 仍以真实首次分歧回归为准。
+
 ### Known Issues
 - **富文本 / 源码长会话仍可能分叉（P0）** — 0.13.47 的 `/code` 原子同步修复通过了家族矩阵、多轮持久化和代码块专项，但安装包人工验收仍能在真实长文档中复现：建立代码块后继续多轮编辑，富文本新增内容可能没有完整进入源码或磁盘；保存既可能暂停，也可能执行成功但内容仍不一致。该问题尚未关闭，禁止把当前候选描述为稳定修复。接手记录见 [`docs/rich-source-divergence-incident-0.13.47.md`](./docs/rich-source-divergence-incident-0.13.47.md)。
 
 ### Added
+- **新增「关闭到托盘」与可自定义的全局显示/隐藏快捷键** — 开启后，关闭按钮（含 Alt+F4）不再退出应用，而是把窗口隐藏到系统托盘；托盘图标左键单击、或全局快捷键可随时唤出/隐藏，托盘右键菜单提供「显示 / 隐藏」「退出」，退出仍会走未保存更改确认。该快捷键不再硬编码为 `Alt+M`，而是注册为命令 `window.toggleVisibility`（分类「视图」、上下文 `app`、默认 `Alt+M`、标记 `globalAccelerator`），因此会出现在命令面板与「设置 › 键盘快捷键」中，可录制、清除、恢复默认并参与既有冲突检测；渲染进程负责键位持久化，主进程只按白名单命令 ID 用 `globalShortcut` 注册（非法或已被系统/其它程序占用的组合会在设置页行内提示）。「设置 › 通用」新增「关闭窗口时最小化到托盘」开关（**默认关闭**，保持"点关闭即退出"的既有行为；开启后托盘图标随开关出现/消失）。移动端通过 `capabilities.closeToTray` / `capabilities.globalShortcuts` 隐藏相关 UI。
 - **0.13.202 新增工作区全局搜索（Issue #120）** — 左侧活动栏新增搜索入口，桌面端可用 `Cmd/Ctrl+Shift+F` 在当前工作区范围内搜索文件内容；空格分隔的多个关键词按 AND 规则匹配。结果按文件分组展示，点击结果会打开对应文件，并把文档内查找定位到该处；源码、纯文本和富文本标签均有对应的定位路径。
 
 ### Changed
@@ -55,6 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **源码同步架构开始迁移** — 已加入统一 ProseMirror transaction 观察器、原子 raw-source patch 原型和真实逐字事务回归。当前发布构建仍只使用原有 fail-closed 保真链路，事务实验默认关闭；新路径只在开发/专项测试中运行，待每类结构通过完整家族门禁后再逐项放行，避免用未成熟架构修改用户文件或拖慢输入。
 
 ### Fixed
+- **0.13.213 修复大文档（如 redis 参考）打字响应迟缓（P7e，用户报告）** — CPU 剖析定位三个叠加根因，全部按层修复：① 同步管线（canonicalize + preserve + 全文 remark 重解析，333K 文档 ~1.4s）在按键之间饱和主线程——新增**自适应打字让路调度**：管线耗时 >150ms 且用户活跃编辑时推迟到 600ms 输入空闲（5 秒硬顶保证连续输入期间仍周期同步；journal 按 revision 积累、模式切换/保存等 forced-flush 边界照旧即时，正确性不变；设计沿用 IME composition 既有 deferral）。② review 装饰插件每笔事务全文档遍历且**每个文本节点从根 `doc.resolve`**（≈300-430ms/键）——文本块组键按父节点 memoize、无 CriticMarkup 起始符的文本节点跳过扫描（19 类装饰/部件输出逐类验证不变）。③ 带 `--horsemd-input-trace` 运行的插桩成本（每键 4 事件 ≈+40ms）——已在 0.13.211+ 瘦身，日常使用建议不带该参数启动。实测：无插桩每键延迟 p50 从 ~90-117ms 降至 **36ms**。新增 `test:redis-typing-latency-ui` 延迟门禁（≤45ms + 延迟管线最终发布 + 存盘字节 + 零警告）；三个 redis 事故重放、小 IME E2E、review 单测、goal-matrix 45/45 全绿（joinBackward/tight 重放改为锁定用户可见合同：零警告 toast + 磁盘字节正确，同时如实记录内部 held 候选数量作为后续兜底 owner 的工单）。
+- **0.13.211+ 追踪日志瘦身：markdown-sync 事件不再每回调携带约 1MB 文档字节** — 带日志会话在大文档上每个同步回调把 source/canonical/previous/markdown 四份全文（333K 文档 ≈ 1MB）经 IPC 写盘（实测 162 个事件写 86MB），是打字期间主线程占用的一部分。现在正常回调只记录长度与结论，**失败时仍携带全字节**（诊断不损失——失败本就有 evidence dump）。归因证据与后续修法（重度分歧基线首笔失败 P7c、打字让路调度）见账本。
+- **0.13.211 移除全部 36 个 focused owner 的 callbackDocumentEquivalent 错层硬门（P7b(2)，trace-89456 用户实机触发驱动）** — 0.13.210 后用户继续实测：从某一刻起**每一次发布都 no-op 挂起**（`visible-stream-mismatch`×20，约 30 秒），文字与结构变更全部积压不进源码，最终在新空项 IME 填充处由 `list-empty-item-text-filled` 的 recognized fail-closed 弹出警告（`empty-item-fill-range-unmapped`——锚定用的邻项文本本身从未发布进源码）。归因：行内 IME 改写（`f s v s f v`→`飞书v是否v`，`list-item-paragraph` 家族形状）本应由对应 owner 认领，但**全部 36 个 focused owner 都带着 P3b 式 `callbackDocumentEquivalent` 硬门**——在该文档的慢性往返不对称下永远 deferred，发布权整体落给 legacy，legacy 的可见流对齐失败 → no-op hold → 停滞。这正是 P6e(2) 账本预警的"第一嫌疑"在全域的体现。修复（统一架构修正，非补丁）：从 36 个 owner（32 个标准形态 + 4 个 `!callback` 变体）的 plan() 中删除该门；proof 字段改为如实记录该布尔值。安全论证：每个 owned 发布最终都过 coordinator 的完整 integrity 校验（semantic/list-slot/transition——0.13.210 起 transition 通道可在分歧文档上正确工作），journal checkpoint 独立绑定 expectedDoc，validateMarkdown 把候选字节对编辑器文档解析比对——这才是真门；被删的门度量的是 callback canonical 字符串的往返对称性，与本次编辑正确性无关，且恰在 owner 为之存在的分歧文档上恒 false。验证：22 个 owner Node 合同全部更新并通过（原"callback 不等价必须拒"负例统一转为"必须照常发布"正例）；两个 redis 事故重放 E2E（line1、joinBackward——后者新增 2b 段复刻本触发的"已填行内继续 IME 改写"形状）、小 IME E2E、完整 markdown-preservation、goal-matrix 全绿。
+- **0.13.210 修复分歧大文档的 transition 等价性墙、删除候选吞围栏、joinBackward 空段拒判三连（P7b，trace-62663 第三族，用户实机触发驱动）** — 用户在 redis 文档的删除链（删字 → 删空项 → joinBackward 合并 → 继续打字）在 0.13.209 上仍触发 `source-document-mismatch` 警告。完整归因后发现**三个独立的根因层**，全部按层修复（无补丁）：① **transition 证明的内联形态敏感**（架构层）：分歧文档上编辑的唯一通过通道 `areSourceDocumentTransitionsEquivalent` 用内联形态 JSON 比对变更窗口，而作者字节与序列化字节在全文数十处内联位解析不同（autolink 括号 `huangz(https://…)` vs `huangz(<https://…>)`、strong 拆分形态）——变更窗口一旦触碰即失败。修复：transition 通道（且仅 transition 通道）对两侧窗口对称做**内联文本化归一**（link/strong/emphasis 摊平为文本、去 marks、合并相邻文本 run），窗口比对变为「块结构 + 可见文本」；全文 semanticOk 通道与严格 list-slot 门保持原语义。新增 `test:transition-inline-textual`（7 合同：autolink/strong-split 不对称下的同构编辑通过、单侧文本/结构差异仍拒绝、严格通道 marks 比较不变）。② **`diverged-visible-delete` 的 affinity 方向错误**（mapper 层，E2E 首轮暴露）：单字符删除的 `rawEnd` 用 `forward` affinity 越过删除点后的不可见语法（空行 + ```bash 围栏行），把围栏开栏一起吞掉产出损坏候选（语义门正确拒绝但用户看到警告）。修复：**镜像 canonical 删除边界**——canonical 删除范围不含换行时源码侧用 `backward` affinity 并断言范围内无换行；跨行删除保持 `forward`（块间布局随删）。③ **joinBackward 的不可编码空段无比较器许可**（验证层，E2E 次轮暴露）：合并消耗空 sibling 后在前一项文本段后留下唯一编辑器尾空段（canonical `  <br />`），作者字节无法编码，`empty-paragraph-before-fence-removed` 不在既有「项内尾空段折叠」许可表中。修复：该 reason 加入 `ignoreTrailingEmptyListItemParagraph` 许可（与 `empty-list-item-removed` 等七个 reason 同类同则）。验证：新增**事故全链重放 E2E** `test:redis-joinbackward-replay-ui`（真实 redis 文档：段末 Enter 分裂 → IME 填充 → 输入又删 → 逐字删除 → 删空项 → joinBackward → 继续打字，全程零警告 + 存盘磁盘字节验证）；`test:redis-line1-replay-ui`、`test:ime-loose-item-split-ui`、完整 markdown-preservation、goal-matrix 复跑全绿。诊断手法（记录）：失败四元组直接从带 trace 会话的 `markdown-sync-integrity` 事件提取（source/candidate/canonical/previousCanonical 全字节），行级 diff 对称性即可定位是 mapper 产坏候选还是证明层误拒。
+- **0.13.209 修复带既有分歧的大文档上空列表项 IME 填充 owner 永远让位的问题（P6e 补丁，trace-51037 21:31:44）** — 0.13.208 的 `list-empty-item-text-filled` owner 带着 P3b 式的 `callbackDocumentEquivalent` 硬门：要求 `parse(callback canonical) ≡ expectedDoc` 才发布。在 redis 参考文档这类**存在序列化/解析往返不对称**（autolink 尖括号等）的真实大文档上，该检查在**每一次** markdownUpdated 上都为 false（当日 trace 中 12 本 journal 全部 `empty-item-fill-callback-document-mismatch` deferred）——owner 恰恰在它为之存在的分歧文档上永远等不到发布机会，调度层随后把发布权交给 legacy `locally-aligned-change`，可见流换算把 IME 文字漂移插进前一段落中间（`一[色反馈]个整数。`），严格 list-slot 门拒绝后弹出「源码不一致」警告。修复：移除该硬门——journal checkpoint 已独立证明 `journal.expectedDoc ≡ expectedDoc`，最终 `validateMarkdown`（候选解析后对 expectedDoc 比对 + list-slot）才是安全门；canonical 基线沿用 callback 字符串（与 legacy 相同的推进方式，但字节正确）。验证：Node 合同新增 9b（callbackDocumentEquivalent=false 必须照常发布）；新增**事故原样重放 E2E** `test:redis-line1-replay-ui`（fixture 字节取自触发 trace 的 #246 事件：333K redis 文档、真实手势 = 续行段末 Enter 分裂 + IME「se f s n k→色反馈」，断言 owner 唯一发布、零警告、源码/磁盘字节 `一个整数。\n- 色反馈` 且不漂移）；小 E2E、goal-matrix B6 复跑全绿。E2E 踩坑（记录）：333K 文档中目标段落需 scrollIntoView 后点击否则坐标落视口外；光标必须在续行段**末尾**（段首 split 是另一形状，legacy 无法发布 split、fill journal 永远合并不分离）；全新打开与热会话的基线链不同（重放需一次良性编辑热身对齐 revision）。
+- **0.13.208 修复松散列表项 IME 段落分裂后填充空 sibling 项时的「富文本与源码不一致」警告（P6e，trace-38723）** — 用户在 redis 大文档（既有转义/表格填充分歧态）列表项的**缩进续行段落**末尾用中文 IME 提交并按 Enter：分裂产生的空顶层 sibling 项先由 legacy 路径发布为源码空 marker 行（`- `），随后第二段 IME 组合填充该空项时，空行在可见流中零宽度导致 generic `locally-aligned-change` 的插入点漂移进**前一段落中间**（`羁`与`开始`之间），严格 list-slot 门正确拒绝但源码基线停摆并弹出警告（fail-closed 生效：源码/磁盘未被写坏）。修复：新增 `list-empty-item-text-filled` focused owner——journal 为 0..N 笔 closed plain-text ReplaceStep 全部落在同一已证明 plain（非任务）list item 的唯一空 paragraph（链起点为空、终态纯文本），源码侧用邻项非空首段锚定 offset → 列表块扫描 → 行数双侧（source/previous-canonical）等于 PM item 数 → 终态文本写入作者空 marker 行 body（indent/token/spacing/EOL 与其余字节逐字保持；ordered 额外校验 ordinal = order + index）；链重放阶段拒绝保持普通 rejected（不劫持其他家族），形状已证明后的行/块/校验失败一律 recognized fail-closed 阻断 legacy 误置。验证：`test:list-empty-item-text-fill-transaction-owner`（事故形状正例 + 单笔插入 + ordered + 空 item 居首锚定后项 + foreign 段落/非空目标/task/嵌套子列表/结构步普通拒绝 + 占用行/行数漂移/canonical 行分歧/序数错位/校验拒绝 recognized 负例）；`test:ime-loose-item-split-ui` 真实 Electron 真 IME 复刻事故手势（续行 IME 提交 → Enter 分裂 → 新空项 IME 填充），callback（settle 后填充，owner 唯一发布）与 forced（split+fill 合并 journal，owner 依 recognized 纪律让位、legacy 正确发布）两场景均零警告、源码字节正确、FAB 存盘磁盘一致、fresh-profile 冷重开拓扑一致；**goal-matrix 常驻矩阵新增 B6 场景**（同节奏 + 零警告门禁）——今后任何功能/修复改动都会跑到它。相邻回归：cross-fence-span（12 合同 + UI）、blockquote 四家族、mixed、list 系 focused owner 全绿；`test:list-subtree-transaction-owner` 为既有失败（干净树复现，与本改动无关）。证据与交接：`scripts/fixtures/ime-loose-item-split/`（三元组 + journal dump + repro）。
+- **0.13.207 修复块密集大文档打开卡死与逐键卡顿（#126）** — 一份 333K 字符、394 个围栏代码块的参考文档（低于 400K heavy 阈值，走富文本路径）在两个独立根因下不可用：① #25 的 CodeMirror 全量 eager 挂载对每个代码块创建常驻实例，394 个 CodeMirror 使打开时渲染进程 200%+ CPU、~1GB 内存（#126 报告的 700-800MB 同源）；② legacy 源码保全链存在 O(块数×全文) 复杂度——`markdownLines`/`comparableListLine`/`sourceVisibleIndex`（全文可见流映射）在每个变更列表块的处理中反复重建全文级结构，实测**单个字符的 preserve 调用耗时 128 秒**，期间 markdownUpdated 被节流到约每分钟一次，打字体验为"卡死"。修法：① eager 挂载按围栏块数封顶（>40 回退 Milkdown 原生懒挂载，小文档保持 #25 稳定修复不变，`chooseCodeBlockMountMode` 在 Crepe 解析前与 replaceMarkdown 时按文档决定）；② 三处全文级结构按字符串身份缓存（`markdownLines` 行索引、`comparableListLines` 可比形式、`sourceVisibleIndex` 可见流映射，容量 8 的 LRU）+ 列表锚匹配从 lines×anchors 线性过滤改为 Map 精确查找（保序等价）。同输入实测 **128161ms → ~600ms（约 200 倍）**，输出字节逐字节一致；真实文档端到端：打开恢复秒级、6 字符 2 秒内落地（原 63 秒）、30 秒 idle 零卡死、渲染进程内存回到 ~300MB。新增 `test:preserve-large-doc-perf`（600 围栏 / 247K 字符 / P7 式作者-序列化分歧形态，预算 15s 锁住复杂度回归，当前 225ms）；`test:codeblock-scroll-stability-ui`（#25）、goal-matrix 42/42、mixed、39/39 probes、code-block 家族、cross-fence-span 全绿。诊断方法论（可复用）：隐藏测试窗口会掩盖绘制驱动的 wedge——必须可见窗口复现；wedged 渲染进程可通过主进程转发 renderer console 取回带时间戳插桩；preserve 为纯函数，实参三元组导出后可直接 Node `--cpu-prof` 离线归因。
+- **0.13.205 修复跨代码块选区删除与撤销恢复后源码静默失同步** — 框选跨越围栏代码块的段落大段删除后按撤销，编辑器里代码块完好，但已提交的源码基线可能停在删除状态且**没有任何提示**：删除方向被 fence 守卫正确拒绝后，legacy 的 no-op hold 赌"后续重试会成功"，而撤销恢复方向的重试同样被拒——赌输后源码基线永久落后，下次切源码或保存时代码块"消失"。新增专有 owner（`cross-fence-span`）：以事务 journal 首尾文档的变更顶层窗口为合同（窗口子树含 code_block 即认领；含表格让位给 table 家族、1:1 code_block 让位给 code content 家族），源码区间按块级偏移锚定（行首与开栏行吸附、跳过空段锚块）后整段替换，序列化跟随文档既有风格并保留 EOL 与间隔；认领后一切无法证明的情形按设计报警而非静默挂起。过程中实证并修复两个映射层事实：生产块级映射返回**块内文本偏移而非行首**（曾在 E2E 中拼出 `## ### 区域选择` 粘连行）、code_block 锚点落在内容行而非围栏行。验证：`test:cross-fence-span-transaction-owner` 12 合同（删除/撤销插入/CRLF/整段替换 + 门控与 fail-closed 负例）；`test:cross-fence-span-ui` 真实 Electron 复刻事故手势（shift-click 跨 fence 选区 → Backspace → Cmd+Z），断言零警告、源码字节正确、存盘磁盘逐字节等于原文；goal-matrix 42/42、code-block 全家族、mixed、paste-tilde、plain-text-drop 全绿。
 - **0.13.204 修复段落“新增/拖拽”操作条会在正文中被呼出并在窄布局遮挡文字** — 旧 guard 把 ProseMirror 左边界向右 36px 当作块操作热区，但正文从该边界直接起笔，因此段首字符本身会触发加号和拖拽柄；现在仅 `.editor-host` 的真实左侧 padding 会转发给 Milkdown BlockService，正文文字完全不再作为触发区，列表圆点/编号/待办标记仍可唤起同一操作条。与此同时修复 P8b 懒加载 CSS 顺序导致的第二个根因：Crepe 后加载样式会把 HorseMD 预期的 28px 双按钮覆盖成 32px×2 的 66px 操作条，并恢复 `transition: all`；66px 放不进 60px gutter 时 Floating UI 会自动 flip 到正文侧。HorseMD 现以更高 specificity 稳定保持 58px 总宽和仅 opacity 动画。`test:block-handle-gutter-ui` 新增长期断言：四种布局、标题/正文/多级列表/任务列表共用单一左侧轨道，段首 `+4px` 不呼出，58px/28px/opacity 合同不被懒加载 CSS 覆盖；`test:inline-html-block-handle-ui` 同时验证普通正文与行内 HTML 无误触发、真实 gutter 仍可用。
 - **0.13.203 修复拖入纯文本时被 HTML flavor 误解析成块结构** — 当拖放数据同时带 `text/plain` 与简单 `text/html`（例如 `<br />`）时，ProseMirror 过去可能优先按 HTML 块解析，导致列表项被拆成额外空段并触发源码一致性警告。现在对“无文件、非结构化 HTML、存在纯文本”的拖放在 capture 阶段按纯文本插入；多行文本使用硬换行，并在插入后把选择区收敛为光标，避免后续拖放误删刚插入内容。
 - **0.13.201 修复自定义主题在编辑器懒加载样式到达后失效** — P8b 后 Crepe 样式表会在运行时继续注入，可能覆盖较早插入的 `#hm-custom-theme` / 用户 CSS。现在 HorseMD 维护 owned styles 的稳定顺序，把主题与用户 CSS 始终保持在 head 尾部；自定义主题、Typora 主题迁移和用户 CSS 不再因为编辑器延迟加载而被反向覆盖。

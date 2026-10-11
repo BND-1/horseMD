@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.204",
+  "version": "0.13.233",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -23,7 +23,21 @@
     "dist:dir": "electron-vite build && electron-builder --dir",
     "build:mobile": "vite build --config vite.mobile.config.mjs",
     "shortcuts:inventory": "node scripts/export-shortcut-inventory.mjs",
+    "test:export-snapshot-ui": "node scripts/test-export-snapshot-completeness-ui.mjs",
+    "test:issue-139-hardbreak-boundary": "node scripts/test-issue-139-hardbreak-boundary.mjs",
+    "test:issue-139-ordered-literal": "node scripts/test-issue-139-ordered-literal.mjs",
+    "test:issue-139-ui": "node scripts/test-issue-139-line-breaks-ui.mjs",
+    "test:issue-139-dom": "node scripts/test-issue-139-clipboard-dom.mjs",
+    "test:context-copy": "node scripts/test-editor-context-copy.mjs",
+    "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
+    "test:editor-style-cascade-ui": "node scripts/test-editor-style-cascade-ui.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
+    "test:source-map-scope": "node scripts/test-editor-source-map-scope.mjs",
+    "test:transaction-trace": "node scripts/test-editor-transaction-trace.mjs",
+    "test:review-scan-budget": "node scripts/test-review-scan-budget.mjs",
+    "test:unchanged-source-result": "node scripts/test-unchanged-source-result.mjs",
+    "test:unchanged-source-reconcile-ui": "node scripts/test-unchanged-source-reconcile-ui.mjs",
+    "profile:redis-interaction": "node scripts/profile-redis-interaction.mjs",
     "test:mode-switch-raw-offset-ui": "node scripts/test-mode-switch-raw-offset-ui.mjs",
     "test:codeblock-scroll-stability-ui": "node scripts/test-codeblock-scroll-stability-ui.mjs",
     "test:markdown-preservation": "node scripts/test-markdown-source-preservation.mjs",
@@ -254,6 +268,7 @@
     "test:source-sync-list-conversion-snapshot-owner": "node scripts/test-source-sync-list-conversion-snapshot-owner.mjs",
     "test:list-subtree-transaction-owner": "node scripts/test-list-subtree-transaction-owner.mjs",
     "test:list-empty-item-remove-transaction-owner": "node scripts/test-list-empty-item-remove-transaction-owner.mjs",
+    "test:list-empty-item-text-fill-transaction-owner": "node scripts/test-list-empty-item-text-fill-transaction-owner.mjs",
     "test:list-empty-item-remove-transaction-ui": "node scripts/test-list-empty-item-remove-transaction-ui.mjs",
     "test:list-empty-item-remove-legacy-retirement-ui": "node scripts/test-list-empty-item-remove-legacy-retirement-ui.mjs",
     "test:list-empty-item-tail-remove-transaction-owner": "node scripts/test-list-empty-item-tail-remove-transaction-owner.mjs",
@@ -304,6 +319,7 @@
     "test:list-item-paragraph-transaction-owner": "node scripts/test-list-item-paragraph-transaction-owner.mjs",
     "test:table-cell-transaction-owner": "node scripts/test-table-cell-transaction-owner.mjs",
     "test:table-cell-transaction-ui": "node scripts/test-table-cell-transaction-ui.mjs",
+    "test:table-cell-empty-replay-ui": "node scripts/test-table-cell-empty-replay-ui.mjs",
     "test:table-column-alignment-transaction-owner": "node scripts/test-table-column-alignment-transaction-owner.mjs",
     "test:table-column-alignment-transaction-ui": "node scripts/test-table-column-alignment-transaction-ui.mjs",
     "test:table-column-delete-transaction-owner": "node scripts/test-table-column-delete-transaction-owner.mjs",
@@ -345,7 +361,20 @@
     "test:custom-theme-style-order-ui": "node scripts/test-custom-theme-style-order-ui.mjs",
     "test:global-search": "node scripts/test-global-search.mjs",
     "test:global-search-ui": "node scripts/test-global-search-ui.mjs",
-    "test:plain-text-drop-ui": "node scripts/test-plain-text-drop-ui.mjs"
+    "test:plain-text-drop-ui": "node scripts/test-plain-text-drop-ui.mjs",
+    "test:cross-fence-span-transaction-owner": "node scripts/test-cross-fence-span-transaction-owner.mjs",
+    "test:cross-fence-span-ui": "node scripts/test-cross-fence-span-ui.mjs",
+    "test:ime-loose-item-split-ui": "node scripts/test-ime-loose-item-split-ui.mjs",
+    "test:redis-line1-replay-ui": "node scripts/test-redis-line1-replay-ui.mjs",
+    "test:redis-joinbackward-replay-ui": "node scripts/test-redis-joinbackward-replay-ui.mjs",
+    "test:redis-tight-backspace-replay-ui": "node scripts/test-redis-tight-backspace-replay-ui.mjs",
+    "test:markdown-sync-scheduling": "node scripts/test-markdown-sync-scheduling.mjs",
+    "test:redis-delete-tail-replay-ui": "node scripts/test-redis-delete-tail-replay-ui.mjs",
+    "test:redis-typing-latency-ui": "node scripts/test-redis-typing-latency-ui.mjs",
+    "test:ordered-relabel-enter-replay-ui": "node scripts/test-ordered-relabel-enter-replay-ui.mjs",
+    "test:adjacent-list-merge-fill-replay-ui": "node scripts/test-adjacent-list-merge-fill-replay-ui.mjs",
+    "test:transition-inline-textual": "node scripts/test-transition-inline-textual.mjs",
+    "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
@@ -389,6 +418,12 @@
     "productName": "HorseMD",
     "files": [
       "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icons/32x32.png",
+        "to": "icons/32x32.png"
+      }
     ],
     "icon": "build/icon.ico",
     "publish": [

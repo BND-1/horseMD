@@ -271,3 +271,42 @@ export function classifySingleAnchoredSubtreeChange({
     targetDepth: candidate.previousEntry.depth
   })
 }
+
+// CommonMark merges blank-separated ADJACENT same-kind lists into ONE list on
+// parse, while a live ProseMirror document (input rules, Enter splits) holds
+// them as separate sibling nodes — and the markdown-side block scanners
+// (listBlockAt + markerRows) model the parser, so their row counts cover the
+// whole merged run. Row-count bijections in the empty-item owners must count
+// the PM side with the same merge semantics (traces 14865/21168: input-rule
+// lists above existing ones made every row proof fail after recognition).
+// Returns the merged item count, how many of those items precede the target
+// list's own items, and the leftmost adjacent same-kind list (ordered start).
+export const mergedAdjacentSameKindListCounts = (doc, listPath) => {
+  const entry = sourceSyncNodeEntryAtPath(doc, Array.isArray(listPath) ? listPath : [listPath])
+  const list = entry?.node
+  if (!list) return { itemCount: 0, precedingItems: 0, followingItems: 0, orderList: null }
+  const listType = list.type?.name
+  let itemCount = list.childCount
+  let precedingItems = 0
+  let followingItems = 0
+  let orderList = list
+  const parentPath = (Array.isArray(listPath) ? listPath : [listPath]).slice(0, -1)
+  const selfIndex = (Array.isArray(listPath) ? listPath : [listPath]).at(-1)
+  const parent = parentPath.length ? sourceSyncNodeEntryAtPath(doc, parentPath)?.node : doc
+  if (parent && Number.isInteger(selfIndex)) {
+    for (let index = selfIndex - 1; index >= 0; index -= 1) {
+      const sibling = parent.child(index)
+      if (sibling?.type?.name !== listType) break
+      itemCount += sibling.childCount
+      precedingItems += sibling.childCount
+      orderList = sibling
+    }
+    for (let index = selfIndex + 1; index < parent.childCount; index += 1) {
+      const sibling = parent.child(index)
+      if (sibling?.type?.name !== listType) break
+      itemCount += sibling.childCount
+      followingItems += sibling.childCount
+    }
+  }
+  return { itemCount, precedingItems, followingItems, orderList }
+}

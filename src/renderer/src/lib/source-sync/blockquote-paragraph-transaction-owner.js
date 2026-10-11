@@ -341,9 +341,6 @@ export function createBlockquoteParagraphTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('blockquote-paragraph-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('blockquote-paragraph-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyBlockquoteParagraphJournal({ journal, expectedDoc })
     if (!classification.ok) {
@@ -461,7 +458,7 @@ export function createBlockquoteParagraphTransactionSourceSyncOwner({
         textReplacementStepCount: classification.transactionChain.textReplacementStepCount,
         textTransactionCount: classification.transactionChain.textTransactionCount
       }),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

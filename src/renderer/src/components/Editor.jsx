@@ -7,18 +7,13 @@ import {
   serializerCtx
 } from '@milkdown/kit/core'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
+import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js' // #126 cap: lazy mount for block-heavy docs
 import './editor-table-click.js' // side effect: single click in a table cell places the caret
 import {
   applySerializerStyleToRemark,
   createSerializerStyleHolder
 } from '../lib/serializer-style.js'
 import { TextSelection } from '@milkdown/prose/state'
-import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/frame.css'
-import '@milkdown/crepe/theme/common/link-tooltip.css'
-// Latex feature styles + the KaTeX stylesheet it @imports (needed for $$…$$
-// block-math preview + inline $…$ to render with correct fonts/layout).
-import '@milkdown/crepe/theme/common/latex.css'
 import { BLOCK_TYPES } from '../blocks.js'
 import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
@@ -54,6 +49,9 @@ import {
   restoreTypedBulletMarker
 } from '../markdown-source-preservation.js'
 import { pmPosToMarkdownOffset } from './editor-source-map.js'
+import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
+import { createEditorTransactionTracer } from './editor-transaction-trace.js'
+import { reconcileUnchangedSourceResult } from '../lib/source-sync/unchanged-source-result.js'
 import {
   areSourceDocumentsEquivalent,
   formatWholeDocumentReplacementSource,
@@ -69,6 +67,7 @@ import {
   createBlockquoteSplitTransactionSourceSyncOwner,
   createCodeBlockExitTransactionSourceSyncOwner,
   createCodeBlockBoundaryJoinTransactionSourceSyncOwner,
+  createCrossFenceSpanTransactionSourceSyncOwner,
   createCodeBlockParagraphTransactionSourceSyncOwner,
   createCodeBlockInfoTransactionSourceSyncOwner,
   createCodeBlockTransactionSourceSyncOwner,
@@ -93,6 +92,7 @@ import {
   createListEmptyItemFirstLiftTransactionSourceSyncOwner,
   createListEmptyItemTailRemoveTransactionSourceSyncOwner,
   createListEmptyItemRemoveTransactionSourceSyncOwner,
+  createListEmptyItemTextFillTransactionSourceSyncOwner,
   createListItemParagraphTransactionSourceSyncOwner,
   createListSubtreeTransactionSourceSyncOwner,
   createPlainParagraphTransactionSourceSyncOwner,
@@ -306,6 +306,7 @@ export default function Editor({
     let richFlushPending = false
     let pendingRichBlockKey = null
     let richDirtyReconcileTimer = 0
+    let cancelDeferredMarkdownSync = () => {}
     let transactionSourcePendingPublish = false
     let transactionSourcePendingDoc = null
     let transactionSourceBlockHints = []
@@ -390,6 +391,7 @@ export default function Editor({
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
     const clearRichFlushPending = () => {
+      cancelDeferredMarkdownSync()
       richFlushPending = false
       pendingRichBlockKey = null
     }
@@ -542,9 +544,10 @@ export default function Editor({
     let crepe
     let sourceSyncBridge = null
     const sourceSyncTransactionJournal = createSourceSyncTransactionJournal()
+    const transactionMarkdownOffsets = createScopedMarkdownOffsetResolver()
     const resolveTransactionMarkdownOffset = ({ markdown, pmPos, doc }) => {
       const remark = crepe.editor.ctx.get(remarkCtx)
-      return pmPosToMarkdownOffset(markdown, pmPos, doc, remark)
+      return transactionMarkdownOffsets.resolve({ markdown, pmPos, doc, remark })
     }
     const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
@@ -651,6 +654,17 @@ export default function Editor({
       createListEmptyItemRemoveTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset
       })
+    // Trace 38723 (0.13.207, 2026-09-12 10:16): an IME composition filling the
+    // empty sibling item a loose-item split just published. The empty marker
+    // row contributes zero visible characters, so the generic locally-aligned
+    // mapper drifts the insertion into the previous paragraph and the strict
+    // gate fail-closes (warning, source stops tracking). This owner fills the
+    // authored empty marker row byte-preservingly.
+    const listEmptyItemTextFillTransactionSourceSyncOwner =
+      createListEmptyItemTextFillTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        validateMarkdown: validateTransactionMarkdown
+      })
     const codeBlockParagraphTransactionSourceSyncOwner =
       createCodeBlockParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -683,6 +697,24 @@ export default function Editor({
     const codeBlockInfoTransactionSourceSyncOwner = createCodeBlockInfoTransactionSourceSyncOwner({
       resolveMarkdownOffset: resolveTransactionMarkdownOffset
     })
+    // Cross-fence block-span replacement (P5c, trace-86199 12:37): selection
+    // deletes / undo restores spanning a fenced code block. The localized
+    // mappers' fence guard correctly refuses these, and the legacy fallback
+    // then holds a no-op — the committed source silently stops tracking the
+    // editor. This owner replaces the whole changed top-level window
+    // (table-free spans only; 1:1 code content edits stay with the code
+    // family above) using the P7 style-following serializer.
+    const crossFenceSpanTransactionSourceSyncOwner =
+      createCrossFenceSpanTransactionSourceSyncOwner({
+        resolveMarkdownOffset: resolveTransactionMarkdownOffset,
+        serializeNodes: (nodes) => {
+          const serializer = crepe.editor.ctx.get(serializerCtx)
+          const schema = nodes?.[0]?.type?.schema || viewRef.current?.state.schema
+          if (!serializer || !schema?.nodes?.doc) return null
+          return serializer(schema.nodes.doc.create(null, nodes))
+        },
+        validateMarkdown: validateTransactionMarkdown
+      })
     const blockquoteParagraphTransactionSourceSyncOwner =
       createBlockquoteParagraphTransactionSourceSyncOwner({
         resolveMarkdownOffset: resolveTransactionMarkdownOffset,
@@ -912,6 +944,16 @@ export default function Editor({
         })
       }),
       Object.freeze({
+        key: 'list-empty-item-text-filled',
+        owner: listEmptyItemTextFillTransactionSourceSyncOwner,
+        traceKey: '__hmListEmptyItemTextFillTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-list-empty-item-text-filled-markdown-updated',
+          'forced-flush': 'transaction-list-empty-item-text-filled-forced-flush'
+        })
+      }),
+      Object.freeze({
         key: 'list-subtree',
         owner: listSubtreeTransactionSourceSyncOwner,
         traceKey: '__hmListSubtreeTransactionTrace',
@@ -987,6 +1029,19 @@ export default function Editor({
         boundaries: Object.freeze({
           'markdown-updated': 'transaction-code-block-info-markdown-updated',
           'forced-flush': 'transaction-code-block-info-forced-flush'
+        })
+      }),
+      // Broad span owner — registered AFTER the whole focused code-block
+      // family so their tighter shapes get first claim (especially the 1:1
+      // code content edit this owner explicitly declines).
+      Object.freeze({
+        key: 'cross-fence-span',
+        owner: crossFenceSpanTransactionSourceSyncOwner,
+        traceKey: '__hmCrossFenceSpanTransactionTrace',
+        legacyRetired: true,
+        boundaries: Object.freeze({
+          'markdown-updated': 'transaction-cross-fence-span-markdown-updated',
+          'forced-flush': 'transaction-cross-fence-span-forced-flush'
         })
       }),
       Object.freeze({
@@ -1217,23 +1272,9 @@ export default function Editor({
       }
     }
 
+    const traceSourceTransactions = createEditorTransactionTracer()
     const handleSourceTransactions = (transactions, oldState, newState) => {
-      traceEditorEvent('prosemirror-transactions', {
-        transactions: (transactions || []).map((transaction) => ({
-          docChanged: transaction?.docChanged || false,
-          selection: {
-            anchor: transaction?.selection?.anchor ?? null,
-            head: transaction?.selection?.head ?? null,
-            from: transaction?.selection?.from ?? null,
-            to: transaction?.selection?.to ?? null
-          },
-          steps: (transaction?.steps || []).map((step) => step?.toJSON?.() || {
-            type: step?.constructor?.name || 'unknown'
-          })
-        })),
-        oldDoc: oldState?.doc?.toJSON?.() || null,
-        newDoc: newState?.doc?.toJSON?.() || null
-      })
+      traceSourceTransactions(transactions, oldState?.doc, newState?.doc)
       // Keep a captured list-input anchor attached to its ProseMirror block
       // even when markdownUpdated is deferred and the user has already moved
       // on to another block. Looking only at the *current* selection loses the
@@ -1566,7 +1607,14 @@ export default function Editor({
 
     crepe = createConfiguredCrepe({
       host,
-      defaultValue: normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent)),
+      // Decide the code-block mount mode BEFORE Crepe parses: block-heavy
+      // documents (issue #126, 394-fence redis doc) must not eager-mount a
+      // CodeMirror per fence.
+      defaultValue: (() => {
+        const normalized = normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent))
+        chooseCodeBlockMountMode(normalized)
+        return normalized
+      })(),
       getT: (key) => tRef.current(key),
       persistImage,
       notify: fireToast,
@@ -1665,7 +1713,7 @@ export default function Editor({
       if (trace.length > 100) trace.shift()
     }
 
-    const publishPendingStructuralTransaction = ({
+    const publishPendingStructuralTransactionImpl = ({
       canonical,
       expectedDoc,
       site = 'markdown-updated',
@@ -1812,6 +1860,8 @@ export default function Editor({
         reason: 'transaction-family-unowned'
       }
     }
+    const publishPendingStructuralTransaction = (options) =>
+      transactionMarkdownOffsets.run(() => publishPendingStructuralTransactionImpl(options))
     const planPendingPlainParagraphTransaction = ({
       canonical,
       expectedDoc,
@@ -1953,6 +2003,7 @@ export default function Editor({
       expectedDoc,
       notifyChange = false
     } = {}) => {
+      cancelDeferredMarkdownSync()
       const structuralResult = publishPendingStructuralTransaction({
         canonical,
         expectedDoc,
@@ -2294,7 +2345,7 @@ export default function Editor({
     // too, and we must ignore them so tab.content isn't spammed with partial
     // docs. Only real user edits propagate.
     crepe.on((api) => {
-      api.markdownUpdated((_ctx, md) => {
+      const handleMarkdownUpdatedImpl = (_ctx, md) => {
         const canonical = canonicalForSource(md)
         if (programmaticReplaceRef.current) {
           wholeDocumentReplacementPending = null
@@ -2713,16 +2764,30 @@ export default function Editor({
               canonical
             )
           }
+          preserved = reconcileUnchangedSourceResult({
+            result: preserved,
+            source: lastMarkdownRef.current,
+            canonical,
+            expectedDoc: viewRef.current?.state.doc,
+            parseMarkdown: (value) => crepe.editor.ctx.get(parserCtx)(value)
+          })
           const preservedBeforeInputRule = preserved
           let pendingInputCanonicalOffset = null
           let consumedInputIntentForIntegrity = null
           traceEditorEvent('markdown-sync', {
-            canonical,
-            previousCanonical: canonicalMarkdownRef.current,
-            source: lastMarkdownRef.current,
+            // Doc bytes (4 × ~333KB on large files) go over IPC and to disk
+            // on EVERY callback — that alone dominated per-keystroke cost in
+            // traced sessions (~1MB/callback). Lengths always; full bytes
+            // only for FAILED preserves (the next successful publish is
+            // reconstructable from journal state, and failures get a full
+            // evidence dump anyway).
+            canonical: preserved?.preserved === false ? canonical : null,
+            canonicalLength: canonical?.length ?? 0,
+            previousCanonical: preserved?.preserved === false ? canonicalMarkdownRef.current : null,
+            source: preserved?.preserved === false ? lastMarkdownRef.current : null,
             preserved: preserved?.preserved !== false,
             reason: preserved?.reason || null,
-            markdown: preserved?.markdown ?? null
+            markdown: preserved?.preserved === false ? (preserved?.markdown ?? null) : null
           })
           const currentView = viewRef.current
           const selectionInList = (() => {
@@ -3208,7 +3273,84 @@ export default function Editor({
           }
           userEditUntil = Date.now() + 1000
         }
+      }
+      // Typing-yield scheduling (P7c-latency, user report 2026-09-13): on a
+      // large document the sync pipeline (canonicalize + preserve + validate,
+      // ~1s+ measured on the 333K redis doc) runs on every markdownUpdated
+      // and saturates the main thread BETWEEN keystrokes — the user types and
+      // characters appear only after ~90ms+ per-key lag. IME composition
+      // already defers the whole callback for exactly this reason; extend the
+      // same policy to plain typing, ADAPTIVELY: only when the last pipeline
+      // run exceeded SYNC_DEFER_THRESHOLD_MS (small docs never defer), and
+      // only while the user is actively editing. The trailing idle timer
+      // processes the LATEST markdown (later callbacks reschedule it), with a
+      // hard cap so continuous typing still syncs periodically. Journals
+      // accumulate across revisions by design, and forced-flush boundaries
+      // (mode switch, save, export) process immediately — correctness is
+      // unchanged, only WHEN the idle-time pipeline runs.
+      let markdownSyncLastMs = 0
+      let markdownSyncDeferTimer = null
+      let markdownSyncDeferSince = 0
+      const SYNC_DEFER_THRESHOLD_MS = 150
+      const SYNC_DEFER_IDLE_MS = 600
+      const SYNC_DEFER_MAX_MS = 5000
+      cancelDeferredMarkdownSync = () => {
+        if (markdownSyncDeferTimer) clearTimeout(markdownSyncDeferTimer)
+        markdownSyncDeferTimer = null
+        markdownSyncDeferSince = 0
+      }
+      const runMarkdownSyncPipeline = (md) => {
+        // Immediate execution and forced flush invalidate older queued work.
+        cancelDeferredMarkdownSync()
+        const started = performance.now()
+        try {
+          handleMarkdownUpdatedImpl(null, md)
+        } finally {
+          markdownSyncLastMs = performance.now() - started
+        }
+      }
+      api.markdownUpdated((_ctx, md) => {
+        // Cold start: the FIRST callback on a large document must not pay the
+        // full pipeline synchronously just to learn it is heavy (CPU profile
+        // of the redis doc: whole-doc remark reparse dominates). Seed the
+        // metric from the document size; a real measurement replaces it after
+        // the first deferred run.
+        if (markdownSyncLastMs === 0 && md && md.length > 100000) {
+          markdownSyncLastMs = 1000
+        }
+        const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS
+        const activelyEditing = ready && !appending &&
+          !pendingRawMarkdownPasteRef.current && !wholeDocumentReplacementPending &&
+          !programmaticReplaceRef.current && !viewRef.current?.composing &&
+          hasRecentUserEdit()
+        if (heavyDocPipeline && activelyEditing) {
+          const overdue = markdownSyncDeferSince > 0 &&
+            Date.now() - markdownSyncDeferSince >= SYNC_DEFER_MAX_MS
+          if (!overdue) {
+            if (markdownSyncDeferTimer) clearTimeout(markdownSyncDeferTimer)
+            else markdownSyncDeferSince = Date.now()
+            markdownSyncDeferTimer = setTimeout(() => {
+              markdownSyncDeferTimer = null
+              markdownSyncDeferSince = 0
+              const view = viewRef.current
+              if (!view || view.composing || !richFlushPending) return
+              // PM may have advanced since Milkdown supplied this callback,
+              // even before its next callback arrives. Pair candidate bytes
+              // and expectedDoc from the SAME live document at execution time.
+              try {
+                const currentMarkdown = crepe.editor.ctx.get(serializerCtx)(view.state.doc)
+                runMarkdownSyncPipeline(currentMarkdown)
+              } catch {
+                reportSourceSyncFailure('deferred-source-serialization-failed')
+              }
+            }, SYNC_DEFER_IDLE_MS)
+            return
+          }
+          markdownSyncDeferSince = 0
+        }
+        runMarkdownSyncPipeline(md)
       })
+      cleanups.push(() => cancelDeferredMarkdownSync())
     })
 
     const runCreate = () =>
@@ -3775,6 +3917,23 @@ export default function Editor({
             left: Math.min(ctxMenu.x, window.innerWidth - 210),
             top: Math.max(8, Math.min(ctxMenu.y, window.innerHeight - 360))
           }}>
+            <button
+              className="block-menu-item"
+              data-context-copy
+              disabled={!ctxMenu.copySelection}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const copied = ctxMenu.copySelection?.copy() === true
+                setCtxMenu(null)
+                if (!copied) fireToast(t('editor.copyFailed'))
+              }}
+            >
+              <span className="block-menu-short" aria-hidden="true">⧉</span>
+              <span className="block-menu-name">{t('editor.copy')}</span>
+              <span className="block-menu-sc">{window.api?.platform === 'darwin' ? '⌘C' : 'Ctrl+C'}</span>
+            </button>
+            {!ctxMenu.copyOnly && (<>
+            <div className="block-menu-divider" />
             {ctxMenu.showTextFormatting && (
               <>
                 <div className="block-menu-submenu-parent">
@@ -3920,6 +4079,7 @@ export default function Editor({
                 </button>
               </>
             )}
+            </>)}
           </div>
         </>
       )}

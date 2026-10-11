@@ -225,9 +225,6 @@ export function createCodeBlockInfoTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('code-block-info-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('code-block-info-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyCodeBlockInfoJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -336,7 +333,7 @@ export function createCodeBlockInfoTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
       mapperReason: 'fenced-code-block-info-string-change',
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

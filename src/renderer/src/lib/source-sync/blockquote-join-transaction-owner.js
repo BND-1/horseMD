@@ -425,9 +425,6 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('blockquote-join-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('blockquote-join-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyBlockquoteJoinJournal({ journal, expectedDoc })
     if (!classification.ok) {
@@ -566,7 +563,7 @@ export function createBlockquoteJoinTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

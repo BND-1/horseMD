@@ -1,4 +1,5 @@
 import { mapPlainTextTransactionsToSource } from '../source-transaction-sync.js'
+import { mapTableCellEmptyTransition } from './table-cell-empty-transition.js'
 import { SOURCE_SYNC_OWNERS } from './proof.js'
 import { sourceSyncDigest } from './snapshot.js'
 import {
@@ -41,11 +42,10 @@ const nodeAtPath = (doc, path) => {
 
 const isTableCellType = (name) => name === 'table_cell' || name === 'table_header'
 
-const isSimpleNonEmptyParagraph = (node) => {
+const isSimpleParagraph = (node) => {
   if (
     node?.type?.name !== 'paragraph' ||
-    !node.isTextblock ||
-    node.content?.size <= 0
+    !node.isTextblock
   ) return false
   let simple = true
   node.forEach?.((child) => {
@@ -105,8 +105,8 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
   const nextTable = nodeAtPath(expectedDoc, tablePath)
   if (
     cellPath.length < 3 ||
-    previousRow?.type?.name !== 'table_row' ||
-    nextRow?.type?.name !== 'table_row' ||
+    !['table_row', 'table_header_row'].includes(previousRow?.type?.name) ||
+    previousRow.type.name !== nextRow?.type?.name ||
     previousTable?.type?.name !== 'table' ||
     nextTable?.type?.name !== 'table'
   ) return rejected('table-cell-path-not-table')
@@ -123,8 +123,8 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
   const previousParagraph = previousCell.child(0)
   const nextParagraph = nextCell.child(0)
   if (
-    !isSimpleNonEmptyParagraph(previousParagraph) ||
-    !isSimpleNonEmptyParagraph(nextParagraph)
+    !isSimpleParagraph(previousParagraph) ||
+    !isSimpleParagraph(nextParagraph)
   ) return rejected('table-cell-not-simple-nonempty')
   if (!sourceSyncAttrsEqual(previousParagraph.attrs, nextParagraph.attrs)) {
     return rejected('table-cell-paragraph-attrs-changed')
@@ -133,6 +133,7 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
     return rejected('table-cell-text-unchanged')
   }
 
+  let hasEmptyParagraph = previousParagraph.content.size === 0 || nextParagraph.content.size === 0
   let currentDoc = journal.oldDoc
   for (const entry of journal.entries || []) {
     if (!sameSourceSyncDocument(entry.beforeDoc, currentDoc)) {
@@ -185,7 +186,7 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
       if (
         beforeCell.type?.name !== previousCell.type?.name ||
         !sourceSyncAttrsEqual(beforeCell.attrs, previousCell.attrs) ||
-        !isSimpleNonEmptyParagraph(beforeParagraph) ||
+        !isSimpleParagraph(beforeParagraph) ||
         !sourceSyncAttrsEqual(beforeParagraph.attrs, previousParagraph.attrs)
       ) return rejected('table-cell-step-baseline-mismatch')
 
@@ -206,10 +207,11 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
       if (
         afterCell?.type?.name !== previousCell.type?.name ||
         !sourceSyncAttrsEqual(afterCell.attrs, previousCell.attrs) ||
-        !isSimpleNonEmptyParagraph(afterParagraph) ||
+        !isSimpleParagraph(afterParagraph) ||
         !sourceSyncAttrsEqual(afterParagraph.attrs, previousParagraph.attrs) ||
         beforeParagraph.eq?.(afterParagraph) === true
       ) return rejected('table-cell-result-not-simple-nonempty')
+      hasEmptyParagraph ||= beforeParagraph.content.size === 0 || afterParagraph.content.size === 0
       entryDoc = applied.doc
     }
     if (!sameSourceSyncDocument(entryDoc, entry.afterDoc)) {
@@ -228,6 +230,8 @@ const classifyTableCellJournal = ({ journal, expectedDoc }) => {
     tablePath,
     rowIndex: cellPath.at(-2),
     cellIndex: cellPath.at(-1),
+    columnCount: previousRow.childCount,
+    hasEmptyParagraph,
     previousCell,
     nextCell,
     previousParagraph,
@@ -316,9 +320,6 @@ export function createTableCellTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('table-cell-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('table-cell-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyTableCellJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -327,7 +328,9 @@ export function createTableCellTransactionSourceSyncOwner({
 
     let mapped
     try {
-      mapped = mapTransactions({
+      mapped = classification.hasEmptyParagraph
+        ? mapTableCellEmptyTransition({ journal, classification, expectedDoc, resolveMarkdownOffset, validateMarkdown })
+        : mapTransactions({
         source: journal.source,
         transactions,
         oldState: { doc: journal.oldDoc },
@@ -375,7 +378,8 @@ export function createTableCellTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(mapped.markdown),
       mapperReason: mapped.reason || null,
-      callbackDocumentEquivalent: true,
+      sourceRange: mapped.sourceRange || null,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

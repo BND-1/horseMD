@@ -324,9 +324,6 @@ export function createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner(
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('nested-empty-bullet-indent-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('nested-empty-bullet-indent-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classify({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -383,7 +380,7 @@ export function createListNestedEmptyBulletTailIndentTransactionSourceSyncOwner(
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(patched.markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

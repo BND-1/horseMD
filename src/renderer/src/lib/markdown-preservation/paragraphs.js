@@ -1393,8 +1393,12 @@ export const preserveMiddleEmptyBlock = ({
     // from the document instead of a `.text` field that may not exist.
     const anchorTail = (doc, line) =>
       String(doc.slice(line.start, line.end) || '').replace(/\r$/, '')
-    const nextHardbreak = /\\[ \t]*$/.exec(anchorTail(next, nextBefore))
-    const sourceHardbreak = /\\[ \t]*$/.exec(anchorTail(source, sourceBefore))
+    // Both CommonMark spellings continue the SAME paragraph. Recognizing only
+    // a backslash turns the two-space form into a new paragraph (#139).
+    // Stay in this owner so batched multi-paragraph pastes retain its existing
+    // placeholder cleanup and authored-EOL contract (0.13.195).
+    const nextHardbreak = /(?:\\[ \t]*| {2,})$/.exec(anchorTail(next, nextBefore))
+    const sourceHardbreak = /(?:\\[ \t]*| {2,})$/.exec(anchorTail(source, sourceBefore))
     const continuationPrefix = next.slice(nextBefore.end, nextBefore.end + 2)
     if (
       nextHardbreak &&

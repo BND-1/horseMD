@@ -575,9 +575,6 @@ export function createTableColumnAlignmentTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('table-column-alignment-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('table-column-alignment-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyAlignmentJournal({ journal, expectedDoc })
     if (!classification.ok) return classification
@@ -659,7 +656,7 @@ export function createTableColumnAlignmentTransactionSourceSyncOwner({
         }),
         edit
       }),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

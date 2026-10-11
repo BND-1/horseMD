@@ -412,7 +412,7 @@ const nextCanonical = nextCanonicalLines.join('\n')
   const captured = capture({ source, canonical, oldDoc: baseDoc, transactions: [transaction], revision: 526 })
   const owner = createOwner()
   const deferred = owner.plan({ journal: captured.journal, activeJournal: captured.journal, snapshot: captured.snapshot, currentSource: source, currentCanonical: canonical, canonical: nextCanonical, expectedDoc: captured.expectedDoc, callbackDocumentEquivalent: false })
-  assert.equal(deferred.reason, 'table-column-insert-callback-document-mismatch')
+  assert.equal(deferred.ok, true, 'must publish despite a non-equivalent callback canonical')
   assert.equal(deferred.deferred, true)
 
   const staleSnapshot = createSourceSyncSnapshot({ revision: 527, source, canonical, doc: captured.expectedDoc })

@@ -136,7 +136,7 @@ const inlineLiteralRanges = (line) => {
 
 const markdownEscapePunctuation = /[\\`*{}\[\]()#+\-.!_>~|]/
 
-const translateInlineCanonicalEscapes = (line, restoreFreshPunctuation = false) => {
+const translateInlineCanonicalEscapes = (line, restoreFreshPunctuation = false, preserveOrderedPrefix = false, initialLinePrefix = '') => {
   const literals = inlineLiteralRanges(line)
   const hasVisibleTextBefore = (offset) => {
     let prefix = line.slice(0, offset).replace(/^[ \t]*/, '')
@@ -190,7 +190,14 @@ const translateInlineCanonicalEscapes = (line, restoreFreshPunctuation = false) 
       // there changes document semantics and the integrity check fails
       // closed. Keep the escape when no visible text precedes it; mid-line
       // escapes remain plain serializer spelling and are restored.
-      const restoresToBlockSyntax = !hasVisibleTextBefore(index) && (
+      // Digits before an escaped delimiter are not enough to prove inline
+      // text: `1\\. text` is a paragraph protected from ordered-list syntax.
+      // Keep only a real marker-shaped prefix; decimals and unfinished `1.`
+      // input retain their existing restoration behavior.
+      const protectsOrderedMarker = preserveOrderedPrefix && /^[.)]$/.test(restoredChar) &&
+        /^(?: {0,3}>[ \t]?)* {0,3}\d{1,9}$/.test(initialLinePrefix + line.slice(0, index)) &&
+        /^[ \t]/.test(rest)
+      const restoresToBlockSyntax = protectsOrderedMarker || !hasVisibleTextBefore(index) && (
         /^[-+*]/.test(restoredChar) && /^(?:\s|$)/.test(rest) ||
         /^\d/.test(restoredChar) && /^[.)](?:\s|$)/.test(rest) ||
         /^[#>|]/.test(restoredChar) ||
@@ -221,14 +228,14 @@ const genericHtmlBlockStart = (line) => /^ {0,3}<\/?[A-Za-z][\w:-]*(?:\s|\/?>|$)
 // regions are different: `&#x20;` and `\~` inside code/HTML are user data and
 // must stay byte-for-byte. Keep the translator Markdown-context-aware rather
 // than applying global string replacements to the whole document.
-export const canonicalTextToSource = (text, { restoreFreshPunctuation = false } = {}) => {
+export const canonicalTextToSource = (text, { restoreFreshPunctuation = false, preserveOrderedPrefix = false, initialLinePrefix = '' } = {}) => {
   const input = String(text || '')
   const chunks = input.match(/[^\n]*(?:\n|$)/g)?.filter(Boolean) || []
   let fence = null
   let htmlTag = null
   let htmlComment = false
   let htmlUntilBlank = false
-  return chunks.map((chunk) => {
+  return chunks.map((chunk, chunkIndex) => {
     const hasNewline = chunk.endsWith('\n')
     const line = hasNewline ? chunk.slice(0, -1) : chunk
     const newline = hasNewline ? '\n' : ''
@@ -281,7 +288,8 @@ export const canonicalTextToSource = (text, { restoreFreshPunctuation = false } 
       return line + newline
     }
     if (!trimmed) return line + newline
-    return translateInlineCanonicalEscapes(line, restoreFreshPunctuation) + newline
+    return translateInlineCanonicalEscapes(line, restoreFreshPunctuation, preserveOrderedPrefix,
+      chunkIndex === 0 ? initialLinePrefix : '') + newline
   }).join('')
 }
 
@@ -289,7 +297,8 @@ export const canonicalTextToSource = (text, { restoreFreshPunctuation = false } 
 // context canonical `\X` is serializer spelling for the character the user
 // entered. Fenced/inline code and HTML ranges remain byte-exact through the
 // context scanner above.
-export const canonicalFreshTextToSource = (text) => canonicalTextToSource(text, {
+export const canonicalFreshTextToSource = (text, options = {}) => canonicalTextToSource(text, {
+  ...options,
   restoreFreshPunctuation: true
 })
 
@@ -341,7 +350,21 @@ export const isTableLine = (line) => line.includes('|')
 
 export const listMarker = (line) => line.match(/^(\s*)(?:[-+*]|\d{1,9}[.)])(?=[ \t]+|$)/)
 
+// Identity-keyed cache: during one preserve call the same source/canonical
+// strings are re-lined by every list block's mapper pass (lists.js calls this
+// ~20×). A capped LRU keyed by the string itself turns that O(blocks × doc)
+// re-splitting into one split per distinct string (redis-doc profile:
+// preserveRichMarkdownSource 128s → the line pass alone was 40%+ of it).
+// Line objects are treated as read-only by every caller (verified: no
+// property assignments on them anywhere in markdown-preservation).
+const markdownLinesCache = new Map()
 export const markdownLines = (markdown) => {
+  const cached = markdownLinesCache.get(markdown)
+  if (cached) {
+    markdownLinesCache.delete(markdown)
+    markdownLinesCache.set(markdown, cached)
+    return cached
+  }
   const lines = []
   let start = 0
   while (start <= markdown.length) {
@@ -351,6 +374,10 @@ export const markdownLines = (markdown) => {
     if (next < 0) break
     start = next + 1
   }
+  if (markdownLinesCache.size >= 8) {
+    markdownLinesCache.delete(markdownLinesCache.keys().next().value)
+  }
+  markdownLinesCache.set(markdown, lines)
   return lines
 }
 

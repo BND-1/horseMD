@@ -466,10 +466,6 @@ export function createListSubtreeTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('list-subtree-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('list-subtree-callback-document-mismatch')
-    }
-
     const classification = classifySingleListSubtreeChange(journal.oldDoc, expectedDoc)
     if (!classification.ok) return classification
     const insertedTrailingEmptyParagraph = proveSingleInsertedTrailingEmptyParagraph({
@@ -608,7 +604,7 @@ export function createListSubtreeTransactionSourceSyncOwner({
           : null,
       trailingBoundaryNewlineGrowth: boundaryEolGrowth ? 1 : 0,
       suffixOwnedRowTerminator: suffixOwnsRowTerminator,
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

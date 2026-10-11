@@ -443,10 +443,6 @@ export function createCodeBlockBoundaryJoinTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('code-block-boundary-join-live-snapshot-stale', { reset: true })
     }
-    if (!callbackDocumentEquivalent) {
-      return rejected('code-block-boundary-join-callback-document-mismatch')
-    }
-
     const classification = classifyBoundaryJoin(journal.oldDoc, expectedDoc)
     if (!classification.ok) return classification
     const replayed = replayJournal({ journal, expectedDoc, classification })
@@ -546,7 +542,7 @@ export function createCodeBlockBoundaryJoinTransactionSourceSyncOwner({
       previousCanonicalDigest: sourceSyncDigest(journal.canonical),
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(markdown),
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })

@@ -296,9 +296,6 @@ export function createPlainParagraphTransactionSourceSyncOwner({
     if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
       return rejected('plain-paragraph-live-snapshot-stale', { reset: true })
     }
-    if (callbackDocumentEquivalent !== true) {
-      return rejected('plain-paragraph-callback-document-mismatch', { deferred: true })
-    }
 
     const classification = classifyPlainParagraphJournal({
       journal,
@@ -459,7 +456,7 @@ export function createPlainParagraphTransactionSourceSyncOwner({
       canonicalDigest: sourceSyncDigest(canonical),
       markdownDigest: sourceSyncDigest(mappedMarkdown),
       mapperReason,
-      callbackDocumentEquivalent: true,
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
       snapshotMatched: true,
       documentMatched: true
     })
