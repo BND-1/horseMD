@@ -36,6 +36,11 @@ const numberedFailure = { ...failed, markdown: numberedSource }
 assert.equal(reconcileUnchangedSourceResult({ ...base, source: numberedSource, canonical: renumbered, result: numberedFailure, expectedDoc: ordered, parseMarkdown: () => ordered }), numberedFailure, 'list numbering gate stays strict even when parser omits ordinals')
 const nestedCanonical = '- one\n  - two\n'
 assert.equal(reconcileUnchangedSourceResult({ ...base, canonical: nestedCanonical }), failed, 'nesting gate stays strict')
-const semanticBreak = doc([list('bullet_list', [[{ type: 'paragraph', content: [text('one'), { type: 'hardbreak' }] }], [paragraph('two')]])])
+// A hard break in the MIDDLE of a paragraph is authored content. One at the
+// very end has no Markdown spelling (the parser drops it) and compares as
+// absent (0.13.246, MacBook Air trace 2026-10-12).
+const semanticBreak = doc([list('bullet_list', [[{ type: 'paragraph', content: [text('on'), { type: 'hardbreak' }, text('e')] }], [paragraph('two')]])])
 assert.equal(reconcileUnchangedSourceResult({ ...base, expectedDoc: semanticBreak }), failed, 'authored hard break cannot disappear')
+const trailingBreak = doc([list('bullet_list', [[{ type: 'paragraph', content: [text('one'), { type: 'hardbreak' }] }], [paragraph('two')]])])
+assert.equal(reconcileUnchangedSourceResult({ ...base, expectedDoc: trailingBreak }).preserved, true, 'a trailing hard break has no encoding')
 console.log('PASS unchanged source candidate: exact bytes, no mutation, stale source/callback, real empty paragraph, numbering/nesting, hard break, exceptions and zero-work success path')

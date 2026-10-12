@@ -147,7 +147,7 @@ async function docJson(app) {
 // Attributes that are editor-only or derived and must not count as content.
 function normalizeDoc(json) {
   const doc = JSON.parse(json)
-  const walk = (node) => {
+  const walk = (node, inTableCell = false) => {
     if (!node || typeof node !== 'object') return node
     // Marks on a line break have no visible meaning (validator ignores them).
     if ((node.type === 'hardbreak' || node.type === 'hard_break') && node.marks) delete node.marks
@@ -162,7 +162,8 @@ function normalizeDoc(json) {
       node.attrs = attrs
     }
     if (Array.isArray(node.content)) {
-      node.content = node.content.map(walk)
+      const cell = node.type === 'table_cell' || node.type === 'table_header'
+      node.content = node.content.map((child) => walk(child, cell))
       // Whitespace at the end of a textblock has no Markdown encoding (it is
       // stripped; two spaces would even mean a hard break), so compare
       // textblocks without it. Interior whitespace stays strict.
@@ -210,7 +211,9 @@ function normalizeDoc(json) {
         return runs
       }, [])
       // A soft break at the very start or end of a text block has no encoding.
-      const softBreak = (child) => child?.type === 'hardbreak' && child?.attrs?.isInline === true
+      // (A hard break there has none either — table cells excepted: a cell's
+      // paragraph is normalized by its own rule below.)
+      const softBreak = (child) => child?.type === 'hardbreak' && (child?.attrs?.isInline === true || !inTableCell)
       while (node.content.length > 1 && softBreak(node.content.at(-1))) node.content.pop()
       while (node.content.length > 1 && softBreak(node.content[0])) node.content.shift()
       const last = node.content.at(-1)

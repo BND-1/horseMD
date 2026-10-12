@@ -141,6 +141,14 @@ const standalone = [
     script: 'scripts/test-single-tilde-strike-ui.mjs'
   },
   {
+    name: 'Image pasted into a text paragraph (empty title = no title)',
+    script: 'scripts/test-image-paste-paragraph-ui.mjs'
+  },
+  {
+    name: 'Edge hard break in a typed-from-scratch document',
+    script: 'scripts/test-edge-hard-break-scratch-ui.mjs'
+  },
+  {
     name: 'URL typing: bare URLs and <url> save byte-exact without a pause',
     script: 'scripts/test-url-typing-ui.mjs'
   },

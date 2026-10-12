@@ -644,7 +644,8 @@ export const withoutEmptyContainerParagraphs = (node) => {
     // (`-` + newline + `  text` is the item `- text`; seed 120).
     const inlines = []
     node.forEach((inline) => inlines.push(inline))
-    const soft = (inline) => /^hard_?break$/.test(inline?.type?.name || '') && inline.attrs?.isInline === true
+    // (Hard breaks at the edges have none either outside table cells.)
+    const soft = (inline) => /^hard_?break$/.test(inline?.type?.name || '')
     if (inlines.some((inline) => !soft(inline))) {
       while (soft(inlines[0])) inlines.shift()
       while (soft(inlines[inlines.length - 1])) inlines.pop()

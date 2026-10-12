@@ -31,6 +31,12 @@ const ignoredAttrs = {
   table_header: ['colwidth']
 }
 
+// An empty title is no title (the editor writes `''`, the parser `null`).
+const attrValue = (attrs, key) => {
+  const value = attrs?.[key] ?? null
+  return key === 'title' && value === '' ? null : value
+}
+
 // Attribute-level equality minus editor-only attrs.
 const attrsEqual = (left, right) => {
   if (left.type !== right.type) return false
@@ -38,7 +44,7 @@ const attrsEqual = (left, right) => {
   const keys = new Set([...Object.keys(left.attrs || {}), ...Object.keys(right.attrs || {})])
   for (const key of keys) {
     if (ignored.has(key)) continue
-    if (JSON.stringify(left.attrs[key] ?? null) !== JSON.stringify(right.attrs[key] ?? null)) return false
+    if (JSON.stringify(attrValue(left.attrs, key)) !== JSON.stringify(attrValue(right.attrs, key))) return false
   }
   return true
 }
@@ -50,7 +56,7 @@ const markEq = (left, right) => {
   const keys = new Set([...Object.keys(left.attrs || {}), ...Object.keys(right.attrs || {})])
   for (const key of keys) {
     if (key === 'marker') continue
-    if (JSON.stringify(left.attrs[key] ?? null) !== JSON.stringify(right.attrs[key] ?? null)) return false
+    if (JSON.stringify(attrValue(left.attrs, key)) !== JSON.stringify(attrValue(right.attrs, key))) return false
   }
   return true
 }
@@ -212,8 +218,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
     if (node.isTextblock) {
       const isSoftBreak = (child) => /^hard_?break$/.test(child?.type?.name || '') && child.attrs?.isInline === true
       if (trimBreaks) {
-        while (children.length && isSoftBreak(children[0])) children.shift()
-        while (children.length && isSoftBreak(children[children.length - 1])) children.pop()
+        // Outside table cells a hard break at the very start or end has no
+        // encoding either (`  \n` there is a blank line / is dropped).
+        const isEdgeBreak = (child) => /^hard_?break$/.test(child?.type?.name || '')
+        if (children.some((child) => !isEdgeBreak(child))) {
+          while (children.length && isEdgeBreak(children[0])) children.shift()
+          while (children.length && isEdgeBreak(children[children.length - 1])) children.pop()
+        } else {
+          while (children.length && isSoftBreak(children[0])) children.shift()
+          while (children.length && isSoftBreak(children[children.length - 1])) children.pop()
+        }
       }
       // Spaces before a line break have no encoding (and 2+ would turn a soft
       // break into a hard one): drop them.
@@ -559,6 +573,14 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
     while (newUnits.length && isBlank(newUnits[newUnits.length - 1]) && !isBlank(oldUnits[oldUnits.length - 1])) newUnits.pop()
     let leadTrim = 0
     if (cell) while (newUnits.length && isBlank(newUnits[0]) && !isBlank(oldUnits[0])) { newUnits.shift(); leadTrim += 1 }
+    // A line break at the very start or end of a paragraph/heading has no
+    // encoding either (cells spell it `<br>`): leave it out of the diff too,
+    // or it is written as a blank line / a dangling `  ` + newline.
+    if (!cell) {
+      const isEdgeBreak = (unit) => unit?.kind === 'leaf' && /^hard_?break$/.test(unit.node?.type?.name || '')
+      while (newUnits.length > 1 && isEdgeBreak(newUnits[newUnits.length - 1]) && !isEdgeBreak(oldUnits[oldUnits.length - 1])) newUnits.pop()
+      while (newUnits.length > 1 && isEdgeBreak(newUnits[0]) && !isEdgeBreak(oldUnits[0])) { newUnits.shift(); leadTrim += 1 }
+    }
     let p = 0
     while (p < oldUnits.length && p < newUnits.length && sameUnit(oldUnits[p], newUnits[p])) p += 1
     let q = 0

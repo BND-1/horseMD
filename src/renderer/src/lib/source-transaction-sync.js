@@ -286,7 +286,7 @@ const semanticJson = (node, {
       )
       .map((path) => path.join('.'))
   )
-  const visit = (value, path = []) => {
+  const visit = (value, path = [], inCell = false) => {
     if (!value || typeof value !== 'object') return value
     const next = { ...value }
     if (literalEmphasis && next.type === 'text') {
@@ -298,6 +298,11 @@ const semanticJson = (node, {
     }
     if (next.attrs) {
       next.attrs = { ...next.attrs }
+      // An empty title is no title: a pasted image (or a link made in the
+      // editor) carries `title: ''`, the parser yields `null`, and Markdown
+      // spells both the same way (MacBook Air trace 2026-10-12: an image
+      // pasted into a paragraph paused every later edit).
+      if (next.attrs.title === '') next.attrs.title = null
       if (next.type === 'heading') {
         // Heading ids are derived by the live editor and regenerated after
         // parse; they are not authored Markdown semantics.
@@ -337,7 +342,8 @@ const semanticJson = (node, {
       if (!Object.keys(next.attrs).length) delete next.attrs
     }
     if (Array.isArray(next.content)) {
-      next.content = next.content.map((child, index) => visit(child, [...path, index]))
+      const childInCell = next.type === 'table_cell' || next.type === 'table_header'
+      next.content = next.content.map((child, index) => visit(child, [...path, index], childInCell))
       if (inlineTextual) {
         // Flatten inline mark containers to their text and strip text marks.
         // Atoms (inline code, images, inline math, html) stay strict — they
@@ -447,13 +453,19 @@ const semanticJson = (node, {
       // A SOFT line break at the very start of a paragraph/heading has no
       // Markdown spelling (a paragraph cannot begin with a newline) — Enter
       // right before a soft break leaves the new paragraph starting with one
-      // (fuzz seed 38). Hard breaks stay strict: `<br>` can spell them.
+      // (fuzz seed 38). A HARD break there has none either: `  \n` at the
+      // start of a paragraph is a blank line and at its end is dropped
+      // (Shift+Enter at the start of a paragraph/heading, or deleting the line
+      // after a hard break — MacBook Air trace 2026-10-12, 12 pauses). Table
+      // cells stay strict: `<br>` spells an edge break there.
       const isSoftBreak = (child) =>
         (child?.type === 'hardbreak' || child?.type === 'hard_break') && child.attrs?.isInline === true
-      if (next.content.some((child) => !isSoftBreak(child))) {
-        while (isSoftBreak(next.content[0])) next.content = next.content.slice(1)
+      const isEdgeBreak = (child) =>
+        (child?.type === 'hardbreak' || child?.type === 'hard_break') && (child.attrs?.isInline === true || !inCell)
+      if (next.content.some((child) => !isEdgeBreak(child))) {
+        while (isEdgeBreak(next.content[0])) next.content = next.content.slice(1)
         // ...nor end with one (the newline is just the paragraph's end).
-        while (isSoftBreak(next.content.at(-1))) next.content = next.content.slice(0, -1)
+        while (isEdgeBreak(next.content.at(-1))) next.content = next.content.slice(0, -1)
       }
       // Spaces right before a line break cannot be stored (CommonMark strips
       // them; two or more turn a soft break into a hard one): compare without

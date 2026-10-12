@@ -120,6 +120,10 @@ reprint(source, editorDoc) → source'
 | 在带标记文本（链接）边界继续输入 | 片段扩展到相邻同标记的顶层节点，整体重打印 |
 | 粗体/斜体在此处无法开合（`a**] ok**`，用户 2026-10-10 选 A，Typora 一致） | 照写字面 `*`/`_`；仅当去掉粗斜体标记后文档相同、且每个文本块只多出 `*`/`_`（`areSourceDocumentsEquivalentWithLiteralEmphasis`）才接受 |
 | 字符补丁校验失败 | 依次 minimal → full → segment（只做片段重打印，重新转义周边字面分隔符） |
+| 硬换行位于段落/标题的最开头或最末尾（段首 Shift+Enter；删光硬换行后的那一行）。表格单元格除外（`<br>` 可表示） | 比较时忽略（`semanticJson`、`withoutEmptyContainerParagraphs`）；打印时不写（`normalizeForPrint`、字符补丁的差异窗口、`break` 序列化处理器），不留只有空格的行 |
+| 图片/链接的 `title` 为空字符串（编辑器粘贴图片、新建链接）与解析得到的 `null` | 视为相同（`semanticJson`、引擎 `attrsEqual`/`markEq`） |
+| 段落里 Shift+Enter（Typora：写普通换行） | 插入软换行（`isInline:true`，源码一个 `\n`）；“保留源码单换行”关闭时才插入硬换行。换行后行首若像列表/标题标记，由行首转义保护 |
+| 标题中间的硬换行（标题只占一行） | 标题里 Shift+Enter 等同回车（拆成两个标题，Typora 一致），不再产生这种状态；已有的（源码 `<br>`、粘贴）由 `break` 序列化处理器写 `<br>`，解析回同一个换行 |
 | 输入的网址是纯文字，但同样的字节解析后是 GFM 自动链接（`https://a.com`、`www.a.com`、`a@b.com`；转义无效，自动链接在解码后的文字上识别） | 文字等于自身可自动链接网址的链接按无标记比较（`semanticJson` 与引擎 `sameNode`）；源码保持所输入字节，重开后显示为链接（Typora 一致）。输入 `<https://…>` 由输入规则直接变成链接，写回同样的 `<…>` |
 
 这张表就是“哪些差异允许不写回”的唯一定义；比较器、重打印、校验三处共用同一个规范化函数。

@@ -99,7 +99,8 @@ try {
       {id:'css-numbered', plain:'1. LEFT\nRIGHT', html:'<p style="white-space:pre-wrap">1. LEFT\nRIGHT</p>', expected:'1\\. LEFT  \nRIGHT'},
       {id:'markdown', plain:'# PASTED\n\nLEFT\nRIGHT', expected:'# PASTED\n\nLEFT\nRIGHT'},
       {id:'enter', key:true, expected:'LEFT\n\nRIGHT'},
-      {id:'shift-enter', key:true, shift:true, expected:'LEFT  \nRIGHT'}
+      // Shift+Enter writes a plain newline since 0.13.246 (Typora parity).
+      {id:'shift-enter', key:true, shift:true, expected:'LEFT\nRIGHT'}
     ]
     for (const eol of ['\n','\r\n']) for (const item of cases) {
       const id=item.id+(eol==='\n'?'-LF':'-CRLF'), file=join(root,id+'.md')

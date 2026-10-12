@@ -119,11 +119,13 @@ const main = async () => {
     const published = (dump.coordinator || []).filter((entry) => entry?.phase === 'published')
     if (!published.length) throw new Error('no publication reached the coordinator')
 
-    // Source mode must show the `\` continuation on the anchor line.
+    // Source mode must keep the pasted text on the line after the break.
     if (await toggleSource(app)) {
       const source = await waitFor(() => visibleSource(app), 'source textarea missing')
       await sleep(400)
-      if (!/分析：(?:\\|  )\r?\n1、定义层/.test(source)) {
+      // Shift+Enter writes a plain newline since 0.13.246 (Typora parity);
+      // a file's own `\\` / two-space spelling is still accepted.
+      if (!/分析：(?:\\|  )?\r?\n1、定义层/.test(source)) {
         throw new Error(`source lost the hardbreak continuation: ${JSON.stringify(source.slice(0, 120))}`)
       }
       if (!source.includes('先明确几个核心概念：')) {
@@ -141,7 +143,7 @@ const main = async () => {
     await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not complete')
     await sleep(300)
     const disk = await readFile(file, 'utf8')
-    if (!/分析：(?:\\|  )\r?\n1、定义层/.test(disk)) {
+    if (!/分析：(?:\\|  )?\r?\n1、定义层/.test(disk)) {
       throw new Error(`disk lost the continuation: ${JSON.stringify(disk.slice(0, 120))}`)
     }
     for (let index = 0; index < disk.length; index += 1) {

@@ -224,6 +224,65 @@ const cases = [
     click: ['你好', 2],
     actions: [['backspace', 2], ['type', 'Q']],
     expected: '# 测试\n\nQ\n\n再见\n'
+  },
+  // MacBook Air 0.13.244 trace (2026-10-12, 12 warnings in one day): a hard
+  // break (Shift+Enter) at the very start or end of a paragraph/heading has no
+  // Markdown spelling — every later edit anywhere in the document paused.
+  {
+    name: 'edge hard break: Shift+Enter at paragraph start, then edit elsewhere',
+    doc: '# T\n\n价格优势：\n\n尾\n',
+    click: ['价格优势', 0],
+    actions: [['key', { key: 'Enter', text: '\r', modifiers: 8 }], ['click', ['尾', 1]], ['type', 'X']],
+    expected: '# T\n\n价格优势：\n\n尾X\n'
+  },
+  {
+    name: 'edge hard break: Shift+Enter at heading start, then edit a list above',
+    doc: '# T\n\n1. **甲乙丙**  \n   第二行\n\n### **还没上：**\n\n尾\n',
+    click: ['还没上', 0],
+    actions: [['key', { key: 'Enter', text: '\r', modifiers: 8 }], ['click', ['甲乙丙', 2]], ['backspace', 2]],
+    expected: '# T\n\n1. **丙**  \n   第二行\n\n### **还没上：**\n\n尾\n'
+  },
+  {
+    name: 'edge hard break: delete the line after a hard break in a list item',
+    doc: '1. **标题**  \n   第二行\n2. 尾\n',
+    click: ['第二行', 3],
+    actions: [['backspace', 3], ['click', ['尾', 1]], ['type', 'X']],
+    expected: '1. **标题**\n2. 尾X\n'
+  },
+  {
+    name: 'heading hard break: Shift+Enter in the middle of a heading splits it (Typora)',
+    doc: '# T\n\n### 甲乙丙丁\n\n尾\n',
+    click: ['甲乙丙丁', 2],
+    actions: [['key', { key: 'Enter', text: '\r', modifiers: 8 }], ['click', ['尾', 1]], ['type', 'X']],
+    expected: '# T\n\n### 甲乙\n\n### 丙丁\n\n尾X\n'
+  },
+  {
+    name: 'heading hard break: an authored <br> in a heading survives an edit',
+    doc: '# T\n\n### 甲乙<br>丙丁\n\n尾\n',
+    click: ['丙丁', 2],
+    actions: [['type', 'X']],
+    expected: '# T\n\n### 甲乙<br>丙丁X\n\n尾\n'
+  },
+  {
+    name: 'paragraph line break: Shift+Enter in the middle writes a plain newline (Typora)',
+    doc: '# T\n\n甲乙丙丁\n\n尾\n',
+    click: ['甲乙丙丁', 2],
+    actions: [['key', { key: 'Enter', text: '\r', modifiers: 8 }], ['type', '- 戊'], ['click', ['尾', 1]], ['type', 'X']],
+    expected: '# T\n\n甲乙\n\\- 戊丙丁\n\n尾X\n'
+  },
+  {
+    name: 'paragraph line break: an authored hard break survives typing after it',
+    doc: '# T\n\n甲乙  \n丙丁\n\n尾\n',
+    click: ['丙丁', 2],
+    actions: [['type', 'X']],
+    expected: '# T\n\n甲乙  \n丙丁X\n\n尾\n'
+  },
+  {
+    name: 'edge hard break: Shift+Enter at paragraph end, then edit elsewhere',
+    doc: '# T\n\n价格优势：\n\n尾\n',
+    click: ['价格优势', 5],
+    actions: [['key', { key: 'Enter', text: '\r', modifiers: 8 }], ['click', ['尾', 1]], ['type', 'X']],
+    expected: '# T\n\n价格优势：\n\n尾X\n'
   }
 ]
 
@@ -242,7 +301,17 @@ const normalize = (json) => {
       if (node.type === 'list_item') delete node.attrs.label
     }
     if (Array.isArray(node.content)) {
+      const cell = node.type === 'table_cell' || node.type === 'table_header'
       node.content = node.content.map(walk)
+      // A hard break at the very start/end of a paragraph or heading has no
+      // Markdown spelling outside table cells.
+      if (!cell) {
+        for (const child of node.content) {
+          if ((child?.type !== 'paragraph' && child?.type !== 'heading') || !Array.isArray(child.content)) continue
+          while (child.content.length > 1 && child.content[0]?.type === 'hardbreak') child.content.shift()
+          while (child.content.length > 1 && child.content.at(-1)?.type === 'hardbreak') child.content.pop()
+        }
+      }
       if (node.type === 'table') {
         // The live editor pads short authored rows; a cold reopen may not yet.
         const width = Math.max(0, ...node.content.map((row) => row.content?.length || 0))
@@ -398,7 +467,7 @@ for (const [index, testCase] of cases.entries()) {
     await setSourceMode(app, true)
     const source = await app.evaluate(`[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent).value`)
     await setSourceMode(app, false)
-    assert.equal(source, testCase.sourceView ?? testCase.expected, 'source view')
+    assert.equal(source, testCase.sourceView ?? testCase.expected, `source view ${JSON.stringify(source)}`)
     await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
     await waitFor(async () => (await readFile(file, 'utf8')) === testCase.expected, `saved bytes differ: ${JSON.stringify(await readFile(file, 'utf8'))}`, 40)
     const toasts = await app.evaluate('window.__toasts.slice()')
