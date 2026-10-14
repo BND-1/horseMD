@@ -57,6 +57,14 @@ assert.equal(watched.length, 1, 'duplicate folder watches reuse the existing wat
 assert.equal(watched[0].options.followSymlinks, false)
 assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/node_modules/pkg'), true)
 assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/notes/file.md'), false)
+const fileStats = { isDirectory: () => false }
+const dirStats = { isDirectory: () => true }
+assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/data/sample.bin', fileStats), true)
+assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/data', dirStats), false)
+assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/notes/file.MD', fileStats), false)
+assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/notes/file.txt', fileStats), false)
+assert.equal(watched[0].options.ignored('/tmp/horsemd-watch-root/future.bin'), false,
+  'paths without stats must be traversed until their type is known')
 
 watched[0].watcher.emit('add', '/tmp/horsemd-watch-root/new.md')
 await sleep(145)

@@ -11,10 +11,14 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.js') },
+        input: {
+          index: resolve(__dirname, 'src/main/index.js'),
+          'workspace-watcher-worker': resolve(__dirname, 'src/main/workspace-watcher-worker.js')
+        },
         output: {
           format: 'cjs',
-          entryFileNames: '[name].cjs'
+          entryFileNames: '[name].cjs',
+          chunkFileNames: 'chunks/[name]-[hash].cjs'
         }
       }
     }
