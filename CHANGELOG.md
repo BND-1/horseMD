@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.247] - 2026-10-14
+
+### Fixed
+- 大型工作区启动后窗口长时间无法操作：目录遍历与文件监听初始化移到独立线程，跳过无关数据和资源文件的监听；保留文件树新增、删除、重命名刷新，以及已打开文档的外部修改检测。
+- 问题反馈与修复贡献：linyibin；原因和验证记录见 `docs/workspace-startup-freeze.md`。
+
 ## [0.13.246] - 2026-10-12
 
 ### Changed

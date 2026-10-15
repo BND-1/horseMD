@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.246",
+  "version": "0.13.247",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -388,7 +388,10 @@
     "test:ordered-relabel-enter-replay-ui": "node scripts/test-ordered-relabel-enter-replay-ui.mjs",
     "test:adjacent-list-merge-fill-replay-ui": "node scripts/test-adjacent-list-merge-fill-replay-ui.mjs",
     "test:transition-inline-textual": "node scripts/test-transition-inline-textual.mjs",
-    "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs"
+    "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs",
+    "test:main-watchers": "node scripts/test-main-watchers.mjs",
+    "test:workspace-watcher": "node scripts/test-workspace-watcher.mjs",
+    "test:workspace-startup-ui": "node scripts/test-workspace-startup-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
@@ -538,6 +541,10 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh"
-    }
+    },
+    "asarUnpack": [
+      "out/main/workspace-watcher-worker.cjs",
+      "out/main/chunks/**"
+    ]
   }
 }

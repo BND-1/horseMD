@@ -543,7 +543,7 @@ registerSyncServiceIpc(ipcMain, {
   isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
 })
 
-registerWatcherIpc(ipcMain, { sendToRenderer })
+registerWatcherIpc(ipcMain, { sendToRenderer, markdownExtensions: MD_EXTS })
 
 ipcMain.handle('shell:openExternal', async (event, url) => {
   if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
