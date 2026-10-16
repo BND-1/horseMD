@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import { constants as fsConstants, existsSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', 'out', 'dist'])
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store', '.obsidian', '.horsemd', 'out', 'dist'])
 
 export async function readDirectoryTree(dir, { showHidden = false, markdownPattern } = {}) {
   let entries
@@ -75,6 +75,30 @@ export function nextDuplicatePath(path, pathExists = existsSync) {
   return target
 }
 
+// Classify paths supplied by Electron's native drag-and-drop bridge. Keep the
+// filesystem check in the main process: the isolated renderer receives only a
+// bounded `{ path, type }` result and never guesses directories from a missing
+// MIME type or filename suffix. Missing/special paths are ignored so one bad
+// item cannot prevent the remaining dropped files from opening.
+export async function classifyFileSystemPaths(paths, { stat = fs.stat } = {}) {
+  if (!Array.isArray(paths)) return []
+  const seen = new Set()
+  const classified = []
+  for (const path of paths.slice(0, 200)) {
+    if (typeof path !== 'string' || !path || seen.has(path)) continue
+    seen.add(path)
+    try {
+      const entry = await stat(path)
+      if (entry.isDirectory()) classified.push({ path, type: 'dir' })
+      else if (entry.isFile()) classified.push({ path, type: 'file' })
+    } catch {
+      // The item may have moved between drag start and drop. Ignore it and keep
+      // processing the rest of the payload.
+    }
+  }
+  return classified
+}
+
 export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
   let showHidden = false
 
@@ -84,7 +108,21 @@ export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
     return { content, mtimeMs: stat.mtimeMs }
   })
 
-  ipcMain.handle('fs:writeFile', async (_event, path, content) => {
+  ipcMain.handle('fs:writeFile', async (_event, path, content, options) => {
+    // Auto-save passes the mtime HorseMD last read/wrote. Refuse (instead of
+    // silently overwriting) when the file has since been changed by another
+    // app or removed — an explicit Save is the only path allowed to clobber.
+    const expected = options?.expectedMtimeMs
+    if (typeof expected === 'number') {
+      let current
+      try {
+        current = await fs.stat(path)
+      } catch (error) {
+        if (error?.code === 'ENOENT') return { conflict: 'missing' }
+        throw error
+      }
+      if (current.mtimeMs > expected) return { conflict: 'modified', mtimeMs: current.mtimeMs }
+    }
     await fs.writeFile(path, content, 'utf8')
     const stat = await fs.stat(path)
     return { mtimeMs: stat.mtimeMs }
@@ -130,6 +168,10 @@ export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
     root: { name: basename(dir), path: dir, type: 'dir' },
     children: await readDirectoryTree(dir, { showHidden, markdownPattern })
   }))
+
+  ipcMain.handle('fs:classifyPaths', async (_event, paths) =>
+    classifyFileSystemPaths(paths)
+  )
 
   ipcMain.handle('fs:duplicate', async (_event, path) => {
     const target = nextDuplicatePath(path)

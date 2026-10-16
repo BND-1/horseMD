@@ -4,12 +4,18 @@
 // this is the discoverable, mouse-friendly affordance.
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 
-export default function SaveFab({ visible, onSave }) {
+export default function SaveFab({ visible, onSave, effectiveKeybindings }) {
   const { t } = useI18n()
   if (!visible) return null
   return (
-    <button className="hm-save-fab" onClick={onSave} title={t('tip.save')} aria-label={t('status.save')}>
+    <button
+      className="hm-save-fab"
+      onClick={onSave}
+      title={labelWithShortcut(t('tip.save'), 'file.save', effectiveKeybindings)}
+      aria-label={t('status.save')}
+    >
       <Icon name="save" size={16} />
       <span>{t('status.save')}</span>
     </button>

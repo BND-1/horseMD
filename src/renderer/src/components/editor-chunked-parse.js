@@ -57,9 +57,10 @@ export function splitMarkdown(md, target) {
 //   view              — the ProseMirror EditorView to dispatch into
 //   getParser         — () => parser fn (or null); parserCtx is caller-owned
 //   isDestroyed       — () => boolean; aborts the loop when the editor unmounts
+//   getEditable       — () => bool; keeps an external reading lock after loading
 //   onLoadingChange   — (bool) optional; outline shows a skeleton while streaming
 //   onStructureChange — () optional; host refreshes outline/scrollspy after load
-export async function appendChunks({ rest, view, getParser, isDestroyed, onLoadingChange, onStructureChange }) {
+export async function appendChunks({ rest, view, getParser, isDestroyed, getEditable, onLoadingChange, onStructureChange }) {
   if (!rest || !rest.length) return
   onLoadingChange?.(true) // outline shows a skeleton while the doc streams in
   const setEditable = (on) => {
@@ -86,7 +87,7 @@ export async function appendChunks({ rest, view, getParser, isDestroyed, onLoadi
       await new Promise((r) => setTimeout(r, 0))
     }
   } finally {
-    setEditable(true)
+    setEditable(getEditable ? getEditable() : true)
     onLoadingChange?.(false)
     // The full doc is now in the DOM — tell the host to refresh the outline
     // heading list + scrollspy (they couldn't track it during load because

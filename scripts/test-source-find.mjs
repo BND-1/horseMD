@@ -1,62 +1,28 @@
 // CDP regression for source-mode find. Launch HorseMD with a real document and
 // --remote-debugging-port first; this verifies selection, scrolling and overlay.
-const port = Number(process.env.CDP_PORT || 9222)
+import { connectCdp, sleep } from './lib/cdp.mjs'
+
 const commonQuery = process.env.FIND_QUERY || '企业'
 const testModeSwitch = process.argv.includes('--mode-switch')
-const base = `http://127.0.0.1:${port}`
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function connect() {
-  let targets = []
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error(`No Electron page found on port ${port}`)
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  const evaluate = async (expression) => {
-    const response = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text)
-    return response.result?.result?.value
-  }
-  return { ws, send, evaluate }
-}
 
 async function main() {
-  const { ws, send, evaluate } = await connect()
+  const { ws, send, evaluate } = await connectCdp()
   await sleep(800)
+  const commandModifier = await evaluate(`navigator.platform?.toLowerCase().includes('mac') ? 4 : 2`)
   await evaluate(`(() => {
     document.querySelector('.tab[title="欢迎使用 HorseMD.md"] .tab-close')?.click()
     if (!document.querySelector('textarea.source-editor')) {
-      [...document.querySelectorAll('.status-btn')].find((button) => button.title?.includes('Ctrl+/'))?.click()
+      [...document.querySelectorAll('.status-btn')].find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))?.click()
     }
     return true
   })()`)
   await sleep(700)
   await send('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown', key: 'f', code: 'KeyF', modifiers: 2,
+    type: 'rawKeyDown', key: 'f', code: 'KeyF', modifiers: commandModifier,
     windowsVirtualKeyCode: 70, nativeVirtualKeyCode: 3
   })
   await send('Input.dispatchKeyEvent', {
-    type: 'keyUp', key: 'f', code: 'KeyF', modifiers: 2,
+    type: 'keyUp', key: 'f', code: 'KeyF', modifiers: commandModifier,
     windowsVirtualKeyCode: 70, nativeVirtualKeyCode: 3
   })
   await sleep(150)
@@ -92,10 +58,14 @@ async function main() {
     }
   })()`)
   const revealed = (state) => {
-    if (state.marks?.length !== 1) return false
-    const mark = state.marks[0]
-    const centered = Math.abs((mark.top + mark.bottom) / 2 - state.viewportCenter) < 36
-    const visible = mark.top >= state.viewportTop && mark.bottom <= state.viewportBottom
+    if (!state.marks?.length) return false
+    // A single current source match can paint as multiple overlay rects when the
+    // selected text wraps across visual lines. Treat those fragments as one
+    // revealed range instead of requiring exactly one rectangle.
+    const top = Math.min(...state.marks.map((mark) => mark.top))
+    const bottom = Math.max(...state.marks.map((mark) => mark.bottom))
+    const centered = Math.abs((top + bottom) / 2 - state.viewportCenter) < 36
+    const visible = top >= state.viewportTop && bottom <= state.viewportBottom
     const atBoundary = state.scrollTop <= 1 || state.scrollTop >= state.maxScroll - 1
     return centered || (atBoundary && visible)
   }
@@ -129,7 +99,7 @@ async function main() {
   if (testModeSwitch) {
     const countBefore = steps.at(-1)?.count || initial.count
     const toggleMode = async () => {
-      await evaluate(`([...document.querySelectorAll('.status-btn')].find((button) => button.title?.includes('Ctrl+/'))?.click(), true)`)
+      await evaluate(`([...document.querySelectorAll('.status-btn')].find((button) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(button.title || button.textContent || ''))?.click(), true)`)
       await sleep(850)
     }
     const modeSnapshot = () => evaluate(`(() => {

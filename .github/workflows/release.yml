@@ -13,7 +13,30 @@ permissions:
   contents: write
 
 jobs:
+  # Create the single draft release up front. When the three platform builders
+  # started concurrently with no existing draft, each electron-builder created
+  # ITS OWN draft and the 14 assets split 5+9 across two same-named releases
+  # (v0.13.199). With one draft already present every builder reuses it.
+  init-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          # --verify-tag fails the job if the tag vanished; ignore "already
+          # exists" so reruns are safe.
+          gh release create "$TAG" --draft --verify-tag \
+            --repo BND-1/horseMD \
+            --title "HorseMD ${TAG#v}" \
+            --notes "Pending release notes." || \
+          gh release view "$TAG" --repo BND-1/horseMD > /dev/null
+
   release:
+    needs: init-release
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +92,17 @@ jobs:
           echo "Found: $DEB_FILE"
           echo "Size: $(stat -c%s "$DEB_FILE") bytes"
           dpkg-deb --info "$DEB_FILE"
-          echo "✅ .deb artifact is valid"
+          # #143: postinst must make chrome-sandbox root-owned SUID, otherwise
+          # Ubuntu 24.04+ (restricted unprivileged userns) crashes on launch.
+          CTRL_DIR=$(mktemp -d)
+          dpkg-deb --control "$DEB_FILE" "$CTRL_DIR"
+          grep -q "chown root:root '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"
+          grep -q "chmod 4755 '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"
+          if grep -q "chmod 0755 '/opt/HorseMD/chrome-sandbox'" "$CTRL_DIR/postinst"; then
+            echo "::error::postinst still downgrades chrome-sandbox to 0755"
+            exit 1
+          fi
+          echo "✅ .deb artifact is valid (postinst sets SUID chrome-sandbox)"
 
       # Linux: electron-builder's default draft-publish SKIPS when the release
       # is already published (existingType=release vs publishingType=draft), so

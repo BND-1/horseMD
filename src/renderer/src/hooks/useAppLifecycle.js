@@ -19,6 +19,7 @@
 //   tabsRef        — live tabs mirror (restore adds scratch tabs; flush reads it)
 //   setActiveId/setTabs/setSidebarMode/setSidebarOpen/setHome/tRef — restore + onboarding
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isTabDirty } from '../lib/tab-state.js'
 import { LS, genId, isHeavyDoc, isNewerVersion } from '../paths.js'
 import { HM_TOAST_EVENT } from '../ui.js'
 import { welcomeDoc } from '../onboarding.js'
@@ -39,6 +40,7 @@ export function useAppLifecycle({
   sidebarOpen,
   sidebarMode,
   paneWidth,
+  restoreSession,
   openPaths,
   isMobile,
   tabsRef,
@@ -64,7 +66,7 @@ export function useAppLifecycle({
       // captures edits still inside a tab's debounce window. (commitAllLive, run
       // before this on the close path, already synced tabsRef.current.)
       const untitled = tabsRef.current
-        .filter((t) => t.kind !== 'settings' && !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .filter((t) => t.kind !== 'settings' && !t.path && isTabDirty(t) && (t.content || '').trim())
         .map((t) => ({ title: t.title, content: t.content }))
       localStorage.setItem(LS, JSON.stringify({ ...sessionRef.current, untitled }))
     } catch {
@@ -72,10 +74,20 @@ export function useAppLifecycle({
     }
   }, [tabsRef])
 
+  // Register the launch-file listener before the restore effect below calls
+  // appReady(). Main delivers queued argv/open-file paths immediately on that
+  // signal, so registering this in the later global menu hook races on empty
+  // sessions and can leave a file launch stuck on the welcome document.
+  useEffect(() => {
+    return window.api.onOpenPaths((paths) => openPaths(paths))
+  }, [openPaths])
+
   // Restore session tabs on first mount
   useEffect(() => {
-    const paths = (session.openPaths || []).filter(Boolean)
-    const untitled = (session.untitled || []).filter((u) => u && (u.content || '').trim())
+    const paths = restoreSession === false ? [] : (session.openPaths || []).filter(Boolean)
+    const untitled = restoreSession === false
+      ? []
+      : (session.untitled || []).filter((u) => u && (u.content || '').trim())
     // Recreate unsaved scratch tabs (no path) from the last session.
     const addUntitled = () => {
       if (!untitled.length) return null
@@ -136,7 +148,7 @@ export function useAppLifecycle({
       // dirty tabs are stored, so the untouched welcome doc / empty new tabs
       // don't keep coming back. Saved files are reopened from disk instead.
       untitled: tabs
-        .filter((t) => t.kind !== 'settings' && !t.path && t.content !== t.savedContent && (t.content || '').trim())
+        .filter((t) => t.kind !== 'settings' && !t.path && isTabDirty(t) && (t.content || '').trim())
         .map((t) => ({ title: t.title, content: t.content })),
       activePath
     }
@@ -212,7 +224,10 @@ export function useAppLifecycle({
     localStorage.setItem(ONBOARDED_KEY, '1')
     // Only greet on a genuinely fresh start (no restored session — neither saved
     // files nor unsaved scratch tabs).
-    if ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length) return
+    if (
+      restoreSession !== false &&
+      ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length)
+    ) return
     const doc = welcomeDoc(session.lang || DEFAULT_LANG)
     const id = genId()
     setTabs((prev) => [

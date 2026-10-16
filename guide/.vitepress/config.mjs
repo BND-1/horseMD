@@ -10,7 +10,7 @@ export default defineConfig({
   srcExclude: ['README.md', 'public/**/*.md'],
   lastUpdated: true,
   sitemap: {
-    hostname: 'https://guide-zeta-rouge.vercel.app'
+    hostname: 'https://guide.horsemd.yangsir.net'
   },
   head: [
     ['link', { rel: 'icon', type: 'image/png', href: '/icon.png' }],
@@ -53,6 +53,7 @@ export default defineConfig({
           { text: '认识界面', link: '/basics/interface' },
           { text: '新建、打开与保存', link: '/basics/create-open-save' },
           { text: '工作区与文件夹', link: '/basics/workspace' },
+          { text: '云同步文件夹', link: '/basics/cloud-sync' },
           { text: '标签页与分屏', link: '/basics/tabs-and-split' },
           { text: '富文本与源码模式', link: '/basics/rich-and-source' }
         ]
@@ -87,6 +88,8 @@ export default defineConfig({
         items: [
           { text: '富文本复制', link: '/output/rich-copy' },
           { text: '导出 PDF', link: '/output/export-pdf' },
+          { text: '导出 HTML', link: '/output/export-html' },
+          { text: '使用 Pandoc 导出', link: '/output/export-pandoc' },
           { text: '移动端分享', link: '/output/mobile-share' }
         ]
       },

@@ -6,6 +6,8 @@ import { LANGS } from '../i18n.jsx'
 import { FONT_SIZE_MIN, FONT_SIZE_MAX } from '../settings.js'
 import LayoutControl from './LayoutControl.jsx'
 import { usePopover } from '../hooks/usePopover.js'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
+import { isTabDirty } from '../lib/tab-state.js'
 
 function stats(md) {
   const text = (md || '')
@@ -331,6 +333,7 @@ export default function StatusBar({
   setTheme,
   lang,
   setLang,
+  effectiveKeybindings,
   sourceMode,
   onToggleSource,
   pageWidth,
@@ -341,6 +344,8 @@ export default function StatusBar({
   onSetLineHeight,
   paragraphSpacing,
   onSetParagraphSpacing,
+  headingSpacing,
+  onSetHeadingSpacing,
   customThemes,
   customTheme,
   onPickCustom,
@@ -366,7 +371,7 @@ export default function StatusBar({
     const id = setTimeout(() => setS(stats(tab?.content)), 400)
     return () => clearTimeout(id)
   }, [tab?.id, tab?.content])
-  const dirty = tab && tab.content !== tab.savedContent
+  const dirty = isTabDirty(tab)
   return (
     <div className="statusbar">
       <div className="status-left">
@@ -428,7 +433,11 @@ export default function StatusBar({
         ) : (
           <>
             {tab && <StatsControl stats={s} />}
-            <button className="status-btn" onClick={onToggleSource} title={t('tip.toggleSource')}>
+            <button
+              className="status-btn"
+              onClick={onToggleSource}
+              title={labelWithShortcut(t('tip.toggleSource'), 'view.toggleSource', effectiveKeybindings)}
+            >
               <Icon name="code" size={14} /> {sourceMode ? t('status.source') : t('status.rich')}
             </button>
             <LayoutControl
@@ -438,6 +447,8 @@ export default function StatusBar({
               onSetLineHeight={onSetLineHeight}
               paragraphSpacing={paragraphSpacing}
               onSetParagraphSpacing={onSetParagraphSpacing}
+              headingSpacing={headingSpacing}
+              onSetHeadingSpacing={onSetHeadingSpacing}
               pageWidth={pageWidth}
               onSetPageWidth={onSetPageWidth}
             />

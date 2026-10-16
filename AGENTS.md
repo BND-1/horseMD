@@ -46,6 +46,22 @@ Use ES modules, React functional components, two-space indentation, single quote
 
 There is no single `npm test` command. Run `npm run build` before PRs. For editor/review logic, add or update focused scripts under `scripts/`. For UI changes, follow `docs/manual-test-checklist.md`; CDP helpers are in `docs/development.md`.
 
+CDP automation must use `scripts/lib/electron-test-app.mjs` with its default
+background mode so tests do not take native keyboard focus or show over the
+user's work. Input-rule, caret, line-break, mode-switch, and source-fidelity
+tests must send committed text one character at a time via
+`scripts/lib/human-input.mjs`, with raw key events for delimiters and special
+keys. Bulk text insertion is only appropriate for paste semantics, fixture
+setup, or behavior unrelated to incremental typing. Per-character committed
+Chinese text is not a substitute for a real IME composition test.
+
+For any real/manual reproduction of rich-text ↔ source divergence, launch the
+actual HorseMD process with `--horsemd-input-trace` in Electron argv before the
+user starts editing. Do not rely on `ELECTRON_ENABLE_LOGGING` alone: it does not
+persist the source/candidate/canonical transaction evidence needed to identify
+the first divergence. Keep the trace-enabled instance running through the real
+operation sequence, and inspect the first integrity failure before changing code.
+
 User-facing changes must update the matching `guide/` page. Tutorial screenshots must come from a rebuilt and freshly installed current app using an isolated profile; follow `docs/user-guide-maintenance.md`. Never publish screenshots containing personal paths or stale UI.
 
 ## Commit & Pull Request Guidelines
@@ -56,15 +72,23 @@ History uses concise subjects such as `feat(#38): ...`, `fix(site): ...`, `docs:
 
 Keep Electron renderer access behind `window.api`; do not enable Node integration. Do not commit signing keys, keystores, or local config such as `android/key.properties`. When adding native capabilities, update both desktop preload and the Capacitor shim or gate the UI with `window.api.capabilities`.
 
+## User Execution Preference
+
+- For routine project-development commands such as build, start, dev, test, read-only diagnostics, and local packaging, the user has explicitly authorized automatic execution without asking again each time.
+- Every independently fixed bug must immediately consume one patch version as soon as its targeted fix is complete; do not wait for the rest of a larger bug batch or family investigation to finish before bumping. Example: three independently fixed bugs after 0.13.90 become 0.13.91, 0.13.92, and 0.13.93 respectively.
+- For rich/source “family bug” work, after each bug-specific fix reaches its required targeted verification gate, immediately bump that bug's patch version; continue broader family regression work on the next patch version. When a user-testable build is requested or the current checkpoint is ready, automatically build/package and launch the latest accumulated patch without asking for another confirmation. Treat the user's standing authorization as explicit permission for these routine development actions; do not interrupt the workflow to ask again.
+- This standing authorization does not override higher-risk confirmation requirements for destructive actions, publishing/releasing to external channels, pushing, deployment, or replacing an installed production application.
+- After a trace-identified family bug is fixed, continue through targeted verification, generalized family tests, patch bump, local packaging, and trace-enabled launch as one uninterrupted routine workflow unless a genuine product regression or higher-risk action requires stopping.
+
 ## Operational Notes From CLAUDE.md
 
-Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` and `docs/` contain deeper history and root-cause writeups.
+Use this section as the short, high-signal handoff for AI agents. Start with `docs/ai-handoff.md` for the current project state, user working style, risk map, website/guide ownership, and verification matrix. `CLAUDE.md` and the rest of `docs/` contain deeper history and root-cause writeups.
 
 ### Cross-Platform Contract
 
 - Desktop and mobile share the renderer. Desktop gets `window.api` from `src/preload/index.js`; mobile gets the same contract from `src/renderer/src/platform/capacitor-api.js`.
-- Platform-specific renderer behavior should go through `window.api.platform`, `window.api.capabilities`, and `.app.is-mac` / `.app.is-win` CSS classes.
-- Keep macOS and Windows title-bar paths separate: macOS uses `hiddenInset` and traffic-light spacing; Windows uses renderer-drawn window controls and `window:*` IPC.
+- Platform-specific renderer behavior should go through `window.api.platform`, `window.api.capabilities`, and `.app.is-mac` / `.app.is-win` / `.app.is-linux` CSS classes.
+- Keep title-bar paths explicit: macOS uses `hiddenInset` and traffic-light spacing; Windows and Linux use `window:*` IPC with separate Windows and GTK renderer styles.
 - Shortcuts should generally support both Ctrl and Cmd via `ctrlKey || metaKey`.
 - If adding native capabilities, update both preload and Capacitor shim, or hide/gate the feature via capabilities.
 
@@ -88,6 +112,10 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - For the current mode-switch fix, Crepe must stay mounted when source mode is shown. Only sync source back into rich when source text was actually edited.
 - Do not replace source/rich mapping with plain keyword matching. The primary caret path is block-aware Markdown raw-offset mapping; global visible-character positions and snippets/context are fallback only.
 - Keep `scrollAnchor.js` as the stable public facade. Implement visible-stream, caret, viewport, and source-heading changes in the focused `mode-*.js` modules and preserve the facade exports.
+- ProseMirror bullet-list nodes do not retain whether an input rule started from `-`, `*`, or `+`. Capture that marker before the rule consumes it and restore only the newly created list level; never solve this with a global serializer default or source replacement. Standalone `<br />` emitted for empty paragraphs is internal canonical state and must not enter raw source, while table-cell and user-authored `<br>` remain valid. Protect both rules with `test:new-source-fidelity-ui`.
+- List-type conversion changes only the current level's marker/checkbox. Capture the actual right-click text anchor and serialize the target transaction document before dispatch; `markdownUpdated` may run during dispatch or after the next keystroke. Never replace an entire canonical list tree, because outer and nested levels may independently use compact/loose spacing, indentation, and marker styles. Protect conversion, immediate per-character typing, source view, save, and full reopen with `test:list-conversion-ui`.
+- Forced rich-editor flushes must serialize the current `view.state.doc` through `serializerCtx`; `crepe.getMarkdown()` can lag behind an already-dispatched keyboard transaction until `markdownUpdated` publishes. This is a save/source-switch data-loss boundary, not a cosmetic cache choice.
+- `saveTab()` must call `getMarkdownForTab()` before writing and synchronously mirror the returned value into `tabsRef`; committing only uncontrolled source textareas leaves rich ProseMirror edits vulnerable to a one-render stale `tab.content` save.
 
 ### Performance-Sensitive Areas
 
@@ -96,12 +124,31 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 - CodeMirror code blocks are eager-mounted via `editor-codeblock-eager.js` to prevent height deltas and scroll jumps near code blocks.
 - Large image-dense documents are the real regression test for scroll/caret fixes; small docs are insufficient.
 
+### PDF Export Invariants
+
+- PDF export uses `getPdfSource()` structured HTML/headings, not a clone of the live editor DOM.
+- Sidebar export waits for the per-tab editor API readiness signal; do not restore fixed polling delays.
+- Main-process preview generation is latest-request-only per renderer. New settings cancel stale hidden-window work, but once `printToPDF()` starts its BrowserWindow must not be destroyed for ordinary supersession. Let printing finish, discard the stale result, and start the latest worker only after asynchronous cleanup; keep `scripts/test-pdf-preview-churn-ui.mjs` in the regression matrix.
+- Keep PDF temporary documents script-free through CSP and retain Electron's default web security policy.
+- A printed contents page and the embedded PDF navigation outline are independent features.
+- PDF body font size is `fontSizePt`, normalized to 8–24pt with an 11pt default and emitted through `--hm-pdf-font-size`. Keep it separate from overall page scaling; headings, tables, code, and spacing should remain relative to the body size.
+- Display LaTeX blocks are preview-backed CodeMirror blocks in the editor, but PDF export must print rendered MathML, not the raw `$$...$$` source or editor controls. Keep `scripts/test-pdf-latex-ui.mjs` in the UI regression matrix.
+- Mermaid blocks are also preview-backed. PDF export must actively render and sanitize their SVG through `editor-pdf-content.js`; it must not depend on a visible `.preview-panel`. Keep `scripts/test-pdf-rendered-formats-ui.mjs` in the UI regression matrix.
+- PDF tables preserve the live editor's measured total width and column proportions. Compact tables remain compact; only tables wider than their editor viewport collapse to the printable width. Do not restore a global fixed/equal-width print rule, and keep `scripts/test-pdf-table-layout-fidelity-ui.mjs` in the UI regression matrix.
+- PDF table cells contain paragraph wrappers. Keep their margins and padding reset in print CSS so global document paragraph spacing cannot inflate every exported row. Visual PDF fixes must be checked against the final PDF Buffer with X/Y coordinates and a rendered page; follow `docs/pdf-visual-fidelity-runbook.md`.
+
 ### Feature-Specific Notes
 
 - Review parsing lives in `reviewMarkup.js`; plugin state, decoration scanning, and card DOM live in `editor-review.js`, `editor-review-decorations.js`, and `editor-review-card.js`. Protect all four with focused script and real UI tests when changed.
 - Find/replace uses the CSS Custom Highlight API scoped to editor content, not `window.find`.
 - Mermaid uses Crepe CodeMirror preview configuration; do not replace it with a custom widget decoration unless there is a clear reason.
+- One Mermaid clipboard payload must map to one `code_block`, one preview, and one fenced source block. Detect diagram declarations only at source line starts; labels may legitimately contain strings such as `flowchart TD` or `sequenceDiagram`. A second paste into a non-empty Mermaid block is handled at the target block boundary, not by scanning arbitrary source substrings.
+- Rich-copy MIME channels have separate contracts: `text/plain` is the visible selected text for external plain-text targets, `text/html` carries styled rich content, and `text/markdown` carries HorseMD's structural source for internal paste. Materialize CSS-only inline soft breaks as `\n`/`<br>` in clipboard clones, but never mutate the editor document. Never put block-level Markdown serializer output in `text/plain`; it adds paragraph separators and list markers that the user did not select. Keep `scripts/test-issue-98-copy-undo-ui.mjs` in the clipboard regression matrix.
+- CodeMirror virtualizes long code blocks, so `.cm-line` nodes are only the visible window and must never be used as the source for whole-block copy, export, save, or statistics. The code-block copy button must resolve the complete ProseMirror `code_block`; if it cannot, fail without a success toast. Preserve CodeMirror's native partial-selection copy behavior and keep the 122-line whole-copy plus 65-line partial-copy cases in `test:issue-98-ui`.
 - Table-cell line breaks round-trip as `<br>` inside table cells; serializing them as normal newlines corrupts GFM tables.
+- Markdown tables use content-driven `table-layout: auto` until the user explicitly resizes a column. Persisted `data-colwidth` then switches that table to fixed layout; do not make untouched tables equal-width or overwrite deliberate widths.
+- Crepe task checkboxes toggle on `pointerdown` and suppress the compatible `mousedown`. Keep the editor-root capture listener so checkbox transactions are recognized as user edits and flow through `markdownUpdated`; verify both checked and unchecked states survive save and full reopen.
+- YAML front matter follows the standard document-header boundary only. Do not infer YAML from body `---` separators plus colon-containing headings; Q&A headings such as `Q3:` must remain headings.
 - Image handling supports custom command/PicGo/local assets/base64 fallback. Empty image-host command must not intercept paste/drop into dead blob URLs.
 - Renderer CSP intentionally allows `img-src http:` for local image hosts and PicGo-style HTTP URLs.
 
@@ -118,11 +165,14 @@ Use this section as the short, high-signal handoff for AI agents. `CLAUDE.md` an
 
 - Run `npm run build` before handing off code changes. Use `npm run build:mobile` for shared-renderer or platform-contract changes.
 - `npm run dist` builds installers for the host OS. For fast local macOS testing, `CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir` creates an unsigned unpacked app.
+- Linux releases are `amd64.deb` files built on an Ubuntu runner. Validate them with `dpkg-deb --info` and real install/launch/file-association/window-control checks; a successful macOS cross-build exit code does not prove the deb is valid.
+- The tag workflow explicitly uploads Linux packages with `gh release upload --clobber` after validation because electron-builder may skip draft publishing when the target Release already exists as published.
 - Release versions must be monotonically greater than every build that may have been distributed for testing. Do not publish a lower "clean" version after internal builds such as `0.5.29`; auto-update compares semver, so `0.5.5` is treated as older than `0.5.29` and will not be offered.
+- Every ordinary user-visible change handed to the user for testing (small feature, bug fix, interaction, or visual adjustment) must increment the patch version, for example `0.12.0` → `0.12.1`. Only a clearly independent, user-designated major feature/module may increment the minor version, for example `0.12.x` → `0.13.0`. Never classify an ordinary change as a minor release without the user's agreement.
 - When asking the user to manually test, always rebuild and install the current source first. Never ask the user to test an older installed app or a stale artifact; explicitly verify the installed app was produced after the latest relevant code change.
 - When handing a macOS build to the user for manual testing, do not only overwrite `/Applications/HorseMD.app`. First kill any running HorseMD/Electron processes, then copy the new app, clear quarantine, launch it, and verify the running process points at `/Applications/HorseMD.app` with the intended document. If a specific fix has a marker string, verify `/Applications/HorseMD.app/Contents/Resources/app.asar` contains it before telling the user to test. This avoids macOS reusing an old app process after a reinstall.
 - macOS unsigned app launch may need `xattr -dr com.apple.quarantine /Applications/HorseMD.app`.
-- CDP test scripts require launching Electron with `--remote-debugging-port=9222`; with multiple mounted tabs, select visible `.ProseMirror` nodes via `offsetParent`.
+- CDP test scripts launched through `launchBuiltElectron()` run hidden by default and must not take native keyboard/mouse focus; use `background: false` only for explicit visual inspection. With multiple mounted tabs, select visible `.ProseMirror` nodes via `offsetParent`.
 - The manual regression baseline is `docs/manual-test-checklist.md`; mode-switch, save, find/replace, review, settings, and large-doc behavior are high-priority checks.
 
 ### Refactor Guidance

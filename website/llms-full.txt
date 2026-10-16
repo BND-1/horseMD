@@ -3,10 +3,10 @@
 > 免费开源的 Typora 平替 Markdown 编辑器：所见即所得 + 标签页 + 文件树工作区，支持 Windows、macOS、Linux 与 Android，中英双语界面，MIT 协议。本文件包含产品全部关键事实：功能详解、快捷键、主题、与 Typora 对比、安装与构建、FAQ。
 
 - **官网**：https://horsemd.yangsir.net/
-- **完整中文使用教程**：https://guide-zeta-rouge.vercel.app/
+- **完整中文使用教程**：https://guide.horsemd.yangsir.net/
 - **GitHub**：https://github.com/BND-1/horseMD
 - **下载**：https://github.com/BND-1/horseMD/releases/latest
-- **版本**：v0.6.0（2026-07）· **协议**：MIT · **价格**：免费
+- **版本**：v0.12.46（2026-07）· **协议**：MIT · **价格**：免费
 - **作者**：Evan Yang（杨庭毅 / 杨sir，GitHub @BND-1，https://yangsir.net）
 
 ---
@@ -88,12 +88,12 @@ HorseMD 是一款桌面 Markdown 编辑器，定位是「一个免费的 Typora 
 | 保存 / 另存为 | Ctrl+S / Ctrl+Shift+S | Cmd+S / Cmd+Shift+S |
 | 关闭标签 / 循环标签 | Ctrl+W / Ctrl+Tab | Cmd+W / Ctrl+Tab |
 | 命令面板 / 查找 | Ctrl+P / Ctrl+F | Cmd+P / Cmd+F |
-| 侧边栏 / 大纲 | Ctrl+B / Ctrl+Shift+L | Cmd+B / Cmd+Shift+L |
+| 侧边栏 / 大纲 | Ctrl+Shift+B / Ctrl+Shift+L | Cmd+Shift+B / Cmd+Shift+L |
 | 源码模式 / 主题循环 | Ctrl+/ / Ctrl+Shift+T | Cmd+/ / Cmd+Shift+T |
 | 替换 / 导出 PDF | Ctrl+Alt+F / Ctrl+Shift+E | Cmd+Alt+F / Cmd+Shift+E |
 | 标题 H1–H6 / 转正文 | Ctrl+1…6 / Ctrl+0 | Cmd+1…6 / Cmd+0 |
 
-注：Ctrl/Cmd+B 固定用于切换侧边栏（不触发加粗）；加粗用选中工具条 B 按钮或 `**文字**` 语法。
+注：Ctrl/Cmd+B 用于加粗；Ctrl/Cmd+Shift+B 用于切换侧边栏。
 
 ---
 

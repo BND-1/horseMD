@@ -11,10 +11,14 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.js') },
+        input: {
+          index: resolve(__dirname, 'src/main/index.js'),
+          'workspace-watcher-worker': resolve(__dirname, 'src/main/workspace-watcher-worker.js')
+        },
         output: {
           format: 'cjs',
-          entryFileNames: '[name].cjs'
+          entryFileNames: '[name].cjs',
+          chunkFileNames: 'chunks/[name]-[hash].cjs'
         }
       }
     }
@@ -29,7 +33,8 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     define: {
-      __APP_VERSION__: JSON.stringify(pkg.version)
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __MOBILE_BUILD__: 'false'
     },
     resolve: {
       alias: {

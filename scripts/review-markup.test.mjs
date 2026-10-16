@@ -22,6 +22,7 @@ import {
   resolveReviewGroupActiveIndex
 } from '../src/renderer/src/components/editor-review-model.js'
 import { HIGHLIGHT_RE } from '../src/renderer/src/components/editor-highlight.js'
+import { createReviewActions } from '../src/renderer/src/lib/reviewActions.js'
 
 const sample =
   'A {++new++} B {--old--} C {~~bad~>good~~} D {>>note<<} E {==focus==}{>>why<<}'
@@ -103,6 +104,44 @@ function testWrapping() {
   assert.deepEqual(wrapReviewSelection('a\nb', 0, 3, REVIEW_KINDS.highlight), {
     error: 'multiline'
   })
+}
+
+function testSourceReviewActionPreservesUnrelatedBytes() {
+  const source = '保留 {\\~\\~旧\\~>新\\~\\~} 标记。\n\n只评阅目标文字。'
+  const start = source.indexOf('目标')
+  const sourceEl = {
+    value: source,
+    selectionStart: start,
+    selectionEnd: start + '目标'.length,
+    focus() {},
+    setSelectionRange() {}
+  }
+  let updated = null
+  const previousRaf = globalThis.requestAnimationFrame
+  globalThis.requestAnimationFrame = (callback) => {
+    callback()
+    return 1
+  }
+  try {
+    const actions = createReviewActions({
+      pickEditableId: () => 'doc',
+      tabsRef: { current: [{ id: 'doc', content: source }] },
+      sourceTextareas: { current: { doc: sourceEl } },
+      editorApis: { current: {} },
+      setHome() {},
+      updateContent: (_id, markdown) => { updated = markdown },
+      setTabs() {},
+      tRef: { current: (key) => key }
+    })
+    actions.applyReviewMarkupToActive(REVIEW_KINDS.addition)
+  } finally {
+    globalThis.requestAnimationFrame = previousRaf
+  }
+  assert.equal(
+    updated,
+    source.replace('目标', '{++目标++}'),
+    'adding one source review marker must not normalize unrelated legacy markers'
+  )
 }
 
 function testDecisions() {
@@ -481,6 +520,7 @@ function testParsedHighlightCommentClose() {
 
 testScanning()
 testWrapping()
+testSourceReviewActionPreservesUnrelatedBytes()
 testDecisions()
 testPrompt()
 testMakeHighlightCommentMarkup()

@@ -28,9 +28,9 @@ import { isHeavyDoc } from '../paths.js'
 import {
   wrapReviewSelection,
   applyReviewDecision,
-  buildReviewAiPrompt,
-  normalizeReviewMarkupMarkdown
+  buildReviewAiPrompt
 } from '../reviewMarkup.js'
+import { applyTextareaSourceEdit } from '../source-text-fidelity.js'
 
 export function createReviewActions({ pickEditableId, tabsRef, sourceTextareas, editorApis, setHome, updateContent, setTabs, tRef }) {
   const getEditableTab = () => {
@@ -54,8 +54,10 @@ export function createReviewActions({ pickEditableId, tabsRef, sourceTextareas, 
         return
       }
       const editedEl = sourceEl
-      const next = normalizeReviewMarkupMarkdown(result.text)
-      editedEl.value = next
+      // wrapReviewSelection already produces the exact marker around the chosen
+      // range. Do not normalize the complete document here: doing so also
+      // rewrites unrelated legacy review markers and violates source fidelity.
+      const next = applyTextareaSourceEdit(editedEl, result.text)
       updateContent(tab.id, next, false)
       requestAnimationFrame(() => {
         if (sourceTextareas.current[tab.id] === editedEl) {

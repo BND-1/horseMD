@@ -3,6 +3,11 @@
 Guidance for Claude / AI agents (and new devs) working in this repo. Keep it
 short; deep detail lives in [`docs/`](./docs/).
 
+> New AI handoff: read [`docs/ai-handoff.md`](./docs/ai-handoff.md) first. It
+> captures the current project state, user working style, risk map, website/guide
+> ownership, verification matrix, and recent stable baseline. This file remains
+> the detailed historical convention book.
+
 ## What this is
 
 **HorseMD** — a warm, Typora-style Markdown editor. Electron shell + Vite +
@@ -25,24 +30,45 @@ npm run guide:check    # tutorial content checks + static build
 ```
 
 `npm run dist` packages for whatever OS you run it on — **Windows NSIS** on
-Windows, **macOS dmg + zip** on macOS (a dmg must be built on macOS). If the
+Windows, **macOS dmg + zip** on macOS, and **Linux amd64 deb** on Linux. Installers
+must be built and validated on their target OS; a dmg must be built on macOS and
+a deb must pass `dpkg-deb --info` on Linux. If the
 electron-builder binaries download slowly:
 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`.
 
 Builds are **unsigned**: Windows shows SmartScreen ("更多信息 → 仍要运行");
 macOS Gatekeeper blocks first launch (right-click → Open, or
-`xattr -dr com.apple.quarantine /Applications/HorseMD.app`).
+`xattr -dr com.apple.quarantine /Applications/HorseMD.app`). Linux users should
+install only the `.deb` from the official GitHub Release. Its postinst is our
+`build/linux/after-install.tpl` (`deb.afterInstall`), which always installs
+`chrome-sandbox` as `root:root 4755` — electron-builder's default probes
+`unshare` as root and leaves it 0755, which crashes on launch under Ubuntu
+24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this.
 
 ## Layout
 
 ```
 src/main/index.js      main entry: window, menu, single-instance, launch args (extractArgs);
                        registers the IPC modules below + shell/themes/image/window/update/permissions IPC
-src/main/documents.js  document/dialog IPC (openFiles/openFolder/saveAs/openAttachments) + export:pdf
+src/main/documents.js  document/dialog IPC + PDF preview/save/dispose IPC registration
 src/main/filesystem.js fs IPC (read/write/rename/delete/create/readDir/listFiles/duplicate) + showHidden
 src/main/watchers.js   chokidar watchers (watch:start/stop/file/unfile) — crash-proof guards (isRestrictedRoot)
 src/main/security.js   external-URL protocol allowlist (https/http/mailto) + local-fonts permission gating
-src/main/pdf-document.js print-to-PDF pipeline + PDF stylesheet (PDF_CSS)
+src/main/pdf-export.js  cancellable preview sessions, resource wait, printToPDF, save
+src/main/pdf-document.js pure PDF document/TOC/header/footer construction
+src/main/pdf-print-styles.js isolated print stylesheet and pagination rules
+src/main/pdf-images.js  stages local/remote images for isolated PDF printing
+src/main/html-export.js   HTML Studio: preview token, image embed, precise save (latest-request-only)
+src/main/html-document.js pure HTML template (themes/widths/CSP/TOC) — no Electron
+src/main/pandoc-export.js Pandoc detect/select/export + save dialog + error mapping
+src/main/pandoc-core.js   Pandoc format whitelist, version parse, args (pure)
+src/main/subprocess.js    no-shell subprocess: timeout→kill→SIGKILL, 64 KiB stderr cap
+src/main/export-prefs.js  per-file export save-dir remembering (userData/export-prefs.json)
+src/main/globalsearch.js workspace search IPC (search:workspace): scans roots via listMarkdownFiles,
+                       mtime-validated content cache, latest-request-only caps
+src/main/globalsearch-core.js pure search logic (multi-term AND, occIdx aligned with find.js
+                       matchIndices, snippet ranges, caps) — locked by scripts/test-global-search.mjs
+src/main/ai/              AI Phase 0 pure logic: context-snapshot (sha256 revision) + change-proposal
 src/preload/index.js   contextBridge → window.api (whitelisted IPC)
 src/renderer/src/
   App.jsx              shell: tabs, state, session, split, theme, lang, editor routing
@@ -60,6 +86,7 @@ src/renderer/src/
   components/editor-slash-menu.js      Feishu-style slash menu: raw ProseMirror plugin (prosePluginsCtx) + SlashProvider; keyword filtering + keyboard nav (see "Slash menu" convention)
   components/editor-dom-bindings.js    ProseMirror DOM behavior: shortcuts, context menu, selection sync, rich-copy, image paste/drop + relative-path resolve, lightbox trigger, caption focus, code-block copy feedback, selection-toolbar scan, slash-menu bounds
   components/editor-api.js             onReady API surface: export markdown/html, review apply, replaceMarkdown, restoreMarkdownOffset, markdownOffsetFromSelection
+  components/editor-pdf-content.js     structured PDF snapshot, Mermaid/LaTeX materialization, table measurement, editor-DOM cleanup
   components/editor-source-map.js      markdown raw-offset ↔ ProseMirror block-level mapping (the mode-switch caret anchor)
   components/editor-image-persistence.js  image paste/drop → local save / image-host / data-URL fallback
   components/editor-lightbox.js        image/Mermaid lightbox (Esc / Ctrl-wheel zoom / drag-pan)
@@ -68,6 +95,10 @@ src/renderer/src/
   components/editor-review-decorations.js  CriticMarkup scan + Decoration construction
   components/editor-review-card.js     review card DOM + edit/navigation actions
   components/editor-{html,images,copy,highlight,mermaid,tablebreak,math,math-preview,autolink,frontmatter,md-paste,toolbar,toolbar-autohide,block-controls,chunked-parse,codeblock-eager,codeblock-tab,source-caret,link-labels}.js  other Editor helpers
+  components/GlobalSearchPanel.jsx  workspace search sidebar pane (third sidebarMode 'search', issue #120)
+  hooks/useGlobalSearch.js   search state (debounce + stale-drop) + result-jump: source tabs land the
+                          FindBar on the exact occurrence (occIdx), rich tabs restoreMarkdownOffset
+                          then pick the nearest highlighted range
   hooks/useWorkspace.js multi-root workspace state + directory watchers
   hooks/useSidebarTree.js file-tree loading, expansion + active-file following
   hooks/useSourceModeSwitch.js per-tab source mode + rich/source sync + anchor restore
@@ -75,7 +106,7 @@ src/renderer/src/
   {paths,find,ui,settings,customThemes}.js  pure helpers: session · find · toast · prefs (page width / font / line height / paragraph spacing / image host) · custom-theme injection
   {blocks,themes,i18n,onboarding}.{js,jsx}
   styles/app.css       all styles + theme variables
-build/                 icon.ico (Windows) + icon.icns (macOS) + installer.nsh (NSIS uninstall: keep user files)
+build/                 icon.ico (Windows) + icon.icns (macOS) + icons/ PNG set (Linux) + installer.nsh
 scripts/               CDP-based e2e helpers (etv.mjs, inspect.mjs)
 docs/                  architecture / features / implementation-notes / development
 guide/                 VitePress user tutorial + versioned current-app screenshots
@@ -83,18 +114,19 @@ guide/                 VitePress user tutorial + versioned current-app screensho
 
 ## Conventions & rules
 
-- **Cross-platform — do not break the other OS.** This app ships on Windows and
-  macOS from one codebase. Platform-specific code is gated:
-  - main process: `process.platform === 'darwin' | 'win32'`
-  - renderer: `window.api.platform` → an `.app.is-win` / `.app.is-mac` class on
+- **Cross-platform — do not break the other OS.** This app ships on Windows,
+  macOS, and Linux from one codebase. Platform-specific code is gated:
+  - main process: `process.platform === 'darwin' | 'win32' | 'linux'`
+  - renderer: `window.api.platform` → an `.app.is-win` / `.app.is-mac` /
+    `.app.is-linux` class on
     the root; write platform CSS under those selectors only.
   - title bar: `hiddenInset` + `trafficLightPosition` on macOS (top bar spans
     full width, activity bar drops below the traffic lights). On Windows the
-    native `titleBarOverlay` is **disabled** — the renderer draws its own
-    minimize/maximize/close buttons (`WindowControls` in `App.jsx`, gated to
-    `platform === 'win32'`), driven by `window:*` IPC; main pushes
+    native `titleBarOverlay` is **disabled** — the renderer draws Windows or GTK
+    minimize/maximize/close buttons (`WindowControls` in `Topbar.jsx`, gated to
+    `platform === 'win32' || platform === 'linux'`), driven by `window:*` IPC; main pushes
     `window:maximized` on `maximize`/`unmaximize` so the restore icon stays in
-    sync. Keep both paths working when touching the top bar, and always leave a
+    sync. Keep all three desktop paths working when touching the top bar, and always leave a
     draggable area even when tabs fill the strip.
   - shortcuts accept both `Ctrl` and `Cmd` (`metaKey`).
   - launch args: `extractArgs()` in `main/index.js` splits argv into markdown
@@ -134,7 +166,8 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   activation, then kept mounted (`mountedIds` in `App.jsx`). This keeps startup /
   session-restore fast (restoring N tabs spins up one editor, not N). Code that
   needs a tab's editor API (`editorApis[id]`) must activate the tab first — see
-  `exportPathToPdf`, which opens/activates then waits for `getDocHTML`.
+  `exportPathToPdf`, which opens/activates then waits for the per-tab editor API
+  readiness signal before reading `getPdfSource()`.
 - **Raw HTML rendering**: Milkdown's `html` node shows markup as escaped text;
   we add a ProseMirror node view (`renderHtmlNodeView` in `Editor.jsx`) that
   renders recognized block HTML (e.g. `<table>`) as real, sanitized DOM.
@@ -160,7 +193,10 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   been distributed for testing: do not publish a lower "clean" version after
   internal builds such as `0.5.29`, because auto-update compares semver and will
   treat `0.5.5` as older than `0.5.29`.
-  Build full set: mac dmg+zip (arm64+x64) + win nsis --x64 (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
+  Build full set: mac dmg+zip (arm64+x64) + win nsis x64 + Linux amd64 deb
+  (`CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned Apple builds). Linux must be
+  built on Ubuntu, pass `dpkg-deb --info`, and be uploaded with
+  `gh release upload "$TAG" dist/*.deb --clobber` after validation.
   `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,
@@ -274,6 +310,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `toggleHighlightCommand` MUST be in that array or Crepe init throws
   ("Context … not found"). The inline-code `inclusive:false` fix uses the same
   `extendSchema` pattern; a belt-and-suspenders post-create override is applied too.
+- **CJK-friendly emphasis** (`remark-cjk-friendly`, first in `remarkPluginsCtx`):
+  `这是**「重点」**内容` parses as bold, matching Typora. Plain CommonMark
+  flanking rules treat CJK punctuation like ASCII punctuation and leave the
+  asterisks literal, which also made the source reprint engine pause whenever a
+  user bolded text next to Chinese punctuation.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →
@@ -364,6 +405,87 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   remark stringify `break` handler emits `<br>` **only inside `tableCell`** (else
   default); a remark transform parses inline `<br>` back to a break. Don't let a
   cell break serialize to a newline — it corrupts the table.
+- **List conversion source fidelity**: right-click conversion owns only the
+  current list level's marker/checkbox. Use the actual hit text position, build
+  the converted canonical snapshot from the transaction document before
+  dispatch, and patch only changed marker prefixes. `markdownUpdated` can arrive
+  during dispatch, after the next keystroke, or at source flush; waiting for it
+  and replacing the complete serializer list rewrites nested compact spacing and
+  indentation. `npm run test:list-conversion-ui` must cover immediate human-like
+  typing, source bytes, save, process exit and full reopen.
+- **Forced rich flushes** must serialize `view.state.doc` with `serializerCtx`.
+  `crepe.getMarkdown()` is a listener-backed snapshot and may lag behind a
+  keyboard transaction that is already visible in ProseMirror; using it for an
+  immediate save or source switch can lose the last input after reopen.
+  `saveTab()` must call `getMarkdownForTab()` and update `tabsRef` before writing;
+  `commitAllLive()` alone covers only uncontrolled source textareas.
+- **Rich/source pause families (0.13.235)** — found by
+  `scripts/fuzz-rich-source-ui.mjs` (seeded real-Electron random editing; oracle =
+  live PM doc vs Save → cold reopen, plus mismatch toasts). Fixes, each locked by
+  `test:rich-source-pause-families-ui` + a pure test:
+  - Blockquote owner: quote paragraphs with marks or several `> `/lazy lines no
+    longer fail closed on every keystroke. `planInlineLocalizedPatch` diffs the
+    paragraph, aligns PM text to the paragraph's own prefix-stripped raw lines
+    (the shared `pmPosToMarkdownOffset` ignores continuation `> ` prefixes and
+    can collapse to the block start), verifies deleted raw bytes == deleted
+    text, tries literal / escaped / mark-delimiter-wrapped spellings (`*e*`
+    input rule), and validates on a BOM-less LF copy. Pure mark toggles stay
+    fail-closed; legacy stays blocked for the family.
+  - Validator (`semanticJson`): table-cell **edge** whitespace is ignored (GFM
+    trims it); interior text stays strict.
+  - Table cell owner: when position mapping fails it falls back to
+    `mapTableCellBySlot` — table found by content (header row + delimiter row +
+    every body row cell-for-cell), only the target slot's trimmed bytes change,
+    `|` always escaped, in-cell line breaks spelled `<br>` (hardbreak is now part
+    of the plain-cell contract). Use text-node concatenation, not
+    `textContent`: Milkdown's hardbreak has `leafText` "\n".
+  - Milkdown's trailing-paragraph append (doc ending in table/list/code/quote)
+    is adopted as an editor-only document change
+    (`isTrailingEmptyParagraphAppend` + `sourceSyncBridge.adoptEditorOnlyDocument`)
+    after validating source ≈ new doc, instead of becoming step 1 of the next
+    journal (which made every focused owner see two top-level changes).
+  - `preserveParagraphSplit`: Enter next to inline markup splits after the
+    closing delimiters and before the opening ones, using the canonical output
+    around the inserted separator as the oracle.
+  - **Journal locality + editor-only changes** (`lib/source-sync/editor-only-document.js`):
+    focused owners prove ONE top-level block, so `handleSourceTransactions`
+    publishes the pending journal (forced flush; dispatch runs before
+    `view.updateState`, so it sees exactly oldState) when a transaction touches
+    top-level blocks disjoint from the journal's changed range — `markUserEdit`'s
+    DOM-driven flush misses CodeMirror/IME/undo edits. Milkdown's
+    `syncHeadingIdPlugin` dispatches separate id-only `setNodeMarkup`
+    transactions after heading edits; `isHeadingIdOnlyChange` closes the
+    pending journal and adopts them as editor-only (ids have no Markdown).
+  - `remarkFixMarkerOffsetForBom`: Milkdown's `remarkMarker` reads
+    `file.value.charAt(offset)` where offsets exclude a BOM but `file.value`
+    includes it → every `*`/`_` marker in a BOM file was the char to its left
+    and canonical printed delimiters as spaces. The fix is order-independent.
+- **Source reprint engine is the primary rich→source path** (R3,
+  [`docs/source-reprint-architecture.md`](./docs/source-reprint-architecture.md)):
+  `reprint(source, editorDoc)` diffs `parse(source)` against the editor
+  document, keeps authored bytes of unchanged subtrees and the frames of changed
+  containers, patches text blocks at character/segment level, and is verified
+  **directly against the editor document** (never via canonical). Run order:
+  precise reprint → existing focused owners/legacy → degraded reprint (inside
+  `reportSourceSyncFailure`) → pause. Editor-only/no-encoding states are listed
+  once in the design doc §5 — extend that table, do not add per-gesture owners.
+  `globalThis.__hmSourceReprintPrimary = false` switches it off (owner tests do
+  this to pin the fallback path). Tests: `test:source-reprint-ui` (real Crepe,
+  `__hmSourceReprintHarness` under `--horsemd-input-trace`); fuzz reports carry
+  shadow stats; `scripts/lib/shadow-triage.mjs` summarizes them.
+- **Auto-save** (`hooks/useAutoSave.js`, `settings.autoSaveDelay` ∈ 0/3/10/60 s,
+  default **0 = off**, Settings › Files, #136): after N s of inactivity (and on
+  window blur) a dirty tab **with a path** is written via `saveTab(id, false,
+  { auto: true })` — the same live-markdown + source-sync integrity gate as
+  Cmd/Ctrl+S, but silent. Auto mode never: opens a dialog, writes a recovery
+  copy, relocates pasted images (`data:`/`paste-images` links wait for an
+  explicit save — that rewrite remounts the editor), or overwrites a file
+  changed/removed on disk (`fs:writeFile` `expectedMtimeMs` guard → `{conflict}`;
+  the tab is paused until its mtime changes). `writeTab` marks
+  `savedContent: written` (the bytes written, never the newer `t.content`), and
+  `saveTab` clears `pendingRichEdit` when it resolves the live markdown, not
+  after the write — so typing during an in-flight save keeps the tab dirty.
+  Locked by `npm run test:autosave-ui`.
 - **Image host** (`ImageHostButton` + `image:upload` IPC): a Typora-style custom
   command. Renderer reads the file bytes and calls main, which writes a temp file,
   runs `<command> "<file>"`, and returns the last http(s) URL it prints. Empty
@@ -395,6 +517,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (`CSS.highlights` + `Highlight`), not `window.find` — it searches only the
   editor body (rich `view.dom` / source `<textarea>`), never UI text, and paints
   ranges without mutating the DOM. See `hooks/useFindReplace.js` and `find.js`.
+- **Global search** (issue #120): the sidebar's third mode (`sidebarMode
+  'search'`, ActivityBar button, `Mod+Shift+F`). Space-separated keywords are
+  AND-matched per file in the main process (`search:workspace` reuses the
+  sidebar's `listMarkdownFiles` scope + `isRestrictedWatchRoot` guard, with an
+  mtime-validated content cache). Clicking a result opens the file and lands
+  the in-document FindBar on that occurrence: source/plain tabs jump by
+  `occIdx` (globalsearch-core counts occurrences with the EXACT find.js
+  `matchIndices` semantics — case-insensitive, non-overlapping — so the index
+  is exact), rich tabs call `restoreMarkdownOffset(fileOffset)` then pick the
+  nearest highlighted range at/before the caret. Untitled tabs carry
+  `path: null` — path comparisons must tolerate it.
 - **File watcher must stay crash-proof.** chokidar recursively watching a tree
   with permission-protected paths throws a flood of `EACCES`/`EAGAIN`/`EBUSY`
   that, left unhandled, `abort()`s the whole main process on launch. The trap:
@@ -426,6 +559,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   wouldn't apply. The rule `.milkdown .cm-editor .cm-content, .cm-line {
   font-family: var(--font-mono) }` (in app.css, specificity beats CM's default)
   is the root fix — don't remove it.
+- **CodeMirror long-code copy**: CodeMirror virtualizes long code blocks, so
+  `.cm-line` contains only the visible window (often 30–65 lines). Whole-block
+  copy must resolve the complete ProseMirror `code_block`; never fall back to
+  DOM text, and never show success after a partial/failed resolution. Keep
+  native CodeMirror selection copy untouched, then run `npm run test:issue-98-ui`
+  for the 122-line whole-copy and 65-line partial-selection cases. Full report:
+  `docs/long-code-copy-virtualization-regression.md`.
 - **queryLocalFonts (Local Font Access API)**: the Settings font pickers
   enumerate installed system fonts via `window.queryLocalFonts()` on first
   focus/click (needs a user gesture). Permission is granted in `main/index.js`
@@ -442,15 +582,90 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   for the split-pane divider + the outline/file-tree resizer. Both used to
   hand-roll the same mousemove/mouseup + body-class dance. onStart returns state
   (e.g. mousedown x / start width) passed to onMove as 2nd arg.
+- **PDF visual fidelity**: PDF Studio renders the same final PDF Buffer that is
+  saved to disk. Do not validate layout only from source HTML or print CSS.
+  Body font size is a separate 8–24pt setting (11pt default); overall scale
+  still scales the complete page, while headings, tables, code, and spacing
+  remain relative to the body size.
+  Table export preserves measured total width and column ratios, while
+  `th/td > p` margins stay reset so document paragraph spacing cannot inflate
+  rows. Follow [`docs/pdf-visual-fidelity-runbook.md`](./docs/pdf-visual-fidelity-runbook.md)
+  for final-PDF X/Y coordinate checks, PNG rendering, regression commands, and
+  handoff stop conditions.
+- **PDF preview cancellation**: latest-request-only does not mean destroying a
+  BrowserWindow during `printToPDF()`. Chromium can reject the Promise before
+  its native print backend has recovered, causing the next request to fail with
+  `Printing failed`. Let active printing finish, discard stale output, and wait
+  for the worker's asynchronous cleanup before starting the latest request.
+- **Document export subsystem** (PDF / HTML / Pandoc / AI): three independent
+  output pipelines. PDF and HTML share the structured editor snapshot
+  `{ html, headings, title, images }` from `editor-pdf-content.js`
+  (`getPdfSource()`/`getExportSource()`) but have **separate templates and
+  settings** — never paste PDF print CSS into the HTML template. Pandoc does
+  **not** use the snapshot: it reads the active tab's raw Markdown only (source
+  textarea live buffer, or `flushMarkdown()` in rich mode — never a stale React
+  tab snapshot), and export must not change dirty/cursor/disk. See
+  [`docs/document-export-architecture.md`](./docs/document-export-architecture.md).
+- **HTML export** (`html-export.js` + `html-document.js`): the main-process
+  preview returns an opaque token; the saved file is the SAME bytes the token
+  refers to (no re-render on save). Output is no-script: the snapshot strips
+  dangerous nodes/attrs, the template ships a strict CSP, the renderer preview
+  is a no-permission sandbox iframe. Latest-request-only like PDF.
+- **Pandoc export** (`pandoc-export.js` + `pandoc-core.js` + `subprocess.js`):
+  the executable is verified by absolute path + `--version`; the target format
+  is a whitelist; args are built main-side; Markdown goes via stdin; `shell:
+  false`; 2-min timeout. The source file's directory is passed as
+  `--resource-path` so relative images resolve. Only the chosen executable
+  path is persisted (`userData/document-tools.json`).
+- **AI Phase 0** (`src/shared/ai-contracts.js` + `src/main/ai/`): pure, no-UI,
+  no-network contracts (`AiRequest`, `ProviderAdapter`, `ContextSnapshot` with
+  sha256 revision, `ChangeProposal` with before-check + stale refusal). **Not
+  user-facing yet** — future Provider/key/network/UI must not bypass revision
+  validation and `ChangeProposal`. See
+  [`docs/ai-vmark-phase-plan.md`](./docs/ai-vmark-phase-plan.md).
+- **Export save-dir remembering** (`export-prefs.js` + `export-prefs-logic.js`):
+  PDF/HTML/Pandoc save dialogs default to the source Markdown's folder, and the
+  choice is remembered **per file** — the same file keeps its chosen folder, but
+  a different file still defaults to its own folder (do NOT use a single global
+  last-dir); untitled docs fall back to a global last dir. Persisted in
+  `userData/export-prefs.json`. The pure decision logic is split into
+  `export-prefs-logic.js` so `scripts/test-export-prefs.mjs` can lock the
+  per-file semantics without Electron.
+- **PDF density** (`PDF_DENSITY_VALUES` in `src/shared/pdf-options.js` +
+  `pdf-print-styles.js`): a comfort/standard/compact preset. The 12 spacing
+  rules (body line-height, para/heading/list/li/blockquote/figure/img/math/hr
+  margins) are CSS vars (`var(--hm-pdf-*, literal)`); `standard`'s values ARE
+  the pre-density literals, so the default renders identically — validate via
+  the rendered PDF, **not a CSS string diff** (the string changes because of
+  `var()`). Heading line-height (1.3), code (1.6) and table-cell (1.4)
+  line-heights + the `th/td > p { margin:0 }` reset stay **hardcoded** (not
+  density levers — protects table measurement + heading hierarchy). Note `em`
+  margins do NOT scale with `line-height` (em is font-size-relative), so ALL
+  spacing rules must be parameterized for uniform compactness. Persist only
+  `densityPreset` (`settings.lastPdfDensityPreset`), **not the whole options
+  bag** (header/footer/title/page-ranges are per-document and must not leak
+  across docs). The live page-count estimate is the preview's real `numPages`,
+  lifted via an `onPageCount` callback. Locked by `scripts/test-pdf-density.mjs`.
 
 ## Testing
 
-No unit tests. Verification is done by running the packaged app and observing
-behavior (screenshots), plus the CDP e2e scripts in `scripts/` — see
-[`docs/development.md`](./docs/development.md). On macOS, when scripting the dev
-build, note that `osascript "tell application \"Electron\""` can launch the
-generic `node_modules` Electron bundle (a name collision); prefer testing the
-packaged **HorseMD.app**, which has a unique name and bundle id.
+There is no single `npm test` command. The repository has deterministic Node
+tests plus hidden, isolated Electron/CDP UI sessions. Run `npm run build` before
+focused tests and use `npm run test:ui-regression` for editor/PDF/UI changes;
+the suite currently covers seven sessions plus standalone regressions. Input
+rules and source-fidelity tests type one character at a time through
+`scripts/lib/human-input.mjs`. See [`docs/development.md`](./docs/development.md).
+
+Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`),
+reproduce with `scripts/lib/probe-session.mjs`, and follow
+[`docs/rich-source-fuzzing.md`](./docs/rich-source-fuzzing.md) (triage flow,
+fixed families with root causes, prioritized open list). UI tests must wait
+for the asynchronous source-mode switch before touching the textarea.
+
+On macOS, scripting `osascript "tell application \"Electron\""` can launch the
+generic `node_modules` Electron bundle. Automated regression must use
+`scripts/lib/electron-test-app.mjs` in background mode; user handoff must rebuild,
+install and verify the current `/Applications/HorseMD.app`.
 
 ## When in doubt
 

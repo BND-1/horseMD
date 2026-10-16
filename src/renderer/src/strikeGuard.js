@@ -73,3 +73,13 @@ export function strikeInputWouldCorruptCriticMarkup(textBefore, typed) {
 
   return false
 }
+
+// Typora parity: only `~~x~~` is strikethrough (the parser runs with
+// singleTilde:false). Preset-gfm's input rule also accepts `~x~`, so typing a
+// range such as `约 ~30~` struck it through while the saved Markdown reopened
+// as plain text. True when the imminent strike match is a single-tilde pair.
+export function strikeInputIsSingleTilde(textBefore, typed) {
+  const full = String(textBefore == null ? '' : textBefore) + (typed == null ? '' : typed)
+  const m = STRIKETHROUGH_INPUT_RE.exec(full)
+  return Boolean(m && m[1] === '~' && m[0].length >= String(typed || '').length)
+}

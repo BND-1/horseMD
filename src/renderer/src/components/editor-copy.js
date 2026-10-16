@@ -17,9 +17,15 @@ const COPY_STYLES = {
   A: 'color:#0969da;text-decoration:underline;',
   BLOCKQUOTE: 'border-left:4px solid #d0d7de;padding-left:14px;color:#57606a;margin:0.6em 0;',
   PRE: 'background:#f6f8fa;padding:14px 16px;border-radius:8px;overflow:auto;font-family:Consolas,Monaco,monospace;font-size:0.9em;line-height:1.5;margin:0.6em 0;',
-  UL: 'padding-left:1.6em;margin:0.6em 0;',
-  OL: 'padding-left:1.6em;margin:0.6em 0;',
-  LI: 'margin:0.3em 0;line-height:1.7;',
+  // WeChat's editor strips list CSS and re-flows <ol> markers as hanging
+  // boxes, which pushes the number onto its own line and the text below it.
+  // `list-style-position:inside` draws the marker INSIDE the li's line box
+  // (it survives sanitizers that drop external/unknown CSS), and the
+  // explicit display:list-item keeps <li> rendering as a list item even
+  // where the surrounding <ol>/<ul> styles are discarded.
+  UL: 'padding-left:1.6em;margin:0.6em 0;list-style-position:inside;',
+  OL: 'padding-left:1.6em;margin:0.6em 0;list-style-position:inside;list-style-type:decimal;',
+  LI: 'margin:0.3em 0;line-height:1.7;display:list-item;list-style-position:inside;',
   TABLE: 'border-collapse:collapse;margin:0.6em 0;',
   TH: 'border:1px solid #d0d7de;padding:6px 12px;background:#f6f8fa;font-weight:700;text-align:left;',
   TD: 'border:1px solid #d0d7de;padding:6px 12px;',
@@ -27,7 +33,159 @@ const COPY_STYLES = {
   IMG: 'max-width:100%;'
 }
 
-export function inlineRichStyles(root) {
+const INLINE_SOFT_BREAK = 'span[data-type="hardbreak"][data-is-inline="true"]'
+
+// Ordinary Markdown newlines are represented by Milkdown as space-only spans
+// and become visual line feeds through CSS. Clipboard targets cannot see that
+// pseudo-element, so materialize it only in the cloned clipboard fragment.
+export function materializeCopiedSoftBreaks(root) {
+  root.querySelectorAll(INLINE_SOFT_BREAK).forEach((node) => {
+    node.replaceWith(document.createElement('br'))
+  })
+}
+
+export function copiedPlainText(root, fallback = '') {
+  // Lists need a manual serialization: Chromium's innerText does not include
+  // ::marker content, so an <ol> copy would lose its numbers in the plain
+  // flavor entirely (WeChat sometimes prefers text/plain). Render each item
+  // as "N. text" / "- text" with nesting, matching the visual marker.
+  if (root.querySelector('ol, ul, li')) {
+    const text = listAwarePlainText(root)
+    if (text) return text
+  }
+  // Tables also go through layout: innerText separates cells with tabs and
+  // rows with newlines, while Selection.toString() put every cell on its own
+  // line between blank lines.
+  if (!root.querySelector('br, table')) return fallback
+  return readClipboardProbe(root.cloneNode(true)) || fallback
+}
+
+// Milkdown's table block view renders drag handles, toolbar buttons and an
+// empty drag-preview table around the real <table>; a range clone carries all
+// of them. Keep only the content table, and lift each cell's paragraph so the
+// pasted cell has no paragraph margins (several paragraphs → <br>).
+export function cleanCopiedTables(root) {
+  root.querySelectorAll('[data-role$="drag-handle"], [data-display-type="tool"]')
+    .forEach((node) => node.remove())
+  wrapOrphanTableParts(root)
+  root.querySelectorAll('table').forEach((table) => {
+    if (table.querySelector('th, td')) return
+    const preview = table.closest('[data-direction]')
+    ;(preview && root.contains(preview) ? preview : table).remove()
+  })
+  root.querySelectorAll('th, td').forEach((cell) => {
+    const paragraphs = [...cell.children].filter((child) => child.tagName === 'P')
+    paragraphs.forEach((paragraph, index) => {
+      if (index) paragraph.before(document.createElement('br'))
+      while (paragraph.firstChild) paragraph.before(paragraph.firstChild)
+      paragraph.remove()
+    })
+  })
+}
+
+// A range that starts and ends inside one table clones its rows (or, within
+// one row, its cells) without the <table> ancestor. Re-wrap each consecutive
+// run so the clipboard still carries a table.
+const wrapOrphanTableParts = (root) => {
+  const wrapRuns = (selector, outside, build) => {
+    const runs = []
+    root.querySelectorAll(selector).forEach((node) => {
+      if (node.parentElement?.closest(outside)) return
+      const run = runs.at(-1)
+      if (run && run.at(-1).nextElementSibling === node) run.push(node)
+      else runs.push([node])
+    })
+    runs.forEach((run) => {
+      const { outer, inner } = build()
+      run[0].before(outer)
+      run.forEach((node) => inner.appendChild(node))
+    })
+  }
+  wrapRuns('th, td', 'tr', () => {
+    const outer = document.createElement('table')
+    const inner = outer.appendChild(document.createElement('tbody')).appendChild(document.createElement('tr'))
+    return { outer, inner }
+  })
+  wrapRuns('tr', 'table', () => {
+    const outer = document.createElement('table')
+    return { outer, inner: outer.appendChild(document.createElement('tbody')) }
+  })
+}
+
+// A ProseMirror CellSelection (mouse drag across cells) keeps the DOM
+// selection on one cell only, so a range clone would copy that single cell.
+// Rebuild the selected rectangle from the live cell elements instead.
+export function cloneSelectedCells(view) {
+  const selection = view.state.selection
+  if (typeof selection.forEachCell !== 'function') return null
+  const rows = new Map()
+  selection.forEachCell((_node, pos) => {
+    const cell = view.nodeDOM(pos)
+    const row = cell?.parentElement
+    if (!cell || !row) return
+    if (!rows.has(row)) rows.set(row, [])
+    rows.get(row).push(cell.cloneNode(true))
+  })
+  if (!rows.size) return null
+  const table = document.createElement('table')
+  const body = document.createElement('tbody')
+  table.appendChild(body)
+  rows.forEach((cells) => {
+    const tr = document.createElement('tr')
+    cells.forEach((cell) => tr.appendChild(cell))
+    body.appendChild(tr)
+  })
+  return table
+}
+
+// Read layout only for the selected clipboard clone. In particular, innerText
+// preserves BR, paragraph, table and PRE boundaries that textContent erases.
+const readClipboardProbe = (probe) => {
+  probe.setAttribute(
+    'style',
+    'position:fixed;left:-100000px;top:0;width:1000px;white-space:normal;'
+  )
+  probe.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(probe)
+  try {
+    return probe.innerText
+  } finally {
+    probe.remove()
+  }
+}
+
+const listAwarePlainText = (root) => {
+  const probe = root.cloneNode(true)
+  // Chromium omits CSS list markers from innerText. Materialize only those
+  // markers in a second clone; leave all selected content in document order.
+  // The HTML clipboard and live DOM must never receive these text prefixes.
+  const integer = (value, fallback) => /^-?\d+$/.test(value || '') ? Number(value) : fallback
+  probe.querySelectorAll('ol, ul').forEach((list) => {
+    const items = [...list.children].filter((node) => node.tagName === 'LI')
+    const ordered = list.tagName === 'OL'
+    const step = list.hasAttribute('reversed') ? -1 : 1
+    let ordinal = integer(list.getAttribute('start'), step < 0 ? items.length : 1)
+    let depth = 0
+    for (let parent = list.parentElement; parent && parent !== probe; parent = parent.parentElement) {
+      if (parent.tagName === 'UL' || parent.tagName === 'OL') depth += 1
+    }
+    items.forEach((item) => {
+      ordinal = integer(item.getAttribute('value'), ordinal)
+      const prefix = document.createElement('span')
+      prefix.style.whiteSpace = 'pre'
+      prefix.textContent = `${'  '.repeat(depth)}${ordered ? `${ordinal}. ` : '- '}`
+      // A preserved first paragraph must not put the prefix on its own line.
+      const first = item.firstElementChild
+      const target = first?.tagName === 'P' && !item.firstChild?.nodeValue?.trim() ? first : item
+      target.prepend(prefix)
+      ordinal += step
+    })
+  })
+  return readClipboardProbe(probe)
+}
+
+export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {
+  cleanCopiedTables(root)
   root.querySelectorAll('*').forEach((el) => {
     // strip editor-only attributes
     el.removeAttribute('class')
@@ -50,4 +208,100 @@ export function inlineRichStyles(root) {
     const style = COPY_STYLES[tag]
     if (style) el.setAttribute('style', style)
   })
+  unwrapScaffoldingContainers(root)
+  flattenListItemContents(root)
+  wrapOrphanListItems(root, { selectionOrderedLists })
+}
+
+// The selection clone wraps each top-level block in editor scaffolding
+// (<div data-v-app>, content-dom wrappers). Between two cloned <li>s that
+// scaffolding breaks DOM adjacency, so orphan-run grouping would wrap EACH
+// item in its own one-item list (ordered numbering restarts at 1 per item).
+// Hoist the children of the two known scaffolding wrappers out so cloned
+// siblings become real siblings again.
+const unwrapScaffoldingContainers = (root) => {
+  // Innermost first, so nested scaffolding unwraps cleanly in one sweep.
+  const wrappers = [...root.querySelectorAll('div[data-v-app], div[data-content-dom]')]
+    .reverse()
+  wrappers.forEach((wrapper) => {
+    const parent = wrapper.parentElement
+    if (!parent) return
+    while (wrapper.firstChild) parent.insertBefore(wrapper.firstChild, wrapper)
+    wrapper.remove()
+  })
+}
+
+// Milkdown renders each li's paragraph inside editor scaffolding:
+// <li><div><div data-content-dom><p>text</p></div></div></li>. The marker is
+// positioned INSIDE the li's first line box (list-style-position:inside), so a
+// BLOCK-level <p> first child puts the marker on a line of its own — that is
+// exactly the WeChat paste bug ("1." alone, text below). Only the FIRST
+// paragraph is unwrapped. Later paragraphs, quotes and code blocks must retain
+// their boundaries; flattening every block concatenated unrelated text (#139).
+const flattenListItemContents = (root) => {
+  root.querySelectorAll('li').forEach((li) => {
+    // Lift the node-view layout wrappers, never arbitrary semantic blocks.
+    for (let pass = 0; pass < 5; pass += 1) {
+      const blockChild = [...li.children].find((child) => child.tagName === 'DIV')
+      if (!blockChild) break
+      const parent = blockChild.parentElement
+      while (blockChild.firstChild) parent.insertBefore(blockChild.firstChild, blockChild)
+      blockChild.remove()
+    }
+    const firstBlock = [...li.children].find((child) => !INLINE_TAGS.has(child.tagName))
+    if (firstBlock?.tagName === 'P') {
+      while (firstBlock.firstChild) li.insertBefore(firstBlock.firstChild, firstBlock)
+      firstBlock.remove()
+    }
+    // Milkdown draws its OWN marker ("1.", "•") as the first inline span of
+    // the item. The clipboard fragment is a real <ol>/<ul>, whose numbering
+    // draws the marker again — keeping both renders "1. 1. text" (or a bare
+    // marker line when the sanitizer drops list CSS). Drop the duplicate.
+    const first = li.firstElementChild
+    if (first?.tagName === 'SPAN' && /^(?:\d{1,9}[.)]|[-*•·])$/.test((first.textContent || '').trim())) {
+      first.remove()
+    }
+    const firstText = li.firstChild
+    if (firstText?.nodeType === Node.TEXT_NODE && /^(?:\d{1,9}[.)]|[-*•·])\s*$/.test(firstText.nodeValue)) {
+      firstText.remove()
+    }
+  })
+}
+const INLINE_TAGS = new Set([
+  'SPAN', 'STRONG', 'B', 'EM', 'I', 'A', 'CODE', 'BR', 'U', 'INS', 'DEL',
+  'SUB', 'SUP', 'MARK', 'SMALL', 'ABBR', 'CITE', 'Q', 'SAMP', 'VAR', 'KBD',
+  'IMG', 'INPUT', 'LABEL', 'FONT', 'S', 'STRIKE', 'TT', 'BIG'
+])
+
+// A mid-list selection clones the <li> elements WITHOUT their <ol>/<ul>
+// wrapper (the wrapper node sits outside the cloned range). Bare <li> pasted
+// into WeChat loses the ordered marker entirely — the engine shows a disc or
+// nothing, and any surviving marker wraps onto its own line. Re-wrap each
+// consecutive same-parent run of wrapper-less items in an <ol>/<ul> carrying
+// the same inline styles.
+const wrapOrphanListItems = (root, { selectionOrderedLists = false } = {}) => {
+  const orphans = [...root.querySelectorAll('li')].filter((li) => !li.closest('ol,ul'))
+  if (!orphans.length) return
+  // Group by parent + DOM adjacency: a run ends when the next orphan's
+  // previous sibling isn't the previous orphan (non-list content between).
+  const runs = []
+  for (const li of orphans) {
+    const lastRun = runs.at(-1)
+    const previous = lastRun?.at(-1)
+    if (lastRun && li.parentElement === previous?.parentElement && li.previousElementSibling === previous) {
+      lastRun.push(li)
+    } else {
+      runs.push([li])
+    }
+  }
+  for (const run of runs) {
+    // The cloned <li> lost its <ol>/<ul> ancestor, so the wrapper type must
+    // come from the LIVE selection the caller inspected (a partial ordered
+    // list copy must stay numbered — a <ul> wrapper would render bullets).
+    const ordered = selectionOrderedLists
+    const wrapper = document.createElement(ordered ? 'ol' : 'ul')
+    wrapper.setAttribute('style', COPY_STYLES[ordered ? 'OL' : 'UL'])
+    run[0].before(wrapper)
+    run.forEach((li) => wrapper.appendChild(li))
+  }
 }

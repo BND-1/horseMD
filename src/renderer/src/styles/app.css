@@ -6,7 +6,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap');
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 /* App-like behavior on touch devices: kill double-tap-to-zoom (which otherwise
    magnifies a blank tap and overflows the layout) and iOS text auto-inflation.
    No effect on desktop (mouse input ignores touch-action). */
@@ -57,7 +63,6 @@ html {
     0 1px 0 rgba(255, 255, 255, 0.55) inset;
   --editor-block-radius: var(--radius-md);
   --editor-block-space: 1.35em;
-  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Animation timing */
   --dur-fast: 0.12s;
@@ -108,6 +113,15 @@ body.light {
   --code-border: #ddd9d2;
   --code-block-bg: #2a2730;
   --code-block-border: rgba(0, 0, 0, 0.25);
+  /* Line numbers in CodeMirror code blocks. Every built-in theme's code-block
+     background is dark, so one shared pale-ink ramp works; alpha is high
+     enough to read (the old 0.36 was ~2.4:1 contrast — "看不清" across every
+     theme) while staying clearly subordinate to the code itself. Themes and
+     custom CSS can override this single variable. */
+  --code-linenum: rgba(238, 233, 244, 0.58);
+  --code-linenum-active: rgba(238, 233, 244, 0.95);
+  --code-linenum-border: rgba(255, 255, 255, 0.12);
+  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Semantic */
   --danger: #c93b3b;
@@ -165,6 +179,7 @@ body.dark {
   /* CodeMirror block sits a shade deeper than the page so it reads as a block. */
   --code-block-bg: #100e0b;
   --code-block-border: rgba(255, 255, 255, 0.06);
+  --editor-subtle-surface: color-mix(in srgb, var(--bg-elevated) 72%, var(--code-bg));
 
   /* Semantic */
   --danger: #ff7070;
@@ -388,6 +403,52 @@ button:focus-visible,
   grid-template-columns: var(--activity-bar-w) 1fr;
   grid-template-rows: var(--topbar-h) 1fr var(--status-h);
   height: 100%;
+}
+
+/* Native desktop file/folder drop target. Kept outside the editor surface so
+   image drops inside ProseMirror retain their existing insert-image behavior. */
+.hm-drop-open-overlay {
+  position: fixed;
+  inset: 10px;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-editor) 82%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  backdrop-filter: blur(10px);
+  animation: hm-drop-open-in 140ms var(--ease-out);
+}
+.hm-drop-open-card {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  max-width: min(440px, calc(100vw - 64px));
+  padding: 24px 30px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 16px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+.hm-drop-open-card strong { font-size: 15px; font-weight: 650; }
+.hm-drop-open-card > span:last-child { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.hm-drop-open-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 2px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+@keyframes hm-drop-open-in {
+  from { opacity: 0; transform: scale(0.992); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* Activity Bar — VSCode style */
@@ -757,6 +818,64 @@ button:focus-visible,
   background: var(--border-soft);
 }
 
+/* Shared file/tab export submenu. It is portaled to body so a scrollable parent
+   menu cannot clip it near a viewport edge. */
+.context-submenu-parent {
+  position: relative;
+}
+.context-submenu-trigger {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.context-submenu-trigger svg {
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+.context-submenu-parent.is-open > .context-submenu-trigger {
+  background: var(--popover-hover);
+  color: var(--text-strong);
+}
+.context-submenu {
+  position: fixed;
+  z-index: 310;
+  min-width: 196px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--surface-shadow);
+  animation: menuFadeIn 0.12s var(--ease-out);
+  -webkit-app-region: no-drag;
+}
+.context-submenu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.context-submenu button:hover,
+.context-submenu button:focus-visible {
+  outline: none;
+  background: var(--popover-hover);
+  color: var(--text-strong);
+}
+.context-submenu-sep {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--border-soft);
+}
+
 /* ---- Rename modal (tab menu → Rename; Electron has no window.prompt) ---- */
 .hm-rename-modal {
   position: fixed;
@@ -817,6 +936,126 @@ button:focus-visible,
   background: var(--accent-strong);
 }
 
+/* ---- PDF export options ---- */
+.hm-pdf-modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 230;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.hm-pdf-title {
+  margin-bottom: 18px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+}
+.hm-pdf-field,
+.hm-pdf-orientation {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.hm-pdf-field > span,
+.hm-pdf-orientation legend,
+.hm-pdf-custom label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hm-pdf-field select,
+.hm-pdf-custom input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--input-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.hm-pdf-field select:focus,
+.hm-pdf-custom input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.hm-pdf-custom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: -4px 0 16px;
+}
+.hm-pdf-custom label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 6px;
+  align-items: center;
+}
+.hm-pdf-custom label > span { grid-column: 1 / -1; }
+.hm-pdf-custom small { color: var(--muted); font-size: 11px; }
+.hm-pdf-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  background: var(--hover);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+.hm-pdf-segmented label {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  color: var(--muted);
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hm-pdf-segmented label.active {
+  color: var(--text);
+  background: var(--popover-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.hm-pdf-segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.hm-pdf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.hm-pdf-actions button {
+  min-height: 32px;
+  padding: 0 14px;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.hm-pdf-actions button:hover { background: var(--active); }
+.hm-pdf-actions button.primary { color: #fff; background: var(--accent); }
+.hm-pdf-actions button.primary:hover { background: var(--accent-strong); }
+.hm-pdf-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Crepe's preview-only mode adds .hidden as soon as the first LaTeX character
+   renders. Keep a focused CodeMirror visible until editing actually ends. */
+.milkdown .milkdown-code-block .codemirror-host.hidden:focus-within {
+  display: block !important;
+}
+
 /* ============================================================
    Lightweight popovers (page width · image host)
    Minimal, roomy, with a sliding segmented control. Shared base
@@ -847,6 +1086,22 @@ button:focus-visible,
   line-height: 1.4;
 }
 .hm-math-preview .katex { color: inherit; font-size: 1.05em; }
+.milkdown .milkdown-latex-inline-edit .hm-inline-math-clear {
+  margin-left: 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+}
+.milkdown .milkdown-latex-inline-edit .hm-inline-math-clear:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
 .hm-pop-head {
   display: flex;
   align-items: baseline;
@@ -1669,6 +1924,8 @@ body.resizing-pane .pane-left-resizer::before {
   box-shadow: var(--surface-shadow);
   padding: 5px;
   min-width: 180px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   animation: menuFadeIn 0.12s var(--ease-out);
 }
 @keyframes menuFadeIn {
@@ -1699,6 +1956,167 @@ body.resizing-pane .pane-left-resizer::before {
 }
 
 /* =====================================================
+   Global Search Panel (issue #120) — third sidebar mode
+   ===================================================== */
+.gsearch {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.gsearch-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 10px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.gsearch-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 0;
+}
+.gsearch-clear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.gsearch-clear:hover { background: var(--hover); color: var(--text); }
+.gsearch-clear:active { background: var(--active); transform: scale(0.9); }
+.gsearch-status {
+  padding: 4px 14px 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gsearch-status.gsearch-hint { white-space: normal; line-height: 1.45; }
+.gsearch-status.gsearch-error { color: var(--accent-strong); }
+.gsearch-body {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0 8px 12px;
+}
+.gsearch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.gsearch-add-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.gsearch-add-folder:hover { background: var(--hover); }
+.gsearch-file { margin-bottom: 4px; }
+.gsearch-file-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px 3px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.gsearch-file-head:hover { background: var(--hover); }
+.gsearch-fname {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+.gsearch-fdir {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.gsearch-count {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.gsearch-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out);
+}
+.gsearch-item:hover,
+.gsearch-item.active { background: var(--hover); }
+.gsearch-item:active { background: var(--active); opacity: 0.9; }
+.gsearch-lineno {
+  flex-shrink: 0;
+  min-width: 26px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+.gsearch-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gsearch-line mark {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* =====================================================
    Outline Panel — Fixed scrolling
    ===================================================== */
 .outline {
@@ -1726,6 +2144,7 @@ body.resizing-pane .pane-left-resizer::before {
   flex: 1;
 }
 .outline-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1752,6 +2171,30 @@ body.resizing-pane .pane-left-resizer::before {
 }
 .outline-twisty:hover { background: var(--hover); }
 .outline-twisty-leaf { width: 14px; height: 14px; }
+.outline-drag-handle {
+  position: absolute;
+  left: calc(var(--outline-indent) - 12px);
+  width: 12px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.outline-item:hover .outline-drag-handle,
+.outline-item.dragging .outline-drag-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+.outline-drag-handle:hover { color: var(--muted); }
+.outline-drag-handle:active { cursor: grabbing; }
+.outline-item.dragging { opacity: 0.55; }
+.outline-item.drag-over-before { box-shadow: inset 0 2px 0 var(--accent); }
+.outline-item.drag-over-after { box-shadow: inset 0 -2px 0 var(--accent); }
 .outline-item-text {
   min-width: 0;
   overflow: hidden;
@@ -1800,6 +2243,7 @@ body.resizing-pane .pane-left-resizer::before {
   content: ' ...';
   color: var(--accent);
 }
+.app.is-mobile .outline-drag-handle { display: none; }
 /* Skeleton shown in the outline while a huge document is still streaming in
    (chunked parse). Mimics a heading list (with indented sub-items) so the user
    sees "loading" instead of an empty/stale list. Reuses the editor skeleton's
@@ -1916,11 +2360,85 @@ body.hm-col-resizing * {
   color: var(--text-strong);
   opacity: 1;
 }
+/* A single document's authored source (left) and existing rich projection
+   (right). Each panel is a working surface, not a miniature reading page: its
+   content must use the full panel width instead of inheriting the single-view
+   800px centered column and leaving a dead strip at the inner edge. */
+.editor-area.is-source-rich-split .source-editor.hm-source-rich-left {
+  box-sizing: border-box;
+  border-right: 0;
+  /* Match the rich projection's trailing reading room. The 60vh single-source
+     writing buffer makes the left pane continue far below the right preview. */
+  padding: 40px 32px 20vh;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right {
+  border-left: 0;
+}
+/* The right side is a projection, not a second editing surface. Keep text
+   selection and scrolling available, but hide rich-editor affordances that
+   could suggest formatting, conversion or review actions are active there. */
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .milkdown-toolbar,
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .milkdown-block-handle {
+  display: none !important;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .ProseMirror {
+  cursor: default;
+}
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-host,
+.editor-area.is-source-rich-split .editor-scroll.hm-source-rich-right .editor-skeleton {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding-left: 32px;
+  padding-right: 32px;
+}
+.hm-rich-preview-state {
+  position: absolute;
+  top: 10px;
+  right: 116px;
+  z-index: 26;
+  padding: 4px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.hm-rich-preview-state.is-error {
+  color: var(--danger, #bf5a4d);
+}
+.hm-source-rich-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 27;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.hm-source-rich-close:hover {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text-strong);
+}
 
 .editor-scroll {
   flex: 1;
   min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   /* No smooth scroll on the edit surface: it turns every implicit
      scroll-into-view (on click/select) into a visible upward slide.
      Outline/find jumps pass `behavior: 'smooth'` explicitly when wanted. */
@@ -1937,6 +2455,167 @@ body.hm-col-resizing * {
      Do NOT set back to `none` — see issue #25 + the .hm-cv content-visibility block. */
   overflow-anchor: auto;
   position: relative; /* containing block for the loading skeleton */
+}
+
+/* Compact reading navigation. It is deliberately outside the editor scroller:
+   it never participates in document layout or competes with ProseMirror's
+   selection/scroll anchoring. The component only consumes useOutline's cached
+   scrollspy state, so expanding it adds zero per-scroll layout work. */
+.floating-outline {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 28px;
+  max-height: min(66%, 480px);
+  transform: translateY(-50%);
+  transition: width 0.18s var(--ease-out);
+}
+.floating-outline:hover,
+.floating-outline:has(:focus-visible) {
+  width: 278px;
+}
+.floating-outline-dots {
+  display: flex;
+  flex: 0 0 28px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 48px;
+  padding: 8px 0;
+}
+.floating-outline-dot {
+  display: grid;
+  width: 24px;
+  height: 14px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.floating-outline-dot > span {
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: .7;
+  transition: width 0.18s var(--ease-out), height 0.18s var(--ease-out), background 0.18s var(--ease-out), opacity 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+.floating-outline-dot:hover,
+.floating-outline-dot:focus-visible {
+  color: var(--accent-strong);
+}
+.floating-outline-dot:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.floating-outline-dot.active {
+  color: var(--accent-strong);
+}
+.floating-outline-dot.active > span {
+  width: 8px;
+  height: 8px;
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.08);
+}
+.floating-outline-panel {
+  width: 0;
+  min-width: 0;
+  max-height: min(66vh, 480px);
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(8px);
+  transition: width 0.18s var(--ease-out), opacity 0.14s var(--ease-out), transform 0.18s var(--ease-out), visibility 0s linear 0.18s;
+}
+.floating-outline:hover .floating-outline-panel,
+.floating-outline:has(:focus-visible) .floating-outline-panel {
+  width: 250px;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+.floating-outline-list {
+  box-sizing: border-box;
+  display: grid;
+  width: 250px;
+  max-height: min(66vh, 480px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.floating-outline-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 8px 5px calc(8px + var(--floating-outline-depth) * 10px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.floating-outline-item:hover,
+.floating-outline-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
+.floating-outline-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.floating-outline-item-dot {
+  width: 4px;
+  height: 4px;
+  justify-self: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: .7;
+}
+.floating-outline-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.floating-outline-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.floating-outline-item.active .floating-outline-item-dot {
+  width: 6px;
+  height: 6px;
+  border-color: var(--accent);
+  background: var(--accent);
+  opacity: 1;
+}
+.floating-outline-item.active .floating-outline-item-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
 }
 
 /* ── Large-document scroll/open virtualization (Windows perf) ───────────
@@ -1971,13 +2650,17 @@ body.hm-col-resizing * {
    applies to ALL docs, not just .hm-cv, because CodeMirror code blocks measure
    line-wrapping lazily on scroll-into-view regardless of content-visibility —
    so even small docs jump without anchoring). No separate .hm-cv anchoring rule
-   is needed. Code blocks / tables stay under CV (anchoring handles their delta,
-   so we keep CV's perf win).
+   is needed. Code blocks are intentionally excluded from CV: even with eager
+   CodeMirror mounting, the 5em intrinsic estimate becomes a real code-block
+   height on first entry and Chromium cannot reliably anchor while a selection
+   is active. Keeping the comparatively rare code blocks laid out prevents that
+   visible 49px jump; tables retain CV because their controls already opt out
+   while open.
    :has(.hm-review-widget) excludes paragraphs holding a review margin-note:
    contain:paint (implied by content-visibility) would clip its absolute
    position:right:-2.7rem button. :has is style-recalc only (no layout), and
    content-visibility already skips style recalc off-screen, so no perf hit. */
-.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(:has(.hm-review-widget)) {
+.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.milkdown-code-block):not(:has(.hm-review-widget)) {
   content-visibility: auto;
   contain-intrinsic-size: auto 5em;
 }
@@ -2032,31 +2715,86 @@ body.hm-full-width .editor-skeleton {
 }
 .milkdown { background: transparent !important; }
 .milkdown .ProseMirror { padding: 0 !important; }
+/* The operation bar uses one fixed editor-edge rail (configured through
+   BlockProvider in editor-crepe-setup.js). Two compact 28px controls fit the
+   editor's 60px leading gutter in every desktop width preset. */
+.editor-host .milkdown .milkdown-block-handle {
+  transition: opacity 0.15s var(--ease-out);
+}
+.editor-host .milkdown .milkdown-block-handle .operation-item {
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.editor-host .milkdown .milkdown-block-handle .operation-item svg {
+  width: 20px;
+  height: 20px;
+}
 
 /* Rendered raw-HTML blocks (e.g. an HTML <table> in the Markdown). The node is
    non-editable; we just give it sensible, theme-aware styling so a pasted
    <table> looks like a table instead of escaped source. */
 .hm-html-block {
   margin: 0.6em 0;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  contain: inline-size layout paint;
+  -webkit-overflow-scrolling: touch;
+  /* ProseMirror sets white-space: break-spaces on its root, and that inherits
+     into pasted raw HTML. break-spaces keeps CJK text from wrapping at
+     character boundaries, so a nested `<table width="950">` keeps its
+     intrinsic width and overflows a narrow writing area. Rendered HTML is
+     static content: reset to normal wrapping (pre blocks opt back in below). */
+  white-space: normal;
+}
+.hm-html-block pre {
+  white-space: pre;
 }
 /* YAML front matter card (--- block at the top of a doc). */
-.hm-frontmatter-wrap { margin: 0 0 1.4em; }
+.hm-frontmatter-wrap { margin: 0 0 1.25em; }
 .hm-frontmatter {
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   background: var(--bg-elevated);
   overflow: hidden;
   font-size: 0.9em;
 }
 .hm-frontmatter-head {
-  padding: 5px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 10px 0 13px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--accent-strong);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+}
+.hm-frontmatter-title { line-height: 1; }
+.hm-frontmatter-action {
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  cursor: pointer;
+}
+.hm-frontmatter-action:hover,
+.hm-frontmatter-action:focus-visible {
+  color: var(--accent-strong);
+  background: var(--hover);
+  outline: none;
 }
 .hm-frontmatter-grid {
   display: grid;
@@ -2079,6 +2817,17 @@ body.hm-full-width .editor-skeleton {
   color: var(--text);
   word-break: break-word;
 }
+/* Nested mapping (#144): an inner key/value table inside the parent's value,
+   its first row aligned with the parent key. */
+.hm-frontmatter-grid-nested {
+  padding: 0;
+}
+.hm-frontmatter-grid dd:has(> .hm-frontmatter-grid-nested) {
+  padding: 0;
+}
+.hm-frontmatter-grid-nested dt {
+  padding-right: 12px;
+}
 .hm-frontmatter-raw {
   margin: 0;
   padding: 10px 14px;
@@ -2088,22 +2837,93 @@ body.hm-full-width .editor-skeleton {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.hm-html-block table {
-  border-collapse: collapse;
+.hm-frontmatter-input {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
+  min-height: 88px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  resize: vertical;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
 }
-.hm-html-block th,
-.hm-html-block td {
+.hm-frontmatter-input:focus {
+  background: color-mix(in srgb, var(--accent-soft) 18%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.milkdown .ProseMirror .hm-html-block table {
+  border-collapse: collapse;
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+  /* A raw-HTML table must never outgrow its block: `width: max-content` keeps
+     compact tables compact, while this cap shrinks pasted fixed-width tables
+     (e.g. gov.cn's `<table width="950">`) to the editor width instead of
+     pushing the column off-screen when the writing area is narrow. */
+  max-width: 100%;
+}
+/* Tables that carry an explicit `width` attribute (100% or a pixel value) get
+   their authored width back (the max-content default above would otherwise
+   replace "100%" with the intrinsic content width and stop following the
+   container); the max-width: 100% cap then absorbs any fixed pixel width. */
+.milkdown .ProseMirror .hm-html-block table[width] {
+  width: unset;
+}
+.milkdown .ProseMirror .hm-html-block th,
+.milkdown .ProseMirror .hm-html-block td {
+  /* Let columns shrink so a narrow editor can fit the whole table instead of
+     clipping it; wide editors still size columns from their content. */
+  min-width: 0;
+  max-width: 24rem;
   border: 1px solid var(--border);
   padding: 6px 12px;
   text-align: left;
   vertical-align: top;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+/* Raw HTML tables use the same reading preference as GFM tables. The default
+   keeps an independently scrollable table so columns remain legible; opting
+   into wide-table wrapping must also constrain HTML <table> content rather
+   than leaving it at its intrinsic width in a narrow editor. */
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block {
+  overflow-x: hidden;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 100%;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block th,
+body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
+  min-width: 0;
+  max-width: none;
 }
 .hm-html-block th {
   background: var(--hover-elevated, var(--border-soft));
   font-weight: 700;
 }
 .hm-html-block img { max-width: 100%; }
+/* Images inside raw-HTML tables must follow the cell width instead of their
+   intrinsic pixel width (e.g. gov.cn's `<img width="900">`). Table auto layout
+   sizes columns from min-content, and a replaced element's intrinsic width is
+   what feeds that calculation — max-width: 100% only clamps the rendered
+   image, so the column refuses to shrink below ~900px and the whole table
+   overflows a narrow writing area. width: 100% makes the image contribute the
+   cell width instead; the td max-width cap keeps wide-window images from
+   stretching beyond their original size. */
+.hm-html-table-block table img {
+  width: 100%;
+  height: auto;
+}
 
 /* Image lightbox: double-click an image in the editor to view it enlarged.
    (Single click stays native — selecting the image and editing its caption.) */
@@ -2114,22 +2934,24 @@ body.hm-full-width .editor-skeleton {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5vh 5vw;
+  padding: 64px 5vw 5vh;
   background: rgba(0, 0, 0, 0.72);
-  cursor: zoom-out;
+  overflow: hidden;
+  cursor: default;
   animation: hmLightboxFade 0.15s var(--ease-out);
 }
 .hm-image-lightbox img {
   max-width: 90vw;
-  max-height: 90vh;
-  min-width: min(600px, 90vw);
+  max-height: calc(95vh - 64px);
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
 }
 .hm-lightbox-close {
   position: fixed;
-  top: 18px;
+  top: calc(18px + env(safe-area-inset-top));
   right: 22px;
   width: 38px;
   height: 38px;
@@ -2144,14 +2966,67 @@ body.hm-full-width .editor-skeleton {
 .hm-lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
 @keyframes hmLightboxFade { from { opacity: 0; } to { opacity: 1; } }
 
+.hm-lightbox-controls {
+  position: fixed;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 38px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(24, 24, 27, 0.88);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  color: #fff;
+  backdrop-filter: blur(12px);
+}
+.hm-lightbox-controls button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  border-radius: 6px;
+  color: inherit;
+  transition: background 0.12s var(--ease-out);
+}
+.hm-lightbox-controls button:hover { background: rgba(255, 255, 255, 0.14); }
+.hm-lightbox-controls button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.hm-lightbox-scale {
+  width: 48px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.82);
+}
+.hm-lightbox-control-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.hm-lightbox-controls .hm-lightbox-actual {
+  width: 38px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 /* Mermaid-diagram lightbox: click a rendered flowchart → fullscreen, then
    Ctrl+wheel zoom + drag-pan (see Editor.jsx onMermaidClick). */
 .hm-lightbox-svg {
+  display: grid;
+  place-items: center;
+  width: max-content;
+  height: max-content;
   max-width: 90vw;
-  max-height: 90vh;
-  min-width: min(760px, 90vw);
-  min-height: min(500px, 80vh);
-  overflow: auto;
+  max-height: calc(95vh - 64px);
+  overflow: hidden;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
@@ -2164,44 +3039,28 @@ body.hm-full-width .editor-skeleton {
 }
 .hm-lightbox-svg svg {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
-  max-width: 100%;
+  max-width: calc(90vw - 48px);
+  max-height: calc(95vh - 112px);
 }
 
-/* Block-level hint: a small, quiet tag beside the caret's line naming the
-   current block (H1…H6 / 正文). Non-interactive — purely an at-a-glance cue.
-   Deliberately minimal: no border or shadow, muted by default. */
-.hm-level-badge {
-  position: fixed;
-  transform: translateY(-50%);
-  z-index: 60;
-  pointer-events: none;
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  color: var(--muted, #8a8a8a);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  opacity: 0.85;
-  transition: top 0.1s ease;
-  animation: hm-level-fade 0.14s ease;
-}
-.hm-level-badge.align-right {
-  transform: translate(-100%, -50%);
-}
-.hm-level-badge.hm-level-heading {
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-}
-@keyframes hm-level-fade {
-  from { opacity: 0; }
-  to { opacity: 0.85; }
+@media (max-width: 520px) {
+  .hm-image-lightbox {
+    padding-top: calc(64px + env(safe-area-inset-top));
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+  .hm-lightbox-controls {
+    top: auto;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .hm-image-lightbox img,
+  .hm-lightbox-svg {
+    max-height: calc(100vh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .hm-lightbox-svg svg {
+    max-height: calc(100vh - 176px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
 }
 
 /* =====================================================
@@ -2220,6 +3079,12 @@ body.hm-full-width .editor-skeleton {
 }
 .milkdown .milkdown-toolbar.hm-toolbar-fading {
   opacity: 0;
+}
+/* The preference changes live, so hide the existing Crepe toolbar in CSS
+   instead of re-creating mounted editors. The right-click menu exposes the
+   same common text-format actions while this is off. */
+.app.hm-selection-toolbar-disabled .milkdown .milkdown-toolbar {
+  display: none !important;
 }
 /* Crepe colors toolbar-item icons with --crepe-color-outline, which the app
    maps to --border — a low-contrast border tone that makes the selection
@@ -2506,6 +3371,7 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   position: fixed;
   z-index: 200;
   min-width: 184px;
+  overflow: visible;
   padding: 6px;
   background: var(--popover-bg);
   border: 1px solid var(--surface-border);
@@ -2520,6 +3386,11 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--muted) 72%, var(--text) 28%);
+}
+.block-menu-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--surface-border);
 }
 .block-menu-item {
   display: flex;
@@ -2567,6 +3438,39 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   font-size: 11px;
   color: var(--faint);
 }
+.block-menu-submenu-parent {
+  position: relative;
+}
+.block-menu-submenu-trigger .block-menu-arrow {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 16px;
+  line-height: 1;
+}
+.block-menu-submenu {
+  position: absolute;
+  top: -6px;
+  left: 100%;
+  z-index: 201;
+  display: none;
+  min-width: 184px;
+  max-height: min(calc(100vh - 16px), 360px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--popover-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--surface-shadow);
+  animation: menuFadeIn 0.12s var(--ease-out);
+}
+.block-menu-submenu-parent:hover > .block-menu-submenu,
+.block-menu-submenu-parent:focus-within > .block-menu-submenu {
+  display: block;
+}
+.block-ctxmenu-submenus-left .block-menu-submenu {
+  right: 100%;
+  left: auto;
+}
 
 /* Status-bar block switcher */
 .block-switch {
@@ -2609,8 +3513,10 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
   background: var(--bg-editor);
   color: var(--text);
   font-family: var(--font-mono);
-  /* Track the editor font size, kept ~2px smaller (mono reads larger). */
-  font-size: calc(var(--editor-font-size, 16px) - 2px);
+  /* Track the editor font size + a user-adjustable offset (issue #78). Default
+     offset is 0 (source = same size as the document body); the source-font
+     control in Settings lets it grow up to +8px or shrink to -4px. */
+  font-size: calc(var(--editor-font-size, 16px) + var(--source-font-offset, 0px));
   line-height: 1.75;
   padding: 40px max(60px, calc((100% - var(--editor-max-width, 800px)) / 2)) 60vh;
   user-select: text;
@@ -2643,6 +3549,20 @@ body.dark .hm-hl-swatch.hm-hl-blue { background: #4a78b8; }
 body.hm-full-width .source-editor {
   padding-left: 60px;
   padding-right: 60px;
+}
+
+/* Windows text layout is the bottleneck for CJK-heavy rich documents. The app
+   body uses optimizeLegibility for chrome polish, but inherited into thousands
+   of editor text runs it makes Chromium's Windows text shaping noticeably more
+   expensive than macOS. Keep the editor at normal text rendering and paint-
+   contain paragraphs so repaint does not spread across long CJK text runs while
+   scrolling. Do not use layout containment: ProseMirror's list and block margins
+   depend on normal block layout. */
+.app.is-win .milkdown .ProseMirror {
+  text-rendering: auto;
+}
+.app.is-win .milkdown .ProseMirror p:not(:has(.hm-review-widget)) {
+  contain: paint;
 }
 
 /* Find Bar */
@@ -2913,6 +3833,14 @@ body.hm-full-width .source-editor {
   padding-top: 10vh;
   animation: fadeIn 0.12s var(--ease-out);
 }
+/* Chromium's full-window backdrop surface is re-composited whenever a palette
+   row changes selection. On some Windows GPU/driver combinations that showed
+   up as a visible flash while hovering or wheel-scrolling. The dimmed overlay
+   still separates the palette from the document without that unstable layer. */
+.app.is-win .palette-overlay {
+  backdrop-filter: none;
+  background: rgba(0, 0, 0, 0.38);
+}
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -3006,12 +3934,50 @@ body.hm-full-width .source-editor {
    section jump-bar at the top (click→jump, scroll→scrollspy), like the Outline. */
 .settings-page {
   flex: 1;
-  overflow-y: auto;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
   background: var(--bg);
   animation: menuFadeIn 0.18s var(--ease-out);
 }
+.settings-nav {
+  flex: 0 0 184px;
+  padding: 28px 16px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.settings-nav-item:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.settings-nav-item.active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: var(--border-soft);
+}
 /* All sections in one scroll, centered. */
 .settings-sections {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
   max-width: 820px;
   margin: 0 auto;
   padding: 40px 48px 96px;
@@ -3032,10 +3998,20 @@ body.hm-full-width .source-editor {
   color: var(--muted);
   line-height: 1.6;
 }
-/* Typography: sliders left, live preview right. The preview is absolutely
-   positioned to fill the container's height (= the in-flow controls column's
-   height), so its base lines up with the last slider AND it can't push the
-   container taller when the font grows — overflow scrolls inside it instead. */
+.settings-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.settings-heading-row .settings-block-title,
+.settings-heading-row .settings-block-desc {
+  margin-bottom: 0;
+}
+/* Typography controls and their live document sample intentionally stack.
+   A side-by-side sample made the document look compressed and tied its height
+   to the controls, which changed as settings were adjusted. */
 .settings-typo {
   position: relative;
 }
@@ -3043,14 +4019,19 @@ body.hm-full-width .source-editor {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: calc(50% - 14px);
+  width: 100%;
+}
+.settings-typo-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.settings-typo-row-single > * {
+  grid-column: 1 / -1;
 }
 .settings-typo-preview {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: calc(50% - 14px);
+  width: 100%;
+  margin-top: 22px;
 }
 /* A label/description + control row inside a section. */
 .settings-row {
@@ -3073,6 +4054,159 @@ body.hm-full-width .source-editor {
   color: var(--muted);
   margin-top: 2px;
   line-height: 1.5;
+}
+/* System-theme mapping stays compact: the toggle establishes intent, then two
+   explicit selects show exactly which built-in palette will be used by day and
+   night. This avoids treating a transient OS preference as a loose swatch. */
+.settings-system-theme {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+.settings-system-theme-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.settings-system-theme-field select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.settings-system-theme-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.settings-system-theme-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+@media (max-width: 620px) {
+  .settings-system-theme { grid-template-columns: 1fr; }
+}
+/* The wide-table setting changes a document-level behavior. Show the actual
+   consequence in-place: the same cells either overflow a narrow viewport or
+   wrap into it, instead of making the user switch back to a document to guess. */
+.settings-table-preview {
+  width: min(100%, 390px);
+  margin: 10px 0 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-editor);
+  overflow: hidden;
+}
+.settings-table-preview-head {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.settings-table-preview-state {
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+.settings-table-preview-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.settings-table-preview table {
+  width: 490px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.settings-table-preview th,
+.settings-table-preview td {
+  padding: 7px 9px;
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+.settings-table-preview th {
+  background: color-mix(in srgb, var(--accent-soft) 38%, var(--bg-elevated));
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.settings-table-preview th:first-child,
+.settings-table-preview td:first-child {
+  width: 108px;
+}
+.settings-table-preview th:last-child,
+.settings-table-preview td:last-child {
+  border-right: 0;
+}
+.settings-table-preview tbody tr:last-child td {
+  border-bottom: 0;
+}
+.settings-table-preview[data-wrap='false'] td {
+  white-space: nowrap;
+}
+.settings-table-preview[data-wrap='true'] .settings-table-preview-viewport {
+  overflow-x: hidden;
+}
+.settings-table-preview[data-wrap='true'] table {
+  width: 100%;
+}
+.settings-table-preview[data-wrap='true'] td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.settings-segmented {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.settings-segmented-option {
+  min-width: 64px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 2px);
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings-segmented-option:hover {
+  color: var(--text);
+}
+.settings-segmented-option.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 /* Toggle switch (role=switch). Track + spring-sliding thumb, theme-tokens only. */
 .hm-toggle {
@@ -3114,49 +4248,95 @@ body.hm-full-width .source-editor {
 }
 /* Live typography preview — reads the SAME CSS vars as the editor
    (--editor-font-size / -line-height / -para-spacing), so dragging a slider in
-   the Settings page updates this sample in real time. Fills its grid column so
-   its base aligns with the last slider. */
+   the Settings page updates this sample in real time. */
+.settings-preview-shell {
+  width: 100%;
+  height: 350px;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-editor);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.settings-preview-toolbar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.settings-preview-toolbar span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
 .settings-preview {
   font-family: var(--font-write);
   font-size: var(--editor-font-size, 16px);
   line-height: var(--editor-line-height, 1.85);
   width: 100%;
-  height: 100%;
+  height: calc(100% - 34px);
   min-height: 0;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  padding: 18px 22px;
+  background: var(--bg-elevated);
   color: var(--text);
   overflow-y: auto;
 }
+.settings-preview .ProseMirror {
+  width: min(100%, var(--settings-preview-page-width, 500px));
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 26px clamp(22px, 6vw, 56px) 36px;
+  outline: none;
+  background: var(--bg-editor);
+  border-inline: 1px solid var(--border-soft);
+  font-family: var(--font-write);
+  --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
+}
+.settings-preview h1 {
+  font-size: 2.05em;
+  margin: 0 0 0.45em;
+  color: var(--text-strong);
+}
 .settings-preview h2 {
   font-size: 1.75em;
-  margin: 0 0 0.4em;
+  margin: 1em 0 0.4em;
   color: var(--text-strong);
-  letter-spacing: -0.02em;
 }
 .settings-preview p {
   margin: var(--editor-para-spacing, 0.8em) 0;
 }
-.settings-preview ul {
+.settings-preview blockquote {
   margin: var(--editor-para-spacing, 0.8em) 0;
-  padding-left: 1.8em;
+  padding: 0.05em 0 0.05em 1em;
+  color: var(--muted);
+  border-left: 3px solid var(--accent-soft);
+}
+.settings-preview ul,
+.settings-preview ol {
+  margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
+  padding-left: 1.2em;
 }
 .settings-preview li {
-  margin: 0.5em 0;
-  line-height: 1.75;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
+  line-height: inherit;
 }
 .settings-preview li::marker {
-  color: var(--accent);
+  color: var(--hm-list-marker-color);
+  font-weight: 500;
 }
 .settings-preview pre {
   background: var(--code-block-bg);
   color: #e8e6e1;
   border-radius: var(--radius-sm);
   padding: 0.7em 0.9em;
-  margin: var(--editor-para-spacing, 0.8em) 0;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.6) 0;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 0.85em;
@@ -3260,6 +4440,180 @@ body.hm-full-width .source-editor {
 .settings-link-btn:hover {
   color: var(--accent);
 }
+.settings-link-btn:disabled {
+  color: var(--faint);
+  cursor: default;
+  text-decoration: none;
+}
+.settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+/* Custom CSS snippets (issue #81). The compact split layout makes several
+   small overrides easier to scan than one long, opaque stylesheet. */
+.settings-css-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.settings-icon-action {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.settings-icon-action:hover:not(:disabled) {
+  border-color: var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--accent-strong);
+}
+.settings-icon-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.settings-icon-action:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.settings-icon-action.danger:hover:not(:disabled) { color: var(--danger); }
+.settings-css-workspace {
+  display: grid;
+  grid-template-columns: minmax(156px, 0.32fr) minmax(0, 1fr);
+  min-height: 224px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--bg-editor);
+}
+.settings-css-snippet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  overflow-y: auto;
+}
+.settings-css-snippet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 5px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.settings-css-snippet.active {
+  border-color: var(--border-soft);
+  background: var(--bg-editor);
+  box-shadow: var(--shadow-sm);
+}
+.settings-css-snippet-select {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-css-snippet-select > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-css-snippet-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.settings-css-snippet-dot.muted { background: var(--faint); }
+.settings-css-snippet .hm-toggle {
+  transform: scale(0.76);
+  transform-origin: right center;
+}
+.settings-css-snippet-editor {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 10px;
+}
+.settings-css-editor-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.settings-css-name-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 5px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-css-name-input:focus { border-bottom-color: var(--accent); }
+.settings-css-editor {
+  width: 100%;
+  min-height: 166px;
+  flex: 1 1 auto;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-elevated) 45%, var(--bg-editor));
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.settings-css-editor:focus { border-color: var(--accent); }
+.settings-css-editor::placeholder { color: var(--faint); }
+.settings-css-foot {
+  display: flex;
+  min-height: 27px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
+}
+.settings-css-foot code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Inline link inside the update-status line (前往下载 →). */
 .settings-inline-link {
   background: none;
@@ -3317,13 +4671,590 @@ body.hm-full-width .source-editor {
   outline: none;
   border-color: var(--accent);
 }
-/* Document + code font pickers (issue #38) — above the typography sliders. */
-.settings-font-pickers {
+.settings-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-action-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.sync-connection-placeholder {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--accent-strong);
+}
+.sync-connection-title,
+.sync-folder-name {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.sync-connection-desc,
+.sync-folder-path,
+.sync-folder-status,
+.sync-empty {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-folder-list {
+  border-top: 1px solid var(--border-soft);
+}
+.sync-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.sync-tip svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+.sync-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sync-folder-icon {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+.sync-folder-icon.muted,
+.sync-folder-status.muted {
+  color: var(--muted);
+}
+.sync-folder-copy {
+  min-width: 0;
+  flex: 1;
+}
+.sync-folder-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-folder-row .settings-link-btn {
+  flex: 0 0 auto;
+}
+.sync-empty {
+  padding: 20px 2px;
+}
+.sync-add-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.sync-connection-option {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sync-connection-option:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.sync-connection-option > span {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.sync-connection-option strong {
+  font-size: 13px;
+}
+.sync-connection-option small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.sync-field {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+/* A failed connection submit marks the offending field(s) instead of
+   resetting the whole form — highlight them and show the reason inline. */
+.sync-field-invalid input {
+  border-color: #e5484d;
+}
+.sync-field-error {
+  color: #e5484d;
+  font-size: 12px;
+}
+.sync-field-label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sync-form input,
+.sync-select {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.sync-select {
+  width: 100%;
+}
+.sync-folder-copy > .sync-select {
+  margin-top: 8px;
+}
+.sync-folder-actions,
+.sync-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sync-icon-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.sync-icon-btn {
+  display: inline-grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sync-icon-btn:hover:not(:disabled) {
+  background: var(--active);
+  color: var(--text);
+}
+.sync-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sync-icon-btn:disabled {
+  cursor: default;
+  opacity: .42;
+}
+.sync-state-icon {
+  display: inline-grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.sync-state-icon.syncing {
+  color: var(--accent-strong);
+}
+.sync-state-icon.syncing svg {
+  animation: sync-state-spin .9s linear infinite;
+}
+.sync-state-icon.complete {
+  color: var(--accent-strong);
+}
+@keyframes sync-state-spin {
+  to { transform: rotate(360deg); }
+}
+.sync-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sync-remote-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+.sync-remote-choice {
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.sync-remote-choice:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.sync-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, #d94b4b 35%, var(--border));
+  border-radius: var(--radius-md);
+  color: #c33;
+  font-size: 12px;
+}
+.sync-notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-soft) 40%, transparent);
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+.sync-workspace-item {
+  border-bottom: 1px solid var(--border-soft);
+}
+.sync-workspace-item > .sync-folder-row {
+  border-bottom: 0;
+}
+.sync-plan-preview {
+  margin: 0 0 10px 27px;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg));
+}
+.sync-plan-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sync-plan-preview-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.sync-plan-preview-head p,
+.sync-plan-preview-note {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-plan-preview-note {
+  margin-top: 7px;
+}
+.sync-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .3);
+}
+.sync-preview-changes {
+  max-height: 240px;
+  overflow: auto;
+  margin: 12px 0 0;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.sync-preview-changes-title {
+  margin: 9px 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sync-preview-changes ul {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 9px;
+  padding: 0;
+  list-style: none;
+}
+.sync-preview-changes li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.sync-preview-changes li > span {
+  color: var(--muted);
+}
+.sync-preview-changes code {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-preview-card {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+.sync-preview h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+.sync-preview p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+@media (max-width: 620px) {
+  .sync-add-options { grid-template-columns: 1fr; }
+  .sync-form { grid-template-columns: 1fr; }
+  .sync-folder-row { align-items: flex-start; flex-wrap: wrap; }
+  .sync-folder-copy { flex-basis: calc(100% - 28px); }
+  .sync-folder-row > .settings-link-btn { margin-left: 28px; }
+  .sync-folder-row > .sync-icon-actions { margin-left: 28px; }
+  .sync-plan-preview { margin-left: 0; }
+}
+.settings-shortcuts {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
+}
+.settings-shortcut-search {
+  margin-bottom: 16px;
+  font-family: var(--font-write);
+}
+.settings-shortcut-no-results {
+  padding: 28px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.settings-shortcut-group {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.settings-shortcut-group-title {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-shortcut-list {
+  display: flex;
+  flex-direction: column;
+}
+.settings-shortcut-row {
+  min-height: 42px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.settings-shortcut-row.has-error {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+.settings-shortcut-row:last-child {
+  border-bottom: 0;
+}
+.settings-shortcut-title {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  padding-top: 7px;
+}
+.settings-shortcut-cell {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.settings-shortcut-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-shortcut-recorder {
+  min-width: 132px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.settings-shortcut-recorder:hover {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
+}
+.settings-shortcut-recorder:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+.settings-shortcut-recorder:disabled:hover {
+  color: var(--text);
+  background: transparent;
+}
+.settings-shortcut-recorder.recording {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-shortcut-recorder.error {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
+  background: color-mix(in srgb, var(--danger) 11%, var(--bg));
+}
+.settings-shortcut-recorder.error kbd {
+  color: var(--danger);
+}
+.settings-shortcut-recorder kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+.settings-shortcut-recorder:hover kbd {
+  color: var(--accent-strong);
+}
+.settings-shortcut-action {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 2px;
+}
+.settings-shortcut-action:hover {
+  color: var(--accent-strong);
+}
+.settings-shortcut-action:disabled {
+  display: none;
+}
+.settings-shortcut-fixed {
+  color: var(--faint);
+  font-size: 12px;
+}
+/* Marks commands registered as OS-level (globalShortcut) shortcuts — they also
+   fire while the window is hidden to the tray. Drawn as a pseudo-element so the
+   row title's text content stays exactly the command name (aria + UI tests). */
+.settings-shortcut-title[data-badge]::after {
+  content: attr(data-badge);
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
+.settings-shortcut-conflict {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.settings-shortcut-inline-error {
+  max-width: 360px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: right;
+}
+.settings-shortcut-empty,
+.settings-shortcut-note {
+  color: var(--faint);
+  font-size: 12px;
+}
+.settings-shortcut-note {
+  margin: 14px 0 0;
+  line-height: 1.6;
+}
+/* Document + code font pickers (issue #38) share the first typography row. */
+.settings-typo-fonts {
   padding-bottom: 14px;
-  margin-bottom: 6px;
   border-bottom: 1px solid var(--border-soft);
 }
 .settings-font-row {
@@ -3428,8 +5359,7 @@ body.hm-full-width .source-editor {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 9px;
+  padding: 7px 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -3443,29 +5373,19 @@ body.hm-full-width .source-editor {
 .settings-font-option.active {
   background: var(--accent-soft);
 }
-/* The sample string rendered in the candidate font (the actual preview). */
-.settings-font-sample {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  color: var(--text-strong);
-}
-.settings-font-option.active .settings-font-sample {
-  color: var(--accent-strong);
-}
-/* The font name, small + muted, in the UI font (readable regardless of the
-   sample font). */
+/* Font options show the full family name. The live preview is the right-side
+   typography sample, so the dropdown can stay readable and name-focused. */
 .settings-font-name {
-  flex: 0 0 auto;
-  max-width: 42%;
-  font-size: 11.5px;
-  color: var(--muted);
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.settings-font-option.active .settings-font-name {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 .settings-font-more,
 .settings-font-empty {
@@ -3475,7 +5395,7 @@ body.hm-full-width .source-editor {
   text-align: center;
 }
 .settings-font-hint {
-  margin: 0;
+  margin: -2px 0 2px;
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--faint);
@@ -3557,23 +5477,78 @@ body.hm-full-width .source-editor {
   font-variant-numeric: tabular-nums;
 }
 /* Mobile — typography two-column collapses to one; tighter paddings. */
+.app.is-mobile .settings-page {
+  flex-direction: column;
+}
+.app.is-mobile .settings-nav {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 10px 10px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border-soft);
+  overflow-x: auto;
+}
+.app.is-mobile .settings-nav-item {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 32px;
+  padding: 7px 10px;
+}
 .app.is-mobile .settings-sections {
   padding: 24px 14px 64px;
 }
 .app.is-mobile .settings-typo-controls {
   width: 100%;
 }
+.app.is-mobile .settings-typo-row {
+  grid-template-columns: 1fr;
+}
 .app.is-mobile .settings-typo-preview {
-  position: static;
   width: 100%;
   margin-top: 18px;
 }
+.app.is-mobile .settings-preview-shell {
+  height: 300px;
+}
 .app.is-mobile .settings-preview {
-  height: auto;
-  max-height: 320px;
+  height: calc(100% - 32px);
+}
+.app.is-mobile .settings-section-heading {
+  flex-direction: column;
+  gap: 8px;
+}
+.app.is-mobile .settings-css-actions {
+  padding-top: 0;
+}
+.app.is-mobile .settings-css-workspace {
+  grid-template-columns: 1fr;
+}
+.app.is-mobile .settings-css-snippet-list {
+  max-height: 168px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border-soft);
 }
 .app.is-mobile .settings-swatches {
   grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+}
+.app.is-mobile .settings-shortcut-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+.app.is-mobile .settings-shortcut-controls {
+  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.app.is-mobile .settings-shortcut-cell {
+  width: 100%;
+  align-items: flex-start;
+}
+.app.is-mobile .settings-shortcut-inline-error {
+  max-width: 100%;
+  text-align: left;
 }
 .welcome-card {
   text-align: center;
@@ -3853,6 +5828,10 @@ body.dark .milkdown {
   user-select: text;
   /* High-contrast caret so the cursor is easy to find while writing */
   caret-color: var(--accent);
+  /* Crepe list markers are node-view labels rather than native ::markers.
+     Keep their tone tied to the current document palette so the settings
+     preview and the actual editor never diverge. */
+  --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
 }
 .milkdown .ProseMirror:focus { outline: none; }
 
@@ -3882,8 +5861,8 @@ body.dark .milkdown {
 .milkdown .ProseMirror h6 {
   font-weight: 700;
   line-height: 1.3;
-  margin-top: 1.75em;
-  margin-bottom: 0.55em;
+  margin-top: var(--editor-heading-spacing, 1.8em);
+  margin-bottom: calc(var(--editor-heading-spacing, 1.8em) * 0.306);
   color: var(--text-strong);
   letter-spacing: 0;
 }
@@ -3909,7 +5888,6 @@ body.dark .milkdown {
   font-size: 1em;
   font-weight: 600;
   color: var(--text);
-  text-transform: uppercase;
   letter-spacing: 0;
 }
 /* First block sits flush with the top — no leading whitespace */
@@ -3936,6 +5914,18 @@ body.dark .milkdown {
 }
 .milkdown .ProseMirror > p:last-child {
   margin-bottom: 0;
+}
+
+/* Milkdown keeps an ordinary Markdown newline as an inline hardbreak span whose
+   text content is a space. When enabled, append a visual line feed without
+   replacing the span, changing its width, or turning it into an explicit <br>.
+   This keeps ProseMirror positions and Markdown round-tripping unchanged. */
+body.hm-preserve-soft-breaks
+  .milkdown
+  .ProseMirror
+  span[data-type='hardbreak'][data-is-inline='true']::after {
+  content: '\A';
+  white-space: pre;
 }
 
 /* Links */
@@ -4046,17 +6036,54 @@ body.dark .milkdown {
   background: var(--code-block-bg) !important;
   border: 1px solid var(--code-block-border);
   border-radius: var(--editor-block-radius);
-  margin: var(--editor-block-space) 0;
+  /* Code blocks are part of the writing flow, not a callout. A compact outer
+     gap keeps prose/code transitions tight while preserving internal padding
+     and room for the CodeMirror controls. */
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.6) 0;
   font-size: 0.92em;
 }
 .milkdown .cm-editor .cm-scroller {
-  padding: 14px 16px;
+  /* The line-number gutter must sit flush against the block's left edge.
+     The old 16px left padding pushed the whole gutter column inward; the
+     same breathing room now lives on .cm-content itself so prose/code
+     spacing is unchanged. */
+  padding: 14px 0;
   line-height: 1.6;
 }
-.milkdown .cm-editor .cm-gutters {
-  background: transparent;
+.milkdown .cm-editor .cm-content {
+  padding: 0 16px;
+}
+/* Selector depth beats Crepe's code-mirror.css (`.milkdown
+   .milkdown-code-block .cm-gutters`, 0-3-0): the editor chunk is lazily
+   loaded (P8b), so Crepe's stylesheet is injected AFTER app.css and wins any
+   equal-specificity tie — its light --crepe-color-surface gutter under pale
+   line numbers made them unreadable in every theme. */
+.milkdown .milkdown-code-block .cm-editor .cm-gutters {
+  background: var(--code-block-bg);
   border: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--code-linenum);
+  user-select: none;
+  -webkit-user-select: none;
+  margin-right: 12px;
+  padding: 0;
+}
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 2.4ch;
+  padding: 0 0.95em 0 0.5em;
+  text-align: right;
+  /* Full-size line numbers: at 1em the 1.6 line box matches the code line's
+     own 23.55px, so the digit column extends the full row height instead of
+     floating as a small sliver in the middle of the gutter. */
+  font-size: 1em;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  line-height: 1.6;
+  color: var(--code-linenum);
+  border-right: 1px solid var(--code-linenum-border);
+  background: transparent;
+}
+.milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement.cm-activeLineGutter {
+  color: var(--code-linenum-active);
+  background: rgba(255, 255, 255, 0.05);
 }
 /* The plain (non-CodeMirror) code block keeps its tinted look; only the
    editable highlighted blocks go dark. */
@@ -4072,22 +6099,66 @@ body.dark .milkdown {
   font-family: var(--font-mono);
   line-height: 1.4;
 }
+.milkdown .ProseMirror .hm-inline-code-delimiter {
+  color: color-mix(in srgb, var(--accent-strong) 72%, var(--text) 28%);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+.milkdown .ProseMirror .hm-inline-code-delimiter.open {
+  margin-right: 1px;
+}
+.milkdown .ProseMirror .hm-inline-code-delimiter.close {
+  margin-left: 1px;
+}
 
-/* Lists — Typora-style spacing */
+/* Lists — compact, writing-first spacing.
+   Crepe renders each marker in `.label-wrapper`, not through `::marker`.
+   Its default 24px marker + 10px gap sits after our 1.8em list padding,
+   which made the text start about 63px from the paragraph edge and put the
+   marker above the first line. Keep the label in a 20px gutter and give it
+   the same first-line box as a Crepe paragraph (1lh + its 4px top/bottom
+   padding). This stays aligned when the user changes editor line height. */
 .milkdown .ProseMirror ul,
 .milkdown .ProseMirror ol {
-  padding-left: 1.8em;
-  margin: 1em 0;
+  padding-left: 0.25em;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 1.25) 0;
+}
+.milkdown .ProseMirror .milkdown-list-item-block > .list-item {
+  gap: 8px;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper {
+  width: 20px;
+  flex: 0 0 20px;
+  height: calc(1lh + 8px);
+  color: var(--hm-list-marker-color);
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper svg {
+  fill: currentColor;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper .label {
+  width: 20px;
+  height: 100%;
+  padding: 0;
+  justify-content: flex-end;
+  color: inherit;
+  font-weight: 500;
+  line-height: inherit;
+}
+.milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper .label.bullet {
+  justify-content: center;
 }
 .milkdown .ProseMirror li {
-  margin: 0.5em 0;
-  line-height: 1.75;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.625) 0;
+  line-height: inherit;
 }
 .milkdown .ProseMirror li p {
   margin: 0;
 }
 .milkdown .ProseMirror li::marker {
-  color: var(--accent);
+  color: var(--hm-list-marker-color);
   font-weight: 500;
 }
 /* Nested lists */
@@ -4095,7 +6166,7 @@ body.dark .milkdown {
 .milkdown .ProseMirror ol ol,
 .milkdown .ProseMirror ul ol,
 .milkdown .ProseMirror ol ul {
-  margin: 0.4em 0;
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.5) 0;
 }
 
 /* Math (KaTeX) — keep long formulas inside the column. A long display equation
@@ -4104,11 +6175,28 @@ body.dark .milkdown {
 /* Keep a wide display equation inside the column: scroll horizontally instead of
    overflowing the page (issue #5). Short formulas still center as usual. The
    block-math preview panel scrolls too. */
-.milkdown .katex-display,
-.milkdown .milkdown-code-block .preview {
+.milkdown .katex-display {
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
+}
+.milkdown .katex-display[data-hm-math-overflow='true'] { overflow-x: auto; }
+/* Block formulas own their overflow. Keeping the surrounding Crepe preview
+   non-scrollable prevents Windows from rendering a second scrollbar/arrows for
+   formulas that fit normally. Mermaid previews retain their own scroll path. */
+.milkdown .milkdown-code-block .preview:has(> .katex-display) {
+  max-width: 100%;
+  overflow: hidden;
+}
+/* Block LaTeX is rendered inside Crepe's general code-block node view. Its
+   default 8px/20px padding is useful for an editable code block but makes a
+   rendered equation look detached from its surrounding prose. Compact only
+   the finished KaTeX preview; the source/editing state keeps Crepe's controls
+   and padding intact. */
+.milkdown .milkdown-code-block:has(.preview > .katex-display) {
+  margin: calc(var(--editor-para-spacing, 0.8em) * 0.45) 0;
+  padding: 0 2px;
+  background: transparent;
 }
 /* Mermaid diagram inside a code block's preview panel: center it. */
 .milkdown .milkdown-code-block .preview:has(svg),
@@ -4118,9 +6206,24 @@ body.dark .milkdown {
   justify-content: center;
   padding: 8px 4px;
 }
-.milkdown .milkdown-code-block .preview svg { height: auto; }
+/* KaTeX draws tall symbols (√, wide accents) as inline-size SVGs; height:auto
+   would collapse them, so keep the rule scoped to non-KaTeX SVGs (Mermaid). */
+.milkdown .milkdown-code-block .preview svg:not(.katex svg) { height: auto; }
 .milkdown .katex-display {
   padding: 4px 2px;
+}
+/* Crepe renders block LaTeX inside a flex preview panel. Without an explicit
+   flex basis, a short equation shrinks to its intrinsic width, so KaTeX's
+   absolutely positioned \tag number is placed on top of the equation. Keep the
+   display as wide as its preview panel and reserve a small number column. */
+.milkdown .milkdown-code-block .preview > .katex-display {
+  flex: 0 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+.milkdown .milkdown-code-block .preview > .katex-display > .katex > .katex-html:has(> .tag) {
+  box-sizing: border-box;
+  padding-right: 4em;
 }
 .milkdown .ProseMirror span[data-type='math_inline'] {
   max-width: 100%;
@@ -4128,11 +6231,88 @@ body.dark .milkdown {
   overflow-y: hidden;
   vertical-align: bottom;
 }
+.milkdown .ProseMirror span[data-type='math_inline'].ProseMirror-selectednode {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--muted) 36%, transparent);
+}
 /* A KaTeX parse error (e.g. \tag in inline math) should wrap, not run off-edge. */
 .milkdown .ProseMirror .katex-error {
   white-space: normal !important;
   overflow-wrap: break-word;
   word-break: break-word;
+}
+
+/* Wide tables keep readable columns and scroll inside their own wrapper instead
+   of squeezing cells or widening the editor/page. Crepe already provides the
+   wrapper around the editable table, so this does not alter its node view. */
+.milkdown .milkdown-table-block {
+  max-width: 100%;
+  margin: var(--editor-block-space) 0;
+  contain: inline-size;
+}
+/* Crepe normally hides these with opacity only. Their stale absolute position
+   can still widen ProseMirror by a few pixels after a viewport change. Remove
+   only the hidden handles from layout; data-show=true restores them normally. */
+.milkdown .milkdown-table-block > div > .cell-handle[data-show='false'] {
+  display: none;
+}
+.milkdown .milkdown-table-block .cell-handle .button-group.hm-table-menu-below {
+  top: calc(100% + 8px);
+}
+/* Large-document virtualization paint-contains each top-level block. Relax it
+   only while this table's action menu is open so the menu can float above the
+   table without covering the header row. */
+.editor-scroll.hm-cv .milkdown .ProseMirror > .milkdown-table-block.hm-table-controls-open {
+  content-visibility: visible !important;
+}
+.milkdown .milkdown-table-block .table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  contain: inline-size layout paint;
+  -webkit-overflow-scrolling: touch;
+}
+.milkdown .ProseMirror .milkdown-table-block table.children {
+  /* Keep compact tables at their natural content width. The wrapper stays as
+     the full-width scroll viewport, but the table itself only grows beyond it
+     when its actual columns need the space. Until the user resizes a column,
+     let the browser distribute width from all cell contents instead of making
+     every column follow the first row's fixed-layout geometry. */
+  table-layout: auto;
+  width: max-content;
+  min-width: 0;
+}
+.milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-widths='true'],
+.milkdown .ProseMirror .milkdown-table-block table.children[data-hm-column-preview='true'] {
+  /* A deliberate drag is an explicit layout decision. Freeze the measured
+     column set while previewing and after data-colwidth has been persisted. */
+  table-layout: fixed;
+}
+
+/* Readers can opt into a print-like wide-table layout in Settings. Keep the
+   table inside the writing column and wrap cells instead of exposing a local
+   horizontal scroll surface. Explicit resize widths are intentionally ignored
+   in this mode so a previously resized table cannot still overflow. */
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .table-wrapper {
+  overflow-x: hidden;
+}
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .line-handle[data-show='false'],
+body.hm-table-auto-wrap .milkdown .milkdown-table-block .drag-preview[data-show='false'] {
+  display: none;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block table.children {
+  width: 100% !important;
+  min-width: 100% !important;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block colgroup.hm-column-widths col {
+  width: auto !important;
+}
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block th,
+body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
+  min-width: 0;
+  max-width: none;
 }
 
 /* Tables — elegant borders */
@@ -4144,17 +6324,24 @@ body.dark .milkdown {
   border-radius: var(--editor-block-radius);
   border: 1px solid var(--border-soft);
   font-size: 0.95em;
-  /* Theme-aware backdrop so the table reads as a unified surface. */
-  background: var(--editor-subtle-surface);
+  /* Give tables a quiet surface of their own. It is intentionally lighter
+     than a code block, while remaining visible in both light and dark themes. */
+  background: color-mix(in srgb, var(--editor-subtle-surface) 88%, var(--accent) 4%);
+}
+.milkdown .ProseMirror .milkdown-table-block table {
+  /* The scrollbar belongs immediately below the grid. Keep document spacing on
+     the block wrapper instead of leaving the table's bottom margin between the
+     last row and its horizontal scrollbar. */
+  margin: 0;
 }
 .milkdown .ProseMirror th,
 .milkdown .ProseMirror td {
   border: none;
   border-bottom: 1px solid var(--border-soft);
-  /* Compact rows: tight padding + line-height so a Markdown table reads densely
-     instead of wasting vertical space. */
-  padding: 6px 12px;
-  line-height: 1.5;
+  /* Keep row density proportional to the configured document font. Fixed px
+     padding made small-font tables stay disproportionately tall (#101). */
+  padding: 0.28em 0.6em;
+  line-height: 1.4;
   text-align: left;
   /* Wrap long content (incl. unbroken CJK / URLs) instead of letting it overflow
      and overlap neighbouring cells/rows (issue #6). */
@@ -4162,11 +6349,18 @@ body.dark .milkdown {
   overflow-wrap: break-word;
   word-break: break-word;
 }
+.milkdown .ProseMirror .milkdown-table-block th,
+.milkdown .ProseMirror .milkdown-table-block td {
+  min-width: 6rem;
+  max-width: 20rem;
+  box-sizing: border-box;
+}
 /* Cell content is a paragraph; drop its block margins so each row stays one line
    tall (this was the main reason rows looked so airy). */
-.milkdown .ProseMirror th > p,
-.milkdown .ProseMirror td > p {
+.milkdown .ProseMirror .milkdown-table-block th > p,
+.milkdown .ProseMirror .milkdown-table-block td > p {
   margin: 0;
+  padding: 0;
   line-height: inherit;
 }
 .milkdown .ProseMirror th {
@@ -4212,9 +6406,46 @@ body.dark .milkdown {
 .milkdown .milkdown-image-block.selected > .image-wrapper::before {
   display: none !important;
 }
-/* Theme the column-resize handle (default is a hard blue #adf bar). */
-.milkdown .ProseMirror .column-resize-handle {
+/* Hovering a table edge is reserved for Crepe's add-row/add-column control.
+   The resize guide belongs to HorseMD instead of prosemirror-tables: Crepe's
+   table node view is not compatible with the plugin's hover transactions. */
+.hm-column-resize-guide {
+  position: fixed;
+  z-index: 8;
   background-color: var(--accent);
+  pointer-events: none;
+  width: 1px;
+  border-radius: 1px;
+}
+/* Crepe's own boundary affordance remains a fine line with a compact, quiet
+   circular plus. It is visually distinct from the resize guide above. */
+.milkdown .milkdown-table-block .line-handle {
+  background: color-mix(in srgb, var(--accent) 84%, transparent);
+}
+.milkdown .milkdown-table-block .line-handle .add-button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 16%, transparent);
+  transition: transform 0.14s var(--ease-out), background 0.14s var(--ease-out), color 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.milkdown .milkdown-table-block .line-handle .add-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  transform: translateY(-50%) translateX(-50%) scale(1.08);
+}
+.milkdown .milkdown-table-block .line-handle[data-role='x-line-drag-handle'] .add-button:hover {
+  transform: translateX(-50%) translateY(-50%) scale(1.08);
+}
+.milkdown .milkdown-table-block .line-handle .add-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Horizontal rule — elegant divider */
@@ -4695,6 +6926,10 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .app.is-mobile .activity-item { width: 48px; height: 48px; }
 .app.is-mobile .icon-btn { width: 40px; height: 40px; }
 .app.is-mobile .hm-menu-btn { margin-right: 2px; }
+.app.is-mobile .hm-readonly-btn.active {
+  color: var(--accent);
+  background: var(--active);
+}
 
 /* Editor fills the screen — ignore the desktop 800px page-width preset and the
    wide horizontal gutters. !important overrides the inline --editor-max-width
@@ -4791,8 +7026,6 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
    is always full width here) and the desktop keyboard-shortcut hints. */
 .app.is-mobile .hm-pagewidth { display: none; }
 .app.is-mobile .welcome-hints { display: none; }
-/* The floating "Text / H1" caret badge is desktop affordance; drop it on phones. */
-.app.is-mobile .hm-level-badge { display: none !important; }
 /* iOS/Android own text selection, copy/paste and accessibility actions. Crepe's
    selection tooltip is disabled in editor-crepe-setup; keep this as a defensive
    fallback so an upstream toolbar cannot overlap the native system menu. */

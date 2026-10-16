@@ -11,6 +11,9 @@ import {
   restoreSourceCaret,
   restoreSourceViewport
 } from '../scrollAnchor.js'
+import { getTextareaSourceValue } from '../source-text-fidelity.js'
+import { fireToast } from '../ui.js'
+import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 
 // Owns rich/source view state and the caret-vs-reading-position transition.
 // Textarea editing remains uncontrolled in EditorArea; this hook only consumes
@@ -22,10 +25,13 @@ export function useSourceModeSwitch({
   tabsRef,
   activeIdRef,
   editorApis,
+  liveContentRef,
   editorHostRef,
+  focusedTabRef,
   commitAllLive,
   findStateRef,
-  richLoadingRef
+  richLoadingRef,
+  tRef
 }) {
   const [sourceModeIds, setSourceModeIds] = useState(() => new Set())
   const sourceMode = !!activeId && sourceModeIds.has(activeId)
@@ -41,6 +47,7 @@ export function useSourceModeSwitch({
   const preserveRichCaretFollowRef = useRef(false)
   const sourceEnteredWithCaretFollowRef = useRef(false)
   const sourceCaretRoundTripRef = useRef(null)
+  const richRestoreInteractionRef = useRef(null)
 
   useEffect(() => {
     const live = new Set(tabs.map((tab) => tab.id))
@@ -65,14 +72,14 @@ export function useSourceModeSwitch({
   const syncSourceToRich = useCallback((id) => {
     const sourceEl = sourceTextareas.current[id]
     if (!sourceEl) return false
-    const next = sourceEl.value || ''
+    const next = getTextareaSourceValue(sourceEl)
     const baseline = sourceEl.__horsemdSourceBaseline ?? ''
     const sourceEdited = sourceEditedIds.current.has(id)
-    if (next === baseline && !sourceEdited) return false
+    if ((sourceEl.value || '') === baseline && !sourceEdited) return false
 
     const api = editorApis.current[id]
     if (api?.replaceMarkdown?.(next)) {
-      sourceEl.__horsemdSourceBaseline = next
+      sourceEl.__horsemdSourceBaseline = sourceEl.value || ''
       sourceEditedIds.current.delete(id)
       return true
     }
@@ -84,16 +91,69 @@ export function useSourceModeSwitch({
           : tab
       )
     )
-    sourceEl.__horsemdSourceBaseline = next
+    sourceEl.__horsemdSourceBaseline = sourceEl.value || ''
     sourceEditedIds.current.delete(id)
     return true
   }, [editorApis, setTabs])
 
-  const toggleSource = useCallback(() => {
-    commitAllLive()
+  const flushRichSource = useCallback(async (id) => {
+    const api = editorApis.current[id]
+    const markdown = typeof api?.flushMarkdownSettled === 'function'
+      ? await api.flushMarkdownSettled()
+      : api?.flushMarkdown?.()
+    if (typeof markdown !== 'string') return false
+    const current = tabsRef.current.find((tab) => tab.id === id)
+    if (!current) return false
+    if (current.content === markdown && !current.pendingRichEdit) return true
+    // The source textarea is uncontrolled. Update the synchronous mirror before
+    // mounting it, then queue the matching React state update in the same event;
+    // waiting for markdownUpdated would leave defaultValue stuck on stale text.
+    // EditorArea prefers the uncontrolled textarea's live mirror over
+    // tab.content when mounting source mode. Rich edits do not normally write
+    // that mirror, so leaving an older value there can mount source mode with
+    // the first intermediate structural snapshot even though flushMarkdown
+    // has already settled to a newer candidate. Replace the mirror atomically
+    // at this same durability boundary.
+    liveContentRef?.current?.set(id, markdown)
+    tabsRef.current = tabsRef.current.map((tab) =>
+      tab.id === id ? { ...tab, content: markdown, pendingRichEdit: false } : tab
+    )
+    setTabs((previous) => previous.map((tab) =>
+      tab.id === id && (tab.content !== markdown || tab.pendingRichEdit)
+        ? { ...tab, content: markdown, pendingRichEdit: false }
+        : tab
+    ))
+    return true
+  }, [editorApis, liveContentRef, setTabs, tabsRef])
+
+  const toggleSource = useCallback(async () => {
     const id = activeIdRef.current
     const tab = tabsRef.current.find((item) => item.id === id)
-    if (!id || tab?.kind === 'settings') return
+    if (!id || tab?.kind === 'settings') return false
+    if (sourceModeRef.current) commitAllLive()
+    else if (!await flushRichSource(id)) {
+      // The visible edit cannot be mapped byte-safely. Do not trap it in
+      // renderer memory: offer the same recovery copy the save path uses.
+      const tab = tabsRef.current.find((item) => item.id === id)
+      const recoveryMarkdown = editorApis.current[id]?.getRecoveryMarkdown?.()
+      if (tab && typeof recoveryMarkdown === 'string') {
+        try {
+          const recovery = await saveSourceSyncRecovery({
+            api: window.api,
+            title: tab.title,
+            markdown: recoveryMarkdown
+          })
+          if (recovery.ok) {
+            fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true })
+            return false
+          }
+        } catch {
+          // Fall through to the paused-source message.
+        }
+      }
+      fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+      return false
+    }
     const view = editorApis.current[id]?.getView?.()
 
     if (sourceModeRef.current) {
@@ -109,7 +169,13 @@ export function useSourceModeSwitch({
       const preserveRichCaret =
         !sourceTextChanged && !sourceSelectionChanged && !sourceSelectionUser && !sourceViewportMoved
       const hasSourceCaretIntent = sourceTextChanged || sourceSelectionChanged || sourceSelectionUser
-      const followSourceCaret = hasSourceCaretIntent && sourceSelectionUser && !sourceViewportMoved
+      // A caret move is an editing intent whenever the live selection differs
+      // from the last restore baseline and the viewport has not been scrolled
+      // away for reading. The synthetic selection-user flag is a fast signal
+      // but can be missed by keyboard caret moves, IME, or assistive input;
+      // the baseline comparison covers those paths so the rich editor still
+      // receives focus and follows the caret on the return trip.
+      const followSourceCaret = hasSourceCaretIntent && !sourceViewportMoved
 
       caretFollowRef.current = preserveRichCaret
         ? sourceEnteredWithCaretFollowRef.current
@@ -126,28 +192,36 @@ export function useSourceModeSwitch({
         viewportAnchorRef.current = followSourceCaret ? null : captureSourceViewport(sourceEl)
       }
       syncSourceToRich(id)
+      richRestoreInteractionRef.current = {
+        id,
+        at: Number(view?.dom?.__horsemdUserInteractionAt || 0)
+      }
     } else {
+      richRestoreInteractionRef.current = null
       preserveRichCaretFollowRef.current = false
       caretFollowRef.current = isRichCaretVisible(view, editorHostRef.current)
       sourceEnteredWithCaretFollowRef.current = caretFollowRef.current
-      const richCaret = captureRichCaret(view)
+      // When the existing caret is off-screen, the user is reading rather than
+      // editing. The mounted rich editor already retains that selection for the
+      // return trip, so computing a full raw caret map only burns time on a
+      // large document and can let an inline atom choose a wrong source block.
+      // The independent viewport anchor is the only state that owns this path.
+      const richCaret = caretFollowRef.current ? captureRichCaret(view) : null
       const carried = sourceCaretRoundTripRef.current
       const canReuseSourceOffset = !!carried &&
         carried.id === id &&
         carried.doc === view?.state.doc &&
         carried.pmPos === view?.state.selection.head
-      const rawOffset = canReuseSourceOffset
-        ? carried.rawOffset
-        : editorApis.current[id]?.markdownOffsetFromSelection?.()
-      if (richCaret && Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
+      if (richCaret) {
+        const rawOffset = canReuseSourceOffset
+          ? carried.rawOffset
+          : editorApis.current[id]?.markdownOffsetFromSelection?.()
+        if (Number.isFinite(rawOffset)) richCaret.rawOffset = rawOffset
+      }
       caretAnchorRef.current = richCaret
 
       const viewport = captureRichViewport(editorHostRef.current, view)
-      const viewportRawOffset = editorApis.current[id]?.markdownOffsetFromViewportTop?.()
-      if (viewport && Number.isFinite(viewportRawOffset)) {
-        viewport.origin = 'rich'
-        viewport.rawOffset = viewportRawOffset
-      }
+      if (viewport) viewport.origin = 'rich'
       viewportAnchorRef.current = viewport
     }
 
@@ -157,7 +231,8 @@ export function useSourceModeSwitch({
       else next.add(id)
       return next
     })
-  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, syncSourceToRich, tabsRef])
+    return true
+  }, [activeIdRef, commitAllLive, editorApis, editorHostRef, flushRichSource, syncSourceToRich, tabsRef, tRef])
 
   useLayoutEffect(() => {
     const caret = caretAnchorRef.current
@@ -165,19 +240,63 @@ export function useSourceModeSwitch({
     const follow = caretFollowRef.current
     const preserveRichCaretFollow = preserveRichCaretFollowRef.current
     if (caret == null && viewport == null && !preserveRichCaretFollow) return
+    const restoreId = activeIdRef.current
 
     caretAnchorRef.current = null
     viewportAnchorRef.current = null
     caretFollowRef.current = false
     preserveRichCaretFollowRef.current = false
 
+    let supersededByUserFocus = false
+    let firstRestoreDone = false
     const apply = () => {
+      // Mode switching retries caret/viewport restoration while rich content
+      // settles. Once the user focuses the other split pane, those retries must
+      // never steal focus back to the pane that initiated the switch (#66).
+      if (supersededByUserFocus) return false
+      const focusedId = focusedTabRef.current
+      if (activeIdRef.current !== restoreId || (focusedId && focusedId !== restoreId)) {
+        supersededByUserFocus = true
+        return false
+      }
       if (findStateRef.current.open && findStateRef.current.query) return
-      const view = editorApis.current[activeIdRef.current]?.getView?.()
+      const view = editorApis.current[restoreId]?.getView?.()
+      if (!sourceMode) {
+        const baseline = richRestoreInteractionRef.current
+        const interactionAt = Number(view?.dom?.__horsemdUserInteractionAt || 0)
+        if (baseline?.id === restoreId && interactionAt > baseline.at) {
+          sourceCaretRoundTripRef.current = null
+          richRestoreInteractionRef.current = null
+          supersededByUserFocus = true
+          return false
+        }
+      }
       if (sourceMode) {
+        const sourceEl = sourceRef.current
+        // The scheduled settle retries must not overwrite a caret that the user
+        // has already moved in source mode. This also protects immediate typing
+        // after a mode switch from landing at the previous rich-text anchor.
+        if (sourceEl?.__horsemdSourceSelectionUser === true) {
+          supersededByUserFocus = true
+          return false
+        }
+        // The synthetic-event flag above can be missed (keyboard caret moves,
+        // IME composition, assistive technology). After the first restore wrote
+        // its baseline, any live selection drift means the user owns the caret
+        // now — the settle retries must yield instead of fighting it.
+        if (
+          firstRestoreDone &&
+          sourceEl &&
+          sourceEl.__horsemdSourceSelectionBaseline != null
+        ) {
+          const liveSelection = `${sourceEl.selectionStart}:${sourceEl.selectionEnd}`
+          if (liveSelection !== sourceEl.__horsemdSourceSelectionBaseline) {
+            supersededByUserFocus = true
+            return false
+          }
+        }
         if (caret) {
-          restoreSourceCaret(sourceRef.current, caret, follow)
-          const sourceEl = sourceRef.current
+          restoreSourceCaret(sourceEl, caret, follow)
           if (sourceEl) {
             sourceEl.__horsemdSourceSelectionBaseline = `${sourceEl.selectionStart}:${sourceEl.selectionEnd}`
             sourceEl.__horsemdSourceSelectionUser = false
@@ -185,19 +304,20 @@ export function useSourceModeSwitch({
           }
         }
         if (!follow && viewport) {
-          restoreSourceViewport(sourceRef.current, viewport)
-          if (sourceRef.current) sourceRef.current.__horsemdSourceViewportMoved = false
+          restoreSourceViewport(sourceEl, viewport)
+          if (sourceEl) sourceEl.__horsemdSourceViewportMoved = false
         }
+        firstRestoreDone = true
       } else {
         if (caret) {
-          const api = editorApis.current[activeIdRef.current]
+          const api = editorApis.current[restoreId]
           const rawRestored = caret.origin === 'source' && Number.isFinite(caret.rawOffset)
             ? api?.restoreMarkdownOffset?.(caret.rawOffset, follow)
             : false
           const restored = rawRestored || restoreRichCaret(view, caret, follow)
           if (restored && caret.origin === 'source' && Number.isFinite(caret.rawOffset)) {
             sourceCaretRoundTripRef.current = {
-              id: activeIdRef.current,
+              id: restoreId,
               rawOffset: caret.rawOffset,
               pmPos: view.state.selection.head,
               doc: view.state.doc
@@ -210,8 +330,15 @@ export function useSourceModeSwitch({
         }
         if (!follow && viewport) restoreRichViewport(editorHostRef.current, view, viewport)
       }
+      return true
     }
 
+    // The first restore must happen in the layout phase, before the newly
+    // visible pane can receive input. Deferring every restore to RAF leaves a
+    // real window where fast typing lands in the stale hidden-pane selection.
+    // Later retries are only for asynchronous layout settling and yield as soon
+    // as the user interacts.
+    apply()
     const raf = requestAnimationFrame(apply)
     const t1 = setTimeout(apply, 90)
     const t2 = setTimeout(apply, 220)
@@ -224,7 +351,7 @@ export function useSourceModeSwitch({
       if (cancelled) return
       const handle = setTimeout(() => {
         if (cancelled) return
-        apply()
+        if (!apply()) return
         const scroller = editorHostRef.current
         const currentHeight = scroller ? scroller.scrollHeight : 0
         const heightChanged = currentHeight > 0 && currentHeight !== lastScrollHeight
@@ -247,7 +374,7 @@ export function useSourceModeSwitch({
       clearTimeout(t3)
       tailCleans.forEach(clearTimeout)
     }
-  }, [activeIdRef, editorApis, editorHostRef, findStateRef, richLoadingRef, sourceMode])
+  }, [activeIdRef, editorApis, editorHostRef, findStateRef, focusedTabRef, richLoadingRef, sourceMode])
 
   return {
     sourceMode,

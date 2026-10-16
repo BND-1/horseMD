@@ -3,13 +3,13 @@
 // changes a paragraph's level stays in sync.
 
 export const BLOCK_TYPES = [
-  { id: 'paragraph', name: 'paragraph', label: 'Text', short: '¶', shortcut: 'Ctrl+0' },
-  { id: 'h1', name: 'heading', level: 1, label: 'Heading 1', short: 'H1', shortcut: 'Ctrl+1' },
-  { id: 'h2', name: 'heading', level: 2, label: 'Heading 2', short: 'H2', shortcut: 'Ctrl+2' },
-  { id: 'h3', name: 'heading', level: 3, label: 'Heading 3', short: 'H3', shortcut: 'Ctrl+3' },
-  { id: 'h4', name: 'heading', level: 4, label: 'Heading 4', short: 'H4', shortcut: 'Ctrl+4' },
-  { id: 'h5', name: 'heading', level: 5, label: 'Heading 5', short: 'H5', shortcut: 'Ctrl+5' },
-  { id: 'h6', name: 'heading', level: 6, label: 'Heading 6', short: 'H6', shortcut: 'Ctrl+6' }
+  { id: 'paragraph', name: 'paragraph', label: 'Text', short: '¶', commandId: 'editor.block.paragraph' },
+  { id: 'h1', name: 'heading', level: 1, label: 'Heading 1', short: 'H1', commandId: 'editor.block.h1' },
+  { id: 'h2', name: 'heading', level: 2, label: 'Heading 2', short: 'H2', commandId: 'editor.block.h2' },
+  { id: 'h3', name: 'heading', level: 3, label: 'Heading 3', short: 'H3', commandId: 'editor.block.h3' },
+  { id: 'h4', name: 'heading', level: 4, label: 'Heading 4', short: 'H4', commandId: 'editor.block.h4' },
+  { id: 'h5', name: 'heading', level: 5, label: 'Heading 5', short: 'H5', commandId: 'editor.block.h5' },
+  { id: 'h6', name: 'heading', level: 6, label: 'Heading 6', short: 'H6', commandId: 'editor.block.h6' }
 ]
 
 // The compact set shown in the on-selection floating toolbar.

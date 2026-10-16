@@ -10,11 +10,13 @@
 //   tabs/setTabs/tabsRef  — the tab store (open/close/save mutate it)
 //   setActiveId/setHome/setSplitId/setRecents — tab/split/recents setters
 //   commitAllLive/liveContentRef/liveTimersRef — uncontrolled-textarea contract
-//   editorApis — ref map of tab id → rich editor API (exportPathToPdf getDocHTML)
+//   getPdfSourceForTab/waitForPdfSourceForTab — resolves structured PDF source
+//   getMarkdownForTab/getSettledMarkdownForTab — sync exports + settled saves
 //   isMobile/t/tRef — i18n + mobile save-dialog branch
 //   setRenameState/setSaveNameState — rename / mobile-save modal triggers
 //   setSidebarOpen/initialFolderRoots — forwarded to useWorkspace
 import { useCallback, useEffect, useRef } from 'react'
+import { isTabDirty } from '../lib/tab-state.js'
 import {
   baseName,
   dirName,
@@ -23,6 +25,8 @@ import {
   isHeavyDoc
 } from '../paths.js'
 import { fireToast } from '../ui.js'
+import { getSavedDocPosition } from '../lib/doc-positions.js'
+import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 import { useWorkspace } from './useWorkspace.js'
 
 export function useFileOps({
@@ -36,12 +40,19 @@ export function useFileOps({
   commitAllLive,
   liveContentRef,
   liveTimersRef,
-  editorApis,
+  getPdfSourceForTab,
+  getMarkdownForTab,
+  getSettledMarkdownForTab,
+  getRecoveryMarkdownForTab,
+  waitForPdfSourceForTab,
   isMobile,
   t,
   tRef,
   setRenameState,
   setSaveNameState,
+  requestPdfExport,
+  requestHtmlExport,
+  requestPandocExport,
   setSidebarOpen,
   initialFolderRoots
 }) {
@@ -84,6 +95,11 @@ export function useFileOps({
         }
         const id = genId()
         lastId = id
+        // Restore the last caret/viewport (issue #111) only when the file's
+        // length still matches the saved snapshot — an externally changed file
+        // must never map a stale offset onto new text.
+        const savedPosition = getSavedDocPosition(norm)
+        const positionMatches = savedPosition && savedPosition.len === content.length
         const newTab = {
           id,
           kind: 'doc',
@@ -93,7 +109,9 @@ export function useFileOps({
           savedContent: content,
           mtimeMs,
           reloadNonce: 0,
-          heavy: isHeavyDoc(content)
+          heavy: isHeavyDoc(content),
+          restoreOffset: positionMatches ? savedPosition.offset : null,
+          restoreScrollTop: positionMatches ? savedPosition.scrollTop || null : null
         }
         tabsRef.current = [...tabsRef.current, newTab] // keep snapshot current for the next iteration
         setTabs((prev) => [...prev, newTab])
@@ -170,29 +188,61 @@ export function useFileOps({
   }, [setTabs, tabsRef])
 
   const updateContent = useCallback((id, md, isInitial) => {
+    if (!isInitial) {
+      // Keep the shared uncontrolled-source mirror current for rich edits too.
+      // EditorArea intentionally prefers this mirror when mounting a textarea;
+      // leaving it populated with an older source-mode value lets a rich
+      // callback update tabsRef while source mode still mounts stale bytes.
+      liveContentRef.current.set(id, md)
+      // `markdownUpdated` is also the source-mode handoff boundary. Mirror the
+      // committed source synchronously before React renders the textarea;
+      // otherwise a rapid structural input-rule callback can leave `tabsRef`
+      // one snapshot behind and source mode mounts that older Markdown even
+      // though Editor's byte-preserving mapper already produced the right
+      // result.
+      tabsRef.current = tabsRef.current.map((tab) =>
+        tab.id === id && (tab.content !== md || tab.pendingRichEdit)
+          ? { ...tab, content: md, pendingRichEdit: false }
+          : tab
+      )
+    }
     setTabs((prev) =>
       prev.map((t) => {
         if (t.id !== id) return t
         if (isInitial) {
-          // Rebaseline a clean doc against Crepe's normalized output; keep the
-          // existing baseline if the doc already had unsaved edits.
-          if (t.content === md && t.savedContent === md) return t
-          if (t.content === t.savedContent) return { ...t, content: md, savedContent: md }
-          if (t.content === md) return t
-          return { ...t, content: md }
+          // Parsing is a view concern. Never adopt Crepe's serializer output as
+          // the source baseline during initialization: that would silently add
+          // escapes/blank lines or normalize line endings before any user edit.
+          return t
         }
-        if (t.content === md) return t
-        return { ...t, content: md }
+        // A delayed Milkdown serializer result is now authoritative. Clear the
+        // immediate UI hint whether the user changed content or changed it back
+        // to the saved source before the debounce elapsed.
+        if (t.content === md && !t.pendingRichEdit) return t
+        return { ...t, content: md, pendingRichEdit: false }
       })
     )
-  }, [setTabs])
+  }, [liveContentRef, setTabs, tabsRef])
+
+  // Milkdown batches `markdownUpdated` for 200ms. Rich text must nevertheless
+  // show its unsaved indicator immediately after a real DOM input event. This
+  // hint never writes to disk and is cleared by the next serializer result.
+  const markRichEditPending = useCallback((id) => {
+    const current = tabsRef.current.find((tab) => tab.id === id)
+    if (!current || current.kind === 'settings' || current.pendingRichEdit) return
+    const next = { ...current, pendingRichEdit: true }
+    tabsRef.current = tabsRef.current.map((tab) => tab.id === id ? next : tab)
+    setTabs((prev) => prev.map((tab) =>
+      tab.id === id && !tab.pendingRichEdit ? { ...tab, pendingRichEdit: true } : tab
+    ))
+  }, [setTabs, tabsRef])
 
   const closeTab = useCallback(
     (id) => {
       commitAllLive() // flush textarea edits so the unsaved-check below is accurate
       setTabs((prev) => {
         const tab = prev.find((x) => x.id === id)
-        if (tab && tab.content !== tab.savedContent) {
+        if (isTabDirty(tab)) {
           if (!window.confirm(tRef.current('confirm.closeUnsaved', { name: tab.title }))) return prev
         }
         // Drop the closing tab's live-edit bookkeeping.
@@ -286,7 +336,7 @@ export function useFileOps({
     commitAllLive()
     setTabs((prev) => {
       const others = prev.filter((t) => t.id !== keepId)
-      const firstDirty = others.find((t) => t.content !== t.savedContent)
+      const firstDirty = others.find(isTabDirty)
       if (firstDirty && !window.confirm(tRef.current('confirm.closeUnsaved', { name: firstDirty.title }))) {
         return prev
       }
@@ -302,15 +352,34 @@ export function useFileOps({
     })
   }, [commitAllLive, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef, tRef])
 
-  const writeTab = useCallback(async (tab, targetPath) => {
+  // `auto` (auto-save) writes the document bytes only: it never relocates
+  // pasted images (that rewrite remounts the editor under the caret), never
+  // overwrites a file changed/removed on disk since `expectedMtimeMs`, and
+  // reports failures to the caller instead of toasting.
+  const writeTab = useCallback(async (tab, targetPath, { auto = false, expectedMtimeMs } = {}) => {
     try {
       // Move pasted images (base64 blobs / global paste-folder files) into the
       // doc's ./assets and rewrite links to relative paths, so the saved file is
       // clean and portable (Typora-style). No-op when there are none / on mobile.
-      const { content: written, changed } = window.api.inlineForSave
+      const { content: written, changed } = !auto && window.api.inlineForSave
         ? await window.api.inlineForSave(tab.content, targetPath)
         : { content: tab.content, changed: false }
-      const { mtimeMs } = await window.api.writeFile(targetPath, written)
+      const result = await window.api.writeFile(
+        targetPath,
+        written,
+        auto && typeof expectedMtimeMs === 'number' ? { expectedMtimeMs } : undefined
+      )
+      if (result?.conflict) return { conflict: result.conflict }
+      const { mtimeMs } = result
+      // Mark exactly the bytes that were written as saved. Typing that landed
+      // while the write was in flight must keep the tab dirty, so never adopt
+      // the newer `t.content` as savedContent. Mirror into tabsRef first so a
+      // watcher echo or close check in the same tick sees the new mtime.
+      tabsRef.current = tabsRef.current.map((t) =>
+        t.id === tab.id && !changed
+          ? { ...t, path: targetPath, title: baseName(targetPath), savedContent: written, mtimeMs }
+          : t
+      )
       setTabs((prev) =>
         prev.map((t) =>
           t.id === tab.id
@@ -324,13 +393,15 @@ export function useFileOps({
                   content: written,
                   savedContent: written,
                   mtimeMs,
+                  pendingRichEdit: false,
                   reloadNonce: t.reloadNonce + 1
                 }
-              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: t.content, mtimeMs }
+              : { ...t, path: targetPath, title: baseName(targetPath), savedContent: written, mtimeMs }
             : t
         )
       )
       bumpRefresh()
+      if (auto) return { ok: true }
       // On mobile, where files land in a system folder, confirm what + where —
       // sticky so the user can read the location before dismissing it.
       if (isMobile) {
@@ -345,20 +416,83 @@ export function useFileOps({
         // (Typora-style). Short-lived so it doesn't linger over writing.
         fireToast(tRef.current('save.saved'), { duration: 1500 })
       }
+      return { ok: true }
     } catch (e) {
+      // Auto-save reports to its scheduler, which de-duplicates the toast.
+      if (auto) return { error: e?.message || String(e) }
       // Never fail silently — surface the real error so saving is debuggable.
       fireToast(tRef.current('save.failed', { msg: e?.message || String(e) }), { sticky: true })
+      return { error: e?.message || String(e) }
     }
-  }, [isMobile, setTabs, bumpRefresh, tRef])
+  }, [isMobile, setTabs, bumpRefresh, tRef, tabsRef])
 
+  // `options.auto` is the auto-save path: it only ever writes an existing,
+  // saved-to-disk document in place, silently, and returns a result object
+  // ({ ok } | { skipped } | { conflict } | { error }) for useAutoSave.
   const saveTab = useCallback(
-    async (id, forceDialog = false) => {
+    async (id, forceDialog = false, { auto = false } = {}) => {
+      if (auto) {
+        const candidate = tabsRef.current.find((t) => t.id === id)
+        if (!candidate?.path || candidate.kind === 'settings' || isMobile) return { skipped: 'ineligible' }
+      }
       commitAllLive() // flush any textarea edits in the debounce window before reading
-      const tab = tabsRef.current.find((t) => t.id === id)
-      if (!tab) return
+      let tab = tabsRef.current.find((t) => t.id === id)
+      if (!tab) return auto ? { skipped: 'missing' } : undefined
+      // A rich ProseMirror transaction can already be visible while Milkdown's
+      // markdownUpdated callback and React state are still one task behind.
+      // Resolve the editor's current document before writing so an immediate
+      // save cannot persist the previous tab.content snapshot.
+      let currentMarkdown = getSettledMarkdownForTab
+        ? await getSettledMarkdownForTab(id)
+        : getMarkdownForTab(id)
+      if (currentMarkdown == null) {
+        // The rich document cannot be mapped to source safely right now. The
+        // integrity warning is already visible; auto-save just waits and never
+        // writes a recovery copy on the user's behalf.
+        if (auto) return { skipped: 'source-sync' }
+        const recoveryMarkdown = getRecoveryMarkdownForTab?.(id)
+        if (typeof recoveryMarkdown !== 'string') {
+          fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+          return
+        }
+        fireToast(tRef.current('save.sourceSyncRecoveryPrompt'), { sticky: true })
+        try {
+          const recovery = await saveSourceSyncRecovery({
+            api: window.api,
+            title: tab.title,
+            markdown: recoveryMarkdown
+          })
+          if (!recovery.ok) return
+          fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true })
+        } catch (error) {
+          fireToast(tRef.current('save.failed', { msg: error?.message || String(error) }), { sticky: true })
+        }
+        return
+      }
+      if (typeof currentMarkdown === 'string' && (currentMarkdown !== tab.content || tab.pendingRichEdit)) {
+        // The live document is now in `content`, so the pending-rich marker is
+        // resolved. Clearing it HERE (not after the write) lets an edit typed
+        // while the write is in flight re-mark the tab dirty.
+        tab = { ...tab, content: currentMarkdown, pendingRichEdit: false }
+        tabsRef.current = tabsRef.current.map((item) => item.id === id ? tab : item)
+        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, content: currentMarkdown, pendingRichEdit: false } : item))
+      }
       // Settings tabs aren't documents — ⌘S / the save button must never try to
       // write one to disk (it has no path and no real content).
-      if (tab.kind === 'settings') return
+      if (tab.kind === 'settings') return auto ? { skipped: 'ineligible' } : undefined
+      if (auto) {
+        if (!tab.path) return { skipped: 'ineligible' }
+        if (tab.content === tab.savedContent) return { skipped: 'clean' }
+        // Pasted images still parked as data: URLs or in the global paste
+        // folder are relocated by an explicit save, which remounts the editor.
+        // Never do that under the user's caret; leave it to Cmd/Ctrl+S.
+        // (Mirrors image:inlineForSave: data: URLs and file:// links into the
+        // app's paste-images folder; other local file:// images stay put.)
+        if (/!\[[^\]]*\]\((?:data:image\/|file:\/\/[^)\s]*\/paste-images\/)/i.test(tab.content)) {
+          return { skipped: 'pending-images' }
+        }
+        return writeTab(tab, tab.path, { auto: true, expectedMtimeMs: tab.mtimeMs ?? undefined })
+      }
       let target = tab.path
       if (!target || forceDialog) {
         // Mobile has no native save dialog: ask for a filename, then write into
@@ -371,9 +505,20 @@ export function useFileOps({
         target = await window.api.saveAs(tab.title.endsWith('.md') ? tab.title : tab.title + '.md')
         if (!target) return
       }
-      await writeTab(tab, target)
+      return writeTab(tab, target)
     },
-    [commitAllLive, writeTab, isMobile, tabsRef, setSaveNameState]
+    [
+      commitAllLive,
+      getMarkdownForTab,
+      getRecoveryMarkdownForTab,
+      getSettledMarkdownForTab,
+      writeTab,
+      isMobile,
+      setTabs,
+      tabsRef,
+      setSaveNameState,
+      tRef
+    ]
   )
 
   // Commit a mobile "save as": let the platform layer place the named file in
@@ -392,43 +537,74 @@ export function useFileOps({
       if (!/\.(md|markdown|mdx)$/i.test(name)) name += '.md'
       const target = await window.api.saveAs(name)
       if (!target) return
+      if (tab.pendingRichEdit) {
+        setTabs((prev) => prev.map((item) => item.id === id ? { ...item, pendingRichEdit: false } : item))
+      }
       await writeTab(tab, target)
     },
-    [commitAllLive, writeTab, tabsRef, setSaveNameState, tRef]
+    [commitAllLive, writeTab, tabsRef, setTabs, setSaveNameState, tRef]
   )
 
-  // Export a file (by path) to PDF: open/focus it, wait for its editor to mount,
-  // then reuse the same HTML→PDF pipeline as the menu command. Driven from the
-  // sidebar's right-click menu, where the file may not be open yet.
+  // A file-tree or tab-menu export may target a document that has never mounted
+  // an editor. Focus it and wait for the shared rendered snapshot before opening
+  // a PDF/HTML studio. Pandoc consumes the current Markdown instead.
+  const resolveExportTab = useCallback(async (path) => {
+    await openPaths([path])
+    const norm = (path || '').replace(/\\/g, '/')
+    return tabsRef.current.find((tab) => (tab.path || '').replace(/\\/g, '/') === norm) || null
+  }, [openPaths, tabsRef])
+
+  const exportPathAsRendered = useCallback(async (path, kind) => {
+    const tab = await resolveExportTab(path)
+    if (!tab) return
+    const source = await getPdfSourceForTab(tab.id) || await waitForPdfSourceForTab(tab.id)
+    if (!source?.html) {
+      window.alert(tRef.current(kind === 'html' ? 'error.exportHtmlUnavailable' : 'error.exportPdfUnavailable'))
+      return
+    }
+    const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
+    const payload = { ...source, title: base }
+    if (kind === 'html') requestHtmlExport(payload, base + '.html', tab.path || null)
+    else requestPdfExport(payload, base + '.pdf', tab.path || null)
+  }, [resolveExportTab, getPdfSourceForTab, waitForPdfSourceForTab, tRef, requestHtmlExport, requestPdfExport])
+
   const exportPathToPdf = useCallback(
-    async (path) => {
-      await openPaths([path])
-      const norm = (path || '').replace(/\\/g, '/')
-      const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
-      if (!tab) return
-      let html = null
-      for (let i = 0; i < 40 && !html; i++) {
-        html = editorApis.current[tab.id]?.getDocHTML?.()
-        if (!html) await new Promise((r) => setTimeout(r, 75))
-      }
-      if (!html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
-        return
-      }
-      const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      await window.api.exportPDF(html, base + '.pdf')
-    },
-    [openPaths, tabsRef, editorApis, tRef]
+    (path) => exportPathAsRendered(path, 'pdf'),
+    [exportPathAsRendered]
   )
+
+  const exportPathToHtml = useCallback(
+    (path) => exportPathAsRendered(path, 'html'),
+    [exportPathAsRendered]
+  )
+
+  const exportPathWithPandoc = useCallback(async (path, format) => {
+    const tab = await resolveExportTab(path)
+    if (!tab) return
+    requestPandocExport({
+      markdown: getMarkdownForTab(tab.id),
+      format,
+      defaultName: tab.title || 'Untitled',
+      sourcePath: tab.path || null
+    })
+  }, [resolveExportTab, getMarkdownForTab, requestPandocExport])
 
   // --------- auto-reload open files edited by external programs ----------
   const watchedRef = useRef(new Set())
+  // A watcher can report one external save more than once (notably on Windows
+  // atomic-save editors). Remember the disk version already disclosed so a
+  // dirty document gets one actionable warning instead of an alert loop.
+  const externalWarningRef = useRef(new Map())
 
   // Keep a per-file watcher in sync with the set of open file paths.
   useEffect(() => {
     const want = new Set(tabs.map((t) => t.path).filter(Boolean))
     for (const p of want) if (!watchedRef.current.has(p)) window.api.watchFile(p)
-    for (const p of watchedRef.current) if (!want.has(p)) window.api.unwatchFile(p)
+    for (const p of watchedRef.current) {
+      if (want.has(p)) continue
+      window.api.unwatchFile(p)
+      externalWarningRef.current.delete(p.replace(/\\/g, '/'))
+    }
     watchedRef.current = want
   }, [tabs])
 
@@ -441,7 +617,7 @@ export function useFileOps({
           if (t.id !== id) return t
           // Bail if the user has started editing since the change fired —
           // never clobber unsaved work.
-          if (t.content !== t.savedContent) return t
+          if (isTabDirty(t)) return t
           if (t.content === content) return { ...t, mtimeMs }
           // Adopt the on-disk content: drop any stale live-edit entry so the
           // textarea (keyed by reloadNonce) remounts with the new defaultValue.
@@ -463,17 +639,28 @@ export function useFileOps({
 
   useEffect(() => {
     const off = window.api.onFileChanged(({ path, mtimeMs }) => {
+      // A source textarea can still be inside its debounce window when an
+      // external editor saves. Commit it before deciding whether this tab is
+      // dirty; otherwise its local change could be mistaken for a clean tab.
+      commitAllLive()
       const norm = (path || '').replace(/\\/g, '/')
       const tab = tabsRef.current.find((t) => (t.path || '').replace(/\\/g, '/') === norm)
       if (!tab) return
       // Ignore the echo from our own save (same or older mtime).
       if (tab.mtimeMs && mtimeMs && mtimeMs <= tab.mtimeMs) return
-      // Don't overwrite unsaved local edits.
-      if (tab.content !== tab.savedContent) return
+      // Don't overwrite unsaved local edits. Make the conflict explicit rather
+      // than silently leaving the user with an out-of-date on-disk version.
+      if (isTabDirty(tab)) {
+        const warnedVersion = externalWarningRef.current.get(norm)
+        if (warnedVersion === mtimeMs) return
+        externalWarningRef.current.set(norm, mtimeMs)
+        window.alert(tRef.current('warning.externalChangedUnsaved', { name: tab.title }))
+        return
+      }
       reloadTabFromDisk(tab.id, tab.path)
     })
     return off
-  }, [reloadTabFromDisk, tabsRef])
+  }, [commitAllLive, reloadTabFromDisk, tabsRef, tRef])
 
   return {
     openPaths,
@@ -481,6 +668,7 @@ export function useFileOps({
     openSettingsTab,
     reorderTabs,
     updateContent,
+    markRichEditPending,
     closeTab,
     closeOthers,
     renameTabFile,
@@ -491,6 +679,8 @@ export function useFileOps({
     saveTab,
     commitMobileSave,
     exportPathToPdf,
+    exportPathToHtml,
+    exportPathWithPandoc,
     ...workspace,
     reloadTabFromDisk
   }

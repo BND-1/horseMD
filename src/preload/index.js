@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // Subscribe to a main→renderer channel; returns an unsubscribe function.
 const on = (channel) => (cb) => {
@@ -7,18 +7,35 @@ const on = (channel) => (cb) => {
   return () => ipcRenderer.removeListener(channel, fn)
 }
 
+// Manual rich/source bug reproduction is opt-in at process launch. The main
+// process keeps the switch authoritative; the renderer only pays the tracing
+// cost when the switch is present.
+const inputTraceEnabled = ipcRenderer.sendSync('debug:inputTraceEnabled') === true
+
 const api = {
   // dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
   openAttachments: () => ipcRenderer.invoke('dialog:openAttachments'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   saveAs: (defaultName) => ipcRenderer.invoke('dialog:saveAs', defaultName),
-  exportPDF: (html, defaultName) => ipcRenderer.invoke('export:pdf', { html, defaultName }),
+  previewPDF: (source, defaultName, options, sourcePath) =>
+    ipcRenderer.invoke('pdf:preview', { source, defaultName, options, sourcePath }),
+  savePDFPreview: (token, defaultName) =>
+    ipcRenderer.invoke('pdf:savePreview', { token, defaultName }),
+  disposePDFPreview: (token) => ipcRenderer.invoke('pdf:disposePreview', token),
+  previewHTML: (source, defaultName, options, sourcePath) =>
+    ipcRenderer.invoke('html:preview', { source, defaultName, options, sourcePath }),
+  saveHTMLPreview: (token, defaultName) =>
+    ipcRenderer.invoke('html:savePreview', { token, defaultName }),
+  disposeHTMLPreview: (token) => ipcRenderer.invoke('html:disposePreview', token),
+  detectPandoc: () => ipcRenderer.invoke('pandoc:detect'),
+  selectPandocExecutable: () => ipcRenderer.invoke('pandoc:selectExecutable'),
+  exportWithPandoc: (payload) => ipcRenderer.invoke('pandoc:export', payload),
   allowLocalFonts: () => ipcRenderer.invoke('permissions:allowLocalFonts'),
 
   // fs
   readFile: (path) => ipcRenderer.invoke('fs:readFile', path),
-  writeFile: (path, content) => ipcRenderer.invoke('fs:writeFile', path, content),
+  writeFile: (path, content, options) => ipcRenderer.invoke('fs:writeFile', path, content, options),
   rename: (oldPath, newPath) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
   deleteItem: (path) => ipcRenderer.invoke('fs:delete', path),
   createFile: (path, content) => ipcRenderer.invoke('fs:createFile', path, content),
@@ -27,7 +44,30 @@ const api = {
   readDir: (dir) => ipcRenderer.invoke('fs:readDir', dir),
   listFiles: (root) => ipcRenderer.invoke('fs:listFiles', root),
   openFolderTree: (dir) => ipcRenderer.invoke('fs:openFolderTree', dir),
+  getPathForDroppedFile: (file) => webUtils.getPathForFile(file),
+  classifyDroppedPaths: (paths) => ipcRenderer.invoke('fs:classifyPaths', paths),
   setShowHidden: (val) => ipcRenderer.invoke('settings:setShowHidden', val),
+
+  // Workspace-wide content search (issue #120).
+  searchWorkspace: (request) => ipcRenderer.invoke('search:workspace', request),
+
+  // Sync workspaces: the renderer can register an explicitly selected root,
+  // but never receives registry paths or arbitrary network/credential access.
+  syncListWorkspaces: () => ipcRenderer.invoke('sync:workspaceList'),
+  syncAdoptWorkspace: (rootPath) => ipcRenderer.invoke('sync:workspaceAdopt', rootPath),
+  syncRemoveWorkspace: (rootPath) => ipcRenderer.invoke('sync:workspaceRemove', rootPath),
+  syncListConnections: () => ipcRenderer.invoke('sync:connectionList'),
+  syncAddWebDavConnection: (config) => ipcRenderer.invoke('sync:connectionAddWebDav', config),
+  syncAddS3Connection: (config) => ipcRenderer.invoke('sync:connectionAddS3', config),
+  syncUpdateConnection: (connectionId, config) => ipcRenderer.invoke('sync:connectionUpdate', connectionId, config),
+  syncRemoveConnection: (connectionId) => ipcRenderer.invoke('sync:connectionRemove', connectionId),
+  syncTestConnection: (connectionId) => ipcRenderer.invoke('sync:connectionTest', connectionId),
+  syncBindWorkspaceConnection: (rootPath, connectionId) =>
+    ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId),
+  syncPreview: (rootPath, strategy) => ipcRenderer.invoke('sync:preview', rootPath, strategy),
+  syncRun: (rootPath, strategy) => ipcRenderer.invoke('sync:run', rootPath, strategy),
+  syncListRemoteWorkspaces: (connectionId) => ipcRenderer.invoke('sync:remoteWorkspaceList', connectionId),
+  syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
 
   // watch
   watchStart: (dir) => ipcRenderer.invoke('watch:start', dir),
@@ -39,6 +79,7 @@ const api = {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openFileUrl: (url) => ipcRenderer.invoke('shell:openFileUrl', url),
   showInFolder: (path) => ipcRenderer.invoke('shell:showInFolder', path),
+  copyText: (text) => ipcRenderer.invoke('clipboard:writeText', String(text ?? '')),
 
   // image host: write the bytes to a temp file, run the user's upload command on
   // it, and return the URL it prints. Returns { ok, url } or { ok:false, error }.
@@ -71,9 +112,28 @@ const api = {
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
   windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  windowToggleDevTools: () => ipcRenderer.invoke('window:toggleDevTools'),
+  // Settings › General: with close-to-tray on, closing the window hides it to
+  // the tray instead of quitting (tray icon / the show-hide shortcut bring it
+  // back).
+  setCloseToTray: (enabled) => ipcRenderer.invoke('window:setCloseToTray', enabled),
+  // Command palette + global keybindings: hide/show the window (main owns the
+  // window) and push the user's effective OS-level accelerators. Only command
+  // ids whitelisted in the main process are registered.
+  toggleWindowVisibility: () => ipcRenderer.invoke('window:toggleVisibility'),
+  setGlobalShortcuts: (accelerators) => ipcRenderer.invoke('window:setGlobalShortcuts', accelerators),
 
   // update check (notify-only)
   checkUpdate: () => ipcRenderer.invoke('update:check'),
+  setMenuKeybindings: (accelerators) => ipcRenderer.invoke('menu:setKeybindings', accelerators),
+  getMenuKeybindings: () => ipcRenderer.invoke('menu:getKeybindings'),
+  getMenuSnapshot: () => ipcRenderer.invoke('menu:getSnapshot'),
+
+  // Development-only manual input tracing. The main process ignores these
+  // calls unless HorseMD was launched with --horsemd-input-trace.
+  inputTraceEnabled,
+  getInputTraceInfo: () => ipcRenderer.invoke('debug:inputTraceInfo'),
+  writeInputTrace: (entry) => ipcRenderer.invoke('debug:inputTrace', entry),
 
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.
@@ -103,13 +163,23 @@ const api = {
     folderWorkspace: true,
     watch: true,
     windowControls: true,
+    // Desktop-only: closing the window can hide it to the system tray, with a
+    // global shortcut to bring it back.
+    closeToTray: true,
+    // Desktop-only: OS-level (globalShortcut) commands such as show/hide window.
+    globalShortcuts: true,
+    devtools: true,
     pdfExport: true,
+    htmlExport: true,
+    pandocExport: true,
     imageHostExec: true,
     nativeMenus: true,
     externalShell: true,
     revealInFolder: true,
     splitView: true,
-    fileAttachments: true
+    fileAttachments: true,
+    cloudSync: true,
+    nativeDropOpen: true
   }
 }
 

@@ -5,11 +5,80 @@
 //   createMenuHandlers({...actions}) — the command-name → action map stored in
 //     a ref and invoked by the menu IPC, the keyboard shortcuts, and the palette.
 //     pickEditableId lives here (only save/saveAs/exportPdf use it).
-//   useGlobalKeys({...}) — registers onMenu/onOpenPaths/onOpenFolderPath/
-//     onAppCloseRequest + the Ctrl+Tab, Ctrl+B, Ctrl+F keydowns.
+//   useGlobalKeys({...}) — registers onMenu/onOpenFolderPath/
+//     onAppCloseRequest + the Ctrl+Tab, Ctrl+Shift+B, Ctrl+F keydowns.
 //   useCommands({t, handlers}) — the command-palette list (useMemo on [t]).
 import { useEffect, useMemo } from 'react'
+import { isTabDirty } from './tab-state.js'
 import { REVIEW_KINDS } from '../reviewMarkup.js'
+import { COMMAND_DEFINITIONS, getCommandHandler, getCommandTitle, isCommandAvailable } from './commands/command-definitions.js'
+import { keybindingMatchesEvent } from './commands/keybinding-normalize.js'
+import { getEffectiveKeybindingMap } from './commands/keybinding-store.js'
+import { getCommandShortcut } from './commands/shortcut-labels.js'
+
+const COMMAND_PALETTE_ICONS = {
+  'file.new': 'file-plus',
+  'file.open': 'file',
+  'workspace.openFolder': 'folder',
+  'file.save': 'save',
+  'file.saveAs': 'save',
+  'file.attach': 'paperclip',
+  'file.exportPdf': 'file',
+  'file.exportHtml': 'globe',
+  'file.exportPandocDocx': 'file',
+  'file.exportPandocEpub': 'file',
+  'file.exportPandocLatex': 'file',
+  'file.exportPandocOdt': 'file',
+  'file.exportPandocRtf': 'file',
+  'file.exportPandocTxt': 'file',
+  'view.toggleSidebar': 'sidebar',
+  'view.showFiles': 'folder',
+  'view.showOutline': 'outline',
+  'view.globalSearch': 'search',
+  'view.toggleSource': 'code',
+  'view.cycleTheme': 'moon',
+  'window.toggleVisibility': 'monitor',
+  'editor.find': 'search',
+  'editor.replace': 'replace',
+  'review.add': 'review',
+  'review.delete': 'review',
+  'review.substitute': 'review',
+  'review.highlight': 'review',
+  'review.copyPrompt': 'review',
+  'review.acceptAll': 'review',
+  'review.rejectAll': 'review'
+}
+
+export const SETTINGS_BACKGROUND_HANDLERS = new Set([
+  'save',
+  'saveAs',
+  'attachFile',
+  'exportPdf',
+  'exportHtml',
+  'exportPandocDocx',
+  'exportPandocEpub',
+  'exportPandocLatex',
+  'exportPandocOdt',
+  'exportPandocRtf',
+  'exportPandocTxt',
+  'toggleSidebar',
+  'toggleOutline',
+  'toggleFiles',
+  'toggleSource',
+  'find',
+  'replace',
+  'reviewAdd',
+  'reviewDelete',
+  'reviewSubstitute',
+  'reviewHighlight',
+  'reviewCopyPrompt',
+  'reviewAcceptAll',
+  'reviewRejectAll'
+])
+
+export function shouldBlockForSettings(handler, activeTabKind) {
+  return activeTabKind === 'settings' && SETTINGS_BACKGROUND_HANDLERS.has(handler)
+}
 
 export function createMenuHandlers({
   pickEditableId,
@@ -27,15 +96,43 @@ export function createMenuHandlers({
   closeTab,
   toggleSource,
   cycleTheme,
-  editorApis,
+  getPdfSourceForTab,
+  getExportSourceForTab,
+  getMarkdownForTab,
   tabs,
   tRef,
   setFind,
   findInputRef,
   openFind,
   replaceInputRef,
-  review
+  review,
+  requestPdfExport,
+  requestHtmlExport,
+  requestPandocExport
 }) {
+  const exportRendered = async (kind) => {
+    const id = pickEditableId()
+    const source = await (getExportSourceForTab || getPdfSourceForTab)(id)
+    if (!source?.html) {
+      window.alert(tRef.current(`error.export${kind === 'html' ? 'Html' : 'Pdf'}Unavailable`))
+      return
+    }
+    const tab = tabs.find((x) => x.id === id)
+    const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
+    if (kind === 'html') requestHtmlExport({ ...source, title: base }, base + '.html', tab?.path || null)
+    else requestPdfExport({ ...source, title: base }, base + '.pdf', tab?.path || null)
+  }
+  const exportPandoc = (format) => {
+    const id = pickEditableId()
+    if (!id) return
+    const tab = tabs.find((candidate) => candidate.id === id)
+    requestPandocExport({
+      markdown: getMarkdownForTab(id),
+      format,
+      defaultName: tab?.title || 'Untitled',
+      sourcePath: tab?.path || null
+    })
+  }
   return {
     home: () => {
       setHome(true)
@@ -53,17 +150,14 @@ export function createMenuHandlers({
       if (id) saveTab(id, true)
     },
     attachFile: attachFiles,
-    exportPdf: async () => {
-      const id = pickEditableId()
-      const html = editorApis.current[id]?.getDocHTML?.()
-      if (!html) {
-        window.alert(tRef.current('error.exportPdfUnavailable'))
-        return
-      }
-      const tab = tabs.find((x) => x.id === id)
-      const base = (tab?.title || 'Untitled').replace(/\.(md|markdown|mdx|txt)$/i, '')
-      await window.api.exportPDF(html, base + '.pdf')
-    },
+    exportPdf: () => exportRendered('pdf'),
+    exportHtml: () => exportRendered('html'),
+    exportPandocDocx: () => exportPandoc('docx'),
+    exportPandocEpub: () => exportPandoc('epub'),
+    exportPandocLatex: () => exportPandoc('latex'),
+    exportPandocOdt: () => exportPandoc('odt'),
+    exportPandocRtf: () => exportPandoc('rtf'),
+    exportPandocTxt: () => exportPandoc('txt'),
     closeTab: () => activeId && closeTab(activeId),
     palette: () => setPaletteOpen((v) => !v),
     toggleSidebar: () => setSidebarOpen((v) => !v),
@@ -75,8 +169,15 @@ export function createMenuHandlers({
       setSidebarMode('files')
       setSidebarOpen(true)
     },
+    globalSearch: () => {
+      setSidebarMode('search')
+      setSidebarOpen(true)
+    },
     toggleSource,
     toggleTheme: cycleTheme,
+    // Main owns the window: hiding/showing it from the renderer is a round trip
+    // through the preload bridge (also used by the command palette).
+    toggleWindowVisibility: () => window.api.toggleWindowVisibility?.(),
     find: () => {
       // Leave the Home page so find acts on the visible document, not a hidden one.
       // openFind pre-fills the search with the current selection (if any).
@@ -109,17 +210,26 @@ export function useGlobalKeys({
   setSidebarMode,
   setSidebarOpen,
   commitAllLive,
+  flushPendingRichEdits,
   flushSession,
   tabsRef,
   tRef,
   setTabs,
   activeId,
+  activeTabKind,
   setActiveId,
-  setHome
+  setHome,
+  effectiveKeybindings
 }) {
+  const keybindings = effectiveKeybindings || getEffectiveKeybindingMap()
+  const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
+
   useEffect(() => {
-    const offMenu = window.api.onMenu((cmd) => handlers.current[cmd]?.())
-    const offOpen = window.api.onOpenPaths((paths) => openPaths(paths))
+    const offMenu = window.api.onMenu((cmd) => {
+      const handler = getCommandHandler(cmd) || cmd
+      if (shouldBlockForSettings(handler, activeTabKind)) return
+      handlers.current[handler]?.()
+    })
     // A folder arriving from Explorer's "Open with HorseMD" folder menu: add it
     // to the active workspace (multi-root). Never open a relative path.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
@@ -131,13 +241,16 @@ export function useGlobalKeys({
     const onOpenFolderEvt = () => openFolder()
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
-    const offClose = window.api.onAppCloseRequest?.(() => {
+    const offClose = window.api.onAppCloseRequest?.((payload) => {
       // Flush textarea edits still inside the per-tab debounce window, then write
       // the session — so a recent keystroke isn't lost on quit.
       commitAllLive()
+      flushPendingRichEdits?.()
       flushSession()
-      const dirty = tabsRef.current.some((t) => t.content !== t.savedContent)
-      if (!dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+      const dirty = tabsRef.current.some(isTabDirty)
+      // Closing to the tray only hides the window: every tab stays alive, so
+      // there is nothing to lose and no confirm is needed.
+      if (payload?.closeToTray || !dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
         window.api.confirmAppClose()
       } else {
         window.api.cancelAppClose?.()
@@ -145,22 +258,24 @@ export function useGlobalKeys({
     })
     return () => {
       offMenu()
-      offOpen()
       offFolder?.()
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openPaths, openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushSession, tabsRef, tRef, handlers])
+  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushPendingRichEdits, flushSession, tabsRef, tRef, handlers, activeTabKind])
 
-  // Ctrl+Tab cycling
+  // Tab cycling uses the user keybinding map. The defaults intentionally remain
+  // Ctrl+Tab / Ctrl+Shift+Tab on macOS to preserve the historical behavior.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.ctrlKey && e.key === 'Tab') {
+      const previous = keybindingMatchesEvent(keybindings['tab.previous']?.[0], e, platform)
+      const next = keybindingMatchesEvent(keybindings['tab.next']?.[0], e, platform)
+      if (previous || next) {
         e.preventDefault()
         setTabs((prev) => {
           if (prev.length < 2) return prev
           const i = prev.findIndex((t) => t.id === activeId)
-          const ni = (i + (e.shiftKey ? -1 : 1) + prev.length) % prev.length
+          const ni = (i + (previous ? -1 : 1) + prev.length) % prev.length
           setActiveId(prev[ni].id)
           setHome(false)
           return prev
@@ -169,14 +284,15 @@ export function useGlobalKeys({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeId, setTabs, setActiveId, setHome])
+  }, [activeId, keybindings, platform, setTabs, setActiveId, setHome])
 
-  // Ctrl/Cmd+B toggles the sidebar. CAPTURE phase so it fires before the
-  // editor's "bold" keybinding (which would otherwise eat it and made the
-  // shortcut feel unreliable). No menu accelerator, so it can't double-fire.
+  // Ctrl/Cmd+Shift+B toggles the sidebar. Plain Mod+B is deliberately left to
+  // ProseMirror's standard bold binding (#67). No menu accelerator, so this
+  // renderer shortcut cannot double-fire with an Electron menu command.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === 'KeyB') {
+      if (shouldBlockForSettings('toggleSidebar', activeTabKind)) return
+      if (keybindingMatchesEvent(keybindings['view.toggleSidebar']?.[0], e, platform)) {
         e.preventDefault()
         e.stopPropagation()
         handlers.current.toggleSidebar()
@@ -184,59 +300,42 @@ export function useGlobalKeys({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [handlers])
+  }, [handlers, keybindings, platform, activeTabKind])
 
   // Mod+F = find, Mod+Alt+F = replace (opens the bar and focuses the replace
-  // field). Capture phase so it beats any editor binding, like Mod+B above.
+  // field). Capture phase so it beats any editor binding.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === 'KeyF') {
+      if (activeTabKind === 'settings') return
+      const replace = keybindingMatchesEvent(keybindings['editor.replace']?.[0], e, platform)
+      const find = keybindingMatchesEvent(keybindings['editor.find']?.[0], e, platform)
+      if (replace || find) {
         e.preventDefault()
         e.stopPropagation()
-        if (e.altKey) handlers.current.replace()
+        if (replace) handlers.current.replace()
         else handlers.current.find()
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [handlers])
+  }, [handlers, keybindings, platform, activeTabKind])
 }
 
 // Command-palette list (titles localized via t; run dispatches via handlers).
-export function useCommands({ t, handlers }) {
+export function useCommands({ t, handlers, effectiveKeybindings }) {
   return useMemo(
     () => {
       const caps = window.api.capabilities || {}
-      return [
-        { id: 'cmd.new', title: t('cmd.new'), icon: 'file-plus', run: () => handlers.current.new() },
-        { id: 'cmd.open', title: t('cmd.open'), icon: 'file', run: () => handlers.current.open() },
-        { id: 'cmd.openFolder', title: t('cmd.openFolder'), icon: 'folder', run: () => handlers.current.openFolder() },
-        { id: 'cmd.save', title: t('cmd.save'), icon: 'save', run: () => handlers.current.save() },
-        { id: 'cmd.saveAs', title: t('cmd.saveAs'), icon: 'save', run: () => handlers.current.saveAs() },
-        caps.fileAttachments && { id: 'cmd.attachFile', title: t('cmd.attachFile'), icon: 'paperclip', run: () => handlers.current.attachFile() },
-        // Export-to-PDF needs a save dialog / print pipeline that doesn't exist on mobile.
-        caps.pdfExport && { id: 'cmd.exportPdf', title: t('cmd.exportPdf'), icon: 'file', run: () => handlers.current.exportPdf() },
-        { id: 'cmd.sidebar', title: t('cmd.sidebar'), icon: 'sidebar', run: () => handlers.current.toggleSidebar() },
-        { id: 'cmd.files', title: t('cmd.files'), icon: 'folder', run: () => handlers.current.toggleFiles() },
-        { id: 'cmd.outline', title: t('cmd.outline'), icon: 'outline', run: () => handlers.current.toggleOutline() },
-        { id: 'cmd.source', title: t('cmd.source'), icon: 'code', run: () => handlers.current.toggleSource() },
-        { id: 'cmd.theme', title: t('cmd.theme'), icon: 'moon', run: () => handlers.current.toggleTheme() },
-        { id: 'cmd.find', title: t('cmd.find'), icon: 'search', run: () => handlers.current.find() },
-        { id: 'cmd.replace', title: t('cmd.replace'), icon: 'replace', run: () => handlers.current.replace() },
-        { id: 'cmd.reviewAdd', title: t('cmd.reviewAdd'), icon: 'review', run: () => handlers.current.reviewAdd() },
-        { id: 'cmd.reviewDelete', title: t('cmd.reviewDelete'), icon: 'review', run: () => handlers.current.reviewDelete() },
-        {
-          id: 'cmd.reviewSubstitute',
-          title: t('cmd.reviewSubstitute'),
-          icon: 'review',
-          run: () => handlers.current.reviewSubstitute()
-        },
-        { id: 'cmd.reviewHighlight', title: t('cmd.reviewHighlight'), icon: 'review', run: () => handlers.current.reviewHighlight() },
-        { id: 'cmd.reviewCopyPrompt', title: t('cmd.reviewCopyPrompt'), icon: 'review', run: () => handlers.current.reviewCopyPrompt() },
-        { id: 'cmd.reviewAcceptAll', title: t('cmd.reviewAcceptAll'), icon: 'review', run: () => handlers.current.reviewAcceptAll() },
-        { id: 'cmd.reviewRejectAll', title: t('cmd.reviewRejectAll'), icon: 'review', run: () => handlers.current.reviewRejectAll() }
-      ].filter(Boolean)
+      return COMMAND_DEFINITIONS
+        .filter((command) => command.palette && command.handler && isCommandAvailable(command, caps))
+        .map((command) => ({
+          id: command.titleKey || command.id,
+          title: getCommandTitle(command, t),
+          hint: getCommandShortcut(command.id, effectiveKeybindings),
+          icon: COMMAND_PALETTE_ICONS[command.id] || 'command',
+          run: () => handlers.current[command.handler]?.()
+        }))
     },
-    [t, handlers]
+    [t, handlers, effectiveKeybindings]
   )
 }

@@ -1,0 +1,232 @@
+
+.hm-pdf-preview {
+  position: relative;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: color-mix(in srgb, var(--bg) 82%, #777 18%);
+}
+
+.hm-pdf-preview-toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.hm-pdf-preview-leading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hm-pdf-preview-leading > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.hm-pdf-preview-leading > button:hover,
+.hm-pdf-preview-leading > button.active {
+  color: var(--text-strong);
+  background: var(--hover-elevated);
+}
+
+.hm-pdf-page-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-pdf-zoom-controls {
+  display: grid;
+  grid-template-columns: 30px 54px 30px;
+  align-items: center;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.hm-pdf-zoom-controls button {
+  width: 100%;
+  height: 28px;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.hm-pdf-zoom-controls button:last-child {
+  border-right: 0;
+}
+
+.hm-pdf-zoom-controls .hm-pdf-zoom-value {
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-pdf-preview-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.hm-pdf-preview-content.with-outline {
+  grid-template-columns: minmax(160px, 210px) minmax(0, 1fr);
+}
+
+.hm-pdf-outline {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.hm-pdf-outline h3 {
+  margin: 0;
+  padding: 13px 12px 9px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.hm-pdf-outline button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding-top: 5px;
+  padding-right: 9px;
+  padding-bottom: 5px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hm-pdf-outline button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.hm-pdf-outline button span {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hm-pdf-outline button small {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.hm-pdf-preview-scroll {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px max(24px, calc((100% - 760px) / 2)) 64px;
+  overscroll-behavior: contain;
+}
+
+.hm-pdf-page {
+  position: relative;
+  margin: 0 auto 24px;
+  border: 1px solid rgba(20, 18, 14, 0.16);
+  border-radius: 2px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(20, 18, 14, 0.16);
+}
+
+.hm-pdf-page canvas {
+  display: block;
+  max-width: none;
+}
+
+.hm-pdf-page figcaption {
+  position: absolute;
+  right: 0;
+  bottom: -19px;
+  left: 0;
+  color: color-mix(in srgb, var(--muted) 76%, transparent);
+  font-size: 10px;
+  text-align: center;
+}
+
+.hm-pdf-preview-empty {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hm-pdf-preview-progress,
+.hm-pdf-preview-warning {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  max-width: min(420px, calc(100% - 36px));
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 16px rgba(20, 18, 14, 0.16);
+  font-size: 11px;
+}
+
+.hm-pdf-preview-warning {
+  color: var(--warning, #9b5e12);
+}
+
+.hm-pdf-preview-error {
+  position: absolute;
+  inset: 42px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 30px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  text-align: center;
+}
+
+.hm-pdf-preview-error strong {
+  color: var(--text-strong);
+}
+
+.hm-pdf-preview-error span {
+  max-width: 520px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.hm-pdf-preview-error button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  cursor: pointer;
+}

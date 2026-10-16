@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://guide-zeta-rouge.vercel.app/sitemap.xml
+Sitemap: https://guide.horsemd.yangsir.net/sitemap.xml

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="160" viewBox="0 0 1200 160">
+  <rect width="1200" height="160" fill="#f7f8fa"/>
+  <path d="M80 80h1040" stroke="#8b9aab" stroke-width="4"/>
+  <g fill="#ffffff" stroke="#47647f" stroke-width="3">
+    <rect x="30" y="35" width="180" height="90" rx="8"/>
+    <rect x="270" y="35" width="180" height="90" rx="8"/>
+    <rect x="510" y="35" width="180" height="90" rx="8"/>
+    <rect x="750" y="35" width="180" height="90" rx="8"/>
+    <rect x="990" y="35" width="180" height="90" rx="8"/>
+  </g>
+  <g fill="#243746" font-family="sans-serif" font-size="24" text-anchor="middle">
+    <text x="120" y="88">Start</text>
+    <text x="360" y="88">Parse</text>
+    <text x="600" y="88">Review</text>
+    <text x="840" y="88">Publish</text>
+    <text x="1080" y="88">Done</text>
+  </g>
+</svg>

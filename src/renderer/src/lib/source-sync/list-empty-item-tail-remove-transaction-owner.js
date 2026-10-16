@@ -1,0 +1,588 @@
+import { lineEndingNear, markdownLines } from '../markdown-preservation/core.js'
+import { listBlockAt } from '../markdown-preservation/lists.js'
+import { SOURCE_SYNC_OWNERS } from './proof.js'
+import { sourceSyncDigest } from './snapshot.js'
+import {
+  sameSourceSyncDocument,
+  sourceSyncAttrsEqual,
+  sourceSyncNodeEntryAtPath,
+  topLevelSourceSyncEntries,
+  mergedAdjacentSameKindListCounts} from './top-level-subtree.js'
+import { verifySourceSyncTransactionJournalCheckpoint } from './transaction-journal.js'
+
+export const LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY = 'list-empty-item-tail-remove'
+export const LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_BOUNDARY = 'transaction-list-empty-item-tail-remove'
+
+const rejected = (reason, { deferred = false, recognized = false, reset = false, proof = null } = {}) =>
+  Object.freeze({ ok: false, decision: 'rejected', deferred, recognized, reset, reason, proof })
+
+const recognizedRejection = (reason, options = {}) => rejected(reason, {
+  ...options,
+  recognized: true
+})
+
+const supportedList = (node) =>
+  node?.type?.name === 'bullet_list' || node?.type?.name === 'ordered_list'
+
+const plainEmptyParagraph = (node) =>
+  node?.type?.name === 'paragraph' && node.isTextblock && node.content?.size === 0
+
+const plainNonEmptyParagraph = (node) =>
+  node?.type?.name === 'paragraph' && node.isTextblock && node.content?.size > 0
+
+const itemMatchesListSemantics = (node, listNode) => {
+  if (node?.type?.name !== 'list_item' || node.attrs?.checked != null) return false
+  const explicitListType = node.attrs?.listType
+  if (explicitListType == null || explicitListType === '') return true
+  const expectedListType = listNode?.type?.name === 'ordered_list' ? 'ordered' : 'bullet'
+  return explicitListType === expectedListType
+}
+
+const topLevelEntries = (doc) => topLevelSourceSyncEntries(doc)
+
+const itemChildrenEqualPrefix = (before, after, count) => {
+  if (!before || !after || count < 0) return false
+  for (let index = 0; index < count; index += 1) {
+    if (before.child(index)?.eq?.(after.child(index)) !== true) return false
+  }
+  return true
+}
+
+const classify = ({ journal, expectedDoc }) => {
+  if (!journal?.oldDoc || !expectedDoc || !Array.isArray(journal.entries)) {
+    return rejected('list-empty-item-tail-document-missing')
+  }
+  const before = topLevelEntries(journal.oldDoc)
+  const after = topLevelEntries(expectedDoc)
+  if (before.length !== after.length) return rejected('list-empty-item-tail-top-level-count')
+  const changed = before
+    .map((entry, index) => entry.node?.eq?.(after[index]?.node) === true ? null : index)
+    .filter((index) => index != null)
+  if (changed.length !== 1) return rejected('list-empty-item-tail-top-level-change-count')
+
+  const topLevelIndex = changed[0]
+  const previousTop = before[topLevelIndex].node
+  const nextTop = after[topLevelIndex].node
+  let previousList = null
+  let nextList = null
+  let listPath = null
+  let containerType = null
+  let quoteChildIndex = null
+
+  if (supportedList(previousTop) && previousTop.type?.name === nextTop?.type?.name) {
+    previousList = previousTop
+    nextList = nextTop
+    listPath = [topLevelIndex]
+    containerType = 'doc'
+  } else if (
+    previousTop?.type?.name === 'blockquote' &&
+    nextTop?.type?.name === 'blockquote' &&
+    sourceSyncAttrsEqual(previousTop.attrs, nextTop.attrs) &&
+    previousTop.childCount === nextTop.childCount
+  ) {
+    const changedQuoteChildren = []
+    for (let index = 0; index < previousTop.childCount; index += 1) {
+      if (previousTop.child(index)?.eq?.(nextTop.child(index)) !== true) changedQuoteChildren.push(index)
+    }
+    if (changedQuoteChildren.length !== 1) {
+      return rejected('list-empty-item-tail-blockquote-change-count')
+    }
+    quoteChildIndex = changedQuoteChildren[0]
+    previousList = previousTop.child(quoteChildIndex)
+    nextList = nextTop.child(quoteChildIndex)
+    if (!supportedList(previousList) || previousList.type?.name !== nextList?.type?.name) {
+      return rejected('list-empty-item-tail-blockquote-child-not-list')
+    }
+    listPath = [topLevelIndex, quoteChildIndex]
+    containerType = 'blockquote'
+  } else {
+    return rejected('list-empty-item-tail-list-shape')
+  }
+
+  if (
+    !supportedList(previousList) ||
+    previousList.type?.name !== nextList?.type?.name ||
+    !sourceSyncAttrsEqual(previousList.attrs, nextList.attrs) ||
+    previousList.childCount < 2 ||
+    previousList.childCount !== nextList.childCount + 1
+  ) return rejected('list-empty-item-tail-list-shape')
+
+  const removedIndex = previousList.childCount - 1
+  const removed = previousList.child(removedIndex)
+  const previousLeft = previousList.child(removedIndex - 1)
+  const nextLeft = nextList.child(removedIndex - 1)
+  if (
+    !itemMatchesListSemantics(removed, previousList) ||
+    removed.childCount !== 1 ||
+    !plainEmptyParagraph(removed.firstChild) ||
+    !itemMatchesListSemantics(previousLeft, previousList) ||
+    !itemMatchesListSemantics(nextLeft, nextList) ||
+    !sourceSyncAttrsEqual(previousLeft.attrs, nextLeft.attrs) ||
+    previousLeft.childCount !== 1 ||
+    !plainNonEmptyParagraph(previousLeft.firstChild) ||
+    nextLeft.childCount !== 2 ||
+    !itemChildrenEqualPrefix(previousLeft, nextLeft, 1) ||
+    !plainEmptyParagraph(nextLeft.child(1))
+  ) return rejected('list-empty-item-tail-target-shape')
+
+  for (let index = 0; index < removedIndex - 1; index += 1) {
+    if (previousList.child(index)?.eq?.(nextList.child(index)) !== true) {
+      return rejected('list-empty-item-tail-sibling-change')
+    }
+  }
+
+  if (journal.transactionCount !== 1 || journal.stepCount !== 1 || journal.entries.length !== 1) {
+    return recognizedRejection('list-empty-item-tail-transaction-count')
+  }
+  const entry = journal.entries[0]
+  const step = entry.steps?.[0]
+  const stepDoc = entry.stepDocs?.[0] || entry.beforeDoc
+  if (!sameSourceSyncDocument(entry.beforeDoc, journal.oldDoc) || !sameSourceSyncDocument(stepDoc, journal.oldDoc)) {
+    return recognizedRejection('list-empty-item-tail-step-document')
+  }
+  if (
+    step?.constructor?.name !== 'ReplaceStep' ||
+    step.structure !== true ||
+    !Number.isFinite(step.from) || !Number.isFinite(step.to) ||
+    step.to <= step.from ||
+    Number(step.slice?.size || 0) !== 0
+  ) return recognizedRejection('list-empty-item-tail-step-shape')
+
+  const removedPath = [...listPath, removedIndex]
+  const leftPath = [...listPath, removedIndex - 1]
+  const removedEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, removedPath)
+  const leftEntry = sourceSyncNodeEntryAtPath(journal.oldDoc, leftPath)
+  if (
+    !removedEntry || removedEntry.type !== 'list_item' ||
+    !leftEntry || leftEntry.type !== 'list_item'
+  ) return recognizedRejection('list-empty-item-tail-path')
+
+  const leftEnd = leftEntry.beforePos + leftEntry.node.nodeSize
+  if (
+    removedEntry.beforePos !== leftEnd ||
+    step.from !== leftEnd - 1 ||
+    step.to !== removedEntry.contentStart
+  ) return recognizedRejection('list-empty-item-tail-step-range')
+
+  let applied
+  try { applied = step.apply(stepDoc) } catch { applied = null }
+  if (applied?.failed || !applied?.doc || !sameSourceSyncDocument(applied.doc, expectedDoc)) {
+    return recognizedRejection('list-empty-item-tail-step-result')
+  }
+
+  return Object.freeze({
+    ok: true,
+    recognized: true,
+    topLevelIndex,
+    containerType,
+    quoteChildIndex,
+    listPath: Object.freeze(listPath),
+    listType: previousList.type.name,
+    previousList,
+    nextList,
+    removedIndex,
+    removedPath: Object.freeze(removedPath),
+    transientListItemPath: Object.freeze(leftPath),
+    transientParagraphPath: Object.freeze([
+      ...leftPath,
+      nextLeft.childCount - 1
+    ]),
+    step: Object.freeze({
+      name: step.constructor.name,
+      from: step.from,
+      to: step.to,
+      structure: true,
+      sliceSize: Number(step.slice?.size || 0)
+    })
+  })
+}
+const markerRows = (markdown, block) => markdownLines(markdown)
+  .map((line) => {
+    if (line.start < block.start || line.start > block.end) return null
+    const text = line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text
+    const match = text.match(/^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/)
+    if (!match || match[1].length !== block.indent) return null
+    return Object.freeze({
+      line,
+      indent: match[1],
+      token: match[2],
+      spacing: match[3],
+      body: match[4],
+      start: line.start,
+      end: line.end
+    })
+  })
+  .filter(Boolean)
+
+const kindForToken = (token) => /^\d/.test(token || '') ? 'ordered' : 'bullet'
+
+const resolveList = ({ markdown, doc, topLevelIndex, resolveMarkdownOffset }) => {
+  const listEntry = topLevelEntries(doc)[topLevelIndex]
+  const firstItem = listEntry?.node?.firstChild
+  const firstParagraph = firstItem?.firstChild
+  if (!listEntry || !firstParagraph) return null
+  const anchor = listEntry.contentStart + 1 + 1
+  let rawOffset
+  try {
+    rawOffset = resolveMarkdownOffset({ markdown, pmPos: anchor, doc, topLevelIndex })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(rawOffset)) return null
+  const block = listBlockAt(markdown, rawOffset)
+  if (!block || block.indent !== 0) return null
+  const rows = markerRows(markdown, block)
+  return Object.freeze({ block, rows, rawOffset })
+}
+
+const quoteMarkerRowAt = ({ markdown, rawOffset, listType }) => {
+  const line = markdownLines(markdown).find((candidate) =>
+    rawOffset >= candidate.start && rawOffset <= candidate.end
+  )
+  if (!line) return null
+  const text = line.text.endsWith('\r') ? line.text.slice(0, -1) : line.text
+  const match = text.match(/^( {0,3}>[ \t]+)([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/)
+  if (!match) return null
+  const ordered = /^\d/.test(match[2])
+  if ((listType === 'ordered_list') !== ordered) return null
+  const bodyStart = line.start + match[1].length + match[2].length + match[3].length
+  const contentEnd = line.end - (line.text.endsWith('\r') ? 1 : 0)
+  if (rawOffset < bodyStart || rawOffset > contentEnd) return null
+  return Object.freeze({
+    line,
+    prefix: match[1],
+    token: match[2],
+    spacing: match[3],
+    body: match[4],
+    bodyStart,
+    start: line.start,
+    end: contentEnd,
+    endWithEol: line.end < markdown.length ? line.end + 1 : contentEnd
+  })
+}
+
+const resolveDirectQuoteList = ({ markdown, doc, classification, resolveMarkdownOffset }) => {
+  if (
+    classification.containerType !== 'blockquote' ||
+    classification.listPath.length !== 2 ||
+    classification.removedIndex < 1
+  ) return null
+
+  // Empty list-item paragraphs have no stable visible source anchor. Bind the
+  // raw range to the preceding non-empty item that the PM topology already
+  // proved, then walk exact adjacent quote-list rows around that anchor.
+  const retainedIndex = classification.removedIndex - 1
+  const retainedParagraphPath = [...classification.listPath, retainedIndex, 0]
+  const retainedParagraphEntry = sourceSyncNodeEntryAtPath(doc, retainedParagraphPath)
+  if (!retainedParagraphEntry || retainedParagraphEntry.type !== 'paragraph') return null
+  let rawOffset
+  try {
+    rawOffset = resolveMarkdownOffset({
+      markdown,
+      pmPos: retainedParagraphEntry.contentStart,
+      doc,
+      topLevelIndex: classification.topLevelIndex,
+      paragraphIndex: 0
+    })
+  } catch {
+    return null
+  }
+  if (!Number.isFinite(rawOffset)) return null
+  const retained = quoteMarkerRowAt({ markdown, rawOffset, listType: classification.listType })
+  if (!retained) return null
+
+  const lines = markdownLines(markdown)
+  const retainedLineIndex = lines.findIndex((line) => line.start === retained.start)
+  if (retainedLineIndex < 0) return null
+  const rows = new Array(classification.previousList.childCount)
+  rows[retainedIndex] = retained
+
+  let lineIndex = retainedLineIndex
+  for (let itemIndex = retainedIndex - 1; itemIndex >= 0; itemIndex -= 1) {
+    lineIndex -= 1
+    const line = lines[lineIndex]
+    if (!line) return null
+    const row = quoteMarkerRowAt({
+      markdown,
+      rawOffset: line.end - (line.text.endsWith('\r') ? 1 : 0),
+      listType: classification.listType
+    })
+    if (!row || row.prefix !== retained.prefix || row.endWithEol !== rows[itemIndex + 1].start) {
+      return null
+    }
+    rows[itemIndex] = row
+  }
+
+  lineIndex = retainedLineIndex
+  for (let itemIndex = retainedIndex + 1; itemIndex < rows.length; itemIndex += 1) {
+    lineIndex += 1
+    const line = lines[lineIndex]
+    if (!line) return null
+    const row = quoteMarkerRowAt({
+      markdown,
+      rawOffset: line.end - (line.text.endsWith('\r') ? 1 : 0),
+      listType: classification.listType
+    })
+    if (!row || row.prefix !== retained.prefix || rows[itemIndex - 1].endWithEol !== row.start) {
+      return null
+    }
+    rows[itemIndex] = row
+  }
+
+  if (rows.some((row) => !row)) return null
+  return Object.freeze({
+    block: Object.freeze({ start: rows[0].start, end: rows.at(-1).end }),
+    rows: Object.freeze(rows),
+    rawOffset: retained.bodyStart
+  })
+}
+
+const removeAuthoredTailRow = ({ source, sourceList, removedIndex, listType }) => {
+  if (removedIndex !== sourceList.rows.length - 1) return null
+  const row = sourceList.rows[removedIndex]
+  if (!row) return null
+  const kind = listType === 'ordered_list' ? 'ordered' : 'bullet'
+  if (kindForToken(row.token) !== kind) return null
+  if (row.body.replace(/\u200B/g, '').trim() !== '') return null
+
+  const previous = sourceList.rows[removedIndex - 1]
+  if (!previous || kindForToken(previous.token) !== kind) return null
+  const previousBreakEnd = previous.end < source.length && source[previous.end] === '\n'
+    ? previous.end + 1
+    : previous.end
+  // The empty tail row must still belong to the same list: everything between
+  // the previous marker row and it stays INSIDE the previous item — blank
+  // lines and indented continuation lines only (trace-26116: the preceding
+  // item carried an indented continuation paragraph, so physical marker-row
+  // adjacency never held, this owner deferred a shape it had already
+  // classified, legacy was blocked by legacyRetired, and the user saw a
+  // warning). A gap line with top-level content means a different block sits
+  // between: reject. The patch itself is unchanged (delete row + EOL only).
+  if (previousBreakEnd > row.start) return null
+  const gapLines = source.slice(previousBreakEnd, row.start).split(/\r\n|\n/).slice(0, -1)
+  if (gapLines.some((line) => line.trim() && !/^[ \t]{2,}\S/.test(line))) return null
+
+  const eol = lineEndingNear(source, row.start)
+  const rowEnd = row.end < source.length && source[row.end] === '\n'
+    ? row.end + 1
+    : row.end
+  return Object.freeze({
+    markdown: source.slice(0, row.start) + source.slice(rowEnd),
+    range: Object.freeze({ start: row.start, end: rowEnd }),
+    row: Object.freeze({ token: row.token, spacing: row.spacing, body: row.body, indent: row.indent }),
+    eol
+  })
+}
+
+const removeAuthoredQuoteTailRow = ({ source, sourceList, removedIndex, listType }) => {
+  if (removedIndex !== sourceList.rows.length - 1) return null
+  const row = sourceList.rows[removedIndex]
+  const previous = sourceList.rows[removedIndex - 1]
+  if (!row || !previous) return null
+  const kind = listType === 'ordered_list' ? 'ordered' : 'bullet'
+  if (
+    kindForToken(row.token) !== kind ||
+    kindForToken(previous.token) !== kind ||
+    previous.prefix !== row.prefix ||
+    previous.endWithEol !== row.start ||
+    !/^<br\s*\/?>$/i.test(row.body.trim())
+  ) return null
+  return Object.freeze({
+    markdown: source.slice(0, row.start) + source.slice(row.endWithEol),
+    range: Object.freeze({ start: row.start, end: row.endWithEol }),
+    row: Object.freeze({
+      prefix: row.prefix,
+      token: row.token,
+      spacing: row.spacing,
+      body: row.body,
+      eol: lineEndingNear(source, row.start)
+    })
+  })
+}
+
+const createOwnedPlan = ({ boundary, markdown, canonical, expectedDoc, proof }) => {
+  const result = Object.freeze({
+    markdown,
+    preserved: true,
+    reason: 'list-empty-item-tail-removed',
+    integrityProof: proof
+  })
+  return Object.freeze({
+    ok: true,
+    decision: 'owned',
+    owner: SOURCE_SYNC_OWNERS.TRANSACTION,
+    family: LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY,
+    boundary,
+    reason: result.reason,
+    baseRevision: proof.transactionJournal.baseRevision,
+    baseSourceDigest: proof.transactionJournal.baseSourceDigest,
+    baseCanonicalDigest: proof.transactionJournal.baseCanonicalDigest,
+    proof,
+    result,
+    canonical,
+    expectedDoc,
+    publication: Object.freeze({
+      result,
+      canonical,
+      expectedDoc,
+      validationSite: boundary,
+      boundary,
+      notifyChange: true
+    })
+  })
+}
+
+export function createListEmptyItemTailRemoveTransactionSourceSyncOwner({ resolveMarkdownOffset } = {}) {
+  if (typeof resolveMarkdownOffset !== 'function') {
+    throw new TypeError('list empty item tail remove owner requires resolveMarkdownOffset')
+  }
+
+  const plan = ({
+    journal,
+    activeJournal,
+    snapshot,
+    currentSource,
+    currentCanonical,
+    canonical,
+    expectedDoc,
+    callbackDocumentEquivalent = false,
+    boundary = LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_BOUNDARY
+  } = {}) => {
+    if (!journal || activeJournal !== journal) {
+      return rejected('list-empty-item-tail-journal-stale', { reset: true })
+    }
+    const verified = verifySourceSyncTransactionJournalCheckpoint({ checkpoint: journal, snapshot, expectedDoc })
+    if (!verified.ok) {
+      return rejected(verified.reason, { reset: verified.reset, proof: verified.proof })
+    }
+    if (
+      typeof currentSource !== 'string' || typeof currentCanonical !== 'string' ||
+      typeof canonical !== 'string' || !expectedDoc
+    ) return rejected('list-empty-item-tail-plan-incomplete', { reset: true })
+    if (currentSource !== snapshot.source || currentCanonical !== snapshot.canonical) {
+      return rejected('list-empty-item-tail-live-snapshot-stale', { reset: true })
+    }
+    const classification = classify({ journal, expectedDoc })
+    if (!classification.ok) return classification
+    const sourceList = classification.containerType === 'blockquote'
+      ? resolveDirectQuoteList({
+        markdown: journal.source,
+        doc: journal.oldDoc,
+        classification,
+        resolveMarkdownOffset
+      })
+      : resolveList({
+        markdown: journal.source,
+        doc: journal.oldDoc,
+        topLevelIndex: classification.topLevelIndex,
+        resolveMarkdownOffset
+      })
+    const previousList = classification.containerType === 'blockquote'
+      ? resolveDirectQuoteList({
+        markdown: journal.canonical,
+        doc: journal.oldDoc,
+        classification,
+        resolveMarkdownOffset
+      })
+      : resolveList({
+        markdown: journal.canonical,
+        doc: journal.oldDoc,
+        topLevelIndex: classification.topLevelIndex,
+        resolveMarkdownOffset
+      })
+    if (!sourceList || !previousList) {
+      return recognizedRejection('list-empty-item-tail-range-unmapped')
+    }
+    // CommonMark merge semantics: the scanner's block spans blank-separated
+    // adjacent same-kind lists, so count the PM side merged as well (trace of
+    // the input-rule-created separate list node above an existing one).
+    const {
+      itemCount: mergedItemCount, precedingItems: mergedPrecedingItems, followingItems: mergedFollowingItems
+    } = mergedAdjacentSameKindListCounts(journal.oldDoc, classification.listPath || [classification.topLevelIndex])
+    // The item is the tail of ITS OWN list node but a following adjacent
+    // same-kind list means it is NOT the tail of the merged source block the
+    // scanner sees — that shape belongs to the interior-remove family. A
+    // plain rejection lets it run; recognizing here would hijack it.
+    if (mergedFollowingItems > 0) {
+      return rejected('list-empty-item-tail-not-merged-tail')
+    }
+    if (
+      sourceList.rows.length !== mergedItemCount ||
+      previousList.rows.length !== mergedItemCount
+    ) return recognizedRejection('list-empty-item-tail-row-count', { proof: {
+      mergedItemCount, sourceRowCount: sourceList.rows.length,
+      canonicalRowCount: previousList.rows.length,
+      listChildCount: classification.previousList.childCount,
+      topLevelIndex: classification.topLevelIndex
+    } })
+
+    const previousRow = previousList.rows[classification.removedIndex + mergedPrecedingItems]
+    if (
+      !previousRow ||
+      kindForToken(previousRow.token) !== (classification.listType === 'ordered_list' ? 'ordered' : 'bullet') ||
+      !/^<br\s*\/?>$/i.test(previousRow.body.trim())
+    ) return recognizedRejection('list-empty-item-tail-previous-row-not-empty')
+
+    const removed = classification.containerType === 'blockquote'
+      ? removeAuthoredQuoteTailRow({
+        source: journal.source,
+        sourceList,
+        removedIndex: classification.removedIndex + mergedPrecedingItems,
+        listType: classification.listType
+      })
+      : removeAuthoredTailRow({
+        source: journal.source,
+        sourceList,
+        removedIndex: classification.removedIndex + mergedPrecedingItems,
+        listType: classification.listType
+      })
+    if (!removed) return recognizedRejection('list-empty-item-tail-authored-row-unproven')
+
+    const proof = Object.freeze({
+      kind: 'transaction-list-empty-item-tail-remove-proof',
+      journalId: journal.journalId,
+      family: LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY,
+      listType: classification.listType,
+      topLevelIndex: classification.topLevelIndex,
+      containerType: classification.containerType,
+      listPath: classification.listPath,
+      quoteChildIndex: classification.quoteChildIndex,
+      removedIndex: classification.removedIndex + mergedPrecedingItems,
+      removedPath: classification.removedPath,
+      transientEmptyListItemPath: classification.transientListItemPath,
+      transientEmptyParagraphPath: classification.transientParagraphPath,
+      step: classification.step,
+      stepDetails: journal.stepDetails,
+      chainLength: journal.transactionCount,
+      transactionJournal: verified.proof,
+      sourceRange: Object.freeze({
+        start: sourceList.block.start,
+        end: sourceList.block.end,
+        rowCount: sourceList.rows.length
+      }),
+      previousRange: Object.freeze({
+        start: previousList.block.start,
+        end: previousList.block.end,
+        rowCount: previousList.rows.length
+      }),
+      removedSourceRow: removed.row,
+      rawReplacement: removed.range,
+      sourceDigest: sourceSyncDigest(journal.source),
+      previousCanonicalDigest: sourceSyncDigest(journal.canonical),
+      canonicalDigest: sourceSyncDigest(canonical),
+      markdownDigest: sourceSyncDigest(removed.markdown),
+      callbackDocumentEquivalent: callbackDocumentEquivalent === true,
+      transactionProvenTransientEquivalent: true,
+      snapshotMatched: true,
+      documentMatched: true
+    })
+    return createOwnedPlan({ boundary, markdown: removed.markdown, canonical, expectedDoc, proof })
+  }
+
+  return Object.freeze({
+    owner: SOURCE_SYNC_OWNERS.TRANSACTION,
+    family: LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_FAMILY,
+    boundary: LIST_EMPTY_ITEM_TAIL_REMOVE_TRANSACTION_BOUNDARY,
+    plan
+  })
+}

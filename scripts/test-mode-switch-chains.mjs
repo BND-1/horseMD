@@ -2,43 +2,7 @@
 // user with real mouse clicks:
 //   source -> rich -> source -> rich
 //   rich -> source -> rich -> source
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const connect = async () => {
-  let targets = []
-  for (let i = 0; i < 60; i++) {
-    try {
-      targets = await (await fetch(base + '/json/list')).json()
-      if (targets.some((target) => target.type === 'page')) break
-    } catch {}
-    await sleep(250)
-  }
-  const page = targets.find((target) => target.type === 'page')
-  if (!page) throw new Error('No Electron page found on CDP port 9222')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pending.has(message.id)) return
-    pending.get(message.id)(message)
-    pending.delete(message.id)
-  })
-  await new Promise((resolve) => { ws.onopen = resolve })
-  const send = (method, params = {}) => new Promise((resolve) => {
-    const current = ++id
-    pending.set(current, resolve)
-    ws.send(JSON.stringify({ id: current, method, params }))
-  })
-  return { ws, send }
-}
-
-const evaluator = (send) => async (expression) => {
-  const response = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-  if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text || 'Runtime.evaluate failed')
-  return response.result?.result?.value
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 
 const click = async (send, point) => {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
@@ -48,16 +12,30 @@ const click = async (send, point) => {
 
 const inSource = (ev) => ev(`[...document.querySelectorAll('textarea.source-editor')].some((node) => node.offsetParent !== null)`)
 
+const waitForContext = async (read, label, attempts = 30) => {
+  for (let index = 0; index < attempts; index += 1) {
+    const context = await read()
+    if (context) return context
+    await sleep(100)
+  }
+  throw new Error(`Timed out waiting for ${label}`)
+}
+
 const toggle = async (send, ev) => {
+  const startedInSource = await inSource(ev)
   const point = await ev(`(() => {
-    const button = [...document.querySelectorAll('.status-btn')].find((node) => node.title?.includes('Ctrl+/'))
+    const button = [...document.querySelectorAll('.status-btn')].find((node) => /源码|Source|Ctrl\\+\\/|⌘\\//.test(node.title || node.textContent || ''))
     if (!button) return null
     const rect = button.getBoundingClientRect()
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
   })()`)
   if (!point) throw new Error('Source toggle button not found')
   await click(send, point)
-  await sleep(1300)
+  for (let index = 0; index < 30; index += 1) {
+    if (await inSource(ev) !== startedInSource) break
+    await sleep(100)
+  }
+  await sleep(250)
 }
 
 const ensureRich = async (send, ev) => {
@@ -290,9 +268,8 @@ const ratios = process.env.CHAIN_RATIOS
   : [0.12, 0.32, 0.52, 0.72, 0.9]
 
 const main = async () => {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate: ev } = await connectCdp({ attempts: 60 })
   await send('Runtime.enable')
-  const ev = evaluator(send)
   await sleep(1600)
   await enableHeavyRich(send, ev)
   const results = []
@@ -302,11 +279,11 @@ const main = async () => {
     await scrollSourceAndClick(send, ev, ratio)
     const source0 = await sourceContext(ev)
     await toggle(send, ev)
-    const rich1 = await richContext(ev)
+    const rich1 = await waitForContext(() => richContext(ev), 'first rich caret')
     await toggle(send, ev)
-    const source2 = await sourceContext(ev)
+    const source2 = await waitForContext(() => sourceContext(ev), 'second source caret')
     await toggle(send, ev)
-    const rich3 = await richContext(ev)
+    const rich3 = await waitForContext(() => richContext(ev), 'second rich caret')
     const crossModeMatch = semanticMatch(source0, rich1) && semanticMatch(source2, rich3)
     results.push({
       chain: 'source-rich-source-rich', ratio,
@@ -321,11 +298,11 @@ const main = async () => {
     await scrollRichAndClick(send, ev, ratio)
     const rich0 = await richContext(ev)
     await toggle(send, ev)
-    const source1 = await sourceContext(ev)
+    const source1 = await waitForContext(() => sourceContext(ev), 'first source caret')
     await toggle(send, ev)
-    const rich2 = await richContext(ev)
+    const rich2 = await waitForContext(() => richContext(ev), 'second rich caret')
     await toggle(send, ev)
-    const source3 = await sourceContext(ev)
+    const source3 = await waitForContext(() => sourceContext(ev), 'second source caret')
     results.push({
       chain: 'rich-source-rich-source', ratio,
       pass: sameCaret(rich0, rich2) && sameCaret(source1, source3) &&

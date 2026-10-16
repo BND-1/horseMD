@@ -5,7 +5,21 @@
 > 重构阶段用 OMC 的 **ralph loop**(持久化循环 + 每步验证)驱动,每拆一块就跑
 > 对应测试,绿灯才继续。
 
-## 当前结果（2026-07-12）
+## 2026-07-29 Markdown 原文保真拆分
+
+| 原文件 | 拆分结果 | 状态 |
+|---|---|---|
+| `markdown-source-preservation.js` 993 行 | 268 行稳定 façade；公共 API 不变 | ✅ 完成 |
+| 通用映射 | `lib/markdown-preservation/core.js` 102 行 | ✅ 完成 |
+| front matter | `frontmatter.js` 40 行 | ✅ 完成 |
+| 列表 | `lists.js` 243 行 | ✅ 完成 |
+| 表格 | `tables.js` 172 行 | ✅ 完成 |
+| 新段落/空块 | `paragraphs.js` 227 行 | ✅ 完成 |
+| 普通区域 | `regions.js` 168 行 | ✅ 完成 |
+
+这次只移动纯函数和调整内部导入，没有修改三个公共导出、调用方、Crepe 生命周期或源码/富文本状态机。专项验证覆盖纯函数、CRLF/BOM、表格保存重开、异构 Markdown 逐字节写盘、120k+ 分块文档、6 个 raw offset 双向连续切换位置，以及行内代码 10 次真实逐键输入。后续领域逻辑继续进入对应模块，跨领域决策才进入 façade。
+
+## 2026-07-12 重构完成时快照（历史记录）
 
 | Phase | 目标 | 状态 |
 |---|---|---|
@@ -16,7 +30,7 @@
 | **5** | Workspace、Sidebar tree 与右键菜单拆分 | ✅ 完成（Sidebar 584 → **465**） |
 | **6** | 源码/富文本状态机提取为 `useSourceModeSwitch` | ✅ 完成（App 1200 → **954**） |
 
-## 一、代码体检(行数,降序)
+## 一、代码体检（2026-07-12 行数快照）
 
 | 文件 | 行数 | 角色 | 评级 |
 |---|---|---|---|
@@ -51,6 +65,8 @@
 > 主进程 `main/index.js` 当前 804 行。继续拆分前应先明确 IPC 领域边界并补主进程合同测试。
 >
 > **文件体量纪律**(用户指令):新功能一律放进小而专的模块/hook,目标 < 500 行/文件(硬上限 800),超了就拆。App.jsx/Editor.jsx 不再 append 新功能。
+
+> 当前文件规模会随功能变化，不使用本页历史数字作重构依据。开始新拆分前先运行 `wc -l`，并以 [architecture.md](./architecture.md)、[editor-feature-inventory.md](./editor-feature-inventory.md) 和 [markdown-source-preservation.md](./markdown-source-preservation.md) 的现行职责合同为准。
 
 ## 二、历史目标拆解
 

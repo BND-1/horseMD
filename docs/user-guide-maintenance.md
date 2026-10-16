@@ -9,12 +9,14 @@ HorseMD 官网负责产品介绍和下载，`guide/` 是面向普通用户的独
 - `basics/`：界面、文件、工作区、标签和编辑模式。
 - `editing/`：Markdown 内容块、图片、链接和附件。
 - `productivity/`：查找、大纲、命令面板、审阅和快捷键。
-- `output/`：富文本复制、PDF 和移动分享。
+- `output/`：富文本复制、PDF、HTML、Pandoc 文档转换和移动分享。
 - `customization/`：主题、字体和设置。
 - `mobile/`：iOS 与 Android 的平台差异。
 - `troubleshooting/`：安装、文件、性能和 FAQ。
 
 每页必须有 `title`、`description`、当前适用版本、明确步骤和必要的边界说明。界面文案以中文正式版本为准，不使用开发变量名替代用户可见名称。
+
+本地测试包和已发布教程要明确分开：开发中的功能可以先补充教程正文、使用边界和人工验收项，但不能把未发布测试包的版本号或截图伪装成正式下载版本。`guide/package.json` 与既有截图目录代表当前公开教程基线；只有准备正式发布时，才统一更新受影响页面的版本徽标、截图和下载说明。每次核对都记录在 [user-guide-feature-coverage.md](./user-guide-feature-coverage.md)。
 
 ## 截图标准
 
@@ -53,9 +55,9 @@ CDP_PORT=9223 npm run guide:capture
 
 用户可见功能变更时：
 
-1. 更新对应教程正文和功能边界。
-2. 根版本修改后，把所有页面的适用版本更新为同一版本。
-3. 用当前安装包重拍受影响截图。
+1. 在覆盖矩阵中确认受影响功能、对应教程页和截图需求。
+2. 更新对应教程正文和功能边界；测试阶段只标注“测试功能”，不改公开下载基线。
+3. 准备正式发布时，再把受影响页面的适用版本统一更新为该发布版本，并用当前安装包重拍受影响截图。
 4. 同步 `website/index.html`、`index.md`、`llms.txt`、`llms-full.txt` 的静态回退版本和平台信息。
 5. 运行 `npm run guide:check`、`npm run test:core`、`npm run build`；共享渲染器变化还要运行 `npm run build:mobile`。
 6. 桌面和手机宽度检查教程导航、搜索、图片灯箱和长代码块。
@@ -63,4 +65,4 @@ CDP_PORT=9223 npm run guide:capture
 ## 部署
 
 教程作为独立 Vercel 项目部署，Project Root 设置为 `guide`，域名绑定
-当前生产入口是 `guide-zeta-rouge.vercel.app`。`guide/vercel.json` 使用 `npm run check` 作为构建命令，输出目录为 `.vitepress/dist`。正式域名 `guide.horsemd.yangsir.net` 已绑定到 Vercel 项目，待阿里云 DNS 增加 CNAME（主机记录 `guide.horsemd`，记录值 `b00990d19c6f8080.vercel-dns-017.com`）并通过验证后，再统一替换生产入口和站点元数据。
+正式生产入口是 `https://guide.horsemd.yangsir.net/`。域名通过阿里云 DNS 的 CNAME 指向 Vercel，HTTPS 证书由 Vercel 自动签发和续期；HTTP 必须 308 跳转到 HTTPS。`guide/vercel.json` 使用 `npm run check` 作为构建命令，输出目录为 `.vitepress/dist`。部署后应同时验证首页、至少一个无扩展名内页、`robots.txt` 和 `sitemap.xml`。

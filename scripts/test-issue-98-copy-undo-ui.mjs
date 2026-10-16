@@ -1,0 +1,336 @@
+import assert from 'node:assert/strict'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
+import { sleep } from './lib/cdp.mjs'
+
+if (process.platform !== 'darwin') {
+  console.log('SKIP issue 98 clipboard verification: native clipboard assertion runs on macOS')
+  process.exit(0)
+}
+
+const root = `/tmp/horsemd-issue-98-copy-undo-${process.pid}`
+const fixture = join(root, 'copy-undo.md')
+const code = 'const alpha = 1\nconsole.log(alpha)'
+const longCode = [
+  '{',
+  ...Array.from({ length: 120 }, (_, index) =>
+    `  "setting.line.${String(index + 1).padStart(3, '0')}": ${index}${index === 119 ? '' : ','}`
+  ),
+  '}'
+].join('\n')
+const previousClipboard = execFileSync('pbpaste', { encoding: 'utf8' })
+let app = null
+
+const waitFor = async (check, message, attempts = 50) => {
+  for (let index = 0; index < attempts; index += 1) {
+    const value = await check()
+    if (value) return value
+    await sleep(100)
+  }
+  throw new Error(message)
+}
+
+const selectContents = async (selector, text, includeElement = false) => {
+  const selected = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const element = [...(editor?.querySelectorAll(${JSON.stringify(selector)}) || [])]
+      .find((node) => node.textContent.includes(${JSON.stringify(text)}))
+    if (!element) return null
+    editor.focus()
+    const range = document.createRange()
+    if (${JSON.stringify(includeElement)}) range.selectNode(element)
+    else range.selectNodeContents(element)
+    const selection = window.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    return selection.toString()
+  })()`)
+  assert.ok(selected, `could not select ${text}`)
+  await sleep(100)
+  return selected
+}
+
+const readCopyPayload = () => app.evaluate(`(() => {
+  const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+  const clipboardData = new DataTransfer()
+  const event = new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData })
+  editor.dispatchEvent(event)
+  return {
+    prevented: event.defaultPrevented,
+    plain: clipboardData.getData('text/plain'),
+    markdown: clipboardData.getData('text/markdown'),
+    html: clipboardData.getData('text/html'),
+    types: [...clipboardData.types]
+  }
+})()`)
+
+const pressMetaKey = async (key, code, virtualKeyCode) => {
+  const command = key === 'a' ? 'selectAll' : key === 'c' ? 'copy' : null
+  const params = {
+    key,
+    code,
+    modifiers: 4,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+    ...(command ? { commands: [command] } : {})
+  }
+  await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...params })
+  await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params })
+}
+
+const pressRawKey = async (key, code, virtualKeyCode, modifiers = 0) => {
+  const params = { key, code, modifiers, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode }
+  await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...params })
+  await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params })
+}
+
+try {
+  await mkdir(root, { recursive: true })
+  await writeFile(fixture, [
+    '# Copy and undo',
+    '',
+    'Editable target',
+    '',
+    'Paragraph copy target',
+    '',
+    'Soft-break copy first',
+    'Soft-break copy second',
+    '',
+    '**bold-marker**',
+    '',
+    '1. Ordered item copy target',
+    '',
+    'Paste destination',
+    '',
+    '```javascript',
+    'const alpha = 1',
+    'console.log(alpha)',
+    '```',
+    '',
+    '```json',
+    longCode,
+    '```'
+  ].join('\n'), 'utf8')
+
+  app = await launchBuiltElectron({
+    profileDir: join(root, 'profile'),
+    port: 9810 + (process.pid % 80),
+    appArgs: [fixture]
+  })
+
+  await waitFor(
+    () => app.evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      return [...(editor?.querySelectorAll('.milkdown-code-block') || [])]
+        .some((block) => block.textContent.includes('const alpha = 1') && block.querySelector('.copy-button'))
+    })()`),
+    'code block copy button did not render'
+  )
+  const clicked = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = [...(editor?.querySelectorAll('.milkdown-code-block') || [])]
+      .find((node) => node.textContent.includes('const alpha = 1'))
+    const button = block?.querySelector('.copy-button')
+    button?.click()
+    return Boolean(button)
+  })()`)
+  assert.equal(clicked, true)
+  await sleep(150)
+  assert.equal(execFileSync('pbpaste', { encoding: 'utf8' }), code, 'code-block button did not copy the complete code')
+
+  const longCopy = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const blocks = [...(editor?.querySelectorAll('.milkdown-code-block') || [])]
+    const block = blocks.at(-1)
+    const renderedLines = block?.querySelectorAll('.cm-line').length || 0
+    const button = block?.querySelector('.copy-button')
+    button?.click()
+    return { clicked: Boolean(button), renderedLines }
+  })()`)
+  assert.equal(longCopy.clicked, true, 'long code-block copy button did not render')
+  assert.ok(longCopy.renderedLines < longCode.split('\n').length, 'long-code fixture did not exercise CodeMirror virtualization')
+  await sleep(150)
+  assert.equal(
+    execFileSync('pbpaste', { encoding: 'utf8' }),
+    longCode,
+    `long code-block copy was truncated to the ${longCopy.renderedLines} rendered DOM lines`
+  )
+
+  const codePoint = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const line = [...(editor?.querySelectorAll('.milkdown-code-block') || [])].at(-1)?.querySelector('.cm-line')
+    const rect = line?.getBoundingClientRect()
+    return rect ? { x: rect.left + 8, y: rect.top + rect.height / 2 } : null
+  })()`)
+  assert.ok(codePoint, 'long CodeMirror block did not expose a clickable line')
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...codePoint })
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...codePoint })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...codePoint })
+  await pressMetaKey('a', 'KeyA', 65)
+  spawnSync('pbcopy', { input: 'HORSEMD_SELECT_ALL_COPY_SENTINEL' })
+  await pressMetaKey('c', 'KeyC', 67)
+  await sleep(150)
+  assert.equal(
+    execFileSync('pbpaste', { encoding: 'utf8' }),
+    longCode,
+    'CodeMirror select-all copy was truncated to its virtualized DOM lines'
+  )
+
+  // Collapse the full selection to its start before building a real partial
+  // selection. Otherwise CodeMirror keeps the selection head at the document
+  // end and scrolls back down after a programmatic scrollTop reset.
+  await pressRawKey('ArrowLeft', 'ArrowLeft', 37)
+  await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const block = [...(editor?.querySelectorAll('.milkdown-code-block') || [])].at(-1)
+    const scroller = block?.querySelector('.cm-scroller')
+    if (scroller) scroller.scrollTop = 0
+  })()`)
+  const firstLinePoint = await waitFor(
+    () => app.evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      const block = [...(editor?.querySelectorAll('.milkdown-code-block') || [])].at(-1)
+      const line = block?.querySelector('.cm-line')
+      const rect = line?.getBoundingClientRect()
+      const scrollerRect = block?.querySelector('.cm-scroller')?.getBoundingClientRect()
+      if ((line?.textContent || '') !== '{' || !rect || !scrollerRect || rect.bottom < scrollerRect.top || rect.top > scrollerRect.bottom) return null
+      return { x: rect.left + 1, y: rect.top + rect.height / 2 }
+    })()`),
+    'long CodeMirror block did not render its first line after selection collapse'
+  )
+  assert.ok(firstLinePoint, 'long CodeMirror block did not return to its first line')
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...firstLinePoint })
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...firstLinePoint })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...firstLinePoint })
+  await pressRawKey('Home', 'Home', 36)
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', modifiers: 8,
+    windowsVirtualKeyCode: 16, nativeVirtualKeyCode: 16
+  })
+  for (let index = 0; index < 65; index += 1) {
+    const params = { key: 'ArrowDown', code: 'ArrowDown', modifiers: 8, windowsVirtualKeyCode: 40, nativeVirtualKeyCode: 40 }
+    await app.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...params })
+    await app.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params })
+  }
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: 'Shift', code: 'ShiftLeft', modifiers: 0,
+    windowsVirtualKeyCode: 16, nativeVirtualKeyCode: 16
+  })
+  const partialSelection = await app.evaluate(`window.getSelection()?.toString() || ''`)
+  assert.ok(partialSelection && partialSelection !== longCode, 'CDP did not establish a partial CodeMirror selection')
+  spawnSync('pbcopy', { input: 'HORSEMD_PARTIAL_COPY_SENTINEL' })
+  await pressMetaKey('c', 'KeyC', 67)
+  await sleep(150)
+  const partialCopy = execFileSync('pbpaste', { encoding: 'utf8' })
+  assert.equal(partialCopy, longCode.split('\n').slice(0, 65).join('\n') + '\n', '65-line CodeMirror selection copied the wrong range')
+
+  await selectContents('p', 'Paragraph copy target')
+  const paragraphCopy = await readCopyPayload()
+  assert.equal(paragraphCopy.prevented, true)
+  assert.equal(paragraphCopy.plain, 'Paragraph copy target', 'plain paragraph copy gained block newlines')
+  assert.equal(paragraphCopy.markdown.trim(), 'Paragraph copy target')
+  assert.match(paragraphCopy.html, /Paragraph copy target/)
+
+  await selectContents('p', 'Soft-break copy first')
+  const softBreakCopy = await readCopyPayload()
+  assert.equal(
+    softBreakCopy.plain,
+    'Soft-break copy first\nSoft-break copy second',
+    'visually preserved source newline did not remain a plain-text newline'
+  )
+  assert.match(
+    softBreakCopy.html,
+    /Soft-break copy first<br[^>]*>Soft-break copy second/,
+    'visually preserved source newline did not become an HTML line break'
+  )
+  assert.equal(
+    softBreakCopy.markdown.trim(),
+    'Soft-break copy first\nSoft-break copy second',
+    'Markdown clipboard flavor changed an ordinary source newline'
+  )
+
+  await selectContents('strong', 'bold-marker', true)
+  const boldCopy = await readCopyPayload()
+  assert.equal(boldCopy.plain, 'bold-marker', 'plain rich-text copy exposed Markdown delimiters')
+  assert.match(boldCopy.markdown, /\*\*bold-marker\*\*/, 'Markdown clipboard flavor lost bold markers')
+  assert.match(boldCopy.html, /<strong[^>]*>bold-marker<\/strong>/, 'HTML clipboard flavor lost bold markup')
+
+  await selectContents('ol', 'Ordered item copy target')
+  const orderedCopy = await readCopyPayload()
+  assert.equal(
+    orderedCopy.plain,
+    'Ordered item copy target',
+    'plain ordered-list copy gained a generated list marker'
+  )
+  assert.match(
+    orderedCopy.markdown,
+    /1\.\s+Ordered item copy target/,
+    'Markdown clipboard flavor lost ordered-list structure'
+  )
+
+  await selectContents('p', 'Paste destination')
+  const pastedOrderedList = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const clipboardData = new DataTransfer()
+    clipboardData.setData('text/plain', ${JSON.stringify(orderedCopy.plain)})
+    clipboardData.setData('text/markdown', ${JSON.stringify(orderedCopy.markdown)})
+    clipboardData.setData('text/html', ${JSON.stringify(orderedCopy.html)})
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData })
+    editor.dispatchEvent(event)
+    return event.defaultPrevented
+  })()`)
+  assert.equal(pastedOrderedList, true, 'HorseMD did not consume its Markdown clipboard flavor')
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror ol li')].filter((node) => node.textContent.includes('Ordered item copy target')).length === 2`),
+    'internal paste lost ordered-list structure'
+  )
+
+  const point = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const paragraph = [...(editor?.querySelectorAll('p') || [])]
+      .find((node) => node.textContent.includes('Editable target'))
+    const rect = paragraph?.getBoundingClientRect()
+    return rect ? { x: rect.right - 2, y: rect.top + rect.height / 2 } : null
+  })()`)
+  assert.ok(point)
+  await app.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1
+  })
+  await app.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1
+  })
+  await app.send('Input.insertText', { text: '-undo-marker' })
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror p')].some((node) => node.textContent.includes('Editable target-undo-marker'))`),
+    'typed undo marker did not appear'
+  )
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown',
+    key: 'z',
+    code: 'KeyZ',
+    modifiers: 4,
+    windowsVirtualKeyCode: 90,
+    nativeVirtualKeyCode: 90
+  })
+  await app.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'z',
+    code: 'KeyZ',
+    modifiers: 4,
+    windowsVirtualKeyCode: 90,
+    nativeVirtualKeyCode: 90
+  })
+  await waitFor(
+    () => app.evaluate(`[...document.querySelectorAll('.ProseMirror p')].some((node) => node.textContent === 'Editable target')`),
+    'Cmd+Z did not undo the rich-editor edit'
+  )
+
+  console.log('PASS issue 98 UI: clipboard MIME separation, native code copy, and editor undo')
+} finally {
+  if (app) await stopBuiltElectron(app, { removeProfile: true })
+  spawnSync('pbcopy', { input: previousClipboard })
+  await rm(root, { recursive: true, force: true })
+}

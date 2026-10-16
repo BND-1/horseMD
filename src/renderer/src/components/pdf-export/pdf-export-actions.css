@@ -1,0 +1,63 @@
+.hm-pdf-studio-footer {
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 0 18px;
+  border-top: 1px solid var(--border);
+}
+
+.hm-pdf-studio-footer > button {
+  min-width: 88px;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  font: inherit;
+  cursor: pointer;
+}
+
+.hm-pdf-studio-footer > button.primary {
+  border-color: var(--accent);
+  color: white;
+  background: var(--accent);
+}
+
+.hm-pdf-studio-footer > button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.hm-pdf-studio-footer > button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.hm-pdf-studio button:disabled,
+.hm-pdf-studio .disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.hm-pdf-export-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hm-pdf-export-message[role='alert'] {
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  .hm-pdf-studio-body {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .hm-pdf-preview-scroll {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+}

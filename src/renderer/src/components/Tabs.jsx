@@ -3,6 +3,9 @@ import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
 import { isMarkdownName } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
+import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
+import ExportContextSubmenu from './ExportContextSubmenu.jsx'
+import { isTabDirty } from '../lib/tab-state.js'
 
 export default function Tabs({
   tabs,
@@ -18,7 +21,10 @@ export default function Tabs({
   onDuplicate,
   onDelete,
   onExportPdf,
-  onReorder
+  onExportHtml,
+  onExportPandoc,
+  onReorder,
+  effectiveKeybindings
 }) {
   const { t } = useI18n()
   const activeRef = useRef(null)
@@ -31,6 +37,27 @@ export default function Tabs({
   // On touch there's no hover to reveal the close ✕, so show it always and use a
   // clear ✕ (the unsaved state is shown in the bottom bar, not as a tab dot).
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
+  const scrollRef = useRef(null)
+
+  // A plain wheel over the tab strip scrolls it horizontally: trackpads send a
+  // vertical delta (Shift+wheel is the OS-level escape hatch, but the strip is
+  // itself horizontal, so steering the wheel at it should just work). Only
+  // intercept when the strip can actually scroll that way, so a wheel over the
+  // tabs keeps scrolling the document when the strip is fully expanded.
+  useEffect(() => {
+    const strip = scrollRef.current
+    if (!strip) return
+    const onWheel = (event) => {
+      if (event.defaultPrevented || event.ctrlKey) return
+      const canScroll = strip.scrollWidth > strip.clientWidth
+      const wheelX = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      if (!canScroll || wheelX) return
+      strip.scrollLeft += event.deltaY
+      event.preventDefault()
+    }
+    strip.addEventListener('wheel', onWheel, { passive: false })
+    return () => strip.removeEventListener('wheel', onWheel)
+  }, [])
 
   // When the active tab changes (opened a new file, switched, or restored a
   // session), the tab strip may have scrolled it out of view once the tabs
@@ -61,9 +88,9 @@ export default function Tabs({
 
   return (
     <div className="tabs">
-      <div className="tabs-scroll">
+      <div className="tabs-scroll" ref={scrollRef}>
         {tabs.map((tab, index) => {
-          const dirty = tab.content !== tab.savedContent
+          const dirty = isTabDirty(tab)
           const isLeft = tab.id === activeId
           const isRight = splitId != null && tab.id === splitId
           // Both panes' tabs are highlighted in split view; the focused pane's tab
@@ -118,7 +145,7 @@ export default function Tabs({
           )
         })}
       </div>
-      <button className="tab-new" title={t('tab.new')} onClick={onNew}>
+      <button className="tab-new" title={labelWithShortcut(t('tab.new'), 'file.new', effectiveKeybindings)} onClick={onNew}>
         <Icon name="plus" size={16} />
       </button>
 
@@ -134,6 +161,7 @@ export default function Tabs({
           />
           <div
             className="tab-ctxmenu"
+            role="menu"
             style={{
               left: Math.min(menu.x, window.innerWidth - 220),
               top: Math.min(menu.y, window.innerHeight - 400)
@@ -172,10 +200,15 @@ export default function Tabs({
                   <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => onDuplicate?.(tab.id))}>
                     {t('side.duplicate')}
                   </button>
-                  {window.api.capabilities?.pdfExport !== false && hasPath && isMarkdownName(tab.title) && (
-                    <button className="tab-menu-item" onClick={run(() => onExportPdf?.(tab.path))}>
-                      {t('side.exportPdf')}
-                    </button>
+                  {hasPath && isMarkdownName(tab.title) && (
+                    <ExportContextSubmenu
+                      t={t}
+                      itemClassName="tab-menu-item"
+                      onClose={() => setMenu(null)}
+                      onExportPdf={onExportPdf ? () => onExportPdf(tab.path) : undefined}
+                      onExportHtml={onExportHtml ? () => onExportHtml(tab.path) : undefined}
+                      onExportPandoc={onExportPandoc ? (format) => onExportPandoc(tab.path, format) : undefined}
+                    />
                   )}
                   <div className="tab-menu-sep" />
                   <button className="tab-menu-item" onClick={run(() => onClose(tab.id))}>

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  classifyFileSystemPaths,
   listMarkdownFiles,
   nextDuplicatePath,
   readDirectoryTree
@@ -15,11 +16,13 @@ try {
   await fs.mkdir(join(root, 'notes'))
   await fs.mkdir(join(root, 'node_modules'))
   await fs.mkdir(join(root, '.git'))
+  await fs.mkdir(join(root, '.horsemd'))
   await fs.writeFile(join(root, 'z.md'), '# z')
   await fs.writeFile(join(root, 'a.txt'), 'a')
   await fs.writeFile(join(root, 'ignored.json'), '{}')
   await fs.writeFile(join(root, '.secret.md'), 'secret')
   await fs.writeFile(join(root, '.gitignore'), 'dist')
+  await fs.writeFile(join(root, '.horsemd', 'workspace.json'), '{}')
   await fs.writeFile(join(root, 'notes', 'nested.markdown'), '# nested')
   await fs.writeFile(join(root, 'node_modules', 'package.md'), '# ignored')
   await fs.writeFile(join(root, '.git', 'internal.md'), '# ignored')
@@ -34,6 +37,7 @@ try {
   const hiddenTree = await readDirectoryTree(root, { showHidden: true, markdownPattern })
   assert.equal(hiddenTree.some((entry) => entry.name === '.secret.md'), true)
   assert.equal(hiddenTree.some((entry) => entry.name === '.git'), false)
+  assert.equal(hiddenTree.some((entry) => entry.name === '.horsemd'), false)
 
   const visibleFiles = await listMarkdownFiles(root, { markdownPattern })
   assert.deepEqual(
@@ -55,8 +59,21 @@ try {
     nextDuplicatePath(join(root, 'z.md'), (path) => occupied.has(path)),
     join(root, 'z copy 3.md')
   )
+
+  const droppedPaths = await classifyFileSystemPaths([
+    join(root, 'z.md'),
+    join(root, 'notes'),
+    join(root, 'z.md'),
+    join(root, 'missing.md'),
+    '',
+    null
+  ])
+  assert.deepEqual(droppedPaths, [
+    { path: join(root, 'z.md'), type: 'file' },
+    { path: join(root, 'notes'), type: 'dir' }
+  ])
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS main filesystem: tree, hidden files, recursion and duplicate naming')
+console.log('PASS main filesystem: tree, hidden files, recursion, duplicate naming and dropped path classification')

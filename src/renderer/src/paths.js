@@ -115,11 +115,35 @@ export function isHeavyDoc(content) {
   let lines = 0
   for (const line of content.split('\n')) {
     if (++lines > HEAVY_MAX_LINES) return true // ← P0-1: line-count guard
-    if (/^[ \t]*$/.test(line)) {
+    if (/^[ \t\r]*$/.test(line)) {
       run = 0
     } else if (++run > HEAVY_MAX_BLOCK_LINES) {
       return true
     }
+  }
+  return false
+}
+
+// CSS content-visibility helps truly huge rich documents, but it is not free:
+// Chromium must swap each off-screen block from estimated to real height as it
+// scrolls in. On Windows that estimation churn regressed medium CJK-heavy docs
+// such as "WhatIf因果推断详细笔记.md" (~245 K chars, ~585 rendered blocks).
+// Gate CV by rough block/line scale instead of raw character count.
+export function shouldUseRichContentVisibility(content) {
+  if (!content) return false
+  if (content.length >= 400000) return true
+  let lines = 0
+  let blocks = 0
+  let inBlock = false
+  for (const line of content.split('\n')) {
+    lines += 1
+    if (/^[ \t\r]*$/.test(line)) {
+      inBlock = false
+    } else if (!inBlock) {
+      blocks += 1
+      inBlock = true
+    }
+    if (lines >= 8000 || blocks >= 1200) return true
   }
   return false
 }

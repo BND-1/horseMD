@@ -11,6 +11,7 @@
 //                   nodes, so <br> in a cell renders as a line break (and the
 //                   previously-dropped <br> now shows up).
 import { keymap } from '@milkdown/prose/keymap'
+import { baseKeymap, chainCommands } from '@milkdown/prose/commands'
 import { defaultHandlers } from 'mdast-util-to-markdown'
 
 const BR_RE = /^<br\s*\/?>$/i
@@ -30,6 +31,20 @@ const PHRASING_PARENTS = new Set([
 // --- 2. serialize: break → <br> inside a table cell ---
 export function tableCellBreakHandler(node, parent, state, info) {
   if (state.stack && state.stack.includes('tableCell')) return '<br>'
+  // A hard break at the very start or end of a paragraph/heading has no
+  // Markdown spelling: `  \n` there is a whitespace-only line (or is dropped
+  // by the parser, or ends the heading). Write nothing instead of a stray
+  // line — the validator compares such edge breaks as absent.
+  if ((parent?.type === 'paragraph' || parent?.type === 'heading') && Array.isArray(parent.children)) {
+    const index = parent.children.indexOf(node)
+    const isBreak = (child) => child?.type === 'break'
+    const leading = parent.children.slice(0, index).every(isBreak)
+    const trailing = parent.children.slice(index + 1).every(isBreak)
+    if ((leading || trailing) && parent.children.some((child) => !isBreak(child))) return ''
+  }
+  // A heading is one line: `  \n` would end it and start a paragraph. Spell a
+  // break inside a heading as `<br>`, which parses back to the same break.
+  if (state.stack && (state.stack.includes('headingAtx') || state.stack.includes('headingSetext'))) return '<br>'
   return defaultHandlers.break(node, parent, state, info)
 }
 
@@ -71,5 +86,28 @@ export function tableBreakKeymap() {
   }
   // Enter and Shift+Enter both break the line in a cell (plain Enter otherwise
   // just jumps out of the table — issue #7's complaint).
-  return keymap({ Enter: insertBreak, 'Shift-Enter': insertBreak, 'Mod-Enter': insertBreak })
+  // A heading is one line, so Shift+Enter in a heading splits it exactly like
+  // Enter (Typora 2026-10-12: `### 甲乙|丙丁` → `### 甲乙` + `### 丙丁` for both
+  // keys) instead of inserting a line break the heading cannot hold.
+  const splitHeading = (state, dispatch, view) => {
+    const { $from, $to } = state.selection
+    if ($from.parent.type.name !== 'heading' || !$from.sameParent($to)) return false
+    return baseKeymap.Enter(state, dispatch, view)
+  }
+  // In a paragraph Shift+Enter writes a plain newline (Typora 2026-10-12:
+  // `甲乙|丙丁` → `甲乙\n丙丁`), i.e. Milkdown's inline ("soft") break, which
+  // the default "preserve single line breaks" display shows as a line break.
+  // With that setting off a soft break renders as a space, so the hard break
+  // (two spaces + newline) stays — the key must visibly break the line.
+  const softBreak = (state, dispatch) => {
+    const { $from, $to } = state.selection
+    const br = state.schema.nodes.hardbreak
+    if (!br || $from.parent.type.name !== 'paragraph' || !$from.sameParent($to)) return false
+    if (typeof document === 'undefined' || !document.body.classList.contains('hm-preserve-soft-breaks')) return false
+    if (dispatch) {
+      dispatch(state.tr.replaceSelectionWith(br.create({ isInline: true }), true).scrollIntoView())
+    }
+    return true
+  }
+  return keymap({ Enter: insertBreak, 'Shift-Enter': chainCommands(insertBreak, splitHeading, softBreak), 'Mod-Enter': insertBreak })
 }

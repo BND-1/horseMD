@@ -1,4 +1,5 @@
 // Raw-HTML rendering for Milkdown's `html` node + block-type conversion.
+import { loadKatex } from '../lib/katex-lazy.js'
 
 // Tags we render as real DOM instead of escaped source. Split into block vs
 // inline so the node view returns the right wrapper element (a block <div> or an
@@ -13,6 +14,78 @@ const INLINE_TAGS =
 
 const BLOCK_RE = new RegExp(`^\\s*<(${BLOCK_TAGS})[\\s/>]`, 'i')
 const INLINE_RE = new RegExp(`^\\s*<(${INLINE_TAGS})[\\s/>]`, 'i')
+
+// `$$…$$` first (display), then single-line `$…$`. Currency-like prose ("花了他
+// $5 和 $6") only matches when BOTH dollars sit on the same line with no `$`
+// between — the same heuristic the GFM math inline node lives with.
+const MATH_TEXT_RE = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g
+
+// Replace every math run in a text node with a rendered KaTeX span. KaTeX's
+// default HTML+MathML output matches what the GFM math inline node view uses,
+// so table-cell formulas look identical to paragraph math. Render failures
+// (unknown macros) leave the literal text in place rather than erroring.
+const renderMathTextNodes = (root) => {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.nodeValue && node.nodeValue.includes('$')
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP
+  })
+  const targets = []
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) targets.push(node)
+  targets.forEach((textNode) => {
+    const text = textNode.nodeValue
+    MATH_TEXT_RE.lastIndex = 0
+    if (!MATH_TEXT_RE.test(text)) return
+    MATH_TEXT_RE.lastIndex = 0
+    const matches = []
+    let match
+    while ((match = MATH_TEXT_RE.exec(text))) {
+      const display = match[1] != null
+      const latex = (display ? match[1] : match[2] || '').trim()
+      if (latex) matches.push({ index: match.index, end: match.index + match[0].length, latex, display })
+    }
+    if (!matches.length) return
+    // KaTeX is lazy-loaded (P8). The raw `$…$` text stays visible until the
+    // chunk resolves, then each run is materialized in one pass. The node view
+    // reports ignoreMutation, so filling after it returned is safe; a detached
+    // text node (view rebuilt meanwhile) is skipped.
+    loadKatex().then((katex) => {
+      if (!textNode.isConnected) return
+      const fragment = document.createDocumentFragment()
+      let cursor = 0
+      for (const m of matches) {
+        let span = null
+        try {
+          span = document.createElement('span')
+          span.className = 'hm-html-block-math'
+          span.innerHTML = katex.renderToString(m.latex, {
+            throwOnError: false,
+            displayMode: m.display
+          })
+        } catch {
+          span = null
+        }
+        if (!span) continue
+        if (m.index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, m.index)))
+        fragment.appendChild(span)
+        cursor = m.end
+      }
+      if (cursor > 0) {
+        if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)))
+        textNode.replaceWith(fragment)
+      }
+    }).catch(() => {
+      /* KaTeX unavailable — the literal $…$ text remains, which round-trips fine */
+    })
+  })
+}
+
+const renderMathInHtmlBlock = (dom) => {
+  dom.querySelectorAll('td, th, p, li, figcaption, summary').forEach((cell) => {
+    renderMathTextNodes(cell)
+  })
+}
 
 // Strip <script>/<style> and inline event handlers so rendering local HTML can't
 // run code. Tables/fragments parse correctly inside a <template>.
@@ -64,10 +137,19 @@ export function renderHtmlNodeView(node) {
     return { dom: span, ignoreMutation: () => true }
   }
   const dom = document.createElement(isBlock ? 'div' : 'span')
-  dom.className = isBlock ? 'hm-html-block' : 'hm-html-inline'
+  const hasTable = isBlock && /<table\b/i.test(value)
+  dom.className = isBlock
+    ? `hm-html-block${hasTable ? ' hm-html-table-block' : ''}`
+    : 'hm-html-inline'
   dom.setAttribute('data-type', 'html')
   dom.contentEditable = 'false'
   dom.innerHTML = sanitizeHtml(value)
+  // Raw-HTML table blocks carry formulas as literal `$x_1$` text — most MD
+  // editors render math inside HTML tables, so materialize each `$…$` /
+  // `$$…$$` run into KaTeX HTML at node-view build time. Render-only: the
+  // node still round-trips the original bytes through attrs.value, so the
+  // saved Markdown is untouched.
+  if (isBlock && hasTable) renderMathInHtmlBlock(dom)
   return { dom, ignoreMutation: () => true, stopEvent: () => false }
 }
 
@@ -159,25 +241,49 @@ export function remarkMergeInlineHtml() {
 // Convert the block containing the cursor to a different type. Operates on the
 // textblock the selection actually sits in and commits through the view so
 // ProseMirror's state stays in sync.
-export function convertBlock(view, typeName, attrs = {}) {
+export function convertBlock(view, typeName, attrs = {}, targetPos = null) {
   const { state } = view
   const { schema, selection } = state
-  const { $from } = selection
 
   const targetType = schema.nodes[typeName]
-  if (!targetType) return
+  if (!targetType) return false
 
-  let depth = $from.depth
-  while (depth > 0 && !$from.node(depth).isTextblock) depth--
-  const node = depth >= 0 ? $from.node(depth) : null
-  if (!node) return
+  let node = null
+  let pos = null
+  if (Number.isFinite(targetPos)) {
+    const safePos = Math.max(0, Math.min(targetPos, state.doc.content.size))
+    const $target = state.doc.resolve(safePos)
+    let depth = $target.depth
+    while (depth > 0 && !$target.node(depth).isTextblock) depth--
+    if (depth > 0 && $target.node(depth).isTextblock) {
+      node = $target.node(depth)
+      pos = $target.before(depth)
+    } else if ($target.nodeAfter?.isTextblock) {
+      node = $target.nodeAfter
+      pos = safePos
+    } else if ($target.nodeBefore?.isTextblock) {
+      node = $target.nodeBefore
+      pos = safePos - node.nodeSize
+    }
+  } else {
+    const { $from } = selection
+    let depth = $from.depth
+    while (depth > 0 && !$from.node(depth).isTextblock) depth--
+    if (depth > 0 && $from.node(depth).isTextblock) {
+      node = $from.node(depth)
+      pos = $from.before(depth)
+    }
+  }
+  if (!node || !Number.isFinite(pos)) return false
 
   // No-op if it's already exactly what we'd convert to.
   if (node.type.name === typeName) {
-    if (typeName === 'heading' && node.attrs.level === attrs.level) return
-    if (typeName === 'paragraph') return
+    if (typeName === 'heading' && node.attrs.level === attrs.level) return false
+    if (typeName === 'paragraph') return false
   }
 
-  const pos = $from.before(depth)
-  view.dispatch(state.tr.setNodeMarkup(pos, targetType, attrs))
+  const transaction = state.tr.setNodeMarkup(pos, targetType, attrs)
+  if (!transaction.docChanged) return false
+  view.dispatch(transaction)
+  return true
 }

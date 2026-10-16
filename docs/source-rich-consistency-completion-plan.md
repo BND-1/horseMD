@@ -1,0 +1,614 @@
+# HorseMD 源码 / 富文本一致性最终收口计划
+
+> 建立日期：2026-08-29
+> 当前源码与安装版本：`0.13.236`（本机已安装带trace；0.13.234–0.13.236 未提交/推送/发布，线上仍 0.13.224）
+> 分支：`main`，未提交工作区；开发机为 Mac mini（见 `ai-handoff.md`）。
+> 最终目标：任何成功持久化的 revision 都满足 `parse(committed source) ≈ committed ProseMirror doc`，源码模式、磁盘和冷重开逐字一致；无法证明的事务只能 fail closed，绝不静默写入错误源码。
+
+## 2026-10-02–06 模糊测试驱动的暂停家族收口（0.13.235–0.13.236）
+
+新增 `npm run fuzz:rich-source-ui` 随机编辑模糊测试（真实 Electron、逐字/IME、保存后冷启动比对）。结论：未出现写错源码；fail-closed 暂停过于频繁。已修 18 个家族（引用 marks/多行、表格单元格/多单元格/`<br>`、trailing 段落与标题 id 的 editor-only 吸收、journal 局部性、行内标记旁/内回车、行首哨兵、BOM marker、段末空白等），并清零原有 5 个长期失败测试。**家族根因、修法位置、未修清单与分诊流程以 [`rich-source-fuzzing.md`](./rich-source-fuzzing.md) 为准。** 全局 P0 仍未宣布关闭：随机长序列仍会在较少见组合上暂停。
+
+## 2026-09-24 #139剪贴板互操作与两个写回边界
+
+0.13.227–229修复混合列表选区纯文本/HTML段落边界和外部HTML的明确white-space换行。0.13.230保留精确基线的必要编号转义；0.13.231扩展既有中间续行识别到两个空格硬换行，保留0.13.195多段粘贴回归，未修改原断言或完整性门。方案、失败证据和逐项commit见[issue-139-line-break-interoperability-plan.md](./issue-139-line-break-interoperability-plan.md)。
+
+14项边界合同、完整保真、39/39探针、34/34 DOM、26/26应用LF/CRLF矩阵及相邻复制/字体/主题/两端构建/教程均通过。安装包257文件与验证out一致，已安装包4项独立抽验通过，PID63500日志已生成。所有测试只操作隔离副本。输入转换可能先丢换行而后续同步仍一致，因此验收同时检查原始剪贴板意图、编辑器节点、源码、磁盘和冷重开，不能只数警告。
+
+本轮未推送发布，未进行Windows原生对端应用联测，未关闭#139或全局P0/P7c/Redis性能工单。
+
+## 历史：2026-09-23 字体与右键复制
+
+0.13.225固定基础CSS→应用CSS顺序，恢复默认六级标题与文档字体；0.13.226增加选区右键复制。字体、用户CSS级联和基本复制回归已通过，并断言源码/磁盘全文不变；不改变SourceSyncCoordinator或保存算法。2026-09-23扩展的65行代码部分右键复制/只读预览断言已实际通过，桌面/移动端构建和教程检查完成。该轮曾打包安装0.13.226（历史PID45544），随后以`ef7c7ff`提交；当前本机已升级0.13.231，仍未推送/发布。安装路径、包哈希及备份详见`docs/ai-handoff.md`。这两项不关闭任何一致性P0/P7c或Redis性能工单。
+
+## 已交付检查点：0.13.223–224 两类真实触发修复
+
+- **0.13.223 / `aec97ac`**：删除列表内空段落后，源码已等价却被搁置。普通回调和强制刷新共用双解析/严格列表检查后的无字节变更候选，经Coordinator推进基线。该修复已提交和安装。
+- **0.13.224**：表格单元格删空被非空门拒绝后，legacy映射错误重排并拼坏另一行。扩展表格owner的空状态转换，逐步证明稳定路径和不变行列，仅替换目标管道槽位文字，保留语义、列表及revision校验。
+- **验证**：真实trace故障副本普通回调/强制刷新、中文IME、源码全文、列数、保存与fresh-profile冷重开通过；既有表格UI、Coordinator、8项调度与39/39保真探针通过。`test:table-cell-empty-replay-ui`支持只读`TABLE_CELL_INPUT_TRACE`与`TABLE_CELL_FORCE=1`。
+- **完成度**：只关闭已覆盖的局部故障；全局P0/P7c、其它未验证结构操作及Redis约1.9秒整篇同步长任务仍开放。
+
+### 交付核验
+
+2026-09-19完成Mac本地安装、trace解码，以及GitHub run `35444210508`各原生平台构建。`v0.13.224`最初为预发布；随后按用户明确要求提升为正式版，已核验`draft=false`、`prerelease=false`及Latest=v0.13.224。15个附件的ID、大小和摘要保持不变。Windows另有本地交叉构建EXE，与GitHub原生包校验值不同；详见`docs/ai-handoff.md`。Windows真机交互验收未做，全局P0/P7c/Redis长停顿仍不关闭。
+
+## 历史检查点：逐键开销改善，长任务仍未收口
+
+`0fc68c8`（0.13.221）消除事务trace重复全文JSON/传输，保留可精确还原的不可变节点字典；`332a32d`（0.13.222）避免无评阅正文每键全篇位置定位。相同Redis全文带日志24键对照输入p50 68→17ms、p95 74→22ms；新增日志55.5MB→0.487MB。逐事件还原42条连续快照、评阅UI及原Redis严格链通过，原semantic/list-slot/revision校验未放宽。
+
+但停止输入后的主线程长任务仍约1.9秒，此项明确未完成，不能用中位数或最终保存正确替代体验验收；后续优先剖析普通段落legacy路径的全篇列表匹配和重复parser调用。P7c与全局P0仍未关闭。测量方法、脚本、证据位置及限制详见 `docs/performance-large-doc.md` 顶部。实际0.13.222已安装，PID47637带trace，旧38670日志保留；原Redis文件未改，历史未跟踪文件未清理。
+
+大文档新事务日志必须从文件头用 `createTransactionTraceDecoder()` 顺序还原 `pm-node-refs-v1`，再按原有first-divergence标准分析。日志格式优化不是删除证据，也不改变任何发布校验。
+
+## 上轮接手：真实 Redis 首发 + 同步调度 + 映射开销
+
+四个独立本地提交已完成，**不等于全局 P0 或 P7c 已关闭**：
+
+| 版本 | 提交 | 内容 | 本轮验证 |
+| --- | --- | --- | --- |
+| 0.13.217 | `61176a4` | 即时同步取消旧尾沿定时任务，阻止 B 后再次处理旧 A | 旧生产代码虚拟时钟先失败、修复后通过；Coordinator；desktop build |
+| 0.13.218 | `93af63e` | 延迟执行使用当前 PM 文档；强制刷新与成功发布取消旧任务 | 8个调度合同；真实 Redis 副本动态 Enter/IME/4次退格逐步零拒绝；源码全字节/磁盘/冷重开；相邻 IME |
+| 0.13.219 | `373bb4e` | nested paragraph proof 缺失参数导致 ReferenceError | 原 owner 合同从抛异常转绿；true/false 证据值回归；相邻 tail owner |
+| 0.13.220 | `eac0a75` | 一次 structural publication 内复用 bounded source map，finally 释放 | scope 隔离/异常/淘汰/偏移等值；原映射13组；实际 Redis 严格链和相邻列表合并；无trace输入基准 |
+
+### 首次分歧与回归证据
+
+- 现场用户 app 为 `/Applications/HorseMD.app` 0.13.216，PID 25389，argv 含 `--horsemd-input-trace`。当前文件位于 `$(getconf DARWIN_USER_TEMP_DIR)/horsemd-input-trace-25389.jsonl`，接手读取共200行、89528566 bytes。
+- 第193行 `list-empty-item-tail-previous-row-not-empty` 不是独立起因。第194行 evidence dump 展示更早 journal-6 正文删除 `粉色分 → 粉色` 的候选正确但 canonical 仍旧，触发 `source-document-mismatch`，之后的尾空项拒绝沿用已失配基线。没有通过放宽 tail 证明修补末尾报警。
+- 新增 `scripts/test-redis-delete-tail-replay-ui.mjs`。`REDIS_INPUT_PATH` 可指向原 Redis 文档，只读原文并复制到测试临时目录；不是在用户文件上自动输入。预置列表控制组未复现，动态 Enter 建项 + IME 填充 + 退格链在旧版重现相同候选/旧 canonical 错位。修复后逐步无拒绝，完整源码和磁盘等于只包含预期编辑的全文，fresh-profile 重开正确，原文件未改。
+- 验证执行：`task_eedff7b0c022d281`、`task_bd8e046d30a7c327`；综合源码保真/39探针/desktop+mobile 构建为 `task_43db31833c6c0091`，均 exit 0。注意下面对旧 tight 回归的例外判定。
+
+### 性能证据边界
+
+原 Redis 为508802 bytes、333584 chars、13107 lines。`test:source-map-scope` 在完整 Markdown + 两块 PM 目标模型上测8次位置查询，全文parse 8→1、单次1389→166ms，偏移逐项等值。缓存只覆盖一次 structural owner 发布；没有替换原映射算法，也不跨callback/revision缓存。该比值不能外推为整机或打字提速倍数。无trace20键的输入事件延迟p50单次37→33ms，只能说明该样本未回退，长期帧延迟和输入法混合操作仍需实测。
+
+### 未关闭项与下一检查点
+
+本轮扩展运行 `test:redis-tight-backspace-replay-ui` 仍出现 bs1/bs2/bs3 的内部 integrity 拒绝，最终保存正确、无toast，旧脚本返回PASS。**按本计划 first-divergence 标准，此项未通过严格验收**；这与既有 P7c held 候选工单一致，不因本轮四个提交而消失。下一步应先把该链的第一处拒绝固定为严格失败测试，再完善证明/受验证的 bounded fallback，不能删除校验或依赖后续自愈。本轮没有实现通用 fallback、没有关闭其它 legacy迁移工作，也未声称全量旧测试全部通过。
+
+接手原文 SHA-256：`2edc209aea4539d8849acac242f1f6e507c93babbf9bd59dcb21eb2a02cf7025`。代码修复轮次未修改或再次规范化原文，未删除历史34条untracked，未 push/release；当时未替换安装应用。
+
+后续用户明确授权安装并强制退出旧测试进程，现已重新打包安装 0.13.220，旧 PID25389 及其 helper 已退出，新 PID38670 运行 `/Applications/HorseMD.app`，argv 含 `--horsemd-input-trace` 和 Redis 测试文件路径。新日志 `/var/folders/4y/k4t_v1r1745gl5m_h1vwc6j40000gn/T/horsemd-input-trace-38670.jsonl` 已实际非空，旧日志保留；安装版 app.asar 与本次产物哈希一致，Redis 原文安装期间未变。后续交付需完成“验证、小步提交、重新打包安装、trace 启动、实际版本/PID/日志核验”再请用户真人测试；本次安装不表示 P7c 或全局 P0 已关闭。
+
+## 1. 最终完成定义
+
+项目只有同时满足以下条件，才能宣布“源码与富文本不一致 P0 已关闭”：
+
+1. 作者 Markdown 是唯一持久化事实源；ProseMirror 只提供编辑事务和交互状态。
+2. 所有用户可达的持久化操作都通过 `SourceSyncCoordinator` 原子发布，不存在直接成功写 source ref、canonical ref、host `onChange` 或磁盘的旁路。
+3. 每个 recognized transaction 都只有两种结果：
+   - 由唯一 owner 生成 bounded raw patch，并通过 parser、semantic、list-slot、revision 与 provenance 校验后提交；
+   - fail closed，作者源码和磁盘保持不变，并提供 warning / recovery 出口。
+4. 新 owner 拒绝后，旧 canonical-diff 逻辑不得重新猜测同一已识别 family。
+5. 未编辑字节、BOM、LF/CRLF/lone-CR、列表 marker、ordered delimiter、围栏风格、空行和表格 spacing 保持。
+6. 源码 textarea、tab mirror、host state、disk bytes 与 fresh-profile reopen 一致。
+7. 正式安装包的长会话 first divergence 为零，不允许“先报错后自愈”。
+
+这里的 `≈` 只允许明确登记的 editor-only 等价，例如 GFM 无法编码的表格列宽、光标/选区和经过精确路径证明的瞬时空段；不允许正文、结构、列表槽位、任务状态或持久化语义差异。
+
+## 2. 全程执行规则
+
+每个阶段都必须遵守：
+
+- 不新增基于 delayed canonical 最终形状的专用猜测。
+- family 由真实 ProseMirror Step、对应 `stepDoc`、稳定 node path、journal continuity 和 raw range 证明。
+- 先写失败优先测试，再接 production owner。
+- 正向测试必须覆盖 callback 与立即 save/source-mode forced flush。
+- 负向测试必须证明 owner 拒绝后不会被 generic legacy 接管。
+- 只有 focused、相邻、全局门禁全部通过后，才可标记 `legacyRetired` 或删除旧 mapper。
+- 一个阶段一个清晰本地提交；未成熟下一阶段草稿不得混入。
+- 不执行 `git reset --hard`、`git clean`、批量 checkout/restore；不破坏长期 dirty tree。
+- 版本只在形成新的可验收产品行为时递增；test-only / docs-only 收口不强制升版。
+- 每次本地提交后重跑该阶段最高风险 Electron smoke。
+
+## 3. 阶段总览
+
+| 阶段 | 目标 | 当前状态 | 完成标志 |
+| --- | --- | --- | --- |
+| A | 收口 `0.13.148` 代码块显式退出与首批 legacy 退役 | **完成：`9dafd76`** | 完整工作树版本通过 focused/global/build，排除未来草稿，形成本地提交 |
+| B | 完成剩余代码块生命周期 owner | **进行中：`code_block → paragraph` 已完成，下一项审计 boundary join / product-reachable conversion** | paragraph↔code、boundary join、完整 fence lifecycle 均有 Step owner与双路径持久化 |
+| C | 退役 blockquote legacy owners | **完成：`5da0e17`** | text/split/join/exit 的旧 dedicated/generic fallback 均被 no-hit 合同覆盖并窄删除/阻断 |
+| D | 退役 table legacy owners | 未开始 | cell、row、column、alignment、width 不再允许旧整表/行级猜测接管 |
+| E | 退役 list legacy owners | **暂停扩面：0.13.151–0.13.165 已完成 empty-item/ordered successor Backspace 链 + plain bullet indent/outdent/split/join + task checkbox AttrStep + task end-Enter empty sibling；0.13.166 又按真实人工 trace 收口 blockquote list-exit、nested ordered parent-join 与既有 list-subtree bullet paragraph-join mapper；在 E0 横切阶段完成前，不继续扩展 task/conversion/input-rule family** | list subtree、item text、Enter/Backspace、task、input rule、conversion 分 family退役 |
+| E0 | **公共输入事务链收口：generated-scratch / IME / pending-text / empty-transient** | **立即进行：0.13.169 人工 trace 已证明 blockquote nonempty→empty 与 nested bullet IME→Enter 仍穿过新旧架构接缝** | 已迁移 family 在普通文件/新建文档、普通输入/IME、单步/连续结构操作下共用同一 Journal→proof→Coordinator 路径；不再因 serializer whole-document formatting drift 误判未编辑区域 |
+| F | 普通段落成为默认 transaction authority | 未开始 | insert/delete/replace/split/join/empty/undo/redo/IME 全覆盖，generic region mapper退出主路径 |
+| G | marks、atoms 与特殊入口统一 | 未开始 | inline code、format marks、link/image/math、frontmatter、Slash、paste、generated scratch、whole-doc统一 publication |
+| H | 消除所有持久化旁路 | 未开始 | 成功写回只能经 Coordinator；静态审计和 runtime trace 均证明无旁路 |
+| I | 长会话与正式安装包资格验收 | 未开始 | clean commit→dist→安装→trace长会话→多轮保存冷重开 first divergence=0 |
+
+## 3.1 阶段 E0：公共输入事务链收口（当前最高优先级）
+
+### 为什么现在必须先做 E0
+
+0.13.169 人工 trace 证明，当前剩余问题不是“引用又坏了一个 case、列表又坏了一个 case”，而是已迁移 owner 仍按理想化单事务输入模型工作，而真实输入流水线会跨 generated scratch、IME composition、pending text 和结构 Step 形成连续事务链。继续直接迁移 task/conversion/input-rule，只会把同一接缝复制到更多 family，因此阶段 E 暂停扩面，先完成这一横切层。
+
+本轮两条必须直接作为架构验收样本，而不是事后补丁：
+
+1. **Blockquote nonempty → empty**：generated-scratch 文档中，第三个引用 paragraph 只有作者字符 `‘`，物理 Backspace 产生非结构 `ReplaceStep(from=80,to=81,sliceSize=0)`，PM 只把该 paragraph 清空；source candidate 正确删除字符后留下作者 quote marker `>`，serializer canonical 却生成 `> <br />`，旧 `blockquote-paragraph` owner 因“next 必须 nonempty”拒绝，随后 whole-document scratch 校验又把上方未编辑列表的 formatting drift 一并卷入失败。
+2. **Nested bullet pending text → Enter split**：generated-scratch 文档中，先 Tab 得到空 nested bullet，再用中文 IME 输入“请问富户”，composition 形成多笔普通 `ReplaceStep`，紧接着 Enter 形成最终 `ReplaceStep(structure=true,sliceSize=4,openStart=2,openEnd=2)`。现有 `list-nested-bullet-item-split` owner只接受 `transactionCount===1 && stepCount===1`，因此完整真实 journal 被拒绝并掉回 scratch canonical fallback。
+
+### E0 架构原则
+
+1. **证据捕获与 publication 永久分离**：普通文档、generated scratch、IME composing 都必须捕获 revision-bound Journal；composing 期间不得发布 source，但也不得丢 Step/StepMap/stepDoc。
+2. **公共 pending-text chain 合同**：抽取共享 helper，证明“同一稳定 target path 上 0..N 笔 closed plain-text ReplaceStep + 可选唯一 terminal structural Step”。helper只负责事务链连续性、目标 path、attrs/邻居不变、逐 Step replay 与 terminal Step 分界，不负责 family-specific Markdown patch。
+3. **family owner 只做 family-specific topology/raw patch**：blockquote、nested bullet、task 等 owner复用公共 chain proof；不得各自重新实现 IME 拼音中间态识别，也不得从 canonical 最终形状猜 operation。
+4. **empty transient 统一为 path-scoped + revision-bound 语义上下文**：只允许 proof 明确登记的空 block/list paragraph 在当前 revision 中作为 editor-only transient；形状消失、path失效或 revision推进时自动清除。禁止全局 `ignore empty`。
+5. **generated scratch 不是第二套 source authority**：未识别事务仍可使用 scratch compatibility fallback，但任何已经被 migrated family PM proof 识别的事务，必须优先走 focused owner；recognized rejection 继续 fail closed，不能再被 scratch/legacy canonical 猜测接管。
+6. **未编辑区域 formatting drift 永远不能决定局部事务成败**：例如作者 bullet `-` 与 serializer `*`、nested list blank-line 差异只能作为 untouched formatting drift；局部 owner验证应依赖 bounded source patch + semantic/list-slot/provenance，而不是要求 whole-document canonical 字节一致。
+
+### E0 实施步骤与落盘状态
+
+- [x] **P0 计划落盘与 trace 定性**：把 0.13.169 两条真实 first-divergence、公共根因、实现顺序和门禁写入本长期计划；阶段 E 在 E0 完成前暂停扩面。
+- [x] **P1 公共 transaction-chain helper**：`source-sync/pending-text-transaction-chain.js` 的 `provePendingTextTransactionChain()` 已落地——证明"0..N 笔 closed plain-text ReplaceStep + 可选唯一 terminal Step（须独占 transaction）+ target validator 钩子"，逐 Step replay 校验 stepDoc/afterDoc 连续性，失败返回带前缀 reason；`scripts/test-pending-text-transaction-chain.mjs` 覆盖 IME 多 transaction、replacement、terminal structure、delete-to-empty、terminal 隔离与两类 fail-closed，PASS。首个消费者为 blockquote-paragraph owner（P2）；nested bullet owner 在 P3 接入。
+- [x] **P2 Blockquote nonempty→empty 并回已有 paragraph family**：`blockquote-paragraph-text-replace` 分类改用 P1 chain proof；仅当 proof 终态为目标 paragraph 清空时才以 family-scoped `allowEmptyTextblock` 授权 mapper 的 delete-to-empty（`source-transaction-sync.js` 历史保护保持默认 armed），raw patch 只删作者正文 bytes，quote prefix/EOL/BOM/邻段不动；empty transient 只登记在 exact blockquote nodePath（`ignoreTrailingEmptyBlockquoteParagraphPaths`），且分类层先证明"trailing + quote ≥2 children + 前一 sibling 非空"——其余 emptied 拓扑（middle/仅此一段）为 `recognizedRejection` fail closed，未新增宽泛 family。validator 侧 `blockquote-paragraph-emptied` reason 的 proof gate + path 激活与 semanticJson owned-path 规则对齐（接受 text-paragraph previous）。验证：`test:blockquote-paragraph-transaction-owner`（真实 trace 单步 + IME 式多步 delete-to-empty + 全部负例）、`test:source-document-equivalence-transients`（含激活矩阵）、新增 `test:blockquote-paragraph-emptied-ui`（existing file × callback/forced-flush：owner 发布 `blockquote-paragraph-emptied`、BOM/CRLF/`> ` marker 保真、save bytes、fresh-profile cold reopen、零 integrity false/warning）全部 PASS。0.13.169 真实 trace 的 generated-scratch 维度由该 family 既有 `generatedScratchEligible` allowlist（348d51f）覆盖，scratch × emptied 专属场景归入 P6 矩阵。
+- [ ] **P3 Nested bullet IME→Enter 并回已有 split family**：先用 P1 将 terminal Enter 前的 pending text原子映射回 source，再由既有 split topology证明最终结构 Step；empty nested baseline没有正文 source-map时，用已证明 parent/相邻物理 list row作为稳定锚点定位唯一 authored empty nested marker，不能伪造 offset。
+  - **P3a 已完成（2026-08-31，blockquote 侧）**：`blockquote-paragraph-split` 已拥有「尾段段尾 Enter（空右段）」——`findSplitIndex`/`quoteMatchesPhase` 允许 trailing child 的空右段，结构合同允许 `parentOffset === content.size`（仅 trailing）；raw patch 保留作者 `> ` 分隔行字节，空尾段经 exact nodePath transient（`ignoreTrailingEmptyBlockquoteParagraphPaths`）进入语义比较，validator 侧新增 `blockquote-paragraph-split` + `trailingEmptySplit` proof gate（结构 Step 必须在 stepDetails 中）。验证：`test:blockquote-split-transaction-owner`（段尾 split 正例、生产形态语义桥"必要且充分"断言、pending text+段尾 split 链、非尾段空右/空左负例）、新增 `test:blockquote-split-trailing-ui`（IME composition→立即段尾 Enter，callback/forced-flush、save、cold reopen、零 warning）。空右段仅 trailing 可拥有；中段空右、空左仍 fail closed。
+  - **P3b 已完成（2026-08-31，0.13.181，09:47:33 用户 trace 驱动）——pending-text 链 + 终态 Enter split**：trace 完整归因（evidence dump + 逐次 publication 演化）：用户在已存盘大文档的 `- 查询某类…` 项下 Tab 出嵌套 bullet → IME 输入「期看；妙可」→ **Enter 建空嵌套 sibling（FIRST DIVERGENCE 09:47:30.938：journal = 4 笔 IME 文本步 + 终态 `4335-4335 slice=4 open2/2` splitListItem，`nested-bullet-split` owner 因 `transactionCount!==1` 拒绝 → legacy `batched-list-block-changes` 把源里的嵌套空行 `  * ` 删掉、在顶层写出 `- `）** → 后续 IME「蔷薇科」落在错误顶层行 → 退格删完后 33.003 legacy 再插顶层 `* ` → 与 PM doc（嵌套空项 indent2）语义冲突 → 3 次警告 → 35.186 `nested-empty-list-item-removed` 自愈收敛。改造（mirror P3a）：① 分类先重放整条 journal 链——每笔 pre-terminal 步必须是 closed plain-text ReplaceStep 且落在**同一**嵌套 item paragraph（按节点身份推导 5 级 path；`ResolvedPos.index()` 在交替列表嵌套上与 child-index 约定错位，不可用）；终态 split 步（slice=4 open2/2）必须独占其 transaction；② 形状匹配改对 **pre-split doc**（split entry 的 beforeDoc）而非 `journal.oldDoc`——leftText+rightText 必须等于用户实际分割的（可能被 IME 改过的）词，而非原始词；③ 发布：单步形态保持历史「只在边界插入 EOL+indent+marker+spacing」补丁；pending-text 形态改为**整行 body 重写** `leftText + EOL + indent + token + spacing + rightText`（blockquote 家族同型的终态 bounded patch，行 body 先对 oldDoc 段落文本证明锚定）。**关键教训（recognized 边界）**：链重放阶段的一切拒绝（文本落在 foreign 段落、步形状不符、链断裂）必须降为普通 rejected——blockquote 段落的 IME+Enter（slice=2 open1/1）会走同一分支，若标 recognized 会 fail-closed 劫持别人的家族（本轮实事故：`nested-bullet-split-text-outside-target-paragraph` recognized 误报 → `blockquote-split-trailing-ui` 红，降级后复绿）；只有终态 split 已定位且后续 slice/range 证明失败才保持 recognized。验证：`test:list-nested-bullet-split-transaction-owner`（新增 IME 链+终态 split 正例、foreign 文本步负例）、新增 `test:list-nested-bullet-split-pending-chain-ui`（真实 CDP IME composition→立即 Enter，callback/forced-flush、嵌套拓扑、owner 唯一发布、零警告、save 磁盘字节含 `  * ` 嵌套 marker）；join/tail-indent/indent/single-child-outdent/blockquote-split 的 UI+Node、blockquote retirement 负例、scratch 兜底×4、paste-tilde、list-conversion、goal-matrix 42/42 全绿。
+  - **P3b(2) 未做（剩余缺口，同 trace 第二形态）**：用户在嵌套空 sibling 里 IME 输入「蔷薇科」时，generic mapper 因 `$from.depth>1 && parent.content.size===0` 拒绝（`nested-empty-textblock-edit`），legacy 把文本发布到顶层 `- ` 行（indent 0）。需要 focused owner 证明「0..N 笔 plain-text ReplaceStep 全落在已证明嵌套 bullet item 的空 paragraph」并把文本写进既有嵌套 marker 行尾。P3b(1) 修复后该形态触发面收窄（源里不再有错误顶层行可落），但独立场景（直接在嵌套空项输入）仍存在。
+  - **P3n 已完成（2026-08-31，0.13.182，11:50:57 用户 trace 驱动）——raw paste token 竞态的误报警告**：用户在同一文档上粘贴同一份 2904 字节 Markdown 两次：第一次干净（bind ok → plan ok → publish `source-sync-live-document-stale` → scratch 释放 → canonical 发布），随后切源码看了一眼 → Cmd+S 存盘 → Cmd+A 全选 → Backspace 清空（`whole-document-replacement` 发布）→ 第二次粘贴：bind ok(2 tx) → plan ok → publish stale → **延迟的 markdownUpdated 重试 plan 得到 `raw-markdown-paste-document-unproven`（第二笔 transaction 在 bind 之后移动了 doc，token.expectedDoc ≠ 当前 doc）→ 旧代码在此直接 fail-closed 报警**。归因：多事务粘贴里第一笔事务的回调先发布并推进基线，重试对当前状态必然 stale/unproven——这是**发布顺序竞态**，不是内容分歧（用户"完全不知道怎么触发，打字不触发"正是因为它只在「粘贴→存盘→清空→再粘贴」这种序列出现）。修复：把该站点（plan 失败 + publish 失败两个分支）从「scratch 才释放，已存盘直接报警」统一为**释放 token 并落回正常 preserve 管线**——preserve 管线自身完整校验候选后才提交，能证明映射就发布粘贴内容，不能证明才以精确 reason fail-closed。报警从「token 竞态本身」改为只在 preserve 证实真实分歧时触发。注：本机 headless 合成 ClipboardEvent 无法完全复刻原生 Cmd+V 的多事务时序（合成事件下 canonical 混合欢迎文档字节，属合成产物非用户形态）；修复验证依赖真实粘贴回归（`test:paste-tilde-table-ui` 双 flavor 粘贴零警告内容完整、`test:mixed-rich-source-transaction-ui`、`test:diverged-ordinary-save-ui`、`test:scratch-canonical-fallback-ui`、goal-matrix 42/42）。`test:rs-41-middle-rich-source-ui` 需要外部 `FILE` fixture（含「额法俄法」的大文档），无 fixture 时在基线上同样失败，非本改动回归。
+  - **P3o 已完成（2026-08-31，0.13.183，12:15:48 用户 trace 驱动）——新空行 marker 闪烁（`-` ↔ `*`）**：用户观察"手打 `-` 后切源码，一会儿是 `*` 一会儿还是 `-`"。trace 归因（`generated-scratch-canonical` 发布扫描）：在嵌套列表项末尾按 **Enter 退出到新的顶层空行**时（`  * 俄法两年了n` → 新 `* `），`preserveGeneratedBulletMarkers` 的四条继承路径全部不命中：① exact-text 匹配不可能（新行无文本）；② ordinal 匹配要求行数不变（行数 +1）；③ `uninterruptedFromPrevious` 要求前一 sibling 同缩进（前一个是 indent2，新行 indent0）；④ `newlyNestedFromPrevious` 只管变深不管变浅 → 序列化器默认 `*` 落进 source。之后用户在该行输入文本、行数稳定，text/ordinal 匹配又把它翻回 `-`——这就是闪烁。修复：新增第五条**空行变浅继承**——当新 canonical 行仍是空 marker 行（无文本锚）且从更深的 sibling 退出到更浅缩进时，向前找最近的同缩进 canonical 行，按其文本（或位置兜底）在 source 里查该层级的作者拼写并继承（**只读拼写不消费 source 行**——第一版要求 unused 行，被 text 匹配消费后饿死，5 个单测全红后修正）。单测 5/5：trace 原形状/单行 `-`/作者用 `*` 保持 `*`/作者用 `+` 保持 `+`/纯嵌套文档无顶层行时不继承。回归：markdown-source-preservation、scratch-marker-spelling、list-conversion、new-document-list-source、paste-tilde、scratch-canonical-fallback、pending-chain、goal-matrix 42/42 全绿。
+  - **P5 系列已完成（2026-09-01，0.13.188–0.13.192，用户真实触发驱动，提交 3eb7ef7 → f24815e）——代码块/嵌套列表/CRLF/批量删除四族误报与真实损坏收口**：完整修复表与踩坑见 `docs/handoff-0-13-192-session.md`。要点：①嵌套列表项文本编辑 focused owner（任意深度+终态行内补丁）；②no-op 候选（===源码）在**回调与 flush 两条路径**都静默挂起；③localized 映射三守卫：CRLF 原子（边界不落 `\r\n` 对中间）、fence 不触碰（`localized-fence-crossing`）、多块纯删除不认领（`localized-multi-block-delete`）；④visible-mismatch 行替换保留作者 marker 前缀；⑤CRLF 家族五轮审计收口（27 形态全绿）。
+  - **P5d 已完成（2026-09-01，0.13.193，trace-23324 07:27:01/07:27:16 两窗口归因，提交 34a97a4）——代码块↔段落边界合并链 focused owner**：用户 Backspace 在紧跟 code_block 的段落「输出完全吻合。」开头 → PM `replace 1205..1207`（删 code 闭合 token + paragraph 开放 token，段落并入代码块末行 `排最后输出完全吻合。`）→ localized mapper 的 fence 守卫正确 fail-closed（`localized-fence-crossing`）→ 0.13.191 no-op hold **静默**挂起 → **无 owner 拥有该形状，源码永不更新**（用户看到的「删除后源码还留着 ```」比警告更严重——是静默失同步）。修复：把 8/29 写好但从未接线的 draft owner `code-block-boundary-join-transaction-owner.js`（untracked，code-absorbs-paragraph / paragraph-absorbs-code 双模式 chain proof）正式接线，并修掉它对着真实 CRLF 文档的 **三个 EOL bug**：①content 检查两侧未归一（CRLF 文档的 PM code text 带 CR，raw 比较必然失败）；②paragraph-absorbs-code 补丁把合并文本的裸 `\n` 直接写进 CRLF 文档（现按段落行自身 EOL 重写）；③code-absorbs-code 补丁仅替换 `\n`（现按 fence 自身 EOL 重写 `\r\n|\r|\n`）。注册为 `legacyRetired:true` 结构 owner（code-block 家族旁）。验证：新增 `test:code-block-boundary-join-transaction-owner`（双合并模式、后续文本链、邻块/fence/语义/stale fail-closed，8 合同）+ `test:code-block-boundary-join-ui`（真实 Electron 复刻用户手势：CRLF 文档、点击段落开头、Backspace、boundary-join publication、零警告、CRLF 保真、FAB 存盘磁盘字节正确）；code-block 家族 4 owner、fence 删除、middle code-block、coordinator/journal/preservation、goal-matrix 42/42 全绿。踩坑：CDP harness 里 `.pmViewDesc.view` 为 null（build 产物下不可用）——UI 断言走 DOM（`editor.children` 的 `P` / `.cm-content`），caret 用真实 `Input.dispatchMouseEvent`（与 CLAUDE.md 既有教训一致）。
+  - **P6a 已完成（2026-09-02，0.13.194，trace-79495 12:19:22 归因，提交 f204341）——行尾行内定界符的插入侧恢复（通用缺陷，非 inlineCode 专属）**：用户在纯行内代码段落（整段一个 `` `练达…` ``，span 恰好在行尾结束）末尾 IME 追加「兰芳」→ PM 段落 `[inlineCode(…), text(兰芳)]` → 22 个 focused owner 均不认领 → legacy `locally-aligned-change` 的可见流换算把插入点放进了 span 内部 → 候选重解析 ≠ 编辑器文档 → 语义校验 fail-closed 警告（文件未坏，但逐键触发）。**根因（精确机制，隔离复现）**：行尾 closing backtick 在可见流中零宽度，插入点（raw 5）与 backtick 前位置（raw 4）都折叠到 visibleIndex 3；`sourceVisiblePositionAtRaw` 对行尾位置返回 `backward` affinity，`sourceRawFromVisibleIndex(3,'backward') = map[2]+1 = 4`——**双向折返落到了定界符本身**，「在定界符前/后」的信息在可见流往返中丢失。任何「不可见定界符 + 行尾」（`` ` ``/`**`/`__`/`~~`）都命中同一塌缩。**修法（不动全局换算函数——被 mode-switch 光标映射共用，改语义风险大；修在 mapper 内）**：`preserveLocallyAlignedTextChange` 对「纯插入 + canonical 行尾以 closing delimiter run 结束 + source 行可见文本与 canonical 行一致」的形状，用 canonical delta 自身的侧别信息把 source 插入点重新锚定到**作者定界符 run 之后**（CRLF 容忍行尾 `\r`）。bold 行尾同恢复；span 内部真实插入、可见文本分歧的行不受影响。验证：preservation 单测新增 LF/CRLF/bold/inside-span 四组合同；新增 `test:inline-code-span-append-ui`（真实 Electron 复刻 trace 手势：CRLF 文档、真实鼠标点击段落尾、End、逐字 insertText、零警告、发布、FAB 存盘、磁盘字节 `动态平衡。\`兰芳\r\n` 且无裸 LF）；markdown-preservation、source-text-fidelity、mode-switch-raw-offset、inline-code UI×2、paste-tilde、mixed-transaction、coordinator、blockquote/list paragraph owners、goal-matrix 42/42 全绿。
+  - **P6b 已完成（2026-09-03，0.13.195，trace-94539 03:15:35/38/56 三次归因，提交 62671f8）——pending hardbreak 后多段粘贴的行内续行**：用户打「根据项目梳理，做以下分析：」→ **Shift+Enter**（hardbreak，其 markdownUpdated 回调尚未发布）→ Cmd+V 粘贴两段文本（尾部带空 `<p></p>`）。PM 终态 `[分析：+hardbreak+1、定义层] [先明确几个核心概念：] [空段]`；canonical = `分析：\⏎1、定义层⏎⏎先明确…⏎⏤<br />⏎⏎2、周期层`。legacy `middle-block-inserted` 把插入当**新块**：hardbreak 丢失（一段被拆成两段）+ `<br />` 被 `withoutStandaloneEmptyBlockLines` 剥掉 → 重解析 12 vs 11 顶层节点 → fail-closed 警告，**且此后零 markdown-sync——源码卡死不同步**（比警告更重的静默失步）。修复：`preserveMiddleEmptyBlock` 的 `directBlockInsertion` 分支开头新增**行内续行拦截**——canonical 锚行尾有 `\` 而作者锚行没有 + nextGap 前缀为单 EOL 接内容时，把 canonical 续行（hardbreak 字节 + 首行 + 其余新块）按作者 EOL 拼到锚行 content end，`<br />` 占位符不产出（`markdown-source-preservation.js:293` 的「占位符永不入源码」硬不变量保持；空段由比较器桥接——E2E 实证）。reason=`middle-continuation-inserted`。踩坑两条：①`lineAt` 回退的行对象只有 `{start,end}` 无 `.text`，hardbreak 检测必须从文档切片取文本；②不能用 `adaptCanonicalRegionToSource`（它会把 `<br />` 剥成空行）——手动 EOL 归一，canonical 转义保留反而更安全（`1\.` 回环解析为文本 `1.` 恰匹配 PM）。验证：preservation 单测（LF/CRLF/plain 无 hardbreak 不回归）+ 新增 `test:hardbreak-paste-continuation-ui`（真实 Electron：CRLF 文档、insertText 打锚行、CDP Shift+Enter（modifiers:8）、120ms 内合成双 flavor 粘贴（text/plain + text/html 含尾部空 `<p>`）、零警告、发布、切源码断言 `：\⏎1、定义层` 续行、FAB 存盘磁盘字节 CRLF 无裸 LF）；markdown-preservation、paste-tilde、mixed、fidelity、blockquote/list owners、inline-code UI×2（P6a 不回归）、goal-matrix 42/42 全绿。
+  - **P6c 已完成（2026-09-03，0.13.196，trace-48689 04:41:38 归因，提交 efdfa08）——分歧列表项合并退格的段落续行空行**：藤壶文献汇总文档（**分歧列表**：作者紧凑 `-` 行 vs canonical 带空行 `*` 行）上，用户删完某行前缀后在行首 Backspace → PM `replace structure:true` 把该行并入上一项——合并后 item = **[paragraph, paragraph] 两个段落**（canonical = `…混成膏。\n\n  氢键；…` 空行+缩进的松散项拼写）。`preserveDivergedNestedListChange` 的 lift 分支（lists.js:2549）只把作者 `- ` 前缀换成缩进、**没插空行** → 软续行 → 重解析成一个段落 → `content[22].content[2].content` 1 vs 2 → fail-closed 警告 + 源码卡死。**归因方法升级**：markdown-sync trace 事件自带全量 `source/previousCanonical/canonical/markdown`——直接从 trace 提取真实字节（18K source + 20K canonicals）做 Node 复现，比 E2E 复刻快且精确（本次 E2E 复刻因长文档滚动/点击定位反复失败后放弃，改走真实字节路径一次命中）。修复：`flatListItemRows` 行对象新增 `blankBefore`（物理前行为空 = canonical 把它作为独立段落分隔），lift 补丁在 blankBefore 时于缩进前插入作者 EOL；lazy 单换行续行不变。既有合同 `nestedOuterMarkerRemoved` 期望值修正为带空行——其 canonical 本身就是空行分隔，旧的 lazy 拼写重解析永远到不了两段落形状（很可能即账本已知失败家族的根因之一）。验证：真实 fixture 候选含 `混成膏。\n\n  氢键`、remark 重解析 item=`paragraph,paragraph` 与 PM 一致；preservation 套件（含新 blank/lazy 双向合同）、list-conversion、coordinator、P5d/P6a/P6b 三 E2E、goal-matrix 42/42 全绿。`test:diverged-list-structure-ui`/`test:nested-number-list-source-ui` 仍按基线方式失败（source textarea 未出现的 harness 层症状，非本修复回归）。
+  - **P7 已完成（2026-09-03，0.13.197，trace-62194 05:35:09 后用户明确要求「不要再补丁式修改」，提交 26378a5）——序列化风格跟随文档（分歧家族根治，架构变更）**：P6c 次日同一藤壶文档再次触发（分类行 bold 标签逐字删除 → `diverged-visible-delete` 产出 no-op 候选 → 警告 + 源码卡死）——同一家族的又一个微形状，补丁路线被用户否决。**根因（Milkdown 源码定位 + remark 实证）**：①remark-stringify 默认 bullet `*`、序号定界 `.`/`)`；②Milkdown `list_item.spread` attr **default true**，Enter/输入规则等命令创建的项带着毒化 sticky attr（实证：紧凑列表 parse→round-trip 本来就是紧的，app 内毒化后才永久松散）→ canonical 与作者紧凑 `-`/`1.` 拼写从加载起必然不同 → 文档永久分歧态 → 每次编辑跨分歧翻译，翻译失败=该家族警告。**修法（新模块 `lib/serializer-style.js`）**：挂载时（+ replaceMarkdown 时）探测作者主导拼写 {bullet、序号定界、紧/松、hardbreak 两空格/反斜杠}；包装 remark 实例的 `stringify`（Milkdown serializer 闭包动态查找实例方法，parse 不动）：①序列化前 walk mdast 把 spread 改为**纯内容推导**（≥2 个非列表块子节点，或**空 `<br />` 占位段后跟更多块**——CommonMark 里非 `1.` 起始的有序列表不能打断段落，紧凑拼写会把嵌套行变成懒续行）∨ 文档 loose 风格；②编译产物上做 fence 感知的行级重写（`* `→作者 bullet、`N.`→`N)`、行尾 `\`→两空格）——unified 实例首次编译后冻结、`data('settings')` 会抛错，设置通道不可用，全走后处理。**效果**：紧凑作者文档 canonical 与源码**逐字节相等**（藤壶文档除表格维度外 249/286 行全同），列表编辑全部走 exact/aligned 快路径，diverged-* mapper 家族降级为兜底。**残留**：表格对齐填充维度（table owner 兜底，记录为后续）；`__`/`_` 拼写维度未做。**验证**：单测（检测矩阵、毒化 spread 字节相等、占位符+嵌套 round-trip、fence 免疫、restore）；真实 Electron E2E（trace 手势：标签删除+项合并+存盘，紧凑 `-` 保真零警告）；全量：goal-matrix 42/42、mixed、P5d/P6a/P6b/P6a-style 四 E2E、preservation、coordinator、scratch-marker 全绿。过程踩坑：unified 冻结导致 settings 静默失效（E2E 里的 `-` 其实是 mapper 保的，改后处理才真生效）；`list.spread` 按作者风格而非 CommonMark 归一（作者混合拼写保真优先）；占位段判定须覆盖 mdast 空段与含 `<br />` html 内联两种形态。
+  - **P5b 未做（精确剩余工作）——表格渲染型 fence 吸收后续块**：` ```goodsTable ` 等 fence 内的 pipe 表被 Milkdown 渲染成可编辑表格；从表格下方段落开头退格，内容被吸收进表格最后一格 → `replaceChangedTableBlock`/`preserveTableTextChange`（`markdown-preservation/tables.js`）对 fence 无感知，只替换表格区域、被吸收段落留在候选 → 逐键警告（fail-closed 正确，文件不坏）。legacy mapper 内做 absorb 补丁的尝试已回退（mid-chain 每键发布的中间态产生伪影：cell 重复片段 + closing fence 被误删）；正确修法 = focused transaction owner 证明完整事务链（mirror code-block 家族），终态 bounded patch = 表格区域更新 + 被吸收行整段删除，fence 行硬边界。验收样本 = E2E trace-12063（04:44–04:47）。**普通代码 fence（```js 等）的删除链已修好**（0.13.190 fence 守卫，零警告验证）。
+  - **P6d 已完成（2026-09-09，0.13.203，trace-61614 16:24:52 归因）——`<br />` HTML 片段拖放的块级劈裂（输入层根因修复）**：用户把 text/plain `<br />`（html flavor 同载）拖到列表项文本内的 2 字符选区上 → prosemirror-view 原生 drop 偏好 html flavor 并解析为**块级**内容，在行内落点把宿主 textblock 从头劈开（列表项变 `[空段, 全文段]`，正文完好但结构碎裂）+ 派生 3 个顶层空段 → journal 因 `recentUserEditMissing` 未捕获（drop 不算 recent user edit）→ legacy `batched-list-row-changes` 把"项内前导空段"编码为 `- \n\n  文本`——**CommonMark 里空项 + 空行 = 项终止**，重解析后文本变成顶层段落 → parse(candidate) 10 顶层节点 vs PM 9 → `source-document-mismatch` fail-closed 警告（源码/磁盘未坏，作者字节保持）。**修复（新模块 `components/editor-drop-text.js`，capture 阶段镜像 paste 手法）**：无文件、非结构化 web html、有 text/plain 的拖放改为在落点**行内插入字面文本**（多行以 hardbreak 连接、code block 豁免），拖放选区语义正确处理（落点在选区内=替换；在选区外=先删被拖选区）；`markUserEdit` 让 journal 拥有该事务（focused owner 可用）。**第二层 bug（E2E 暴露）**：`replaceWith` 会把原选区映射为"覆盖新插入内容"的范围——下一次 drop 会把它当被拖选区**删掉刚插入的文本**（数据丢失路径）；插入后显式 `setSelection` 收拢为插入末尾光标。附带：trace 的 drop 事件现在记录 html flavor 头 300 字符（本次归因缺它只能从 PM 形状反推）。验证：新增 `test:plain-text-drop-ui`（incident 形状不劈裂、`\<br />` 字面字节入源码、FAB 存盘磁盘字节、fresh-profile 冷重开零警告、多行 drop 以 hardbreak 并入单段）；goal-matrix 42/42、web-paste、paste-tilde、mixed 全绿。遗留（按设计接受）：结构化 web html 拖放仍走 PM 原生；"项内前导空段"的比较器桥接未做——其它路径若再产生该 PM 形状仍会 fail-closed 警告而非静默。
+  - **P6e 已完成（2026-09-12，0.13.208，trace-38723 10:16:37 归因→当日修复）——松散列表项续行 IME 分裂后填充空 sibling 项的 focused owner（`list-empty-item-text-filled`）**：事故三步还原（见 fixture）：① 续行段落末尾 IME 提交 + Enter 分裂——空顶层 sibling 项由 legacy `middle-block-before-authored-fence`（forced-flush 边界）成功发布为源码空 marker 行（`- `，含其后空行），**分裂本身没有失败**；② 第二段 IME 组合（journal-3：6 笔 closed plain-text ReplaceStep 全落在新空项 paragraph，首笔 15512 = split 后 contentStart）填充该空项——空行在可见流零宽度，generic `locally-aligned-change` 的插入点漂移进**前一段落中间**（`色剂狂放不羁` 与 `开始` 之间），严格 list-slot 门正确拒绝（`ok=false listSlotsMatch=false`）→ 警告 + 源码基线停摆；③ 4 次 Backspace 后 `visible-stream-mismatch` 挂起。交接文档当初预判的"分裂无人认领、patch=缩进续行"与证据不符——终态实为**新顶层 sibling**（canonical `- 色不放假`），失败点是**填充步**，以三元组为准修正。**owner 合同**：`provePendingTextTransactionChain`（requireTerminal:false）+ validateTextChain——0..N 笔 plain-text 步全部落在同一 list_item 唯一 paragraph（oldDoc 时空、expectedDoc 纯文本无 marks、item plain 非任务、bullet/ordered 双支持）；空段落无可靠 offset，锚定用**邻项非空首段**（前项优先、空项居首回退后项）→ `listBlockAt` → markerRows 行数双侧（source + previous-canonical）等于 PM childCount、canonical 行 body 为 `<br />`；补丁 = 终态文本写入作者空 marker 行 body（indent/token/spacing/EOL 逐字保持；ordered 校验 ordinal=order+index）；`validateMarkdown` 最终门。**recognized 纪律**（P3b 教训落地）：链重放/形状未证明前的拒绝全部普通 rejected（E2E 的 forced 合并 journal 场景实证：owner 普通让位、legacy 正确发布、零警告），形状证明后的行/块/校验失败才 recognized fail-closed（阻断 legacy 误置——正是事故根因路径）。**验收全部完成**：① Node 合同 `test:list-empty-item-text-fill-transaction-owner`（15 合同：事故形状/单笔/ordered/居首锚定 + foreign 段落/非空目标/task/嵌套子列表/结构步普通拒绝 + 占用行/行数漂移/canonical 行分歧/序数错位/校验拒绝 recognized）；② 真实 Electron 真 IME E2E `test:ime-loose-item-split-ui`（`Input.imeSetComposition` 复刻 composition→Enter→composition：callback 场景 owner 唯一发布、forced 场景（split+fill 合并 journal）legacy 正确发布，两场景零警告、源码字节、FAB 存盘、fresh-profile 冷重开）；③ **goal-matrix 常驻新增 B6**（同节奏零警告门禁）——"以后改什么都不能再触发"的机制化；④ 相邻回归：cross-fence-span 12 合同 + UI、blockquote 四家族 Node、mixed UI、list 系 focused owner 全绿；`test:list-subtree-transaction-owner` 既有失败（干净树复现，遗留清单）。E2E 踩坑：续行段含行内代码时 caret 定位必须取**最后一个**文本节点（取第一个会把 IME 文字插到代码前、Enter 变段中 split）。
+  - **P6e(2) 已完成（2026-09-12 晚，0.13.209，trace-51037 21:31:44 用户实机触发）——0.13.208 owner 的 callbackDocumentEquivalent 硬门在分歧大文档上永远让位**：用户当日把带 trace 的 0.13.208 装机实测，在 redis 文档里做「点击松散项续行段 `一个整数。` → Enter 分裂（legacy `middle-block-before-authored-fence` 发布 revision 11 ✓）→ IME `se f s n k`→色反馈 填充新空项」，0.13.208 的新 owner **没有认领**：evidence dump 显示该会话 12 本 journal 全部被 `empty-item-fill-callback-document-mismatch`（deferred）挡在门外——P3b 式硬门要求 `parse(callback canonical) ≡ expectedDoc`，而 redis 文档的序列化/解析往返不对称（autolink 尖括号等）让它在**每次** markdownUpdated 上都是 false；deferred 不阻断调度层，发布权落入 legacy `locally-aligned-change`，文字漂移进前一段中间（`一[色反馈]个整数。`）+ 空行未填 → `source-list-structure-mismatch` 警告（P6e 同款形状、更深一层）。**根因教训：安全门选错了层**——journal checkpoint 已独立绑定 `journal.expectedDoc ≡ expectedDoc`（逐 stepDoc 重放），最终 `validateMarkdown`（候选解析 vs expectedDoc + list-slot）才是字节安全门；`callbackDocumentEquivalent` 度量的是 callback canonical 字符串的往返对称性，与本次编辑的正确性无关，且恰在 owner 为之存在的分歧文档上恒 false。修复：删除该硬门（canonical 基线沿用 callback 字符串，与 legacy 相同的推进方式但字节正确；proof 里如实记录该布尔值）。验证：Node 合同 9b（callbackDocumentEquivalent=false 必须照常发布）；**事故原样重放 E2E** `test:redis-line1-replay-ui`——fixture（`scripts/fixtures/redis-line1-replay/start.md`）字节取自触发 trace #246 事件的 committed source，真实手势（段末 caret + Enter + 真 IME 拼音含空格）在 333K 文档上重放，owner 唯一发布、零警告、源码/磁盘字节正确；小 E2E / goal-matrix B6 复跑全绿。重放 E2E 三踩坑（已记录在 CHANGELOG）：目标段 scrollIntoView 后坐标才在视口内；caret 必须在续行段**末尾**（段首 split 形状 legacy 发不了、journal 永远合并）；全新打开需一次良性编辑热身基线链（热会话才有 revision 链）。**遗留警示**：P3b/blockquote 等带同款硬门的 owner 在分歧大文档上同样存在"永远 deferred"的理论缺口，暂无实锤触发（无证据不扩大），若再遇同类"owner 从不发布但 legacy 误发"的 trace，第一嫌疑就是这道门。
+  - **P7b(2) 已完成（2026-09-13 凌晨，0.13.211，trace-89456 用户实机触发驱动）——全域移除 36 个 focused owner 的 callbackDocumentEquivalent 错层硬门**：0.13.210 后用户继续实测触发"整链停滞"——行内 IME 改写（`list-item-paragraph` 形状）无人认领（全部 owner 被该门挡在门外恒 deferred）→ legacy 可见流对齐失败 → no-op hold ×20 → 积压最终在空项填充处 recognized fail-closed 弹警。修复：36 个 owner（32 标准 + 4 `!callback` 变体）统一删门，proof 如实记录该布尔；安全 = journal checkpoint 绑定 expectedDoc + validateMarkdown 字节门 + coordinator 完整 integrity（0.13.210 后 transition 通道对分歧文档正确）。22 个 owner 合同的"callback 不等价必须拒"负例统一转为"必须照常发布"正例；两个 redis 重放 E2E（joinBackward 新增 2b 行内改写段）+ 小 E2E + preservation + goal-matrix 全绿。**教训闭环**：P6e(2) 的预警（"owner 从不发布但 legacy 误发/停滞时，第一嫌疑就是这道门"）在两代修复后应验——错层的安全门不因存在时间长而变对，三实锤（P6e fill、P7b stall、本域）齐后应全域清除而非逐个等待各自实锤。
+  - **P7h 已完成（2026-09-14，0.13.216，trace-21168 用户实机触发驱动）——空项家族全部四个 owner 的行数证明统一建模 CommonMark 相邻同类列表合并**：P7g 只修了 fill owner；同日用户在同样"输入规则创建相邻列表"状态下 Backspace 删空项，tail-remove owner 以同款 `row-count` 失败（同一状态第四个实例）。本轮把合并计数提取为共享 helper `mergedAdjacentSameKindListCounts`（top-level-subtree.js：相邻同类列表节点项数求和、前置项数、后续项数、最左列表的有序起始），一次性修正全部四个空项 owner：fill/remove 按合并计数+行索引偏移；**tail 在后续相邻同类列表存在时普通拒绝**（合并视角下"尾部"不再是块尾，形状属于 interior 家族——recognized 会劫持后续 owner，P3b lesson 再次应用）；**first-lift 在前置相邻同类列表存在时普通拒绝**（同理）；tail 的 helper 输入改用 classification.listPath（blockquote 容器变体）。全部行数拒绝补诊断证明（两侧计数/块范围/索引）。验证：四个 owner Node 合同全绿（含 4b 相邻合并正例）；`test:adjacent-list-merge-fill-replay-ui` 扩展 trace-21168 尾段（Enter→Backspace→Enter→Backspace）；tight/line1/ime-loose 重放全绿。**方法论结论（用户连续触发同一状态的不同 owner）**：修一个 owner 时应 grep 同款证明模式的全家族——共享语义缺口不该等各自实锤。
+  - **P7g 已完成（2026-09-14，0.13.215，trace-14865 用户实机触发驱动）——空项填充 owner 的行数证明未建模 CommonMark 相邻同类列表合并**：用户在既有列表正上方段落末尾打 `- `+空格（输入规则，trace 可见 `typed-bullet-input-rule` 发布）后 Enter 拆分、再 IME 填充新空项——PM 里输入规则创建的是**独立单项列表节点**，而 CommonMark（与源码扫描器 `listBlockAt`）把空行分隔的相邻同类列表**合并为一个**：源码块行数（含既有列表全部行）≠ PM 目标列表节点项数 → 认领后行数证明失败（`empty-item-fill-row-count`，recognized 阻断 legacy）→ 警告，且每个后续空项填充重复触发。修法（语义对齐）：owner 的 PM 侧计数改为**合并视角**——目标列表节点与相邻同类兄弟节点的项数求和、行索引按前置相邻列表项数偏移、有序序号起始取最左侧相邻列表；同时给 row-count 拒绝补上完整诊断证明（两侧计数、块范围、锚与索引），下次触发可直接定位。验证：Node 合同新增 4b（两个相邻同类 PM 列表 + 源码连续行 → 必须发布）；新增 `test:adjacent-list-merge-fill-replay-ui`（redis 文档：既有列表上方输入规则项 + Enter + IME 填充，零警告 + 磁盘正确）；既有 16 合同、line1/ime-loose 重放全绿。
+  - **P7f 已完成（2026-09-14，0.13.214，trace-9817 用户实机触发驱动）——label-only 变更污染 owner 变更窗口**：用户在巨有序列表第一项内 IME 提交 + Enter，ProseMirror 对全文档后继项发出 relabel `ReplaceAroundStep`（编号刷新，语义不可见——比较器本就忽略 label/listType/spread）。cross-fence owner 的 `changedTopLevelWindow` 用裸 `.eq()` 对比顶层块，把 label-only 差异当内容变更 → 窗口膨胀跨代码围栏 → 该 owner 认领了一个它无法表示的拆分 → 候选被语义校验拒绝 → 警告（用户以为是"打字太快时序问题"，实为窗口计算把非语义变更计入）。修法（根因层）：从 `source-transaction-sync.js` 导出 `areSourceSyncNodesSemanticallyEqual`（复用既有 `semanticJson` 归一），cross-fence 的窗口前后缀判定改用它——窗口收缩到真实拆分区（无围栏）→ 该 owner 依家族纪律让位 → 拆分走既有发布路径。验证：新增 `test:ordered-relabel-enter-replay-ui`（真实形状：首项续行末 IME + Enter + 后续打字，零警告 + cross-fence 不认领/不失败 + 磁盘字节含正确重编号 1..5 与围栏）；cross-fence 12 合同、transition 合同、typing-latency p50=35ms、tight/IME 重放全绿；`test:source-transaction-sync` 仅剩既有失败。
+  - **P7e 已完成（2026-09-13，0.13.213，用户"打字很慢"报告驱动）——大文档打字延迟三层根治**：CPU 剖析（CDP Profiler）定位三叠加源：① 同步管线在每键之间跑（~1.4s：canonicalize+preserve+全文 remark 重解析）→ **自适应打字让路调度**（`markdownUpdated` 包装：上次管线 >150ms 且活跃编辑时推迟到 600ms 空闲尾沿、5s 硬顶、按 md>100K 播种冷启动；journal 按 revision 积累 + forced-flush 边界即时，正确性不变；沿用 IME composition 既有的同型 deferral 设计）；② **review 装饰每键全文档 walk + 每文本节点从根 `doc.resolve`**（333K 文档 ≈300-430ms/键）→ groupKey 按父文本块 memoize + 无 CriticMarkup 起始符的文本节点跳过扫描（输出逐类验证不变：19 类装饰/部件全存活、编辑后保持）；③ 输入 trace 每键 4 事件 IPC ≈+40ms（instrumentation 成本，用户带 trace 运行）→ 已在 0.13.211+ 瘦身，日常建议不带 trace 运行。验证：`test:redis-typing-latency-ui`（无 trace 实测 p50=36ms，原 ~90-117ms；断言 ≤45ms + 延迟管线最终发布 + 存盘字节 + 零 toast）；三个 redis 事故重放（line1/joinBackward/tight——后两者转为锁用户可见合同：零 toast + 磁盘正确，内部 held 候选如实记录为 P7c 工单）、ime-loose、goal-matrix 45/45、`test:review` 单测全绿。遗留：held 候选（P7c 兜底 owner）与空闲期管线成本（`pmPosToMarkdownOffset` 每次调用重建全文 mapper——可按 run memoize，未做）。
+  - **P7b(3) 已完成（2026-09-13 深夜，0.13.212，trace-26116 用户实机触发驱动）——规范化后首夜的紧凑/续行形态两修**：用户在规范化文档上触发 `list-empty-item-tail-authored-row-unproven` + `source-list-structure-mismatch`。两根因：① **`removeAuthoredTailRow` 的物理邻接证明**要求空行紧跟前一 marker 行，前一项带缩进续行时永不成立——该 owner 从未真正拥有带续行形态，`legacyRetired` 又拦了 legacy → 警告。修：邻接改为「间隔仍属前一项」（仅空行与 ≥2 缩进续行，顶层内容即拒）；补丁不变（只删空行+EOL）。合同更新：松散间隔从"必须拒"翻转为"必须发布"。② **规范化首版把 5 个 `<br />` 写进文件违反系统不变量**（facade 对每个候选全文剥离独立 `<br />` 行）→ 每个候选都被剥掉它们而失配。修：规范化改为不含 `<br />`（那 5 处回到空行表达，系统本就容忍该形态；文本流等价性重验通过）。③ `transaction-list-subtree` reason 补「项内尾空段」许可（同 `empty-list-item-removed` 同则：恰好一个、前邻文本段）——subtree owner 发布字节正确但该 reason 无许可时被拒。验证：`test:redis-tight-backspace-replay-ui`（规范化 fixture：split→打字→undo→三连 Backspace，零 toast、磁盘正确；3 个内部 held 候选随后发布——这正是 P7c 兜底 owner 的工单）；tail owner 合同（含新松散正例）；joinBackward E2E 复绿；`test:list-subtree-transaction-owner` 为既有失败（干净树复现）。**遗留（P7c 工单具体化）**：bs1-3 的 held 候选（空项删除+项内空段提升在 subtree/legacy 边界的证明缺口）+ 打字让路调度。
+  - **P7d 已完成（2026-09-13 午后，用户批准）——redis 参考文档一次性格式规范化 + 兜底 owner 设计边界定案**：① **设计边界（用户原话确认）**：兜底 owner（P7c 选项 2）的三层语义——**内容错 → 报警拦住；风格归一 → 非阻塞提示（可见、可追溯、不拦保存）；一切正常 → 无感**。兜底候选仍过全部 semantic/list-slot 校验，校验不过照样 fail-closed；真问题（内容丢失/结构损坏）永不被吞。该边界为 P7c 实施的合同。② **规范化执行**：以应用自身序列化器产出不动点字节（serialize(parse(file))，经 热身编辑+undo 从 preserve log 提取），对用户 redis 文档清分歧债。**内容安全验证**：remark 全文文本流（text+inlineCode+code）逐字符等长等值；214 个链接全保留——其中 3 个非 ASCII URL 链接被序列化器拍平/截断（autolink 解包插件 + CRC16 链接 URL 被砍成 `wiki/`），已用唯一上下文锚点恢复原始链接形态；已知可接受的格式变化：5 处围栏后空行序列化为 `<br />` 空段（不动点所需，渲染等价一个空行）、21 个松散列表转紧凑（项间距略变）、一处硬换行尾随空格。**应用内终检**：规范化文件全新打开 → 热身编辑与事故手势（段末 Enter 分裂 + IME 填充）零失败发布、零警告。原文件备份于同目录 `*.backup-20260913.md`。③ 遗留：P7c 的兜底 owner 实施与打字让路调度（延迟根治）待专门会话；规范化后的编辑体验应显著改善（分歧基线归零 + 0.13.211+ trace 瘦身）。
+  - **P7c 未做（trace-97626，2026-09-13 午间用户实机触发）——重度分歧基线上的首笔发布失败 + 大文档编辑延迟（两个问题，需分别修）**：① **首笔失败**：用户 redis 文件（磁盘现状）全新打开后，第一笔编辑（插入一个空 sibling）起**每一次发布都 `visible-stream-mismatch` no-op 挂起**（journal-1 从 revision 0 涨到 21 笔），最终 `middle-empty-block-created` 候选被 validation 拒绝弹警。根因方向：该文件积累了 295 行级分歧（**127 个多余空行**——多日分裂发布的 `
+
+- 
+
+` 风格累积 + 慢性转义/双空格），mapper 的槽位对齐与 transition 通道在这个基线上失败。fixture：`scripts/fixtures/redis-open-stall/`（source/previous/canonical + meta；离线 repro：`preserveRichMarkdownSource` → visible-stream-mismatch，626ms）。修法候选：(a) 修 `middle-empty-block-created` 的对齐/校验路径（继续打家族）；(b) **generalized changed-window fallback**（cross-fence-span 的 style-following 序列化推广为分歧文档的兜底 owner——一个大改动，需专门会话）；(c) 向用户提供**一次性格式规范化**（清分歧债，改空白/转义拼写但内容不变，需用户同意）。② **编辑延迟**（用户："打字很慢才能显示"）：每回调管线 ~1.4s（serialize ~600ms + preserve 626ms 离线实测）在按键间饱和主线程（按键 beforeinput→input ~90ms）；0.13.211+ 已把 trace 的 markdown-sync 全字节（~1MB/回调）瘦身为仅失败时携带。**根本修法 = 打字让路调度**：活跃输入期间（最近按键 < ~400ms 且非关键 pending）跳过管线，空闲 trailing 定时器补发布（journal 本就按 revision 积累、composition 已有同型 deferral 先例；forced-flush 边界照旧即时）。改动面大（矩阵/E2E 时序全面重验），须专门会话。
+  - **P5c 已完成（2026-09-09，0.13.205，trace-86199 12:37 首次真人触发驱动）——跨 fence 块区间替换 owner（选区删除 + undo 恢复两个方向）**：用户在分歧文档（表格对齐填充维度）上跨代码块选区删除 → undo 恢复：删除方向 legacy 的 fence 守卫正确拒绝后 **no-op 静默挂起**（0.13.190 为大删除引入的 hold 赌"后续重试成功"，但 undo 恢复方向的重试同样被拒——赌输后 committed source 永久落后 1356 字节，代码块在编辑器里完好、源码里只剩空行，**无任何警告**）。实现 = 新 owner `cross-fence-span-transaction-owner.js`：以 journal.oldDoc↔expectedDoc 的**变更顶层窗口**（唯一 .eq() 前缀/后缀推导）为合同——窗口子树含 ≥1 code_block（家族门）、含 table 即拒（表格填充维度明确出域，table owners 保留）、1:1 code_block↔code_block 即拒（code content 家族拥有）、触达文档首/尾即拒（v1 需双侧锚）；源码区间由块级 PM→markdown 偏移映射解析（**生产 mapper 返回块内文本偏移而非行首——E2E 实证 `## ### 区域选择` 粘连行后加行首吸附；锚块是 code_block 时再向上吸附到开栏行（同 resolveFencedCodeSourceRange 的职责）；前导空段（undo 场景常态）在窗口与后缀两侧都被跳过**）；替换字节 = P7 风格跟随 serializer 序列化新窗口（顶层 editor-only 空段不产出，比较器桥接），保留源文档 EOL 与既有间隔（被污染的 multi-newline gap 保守保留，语义等价）。recognized 后一切失败 fail-closed（源码锚无法解析/序列化器抛/语义不符 → 警告而非静默）。注册于 code-block 家族之后（更窄形状优先），`legacyRetired: true`，scratch 不适用。验证：`test:cross-fence-span-transaction-owner` 12 合同（删除/undo 插入/CRLF/替换 + 4 门控负例 + 3 recognized 负例 + stale）；`test:cross-fence-span-ui` 真实 Electron（shift-click 跨 fence 选区 → Backspace → 零警告 + 源码无 fence 残留 → Cmd+Z 恢复 → 零警告 + 源码含完整 fence → 存盘磁盘逐字节等于原文）；goal-matrix、code-block 家族（boundary-join owner+UI、content、middle、fence-delete）、mixed、paste-tilde、plain-text-drop 全绿。**遗留**：P5c 原始描述中的 `45~60` 转义维度未被本 owner 覆盖（窗口内含转义分歧文本时语义验证决定成败，实测通过但未专项锁）；表格内 fence（goodsTable，P5b）仍属 table 家族。
+  - **P3c 已完成（2026-08-31，top-level paragraph 侧）**：`plain-paragraph` owner factory 新增 `requireTerminalSplit` 变体，派生窄 family `plain-paragraph-terminal-split`（boundary `transaction-plain-paragraph-split`，reason `plain-paragraph-split`）——分类只认领「0..N 笔顶层 plain paragraph 文本 ReplaceStep + 唯一且必须为最后一 Step 的顶层结构 split（from===to）」，raw 映射委托 mapper 既有 `isPlainTopLevelSplit` 分支（作者 EOL 分隔行 + 空槽 hint）；split 产生的顶层空段由 semantic comparator 既有的顶层空段过滤桥接（无需 transient）。已注册进 `structuralTransactionSourceSyncOwners`（`generatedScratchEligible: true`——16:38:54 trace 发生在 scratch；不 retired legacy，纯文本 journal 永不匹配该 family，既有 paragraph 权威路径不受影响）。验证：`test-plain-paragraph-transaction-owner.mjs`（IME 链+terminal split 正例、no-split/mid-chain/double-structural/empty-left 负例）、新增 `test:plain-paragraph-split-trailing-ui`（IME composition→立即段尾 Enter，callback/forced-flush、save、cold reopen、零 warning）。过程教训：registry 条目引用的 owner 声明必须先于 registry（TDZ 只在运行时暴露，vite build 不查——本次由 UI 回归的 mount 失败捕获）。
+  - **P3a 后续接缝已收口（同日）——exit 消费已发布 transient**：split family 发布尾空段后，后续 staged exit journal（Enter→发布→再 Enter+输入）的 coalesced 路径原先用通用位置映射器定位插入点：staged 分类器会把尾空段从 `sourceQuote` 裁掉（`withoutTrailingEmptyParagraph`），导致插入落在正文行后、把已发布的裸 `>` marker 行孤立成第二个 quote 块（list_item 子节点 3→4，semantic 拒绝 → recognized fail-closed → sticky warning）。修复：`resolveTrailingTransientQuoteRun` 以「前一非空 sibling 的映射行 + 其后连续裸 marker 行」结构化证明 transient run；exit 将该 run **整段消费替换**为 exit 行（字节与既有期望一致，也避免反复 Enter/exit 累积裸 marker 行）；coalesced 模式下 exit 的空段自身定位同样走结构化证明。`blockquote-exit-transient-row-unproven` 为新 fail-closed reason。
+  - **P3d（0.13.171 用户 trace，2026-08-30 17:22:18）——已发布尾空段之上的再 Enter**：scratch 引用 `[p1, p2, '']`（尾空段已由此前 Enter 发布）中，倒数第二段 IME 输入后段尾 Enter → `[p1, p2X, '', '']` 两个连续尾空段。`blockquote-split` 以 `target-count` 拒绝（合同只允许恰好 1 个尾空段）；`exit-pending` 以 `empty-baseline-unmapped` 拒绝（其空基线解析器只认单 child 顶层引用）→ legacy scratch flush 整文档比较失败。归因：**transient 语义桥「恰好 1 个尾空段」的限制与真实连续 Enter 流冲突**。修复方向：owned path 上的 transient 桥折叠**全部**连续尾空段（镜像 list_item 既有的连续空段折叠先例；legacy 布尔开关保持恰好 1），split 分类的 trailing 谓词从「最后一个 child」泛化为「split 之后全部为空段」。
+  - **P3e（0.13.171 用户 trace，2026-08-30 17:32:19）——语法进行中的瞬态 + 中间态不可表示**：scratch 引用尾空段（split 已发布）中逐字输入 `1` + `.`（输入法此刻输出 ASCII 句点）→ PM 段落文本恰为 `"1."`。该字节写进 `> ` 行会重解析为 ordered_list ≠ paragraph，任何 bounded patch 在该瞬间语义不成立；下一物理按键必然解决（空格→输入规则转真列表，或继续字符→普通文本）。两层修复：① `blockquote-paragraph` owner 新增 `SYNTAX_PENDING_MARKER_PREFIX`（`^\d{1,9}[.)]$|[-*+]$|…` marker-only 瞬态）→ `deferred + holdJournal`（不 recognized、不警告、保住 journal 给下一事务）；② 该 owner 的发布路径从**逐步 view 演化 mapper** 改为**终态 bounded patch**（映射原文 span——已发布纯文本无歧义——整行替换为最终文本，与 split owner 同型）：中间态不再需要可表示（逐步 mapper 在 `> 1.` 中间态上第 2 步映射必然失败），语法安全由终态语义验证兜底（重解析改变块型/mark 即 fail-closed；`alpha*` 等字面回环文本正确发布）。
+  - **P3f（0.13.172 用户 trace，2026-08-30 17:43:19）——list intent 阻塞窗 × 引用内列表退出的尾空段**：scratch 引用内 `1. ` 建有序列表 → 连续 IME 编辑 → 空列表项 Enter 退出：退出 journal 被 `listInputIntent` 的 3 秒阻塞窗吞掉（无 owner 可见），引用尾部新出现的空段无人注册 transient 语义上下文（旧上下文在列表编辑期间被形状检查正确清除）→ legacy scratch 整文档比较失败。尝试过的方向与结论：给 intent 加「item 数减少即清除」carve-out 会**破坏 marker 桥接**（`list-conversion-ui` 等 3 个测试证明退出转换本身由 intent/marker 路径拥有）——已撤回。落地方案：**scratch 校验站点（`generated-scratch-canonical`/`generated-scratch-flush`）按 expectedDoc 形状派生 quote-tail transient 桥**（`shapeDerivedTrailingEmptyBlockquotePaths`，规则与 activation 完全一致：≥2 children、尾空段 run、前邻非空 text/list；scratch 的 source 字节本就是编辑器生成的，形状派生在此不违反 proof-bound 原则；非 scratch 校验仍只认 proof 派生路径）。端到端复现脚本（scratch→引用→IME→Enter→`1.`→列表→IME→Enter×2 退出）零警告零 integrity false。同轮修正：**plain-paragraph-terminal-split 的分隔字节从「空槽双空行」改为「最小分隔」**（作者已有的边界字节不动——旧实现把作者 1 个空行改写成 2 个，破坏下游 list-conversion 字节合同，`list-conversion-ui` 锁定）。
+  - **P3g（0.13.173→0.13.174 用户 goal-matrix 轮，2026-08-31）——四维矩阵自测闭环**：按用户要求构建真实输入矩阵（A 写后删 / B 有序+无序+任务列表全生命周期 / C 斜杠全部格式+组合 / D 文档最前逐字删除），42 检查点两轮修复后全绿。本轮修复：① **单段引用清空**不再 recognized fail-closed——legacy `paragraph-emptied` 多年来正确拥有该形状（`>\n>\n`），保持可用（矩阵 A2）；② **list-item 尾空段桥**扩到 `typed-bullet-input-rule`（+fallback）reason 集（矩阵 B2：`1. ` 列表空项 Backspace 退出）；③ **scratch 形状桥扩到 list-item 尾空段**（`shapeDerivedTrailingEmptyListItemPaths`，严格形：恰好 1 尾空段+前邻非空文本段；矩阵 B4：Shift-Tab outdent）。跑器层事实（对后续 UI 自动化重要）：斜杠菜单**必须真实 keydown 输入**（insertText 选不中）；**Mod+Enter** 是代码/数学块退出键（Escape 无效）；表格退出需点击表格下方坐标并验证 selection 已离开；新文档首次输入需轮询落地。
+  - **P3h（0.13.174 用户 trace，2026-08-31 03:46:16/03:46:40）——scratch 连续空列表项的整文档比较误报**：真实序列（有序两项→Enter→Tab 嵌套填充×2→ArrowUp→逐字删 item2 至空→结构性删除）后，`empty-list-item-removed`（editor-api-flush）与 `generated-scratch-canonical` 校验失败，diff 全部为「多出一行空列表 item」（且 `listSlotsMatch:true`——非空结构完全等价）。三次按键级复现（含真实 IME）未重现警告，判定为时序敏感的 legacy 局部 patch 精度问题（stale 空 row 残留）。修复：**scratch 校验站点对称归一**——`collapseEmptyListItemRuns` 在比较前把两侧连续空列表项折叠为一个（仅 `generated-scratch-canonical/flush` 两个 reason；scratch source 本就是编辑器重建的，stale 空 row 下一次全量 canonical 发布自愈；非 scratch 校验逐字节不变）。验证：用户序列重放零警告、goal-matrix 42/42、blockquote/list/IME/fidelity 回归全绿。遗留：legacy `empty-list-item-removed` 的 raw patch 为何留下 stale 空 row 未定位（按键级复现失败，时序敏感）——若再次触发，evidence dump 现已包含 candidate/canonical 尾部文本以便直接归因。
+  - **P3i（0.13.175 用户 trace，2026-08-31 04:03:17）——exit family 对引用内嵌套列表退出的过度认领**：用户在引用的有序列表末项下 Tab 出嵌套子列表、输入后 Enter Enter 退出空嵌套项。journal 的 doc 形状匹配 `blockquote-exit` 的 list-exit-pending 分类（quote +1 尾空段、直接子列表 -1 项），但其 raw 行解析器（`resolveQuoteListTailRows`）只会映射引用**直接**子列表的 `> N. text` 行——嵌套列表内的位置 unmapped → `recognizedRejection('blockquote-list-exit-pending-range-unmapped')` → 阻断 legacy → 警告。而同 dump 证据显示 legacy 对该状态的候选校验 ok。修复语义校准：**range-unmapped（无法定位=无法证明所有权）从 recognized 降为普通拒绝**，放行给 legacy 发布+全文档校验兜底；行内容已定位但背离的两类拒绝（`previous-row-unproven`/`authored-row-unproven`）保持 recognized fail-closed。验证：新增 `test:blockquote-nested-list-exit-ui`（引用嵌套子列表输入+Enter Enter 零警告零 integrity 失败）、exit/list-exit owner+UI、goal-matrix 42/42、IME/mixed/fidelity 全绿。0.13.173 加入的 evidence dump candidate/canonical 尾文本在本轮归因中直接命中根因。
+  - **P3j（0.13.176 用户 trace，2026-08-31 04:32:11）——scratch 结构性兜底（本轮架构性收口）**：用户在列表嵌套文档中逐字删除 + 结构性删除空项后 flush，`empty-list-item-removed`（editor-api-flush，scratch 分支的 proven-transient 信任清单内的局部映射结果）校验失败 → 警告。复盘 0.13.169 以来全部用户触发（17:22/17:32/17:43/03:46/04:03/04:32）：**全部发生在 generated scratch（未存盘）文档，且全部来自 legacy 局部映射/校验层，而非 focused owner 发布路径**。结构性修复：scratch 文档没有作者字节需要保护（source 本就是编辑器派生），在任何发布失败点（editor-api flush 发布失败、markdownUpdated 的 primary-preserved/post-fallback 失败、unmapped preserve、publishPrepared 失败、retired-structural 拒绝）**用序列化 canonical 兜底重试一次（仍走完整 Coordinator 校验）**，成功则继续同步并记录 `scratch-canonical-fallback` 事件，失败才警告。已存盘文件严格保持 fail-closed 警告不变（retirement-ui 等既有回归锁定）。代价：scratch 中兜底触发时 marker 拼写可能翻成 serializer 风格（`-`→`*`）——仅未存盘 buffer 的外观差异，非损坏。验证：新增 `test:scratch-canonical-fallback-ui`（字符删除+结构删除+切源 flush 零警告内容完整）、22 项回归 + goal-matrix 42/42 全绿。
+  - **P3k（0.13.177 用户 trace，2026-08-31 04:46:23）——兜底候选拼写错误**：P3j 的 editor-api flush 兜底用了 `getGeneratedScratchMarkdown(canonical)`（marker 保留变换），其产物在「引用内列表嵌套删除」场景携带多余 `>` 分隔行、与 PM doc 不等价 → 兜底本身校验失败 → 仍警告。修复：**兜底直接使用原样 canonical**（当前文档的序列化，是唯一保证能解析回自身的拼写；marker 外观差异已由 P3j 声明接受）。验证：新增 `test:scratch-quote-nested-flush-ui`（引用×有序×嵌套×字符删除×结构删除×切源 flush 零警告、引用/列表内容完整）、19 项 UI + 10 项 Node + goal-matrix 42/42 全绿。
+  - **P3l（0.13.179，用户确认的互操作需求）——scratch 兜底的 marker 拼写保留**：用户要求未存盘文档也保持输入的 `-`/`+`（与 Typora/Obsidian 等工具互操作，marker 拼写差异会造成全文 diff）。实现为**两层顺序**：scratch 兜底先构造 marker 保留候选（`preserveGeneratedBulletMarkers(lastSource, canonical)`，复用既有按文本匹配+新行继承的实现），过完整 Coordinator 校验后发布；校验不过才落到原样 canonical（保真底线）。三个兜底构造点（editor-api flush、markdownUpdated 的 scratchCanonicalCandidate、retired-structural 分支）统一接入。验证：新增 `test:scratch-marker-spelling-ui`（scratch 输入 `-` 列表→删除项→切源 flush，断言 source 保留 `-` 且无 `*` 重写、零警告）。注：续行项的 `\-` 是 remark 对行首字面 `-` 的标准转义（防重解析成列表），渲染回 `-`，属正常回环。
+  - **P3m（0.13.179 用户 trace，2026-08-31 06:53）——raw Markdown 粘贴的发布竞态 + 相邻文本节点拆分**：用户粘贴含孤立 `~`（`45~60`）与紧凑表格的 Markdown 到 scratch 文档。三层问题：① 语义比较器未合并相邻同 mark 的 text 节点——PM 在 `~` 边界拆分 text run 而粘贴解析不拆（12 vs 14 内联节点）→ 同一可见文本被误判不等（`semanticJson` 现在比较前合并相邻同 mark 文本串，附四组单测：基本合并/同 mark 合并/异 mark 不合并/文本内容仍严格）；② 两笔事务的粘贴中第一笔的回调先发布并前移基线，raw-paste token 的重试 plan/publish 对当前状态必然 stale（`document-unproven`/`snapshot-stale`）→ 在 scratch 下**释放 token 落回正常发布管线**（内容已被校验发布，纯竞态误报不再警告；已存盘文件保持严格警告）；③ 序列化器对孤立 `~` 输出 `~~`（防重解析成删除线的标准转义，与 `\-` 同类，渲染回 `~`，校验通过即回环证明）。验证：新增 `test:paste-tilde-table-ui`（text/markdown 双 flavor 粘贴含 `~`+表格 → 零警告、内容完整、转义回环）；18 项 UI + Node 全量 + goal-matrix 42/42 全绿。注：`raw-markdown-paste` owner 对 `-`→`*` marker 的既有失败（rs-41）是 owner 认领层另一问题，仍在此前记录的既有失败清单中。
+  - **P8-性能与样式系列已完成（2026-09-03~09-08，0.13.198–0.13.201，用户反馈 + issue #126 驱动）——启动提速与懒加载 CSS 顺序家族**（非 source-sync，但同会话产物，详见 `docs/handoff-0-13-201-session.md`）：①0.13.198 katex/pinyin-pro/@capacitor 改按需 import（共享 `lib/katex-lazy.js`；math tooltip 带占位文本+stale-render token，html 表格公式异步物化，PDF 导出链 await），主 chunk 5.7→5.2MB；②0.13.199 **Editor 改 React.lazy + Suspense 骨架屏**（EditorArea 单一边界；App 只引 editor-api-registry 纯逻辑，无泄漏），主 chunk 5.2→**1.1MB**——首绘只需 shell，编辑器 4.1MB 并行解析；update:check 加 8s AbortSignal.timeout；③**懒加载 CSS 顺序家族**（P8b 伴生回归，同根因三例）：Crepe 样式表改为运行时注入 head、落在 app.css/owned-style 之后，同 specificity 平局后者赢——行号 gutter 被 Crepe 浅色背景盖住（0.13.200：我们升 0-4-0 specificity + `--code-linenum` 主题变量 0.58/0.95/0.12）与自定义主题 `#hm-custom-theme` 被 tables.css 覆盖（0.13.201：customThemes.js MutationObserver 把 owned 样式幂等垫底，`test:custom-theme-style-order-ui` 走真实激活链路锁定）；**今后任何编辑器相关 CSS 都要考虑注入顺序不定**。发版：v0.13.199/v0.13.200（14 资产 + feed 验证）；发布流水线加固——init-release 前置 job 防 draft 分裂（v0.13.199 实测 5+9 分裂）+ gh 显式 `-R`；**漏提交教训**：P5d 曾引用 untracked 的 fenced-code-source-range.js 导致 CI 构建失败，提交前须扫 untracked 引用。既有失败清单新增 `test:system-theme-ui`（stash 对照验证为基线失败）与 `test-html-table-math-export-ui`（旧期望值与 bug1b 行为矛盾）。后续：**v0.13.204（2026-09-09 发布，含 0.13.202 全局搜索 + 0.13.203 拖放修复）添了该家族第四例**——Crepe 懒加载 CSS 把块操作条恢复成 66px + `transition: all`，窄布局下 Floating UI 翻转到正文侧遮挡文字；修法 = 高 specificity 钉死 58px/28px×2 + 仅 opacity 动画（提交 67a1530，同时把 36px 正文误触发热区改为只转发 `.editor-host` 真实左侧 padding 给 `blockServiceInstance`）。
+  - **既有失败清单（与 E0 工作无关，独立 worktree 在 348d51f 干净基线上复验一致）**：`test:rs-41-source-sync` UI 的 raw Markdown paste（`-`→`*`）；`test:list-item-literal-marker-source-ui`（10 连击 marker 输入后首次切源 textarea 不出现，单 marker 场景正常）。P8 门禁前需单独归因。
+  - **已知产品限制（非 source-sync，零警告）**：斜杠菜单在列表项内不打开（Milkdown SlashProvider 沿袭门控；`shouldShow` 的 `isInList` 移除无效——按键到达编辑器但 provider 不显示，更深层还有一道闸）。列表内嵌引用可经源码模式 marker 作者化。UI 层后续单独归因。
+- [ ] **P4 scratch authority allowlist按 proof 扩展**：只有 P2/P3 已通过完整正负合同后，才给对应 owner增加 generated-scratch publication资格；不批量给 list/table/code owners打开 scratch authority。
+- [ ] **P5 empty-transient semantic context泛化并收紧**：把 blockquote/list 的 transient path表达统一到 snapshot/validator 可验证结构；旧 reason 继续兼容，但所有新 path都必须由 transaction proof 推导，错误 path/伪 proof/过期 revision fail closed。
+- [ ] **P6 真实 Electron 四维矩阵**：至少覆盖 `existing file / generated scratch × plain input / Chinese IME × single-step / rapid structural follow-up`。本轮硬性样本包括：引用最后字符 Backspace→空；引用 IME→立即 Enter；空 nested bullet→IME fill→立即 Enter；已有 nested bullet正文→IME replacement→立即 Enter；每场都验证 source textarea、save、disk、fresh-profile cold reopen、零 integrity false / warning。
+- [ ] **P7 相邻 family 泛化回归**：blockquote split/join/exit、nested bullet indent/outdent/split/join、task checkbox/empty sibling、ordered successor链、generated-scratch RS-49/56/58/60、forced-flush isolation 全部重跑；recognized retirement负例必须仍阻断 broad legacy。
+- [ ] **P8 全局门禁与版本候选**：`source-transaction-sync`、Journal、Coordinator、Markdown preservation、source-fidelity probes 39/39、mixed/heterogeneous fidelity、desktop/mobile build、`git diff --check`。只有全部通过才 bump 下一可验收版本并启动独立 trace 实例。
+- [ ] **P9 人工长会话验收后更新本计划**：用户真实乱测至少覆盖引用、nested bullet、task和模式切换；如仍触发，先记录新的 first-divergence 是否违反 P1/P5 公共合同，再决定修公共层还是新 family，禁止直接追加字符串/时序特例。
+
+**E0 期间核实的基线事实（2026-08-31）**：`test:rs-41-source-sync` 的 UI 部分（`test-rs-41-source-sync-ui.mjs` 的 `testRawMarkdownPasteOwnership`，raw Markdown paste `-` marker 被写成 `*`、走 legacy `list-line-change` 且弹暂停 toast）在**干净 checkout 的 348d51f 基线**上同样失败（独立 worktree 验证，两次输出一致）。该失败先于 E0 工作存在，与 blockquote-paragraph emptied 改动无关；P8 门禁重跑 rs-41 前需要先单独归因修复。
+
+**0.13.170 人工测试两条新 first-divergence（2026-08-30 16:38/16:39，generated scratch，均 fail-closed 未写坏 source）**：
+
+1. **16:38:54**：slash 菜单插入块后 IME 输入「快去我家拿看了你」（composition 约 8 笔 ReplaceStep，逐字 99→115）→ 空格选字（compositionend，`ReplaceStep 99-115 slice=8`）→ **113ms 后立即 Enter**（`ReplaceStep 107-107 structure=true slice=2`，top-level paragraph split）。focused owners 以 `blockquote-*-anchored-target-count` / `node-type-changed` 拒绝（目标不是 blockquote 子树）；`mapPlainTextTransactionsToSource` 的 top-level split 分支被 `__hmTransactionSourcePrimary` 测试门禁挡住 → legacy scratch flush 整文档比较失败。归因：**top-level paragraph 的 pending-text + split 没有任何 focused owner**（P3 的 blockquote/list 之外第三处同型缺口）。
+2. **16:39:14**：引用内 IME（wearilh→wearily 类）→ Backspace 删一字 → **段尾 Enter**（journal = 文本链 + delete + `structure=true` 段尾 split，产生空尾段）。`blockquote-split` owner 因 `findSplitIndex`/`quoteMatchesPhase` 的 `isSimpleParagraph(nonEmpty)` 拒绝**空右段**（`target-count`）→ legacy `paragraph-emptied`/scratch flush 发表 `>\n>\n` 这类不可往返编码 → 后续 flush 整文档比较在尾空段上失败（`$.content[N].content` 1↔2）。归因：**P3（pending chain + terminal structural split）与 P5（尾空段 transient path）在 split family 的缺口**。
+   同场证据：P2 owner 已在 scratch 真实管线成功接管引用内 IME 替换（`wearilh→wearily`，`blockquote-paragraph-text-change` 由 transaction owner 发布）——P1/P2 机制对真实 IME 输入有效。
+
+### E0 完成标志
+
+只有同时满足以下条件才允许回到阶段 E 的 task/conversion/input-rule 扩面：
+
+- generated scratch 与 IME 不再是 Journal 捕获或 focused owner 调度的旁路；
+- 已迁移 blockquote / nested bullet owner可以消费“pending text chain + terminal structure”的真实 journal，而不是要求理想化单 transaction；
+- nonempty→empty 等不可直接由 serializer稳定编码的状态由 exact transaction path semantic context处理，不泄漏 `<br />` 到作者 source；
+- 前文列表 marker/空行等 formatting drift不再导致局部引用/list transaction误报；
+- 本节 P0–P9 全部打勾，门禁和独立安装/trace人工验收均通过。
+
+### E0 复盘（2026-08-31 收官，0.13.169 → 0.13.184，提交 f117a33 + dcb6ddc）
+
+用户真实乱测驱动的 E0 主线已完成（P1、P2、P3a/b/c、P3d–P3o 全落盘）。复盘提炼出的可复用教训：
+
+**架构层面（哪些做法被证明是对的）**
+
+1. **journal-first 归因闭环**：每次用户说"触发"，第一动作永远是拉 `$TMPDIR/horsemd-input-trace-<pid>.jsonl` 的 evidence dump（journal 步链 + coordinator 发布序列 + integrity candidate/canonical 尾文本），先定位 FIRST DIVERGENCE 再动代码。本轮 16 轮触发全部靠这个闭环一次归因，零盲改。
+2. **警告分层经受住了考验**：已存盘文件严格 fail-closed（作者字节受保护）+ scratch canonical 兜底（无作者字节可保护）的双层契约没有再制造误报，也没有漏掉真实错误。P3j 的"兜底必过完整校验"是关键——兜底不是逃生门，是第二证明路径。
+3. **pending-text chain 合同收敛了 IME 复杂度**：把"0..N 笔文本步 + 唯一终态结构步"抽成公共合同后，三个 split family（blockquote/顶层段落/嵌套列表）各自只写 topology 和 patch，不再各自猜 IME。新增 family 的边际成本从"重写识别逻辑"降到"写形状匹配"。
+
+**踩坑记录（以后不要再犯）**
+
+1. **recognized 边界要精确到"证明进行到哪一步"**：P3b 实事故——链重放阶段的拒绝标了 `recognized`（fail-closed），结果 blockquote 段落的 IME+Enter（不同 slice 形状）走同一分支被劫持，别的家族绿测变红。规则：**只有"终态结构步已定位且属于本家族"之后的拒绝才 recognized**；之前的拒绝说明"不是我的形状"，必须落回 legacy。
+2. **形状匹配要对准正确的文档快照**：pending-text 链存在时，`journal.oldDoc` 是链前快照，而 left/right 文本描述的是链后（split 前）的词。对着 oldDoc 匹配必然 candidateCount=0。规则：**形状匹配对 pre-split doc（终态步所在 entry 的 beforeDoc）**。
+3. **PM `ResolvedPos.index(depth)` 在交替嵌套上与 child-path 约定错位**：`index(d)` 数的是 depth d 节点**内部**的孩子索引，不是 node(d) 在 node(d-1) 里的索引。列表这种 doc>list>item>list>item>para 交替结构要按节点身份遍历推导 path，不能直接用 index()。
+4. **单测先行暴露继承饿死**：P3o 第一版要求"unused source 行"，被 text 匹配消费后饿死，5 个单测全红后改成"只读拼写不消费行"。marker 继承类修复必须覆盖：目标形状 + 紧/松分隔 + 三种拼写（`-`/`*`/`+`）各保持 + 无父列表不继承 + 上一修复不回归。
+5. **死分支要靠真实 trace 发现**：P3p 的 Tab 继承分支要求"恰好一个换行"分隔，但嵌套空行必须带结构性空行（RS-64），分支对目标形状永远不可达——单测如果只测紧分隔永远发现不了。**写继承/分隔类逻辑时，先从真实 trace 抄 serializer 的实际输出形状**。
+6. **合成 ClipboardEvent/insertText 不能完全复刻原生输入**：粘贴竞态（P3n）和输入规则（E2E harness 打不出 `-`+空格）在 headless 下时序不同。回归要靠"真实 CDP keydown/imeSetComposition"型测试（库里已有 human-input 模式），合成事件只能做内容级验证。
+
+**遗留（不阻塞，已记录）**
+
+- P3b(2)：直接在嵌套空项输入文字的 focused owner（generic mapper 因 depth>1 空文本块拒绝；P3b(1) 后触发面已收窄）。
+- 既有失败清单：`test:rs-41-source-sync` UI raw paste 的 `-`→`*`（owner 认领层）、`test:list-item-literal-marker-source-ui`（10 连击 marker）。P8 门禁前单独归因。
+- 已知产品限制：斜杠菜单在列表项内不打开（SlashProvider 深层门控，UI 层）。
+- 用户实测残留的 `*` 存量字节：旧版本写入磁盘的拼写，新版不再产生新的；需要用户在源码模式手动统一。
+
+## 4. 阶段 A：0.13.148 可复现检查点
+
+### 范围
+
+- `code-block-exit` 产品命令、pending/coalesced/staged owner 与 provenance。
+- `code-block-content-replace`、`code-block-info-string-change`、`empty-code-block-backspace-unpack`、`code-block-exit` 的 legacy 退役。
+- `legacyRetired + recognized` 阻断 generic fallback。
+- dedicated `preserveFencedCodeBlockTextChange()` 删除。
+
+### 必须排除
+
+以下属于阶段 B 草稿，不进入本阶段提交：
+
+- `paragraph → code_block`；
+- 非空 `code_block → paragraph`；
+- code block / paragraph boundary join；
+- `fenced-code-source-range.js` 草稿；
+-对应 diagnostic/UI 草稿；
+- 历史 `tmp-repro-rs44/73/76` 文件。
+
+### 门禁
+
+```text
+test:code-block-legacy-owner-retirement
+test:code-block-legacy-owner-retirement-ui
+test:code-block-transaction-owner
+test:code-block-info-transaction-owner
+test:empty-code-block-unpack-transaction-owner
+test:code-block-exit-transaction-owner
+test:code-block-info-transaction-ui
+test:empty-code-block-unpack-transaction-ui
+test:code-block-exit-transaction-ui
+test:code-block-exit-staged-ui
+test:code-block-exit-forced-flush-ui
+test:middle-codeblock-source-ui
+test:source-sync-transaction-journal
+test:source-sync-coordinator
+test:source-transaction-sync
+test:editor-api-transaction-flush
+test:markdown-preservation
+test:source-fidelity-probes
+test:source-fidelity-ui
+test:mixed-rich-source-transaction-ui
+test:tail-fence-ui
+build
+build:mobile
+```
+
+### 完成标志
+
+- 三处版本均为 `0.13.148`。
+- 上述矩阵 exit 0。
+- staged 集合只含本阶段文件。
+- 本地提交后重跑 retirement UI、exit 三条 UI、middle-code、39/39 probes。
+
+### 实际完成记录（2026-08-29）
+
+- 本地提交：`9dafd76 refactor(editor): finish code block source authority`。
+- 提交范围：43 个文件，包含 `code-block-exit` 产品入口、owner、provenance、四项代码块 family 的 legacy 退役、负向 fence-collision 回归、版本文档和本路线图。
+- 提交前 focused 矩阵全部 exit 0：legacy retirement 静态/真实负例、code content、info、empty unpack、exit callback/staged/forced、middle-code source/save/cold-reopen。
+- 提交前 global 矩阵全部 exit 0：Journal、Coordinator、source mapper、flush policy、完整 preservation、39/39 probes、异构 fidelity、mixed immediate switch、tail-fence 两档、desktop build、mobile build。
+- post-commit smoke 全部 exit 0：retirement UI、exit callback/staged/forced、middle-code、39/39 probes。
+- 提交后 tracked/staged/unstaged 均为空；工作树只保留明确排除的阶段 B 草稿和历史 RS-44/73/76 临时复现文件。
+- 本阶段没有打包、安装、推送或发布；正式安装包资格验收仍属于阶段 I。
+
+## 5. 阶段 B：剩余代码块生命周期
+
+依次独立完成：
+
+1. `paragraph → code_block`：真实转换 Step、作者段落唯一 raw range、fence选择与 collision拒绝。
+2. 非空 `code_block → paragraph`：完整 opening/content/closing range原子替换，不允许只删一侧 fence。
+3. code block / paragraph boundary join：Backspace/Delete真实边界 Step、两侧节点与邻块不变。
+4. fence 创建、删除、拆分、合并和围栏字符/长度变化；不能从 canonical fence行猜操作。
+5. nested、跨 block selection 和多节点批次。
+
+每个 family 通过后立即做 legacy no-hit/negative fallback测试，不等到全部生命周期完成再统一退役。
+
+### `code_block → paragraph` 实际完成记录（0.13.150）
+
+- 产品入口：真实 HorseMD 右键“转换为正文”通过被点击 CodeMirror NodeView identity 唯一映射目标 PM `code_block`；wrapper 的 end-boundary `posAtDOM` 不再决定归属。
+- 事务：`setNodeMarkup(...paragraph)` 的 `ReplaceAroundStep(structure=true)` 与随后快速 paragraph `ReplaceStep` 由同一本 revision-bound journal 拥有；其它块、marks、atom、多行/空代码块保持不认领或 fail closed。
+- raw patch：只把作者完整 opening/content/closing fenced range 原子替换为最终 paragraph，保留作者 BOM、LF/CRLF、fence 之外邻块与未编辑字节。
+- legacy retirement：生产 registry 的 `code-block-paragraph` 设置 `legacyRetired:true`；family 已识别后的 range/content/language/semantic失败 `recognized:true`，禁止 generic fallback。
+- 永久回归：共享 NodeView identity 的 identity/end-boundary/strict-interior/empty 合同；focused owner 正反合同；legacy no-hit；真实 Electron callback、forced-flush、源码、保存、磁盘、fresh-profile reopen；`# heading` semantic rejection证明 warning + source/disk不变且无 publication。
+- focused gate、production build 与真实三场 Electron、相邻/全局门禁均已在 2026-08-29 通过；本地提交 `0614893 refactor(editor): journal-own code block paragraph conversion` 已形成，后续代码块 boundary join / product-reachable conversion 草稿继续保持未提交隔离。
+
+## 6. 阶段 C：Blockquote legacy 退役
+
+覆盖：
+
+- `blockquote-paragraph-text-replace`；
+- `blockquote-paragraph-split`；
+- `blockquote-paragraph-join`；
+- `blockquote-paragraph-exit`；
+- pending/staged transient。
+
+重点负例：重复引用正文、列表项内引用、多引用同批变化、空引用、marks、错误 quote prefix、source range歧义。recognized rejection必须阻断 `paragraph-emptied`、`middle-block-*`、quote line generic mapper。
+
+### 实际完成记录（2026-08-29）
+
+- 本地提交：`5da0e17 refactor(editor): retire blockquote legacy owners`；19文件白名单，未来代码块生命周期与历史repro草稿均未进入提交。
+- `blockquote-paragraph`、`blockquote-split`、`blockquote-join`、`blockquote-exit` 四个生产 registry entry 均设置 `legacyRetired:true`。
+- 四个 owner 明确区分 recognition：PM path/Step/stepDoc/replay 尚未证明 family 时为 `recognized:false`；family 已证明后，source range、作者 prefix/separator、正文一致性、syntax-sensitive或semantic失败为 `recognized:true`，统一阻断 generic fallback。
+- 新增纯退役合同，静态证明 focused reason 不存在于 canonical-diff 模块，并锁定 `recognized + legacyRetired` 控制流；四个原 owner 正反合同同步覆盖 recognition 边界。
+- 新增真实 Electron 负例：引用正文末尾物理输入 `*` 后，trace 为 `syntax-sensitive-insert / recognized:true / legacyBlocked:true`；富文本编辑保留、显示警告、无legacy/Coordinator publication、源码模式不展示陈旧内容、磁盘逐字不变。
+- 四项正向 callback/forced/source/save/disk/fresh-profile reopen 全绿；空引用删除、空引用IME、generated scratch尾随空段和文档中间尾随空段兼容矩阵全绿。
+- 共享 Journal、Coordinator、transaction sync、forced flush、完整 preservation、39/39 probes、异构 fidelity、mixed rich/source、desktop build与mobile build全部 exit 0。
+- post-commit smoke再次通过退役纯合同、真实fail-closed负例、四项正向Electron和39/39 probes。
+- 本阶段未打包、安装、推送或发布；完成后返回阶段 B，下一项为非空 `code_block → paragraph`。`paragraph → code_block` 右键草稿因当前产品 `BLOCK_TYPES` 无 code入口，仍不计入完成范围。
+
+## 7. 阶段 D：Table legacy 退役
+
+覆盖：
+
+- 单 cell正文；
+- body row insert/delete；
+- simple-grid column insert/delete；
+- alignment；
+- PM-only colwidth。
+
+必须证明新 owner拒绝后不会回落为 whole-table、table-line或table-region重写。span/merge/split因GFM不可表达，保持明确 fail closed或产品级禁用，不伪造Markdown持久化。
+
+## 8. 阶段 E：List legacy 退役
+
+这是风险最高的阶段，按以下顺序拆分：
+
+1. list item plain paragraph正文。
+2. 单一 list subtree结构变化。
+3. 空项 Enter退出、Backspace lift、successor补位。
+4. nested list split/join/indent/outdent。
+5. task list与空task sentinel。
+6. bullet/ordered/task conversion。
+7. `- `、`1. ` 等 input rules和pending intent。
+8. 跨列表选区、多 transaction coalescing、generated scratch。
+
+每一类必须有真实 physical-key Electron negative case，证明旧 broad list mapper不能在 recognized rejection后接管。
+
+### List empty-item Backspace 第一子族实际完成记录（0.13.151）
+
+- 范围刻意只覆盖顶层普通 bullet/ordered list 的 **interior empty item**：目标 item 必须前后都有 sibling、非 task、仅含一个空 paragraph；首项、尾项、nested、task、ordered lift、多 transaction/coalesced 继续交给后续子族或既有兼容 owner。
+- 真实 PM Step 已由 Electron 固化：前一 item `[16,23)`、空 item `[23,27)` 时，Backspace 为唯一 `ReplaceStep from=22,to=24,structure=true,sliceSize=0`。owner 要求 `from === previousItemEnd - 1` 且 `to === emptyItem.contentStart`，并逐 Step apply 后必须等于 live expectedDoc；不是根据 canonical 中 `<br />` 消失形状猜 family。
+- raw source ownership：PM source-map 锁定唯一顶层 list，source 与 previous canonical 的同级 marker row 数必须等于 old PM item 数；目标作者 row 必须真为空、前后 row 同类且物理连续。成功时仅删除该 marker row + 自身 EOL，作者 BOM、LF/CRLF、marker/delimiter、邻块和未编辑字节逐字保留。
+- semantic transient：Backspace 后 PM 会在前一 item 尾部多一个 Markdown 无法编码的空 paragraph。validator 只接受 exact `transaction-list-empty-item-remove-proof`、单 step、精确 removed/listItem/paragraph paths 后忽略这一处；伪 proof、错 path、错 step 继续 fail closed。
+- legacy retirement：生产 registry 把 `list-empty-item-remove` 放在 broad `list-subtree` 之前并设置 `legacyRetired:true`。PM family 尚未证明时 `recognized:false`，不会抢其它 list family；family 已证明后 source row/range/body/spacing 不满足则 `recognized:true + legacyBlocked:true`，禁止旧 `empty-list-item-removed` 或 broad canonical fallback“救回来”。
+- 失败优先真实证据：迁移前同一 Backspace 已被 `list-subtree` 认领，但候选错误写入 `<br />`，产生 `semanticOk=false` 后再由 legacy `empty-list-item-removed` 自愈；迁移后同一场景只有一次 focused transaction publication，整个周期零 integrity false。
+- 永久门禁：focused owner 正反合同；Enter→Backspace callback/forced；初始 BOM+CRLF 空项 callback/forced 的源码、保存、磁盘、fresh-profile reopen；loose-list `recognized + legacyBlocked` 负例；ordered lift、RS-72、cross-list、nested、generated scratch、task、rapid double Enter、generic list-subtree、mixed rich/source、完整 preservation、39/39 probes、异构 source-fidelity均通过。
+- 下一 List 子族仍按风险拆分：空项首/尾边界、ordered successor/lift 的更窄 owner，随后 nested、task sentinel、conversion/input-rule、跨列表 coalescing；不得因为 0.13.151 完成一个子族就把全部 `empty-list-item-removed` legacy mapper删除。
+
+### List empty-item Backspace 第二子族实际完成记录（0.13.152）
+
+- 范围只覆盖顶层普通 bullet/ordered list 的 **tail empty item**，且 preceding item 必须只有一个非空 plain paragraph；task、nested preceding structure、first-empty、interior、ordered lift、多 transaction均保持不认领。
+- 真实 Electron 证据：`- left / - ` 的 Backspace 为唯一 `ReplaceStep from=16,to=18,structure=true,sliceSize=0`；owner要求 removed item紧邻 preceding item，`from === precedingEnd - 1`、`to === removed.contentStart`，并在捕获 stepDoc 上完整重放到 expectedDoc。
+- 成功后 PM 前一 item多一个无法安全编码的 trailing empty paragraph；validator 只依据 `transaction-list-empty-item-tail-remove-proof` 的 exact removed/listItem/paragraph path和单 Step journal忽略这一处 transient。
+- raw patch只删除作者最后一个空 marker row和其 EOL，保留列表后 block gap、BOM、LF/CRLF、marker/delimiter与未编辑字节。loose tail row在 PM family已识别后返回 `recognized:true + legacyBlocked:true`，warning且source/disk不变。
+- 相邻门禁发现初版会抢 RS-63 nested continuation；发布前已收窄为 old preceding item `childCount===1` 且唯一 child为非空 paragraph，新态恰为该 paragraph + 一个空 paragraph。RS-63恢复 `empty-list-item-merged-after-nested-list`，task/cross-list/rapid Enter/nested Enter均保持原 owner。
+- callback与立即源码 forced-flush、BOM+CRLF、source/save/disk/fresh-profile reopen、纯正反合同、loose-tail负例、0.13.151 interior、first-empty控制、isolated ordered lift、RS-72、generic list-subtree、完整 preservation、39/39 probes、mixed rich/source和异构 fidelity均通过。
+- 下一独立 family 是 **first-empty Backspace**：真实 Step 已确认是 `ReplaceAroundStep from=8,to=13,structure=true,sliceSize=1`，拓扑为 `[empty,right]` 列表变成“列表前一个顶层 editor-only 空 paragraph + `[right]` 列表”；必须独立证明，不复用 tail 的 trailing-paragraph semantic path。
+
+### List empty-item Backspace 第三子族实际完成记录（0.13.153）
+
+- 范围只覆盖顶层 **plain bullet** first-empty：old list 第一 item 只能是非 task 空 paragraph，第二 item 必须是非 task、单一非空 paragraph；ordered first-empty、task、tail/interior、多 transaction继续不认领。
+- 真实 ProseMirror `joinBackward` 形成唯一 `ReplaceAroundStep from=8,to=13,gapFrom=10,gapTo=12,insert=0,structure=true`，slice 是空 `bullet_list` wrapper，`size=1/openStart=0/openEnd=1`。owner精确绑定 old list `[i]`、first item `[i,0]`、first paragraph `[i,0,0]`、successor `[i,1]`，并要求 after 为顶层空 paragraph `[i]` + remaining list `[i+1]`。
+- raw source patch只删除作者第一空 marker row + 自身 EOL，successor row、前后 block gap、BOM、LF/CRLF与其它字节保持。loose-first rows在 PM family已识别后 `recognized:true + legacyBlocked:true`，warning且source/disk不变。
+- 本 family不新增 validator semantic 例外：共享 comparator 已只在 doc 顶层过滤 editor-owned empty paragraph；该行为正好匹配 first-lift 当前会话 transient，cold reopen从源码恢复时该空段自然消失。
+- RS-84 第二拍现在由 `list-empty-item-first-lift` transaction proof接管，第一拍 cross-list owner保持不变；永久测试明确禁止第二拍再回落到 legacy `empty-list-item-removed`。
+- callback/立即源码 forced-flush、BOM+CRLF、source/save/disk/fresh-profile reopen、纯正反合同、loose-first负例、tail/interior、isolated ordered lift、RS-72、nested/task/cross-list/rapid Enter、generic list-subtree、Journal/Coordinator/source transaction、完整 preservation、39/39 probes、mixed rich/source、异构 fidelity、desktop/mobile build全部通过。
+- 下一独立 family 为 **ordered successor/lift**：先从 `test-isolated-empty-ordered-backspace-lift-ui.mjs` 与 `test-single-empty-ordered-backspace-successor-ui.mjs` 捕获真实 ordered Step/topology、`start`/delimiter/renumbering与 raw source 影响，不能把 ordered 纳入 bullet first owner。
+
+### List ordered Backspace 第一子族实际完成记录（0.13.154）
+
+- 范围刻意只覆盖 **isolated empty ordered lift**：旧拓扑必须是顶层 plain bullet list、紧邻单一空 ordered list、再紧邻一个未变化的 nonempty bullet list；前一/空ordered/后继 item 的显式 `listType` 必须分别与 bullet/ordered/bullet 容器一致。RS-72 的 ordered successor、多 item ordered、task、nested全部不认领。
+- 真实 PM `joinBackward` 是一个 `ReplaceStep(structure=true,sliceSize=0)`；最小合同 `24→26`，generated-input真实文档 `40→42`。精确关系是 `from === ordered.beforePos - 1`、`to === ordered.contentStart`，即删除前一 bullet closing wrapper与isolated ordered opening wrapper，保留空 item并追加进前一 bullet list。
+- 为使 `1.` input-rule后立即 Backspace可被Journal看到，新增 `list-input-intent-lifecycle`：active且未消费的intent仍阻断结构跟踪；回调已消费但仍处于callback-tail TTL的intent不再阻断后续真实结构事务。没有新增基于时间窗口推断操作的source mapper。
+- 空 ordered paragraph无法作为可靠 PM→Markdown offset锚点；owner改用前一 bullet最后非空 paragraph和后继 bullet第一非空 paragraph两端定位，在source与previous canonical的两个list block边界之间分别要求唯一非空top-level ordered row。作者ordered数字必须等于PM `ordered_list.attrs.order`，成功只替换marker token；`1)`/`.` delimiter、`+/-/*` bullet token、BOM、LF/CRLF和空行均由作者source决定。
+- legacy retirement：registry把`list-isolated-empty-ordered-lift`置于first/tail/interior/broad list owners之前并`legacyRetired:true`。一空格 authored ordered row在PM family已证明后以`isolated-ordered-lift-row-count / recognized:true / legacyBlocked:true` fail closed，rich lift保留、warning、无publication、disk不变。
+- ordered lift后的第二 Backspace会暂时出现`bullet_list`内显式`listType='ordered'` item；前置提交`5c91042`已收紧tail和generic list-subtree，让显式item/container语义冲突在mapper前保持未识别，第二拍因此直接走既有`empty-list-item-removed` legacy且全周期零integrity false。
+- 永久门禁：pure owner、input-intent lifecycle、generated-input两拍、直接authored callback/forced、BOM+CRLF source/save/disk/fresh-profile reopen、legacy-blocked负例；first/tail/interior正负、RS-72、RS-63、task、RS-84、rapid Enter、nested Enter、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/fidelity、desktop/mobile build全部通过。
+- 下一独立 family 是 **RS-72 ordered successor/multi-step**：当前仍由`list-subtree-replace`的两Step journal（`ReplaceStep + ReplaceAroundStep`）处理，后续必须单独证明successor numbering、ordered start/delimiter与transient paragraph path，不把它扩入本 isolated owner。
+
+### List ordered Backspace 第二子族实际完成记录（0.13.155）
+
+- 范围刻意只覆盖 **RS-72 single-successor**：顶层 plain `ordered_list` 必须恰有三项 `[nonempty, empty, nonempty]`，空项位于 ordinal 1，前后 item 都是非 task、单一非空 plain paragraph；四项以上、多空项、nested、task、首/尾空项继续不认领。
+- 真实物理 Backspace 是同一本 journal 内 **2 transactions / 2 steps**。第一笔为 `ReplaceStep(structure=true,sliceSize=0)`，精确删除前一 item closing wrapper 与 empty item opening wrapper；它 apply 后产生 intermediate doc：前一 item 变成原非空 paragraph + 一个 editor-only empty paragraph，原 successor 内容和 label `3.` 均未变化。第二笔为 `ReplaceAroundStep(structure=true,sliceSize=2,insert=1,openStart=0,openEnd=0)`，gap 精确包住 successor content，只把该 successor wrapper/label 改成 `2.`。每笔都必须在捕获时 `stepDoc` 上重放并等于下一实际 doc。
+- proof 明确绑定 old `removedPath` / `previousPath` / `successorOldPath`、intermediate successor path、final successor path，以及唯一 transient `[previousItem, trailingParagraph]`；validator 只在 exact `transaction-list-ordered-empty-successor-lift-proof` + 两 Step journal + 精确 path 下忽略这一处 Markdown 无法编码的 empty paragraph。
+- raw source ownership 使用 PM source-map 锁定 source / previous canonical / next canonical 中同一顶层 ordered block，但 focused owner不再调用 broad `preserveTransactionOwnedListSubtreeChange()`。新增 `preserveTransactionOwnedSingleEmptyOrderedBackspaceLift()`，只允许 RS-72 专用 mapper解释 bounded fragment；它拒绝 mixed EOL，规范化 canonical 的 ordered delimiter/empty placeholder用于比较，成功后恢复作者 EOL。
+- 成功 patch 一次性删除作者中间空 ordered row，并把唯一 successor 的数字从 `order+2` 改成 `order+1`；delimiter完全取作者原 token，所以 `1) / 2) / 3)` 保持 `)`，BOM、LF/CRLF、空行、列表外邻块与其它字节不变。owner要求 mapper reason只能是历史已验证的 `diverged-empty-ordered-backspace-lift`，其它 list mapper不能在 focused rejection后接管。
+- legacy retirement：生产 registry 把 `list-ordered-empty-successor-lift` 放在 isolated/first/tail/interior/broad owner之前并设置 `legacyRetired:true`。一空格 authored ordered rows仍可形成相同 PM 两 Step family，但 source range不可安全证明；此时 `recognized:true + legacyBlocked:true`，rich edit保留、显示warning、没有 focused success、没有 broad/legacy/Coordinator publication，磁盘保持原字节。
+- 永久门禁：pure owner；BOM+CRLF + `)` delimiter callback/forced source/save/disk/fresh-profile reopen；one-space authored fail-closed；原 `test-single-empty-ordered-backspace-successor-ui` 长文档要求 focused-only publication；generic list-subtree pure/UI；0.13.154 isolated、first/tail/interior正负、RS-63/60/84/85/86、ordered Enter/exit/delimiter/repeated-list；Journal/provenance/Coordinator/source transaction、完整 preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build全部通过。
+- 下一独立 family 是 **multi-successor ordered middle-empty relabel chain**：先捕获四项及更长 ordered list 中删除一个 middle empty item时后续 `3→2, 4→3, ...` 的真实 transaction/Step 链、非 `order=1` 起点和 `.`/`)` delimiter行为；在真实 Step 数和 raw row ownership没有证明前，不把当前三项 owner泛化。
+
+### List ordered Backspace 第三子族实际完成记录（0.13.156）
+
+- 范围覆盖 **multi-successor ordered middle-empty relabel chain**：顶层 plain `ordered_list` 至少四项、恰好一个 middle empty item、empty 后至少两个 nonempty successor；removedIndex 可大于 1，`ordered_list.attrs.order` 可不是 1。single-successor、多个空项、首/尾空项、nested/task继续不认领。
+- 真实物理 Backspace 仍是同一本 journal 的 **2 transactions**，但 Step 数随 successorCount 扩展。第一笔只有一个 `ReplaceStep(structure=true,sliceSize=0)`，精确合并 removed item到其前一 item；第二笔 transaction 恰含 `successorCount` 个 `ReplaceAroundStep(structure=true,sliceSize=2,insert=1,openStart=0,openEnd=0)`，按列表顺序逐项 relabel。owner要求 `transactionCount===2`、`stepCount===successorCount+1`，并逐 Step 使用捕获的递进 `stepDoc` 重放；任何遗漏、额外 Step、错误 gap/range 或错误 wrapper attrs 都在 family 已识别后 fail closed。
+- topology proof 要求 old ordered labels 从 `attrs.order` 连续增长且 delimiter统一；removed item是唯一空 plain paragraph，其余 items均为单一非空 plain paragraph。intermediate doc只允许前一 item新增一个 editor-owned trailing empty paragraph，所有 successor仍保持旧 label；final doc只允许删除该 empty item并将每个 successor label减 1，正文、attrs、prefix/suffix和邻块全部不变。
+- raw source 独立使用 `preserveTransactionOwnedOrderedEmptySuccessorChain()`，不调用 single-successor 或 generic list mapper。bounded source/previous/next 先做 EOL与empty-placeholder比较归一化；source必须有相同数量的顶层 ordered rows、唯一空 row以及连续 authored ordinals。成功时先记录全部 successor ordinal digit patch，再从后向前应用，同时删除 empty row到下一 row起点的完整物理范围；因此作者 `.`/`)` delimiter、marker spacing、body、BOM、LF/CRLF、block gaps和其它未编辑字节都保持。
+- validator只在 exact `transaction-list-ordered-empty-successor-chain-proof` 下忽略 removed 前一 item 的一个 trailing empty paragraph；proof同时绑定 removed/previous path、successor count、old/final label数组、第一笔 Step、全部 relabel Step和 Journal snapshot/document证明。single-successor proof不能伪装成chain proof，伪 path、少一个 relabel、错误 transaction/step count均拒绝。
+- legacy retirement：registry把chain owner置于0.13.155 single-successor与broad list-subtree之前并`legacyRetired:true`。一空格 authored四项列表仍形成相同PM merge+relabel chain，但source range无法安全映射；此时 `recognized:true + legacyBlocked:true`，保留rich edit和transient paragraph、显示warning，不允许 single/broad/legacy/Coordinator publication，disk不变。
+- 永久门禁：pure owner覆盖2/3 successor、removedIndex 1/2、`order=4`、`)` delimiter、body/mixed-EOL/wrong-step负例和single-successor no-hit；真实Electron覆盖callback/forced、BOM+CRLF、source/save/disk/fresh-profile reopen与one-space fail-closed。0.13.155 single-successor、0.13.154 isolated、first/tail/interior、RS-63/60/84/85/86、nested Enter、ordered Enter/exit/delimiter/repeated-list、generic list-subtree、Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build和`git diff --check`均通过。
+- 阶段 E 尚未结束。下一项按既定顺序进入 **nested list split/join/indent/outdent**：先从真实物理 Tab/Shift+Tab、Enter、Backspace/Delete 捕获 PM Step/stepDoc/path 家族，再拆 focused owners；task sentinel、conversion、input rules与跨列表/coalescing继续排在后面，不把 broad list owner提前删除。
+
+### Nested list 第一子族实际完成记录（0.13.157）
+
+- 范围刻意只覆盖 **top-level plain bullet list 的 tail empty item 物理 Tab sink**：target 必须是最后一个 non-task、单一空 paragraph item；其前一 sibling 必须是 non-task、只有一个非空 plain paragraph且尚无 nested list。中间项、非空项、已有 nested parent、task、ordered、Shift+Tab/outdent、split/join都不认领。
+- 真实产品路径没有 HorseMD 自定义普通列表 Tab 特判，而是 ProseMirror 原生 `sinkListItem`。RS-64 与最小 schema均证明唯一 `ReplaceAroundStep(structure=true,sliceSize=3,openStart=1,openEnd=0,insert=1)`；精确边界为 `from=target.beforePos-1`、`gapFrom=target.beforePos`、`gapTo=to=target.beforePos+target.nodeSize`。slice是一个外层 `list_item` wrapper包住空 `bullet_list` wrapper，target item本身通过 gap移动到该 nested list。
+- Milkdown parsed top list目前把 `spread` 表示为字符串 `"false"`，`sinkListItem` 新建 nested wrapper则是布尔 `false`。owner只对 **list wrapper 的 false spread** 做局部语义归一化；target item、parent item、Step、path、sibling与其它 attrs仍严格，不把表示差异扩散到通用 comparator。
+- raw source不复用 broad list mapper。CommonMark解析实验表明空 nested bullet若直接写成 `- beta\n  - ` 会被错误解释，而 `- beta\n\n  - ` 才是稳定父 item + 空 nested child。因此成功 patch只在作者 tail marker row前插入“一个原 EOL + 两个 spaces”，即把连续 top-level row变为 parse-safe nested row；原 `-`/`+`/`*` token、marker spacing、body、BOM、LF/CRLF、前后邻块都逐字保持。RS-64 过去由 broad `batched-list-block-changes` 输出 serializer `*`，0.13.157 focused owner后作者 `-` 在 Tab、继续输入`s`、source/save/reopen全周期保持。
+- 本 family不需要 semantic transient豁免：空 nested item有合法 authored Markdown 表示，focused candidate可直接通过 strict semantic + list-slot validation。proof仍绑定 Journal snapshot/document、parent/target/nested paths、单一真实 ReplaceAroundStep、source range、原 parent/target rows与 raw insertion。
+- legacy retirement：registry把该 owner放在其它 list focused owners和 broad list-subtree之前，并设置 `legacyRetired:true`。两空格 authored marker spacing仍可解析出相同PM family，但当前raw byte合同刻意只证明单空格 spacing；因此在 `nested-empty-bullet-indent-source-row-unproven` 阶段 `recognized:true + legacyBlocked:true`，rich Tab sink和nested list保持可见、显示warning，不允许 broad/legacy/Coordinator publication，disk不变。
+- 永久门禁：pure owner使用真实 `sinkListItem`，覆盖BOM+CRLF作者`+` marker以及body/spacing recognized负例、nonempty/existing-nested/task/ordered no-hit；RS-64永久回归升级为必须focused publication且作者`-` marker保持；专用Electron覆盖callback/forced、BOM+CRLF、source/save/disk/fresh-profile reopen与两空格fail-closed。相邻矩阵覆盖nested Enter、RS-68/63/85、generated nested/task、first/tail/interior、0.13.154–156 ordered、generic list-subtree和nested 3×2 fidelity；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`全部通过。
+- 阶段 E 仍未完成。下一步先继续真实取证 **nonempty/middle Tab indent** 与 **Shift+Tab outdent**，再决定是否拆成独立 family；nested split/join、task sentinel、conversion、input rules与跨列表/coalescing仍排在后面。
+
+### Nested list 第二子族实际完成记录（0.13.158）
+
+- 范围覆盖 **top-level plain bullet list 的 nonempty middle/tail item 物理 Tab sink**：targetIndex必须≥1；target与紧邻前一parent都必须是non-task bullet item、只有一个无marks非空plain paragraph，parent在old doc中尚无nested list。empty target继续归0.13.157；已有nested parent、task、ordered、首项、marks/复杂item继续不认领。
+- 真实产品tail和middle Tab均由原生` sinkListItem `形成单transaction/单`ReplaceAroundStep(structure=true,sliceSize=3,openStart=1,openEnd=0,insert=1)`。对任意targetIndex，`target.beforePos===parent.beforePos+parent.nodeSize`、`from===target.beforePos-1`、`gapFrom===target.beforePos`、`gapTo===to===target.beforePos+target.nodeSize`。new top-level list少一个item，parent在原index新增一个nested bullet list，nested恰含old target；middle case中target后的所有siblings只向前移动一位并保持`.eq()`。
+- 真实Milkdown trace显示Step slice外层`list_item`会带`spread:true`，而live newDoc parent attrs仍保持old parent的`spread:"false"`。因此owner不把slice外层wrapper attrs当source语义证据，只要求slice中存在false-like的空bullet wrapper，并以最终new parent node、target `.eq()`、Step/path replay作为ownership合同；false/`"false"`归一化继续只限list wrapper。
+- raw source比0.13.157 empty sink更简单：CommonMark实测`- beta\n  - gamma`、`+ beta\n  + gamma`以及middle `+ alpha\n  + beta\n+ gamma`均稳定解析，所以成功patch只在target authored row.start前插入两个ASCII spaces，不新增空行、不改EOL。所有top-level source rows当前要求同一作者bullet token、单空格marker spacing、indent 0；parent/target raw body必须与PM plain text精确一致。作者marker、正文、BOM、LF/CRLF、middle后的top-level successor和其它字节保持。
+- 本family不新增validator semantic例外：nonempty nested item有直接合法Markdown表示，patch后必须通过生产`validateTransactionMarkdown`的parser document equivalence和strict list-slot gate。proof绑定Journal snapshot/document、targetIndex/parentIndex、middle/tail position、old/new paths、真实ReplaceAroundStep、source range、原作者rows与`rawInsertion='  '`。
+- legacy retirement：registry把nonempty owner放在0.13.157 empty owner之后、ordered focused owners和broad list-subtree之前，并设置`legacyRetired:true`。两空格marker spacing或target raw body无法与PM正文精确证明时，在PM topology+Step已完成分类后返回`recognized:true`并统一`legacyBlocked:true`；empty owner、broad mapper与legacy都不能重新解释，rich nested edit保持、warning出现、Coordinator不发布、disk不变。
+- 永久门禁：pure owner用真实`sinkListItem`覆盖middle/tail、作者`+`、BOM+CRLF、wide-spacing/raw-body recognized负例、empty/existing-nested/task/ordered no-hit和wrong-gap Step；真实Electron覆盖tail callback（`+` marker）与middle forced-flush（`-` marker）、source/save/disk/fresh-profile reopen和two-space retirement。相邻矩阵覆盖0.13.157 empty sink、RS-64、continuous fidelity、nested 3×2 continuous+slow、generated empty ordered indent、nested Enter/RS-68/63/85、0.13.154–156 ordered families和generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build和`git diff --check`均通过。
+- 阶段E仍未完成。0.13.158 当时的 generic-minimal outdent 比较只用于决定“不要做宽 owner”，其中 single-child `sliceSize=0` 的具体参数不是 HorseMD 真实合同；0.13.159 已用真实 Electron 与 HorseMD 同款 attrs 的最小 schema 将 single-child 正式纠正为 `sliceSize=1/openStart=1/openEnd=0/insert=1`。multi-child 的具体 Step 数量/参数仍需按真实产品重新取证，旧预判不再作为正式证据。
+
+### Nested list 第三子族实际完成记录（0.13.159）
+
+- 范围只覆盖 **top-level plain bullet parent 下唯一 nonempty nested bullet child 的物理 Shift+Tab outdent**。old parent必须是non-task plain bullet item，直接children恰为一个无marks非空paragraph和一个`bullet_list`；nested list必须只有一个child，target同样是non-task、单一无marks非空paragraph。multi-child、empty child、task、ordered、复杂parent/target全部不认领。
+- 真实 HorseMD Electron 的 `- beta /  - gamma` Shift+Tab 与使用HorseMD同款`spread:"false"`/listType attrs的最小`liftListItem`完全一致：单transaction / 单`ReplaceAroundStep(structure=true,sliceSize=1,openStart=1,openEnd=0,insert=1)`。结构边界固定为`from=nestedList.beforePos`、`to=parent.beforePos+parent.nodeSize`、`gapFrom=target.beforePos`、`gapTo=target.beforePos+target.nodeSize`，且`target.beforePos===nestedList.contentStart`；slice唯一空`list_item` wrapper的attrs必须与old target一致，Step在捕获`stepDoc`上apply必须精确得到expectedDoc。
+- new topology要求同一top-level bullet list childCount增加1：old parent原paragraph保持、nested list消失，old target被提升为紧随parent后的top-level item；parent之后其它old siblings只整体右移一位并逐项`.eq()`，其它top-level blocks与list attrs完全不动。
+- raw source不调用broad list mapper。当前安全byte合同要求parent source row indent为0，target source row indent恰为两个ASCII spaces；两row必须物理相邻、使用同一作者`-`/`+`/`*` token、marker spacing恰为一个space，raw body分别精确等于parent/target PM plain text。成功patch只有一个操作：删除target row开头两个spaces；不新增/删除EOL，不改marker/body/BOM/CRLF/邻块。
+- 本family不需要validator semantic例外：outdent后的三个top-level bullet items有直接合法Markdown表示，focused candidate必须直接通过生产parser document equivalence与strict list-slot gate。proof绑定Journal provenance、parent/nested/target/targetNew paths、exact ReplaceAroundStep、作者rows、`rawRemoval='  '`与各digest。
+- legacy retirement：registry位于0.13.157/158 nested indent owners之后、ordered focused owners与broad list-subtree之前，并设置`legacyRetired:true`。四空格target、mixed parent/target marker或raw body不一致等在PM topology+Step已完整分类后返回`recognized:true`，统一`legacyBlocked:true`；rich outdent保留、warning出现，但indent owners/broad/legacy/Coordinator均不得publication，disk不变。
+- 永久门禁：pure owner覆盖真实`liftListItem`、exact range/slice、BOM+CRLF作者`+`、wide-indent/mixed-marker/wrong-step recognized负例、multi-child/empty/task/ordered no-hit。真实Electron覆盖parent为第二项的callback `+`、parent为第一项且后有sibling的forced `-`，两条均验证source/save/disk/fresh-profile reopen与focused-only publication；mixed-marker负例验证rich outdent保留且disk不变。相邻矩阵覆盖0.13.157/158 indent、continuous/nested 3×2 fidelity、nested Enter/RS-68/63/85、generated nested/ordered、0.13.154–156 ordered families和generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均通过。
+- 阶段E下一步继续 **multi-child Shift+Tab outdent**。先对first-child与last-child分别做真实Electron transaction/stepDoc取证，只有真实Step拓扑一致时才合并；否则继续拆family。nested split/join随后再迁移，task sentinel、conversion、input rules与跨列表/coalescing仍在后面。
+
+### Nested list 第四子族实际完成记录（0.13.160）
+
+- 范围只覆盖 **top-level plain bullet parent 下 nestedCount>=2 时最后一个 nonempty plain bullet child 的物理 Shift+Tab outdent**。parent直接children仍要求一个无marks非空paragraph + 一个plain nested `bullet_list`；nested中每一项当前都要求non-task、单一无marks非空paragraph。first child、single child、empty/task/ordered/复杂nested明确不认领。
+- 真实 HorseMD 对两子项 `gamma/delta` 的 last child 与HorseMD同attrs 2/3-child最小`liftListItem`一致：单transaction/单`ReplaceAroundStep(structure=true,insert=2,sliceSize=2,openStart=2,openEnd=0)`。exact relation为`from===gapFrom===target.beforePos`、`gapTo===target.beforePos+target.nodeSize`、`to===parent.beforePos+parent.nodeSize`。slice外层空`list_item` attrs与target精确一致，其唯一child是与old nested attrs一致的空`bullet_list` wrapper；Step在捕获stepDoc上apply必须精确等于expectedDoc。
+- topology：new top-level list childCount增加1，parent仍原index；parent paragraph不变，nested list保留old target之前全部prefix children并逐项`.eq()`，最后target被提升为`parentIndex+1` top-level item，parent之后其它siblings整体后移一位且不变。2-child与3-child均使用同一proof。
+- raw source：source-map同时锚定parent和全部nested paragraph。当前byte合同要求parent indent 0、所有nested indent恰两个spaces，parent+全部nested物理连续、全部使用同一作者bullet token且marker spacing恰一个space，raw body逐项精确等于PM正文。成功只删除最后target row起始的两个spaces；前面的nested siblings、marker、BOM、LF/CRLF、邻块和其它字节逐字保持。
+- retirement：target marker padding为两个spaces、wide indent、mixed marker/body等，在exact PM last-child family已分类后返回`recognized:true + legacyBlocked:true`；rich outdent保留，single-child/broad/legacy/Coordinator不得publication，warning出现且disk不变。
+- 永久门禁：pure覆盖2/3 nested children、exact Step/path/slice、BOM+CRLF `+`、wide/mixed/wrong-step recognized负例及first/single/empty/task/ordered no-hit；真实Electron覆盖2-child callback与3-child forced、`+/-`、source/save/disk/fresh-profile reopen和target marker-spacing retirement。真实multi-child diagnostic在production接线后再次证明first-child仍由broad `list-subtree-replace`持有，而last-child由0.13.160 focused owner持有；0.13.157–159、continuous/nested fidelity、nested Enter/RS-68/63/85、ordered families、generic subtree、Journal/Coordinator、完整preservation、39/39、mixed/heterogeneous fidelity与双build均通过。
+- **first-of-multiple 不属于本 family**：同一文档transaction中有两笔`ReplaceAroundStep`。实机两子项时第一步`48→58 / gap 49→58 / insert=1 / sliceSize=3`，把剩余`delta`挂到被提升`gamma`下；第二步`39→62 / gap 40→60 / insert=1 / sliceSize=1`完成外层lift，最终`gamma`成为top-level且仍含nested `delta`。下一版本必须按两Step/stepDoc链单独建立focused owner，不允许last-child owner扩宽。
+- nested split/join排在first-of-multiple之后；task sentinel、conversion、input rules与跨列表/coalescing继续排后。
+
+### Nested list 第五子族实际完成记录（0.13.161）
+
+- 范围只覆盖 **top-level plain bullet parent 下 nestedCount>=2 时第一个 nonempty plain bullet child 的物理 Shift+Tab outdent**。parent与所有nested items仍要求non-task、单一无marks非空paragraph；last child由0.13.160，single child由0.13.159，empty/task/ordered/复杂nested继续不认领。
+- 真实 HorseMD 与 2/3-child同attrs `liftListItem` 都在同一document transaction里产生 **两笔 `ReplaceAroundStep`**。Step 1 `insert=1/sliceSize=3/openStart=1/openEnd=0`，从target结束wrapper前到old nested结束wrapper前，把全部successors通过gap搬入target中新建nested wrapper；Step 2 `insert=1/sliceSize=1/openStart=1/openEnd=0`，严格以Step 1后的`stepDoc`为输入，把这个已经带successor nested list的target从old parent提升到top-level。owner要求Step 1 apply结果精确等于捕获的第二个stepDoc，Step 2 apply结果精确等于live expectedDoc。
+- intermediate topology是本family的核心证据：outer top-level item count尚未变化；old parent仍保留一个nested list，但其中只剩target；target已经拥有与old nested attrs一致的新nested list，并按原顺序包含全部successors。第二步之后parent只保留原paragraph，target成为`parentIndex+1` top-level item且successors仍位于target的nested list；其它outer siblings只整体后移一位并`.eq()`。
+- raw source不尝试复现中间态。source-map证明parent + 全部nested rows物理连续、同作者bullet token、marker spacing一个space、parent indent=0、nested indent恰两个spaces且raw body逐项等于PM正文后，最终patch只删除**第一 target row**的两个spaces。successor rows完全不动，因此原来的`  + delta`/`  + epsilon`自然在最终Markdown中继续属于被提升target。
+- legacy retirement：wide target indent、target marker padding、mixed marker/body等在两-Step PM family已完整分类后`recognized:true + legacyBlocked:true`；last/single/broad/legacy/Coordinator不得接管，rich结构保持、warning出现且disk不变。
+- 永久门禁：pure覆盖2/3 nested children、Step 1/2 range/slice、stepDoc中间态、successor顺序、BOM+CRLF、wide/mixed/wrong-step recognized负例以及last/single/empty/task/ordered no-hit；真实Electron覆盖2-child callback与3-child forced、`+/-` marker、source/save/disk/fresh-profile reopen和marker-spacing retirement。相邻矩阵覆盖0.13.157–160、continuous/nested 3×2 fidelity和generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`全部通过。
+- 至此 plain bullet 的基础 Tab/Shift+Tab families 已按真实 Step 拆清。下一步进入 **nested split/join**，先通过真实Electron比较 Enter split、Backspace/Delete join 的Step topology与raw byte影响，优先迁移最小且稳定的子族；task sentinel、conversion、input rules与跨列表/coalescing仍在之后。
+
+### Nested list 第六子族实际完成记录（0.13.162）
+
+- 范围只覆盖 **top-level plain bullet parent 内 nested plain bullet item 的 middle/end Enter split**。target必须non-task、单一无marks非空paragraph；splitOffset必须`>0`，允许等于正文长度以生成空right sibling；任意nested index均可。item开头Enter、task、ordered、marks/atoms/复杂item以及Backspace/Delete join明确不认领。
+- 真实 HorseMD end/middle Enter 与同attrs `splitListItem` 完全一致：单document-changing transaction、单`ReplaceStep(structure=true,sliceSize=4,openStart=2,openEnd=2)`，`from===to===targetParagraph.contentStart+splitOffset`；slice是两个空`list_item` wrappers，各含空paragraph且attrs与old target一致。new nested list childCount增加1；target位置变成left/right两个item，`leftText+rightText===oldText`，其它nested和outer siblings逐项`.eq()`。
+- raw source只修改target作者row：在语义split boundary插入 **原EOL + 原indent + 原marker + 原spacing**。当前安全合同要求nested indent恰两个ASCII spaces、marker spacing一个space、EOL为LF/CRLF。BOM、marker token、正文其余bytes、siblings与邻块均保持。
+- 为避免 authored escape 造成“PM字符offset != raw byte offset”，本family新增局部 `escapedPlainTextBoundary`：逐字符证明raw body等价于PM plain text，仅接受原字符本身或Markdown可转义标点的`\\x → x`，同时返回精确raw boundary；任何无法完整对齐的entity/复杂inline继续fail closed。永久旧基线`1\\. 额啊飞啊发`已验证PM `splitOffset=8`映射到raw `rawSplitOffset=9`，最终source仍保留反斜杠。
+- legacy retirement：registry将split owner置于nested focused owners之后、ordered/broad之前并`legacyRetired:true`。两空格marker padding等在PM topology+Step已完整分类后返回`recognized:true + legacyBlocked:true`；rich split保留、warning出现，但outdent/broad/legacy/Coordinator均不得publication，disk不变。原`nested-list-enter-empty-sibling`永久回归已升级为focused-only ownership，禁止 broad `list-subtree-replace`重新接管。
+- 永久门禁：pure覆盖middle/end、任意nested index、BOM+CRLF作者`+`、authored `1\\.` raw offset、unsafe row/wrong Step recognized fail-closed及start/task/ordered no-hit；Electron覆盖end callback和middle forced、`+/-` marker、source/save/disk/fresh-profile reopen与marker-spacing retirement。相邻矩阵覆盖0.13.157–161、continuous/nested 3×2 fidelity、RS-68 rapid nested parent Backspace、RS-63 nested Backspace与generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build和`git diff --check`均通过。
+- 下一独立family是 **nested sibling 起始 Backspace join**。真实诊断已经证明它与split不同：单`ReplaceStep`后final PM为一个list_item内部两个paragraph，作者source形状为nested marker第一段 + continuation paragraph；当前broad transaction candidate会因document mismatch失败并落回legacy。0.13.163必须单独证明old/new paths、Step range、continuation indentation和save/reopen，不能复用split raw patch。
+
+### Nested list 第七子族实际完成记录（0.13.163）
+
+- 范围只覆盖 **top-level plain bullet parent 内任意非首 nested plain bullet sibling 在正文起始位置的物理 Backspace join**。previous 与 target 都必须non-task、单一无marks非空paragraph；targetIndex必须`>=1`。task、ordered、复杂item、item中间删除、Delete join与跨list join继续不认领。
+- 真实 HorseMD 与同attrs `joinBackward` 对2-child second、3-child middle/last均使用单transaction/单`ReplaceStep(structure=true,sliceSize=0,openStart=0,openEnd=0)`；范围恒为`from=target.beforePos-1=previous.beforePos+previous.nodeSize-1`、`to=target.contentStart`。Step在捕获stepDoc上apply必须精确等于live expectedDoc。
+- final topology：nested childCount减1；target sibling消失，previous位置的joined item保留原attrs并拥有两个paragraph，第一paragraph逐字等于old previous，第二paragraph逐字等于old target；其余nested siblings在target之后整体左移一位，outer siblings与parent paragraph保持`.eq()`。
+- raw source不调用broad mapper。source-map分别锚定previous/target paragraph，并要求两作者rows物理相邻、nested indent都恰两个ASCII spaces、使用同一作者`-`/`+`/`*` marker、marker spacing一个space、LF/CRLF一致；正文通过有限backslash-escape对齐证明。成功只把target row的`  marker `前缀替换为 **原EOL + 四个spaces**，target正文bytes原样保留，因此生成`previous marker row + blank line + four-space continuation paragraph`。
+- 真实Electron已证明该continuation source直接通过生产parser/document equivalence/strict list-slot gate，不需要semantic豁免，并在source/save/disk/fresh-profile cold reopen后稳定恢复为一个nested list_item内两个paragraphs。BOM、CRLF、作者`+/-` marker与`1\\.`正文保持。
+- legacy retirement：registry将join owner置于split之后、ordered/broad之前并`legacyRetired:true`。target marker padding等在exact PM family已分类后`recognized:true + legacyBlocked:true`；rich双paragraph join保留、warning出现，split/broad/legacy/Coordinator不得publication，disk不变。
+- 永久门禁：pure覆盖2-child、3-child middle/last、exact Step/path、BOM+CRLF、authored escape、unsafe row/wrong-step recognized fail-closed以及task/ordered no-hit；Electron覆盖2-child callback与3-child middle forced、source/save/disk/reopen和marker-padding retirement。相邻矩阵覆盖0.13.157–162、continuous/nested 3×2 fidelity、RS-68、RS-63与generic list-subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均通过。
+- 至此 plain nested bullet 的基础 **Tab indent / Shift+Tab outdent / Enter split / Backspace sibling join** 已全部迁入focused transaction owners。Stage E仍未结束；下一步进入 **task sentinel / task-list item 特有结构** 的真实Step与raw source取证，之后再处理conversion、input rules与cross-list/coalescing。
+
+### Task list 第一子族实际完成记录（0.13.164）
+
+- 范围只覆盖 **plain bullet task item 已存在 boolean `checked` 时的 checkbox 点击切换**。top-level task 与 top-level plain parent 下的一层 nested task均支持；ordinary item `checked:null→false` 的 task conversion、ordered task、空 task sentinel、task Enter/Backspace、复杂multi-block task明确不认领。
+- 真实 HorseMD top-level/nested checkbox点击均为单document-changing transaction / 单`AttrStep`：`step.pos===target list_item.beforePos`、`step.attr==='checked'`、`step.value===next checked boolean`，非checked attrs与paragraph content保持。nested场景里祖先parent list_item的`.eq()`也会变化，因此本family不用generic anchored-list-item classifier，而是先在old/new tree中找唯一“checked boolean翻转且content/nonchecked attrs不变”的leaf task，再由AttrStep.pos完成Step-first绑定。
+- raw source只锚定target paragraph所在task row。row解析保留indent、作者`-`/`+`/`*` token、bullet marker spacing、`[ ]/[xX]`之后的task spacing、正文与EOL；成功patch只替换checkbox状态字符一个byte/字符，unchecked写` `，checked写`x`。正文允许普通字符和有限Markdown backslash escape，entity等复杂raw spelling当前不猜。
+- 该owner直接修复现有 fidelity first divergence：真实诊断证明checkbox点击过去由legacy `list-line-change`持有，会把作者`+ [ ] Top task`及nested作者`  + [x] Nested task`改写为serializer默认`*`。0.13.164 focused callback/forced 回归要求 `+/-` token逐字保持，且source/save/disk/fresh-profile reopen全部一致。
+- legacy retirement：registry将`list-task-checkbox-toggle`置于nested join之后、ordered/broad owners之前并`legacyRetired:true`。entity-authored正文`A &amp; B`作为永久负例：PM checked AttrStep已完整分类，但raw body无法由有限plain/escape对齐证明时返回`recognized:true + legacyBlocked:true`；rich checkbox切换保留，warning出现，legacy `list-line-change`、broad list-subtree与Coordinator均不得publication，disk不变。
+- 永久门禁：pure覆盖top-level/nested、false→true/true→false、exact AttrStep、BOM+CRLF、作者`+/-`、`1\\.` escape、entity/wrong-step recognized fail-closed、ordinary conversion/ordered no-hit；Electron覆盖top-level callback + nested forced、focused-only publication、source/save/disk/reopen和entity retirement。相邻覆盖原task persistence、RS-70 task Enter empty sibling、RS-58 task continuation empty、RS-60 empty task Backspace、0.13.162/163 nested split/join与generic subtree；Journal/Coordinator/source transaction、完整preservation、39/39、mixed/heterogeneous fidelity、desktop/mobile build及`git diff --check`全部通过。
+- Stage E下一步进入 **task Enter/sentinel 生命周期**：需要把`taskEmptyNext`、zero-width sentinel、empty sibling填充/退出等真实transaction/Step拆开；conversion、typed input rule与cross-list/coalescing继续后排，不能扩宽checkbox AttrStep owner。
+
+### Task list 第二子族实际完成记录（0.13.165）
+
+- 范围只覆盖 **已有 plain bullet task item 在正文末尾物理 Enter，新建一个空同层 task sibling**。top-level task 与顶层 plain bullet parent 下的一层 nested task均支持；正文中间 split、item开头 Enter、ordinary bullet、ordered task、task conversion、sentinel 填充/退出与 Backspace明确不认领。
+- 真实 HorseMD top unchecked、top checked、nested checked 三组诊断均为单document-changing transaction / 单`ReplaceStep(structure=true,sliceSize=4,openStart=2,openEnd=2)`；`from===to===paragraph.contentStart+oldText.length`，slice恰有两个空`list_item` wrapper，各含空paragraph且attrs与旧task完全一致。new list只在target后增加一个sibling，其它siblings逐项`.eq()`；因此新空task继承旧item的`checked` boolean。
+- raw source不序列化整个list，也不让legacy决定marker。source-map锚定旧task paragraph后，row必须满足当前安全合同：top-level indent为空或nested恰两个spaces、作者bullet token任意`-`/`+`/`*`、bullet/task spacing各一个space、checkbox state与PM一致、正文为plain text或有限Markdown backslash escape、EOL为LF/CRLF。成功只在该物理row结束后插入同indent/token/spacing/state spelling的空task row，并用U+200B作为source-owned sentinel；BOM、原正文、后继row和其它bytes不动。
+- 该family直接消除了一个现有source-rich divergence：迁移前top-level Enter会落到legacy `list-line-change`，把作者`+` marker改为canonical `*`且曾出现`semanticOk:false`；nested Enter则落到`middle-empty-block-list-filled`。0.13.165 callback/forced永久回归要求 focused owner唯一publication，并禁止这两个legacy reason与broad list-subtree publication。
+- legacy retirement：registry将`list-task-empty-sibling-split`置于task checkbox之后、ordered/broad owners之前并`legacyRetired:true`。entity-authored `A &amp; B`作为真实负例：PM Step/topology已完整识别，但raw body不属于当前plain/escape证明时返回`recognized:true + legacyBlocked:true`；rich Enter保留、warning出现，legacy/broad/Coordinator不得publication，disk保持原字节。
+- 永久门禁：pure覆盖top unchecked、top checked uppercase `X`、nested checked、exact Step/slice/path、BOM+CRLF、`1\\.` escape、entity/wrong-step recognized fail-closed，以及middle split/ordinary/ordered no-hit；Electron覆盖top callback、nested forced、source/save/disk/fresh-profile reopen和entity retirement。原RS-70已升级为Enter必须由本focused family发布，随后填正文仍由legacy `empty-task-sentinel-filled`；task checkbox/persistence、RS-58 task continuation、RS-60 empty-task Backspace、nested split/join、generic subtree相邻矩阵全绿。Journal/Coordinator/source transaction、完整preservation、39/39 probes、mixed/heterogeneous fidelity、desktop/mobile build与`git diff --check`均exit 0。
+- 下一family明确为 **`empty-task-sentinel-filled`**：从U+200B空task继续物理输入正文，当前RS-70已提供稳定legacy first-punch证据。先抓真实ReplaceStep/transaction chain，再做raw row“只消费sentinel并写入正文”的focused owner；不要同时迁移empty-task Backspace或task input rule。
+
+## 9. 阶段 F：普通段落默认 authority
+
+把已有 `plain-paragraph-transaction-owner` 从显式测试门禁提升为生产默认，逐项完成：
+
+- insert/delete/selection replace；
+- Enter split；
+- Backspace/Delete join；
+- 连续空段和新文档 bootstrap；
+- trailing spaces、hard break、BOM与三种EOL；
+- IME composition；
+- undo/redo；
+- source-mode/save竞争。
+
+完成后退役 generic localized/line/middle/tail正文写回主路径，只保留明确未迁移 family 的 fail-closed compatibility。
+
+## 10. 阶段 G：Marks、Atoms 与特殊入口
+
+依次迁移：
+
+- strong/emphasis/strike；
+- inline code；
+- links；
+- images、math与其它 atoms；
+- frontmatter；
+- Slash code/math及其它结构命令；
+- paste、drop、whole-document replacement；
+- generated scratch；
+- source+preview和多标签隐藏editor callback。
+
+每个入口必须与普通 dispatch共享 revision/provenance；命令级 source intent不能绕过最终 Coordinator validation。
+
+## 11. 阶段 H：持久化旁路清零
+
+建立静态和runtime双门禁：
+
+- 搜索成功路径中直接赋值 source/canonical refs、host `onChange`、磁盘写入。
+- 所有成功 publication trace必须含 candidate id、owner、family、reason、revision、boundary。
+- 识别但拒绝的事务必须有 `legacyBlocked` 或明确未迁移状态。
+- 不允许先推进 canonical/source基线再验证。
+- 不允许旧 callback在新revision上rebase。
+
+完成后，legacy preservation只能作为未识别 family 的临时兼容层，不得拥有已经迁移的任何操作。
+
+## 12. 阶段 I：最终资格验收
+
+### 自动化
+
+- focused family全矩阵；
+- family multicycle默认/transaction authority；
+- continuous fidelity；
+- chaos多档节奏；
+- 100K–400K大文档性能和逐键延迟；
+- LF、CRLF、lone-CR、BOM、无final-EOL；
+- IME、快速按键、保存/源码切换抢跑；
+- 多标签、隐藏editor、外部文件更新；
+- desktop/mobile build。
+
+### 正式安装包
+
+1. clean本地提交；
+2. `dist:dir`；
+3. 核验 bundle版本；
+4. 安装到 `/Applications` 前保留旧版唯一备份；
+5. `--horsemd-input-trace` 启动；
+6. 使用真实长文档连续交替操作段落、列表、引用、代码块、表格、输入规则、IME；
+7. 多轮保存、关闭、fresh-profile冷重开并继续编辑；
+8. 同时比对 PM、committed source、canonical、textarea、tab mirror和disk；
+9. 首个 divergence、integrity false、warning和错误成功保存均为零。
+
+只有该阶段通过，才能关闭 `rich-source-divergence-incident-0.13.47.md` 的P0 Known Issue。
+
+## 13. 进度维护规则
+
+每完成一个阶段，更新本文件：
+
+- 状态从“未开始/进行中”改为“完成”；
+- 写入版本和本地提交hash；
+- 记录实际执行的focused、negative、global和post-commit smoke；
+- 写明仍未覆盖的用户操作；
+- 下一阶段只从本文件确定，不从聊天记录或临时 `/tmp` 状态文件推断。

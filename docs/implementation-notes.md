@@ -90,16 +90,30 @@ await crepe.create()
 
 ---
 
-## bug 7：Ctrl+B 切侧边栏时灵时不灵
+## bug 7 / #66：分屏大纲未跟随当前窗格
 
-**现象**：按 `Ctrl+B` 想切侧边栏，但经常不生效，或被编辑器拿去加粗。
+**现象**：分屏打开两个文档后，无论用户点击左侧还是右侧编辑器，大纲都可能继续显示左侧文档；在源码/富文本混合分屏中，切换焦点后还可能短暂正确、随后又跳回左侧。
 
-**根因**：`Ctrl+B` 在主进程菜单注册成了加速器，而编辑器（ProseMirror）也把 `Mod-B` 绑成加粗 —— 冲突，编辑器经常先吃掉这个按键。
+**根因**：大纲原来只读取活动标签使用的单一 `editorHostRef`，没有把“当前聚焦窗格”作为独立目标。与此同时，源码/富文本切换会分多轮恢复光标；用户已经点击另一个窗格后，旧窗格尚未结束的延迟恢复仍会调用 `view.focus()`，把焦点和大纲目标抢回去。
 
-**修复**：
-- 主进程移除 `Toggle Sidebar` 的 `CmdOrCtrl+B` 加速器（避免和渲染层双触发）
-- 渲染层在 **捕获阶段** 监听 `Ctrl/Cmd+B`，先于编辑器处理：切侧边栏 + `preventDefault/stopPropagation`（编辑器收不到 → 不加粗）
-- `metaKey` 一并判断，macOS 的 `Cmd+B` 同样生效
+**最终修复**：
+- 为每个已挂载富文本编辑器按标签 ID 保存 host，大纲根据 `focusedPane` 选择富文本 host 或源码 textarea。
+- 大纲目标切换立即刷新；同一文档内容变化仍保留防抖，避免输入时频繁解析。
+- 光标恢复轮次绑定开始切换时的标签；检测到用户聚焦其他窗格后，立即终止该轮后续恢复。
+- 保持活动左栏使用的旧 ref 和编辑器生命周期不变，避免影响查找、保存及源码/富文本切换状态机。
+
+---
+
+## bug 8 / #67：Ctrl+B 与侧边栏冲突
+
+**现象**：早期版本把 `Ctrl+B` 定义成侧边栏开关，但工具栏和多数编辑器都把它标为加粗，Windows 用户无法使用标准快捷键。
+
+**根因**：ProseMirror 已把 `Mod-B` 绑定为加粗，HorseMD 又在全局捕获阶段拦截同一个按键，导致编辑器永远收不到事件。之前为了让侧边栏优先而做的捕获修复，本身造成了 #67。
+
+**最终修复**：
+- 普通 `Ctrl/Cmd+B` 不做全局拦截，交还给 ProseMirror 加粗。
+- 侧边栏迁移到 `Ctrl/Cmd+Shift+B`，仍在渲染层统一处理 Ctrl/Cmd。
+- 主进程不注册重复 accelerator，避免菜单命令和渲染层双触发。
 
 ---
 
@@ -141,7 +155,8 @@ macOS 用 `titleBarStyle: 'hiddenInset'`，红绿灯（关/最小/最大）浮�
 - 顶栏横跨整个宽度成为一条**独立标题栏**（`grid-column: 1 / -1` + `padding-left` 给红绿灯留位）
 - 活动栏下移到标题栏**下方**（`grid-row: 2 / -1`）→ 红绿灯落在同一条背景上、自成一行，不再交叉
 
-> 平台样式一律写在 `.app.is-win` / `.app.is-mac` 选择器下；改顶栏时两个系统都要验证。
+> 平台样式一律写在 `.app.is-win` / `.app.is-mac` / `.app.is-linux` 选择器下；
+> Windows 和 Linux 共用窗口 IPC，但按钮样式不同。改顶栏时三个桌面系统都要验证。
 
 ---
 
@@ -337,6 +352,26 @@ CodeMirror 默认带 `highlightActiveLine`，进入代码块/打开时会给光�
 - 第一版改成"有手柄就藏标记" —— 但手柄一悬停就出现(鼠标常停在编辑区),导致标记几乎一直看不到,过头了。
 - 最终:**两个都显示、标记避让** —— 当手柄出现在光标所在行时,把标记的右边缘挪到手柄左侧(`badgeRight = min(默认, handle.left - 6)`),并加 `mousemove → scheduleLevel` 让标记随手柄出现而重定位。键盘编辑(无悬停)时标记照常显示。
 
+## bug 18a：正文悬浮会误唤起块拖拽柄
+
+**现象**：鼠标移动到正文中的普通文字、`<font>` 或 `<span>` 行内 HTML 上时，Milkdown 的块拖拽柄会突然显示在段落左侧。原始 HTML atom 因为色彩醒目更容易让人误以为是它触发了问题，但普通文本也能复现。
+
+**根因**：Milkdown BlockEdit 的 hover 服务没有用真实的 `event.clientX` 命中块，而是以编辑器水平中点和当前 `clientY` 反查所在块。因此只要鼠标处于同一文本行的任意横向位置，都会被解释为“悬浮该块”。
+
+**修复（0.13.204 再收口）**：早期 guard 把 ProseMirror 左边界向右 36px 当作“左侧热区”，但 ProseMirror 本身 `padding: 0`，所以这 36px 实际就是段首正文。现在 `editor-block-handle-guard.js` 改为监听 `.editor-host` 的真实左侧 padding：只有 `editor-host.left <= clientX < ProseMirror.left` 的 gutter 会主动调用 Milkdown 同一个 `BlockService.mousemoveCallback()` 计算 active block；正文内任意横向位置都只会收起操作条。列表圆点、编号和待办标记继续作为显式呼出目标。该 guard 不改 Markdown、selection 或 table DOM listener。
+
+**回归**：`npm run test:inline-html-block-handle-ui` 验证行内 HTML、普通正文不会显示操作条而真实左侧 gutter 仍会显示；`npm run test:block-handle-gutter-ui` 额外把普通段落 `ProseMirror.left + 4px` 锁为“不呼出”，防止再次把段首正文误当 gutter。
+
+### bug 18b：窄布局的块操作条存在多个位置并遮挡正文
+
+**现象**：无序列表圆点、嵌套列表、标题和正文唤起的加号/拖拽柄不在同一条横向轨道。窄布局下，原生 66px 双按钮还会越过正文边界或被滚动容器左侧裁切。
+
+**根因**：Milkdown BlockProvider 默认以每个 active block 自己的 `getBoundingClientRect()` 为 Floating UI 锚点，而列表、嵌套列表、标题和段落的左边界天然不同。此前 HorseMD 又在 Provider 异步写入 `left/top` 后，通过 MutationObserver、ResizeObserver 和 `translate` 做二次纠偏，形成两个坐标所有者；Milkdown 的 200ms 节流与位置动画会让两套写入顺序不确定，所以表现为偶发跳位和“两个悬浮位置”。
+
+**最终方案**：使用 Crepe 官方 `Feature.BlockEdit.blockHandle.getPosition/getOffset` 配置，在 Provider 计算阶段保留 active block 的纵向矩形，但把横向锚点统一替换为 ProseMirror 正文左边界。HorseMD 的插件只过滤/转发触发事件、处理离开与滚动隐藏，不再二次写坐标。双按钮固定为 28px + 2px gap + 28px = 58px，完整容纳在 60px 编辑器留白中。0.13.204 进一步修复 P8b 懒加载后的 CSS 顺序回归：Crepe 后加载的 `block-edit.css` 曾以同优先级把按钮恢复为 32px×2（66px）并设置 `transition: all`，窄布局下 Floating UI 因 60px gutter 放不下会自动 flip 到正文侧；HorseMD 现用更高 specificity 固定 28px 尺寸和仅 `opacity` 动画，不再依赖样式加载顺序。
+
+**回归**：`npm run test:block-handle-gutter-ui` 使用真实 CDP 鼠标事件覆盖 4 种布局、标题/正文/三级列表/有序列表/待办列表、列表标记到按钮的移动，以及视觉位置与点击命中层一致性；同时断言整条操作栏始终 58px、单按钮 28px、`transition-property: opacity`，并检查段首正文绝不呼出。
+
 ## bug 19：点击表格单元格出现刺眼的选中线框
 
 ProseMirror 默认 `.ProseMirror-selectednode { outline: 2px solid #8cf }`(生硬浅蓝方框),加上 Crepe 给选中单元格的强调色描边,点击表格时会出现一圈和主题违和的"线框"(Windows 上尤其明显)。
@@ -365,10 +400,10 @@ Crepe 的 CodeMirror 功能**拥有** `code_block` 的 node view,且代码块自
 - `codeBlockConfig.renderPreview(language, text, setPreview)`(`editor-mermaid.js` 的
   `createMermaidPreviewRenderer`):`language === 'mermaid'` 时返回图表 SVG(异步,渲染完
   用 `setPreview` 回填),其它语言返回 `null`(普通代码块照旧,无预览/无折叠按钮)。
-- `previewOnlyByDefault: true`:mermaid 块默认只显图、隐藏源码;工具栏里"复制"旁出现
-  隐藏/编辑切换。**注意**:`previewOnlyByDefault` 对所有代码块生效,但因为非 mermaid 块
+- `previewOnlyByDefault: true`:mermaid/LaTeX 默认只显示预览;工具栏里"复制"旁出现
+  隐藏/编辑切换。**注意**:`previewOnlyByDefault` 对所有代码块生效,但因为普通代码块
   没有 preview(`renderPreview` 返回 `null`),它们不会被隐藏(`.codemirror-host.hidden`
-  的 CSS 要求 `preview` 非空才生效)。
+  的 CSS 要求 `preview` 非空才生效)。聚焦中的 CodeMirror 由 `:focus-within` 样式覆盖 `hidden`,避免首个 LaTeX 字符出现时中断输入(issue #57)。
 - `previewToggleText` 必须放在 **feature config**(`featureConfigs[CrepeFeature.CodeMirror]`)
   里,不能放在 `codeBlockConfig`——因为它是被 feature 读去**构建** `previewToggleButton`
   的,放错位置就一直卡在英文 Edit/Hide。
@@ -383,9 +418,35 @@ Crepe 的 CodeMirror 功能**拥有** `code_block` 的 node view,且代码块自
 
 `$…$` 一直是死文本——因为 `CrepeFeature.Latex` **默认是关的**,我们从没显式开启(features 里那几个 `SelectionTooltip/SlashCommand/InlineCode` 其实不是真 key,是 no-op,相关功能靠 Crepe 默认开着)。开启 `Latex` 后行内/块级公式经 KaTeX 渲染(latex/katex 样式随主题 CSS 已打包)。块级要 `$$` **单独成行**才识别为 display(否则当行内,`\tag` 这种 display-only 命令会报错)。长 display 公式会溢出列宽 → `.katex-display { overflow-x:auto }` 在列内滚动;KaTeX 解析错误文本也允许换行,不再冲出右边。
 
+## bug 23：块公式输入首字符后丢失焦点（issue #57）
+
+根因不是 KaTeX 或键盘事件，而是 Crepe `codeBlockConfig.previewOnlyByDefault:true`。空 LaTeX 暂时没有 preview，CodeMirror 可见；首字符一旦能渲染，Vue node view 同一轮更新给 `.codemirror-host` 加 `hidden`，正在聚焦的编辑器被隐藏，焦点回到 `body`。直接关闭 preview-only 会改变所有 Mermaid/公式块高度，因此保留原配置，用更具体的 `.codemirror-host.hidden:focus-within { display:block !important }` 让编辑期间的 `hidden` 不生效；焦点离开后仍回到既有的仅预览布局。`/math` 另有一层问题：`addBlockTypeCommand` 会在当前段落后新增块，改用 `setBlockTypeCommand` 才是把斜杠所在段落转换成 LaTeX，光标自然留在源码内。
+
+## bug 24：底部文件右键菜单仍差几像素被裁切（issue #59）
+
+旧代码用固定 `340px` 猜菜单高度，菜单项变化后必然失效。第一版改成 `getBoundingClientRect()` 实测仍在真实 UI 中越界 11px，因为测量发生在 `scale(0.95)` 入场动画期间，读到的是视觉缩放尺寸；动画结束后菜单变大。最终使用不受 transform 影响的 `offsetWidth/offsetHeight` 做视口夹紧，并用 `max-height + overflow-y:auto` 处理窗口比菜单本身还矮的极端情况。几何规则在 `menuPosition.js` 纯函数测试，动画后的最终边界由 CDP 读取 DOM 验收。
+
+## 坑：Electron 两套打印 API 的自定义 Size 单位不同（issue #60）
+
+`webContents.printToPDF` 的 `PrintToPDFOptions.pageSize` 对象使用**英寸**，而原生 `webContents.print` 的近似选项文档使用微米，不能混用。只跑 CSS/参数单测时曾把 180 mm 写成 `180000`，真实生成的 PDF `/MediaBox` 变成约 180000 英寸的异常页面。最终 `resolvePdfPage` 保留 mm 供 `@page` 使用，同时除以 25.4 生成 Electron PDF 参数；验收必须实际保存 PDF 并从 `/MediaBox` 反算尺寸，不能只断言参数形状。
+
 ## bug 21：表格太占地方 + 文字/行内代码超列宽重叠（issue #6）
 
 单行单元格行高一度 **84px**:单元格内边距 + **单元格里 `<p>` 的上下 margin(~25px)** + 行高 1.85 三者叠加。修法:`td/th>p { margin:0 }`、内边距 10×14 → 6×12、行高 → 1.5、表格上下 margin 1.5em → 1.1em,行高降到 ~45px。重叠则是行内代码/长串不换行撑破固定列宽 → 给单元格加 `overflow-wrap/word-break: break-word`(行内 `code` 继承生效)。
+
+## bug：PDF 表格列宽和行距与编辑器分叉
+
+编辑器已经采用内容驱动列宽和紧凑单元格，但 PDF 仍保留 `width:100%` +
+`table-layout:fixed`，且 `.doc p` 的全局段落 margin 继续命中 `th/td > p`。
+第一次只修复列宽后，最终 PDF X 坐标已经正确，用户仍能看到每行上下留白过大；
+这说明视觉验收只测一个轴线不完整。
+
+最终做法是在 `editor-pdf-content.js` 清理 DOM 前测量 live table 并写入 PDF 专用
+列比例，在 `pdf-print-styles.js` 只重置 cell paragraph 的 margin/padding。测试
+直接读取最终 PDF 的 X/Y 坐标并渲染 PNG，不以 source HTML 或成功生成 Buffer
+代替视觉验收。完整根因和工程流程见
+[pdf-table-layout-fidelity-report.md](./pdf-table-layout-fidelity-report.md) 与
+[pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
 
 ## 坑：表格单元格内换行只能走 `<br>`,不能用 hardbreak 序列化（issue #7）
 

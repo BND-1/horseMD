@@ -48,7 +48,7 @@ capacitor.config.ts    // Capacitor 配置(appId / webDir / 插件设置)
 | `themesList / themeRead / themesReveal` | userData/themes | App 私有 `themes/` 目录(reveal 无意义→禁用) |
 | `watchStart/Stop/File`、`onWatch*/onFileChanged` | chokidar | **no-op**(移动端无文件监听;靠重新进入前台时刷新) |
 | `window*`(最小化/最大化/关闭) | BrowserWindow | **no-op**(移动端无窗口控件) |
-| `exportPDF` | 主进程打印 | **MVP 先禁用**(后续可用系统分享/打印) |
+| `previewPDF / savePDFPreview / disposePDFPreview` | 主进程预览与保存 | **移动端禁用**(使用系统分享/打印) |
 | `openExternal / showInFolder` | shell | `@capacitor/browser`;showInFolder 禁用 |
 | `checkUpdate` | net.fetch GitHub | 复用 `@capacitor/app` 版本 + 同样的 GitHub 检查(可保留) |
 | `confirmAppClose / cancelAppClose / onAppCloseRequest` | 关闭拦截 | **no-op**(移动端无"关窗"语义) |

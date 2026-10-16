@@ -12,6 +12,10 @@ import {
   stripMdForSnippet,
   visibleSourcePosition
 } from './mode-visible-map.js'
+import {
+  sourceOffsetForTextarea,
+  textareaOffsetForSource
+} from './source-text-fidelity.js'
 const SNIPPET_LEN = 24
 
 // ---------------------------------- #41 caret ----------------------------------
@@ -182,6 +186,7 @@ export function captureSourceCaret(textarea) {
   if (!textarea) return null
   const md = textarea.value || ''
   const start = textarea.selectionStart || 0
+  const sourceRawOffset = sourceOffsetForTextarea(textarea, start)
   const lineStart = md.lastIndexOf('\n', start - 1) + 1
   const lineEndRel = md.indexOf('\n', start)
   const lineEnd = lineEndRel < 0 ? md.length : lineEndRel
@@ -225,8 +230,8 @@ export function captureSourceCaret(textarea) {
   }
   const ratio = md ? start / md.length : 0
   const { visibleIndex, visibleAffinity } = sourceVisiblePositionAtRaw(md, start)
-  if (pick) return { origin: 'source', heading: pick.text, offset: start - pick.charOffset, ratio, snippet, snipOff, context, contextOff, visibleIndex, visibleAffinity, rawOffset: start }
-  return md ? { origin: 'source', ratio, snippet, snipOff, context, contextOff, visibleIndex, visibleAffinity, rawOffset: start } : null
+  if (pick) return { origin: 'source', heading: pick.text, offset: start - pick.charOffset, ratio, snippet, snipOff, context, contextOff, visibleIndex, visibleAffinity, rawOffset: sourceRawOffset }
+  return md ? { origin: 'source', ratio, snippet, snipOff, context, contextOff, visibleIndex, visibleAffinity, rawOffset: sourceRawOffset } : null
 }
 
 // Rich → Source: use the markdown source offset while both views share the
@@ -242,7 +247,7 @@ export function restoreSourceCaret(textarea, anchor, follow = false) {
     const hint = anchor.ratio != null ? anchor.ratio * md.length : -1
     let target
     if (Number.isFinite(anchor.rawOffset)) {
-      target = Math.max(0, Math.min(anchor.rawOffset, md.length))
+      target = Math.max(0, Math.min(textareaOffsetForSource(textarea, anchor.rawOffset), md.length))
     }
     if (target == null && Number.isFinite(anchor.visibleIndex)) {
       target = sourceRawFromVisibleIndex(md, anchor.visibleIndex, anchor.visibleAffinity)

@@ -107,7 +107,7 @@ async function main() {
     await click("[...document.querySelectorAll('.activity-item')].find((button) => button.title.includes('大纲'))")
     await capture('outline')
 
-    await click("document.querySelector('.topbar .icon-btn[title*=" + JSON.stringify('Command palette') + "]')")
+    await click("[...document.querySelectorAll('.topbar .icon-btn')].find((button) => /Command palette|命令面板/i.test(button.title || ''))")
     await capture('command-palette')
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
@@ -166,9 +166,41 @@ async function main() {
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
 
     await click("[...document.querySelectorAll('.activity-item')].find((button) => button.title.includes('大纲'))")
-    await click("document.querySelector('.status-btn[title*=" + JSON.stringify('Ctrl+/') + "]')")
+    await click("[...document.querySelectorAll('.status-btn')].find((button) => /Ctrl\\+\\/|Cmd\\+\\/|源码|Source/i.test(button.title || button.textContent || ''))")
     await waitFor("[...document.querySelectorAll('textarea.source-editor')].find((node) => node.offsetParent)")
     await capture('source-mode')
+
+    const tabPoint = await evaluate(`(() => {
+      const tab = document.querySelector('.tab.active')
+      if (!tab) return null
+      const rect = tab.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    })()`)
+    if (!tabPoint) throw new Error('Could not locate active tab for PDF export')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tabPoint.x, y: tabPoint.y, button: 'right', clickCount: 1 })
+    await waitFor("document.querySelector('.tab-ctxmenu .context-submenu-trigger')")
+    await evaluate(`(() => {
+      const trigger = document.querySelector('.tab-ctxmenu .context-submenu-trigger')
+      trigger.focus()
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })()`)
+    await waitFor("[...document.querySelectorAll('.context-submenu button')].some((button) => /PDF/i.test(button.textContent))")
+    const exportPoint = await evaluate(`(() => {
+      const button = [...document.querySelectorAll('.context-submenu button')].find((node) => /PDF/i.test(node.textContent))
+      if (!button) return null
+      const rect = button.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    })()`)
+    if (!exportPoint) throw new Error('Could not locate PDF export menu item')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: exportPoint.x, y: exportPoint.y, button: 'left', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: exportPoint.x, y: exportPoint.y, button: 'left', clickCount: 1 })
+    await waitFor("document.querySelector('.hm-pdf-studio')")
+    await waitFor("document.querySelector('.hm-pdf-preview')?.dataset.previewToken", 20000)
+    await waitFor("document.querySelector('.hm-pdf-page canvas')", 20000)
+    const outlineButton = "document.querySelector('.hm-pdf-preview-leading > button')"
+    if (await evaluate(`Boolean(${outlineButton})`)) await click(outlineButton)
+    await capture('pdf-export')
   } finally {
     socket.close()
   }

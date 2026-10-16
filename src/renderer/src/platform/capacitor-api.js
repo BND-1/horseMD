@@ -285,14 +285,21 @@ const capabilities = {
   folderWorkspace: false, // iOS sandbox; Android SAF comes later
   watch: false,
   windowControls: false,
+  closeToTray: false,
+  globalShortcuts: false,
+  devtools: false,
   pdfExport: false, // no print-to-PDF save dialog on mobile
+  htmlExport: false,
+  pandocExport: false,
   imageHostExec: false,
   nativeMenus: false,
   externalShell: true,
   revealInFolder: false, // no Finder/Explorer on mobile
   splitView: false, // not enough width on a phone
   canShare: true, // system share sheet (export a file out)
-  fileAttachments: false
+  fileAttachments: false,
+  cloudSync: false,
+  nativeDropOpen: false
 }
 
 export function makeCapacitorApi() {
@@ -304,7 +311,9 @@ export function makeCapacitorApi() {
     openAttachments: async () => [],
     openFolder,
     saveAs,
-    exportPDF: async () => ({ ok: false, error: 'unsupported' }),
+    previewPDF: async () => ({ ok: false, error: 'unsupported' }),
+    savePDFPreview: async () => ({ ok: false, error: 'unsupported' }),
+    disposePDFPreview: async () => false,
     allowLocalFonts: async () => false,
 
     // fs
@@ -318,6 +327,22 @@ export function makeCapacitorApi() {
     readDir: readTree,
     listFiles,
     openFolderTree,
+    getPathForDroppedFile: () => '',
+    classifyDroppedPaths: async () => [],
+    syncListWorkspaces: async () => [],
+    syncAdoptWorkspace: async () => { throw new Error('unsupported') },
+    syncRemoveWorkspace: async () => false,
+    syncListConnections: async () => [],
+    syncAddWebDavConnection: async () => { throw new Error('unsupported') },
+    syncAddS3Connection: async () => { throw new Error('unsupported') },
+    syncUpdateConnection: async () => { throw new Error('unsupported') },
+    syncRemoveConnection: async () => false,
+    syncTestConnection: async () => { throw new Error('unsupported') },
+    syncBindWorkspaceConnection: async () => { throw new Error('unsupported') },
+    syncPreview: async () => { throw new Error('unsupported') },
+    syncRun: async () => { throw new Error('unsupported') },
+    syncListRemoteWorkspaces: async () => [],
+    syncJoinWorkspace: async () => { throw new Error('unsupported') },
 
     // watch (no-op on mobile)
     watchStart: async () => true,
@@ -329,6 +354,14 @@ export function makeCapacitorApi() {
     openExternal: (url) => Browser.open({ url }).catch(() => {}),
     openFileUrl: async () => ({ ok: false, error: 'unsupported' }),
     showInFolder: async () => false,
+    copyText: async (text) => {
+      try {
+        await navigator.clipboard?.writeText(String(text ?? ''))
+        return true
+      } catch {
+        return false
+      }
+    },
     // Export/share a saved file via the system share sheet ("Save to Files",
     // Drive, send, …) — the way to get a copy out where the user can find it.
     shareFile: async (path) => {
@@ -355,9 +388,16 @@ export function makeCapacitorApi() {
     windowToggleMaximize: async () => {},
     windowClose: async () => {},
     windowIsMaximized: async () => false,
+    windowToggleDevTools: async () => false,
+    setCloseToTray: async () => ({ ok: false, closeToTray: false }),
+    toggleWindowVisibility: async () => ({ ok: false }),
+    setGlobalShortcuts: async () => ({ ok: false, accelerators: {}, unregistered: [] }),
 
     // update check — wired up later (CSP/network)
     checkUpdate: async () => null,
+    setMenuKeybindings: async () => ({ ok: false, unsupported: true }),
+    getMenuKeybindings: async () => ({}),
+    getMenuSnapshot: async () => [],
 
     // app close (no "close window" on mobile)
     confirmAppClose: () => {},

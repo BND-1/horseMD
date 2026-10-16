@@ -3,38 +3,7 @@
 // own click handler → updates its internal selection) + REAL Tab keys, then reads
 // the rendered .cm-line text. No view-API access needed (CM6 hides it behind a
 // weakmap). Connects to a running app on --remote-debugging-port=9222.
-const base = 'http://127.0.0.1:9222'
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-async function connect() {
-  let targets
-  for (let i = 0; i < 40; i++) {
-    try {
-      targets = await (await fetch(base + '/json/list')).json()
-      if (targets.some((t) => t.type === 'page')) break
-    } catch {}
-    await sleep(500)
-  }
-  const page = targets.find((t) => t.type === 'page')
-  if (!page) throw new Error('no page target')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  const pending = new Map()
-  let id = 0
-  ws.addEventListener('message', (e) => {
-    const m = JSON.parse(e.data)
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
-  })
-  await new Promise((r) => (ws.onopen = r))
-  const send = (method, params) =>
-    new Promise((res) => { const c = ++id; pending.set(c, res); ws.send(JSON.stringify({ id: c, method, params })) })
-  return { ws, send }
-}
-const evals = (send) => async (expr) => {
-  const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
-  const res = r.result
-  if (res?.exceptionDetails) return { __error: res.exceptionDetails.exception?.description }
-  return res?.result?.value
-}
+import { connectCdp, sleep } from './lib/cdp.mjs'
 async function click(send, x, y) {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
@@ -47,9 +16,8 @@ async function tabKey(send, shift = false) {
 }
 
 async function main() {
-  const { ws, send } = await connect()
+  const { ws, send, evaluate: ev } = await connectCdp({ intervalMs: 500 })
   await send('Runtime.enable')
-  const ev = evals(send)
   const out = {}
 
   await ev(`(() => {

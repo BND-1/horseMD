@@ -1,9 +1,13 @@
-import { app, BrowserWindow, dialog, shell } from 'electron'
-import { join } from 'node:path'
-import fs from 'node:fs/promises'
-import { buildPdfDocument } from './pdf-document.js'
+import { dialog } from 'electron'
+import { createPdfExportService } from './pdf-export.js'
+import { createPandocExportService } from './pandoc-export.js'
+import { createHtmlExportService } from './html-export.js'
 
-export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions }) {
+export function registerDocumentIpc(ipcMain, { getMainWindow, getUserDataPath, markdownExtensions, isTrustedSender }) {
+  const pdfExport = createPdfExportService({ getMainWindow })
+  const htmlExport = createHtmlExportService({ getMainWindow })
+  const pandocExport = createPandocExportService({ getMainWindow, getUserDataPath })
+  const trusted = (event) => !isTrustedSender || isTrustedSender(event)
   ipcMain.handle('dialog:openFiles', async () => {
     const res = await dialog.showOpenDialog(getMainWindow(), {
       properties: ['openFile', 'multiSelections'],
@@ -36,35 +40,31 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, markdownExtensions
     return res.canceled ? null : res.filePath
   })
 
-  ipcMain.handle('export:pdf', async (_event, { html, defaultName }) => {
-    const res = await dialog.showSaveDialog(getMainWindow(), {
-      defaultPath: defaultName || 'Untitled.pdf',
-      filters: [{ name: 'PDF', extensions: ['pdf'] }]
-    })
-    if (res.canceled || !res.filePath) return { canceled: true }
-
-    const tmp = join(app.getPath('temp'), `horsemd-export-${Date.now()}.html`)
-    await fs.writeFile(tmp, buildPdfDocument(html), 'utf8')
-    const win = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        // The temporary file must load local images referenced by the document.
-        webSecurity: false
-      }
-    })
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-    try {
-      await win.loadFile(tmp)
-      const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
-      await fs.writeFile(res.filePath, pdf)
-    } finally {
-      if (!win.isDestroyed()) win.destroy()
-      fs.unlink(tmp).catch(() => {})
-    }
-    shell.openPath(res.filePath)
-    return { path: res.filePath }
-  })
+  ipcMain.handle('pdf:preview', (event, payload) => trusted(event)
+    ? pdfExport.createPreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pdf:savePreview', (event, payload) => trusted(event)
+    ? pdfExport.savePreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pdf:disposePreview', (event, token) => trusted(event)
+    ? pdfExport.disposePreview(event, token)
+    : false)
+  ipcMain.handle('html:preview', (event, payload) => trusted(event)
+    ? htmlExport.createPreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('html:savePreview', (event, payload) => trusted(event)
+    ? htmlExport.savePreview(event, payload)
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('html:disposePreview', (event, token) => trusted(event)
+    ? htmlExport.disposePreview(event, token)
+    : false)
+  ipcMain.handle('pandoc:detect', (event) => trusted(event)
+    ? pandocExport.detect()
+    : { available: false, path: null, version: null, error: 'Untrusted renderer.' })
+  ipcMain.handle('pandoc:selectExecutable', (event) => trusted(event)
+    ? pandocExport.chooseExecutable()
+    : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pandoc:export', (event, payload) => trusted(event)
+    ? pandocExport.exportDocument(payload)
+    : { ok: false, error: 'Untrusted renderer.' })
 }

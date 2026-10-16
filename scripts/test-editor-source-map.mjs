@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import {
@@ -18,21 +19,27 @@ const schema = new Schema({
     bullet_list: { content: 'list_item+', group: 'block' },
     list_item: { content: 'paragraph block*' },
     table: { content: 'table_row+', group: 'block' },
-    table_row: { content: 'table_cell+' },
+    table_row: { content: '(table_cell | table_header)+' },
     table_cell: { content: 'paragraph+' },
+    table_header: { content: 'paragraph+' },
     image: { group: 'block', atom: true, attrs: { src: { default: '' } } },
+    inline_image: { group: 'inline', inline: true, atom: true, attrs: { src: { default: '' } } },
+    inline_math: { group: 'inline', inline: true, atom: true, attrs: { value: { default: '' } } },
+    hard_break: { group: 'inline', inline: true, atom: true },
     html: { group: 'block', atom: true, attrs: { value: { default: '' } } },
     text: { group: 'inline' }
   }
 })
 
-const remark = unified().use(remarkParse).use(remarkGfm)
+const remark = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
 const text = (value) => value ? schema.text(value) : null
 const paragraph = (value) => schema.node('paragraph', null, text(value))
 const heading = (value, level = 1) => schema.node('heading', { level }, text(value))
 const codeBlock = (value) => schema.node('code_block', null, text(value))
 const cell = (value) => schema.node('table_cell', null, paragraph(value))
+const headerCell = (value) => schema.node('table_header', null, paragraph(value))
 const row = (...values) => schema.node('table_row', null, values.map(cell))
+const headerRow = (...values) => schema.node('table_row', null, values.map(headerCell))
 const table = (...rows) => schema.node('table', null, rows)
 const listItem = (value) => schema.node('list_item', null, paragraph(value))
 const bulletList = (...values) => schema.node('bullet_list', null, values.map(listItem))
@@ -62,7 +69,17 @@ const nthNodePos = (pmDoc, type, occurrence = 0) => {
   return found
 }
 
-const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 0, local = 0, pmText, pmOccurrence = 0 }) => {
+const assertTextRoundTrip = ({
+  label,
+  markdown,
+  pmDoc,
+  token,
+  tokenOccurrence = 0,
+  local = 0,
+  pmText,
+  pmOccurrence = 0,
+  pmExtraBefore = 0
+}) => {
   let rawStart = -1
   let from = 0
   for (let i = 0; i <= tokenOccurrence; i++) {
@@ -71,7 +88,10 @@ const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 
     from = rawStart + token.length
   }
   const rawOffset = rawStart + local
-  const pmOffset = nthTextblockPos(pmDoc, pmText, pmOccurrence) + pmText.indexOf(token) + local
+  const pmOffset = nthTextblockPos(pmDoc, pmText, pmOccurrence) +
+    pmText.indexOf(token) +
+    local +
+    pmExtraBefore
   const mapped = markdownOffsetToPmPos(markdown, rawOffset, pmDoc, remark)
   assert.equal(mapped?.atom, false, `${label}: source should map to text`)
   assert.equal(mapped?.pos, pmOffset, `${label}: source -> PM`)
@@ -79,6 +99,79 @@ const assertTextRoundTrip = ({ label, markdown, pmDoc, token, tokenOccurrence = 
 }
 
 const cases = []
+
+{
+  const markdown = 'first  \nsecond tail\n\nXYZ\n\nAfter\n'
+  const pmDoc = doc(
+    schema.node('paragraph', null, [
+      text('first'),
+      schema.node('hard_break'),
+      text('second tail')
+    ]),
+    paragraph('XYZ'),
+    paragraph('After')
+  )
+  assertTextRoundTrip({
+    label: 'text after hard break',
+    markdown,
+    pmDoc,
+    token: 'second tail',
+    local: 7,
+    pmText: 'firstsecond tail',
+    pmExtraBefore: 1
+  })
+  const rawEnd = markdown.indexOf('second tail') + 'second tail'.length
+  const pmEnd = nthTextblockPos(pmDoc, 'firstsecond tail') + 'firstsecond tail'.length + 1
+  assert.equal(markdownOffsetToPmPos(markdown, rawEnd, pmDoc, remark)?.pos, pmEnd, 'hard break: source end -> PM end')
+  assert.equal(pmPosToMarkdownOffset(markdown, pmEnd, pmDoc, remark), rawEnd, 'hard break: PM end -> source end')
+  assertTextRoundTrip({
+    label: 'paragraph after hard break',
+    markdown,
+    pmDoc,
+    token: 'XYZ',
+    local: 3,
+    pmText: 'XYZ'
+  })
+  cases.push('hard break inline position')
+}
+
+{
+  const markdown = 'before ![diagram](https://example.com/image.png) after\n'
+  const pmDoc = doc(schema.node('paragraph', null, [
+    text('before '),
+    schema.node('inline_image', { src: 'https://example.com/image.png' }),
+    text(' after')
+  ]))
+  assertTextRoundTrip({
+    label: 'text after inline image',
+    markdown,
+    pmDoc,
+    token: 'after',
+    local: 3,
+    pmText: 'before  after',
+    pmExtraBefore: 1
+  })
+  cases.push('inline image position')
+}
+
+{
+  const markdown = 'before $x^2 + y^2$ unique-after-inline-math\n'
+  const pmDoc = doc(schema.node('paragraph', null, [
+    text('before '),
+    schema.node('inline_math', { value: 'x^2 + y^2' }),
+    text(' unique-after-inline-math')
+  ]))
+  assertTextRoundTrip({
+    label: 'text after inline math',
+    markdown,
+    pmDoc,
+    token: 'unique-after-inline-math',
+    local: 12,
+    pmText: 'before  unique-after-inline-math',
+    pmExtraBefore: 1
+  })
+  cases.push('inline math atom position')
+}
 
 {
   const markdown = '# Title\n\nsame paragraph\n\nmiddle\n\nsame paragraph\n'
@@ -105,11 +198,19 @@ const cases = []
     '| Gamma | `npm run build` | final |'
   ].join('\n')
   const pmDoc = doc(table(
-    row('Item', 'Command', 'Note'),
+    headerRow('Item', 'Command', 'Note'),
     row('Alpha', 'npm run build', 'repeated'),
     row('Beta', 'prefix git status suffix', 'repeated'),
     row('Gamma', 'npm run build', 'final')
   ))
+  assertTextRoundTrip({
+    label: 'table header cell local offset',
+    markdown,
+    pmDoc,
+    token: 'Command',
+    local: 4,
+    pmText: 'Command'
+  })
   assertTextRoundTrip({
     label: 'table inline code local offset',
     markdown,
@@ -144,6 +245,42 @@ const cases = []
     pmText: code
   })
   cases.push('fenced code block')
+}
+
+{
+  const markdown = 'Before\n\n```js\n\n```\n\nAfter\n'
+  const pmDoc = doc(paragraph('Before'), codeBlock(''), paragraph('After'))
+  const rawStart = markdown.indexOf('```js')
+  const pmPos = nthNodePos(pmDoc, 'code_block') + 1
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, pmPos, pmDoc, remark),
+    rawStart,
+    'empty fenced code block must map to its own opening fence, not a neighbouring blank-line gap'
+  )
+  assert.deepEqual(
+    markdownOffsetToPmPos(markdown, rawStart, pmDoc, remark),
+    { pos: pmPos, atom: false },
+    'empty fenced code block opening fence must map back to its code_block content position'
+  )
+  cases.push('empty fenced code block')
+}
+
+{
+  const markdown = '\uFEFFBefore\r\n\r\n~~~js\r\n\r\n~~~\r\n\r\nAfter\r\n'
+  const pmDoc = doc(paragraph('Before'), codeBlock(''), paragraph('After'))
+  const rawStart = markdown.indexOf('~~~js')
+  const pmPos = nthNodePos(pmDoc, 'code_block') + 1
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, pmPos, pmDoc, remark),
+    rawStart,
+    'BOM+CRLF empty tilde code block must map to its physical opening fence'
+  )
+  assert.deepEqual(
+    markdownOffsetToPmPos(markdown, rawStart, pmDoc, remark),
+    { pos: pmPos, atom: false },
+    'BOM+CRLF tilde opening fence must map back to the empty code_block content position'
+  )
+  cases.push('BOM CRLF empty tilde code block')
 }
 
 {
@@ -188,6 +325,57 @@ const cases = []
   assert.deepEqual(mapped, { pos: pmPos, atom: true }, 'HTML: source -> atom')
   assert.equal(pmPosToMarkdownOffset(markdown, pmPos, pmDoc, remark), rawStart, 'HTML: atom -> source')
   cases.push('HTML atom')
+}
+
+{
+  // A PM-only empty paragraph (absent from the source) must map its caret to
+  // the blank-line gap after the previous block, not into the next block.
+  const markdown = '# 测试\n\n你好\n\n再见\n'
+  const pmDoc = doc(heading('测试'), paragraph('你好'), paragraph(), paragraph('再见'))
+  const emptyPos = (() => {
+    let found = null
+    pmDoc.descendants((node, pos) => {
+      if (node.isTextblock && node.textContent === '') { found = pos + 1; return false }
+      return true
+    })
+    return found
+  })()
+  assert.notEqual(emptyPos, null, 'empty paragraph not found in PM doc')
+  const gapOffset = pmPosToMarkdownOffset(markdown, emptyPos, pmDoc, remark)
+  assert.equal(
+    gapOffset,
+    markdown.indexOf('再见') - 1,
+    'empty paragraph caret must map to the blank line before the next block, not its start'
+  )
+  const back = markdownOffsetToPmPos(markdown, markdown.indexOf('再见') - 1, pmDoc, remark)
+  assert.equal(back?.pos, emptyPos, 'caret on the blank line must map back into the empty paragraph')
+  cases.push('empty paragraph gap')
+}
+
+{
+  // Consecutive empty paragraphs must not recurse infinitely and both map to
+  // the same blank-line gap (the source cannot distinguish two adjacent empty
+  // paragraphs from one).
+  const markdown = '# 测试\n\n你好\n\n再见\n'
+  const pmDoc = doc(heading('测试'), paragraph('你好'), paragraph(), paragraph(), paragraph('再见'))
+  const empties = []
+  pmDoc.descendants((node, pos) => {
+    if (node.isTextblock && node.textContent === '') { empties.push(pos + 1); return false }
+    return true
+  })
+  assert.equal(empties.length, 2, 'two empty paragraphs expected in PM doc')
+  const gapOffset = pmPosToMarkdownOffset(markdown, empties[0], pmDoc, remark)
+  assert.equal(
+    gapOffset,
+    markdown.indexOf('再见') - 1,
+    'consecutive empty paragraphs must map to the shared blank-line gap'
+  )
+  assert.equal(
+    pmPosToMarkdownOffset(markdown, empties[1], pmDoc, remark),
+    gapOffset,
+    'both consecutive empties share the same gap offset without recursion'
+  )
+  cases.push('consecutive empty paragraphs gap')
 }
 
 console.log(`PASS editor source map: ${cases.length} groups`)

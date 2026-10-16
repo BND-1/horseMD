@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, net, session, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
@@ -8,7 +8,11 @@ import { tmpdir } from 'node:os'
 import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from './security.js'
 import { registerDocumentIpc } from './documents.js'
 import { registerFileSystemIpc } from './filesystem.js'
+import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
+import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { registerWatcherIpc } from './watchers.js'
+import { registerGlobalSearchIpc } from './globalsearch.js'
+import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -16,6 +20,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
 const MD_RE = new RegExp(`\\.(${MD_EXTS.join('|')})$`, 'i')
+// Pre-sync default for the global show/hide accelerator. The renderer owns the
+// real default (command-definitions.js → 'window.toggleVisibility') and pushes
+// the user's effective binding as soon as it mounts; this only covers the gap.
+const DEFAULT_TOGGLE_WINDOW_SHORTCUT = 'Alt+M'
+// OS-level shortcuts must be registered here (globalShortcut), but the binding
+// itself is user-configurable in the renderer. The renderer may only bind
+// commands in this whitelist — anything else in the payload is ignored, so a
+// compromised renderer cannot hook arbitrary system-wide keys.
+const GLOBAL_COMMANDS = {
+  'window.toggleVisibility': () => toggleMainWindow()
+}
+const backgroundTestMode = process.argv.includes('--horsemd-test-background')
+const inputTraceEnabled = process.argv.includes('--horsemd-input-trace')
 
 let mainWindow = null
 // When true, the window is allowed to close without re-prompting (the renderer
@@ -26,6 +43,48 @@ let allowClose = false
 // app running on window close, but Cmd+Q must fully quit).
 let isQuitting = false
 let localFontGrant = null
+let rendererReady = false
+// Tray icon that keeps the app reachable while the window is hidden. Held in a
+// module variable so it isn't garbage-collected (which would remove the icon).
+let tray = null
+// Settings › General "close to tray". The renderer owns the persisted value and
+// pushes it here on mount. Default OFF on both sides: "close quits" stays the
+// long-standing behavior; the tray is opt-in from Settings › General.
+let closeToTray = false
+// Registered OS-level accelerators: command id -> accelerator. Rebuilt whenever
+// the renderer pushes the user's effective keybindings.
+let globalShortcuts = new Map()
+
+const inputTracePath = () => join(app.getPath('temp'), `horsemd-input-trace-${process.pid}.jsonl`)
+let inputTraceQueue = Promise.resolve()
+
+// Preload asks synchronously so normal builds do not install per-event input
+// listeners or send IPC traffic. The actual trace writer is also gated here,
+// making the feature unavailable unless the process was explicitly launched
+// with --horsemd-input-trace.
+ipcMain.on('debug:inputTraceEnabled', (event) => {
+  event.returnValue = inputTraceEnabled
+})
+ipcMain.handle('debug:inputTraceInfo', () => ({
+  enabled: inputTraceEnabled,
+  path: inputTraceEnabled ? inputTracePath() : null
+}))
+ipcMain.handle('debug:inputTrace', (event, entry) => {
+  if (!inputTraceEnabled || !mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  let line
+  try {
+    const payload = entry && typeof entry === 'object' ? entry : { value: String(entry ?? '') }
+    line = JSON.stringify({ pid: process.pid, ...payload }) + '\n'
+  } catch {
+    return false
+  }
+  // Avoid turning a malformed renderer payload into an unbounded log file.
+  if (line.length > 2 * 1024 * 1024) return false
+  inputTraceQueue = inputTraceQueue
+    .catch(() => {})
+    .then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
+  return inputTraceQueue.then(() => true).catch(() => false)
+})
 
 // ---- Safety net: never let a stray async error abort the whole app ----
 // chokidar (and other fs/network async work) can reject with EACCES/EPERM when
@@ -48,6 +107,13 @@ if (!gotLock) {
   app.on('second-instance', (_e, argv) => {
     const { files, folders } = extractArgs(argv)
     focusMainWindow()
+    // macOS keeps the process alive after its final window closes. A new launch
+    // reaches this handler before a replacement renderer is ready, so queue its
+    // paths instead of sending them into a missing (or still loading) window.
+    if (!rendererReady) {
+      enqueueLaunch(files, folders)
+      return
+    }
     if (folders.length) sendToRenderer('open-folder', folders[0])
     if (files.length) sendToRenderer('open-paths', files)
   })
@@ -59,11 +125,21 @@ if (!gotLock) {
 // otherwise the launched file is lost and the restored session shows instead.
 let pendingLaunch = { files: [], folders: [] }
 ipcMain.on('app-ready', () => {
+  rendererReady = true
   const { files, folders } = pendingLaunch
   pendingLaunch = { files: [], folders: [] }
   if (folders.length) sendToRenderer('open-folder', folders[0])
   if (files.length) sendToRenderer('open-paths', files)
 })
+
+function enqueueLaunch(files = [], folders = []) {
+  for (const file of files) {
+    if (!pendingLaunch.files.includes(file)) pendingLaunch.files.push(file)
+  }
+  for (const folder of folders) {
+    if (!pendingLaunch.folders.includes(folder)) pendingLaunch.folders.push(folder)
+  }
+}
 
 // Split launch args into markdown files and folders. A folder argument (from
 // the Explorer "Open with HorseMD" folder menu) opens as a workspace; markdown
@@ -98,15 +174,167 @@ function extractArgs(argv) {
   return { files, folders }
 }
 
-function focusMainWindow() {
-  if (!mainWindow) return
+// ---- Tray / show-hide window ---------------------------------------------
+// "Close to tray" keeps the app running when the window is closed: the window is
+// hidden instead, and the tray icon (or the global Alt+M shortcut) brings it
+// back. A real quit still goes through the renderer's unsaved-changes confirm.
+function trayIconPath() {
+  // Packaged: electron-builder copies build/icons/32x32.png -> <resources>/icons.
+  const packaged = join(process.resourcesPath, 'icons', '32x32.png')
+  if (existsSync(packaged)) return packaged
+  // Dev: app.getAppPath() is the project root.
+  return join(app.getAppPath(), 'build', 'icons', '32x32.png')
+}
+
+// The native application menu is English-only, but the tray is the one surface
+// a user sees while the window is hidden — follow the OS locale there.
+function trayLabels() {
+  const zh = String(app.getLocale?.() || '').toLowerCase().startsWith('zh')
+  return zh
+    ? { toggle: '显示 / 隐藏 HorseMD', quit: '退出 HorseMD' }
+    : { toggle: 'Show / Hide HorseMD', quit: 'Quit HorseMD' }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return
+  }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
 }
 
+function hideMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide()
+}
+
+function toggleMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return
+  }
+  // Visible AND focused -> hide. Anything else (hidden, minimized, or behind
+  // another window) -> bring it to the front.
+  if (!mainWindow.isMinimized() && mainWindow.isVisible() && mainWindow.isFocused()) {
+    hideMainWindow()
+  } else {
+    showMainWindow()
+  }
+}
+
+// Tray "Quit". The window is shown first so the renderer's unsaved-changes
+// confirm (a page dialog) is visible; isQuitting makes the window 'close'
+// handler treat it as a quit instead of another hide-to-tray.
+function quitApp() {
+  isQuitting = true
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    app.quit()
+    return
+  }
+  showMainWindow()
+  mainWindow.close()
+}
+
+// The tray menu mirrors the current global accelerator, so it stays correct
+// after the user rebinds (or clears) the show/hide shortcut.
+function rebuildTrayMenu() {
+  if (!tray) return
+  const labels = trayLabels()
+  const accelerator = globalShortcuts.get('window.toggleVisibility') || ''
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: labels.toggle, accelerator: accelerator || undefined, click: () => toggleMainWindow() },
+    { type: 'separator' },
+    { label: labels.quit, click: () => quitApp() }
+  ]))
+}
+
+function createTray() {
+  if (tray) return
+  let image = null
+  try {
+    const iconPath = trayIconPath()
+    if (existsSync(iconPath)) image = nativeImage.createFromPath(iconPath)
+  } catch {
+    /* fall through — no usable icon means no tray */
+  }
+  if (!image || image.isEmpty()) return
+  // Linux without a system tray (headless / some Wayland sessions) makes the
+  // Tray constructor itself throw — the app must still start (the watcher
+  // EACCES lesson: environment variance can never abort launch).
+  try {
+    tray = new Tray(image)
+  } catch {
+    tray = null
+    return
+  }
+  tray.setToolTip('HorseMD')
+  rebuildTrayMenu()
+  // Windows/Linux: a plain left click toggles the window (right click still
+  // opens the context menu). macOS shows the menu on click, per platform norms.
+  if (process.platform !== 'darwin') tray.on('click', () => toggleMainWindow())
+}
+
+function destroyTray() {
+  if (!tray) return
+  try {
+    tray.destroy()
+  } catch {
+    /* already gone */
+  }
+  tray = null
+}
+
+// Replace the whole set of app-owned global accelerators. Called once at startup
+// with the default and again whenever the renderer's effective keybindings
+// change. Returns the accelerators that actually registered plus the command ids
+// the OS/another app already owns (the settings UI warns about those).
+function applyGlobalShortcuts(payload) {
+  for (const accelerator of globalShortcuts.values()) {
+    try {
+      globalShortcut.unregister(accelerator)
+    } catch {
+      /* already released (e.g. a later registration failed) — ignore */
+    }
+  }
+  globalShortcuts = new Map()
+  const unregistered = []
+  for (const [commandId, accelerator] of Object.entries(payload || {})) {
+    const action = GLOBAL_COMMANDS[commandId]
+    if (!action) continue
+    if (typeof accelerator !== 'string' || !accelerator.trim() || accelerator.length > 80) continue
+    let registered = false
+    try {
+      registered = globalShortcut.register(accelerator, action)
+    } catch {
+      /* invalid accelerator string — leave the command unbound */
+      registered = false
+    }
+    if (registered) globalShortcuts.set(commandId, accelerator)
+    else unregistered.push(commandId)
+  }
+  rebuildTrayMenu()
+  return {
+    ok: true,
+    accelerators: Object.fromEntries(globalShortcuts),
+    unregistered
+  }
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return false
+  }
+  if (backgroundTestMode) return true
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  return true
+}
+
 function sendToRenderer(channel, payload) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (mainWindow && !mainWindow.isDestroyed() && rendererReady) {
     mainWindow.webContents.send(channel, payload)
   }
 }
@@ -119,6 +347,7 @@ async function openExternalUrl(url) {
 }
 
 function createWindow() {
+  rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -144,12 +373,13 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      spellcheck: true
+      spellcheck: true,
+      backgroundThrottling: !backgroundTestMode
     }
   })
 
   mainWindow.once('ready-to-show', () => {
-    focusMainWindow()
+    if (!backgroundTestMode) focusMainWindow()
     // Launch files/folders are delivered on the renderer's 'app-ready' signal
     // (see pendingLaunch below) — sending here races the renderer's IPC listener
     // registration, and the double-clicked file is lost to the restored session
@@ -177,6 +407,7 @@ function createWindow() {
   mainWindow.on('maximize', emitMaxState)
   mainWindow.on('unmaximize', emitMaxState)
 
+
   // Warn about unsaved changes before the window closes (macOS traffic light,
   // the custom Windows close button, Cmd/Ctrl+Q). The dirty state lives in the
   // renderer, so defer the close and ask it; it calls back via 'app:confirm-close'
@@ -185,7 +416,9 @@ function createWindow() {
   mainWindow.on('close', (e) => {
     if (allowClose) return
     e.preventDefault()
-    sendToRenderer('app-close-request')
+    // Closing to the tray keeps the app (and every open tab) alive, so the
+    // renderer only has to flush pending edits — no unsaved-changes confirm.
+    sendToRenderer('app-close-request', { closeToTray: closeToTray && !isQuitting })
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -196,18 +429,19 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    rendererReady = false
   })
 }
 
 // macOS: opening a file from Finder
 app.on('open-file', (event, path) => {
   event.preventDefault()
-  if (mainWindow) {
-    focusMainWindow()
+  if (rendererReady && focusMainWindow()) {
     sendToRenderer('open-paths', [path])
   } else {
     // First launch: queue for the renderer's app-ready handshake (#36).
-    if (!pendingLaunch.files.includes(path)) pendingLaunch.files.push(path)
+    enqueueLaunch([path])
+    focusMainWindow()
   }
 })
 
@@ -216,8 +450,7 @@ app.whenReady().then(() => {
   // queue (macOS open-file events already pushed above). Delivered on the
   // renderer's app-ready signal (#36).
   const launched = extractArgs(process.argv)
-  for (const f of launched.files) if (!pendingLaunch.files.includes(f)) pendingLaunch.files.push(f)
-  for (const d of launched.folders) if (!pendingLaunch.folders.includes(d)) pendingLaunch.folders.push(d)
+  enqueueLaunch(launched.files, launched.folders)
   ensureThemesDir()
   buildMenu()
   const allowLocalFonts = (webContents, permission, requestingUrl, isMainFrame) =>
@@ -242,8 +475,19 @@ app.whenReady().then(() => {
     allowLocalFonts(webContents, permission, details?.requestingUrl || requestingOrigin, details?.isMainFrame)
   )
   createWindow()
+  // The tray icon exists only while "close to tray" is enabled — the renderer
+  // pushes the preference on mount, which (re)creates or destroys it below.
+  // Default off: no tray icon for users who never opt in.
+  // Pre-sync default; the renderer replaces it with the user's effective binding
+  // ('window:setGlobalShortcuts') as soon as it has loaded the keybinding store.
+  applyGlobalShortcuts({ 'window.toggleVisibility': DEFAULT_TOGGLE_WINDOW_SHORTCUT })
+  if (inputTraceEnabled) {
+    console.log(`HorseMD input trace: ${inputTracePath()}`)
+  }
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // macOS dock click: also restores a window that was hidden to the tray (the
+    // window still exists, it's just not visible), and recreates a closed one.
+    showMainWindow()
   })
 })
 
@@ -259,20 +503,47 @@ app.on('before-quit', () => {
   isQuitting = true
 })
 
+// Global accelerators are process-wide; release them on the way out so a
+// relaunch (or another app) can register the same combination again.
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  // With close-to-tray on, the window is hidden rather than closed, so this
+  // only fires for a real quit — or when the user turned close-to-tray off.
+  if (process.platform !== 'darwin' && !closeToTray) app.quit()
 })
 
 // ----------------------------- IPC: file system -----------------------------
 
 registerDocumentIpc(ipcMain, {
   getMainWindow: () => mainWindow,
-  markdownExtensions: MD_EXTS
+  getUserDataPath: () => app.getPath('userData'),
+  markdownExtensions: MD_EXTS,
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
 })
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
 
-registerWatcherIpc(ipcMain, { sendToRenderer })
+// Workspace-wide content search (issue #120) — same markdownPattern so the
+// search scope is exactly what the sidebar tree shows.
+registerGlobalSearchIpc(ipcMain, { markdownPattern: MD_RE })
+
+registerSyncWorkspaceIpc(ipcMain, {
+  getUserDataPath: () => app.getPath('userData'),
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+})
+registerSyncServiceIpc(ipcMain, {
+  syncService: new SyncService({
+    getUserDataPath: () => app.getPath('userData'),
+    safeStorage,
+    request: (url, init) => net.fetch(url, init)
+  }),
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+})
+
+registerWatcherIpc(ipcMain, { sendToRenderer, markdownExtensions: MD_EXTS })
 
 ipcMain.handle('shell:openExternal', async (event, url) => {
   if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
@@ -280,7 +551,10 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
   }
   return openExternalUrl(url)
 })
-ipcMain.handle('shell:openFileUrl', async (_e, url) => {
+ipcMain.handle('shell:openFileUrl', async (event, url) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, error: 'Untrusted renderer.' }
+  }
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'file:') return { ok: false, error: 'Only file:// URLs are supported.' }
@@ -292,6 +566,11 @@ ipcMain.handle('shell:openFileUrl', async (_e, url) => {
   }
 })
 ipcMain.handle('shell:showInFolder', async (_e, path) => shell.showItemInFolder(path))
+ipcMain.handle('clipboard:writeText', (event, text) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  clipboard.writeText(String(text ?? ''))
+  return true
+})
 
 // ----------------------------- custom themes -------------------------------
 // User-supplied CSS themes (e.g. migrated Typora themes) live in a `themes`
@@ -675,14 +954,56 @@ ipcMain.handle('window:toggleMaximize', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
+// Settings › General. The preference itself is persisted by the renderer; main
+// only needs the live value.
+ipcMain.handle('window:setCloseToTray', (event, value) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
+  closeToTray = value === true
+  if (closeToTray) createTray()
+  else destroyTray()
+  return { ok: true, closeToTray }
+})
+// Command palette ("Show / Hide Window"): the renderer can't hide/show its own
+// window, so it asks main — the same toggle the tray icon and global shortcut use.
+ipcMain.handle('window:toggleVisibility', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
+  toggleMainWindow()
+  return { ok: true }
+})
+// Custom keybindings › global commands. The renderer resolves the user's
+// effective binding and sends { commandId: electronAccelerator }; only the
+// whitelisted GLOBAL_COMMANDS are accepted. `unregistered` reports combinations
+// the OS/another app already owns so the settings UI can warn about them.
+ipcMain.handle('window:setGlobalShortcuts', (event, payload) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    return { ok: false, accelerators: {}, unregistered: [] }
+  }
+  return applyGlobalShortcuts(payload)
+})
+// This is intentionally a narrow bridge to Electron's existing View menu role.
+// DevTools remains desktop-only and renderer code never receives Node access.
+ipcMain.handle('window:toggleDevTools', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  mainWindow.webContents.toggleDevTools()
+  return true
+})
 
 // The renderer confirmed it's safe to close (no unsaved changes, or the user
-// chose to discard). If a quit is underway (Cmd/Ctrl+Q), quit the whole app;
-// otherwise just close the window (macOS keeps the app running).
+// chose to discard). A real quit quits the whole app; with close-to-tray on a
+// plain close only hides the window (and `allowClose` stays false so the next
+// close goes through the same confirm path again).
 ipcMain.on('app:confirm-close', () => {
+  if (isQuitting) {
+    allowClose = true
+    app.quit()
+    return
+  }
+  if (closeToTray) {
+    hideMainWindow()
+    return
+  }
   allowClose = true
-  if (isQuitting) app.quit()
-  else mainWindow?.close()
+  mainWindow?.close()
 })
 // The user cancelled the close. Clear the quit intent so a later window-close
 // (e.g. the macOS traffic light) isn't mistaken for a quit.
@@ -702,7 +1023,10 @@ ipcMain.handle('update:check', async () => {
     // as an instant crash on open). net.fetch goes through Chromium's resolver,
     // which fails gracefully instead of crashing.
     const res = await net.fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' }
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' },
+      // Notify-only check: never let a stalled network (api.github.com is
+      // unreachable on some connections) hold the request open — bail early.
+      signal: AbortSignal.timeout(8000)
     })
     if (!res.ok) return { ok: false }
     const data = await res.json()
@@ -722,9 +1046,42 @@ ipcMain.handle('update:check', async () => {
   }
 })
 
+ipcMain.handle('menu:setKeybindings', async (_event, accelerators) => {
+  const normalized = normalizeMenuKeybindingPayload(accelerators)
+  if (!normalized.ok) return normalized
+  menuKeybindings = normalized.keybindings
+  buildMenu()
+  return { ok: true, ignoredCommandIds: normalized.ignoredCommandIds }
+})
+
+ipcMain.handle('menu:getKeybindings', async () => ({ ...menuKeybindings }))
+
+ipcMain.handle('menu:getSnapshot', async () => getMenuSnapshot())
+
 // Menu actions are forwarded to renderer as commands.
 function menuCmd(cmd) {
   return () => sendToRenderer('menu', cmd)
+}
+
+let menuKeybindings = {}
+
+function menuAccelerator(commandId) {
+  return menuAcceleratorFor(menuKeybindings, commandId, defaultMenuAcceleratorFor(commandId))
+}
+
+function serializeMenuItem(item) {
+  return {
+    label: item.label || '',
+    role: item.role || '',
+    type: item.type || '',
+    accelerator: item.accelerator || '',
+    submenu: item.submenu ? item.submenu.items.map(serializeMenuItem) : []
+  }
+}
+
+function getMenuSnapshot() {
+  const menu = Menu.getApplicationMenu()
+  return menu ? menu.items.map(serializeMenuItem) : []
 }
 
 function buildMenu() {
@@ -734,16 +1091,28 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'New File', accelerator: 'CmdOrCtrl+N', click: menuCmd('new') },
-        { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: menuCmd('open') },
-        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: menuCmd('openFolder') },
+        { label: 'New File', accelerator: menuAccelerator('file.new'), click: menuCmd('new') },
+        { label: 'Open File…', accelerator: menuAccelerator('file.open'), click: menuCmd('open') },
+        { label: 'Open Folder…', accelerator: menuAccelerator('workspace.openFolder'), click: menuCmd('openFolder') },
         { label: 'Attach File…', click: menuCmd('attachFile') },
         { type: 'separator' },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menuCmd('save') },
-        { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: menuCmd('saveAs') },
-        { label: 'Export as PDF…', accelerator: 'CmdOrCtrl+Shift+E', click: menuCmd('exportPdf') },
+        { label: 'Save', accelerator: menuAccelerator('file.save'), click: menuCmd('save') },
+        { label: 'Save As…', accelerator: menuAccelerator('file.saveAs'), click: menuCmd('saveAs') },
+        { label: 'Export as PDF…', accelerator: menuAccelerator('file.exportPdf'), click: menuCmd('exportPdf') },
+        { label: 'Export as HTML…', accelerator: menuAccelerator('file.exportHtml'), click: menuCmd('exportHtml') },
+        {
+          label: 'Export via Pandoc',
+          submenu: [
+            { label: 'Word (.docx)…', accelerator: menuAccelerator('file.exportPandocDocx'), click: menuCmd('exportPandocDocx') },
+            { label: 'EPUB (.epub)…', accelerator: menuAccelerator('file.exportPandocEpub'), click: menuCmd('exportPandocEpub') },
+            { label: 'LaTeX (.tex)…', accelerator: menuAccelerator('file.exportPandocLatex'), click: menuCmd('exportPandocLatex') },
+            { label: 'OpenDocument (.odt)…', accelerator: menuAccelerator('file.exportPandocOdt'), click: menuCmd('exportPandocOdt') },
+            { label: 'Rich Text (.rtf)…', accelerator: menuAccelerator('file.exportPandocRtf'), click: menuCmd('exportPandocRtf') },
+            { label: 'Plain Text (.txt)…', accelerator: menuAccelerator('file.exportPandocTxt'), click: menuCmd('exportPandocTxt') }
+          ]
+        },
         { type: 'separator' },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: menuCmd('closeTab') },
+        { label: 'Close Tab', accelerator: menuAccelerator('tab.close'), click: menuCmd('closeTab') },
         // macOS: give "Close Window" Shift+Cmd+W so it doesn't fight Close Tab
         // for Cmd+W (role 'close' otherwise defaults to Cmd+W). Windows: Quit.
         isMac ? { role: 'close', accelerator: 'Shift+CmdOrCtrl+W' } : { role: 'quit' }
@@ -760,20 +1129,21 @@ function buildMenu() {
         { role: 'paste' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find', accelerator: 'CmdOrCtrl+F', click: menuCmd('find') }
+        { label: 'Find', accelerator: menuAccelerator('editor.find'), click: menuCmd('find') }
       ]
     },
     {
       label: 'View',
       submenu: [
-        { label: 'Command Palette', accelerator: 'CmdOrCtrl+P', click: menuCmd('palette') },
-        // Sidebar toggle is handled in the renderer (capture phase) so it wins
-        // over the editor's Ctrl/Cmd+B "bold" binding instead of conflicting.
+        { label: 'Command Palette', accelerator: menuAccelerator('view.commandPalette'), click: menuCmd('palette') },
+        // Sidebar toggle is handled in the renderer as Ctrl/Cmd+Shift+B. Plain
+        // Ctrl/Cmd+B remains the editor's standard bold shortcut (#67).
         { label: 'Toggle Sidebar', click: menuCmd('toggleSidebar') },
-        { label: 'Toggle Outline', accelerator: 'CmdOrCtrl+Shift+L', click: menuCmd('toggleOutline') },
-        { label: 'Toggle Source Mode', accelerator: 'CmdOrCtrl+/', click: menuCmd('toggleSource') },
+        { label: 'Toggle Outline', accelerator: menuAccelerator('view.showOutline'), click: menuCmd('toggleOutline') },
+        { label: 'Global Search', accelerator: menuAccelerator('view.globalSearch'), click: menuCmd('globalSearch') },
+        { label: 'Toggle Source Mode', accelerator: menuAccelerator('view.toggleSource'), click: menuCmd('toggleSource') },
         { type: 'separator' },
-        { label: 'Toggle Theme', accelerator: 'CmdOrCtrl+Shift+T', click: menuCmd('toggleTheme') },
+        { label: 'Toggle Theme', accelerator: menuAccelerator('view.cycleTheme'), click: menuCmd('toggleTheme') },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

@@ -1,0 +1,280 @@
+# Transaction-first source sync — Phase 0 shadow rollout plan
+
+## Status
+
+- Phase: 0 — contract freeze / behavior-neutral shadow rollout
+- Publication authority: legacy source-preservation path only
+- Production behavior change allowed: **none**
+- Parent architecture: `docs/transaction-first-source-sync-migration.md`
+- Phase-0 core boundary: `src/renderer/src/lib/transaction-first-source-sync.js`
+
+This document is the execution plan and migration ledger for wiring the already-tested transaction-first boundary into the live rich editor without taking publication ownership.
+
+## Goal
+
+Turn the existing transaction experiment in `Editor.jsx` into a real dual-run observation path:
+
+```text
+PM transaction
+  -> snapshot SourceRangeMap
+  -> transaction-first candidate
+  -> hold as pending shadow evidence
+
+Crepe markdownUpdated
+  -> legacy preservation candidate
+  -> final legacy integrity checks / marker corrections
+  -> compare final legacy bytes with pending transaction candidate
+  -> record byte-equal / byte-diverged / rejected / stale
+  -> publish legacy bytes exactly as before
+```
+
+The important change in Phase 0 is **evidence quality**, not source ownership.
+
+Today the editor can run `mapPlainTextTransactionsToSource()` in a shadow mode, but that result is discarded before `markdownUpdated` produces the actual legacy candidate. A discarded candidate cannot prove equivalence and therefore cannot support a safe promotion decision.
+
+## Non-goals
+
+Phase 0 does not:
+
+- make transaction-first authoritative in normal production editing,
+- broaden ownership beyond the existing single-`ReplaceStep` plain-text family,
+- add list, quote, table, code-block or marked-text transaction handlers,
+- relax semantic or list-structure integrity,
+- delete any legacy preservation mapper,
+- change generated-scratch behavior,
+- change input-rule marker reconstruction,
+- change save/source-switch behavior.
+
+The existing opt-in `transactionPrimaryEnabled` path is kept behaviorally intact during this slice so existing targeted tests retain their current contract. Replacing that path is a later promotion step, not part of Phase 0 shadow wiring.
+
+## Source-of-truth rule
+
+Phase 0 follows three separate truths:
+
+1. **PM transaction / Step** — what operation happened.
+2. **Authored Markdown checkpoint** — how untouched bytes are spelled.
+3. **Parser + structure validation** — whether the candidate still means the live document.
+
+No one layer substitutes for the other two.
+
+## Implementation slices
+
+### Slice A — staged shadow lifecycle API
+
+Extend `transaction-first-source-sync.js` with an explicit two-stage API:
+
+- capture a transaction candidate against an exact source/PM snapshot,
+- reconcile that captured candidate later against the final legacy result.
+
+Required properties:
+
+- capture must retain only bounded metadata plus the candidate needed for byte comparison,
+- capture must be tied to the exact authored source and `oldState.doc` / `newState.doc`,
+- reconcile must fail closed when the source checkpoint or callback document no longer matches,
+- shadow/observe reconcile can never select transaction bytes for publication,
+- every result must expose a stable classification reason.
+
+The one-shot `runTransactionFirstSourceSync()` API remains available for focused unit tests and future authoritative use.
+
+### Slice B — live `Editor.jsx` shadow wiring
+
+At `handleSourceTransactions`:
+
+1. Keep all existing transaction eligibility gates.
+2. Build `buildPlainParagraphSourceRangeMap()` from `lastMarkdownRef.current` + `oldState.doc`.
+3. Capture a transaction-first shadow candidate.
+4. Store only the latest eligible pending checkpoint for reconciliation.
+5. Keep the existing opt-in primary path unchanged.
+
+At `markdownUpdated`:
+
+1. Let the complete legacy pipeline finish constructing and validating `preserved`.
+2. Reconcile the pending transaction-first checkpoint against that **final** legacy candidate.
+3. Clear the checkpoint after reconcile or when it is proven stale.
+4. Continue publishing `preserved.markdown` exactly as before.
+
+The comparison must happen after list-input marker restoration and integrity fallback, otherwise shadow telemetry would compare against an intermediate legacy candidate that the app never publishes.
+
+### Slice C — bounded telemetry
+
+Use `globalThis.__hmTransactionFirstTrace` as the primary structured trace.
+
+Each reconciled event should include, without full-document bytes by default:
+
+- `mode`
+- `ownership`
+- `transactionReason`
+- `comparison`
+- `promotionEligible`
+- `publicationOwner`
+- `sourceMapEntries`
+- `stepNames`
+- `reconcileReason`
+- source checkpoint length / candidate length only when useful
+
+Expected comparison classes:
+
+- `byte-equal`
+- `byte-diverged`
+- `transaction-rejected`
+- `legacy-unavailable`
+- `shadow-stale-source`
+- `shadow-stale-document`
+
+The trace is diagnostic evidence only. It must not influence publication in Phase 0.
+
+## Snapshot lifetime rules
+
+A pending shadow checkpoint is valid only while all of these still hold:
+
+- current authored source is the same source string used at capture,
+- the callback/live PM document equals the captured `newState.doc`,
+- the candidate belongs to the captured `oldState.doc`,
+- no special editing flow has independently taken source ownership.
+
+Clear or reject pending shadow state when any of these occur:
+
+- raw Markdown paste,
+- list conversion ownership,
+- whole-document replacement,
+- generated scratch,
+- programmatic replacement,
+- composition,
+- transaction quarantine,
+- a newer eligible transaction supersedes the pending checkpoint,
+- a legacy callback publishes a different PM document.
+
+A stale shadow checkpoint is expected during deferred/coalesced callbacks. Staleness is telemetry, not an integrity error and must not show a user warning.
+
+## Tests to add or extend
+
+### Unit: `scripts/test-transaction-first-source-sync.mjs`
+
+Add staged-lifecycle coverage for:
+
+- capture owned plain text -> reconcile byte-equal,
+- capture owned plain text -> reconcile byte-diverged,
+- shadow reconcile always publishes legacy,
+- source changed before reconcile -> stale-source classification,
+- PM doc changed before reconcile -> stale-document classification,
+- transaction rejection is retained through reconcile,
+- trace entry contains step family / source-map coverage without requiring document bytes.
+
+### Existing regression suites
+
+Must remain green:
+
+```sh
+node scripts/test-editor-source-map.mjs
+npm run test:source-transaction-sync
+node scripts/test-transaction-first-source-sync.mjs
+npm run test:source-fidelity-probes
+```
+
+Run targeted UI transaction tests that already cover the opt-in primary path before changing any primary behavior.
+
+## Manual shadow qualification
+
+With shadow explicitly enabled in a development run, exercise:
+
+- insert one normal character in a plain paragraph,
+- delete a normal character,
+- replace a same-paragraph selection,
+- edit duplicate paragraph text where the same body appears twice,
+- type Markdown-sensitive syntax such as `*` and confirm rejection,
+- edit marked text and confirm rejection/fallback,
+- perform list Enter / Backspace / Tab and confirm rejection rather than accidental ownership,
+- perform rapid consecutive paragraph edits and inspect stale/coalesced classifications.
+
+A plain-text family is promotable only after representative sessions show owned events are byte-equal with the final legacy publication and unsupported families stay rejected.
+
+## Acceptance criteria
+
+Phase 0 shadow wiring is complete only when:
+
+- [x] a live PM transaction produces a staged transaction-first checkpoint,
+- [x] the checkpoint is compared with the final legacy candidate in `markdownUpdated`,
+- [x] normal shadow mode cannot publish transaction bytes,
+- [x] stale source/doc checkpoints fail closed without a toast,
+- [x] unsupported structural edits remain rejected,
+- [x] telemetry is bounded and does not log full documents by default,
+- [x] existing source/integrity regressions remain green,
+- [x] targeted diff checks pass for the new migration files/hunks,
+- [ ] migration work is committed separately from unrelated dirty-tree changes — clean core/docs/UI commits are isolated; the live `Editor.jsx` wiring remains intentionally uncommitted until its pre-existing dirty baseline can be checkpointed safely.
+
+## Commit / audit strategy
+
+The working tree contains substantial pre-existing RS work. To keep migration history reviewable:
+
+1. Commit this plan document by itself.
+2. Prefer new migration modules/tests where possible.
+3. For `Editor.jsx`, stage only the exact migration hunks; never stage the whole existing dirty file.
+4. Run `git diff --cached --check` and inspect `git diff --cached --stat` before each migration commit.
+5. Keep RS-72 and other unrelated dirty changes out of transaction-first commits.
+6. Record each completed slice below with its commit hash and validation commands.
+
+## Migration ledger
+
+### 2026-08-25 — Phase 0 architecture boundary
+
+Completed before this plan:
+
+- architecture document added,
+- plain-paragraph SourceRangeMap added,
+- transaction-first coordinator added,
+- focused unit test added,
+- local commit: `42a0f8a refactor(editor): start transaction-first source sync`.
+
+Validation at that checkpoint:
+
+- `node scripts/test-editor-source-map.mjs`
+- `npm run test:source-transaction-sync`
+- `node scripts/test-transaction-first-source-sync.mjs`
+
+### 2026-08-25 — Phase 0 staged shadow lifecycle
+
+Status: **core committed; live wiring implemented and validated in working tree**
+
+Completed core work:
+
+- added dispatch-time `captureTransactionFirstSourceSync()` checkpoints,
+- added deferred `reconcileTransactionFirstSourceSync()` against the final legacy candidate,
+- added stale-source / stale-document classifications,
+- added bounded step/source-map telemetry without full-document bytes,
+- kept one-shot coordinator behavior and authoritative API available for later promotion,
+- local commit: `bcc96a0 refactor(editor): stage transaction-first shadow evidence`.
+
+Live `Editor.jsx` wiring now exists in the working tree:
+
+- builds a plain-paragraph SourceRangeMap only behind the existing transaction shadow switch,
+- captures the dispatch-time candidate without publishing it,
+- reconciles after legacy marker restoration and integrity fallback,
+- keeps `onChange` publication on `preserved.markdown`,
+- keeps the existing opt-in primary path behavior unchanged.
+
+Validation after live wiring:
+
+- `node scripts/test-editor-source-map.mjs` — PASS, 11 groups,
+- `npm run test:source-transaction-sync` — PASS,
+- `node scripts/test-transaction-first-source-sync.mjs` — PASS,
+- `npm run test:source-fidelity-probes` — PASS, 35/35,
+- `npm run build` — PASS,
+- `git diff --check -- src/renderer/src/components/Editor.jsx` — PASS.
+
+Live shadow qualification:
+
+- `9340d33 test(editor): qualify transaction-first shadow UI` added a real Electron/CDP check for an owned plain `ReplaceStep` and a Markdown-sensitive `*` rejection,
+- `37f2b6f test(editor): guard shadow structural fallback` added a real list-item Backspace rejection boundary,
+- plain paragraph insertion produced `owned + byte-equal + publicationOwner=legacy`,
+- literal `*` produced `transaction-rejected` with `syntax-sensitive-insert`; legacy safely published `\\*`,
+- list-item Backspace stayed `rejected`; legacy converted `- item` to the ordinary paragraph `item`,
+- all three live paths completed without a source-sync warning toast.
+
+Audit note: `Editor.jsx` already contained a large pre-existing uncommitted RS/integrity diff. The new shadow import/state/capture/reconcile lines share hunk bases with that work, so staging the file against HEAD would also stage unrelated changes. Per this plan's isolation rule, the live wiring is intentionally left uncommitted rather than mixing histories. It should be committed only after the existing Editor baseline is safely checkpointed or when the migration hunks can be isolated without importing unrelated RS work.
+
+Next qualification step:
+
+- add duplicate-paragraph and rapid/coalesced-edit live cases so stale/snapshot behavior is exercised under real callback timing,
+- inspect `__hmTransactionFirstTrace` distributions across a longer editing session,
+- resolve the pre-existing `Editor.jsx` dirty-baseline checkpoint before any authoritative wiring is committed,
+- do not promote plain paragraph edits merely because one happy path is byte-equal; promotion requires the Phase 1 plan and its explicit ownership matrix.

@@ -7,18 +7,18 @@
 - **React 18** —— 渲染层 UI
 - **Milkdown Crepe 7**（基于 ProseMirror）—— 所见即所得 Markdown 编辑器引擎
 - **chokidar** —— 文件/文件夹监听
-- **electron-builder** —— 打包（Windows NSIS 安装包 + macOS dmg/zip）
+- **electron-builder** —— 打包（Windows NSIS + macOS dmg/zip + Linux deb）
 
 ## 进程模型
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 主进程 (src/main/index.js)                                │
-│  · BrowserWindow（无边框标题栏；mac 红绿灯 / win 自绘按钮）   │
+│  · BrowserWindow（无边框标题栏；mac 红绿灯 / win、Linux 自绘）│
 │  · 单实例锁：第二次启动把文件/文件夹转发给已有窗口            │
 │  · 文件系统 IPC：读写/重命名/删除/新建/复制/列目录          │
 │  · 文件夹监听（刷新文件树） + 单文件监听（自动重载内容）       │
-│  · 窗口控制 IPC（win 自绘按钮）+ 导出 PDF + 更新检查         │
+│  · 窗口控制 IPC + PDF/HTML/Pandoc 导出 + 更新检查           │
 │  · 关闭拦截：未保存时先问渲染层（app-close-request）         │
 │  · 应用菜单（主要用于快捷键加速器）                          │
 └───────────────▲───────────────────────────┬──────────────┘
@@ -41,10 +41,17 @@
 ```
 src/
   main/index.js            主进程：窗口生命周期、IPC 装配、菜单
-  main/documents.js        打开/保存对话框与 PDF 导出 IPC
+  main/documents.js        打开/保存对话框与文档导出 IPC
+  main/html-export.js      HTML 预览 token、资源内嵌与精确保存
+  main/html-document.js    HTML 阅读模板、主题、目录与 CSP
+  main/pandoc-export.js    Pandoc 检测、选择与格式转换
+  main/subprocess.js       无 shell 的受控子进程运行器
   main/filesystem.js       文件读写、目录树与复制 IPC
   main/watchers.js         工作区与单文件监听 IPC
-  main/pdf-document.js     PDF 文档外壳与打印样式（纯函数）
+  main/pdf-document.js     PDF 页面、目录与页眉页脚文档构建（纯函数）
+  main/pdf-print-styles.js PDF 打印样式与分页规则
+  main/pdf-export.js       PDF 预览会话、资源等待、打印与保存
+  main/latest-task-runner.js 同一调用方最新任务优先与取消协调
   main/security.js         权限与外部 URL 安全策略（纯函数）
   preload/index.js         contextBridge：window.api 桥接
   renderer/
@@ -55,8 +62,16 @@ src/
       paths.js             纯工具：路径/文件名/版本/重文档判定/genId/会话
       find.js              文档内查找的高亮/匹配纯函数
       ui.js                fireToast + copyToClipboard（toast 通道单一来源）
-      settings.js          用户偏好（排版/图床/拼写/隐藏文件）持久化 + CSS var 应用
+      settings.js          用户偏好（正文/列表排版、图床、拼写、隐藏文件）持久化 + CSS var 应用
       scrollAnchor.js      模式切换稳定 façade（仅 re-export 公共 API）
+      markdown-source-preservation.js 原文保真稳定 façade 与跨语法策略编排
+      lib/markdown-preservation/
+        core.js            通用差分、可见字符与 raw offset
+        frontmatter.js     YAML front matter 块替换
+        lists.js           列表结构与原文保真
+        tables.js          表格结构、单元格文字与空单元格
+        paragraphs.js      新段落与空块事务时序
+        regions.js         普通行、文字和结构前缀变化
       mode-visible-map.js  源码/富文本可见字符 fallback 映射
       mode-caret-anchor.js 双向光标 capture/restore
       mode-viewport-anchor.js 阅读视口 capture/restore
@@ -69,27 +84,46 @@ src/
       onboarding.js        首次启动的欢迎/介绍文档（中英）
       assets/logo.png      首页 logo（应用图标副本）
       hooks/
+        useAttachments.js 附件复制、链接生成与源码/富文本插入
         useFileOps.js      文件与标签操作、单文件 watcher
+        usePdfExport.js    PDF 导出请求、保存锁、取消与错误状态
+        useHtmlExport.js   HTML Studio 打开、保存与错误状态
+        useHtmlPreview.js  HTML latest-only 预览会话
+        usePandocExport.js Pandoc 一次性转换状态
+        usePdfPreview.js   防抖预览、过期请求隔离与临时会话清理
         useWorkspace.js    多根工作区状态、目录 watcher 与命令面板文件列表
         useSidebarTree.js  文件树加载、展开与当前文件跟随
         useSourceModeSwitch.js per-tab 源码模式、内容同步与锚点恢复
         useOutline.js      大纲（标题列表 + scrollspy + jumpAndStabilize 跳转）
+      lib/
+        editor-api-registry.js 按 Tab 注册 Editor API、ready 等待与关闭清理
+      components/
+        editor-dom-bindings.js 编辑器 DOM 绑定稳定入口
+        editor-dom-interactions.js 键盘、选择、右键与编辑意图
+        editor-dom-layout.js 斜杠菜单边界、空白续写、表格控件定位与长按实时列宽
+        editor-dom-content.js 链接、复制、图片、粘贴与 Mermaid
+        editor-pdf-content.js PDF 快照、预览型代码块物化与导出 DOM 清理
+        pdf-export/        PDF 设置、PDF.js 单页渲染、书签解析与独立样式
+        commands/          命令注册表、快捷键规范化、冲突检测、菜单 accelerator 转换
         useFindReplace.js  查找替换（CSS Highlight API）
         useAppLifecycle.js 会话持久化 + 恢复 + 更新检查
         usePopover.js      共享 popover hook（outside-click + Esc 关闭）
       components/
         Editor.jsx         Crepe 编辑器封装 + 块控件 + 灯箱 + 拼写检查
-        SettingsView.jsx   设置页（排版/外观/校对/语言/图床/关于）
+        SettingsView.jsx   设置页壳层（模块导航 + 当前设置模块）
+        settings/          常规/编辑器/外观/文件图片/快捷键/关于设置模块
+          DocumentAppearanceSettings.jsx 排版预览、自定义 CSS、表格与源码外观编排
         editor-html.js     原生 HTML 节点视图（表格渲染）+ 块转换
         editor-images.js   相对图片路径解析为 file:// （纯函数）
         editor-copy.js     富文本复制的内联样式（纯函数）
-        editor-mermaid.js  Mermaid widget 装饰插件（懒加载 mermaid）
+        editor-mermaid.js  Mermaid 预览与 PDF 共用的严格模式懒加载渲染器
         editor-highlight.js ==text== 高亮 mark + 工具栏颜色选择
         editor-review.js   审阅插件状态机与命令入口
         editor-review-card.js 审阅卡片 DOM、编辑和导航交互
         editor-review-decorations.js CriticMarkup 扫描与 Decoration 构建
         editor-md-paste.js 智能粘贴（Markdown → 富文本）
         editor-tablebreak.js 表格单元格内换行（<br> 往返）
+        editor-block-handle-guard.js 块操作条触发过滤与 BlockProvider 统一轨道锚点
         editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
         LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
         ImageHostButton.jsx 顶栏图床配置按钮
@@ -98,7 +132,7 @@ src/
         Tabs.jsx           顶部标签条（拖拽排序 #31）+ 右键菜单
         Welcome.jsx        首页/欢迎页（logo、版本、最近文件）
         SaveFab.jsx        浮动保存按钮（dirty 时显示）
-        WindowControls.jsx Windows 自绘窗口按钮
+        WindowControls.jsx Windows / Linux 自绘窗口按钮
         UpdateToast.jsx    更新提示浮层
         RenameModal.jsx    标签重命名弹窗
         Outline.jsx        大纲面板（标题列表 + scrollspy + 软居中）
@@ -112,16 +146,21 @@ src/
           ActivityBar.jsx  左侧活动栏（Home/Files/Outline/Settings/折叠）
           EditorArea.jsx   编辑区（lazy mount + 分屏 + heavy-doc 横幅 + .hm-cv）
           Topbar.jsx       顶栏（标签 + 新建 + 图床 + 命令面板入口）
-      styles/app.css       全部样式 + 主题变量 + content-visibility
+      styles/app.css       应用主体样式 + 主题变量 + content-visibility
 scripts/
   etv.mjs                  端到端测试工具（CDP 驱动，见 development.md）
+  test-keybindings*.mjs    自定义快捷键纯函数、设置 UI、持久化、菜单同步和运行时回归
   inspect.mjs              简易 CDP 状态检查器
 build/
   icon.ico                 Windows 图标（多分辨率、圆角）
   icon.icns                macOS 图标（由 icon.png 生成）
+  icons/                   Linux PNG 图标（16px–512px）
 ```
 
-> 跨平台：渲染层根节点按 `window.api.platform` 挂 `.app.is-win` / `.app.is-mac` 类，平台相关样式（标题栏让位红绿灯等）只写在这两个选择器下；主进程用 `process.platform` 分支。改顶栏/平台代码时两个系统都要顾到。
+> 跨平台：渲染层根节点按 `window.api.platform` 挂 `.app.is-win` / `.app.is-mac` /
+> `.app.is-linux` 类；主进程用 `process.platform` 分支。macOS 使用原生红绿灯，Windows
+> 和 Linux 共用窗口 IPC，但分别渲染 Windows 与 GTK 风格按钮。改顶栏或平台代码时三个
+> 桌面系统都要顾到。electron-vite 将主进程构建为 `out/main/index.cjs`，preload 仍为 ESM。
 
 ## App.jsx：外壳的核心职责
 
@@ -135,15 +174,16 @@ build/
 - **主题/语言**：`theme`（主题 id）、`lang`（en/zh），分别 `applyTheme()` 与 `I18nProvider`
 - **最近文件**：`recents[]`，每次打开文件时记录，持久化，首页展示
 - **首次引导**：首启动（无 `horsemd.onboarded.v1` 标记且无恢复标签）打开欢迎文档
-- **快捷键**：菜单加速器（主进程）+ 渲染层监听（Ctrl+Tab 切标签、Ctrl+B 切侧边栏）
+- **快捷键**：`useKeybindings` 读取 `horsemd.keybindings.v1`，`useGlobalKeys` 消费有效键位；主进程菜单 accelerator 通过白名单 IPC 同步；命令面板、工具提示和设置页读取同一命令注册表。编辑器原生粗体/斜体/高亮暂不开放改绑，Ctrl/Cmd+B 保留给编辑器加粗
 
 ## 编辑器内容数据流（重要）
 
 ```
 用户敲键 → Crepe/ProseMirror 改文档
         → markdownUpdated 回调（必须在 create() 之前注册！）
-        → onChange(md, false)
-        → App.updateContent(tabId, md)
+        → canonical Markdown + 原始源码局部保真映射
+        → onChange(preservedMarkdown, false)
+        → App.updateContent(tabId, preservedMarkdown)
         → tab.content 更新
         → 派生：大纲、字数、脏标记、保存内容 全部跟着更新
 ```
@@ -151,6 +191,51 @@ build/
 > ⚠️ 这条链路曾经断过：监听器注册晚了导致 `markdownUpdated` 从不触发，详见 [implementation-notes.md](./implementation-notes.md)。
 
 > **编辑器路由**：`EditorArea.jsx` 根据 `paths.js` 的文档分类选择 rich/source/plain textarea。Markdown 富文本首次激活才挂载、之后常驻；源码模式只覆盖并隐藏 Crepe，不卸载它。
+
+> **原文保真**：Crepe 的 Markdown serializer 只保证语义，不保证原始字符写法。`Editor.jsx` 同时维护原始源码和 canonical 快照，局部富文本编辑经 `markdown-source-preservation.js` 稳定 façade 回写到原始源码；列表、表格、段落、front matter 和普通区域的纯函数实现位于 `lib/markdown-preservation/`。非受控 textarea 通过 `source-text-fidelity.js` 保留 BOM、CRLF、混合换行和 raw offset；智能粘贴仅在 Markdown 覆盖 HTML 语义时以原始 Markdown 为输入。完整合同和边界见 [markdown-source-preservation.md](./markdown-source-preservation.md) 与 [2026-07 深度审计](./source-fidelity-audit-2026-07.md)。
+
+## PDF 导出数据流（重要）
+
+```
+可见 ProseMirror
+  → editor-pdf-content.js 冻结快照、物化预览内容、测量表格、收集图片
+  → getExportSource()（兼容旧名 getPdfSource()）返回 { html, headings, title, images }
+  → pdf-images.js 暂存本地/网络资源并替换占位符
+  → pdf-document.js + pdf-print-styles.js 生成无脚本打印文档
+  → pdf-export.js 隐藏 BrowserWindow + printToPDF()
+  → 同一 PDF Buffer 同时提供给 PDF Studio 和最终保存
+```
+
+边界约束：
+
+- renderer 负责读取 live editor 的结构和几何；主进程不反向读取编辑器 DOM。
+- 主进程负责资源、安全模板、页面参数和最终打印；不得把脚本或 Node 能力交给临时文档。
+- PDF Studio 不是 HTML 预览，而是 PDF.js 展示最终 Buffer。布局验收必须落到该 Buffer。
+- 表格列宽需要在 renderer 清理 class/style 前测量；表格行距由打印 CSS 独立控制，单元格内层 `<p>` 不能继承正文段距。
+- 视觉问题的分层诊断、坐标断言与停止条件见 [pdf-visual-fidelity-runbook.md](./pdf-visual-fidelity-runbook.md)。
+
+## HTML 与 Pandoc 导出数据流
+
+HTML 沿用上面的结构化快照，但不沿用打印模板：
+
+```text
+getExportSource()
+  → html-export.js 暂存并内嵌可读取图片
+  → html-document.js 应用阅读主题、宽度、字号、目录和 CSP
+  → 预览返回 token + 最终 HTML
+  → 保存按 token 写入同一份 HTML
+```
+
+Pandoc 则必须保留 Markdown 输入，不经过 HTML serializer：
+
+```text
+source textarea live buffer / editor.flushMarkdown()
+  → pandoc-export.js 校验格式、程序路径和保存路径
+  → subprocess.js 以 stdin、shell:false、固定参数启动 Pandoc
+  → docx / epub / tex / odt / rtf / txt
+```
+
+两条链路的产品边界、错误语义和回归矩阵见 [document-export-prd.md](./document-export-prd.md) 与 [document-export-architecture.md](./document-export-architecture.md)。
 
 ## 获取 ProseMirror view 的正确姿势
 

@@ -1,5 +1,5 @@
 import { TextSelection, Plugin } from '@milkdown/prose/state'
-import { strikeInputWouldCorruptCriticMarkup } from '../strikeGuard.js'
+import { strikeInputIsSingleTilde, strikeInputWouldCorruptCriticMarkup } from '../strikeGuard.js'
 
 // Reconstruct `{~~old~>new~~}` substitution markers that GFM strikethrough
 // consumed during parse. remark turns `{~~old~>new~~}` into three mdast nodes:
@@ -105,7 +105,8 @@ export function createSubstitutionLiveReconstructPlugin() {
 }
 
 // Prevent the GFM strikethrough input rule from eating CriticMarkup
-// substitution markers. This plugin must be prepended before inputRules.
+// substitution markers, and from striking a single-tilde pair (Typora only
+// strikes `~~x~~`). This plugin must be prepended before inputRules.
 export function createStrikeGuardPlugin() {
   return new Plugin({
     props: {
@@ -117,8 +118,22 @@ export function createStrikeGuardPlugin() {
           null,
           '￼'
         )
-        if (!strikeInputWouldCorruptCriticMarkup(textBefore, text)) return false
-        view.dispatch(view.state.tr.insertText(text, from, to))
+        const critic = strikeInputWouldCorruptCriticMarkup(textBefore, text)
+        if (!critic && !strikeInputIsSingleTilde(textBefore, text)) return false
+        const tr = view.state.tr.insertText(text, from, to)
+        // The input rule matches the FIRST tilde run in the line, so a literal
+        // `~30~` earlier would also block a `~~x~~` being closed at the
+        // cursor. Apply that strike here, as the rule would have.
+        const strike = !critic && view.state.schema.marks.strike_through
+        const closing = strike && /(?<![\w:/])~~([^~](?:[^]*?[^~])?)~~$/.exec(textBefore + text)
+        if (closing) {
+          const start = from - textBefore.length + closing.index
+          const contentEnd = start + 2 + closing[1].length
+          tr.delete(contentEnd, contentEnd + 2).delete(start, start + 2)
+            .addMark(start, start + closing[1].length, strike.create())
+            .removeStoredMark(strike)
+        }
+        view.dispatch(tr)
         return true
       }
     }

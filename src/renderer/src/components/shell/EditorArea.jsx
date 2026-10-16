@@ -8,10 +8,26 @@
 //   - Uncontrolled textarea: defaultValue + liveContentRef/liveTimersRef/commitLive
 //     (no per-keystroke value re-set).
 //   - Split: panes are flex siblings; visibility is display/order, NO re-parenting.
-import Editor from '../Editor.jsx'
+// P8b shell-first startup: the editor stack (Milkdown/ProseMirror/CodeMirror,
+// several MB) is a lazy chunk, so the app shell paints as soon as the small
+// main bundle evaluates. The editor mounts inside Suspense — until the chunk
+// arrives a static pane skeleton shows, then the existing loading skeleton and
+// chunked-load flow take over exactly as before.
+const Editor = lazy(() => import('../Editor.jsx'))
 import { Icon } from '../icons.jsx'
-import { isPlainTextDoc } from '../../paths.js'
+import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
+import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
+import { Suspense, lazy, useRef } from 'react'
+
+const editorChunkFallback = (
+  <div className="editor-skeleton" aria-hidden="true">
+    <div className="skel-line skel-title" />
+    <div className="skel-line" style={{ width: '84%' }} />
+    <div className="skel-line" style={{ width: '71%' }} />
+    <div className="skel-line skel-gap" style={{ width: '58%' }} />
+  </div>
+)
 
 export default function EditorArea({
   tabs,
@@ -22,13 +38,21 @@ export default function EditorArea({
   focusedPane,
   home,
   sourceMode,
+  sourceRichSplitMode,
+  sourceRichSplitRatio,
+  richPreviewState,
   richForced,
   mountedIds,
   activeTab,
   imageUploadCommand,
   spellcheck,
+  inlineMathDeleteMode,
+  selectionToolbar,
+  readOnly,
+  effectiveKeybindings,
   editorAreaRef,
   editorHostRef,
+  editorHosts,
   sourceRef,
   sourceTextareas,
   sourceEditedIds,
@@ -36,6 +60,7 @@ export default function EditorArea({
   liveTimersRef,
   commitLive,
   editorApis,
+  registerEditorApi,
   activeIdRef,
   focusedTabRef,
   setRichForced,
@@ -43,15 +68,28 @@ export default function EditorArea({
   setFocusedPane,
   setActiveBlock,
   setRichDocVersion,
-  setRichLoading,
+  setTabRichLoading,
   startSplitDrag,
+  startSourceRichSplitDrag,
+  onSourceInput,
+  onSourceCompositionStart,
+  onSourceCompositionEnd,
+  onSourcePaneFocus,
+  onRichPaneFocus,
+  onCloseSourceRichSplit,
+  onToggleSourceRichSplit,
   updateContent,
+  markRichEditPending,
   t
 }) {
+  // One-shot restore of the persisted caret/viewport per tab (issue #111). The
+  // Set survives reloads (keyed by tab.id) so an external-edit reload that
+  // remounts the editor does not re-apply a stale offset onto new content.
+  const restoredDocPosRef = useRef(new Set())
   return (
     <div
       ref={editorAreaRef}
-      className={`editor-area${split ? ' is-split' : ''}`}
+      className={`editor-area${split || sourceRichSplitMode ? ' is-split' : ''}${sourceRichSplitMode ? ' is-source-rich-split' : ''}`}
       style={{ display: home || !activeTab || activeTab?.kind === 'settings' ? 'none' : undefined }}
     >
       {tabs.map((tab) => {
@@ -71,44 +109,67 @@ export default function EditorArea({
         const isFocusedPane = split && ((isRight && focusedPane === 'right') || (isLeft && focusedPane === 'left'))
         const paneClass =
           (isRight ? ' hm-pane-right' : isLeft ? ' hm-pane-left' : '') + (isFocusedPane ? ' hm-focused' : '')
-        const onPaneFocus = () => {
+        // The source/rich split is ONE tab represented by two surfaces. It is
+        // intentionally distinct from `split`, which shows TWO documents.
+        const heavyAsSource = tab.heavy && !richForced.has(tab.id)
+        const plainText = isPlainTextDoc(tab)
+        const isSourceRichSplit = sourceRichSplitMode && isLeft && !plainText && !heavyAsSource
+        const onPaneFocus = (pane = null) => {
           focusedTabRef.current = tab.id
           if (split) setFocusedPane(isRight ? 'right' : 'left')
+          if (isSourceRichSplit) {
+            if (pane === 'source') onSourcePaneFocus?.()
+            if (pane === 'rich') onRichPaneFocus?.()
+          }
         }
-        // In split view the left pane holds a fixed fraction; the right pane
-        // grows to fill the rest. Outside split, panes fill the row.
+        // In normal document split the left pane holds a fixed fraction. In a
+        // source/rich split the source pane is the left fixed column and the
+        // existing rich editor fills the right column.
         const paneFlex = split && isLeft ? `0 0 calc(${(splitRatio * 100).toFixed(2)}% - 3px)` : undefined
+        const sourceRichFlex = isSourceRichSplit
+          ? `0 0 calc(${(sourceRichSplitRatio * 100).toFixed(2)}% - 3px)`
+          : undefined
 
         // Plain-text docs always use the textarea; "heavy" Markdown docs do
         // too until the user opts into rich (avoids a multi-second freeze).
         // In global source mode the active Markdown pane shows a textarea too,
         // but its already-mounted Crepe editor stays mounted underneath. That
         // avoids a full re-parse/image reload when switching back to rich.
-        const heavyAsSource = tab.heavy && !richForced.has(tab.id)
-        const plainText = isPlainTextDoc(tab)
-        const sourceForActiveRich = sourceMode && isLeft && !plainText && !heavyAsSource
+        const sourceForActiveRich = (sourceMode || isSourceRichSplit) && isLeft && !plainText && !heavyAsSource
         const usesTextarea = plainText || heavyAsSource || sourceForActiveRich
-        // content-visibility virtualization (see .hm-cv in app.css) kicks in
-        // only for genuinely large RICH documents — small docs and the
-        // textarea path are untouched. ~20k chars ≈ hundreds of blocks,
-        // the range where software-composited scrolling starts to struggle.
+        // content-visibility virtualization (see .hm-cv in app.css) is reserved
+        // for genuinely huge RICH documents. Medium CJK-heavy docs have enough
+        // text to be expensive on Windows, but too few blocks for CV to pay for
+        // its estimate-to-real height churn; they use layout containment instead.
         const richEligible = !plainText && !heavyAsSource
-        const largeRich = richEligible && (tab.content?.length || 0) >= 20000
+        const largeRich = richEligible && shouldUseRichContentVisibility(tab.content || '')
         const nodes = []
 
         if (usesTextarea && inView) {
+          const initialSource = liveContentRef.current.get(tab.id) ?? tab.content
           const setSourceTextareaRef = (el) => {
             if (el) {
               sourceTextareas.current[tab.id] = el
               if (isLeft) sourceRef.current = el
-              if (!el.__horsemdSourceCaretCleanup) {
+              if (!readOnly && !el.__horsemdSourceCaretCleanup) {
                 el.__horsemdSourceCaretCleanup = attachSourceCaret(el)
               }
+              if (el.__horsemdSourceRawValue == null) el.__horsemdSourceRawValue = initialSource || ''
               if (el.__horsemdSourceBaseline == null) el.__horsemdSourceBaseline = el.value || ''
               if (el.__horsemdSourceSelectionBaseline == null) {
                 el.__horsemdSourceSelectionBaseline = `${el.selectionStart || 0}:${el.selectionEnd || 0}`
               }
               if (el.__horsemdSourceViewportMoved == null) el.__horsemdSourceViewportMoved = false
+              if (tab.restoreOffset != null && !el.__horsemdDocPosRestored) {
+                el.__horsemdDocPosRestored = true
+                try {
+                  const off = Math.max(0, Math.min(tab.restoreOffset, el.value.length))
+                  el.setSelectionRange(off, off)
+                  if (tab.restoreScrollTop) el.scrollTop = tab.restoreScrollTop
+                } catch {
+                  // Selection/scroll restore must never break the editor.
+                }
+              }
               return
             }
             const existing = sourceTextareas.current[tab.id]
@@ -121,13 +182,14 @@ export default function EditorArea({
             <textarea
               key={`source:${tab.id}:${tab.reloadNonce}`}
               ref={setSourceTextareaRef}
-              className={`source-editor${paneClass}`}
-              defaultValue={liveContentRef.current.get(tab.id) ?? tab.content}
+              className={`source-editor${paneClass}${isSourceRichSplit ? ' hm-source-rich-left' : ''}`}
+              defaultValue={initialSource}
+              readOnly={readOnly}
               spellCheck={false}
-              style={{ order, flex: paneFlex }}
-              onFocus={onPaneFocus}
+              style={{ order: isSourceRichSplit ? 1 : order, flex: isSourceRichSplit ? sourceRichFlex : paneFlex }}
+              onFocus={() => onPaneFocus('source')}
               onMouseDown={(e) => {
-                onPaneFocus()
+                onPaneFocus('source')
               }}
               onMouseUp={(e) => {
                 e.currentTarget.__horsemdSourceSelectionUser = true
@@ -165,6 +227,8 @@ export default function EditorArea({
                 const selectedAt = e.currentTarget.__horsemdSourceSelectionAt || 0
                 if (performance.now() - selectedAt > 250) e.currentTarget.__horsemdSourceViewportMoved = true
               }}
+              onCompositionStart={() => onSourceCompositionStart?.(tab.id)}
+              onCompositionEnd={() => onSourceCompositionEnd?.(tab.id)}
               onChange={(e) => {
                 // Uncontrolled: stash the edit and debounce-commit it, so
                 // typing never re-renders App or re-sets a multi-MB value per
@@ -173,8 +237,9 @@ export default function EditorArea({
                 e.target.__horsemdSourceViewportMoved = false
                 e.target.__horsemdSourceSelectionAt = performance.now()
                 sourceEditedIds.current.add(tab.id)
-                const v = e.target.value
+                const v = updateTextareaSourceFromDom(e.target)
                 liveContentRef.current.set(tab.id, v)
+                onSourceInput?.(tab.id, v)
                 const prev = liveTimersRef.current.get(tab.id)
                 if (prev) clearTimeout(prev)
                 liveTimersRef.current.set(tab.id, setTimeout(() => commitLive(tab.id), 400))
@@ -186,34 +251,73 @@ export default function EditorArea({
         // opened yet (keeps session-restore of many tabs fast). Panes in
         // view always mount; visited tabs stay mounted.
         if (richEligible && (inView || mountedIds.has(tab.id))) {
+          const setEditorHost = (el) => {
+            if (el) {
+              editorHosts.current[tab.id] = el
+              if (isLeft) editorHostRef.current = el
+              return
+            }
+            const existing = editorHosts.current[tab.id]
+            delete editorHosts.current[tab.id]
+            if (isLeft && (!existing || editorHostRef.current === existing)) editorHostRef.current = null
+          }
           nodes.push(
             <div
               // Include reloadNonce so an external-edit reload remounts the
               // Crepe editor with the new content (the create effect only
               // runs on mount). tab switches keep the same key → stay mounted.
               key={`rich:${tab.id}:${tab.reloadNonce}`}
-              className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}`}
-              ref={isLeft ? editorHostRef : undefined}
-              style={{ display: inView && !sourceForActiveRich ? undefined : 'none', order, flex: paneFlex }}
-              onFocusCapture={onPaneFocus}
-              onMouseDownCapture={onPaneFocus}
+              className={`editor-scroll${paneClass}${largeRich ? ' hm-cv' : ''}${isSourceRichSplit ? ' hm-source-rich-right' : ''}`}
+              ref={setEditorHost}
+              // Source mode replaces only the LEFT (active) pane with its
+              // textarea; the right document of a two-document split stays
+              // rich (#138 — hiding it on `sourceMode` alone blanked the
+              // right pane whenever the left switched to source).
+              style={{ display: inView && !(sourceMode && isLeft) ? undefined : 'none', order: isSourceRichSplit ? 3 : order, flex: isSourceRichSplit ? undefined : paneFlex }}
+              onFocusCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
+              onMouseDownCapture={() => onPaneFocus(isSourceRichSplit ? null : 'rich')}
             >
+              <Suspense fallback={editorChunkFallback}>
               <Editor
                 tabId={`${tab.id}:${tab.reloadNonce}`}
                 initialContent={tab.content}
                 docPath={tab.path}
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
+                inlineMathDeleteMode={inlineMathDeleteMode}
+                selectionToolbar={selectionToolbar}
+                readOnly={readOnly || isSourceRichSplit}
+                effectiveKeybindings={effectiveKeybindings}
                 onChange={(md, isInitial) => updateContent(tab.id, md, isInitial)}
+                onToggleSourceRichSplit={isSourceRichSplit ? undefined : onToggleSourceRichSplit}
+                onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
-                  editorApis.current[tab.id] = api
+                  registerEditorApi(tab.id, api)
+                  if (tab.restoreOffset != null && !restoredDocPosRef.current.has(tab.id)) {
+                    restoredDocPosRef.current.add(tab.id)
+                    // Set the caret without scrolling/focusing (a reading open
+                    // must not steal focus), then restore the saved viewport.
+                    try {
+                      api.restoreMarkdownOffset?.(tab.restoreOffset, false)
+                    } catch {
+                      // A stale offset just leaves the caret at the default spot.
+                    }
+                    const restoreScroller = editorHosts.current[tab.id]
+                    if (tab.restoreScrollTop) {
+                      // Synchronous set: requestAnimationFrame is throttled in
+                      // background windows, and the editor host is already laid
+                      // out by the time onReady fires.
+                      if (restoreScroller) restoreScroller.scrollTop = tab.restoreScrollTop
+                    }
+                  }
                 }}
                 onActiveBlock={(id) => {
                   if (tab.id === activeIdRef.current) setActiveBlock(id)
                 }}
                 onStructureChange={() => setRichDocVersion((v) => v + 1)}
-                onLoadingChange={setRichLoading}
+                onLoadingChange={(loading) => setTabRichLoading(tab.id, loading)}
               />
+              </Suspense>
             </div>
           )
         }
@@ -232,13 +336,32 @@ export default function EditorArea({
         </div>
       )}
 
-      {split && (
+      {(split || sourceRichSplitMode) && (
         <div
           className="hm-split-divider"
           style={{ order: 2 }}
-          onMouseDown={startSplitDrag}
+          onMouseDown={sourceRichSplitMode ? startSourceRichSplitDrag : startSplitDrag}
           title={t('split.drag')}
         />
+      )}
+
+      {sourceRichSplitMode && richPreviewState !== 'idle' && (
+        <div className={`hm-rich-preview-state ${richPreviewState === 'error' ? 'is-error' : ''}`} role="status">
+          {richPreviewState === 'error' ? t('sourceRich.previewError') : t('sourceRich.previewUpdating')}
+        </div>
+      )}
+
+      {sourceRichSplitMode && (
+        <button
+          className="hm-source-rich-close"
+          type="button"
+          title={t('sourceRich.close')}
+          aria-label={t('sourceRich.close')}
+          onClick={onCloseSourceRichSplit}
+        >
+          <Icon name="close" size={13} />
+          <span>{t('sourceRich.close')}</span>
+        </button>
       )}
 
       {split && (

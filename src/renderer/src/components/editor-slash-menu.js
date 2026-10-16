@@ -35,7 +35,6 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { createTable } from '@milkdown/kit/preset/gfm'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state'
-import { pinyin as toPinyin } from 'pinyin-pro'
 
 const KEY = new PluginKey('hm-slash-menu')
 
@@ -118,7 +117,7 @@ const RUN = {
   codeLang: (lang) => (ctx, view) =>
     clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: lang } }),
   math: (ctx, view) =>
-    clearThen(ctx, addBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: 'LaTeX' } }),
+    clearThen(ctx, setBlockTypeCommand.key, { nodeType: node(view, 'code_block'), attrs: { language: 'LaTeX' } }),
   table: (ctx, view) => {
     const commands = ctx.get(commandsCtx)
     commands.call(clearTextInCurrentBlockCommand.key)
@@ -180,6 +179,24 @@ const LANGUAGES = [
 // pinyin (so "/bt" → 标题, "/bg" → 表格, "/wxlb" → 无序列表, "/biaoti" → 标题).
 // Non-CJK labels pass through pinyin-pro unchanged (harmless, already covered by
 // their English keywords). Cached per label — buildItems runs on every keystroke.
+// Pinyin matching is a progressive enhancement (P8: pinyin-pro's dictionary
+// is a few hundred KB and does not belong in the eagerly parsed main chunk).
+// The module loads on the first slash-menu activation; until it resolves the
+// CJK pinyin aliases are simply absent — English keywords still match, and
+// once loaded the cache is dropped so the next keystroke rebuilds with pinyin.
+let toPinyin = null
+let pinyinRequested = false
+const ensurePinyin = () => {
+  if (toPinyin || pinyinRequested) return
+  pinyinRequested = true
+  import('pinyin-pro')
+    .then((mod) => {
+      toPinyin = mod.pinyin
+      PY_CACHE.clear()
+    })
+    .catch(() => {})
+}
+
 const PY_CACHE = new Map()
 function pinyinKeywords(label) {
   if (!label) return []
@@ -187,10 +204,14 @@ function pinyinKeywords(label) {
   if (cached) return cached
   const out = new Set()
   try {
-    const full = toPinyin(label, { toneType: 'none', type: 'array' }).join('').replace(/\s+/g, '').toLowerCase()
-    const first = toPinyin(label, { pattern: 'first', toneType: 'none', type: 'array' }).join('').replace(/\s+/g, '').toLowerCase()
-    if (full && /[a-z]/.test(full)) out.add(full)
-    if (first && /[a-z]/.test(first) && first !== full) out.add(first)
+    if (toPinyin) {
+      const full = toPinyin(label, { toneType: 'none', type: 'array' }).join('').replace(/\s+/g, '').toLowerCase()
+      const first = toPinyin(label, { pattern: 'first', toneType: 'none', type: 'array' }).join('').replace(/\s+/g, '').toLowerCase()
+      if (full && /[a-z]/.test(full)) out.add(full)
+      if (first && /[a-z]/.test(first) && first !== full) out.add(first)
+    } else {
+      ensurePinyin()
+    }
   } catch {
     /* pinyin-pro shouldn't throw on any string, but never let matching crash the menu */
   }
@@ -277,10 +298,11 @@ function atEndOfBlock(sel) {
 
 // ---- the menu controller. One per editor (pluginView lifetime). ----
 class SlashMenu {
-  constructor(ctx, view, getT) {
+  constructor(ctx, view, getT, onCommand) {
     this.ctx = ctx
     this.view = view
     this.getT = getT
+    this.onCommand = onCommand
     this.items = buildItems(getT, '')
     this.filtered = []
     this.selectedIndex = 0
@@ -395,7 +417,9 @@ class SlashMenu {
     const item = this.filtered[this.selectedIndex]
     if (!item) return
     this.provider.hide()
+    const token = this.onCommand?.({ phase: 'before', id: item.id, view: this.view })
     item.run(this.ctx, this.view)
+    this.onCommand?.({ phase: 'after', id: item.id, view: this.view, token })
     this.view.focus()
   }
 
@@ -471,12 +495,12 @@ function esc(s) {
 }
 
 // ---- public: build the raw ProseMirror plugin. Add via prosePluginsCtx. ----
-export function createSlashPlugin(ctx, getT) {
+export function createSlashPlugin(ctx, getT, onCommand) {
   let menu = null
   return new Plugin({
     key: KEY,
     view: (view) => {
-      menu = new SlashMenu(ctx, view, getT)
+      menu = new SlashMenu(ctx, view, getT, onCommand)
       return {
         update: (v, prev) => menu && menu.update(v, prev),
         destroy: () => {

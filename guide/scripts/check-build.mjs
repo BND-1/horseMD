@@ -10,7 +10,7 @@ const sitemap = await fs.readFile(path.join(dist, 'sitemap.xml'), 'utf8')
 const errors = []
 
 if (/\/public\/|\/fixtures\//.test(sitemap)) errors.push('sitemap contains internal fixture/public routes')
-if (!sitemap.includes('https://guide-zeta-rouge.vercel.app/getting-started/')) {
+if (!sitemap.includes('https://guide.horsemd.yangsir.net/getting-started/')) {
   errors.push('sitemap is missing the getting-started route')
 }
 if (vercelConfig.cleanUrls !== true) {

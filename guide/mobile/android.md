@@ -5,7 +5,7 @@ description: 在 Android 版 HorseMD 中打开、编辑、保存和导出 Markdo
 
 # Android
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.12.10</span>
 
 先按照 [Android 安装](/getting-started/install-android)完成 APK 安装。
 
@@ -22,6 +22,9 @@ description: 在 Android 版 HorseMD 中打开、编辑、保存和导出 Markdo
 ## 触摸操作
 
 侧边栏以抽屉形式覆盖正文，点击遮罩关闭。双击或长按文字只显示 Android 系统文本菜单，不显示桌面选区格式栏。手机屏幕使用全宽编辑，平板和横屏会保持舒适阅读宽度。
+
+顶栏的解锁/锁定按钮切换手机专用只读模式。锁定后可以滚动、选择、复制和打开链接，
+但不能输入、粘贴或改动文档；再次点击锁定图标才恢复编辑。云同步当前仍只在桌面端提供。
 
 ::: danger 卸载前导出重要文件
 Android 卸载应用时可能删除应用文档库。重要文档应提前分享或备份到外部位置。

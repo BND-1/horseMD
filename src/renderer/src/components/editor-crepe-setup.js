@@ -1,5 +1,6 @@
 import { Crepe, CrepeFeature as Feature } from '@milkdown/crepe'
 import {
+  editorViewOptionsCtx,
   nodeViewCtx,
   prosePluginsCtx,
   remarkPluginsCtx,
@@ -9,21 +10,43 @@ import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
+import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
 import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
-import { remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
+import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
+import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
-import { tableBreakKeymap, tableCellBreakHandler, brToBreakRemarkPlugin } from './editor-tablebreak.js'
+import {
+  tableBreakKeymap,
+  tableCellBreakHandler,
+  brToBreakRemarkPlugin
+} from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
+import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
-import { frontmatterSchema, renderFrontmatterNodeView, remarkFrontmatterAnywhere } from './editor-frontmatter.js'
+import {
+  createBlockHandleGutterPlugin,
+  getBlockHandlePosition
+} from './editor-block-handle-guard.js'
+import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
+import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
+import { createTaskListInputPlugin } from './editor-task-list.js'
+import { createSourceTransactionDispatch } from './editor-source-transactions.js'
+import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
+import { normalizeWebPasteHtml } from './editor-web-paste.js'
+import { imageBlockMarkdownSchema } from './editor-image-markdown.js'
+import { remarkStripLeadingSpaceSentinel } from '../lib/markdown-leading-space.js'
+import remarkCjkFriendly from 'remark-cjk-friendly'
+import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
+import { safeTrailingWhitespaceTextHandler } from '../lib/remark-text-handler.js'
+import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import {
   createStrikeGuardPlugin,
   createSubstitutionLiveReconstructPlugin,
@@ -38,7 +61,18 @@ const mermaidLanguage = LanguageDescription.of({
   alias: ['mermaid', 'mmd'],
   extensions: ['mmd', 'mermaid'],
   async load() {
-    return new LanguageSupport(StreamLanguage.define(() => ({ token: () => null })))
+    // StreamLanguage.define takes the stream-parser SPEC OBJECT ({token, ...}),
+    // and a no-op token MUST consume the stream (readToken throws "failed to
+    // advance" after 10 zero-width calls). The original factory-function spec
+    // left token undefined and crashed with "token is not a function" the
+    // moment a mermaid block's editor parsed — e.g. the welcome document's
+    // diagram, on every build up to and including 0.13.207.
+    return new LanguageSupport(StreamLanguage.define({
+      token: (stream) => {
+        stream.next()
+        return null
+      }
+    }))
   }
 })
 
@@ -68,7 +102,14 @@ export function createConfiguredCrepe({
   getT,
   persistImage,
   notify,
-  copyText
+  copyText,
+  getInlineMathDeleteMode,
+  markUserEdit,
+  isReadOnly,
+  onFrontmatterValueChange,
+  onInlineCodeValueChange,
+  onSlashCommand,
+  onSourceTransactions
 }) {
   const t = getT
   const platform = window.api?.platform
@@ -94,11 +135,22 @@ export function createConfiguredCrepe({
     },
     featureConfigs: {
       [Feature.Placeholder]: { text: t('editor.placeholder'), mode: 'block' },
+      [Feature.BlockEdit]: {
+        blockHandle: {
+          getPosition: getBlockHandlePosition,
+          getOffset: () => 0
+        }
+      },
       [Feature.CodeMirror]: {
         copyText: t('code.copy'),
         previewToggleText: (previewOnly) =>
           previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode'),
         extensions: [tabAtCursorKeymap]
+      },
+      [Feature.Latex]: {
+        katexOptions: {
+          output: window.api?.platform === 'win32' ? 'html' : 'htmlAndMathml'
+        }
       }
     }
   })
@@ -109,10 +161,33 @@ export function createConfiguredCrepe({
     // in editor-slash-menu.js replaces it. Feature.BlockEdit stays enabled so
     // the block drag/add handle (.milkdown-block-handle) is preserved.
     disableCrepeSlash(ctx)
+    // Typora parity: only `~~x~~` is strikethrough. remark-gfm's default also
+    // accepts a single tilde pair, so prose ranges such as `约 5~30 行……4~7 千行`
+    // rendered the text between the two tildes struck through.
+    ctx.set(remarkGFMPlugin.options.key, { ...ctx.get(remarkGFMPlugin.options.key), singleTilde: false })
+    ctx.update(editorViewOptionsCtx, (options) => ({
+      ...options,
+      dispatchTransaction: createSourceTransactionDispatch(onSourceTransactions),
+      transformPastedHTML: (html, view) => {
+        const transformed = options.transformPastedHTML
+          ? options.transformPastedHTML(html, view)
+          : html
+        return normalizeWebPasteHtml(transformed)
+      }
+    }))
     ctx.update(nodeViewCtx, (views) => [
       ...views,
       ['html', (node) => renderHtmlNodeView(node)],
-      ['frontmatter', (node) => renderFrontmatterNodeView(node)]
+      ['frontmatter', (node, view, getPos) => renderFrontmatterNodeView(node, view, getPos, {
+        labels: {
+          edit: t('frontmatter.edit'),
+          done: t('frontmatter.done'),
+          input: t('frontmatter.input')
+        },
+        onEdit: markUserEdit,
+        onValueChange: onFrontmatterValueChange,
+        canEdit: () => !isReadOnly?.()
+      })]
     ])
 
     applyImageText(ctx, getT)
@@ -139,10 +214,19 @@ export function createConfiguredCrepe({
 
     ctx.update(prosePluginsCtx, (plugins) => [
       createStrikeGuardPlugin(),
+      createAngleAutolinkInputPlugin(),
+      createBlockHandleGutterPlugin(ctx),
       ...plugins,
       tableBreakKeymap(),
-      mathPreviewPlugin(),
-      createSlashPlugin(ctx, getT),
+      createInlineCodeEditingPlugin({
+        onEdit: markUserEdit,
+        onValueChange: onInlineCodeValueChange
+      }),
+      createTaskListInputPlugin(),
+      createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
+      createKatexDomPrunePlugin(),
+      mathPreviewPlugin(getT),
+      createSlashPlugin(ctx, getT, onSlashCommand),
       toolbarAutohidePlugin(),
       createReviewDecorationPlugin({
         getT: (key, fallback) => {
@@ -155,13 +239,15 @@ export function createConfiguredCrepe({
       }),
       createMermaidSplitPlugin(),
       createSubstitutionLiveReconstructPlugin(),
-      createMathBlockPromotionPlugin()
+      createMathBlockPromotionPlugin(),
+      createListTypeSyncPlugin()
     ])
 
     ctx.update(remarkStringifyOptionsCtx, (opts) => ({
       ...opts,
       handlers: {
         ...(opts?.handlers || {}),
+        text: safeTrailingWhitespaceTextHandler,
         break: tableCellBreakHandler,
         highlight: highlightStringifyHandler
       }
@@ -169,10 +255,16 @@ export function createConfiguredCrepe({
 
     ctx.update(remarkPluginsCtx, (plugins) => [
       ...plugins,
+      // CJK-friendly emphasis (Typora parity): `这是**「重点」**内容` is bold.
+      // Plain CommonMark flanking rules treat CJK punctuation like ASCII
+      // punctuation and leave the asterisks literal.
+      { plugin: remarkCjkFriendly, options: undefined },
+      { plugin: remarkFixMarkerOffsetForBom, options: undefined },
+      { plugin: remarkStripLeadingSpaceSentinel, options: undefined },
       { plugin: remarkNormalizeCodeOnlyLinkLabels, options: undefined },
+      { plugin: remarkPreserveLiteralTripleBacktickTextBlocks, options: undefined },
       { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
       { plugin: remarkFrontmatter, options: undefined },
-      { plugin: remarkFrontmatterAnywhere, options: undefined },
       { plugin: brToBreakRemarkPlugin, options: undefined },
       { plugin: remarkMergeInlineHtml, options: undefined },
       { plugin: remarkReconstructSubstitution, options: undefined }
@@ -182,6 +274,7 @@ export function createConfiguredCrepe({
   crepe.editor.use(
     inlineCodeSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), inclusive: false }))
   )
+  crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(highlightFeatures)
   crepe.editor.use(frontmatterSchema)
 

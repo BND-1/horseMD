@@ -5,9 +5,11 @@ import Tabs from '../Tabs.jsx'
 import { Icon } from '../icons.jsx'
 import ImageHostButton from '../ImageHostButton.jsx'
 import WindowControls from '../WindowControls.jsx'
+import { labelWithShortcut } from '../../lib/commands/shortcut-labels.js'
 
 export default function Topbar({
   isMobile,
+  readOnly,
   t,
   tabs,
   activeId,
@@ -15,6 +17,7 @@ export default function Topbar({
   focusedPane,
   split,
   imageUploadCommand,
+  effectiveKeybindings,
   onActivate,
   onClose,
   onNew,
@@ -24,8 +27,11 @@ export default function Topbar({
   onDuplicate,
   onDelete,
   onExportPdf,
+  onExportHtml,
+  onExportPandoc,
   onReorder,
   onToggleSidebar,
+  onToggleReadOnly,
   onToggleSplit,
   onImageHostChange,
   onOpenPalette
@@ -55,10 +61,27 @@ export default function Topbar({
         onDuplicate={onDuplicate}
         onDelete={onDelete}
         onExportPdf={onExportPdf}
+        onExportHtml={onExportHtml}
+        onExportPandoc={onExportPandoc}
         onReorder={onReorder}
+        effectiveKeybindings={effectiveKeybindings}
       />
       <div className="topbar-spacer" />
-      <button className="icon-btn drag-no" title={`${t('welcome.newFile')} (Ctrl+N)`} onClick={onNew}>
+      {isMobile && (
+        <button
+          className={`icon-btn drag-no hm-readonly-btn${readOnly ? ' active' : ''}`}
+          title={readOnly ? t('mobile.readOnlyOff') : t('mobile.readOnlyOn')}
+          aria-pressed={readOnly}
+          onClick={onToggleReadOnly}
+        >
+          <Icon name={readOnly ? 'lock' : 'unlock'} size={18} />
+        </button>
+      )}
+      <button
+        className="icon-btn drag-no"
+        title={labelWithShortcut(t('welcome.newFile'), 'file.new', effectiveKeybindings)}
+        onClick={onNew}
+      >
         <Icon name="plus" size={18} />
       </button>
       {!isMobile && (
@@ -77,7 +100,11 @@ export default function Topbar({
           onChange={onImageHostChange}
         />
       )}
-      <button className="icon-btn drag-no" title="Command palette (Ctrl+P)" onClick={onOpenPalette}>
+      <button
+        className="icon-btn drag-no"
+        title={labelWithShortcut(t('cmd.palette'), 'view.commandPalette', effectiveKeybindings)}
+        onClick={onOpenPalette}
+      >
         <Icon name="command" size={16} />
       </button>
       {(window.api.platform === 'win32' || window.api.platform === 'linux') && <WindowControls t={t} />}

@@ -1,5 +1,7 @@
 # 待办梳理：Issue #10 / #11 + 字号 + 粘贴图片丢失
 
+> 历史文档：这是早期一批 issue 的根因、方案和验收记录，不是当前待办列表。新的 AI / 开发者请先读 [ai-handoff.md](./ai-handoff.md) 和 [ROADMAP.md](../ROADMAP.md)，再把本文件作为历史背景参考。
+
 > 本批改动的目标、根因分析与实施方案。**约束:不引入 bug、不影响现有功能;
 > 桌面端(Win/mac)与移动端(iOS/Android)共用 renderer,改动需保持两端可用。**
 

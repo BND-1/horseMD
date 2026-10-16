@@ -1,0 +1,83 @@
+.hm-pandoc-status {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 22, 24, .28);
+}
+
+.hm-pandoc-status-dialog {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(580px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.hm-pandoc-status-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.hm-pandoc-status-icon.running svg {
+  animation: hm-pandoc-spin 1s linear infinite;
+}
+
+.hm-pandoc-status-icon.error {
+  color: var(--danger);
+  background: var(--danger-soft, rgba(190, 60, 60, .12));
+}
+
+.hm-pandoc-status-copy {
+  min-width: 0;
+}
+
+.hm-pandoc-status-copy h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.hm-pandoc-status-copy p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+}
+
+.hm-pandoc-status-copy p.warning {
+  margin-top: 6px;
+  max-height: 120px;
+  overflow: auto;
+  color: var(--warning, #9b5e12);
+  white-space: pre-wrap;
+}
+
+.hm-pandoc-status-dialog > button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+@keyframes hm-pandoc-spin {
+  to { transform: rotate(360deg); }
+}

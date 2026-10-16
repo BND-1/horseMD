@@ -1,5 +1,39 @@
 # 大文档打开卡顿：根因分析与优化方案
 
+## 最新实测：0.13.220 → 0.13.222 的真实编辑链
+
+本文下方保留早期分析；当前实际 Redis 文件是 **508802 bytes / 333584 个字符 / 13107 行**，不是32万行。富文本流畅编辑仍是硬需求，不能以让用户停留源码模式代替解决。
+
+### 测试条件和此前验证缺口
+
+旧 `test:redis-typing-latency-ui` 只测关闭trace的20键 beforeinput→input 中位数，而实际交给用户的进程开启trace；也没有统计停止输入后的主线程长任务。这不足以证明用户版本流畅。
+
+新增 `scripts/profile-redis-interaction.mjs`：在原文件独立副本顶部加探针段落，使用相同全文、24次逐字符输入、90ms间隔，对照trace开关；记录beforeinput→input、下一次rAF代理、CDP往返、16ms定时器延迟、PerformanceObserver长任务及CPU profile。这些是隔离后台实例的测量，不是物理键盘到屏幕显示的完整延迟，也不是长期工作负载结论。每轮都校验磁盘全文只发生预期改动；trace逐事件解码并按编辑器ID检查连续文档快照。
+
+| 候选 | trace | 输入p50 / p95 | 输入阶段新增日志 | 停顿后最长任务 |
+| --- | --- | --- | --- | --- |
+| 0.13.220基线 | 关 | 37 / 43 ms | 0 | 1912 ms |
+| 0.13.220基线 | 开 | 68 / 74 ms | 55500901 bytes | 2048 ms |
+| 仅日志优化 | 开 | 35 / 37 ms | 486649 bytes | 1975 ms |
+| 日志 + 评阅扫描优化 | 开 | 17 / 22 ms | 486649 bytes | 1932 ms |
+
+以上为同机单轮对照，不外推为固定倍数。完整证据目录（本机临时目录保留）：`horsemd-redis-profile-MY94HA`（基线）、`horsemd-redis-profile-619W9T`（日志优化）、`horsemd-redis-profile-BnDC7k`（两项优化），位于系统临时目录中，各含JSON和cpuprofile。最后一组42条事务快照连续还原通过。
+
+### 已独立修复
+
+1. `0fc68c8` / 0.13.221：原事务回调先构造oldDoc/newDoc全文JSON，再进入trace开关，因此关日志也有开销；开日志还会重复IPC传输和写入。新helper关闭时零构造，大文档按不可变PM节点身份记录字典和引用，逐条精确还原；小文档保留旧字段，所有事件添加编辑器traceId。没有删去首次分歧所需的文档证据。
+2. `332a32d` / 0.13.222：评阅插件对无评阅正文每键执行全文位置定位。按不可变文本块缓存是否有`{`起始符，否定块直接跳过；有标记的块保留原始跨文本节点解析和所有批注行为。1000段合同doc.resolve从1000次到0；编辑后插入标记、嵌套批注及真实卡片编辑/取消/完成通过。
+
+### 尚未解决的长停顿（不能关闭）
+
+**约1.9秒主线程同步长任务仍在，不能将输入p50下降称为Redis整体流畅。**CPU采样指向 `handleMarkdownUpdatedImpl` 的普通正文legacy路径：批量列表保留逻辑反复定位并比较未编辑列表，同时 `createLegacySourceIntegrityValidator` 在候选/当前canonical/历史source/历史canonical之间多次做全文解析和比较。本轮没有通过删校验、提高延迟阈值或重新规范化用户原文来掩盖它。
+
+下一工作单应把“打字→短暂停顿→继续打字/切源码/立即保存”的主线程最长任务加入失败预算，再沿相同CPU调用链减少重复解析和未变列表匹配；任何缓存须绑定正确文档/解析上下文，任何局部转换仍须通过semantic、list-slot、revision校验。通用Worker拆分或局部权威转换需要独立验证，不能仅为降低耗时开启未验收的全局authority开关。P7c和全局源码一致性P0仍未关闭。
+
+复测命令：`TRACE_MODES=off,on REDIS_INPUT_PATH='<Redis原文件路径>' npm run profile:redis-interaction`。原文件只读，测试写入独立副本。大文档事务新格式为`pm-node-refs-v1`，后续分析必须从日志开头按顺序调用 `createTransactionTraceDecoder()`（`components/editor-transaction-trace.js`）；缺字典时明确报错，不把缺少inline oldDoc误判为未记录。
+
+---
+
 > 用户反馈：打开一个 **~32 万行 / 0.5 MB** 的 `.md` 文件非常卡。
 >
 > 根因是 ProseMirror 全量解析 + 全量 DOM，而当时的「大文档」判定恰好漏掉了「行数极多但有正常空行」的文件。优化分三档列出，P0 多数已落地（见各条 ✅）。
@@ -161,11 +195,9 @@ if (isLargeDoc) {
 - **二次优化**：把每个标题的「内容偏移量」`Y = rect.top − scroller.top + scrollTop` **只测一次**（单次布局 pass，每 2s / resize 重建），滚动时只比 `scrollTop`（**零布局读取**）。于是可以**每帧更新**、永远落在当前标题——既不卡，高亮/大纲面板自动滚动也都精准。`Outline.jsx` 的 `scrollIntoView` 依赖 `activeIndex` 变化，所以这一处同时修了「高亮停错」和「大纲不跟滚」。
 - **根因关联**：原 leading-only 节流 + 每帧全文档 reflow = issue #17 滚动追赶 + 大纲停错，是同一根因。
 
-**P0-3b. `refreshLevel`（滚动路径改 trailing）** ✅ 已实施（二次优化）
+**P0-3b. 移除浮动块类型徽标** ✅ 0.6.5 已实施
 
-`Editor.jsx` 浮动块类型徽标（level badge，跟随光标）。
-- 初版：从每帧 rAF 改为每 **200ms** 节流。typing/selection 仍走这个 leading 节流。
-- **二次优化**：滚动时光标本身不动（只是屏幕位置变），徽标无需每 200ms 重算——把**滚动 handler** 改成「停止 150ms 后算一次」(trailing)，干掉滚动时每 200ms 的全文档 reflow（`coordsAtPos` + `getBoundingClientRect`）。typing / selectionchange / mousemove 仍用原 200ms leading 节流，行为不变。
+早期版本为跟随光标的 level badge 做过节流优化。0.6.5 按产品取舍移除了该纯提示控件，同时删除 selection、mousemove、scroll 路径中的 `coordsAtPos` / `getBoundingClientRect`、定时器和 React 状态；标题快捷键、右键菜单、selection toolbar、状态栏切换和大纲功能不受影响。
 
 **P0-3c. 大纲标题列表 debounce** ✅ 已实施
 
@@ -236,7 +268,7 @@ if (isLargeDoc) {
 
 **第一/三/四步已完成**（大文件秒开 + 滚动追赶修复 + 富文本 `content-visibility`）。**P2（让富文本流畅承载极大文档）不是可选项**——按文首产品原则,用户打开大文档后必须在富文本里查看/编辑,textarea 只是过渡。
 
-**#25「跳页」修复(重要,易踩):** `content-visibility:auto` 用 `contain-intrinsic-size` 估算屏外块高度,滚入视口时从估算变为真实高度 → 块"长高"。若此时 `.editor-scroll { overflow-anchor: none }`,浏览器不补偿 → 视口内容上蹿(停在代码块上尤其明显,因为 CodeMirror 还会延迟测量行换行,代码块真实高度 20em+ vs 估算 5em)。修法两条都已落地:① 估算 `3.5em → 5em`(实测段落均值,降低单块误差);② `.editor-scroll.hm-cv { overflow-anchor: auto }`(让 Chromium 自动补偿高度变化,把 delta 吸收掉)——**只对 CV 文档开,小文档保持 `none` 不变**。**教训:用了 content-visibility,几乎总要配 `overflow-anchor: auto`,否则估算↔真实的差就是可见的跳。**
+**#25「跳页」修复(重要,易踩):** `content-visibility:auto` 用 `contain-intrinsic-size` 估算屏外块高度,滚入视口时从估算变为真实高度。`.editor-scroll { overflow-anchor:auto }` 会吸收普通段落的高度变化，但选区存在时 Chromium 不保证锚定。CodeMirror 即使 eager-mount，代码块仍远高于 5em 估值，因此 `.editor-scroll.hm-cv` 必须把 `.milkdown-code-block` 排除在 `content-visibility` 外，让其真实高度常驻；表格仍保留 CV，并在操作控件打开时自行退出。`scripts/test-codeblock-scroll-stability-ui.mjs` 用 1300 段的大文档模拟连续滚动，在四处代码块点击并静置，断言视口位移为 0px。**教训:有选择态的复杂块不能只依赖 scroll anchoring，必须消除估高→真实高度的切换。**
 
 ---
 

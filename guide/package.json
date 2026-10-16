@@ -1,6 +1,6 @@
 {
   "name": "horsemd-guide",
-  "version": "0.6.0",
+  "version": "0.12.10",
   "private": true,
   "type": "module",
   "engines": {
@@ -19,6 +19,7 @@
     "vue": "3.5.39"
   },
   "overrides": {
-    "vite": "6.4.3"
+    "vite": "6.4.3",
+    "postcss": "8.5.25"
   }
 }

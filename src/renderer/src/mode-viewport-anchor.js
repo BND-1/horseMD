@@ -5,6 +5,10 @@ import {
   sourceVisiblePositionAtRaw,
   stripMdForSnippet
 } from './mode-visible-map.js'
+import {
+  sourceOffsetForTextarea,
+  textareaOffsetForSource
+} from './source-text-fidelity.js'
 const VIEWPORT_LEN = 24
 
 // --------------------------------- #28 viewport ---------------------------------
@@ -129,7 +133,14 @@ export function captureSourceViewport(textarea) {
   if (imgRel >= 0 && imgRel < 30) pos += imgRel + ahead.slice(imgRel).match(/!\[[^\]]*\]\([^)]*\)/)[0].length
   const snippet = stripMdForSnippet(md.slice(pos, pos + 80)).replace(/\s+/g, ' ').trim().slice(0, VIEWPORT_LEN) || null
   const { visibleIndex, visibleAffinity } = sourceVisiblePositionAtRaw(md, pos)
-  return { origin: 'source', snippet, ratio, rawOffset: pos, visibleIndex, visibleAffinity }
+  return {
+    origin: 'source',
+    snippet,
+    ratio,
+    rawOffset: sourceOffsetForTextarea(textarea, pos),
+    visibleIndex,
+    visibleAffinity
+  }
 }
 
 // Scroll the rich editor so the viewport-top snippet is back at the top. Builds
@@ -235,7 +246,7 @@ export function restoreSourceViewport(textarea, anchor) {
     const md = textarea.value || ''
     const hint = anchor.ratio != null ? anchor.ratio * md.length : -1
     let charPos = Number.isFinite(anchor.rawOffset)
-      ? Math.max(0, Math.min(anchor.rawOffset, md.length))
+      ? Math.max(0, Math.min(textareaOffsetForSource(textarea, anchor.rawOffset), md.length))
       : -1
     if (charPos < 0) charPos = anchor.snippet ? nearestIndexOf(md, anchor.snippet, hint) : -1
     if (charPos < 0) charPos = Math.round((anchor.ratio || 0) * md.length)

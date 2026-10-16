@@ -5,7 +5,7 @@ description: HorseMD 价格、隐私、平台、格式兼容和功能范围常�
 
 # 常见问题
 
-<span class="version-badge">适用于 HorseMD v0.6.0</span>
+<span class="version-badge">适用于 HorseMD v0.13.29（桌面版）</span>
 
 ## HorseMD 收费吗
 
@@ -17,15 +17,15 @@ description: HorseMD 价格、隐私、平台、格式兼容和功能范围常�
 
 ## 支持哪些平台
 
-v0.6.0 正式提供 Windows x64、macOS Apple Silicon、macOS Intel 和 Android 安装包。iOS 当前需要 Xcode 开发安装。Linux 官方包仍在完善和验证中，不应使用未审阅的构建替代正式 Release。
+桌面 `v0.13.29` 提供 Windows x64、macOS Apple Silicon、macOS Intel 和 Linux amd64 安装包；Android 公开 APK 当前仍为 `v0.12.10`。iOS 需要 Xcode 开发安装。Linux 用户应从官方 Release 下载经过 Ubuntu Runner 校验的 `.deb`。
 
 ## 能直接替代 Typora 吗
 
 HorseMD 支持所见即所得、表格、代码、公式、Mermaid、自定义主题和 PDF 导出，并增加标签页、多根工作区、分屏和审阅。但不同 Markdown 引擎对 HTML、主题 CSS 和扩展语法的处理可能不同，迁移重要文档前应保留备份。
 
-## 支持自动云同步吗
+## 支持云同步吗
 
-HorseMD 本身不提供账号云同步。可以把工作区放在 iCloud Drive、OneDrive、Dropbox、坚果云或 Git 仓库中，由对应工具同步。发生外部冲突时先保留两个版本再合并。
+桌面端可以为你明确选择的文件夹连接 WebDAV 或 S3 兼容存储，并在预览后手动执行同步；少数服务商要求时也可填写可选 User-Agent。它不需要 HorseMD 账号，也不会扫描电脑上的其他目录。当前不提供自动同步、移动端同步或端到端加密；完整步骤见[云同步文件夹](/basics/cloud-sync)。
 
 ## 可以编辑普通文本吗
 

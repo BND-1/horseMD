@@ -1,34 +1,26 @@
 import fs from 'node:fs/promises'
 import chokidar from 'chokidar'
+import { createWorkspaceWatcher } from './workspace-watcher.js'
+import { DEFAULT_WATCH_EXTENSIONS, isRestrictedWatchRoot, workspaceWatchOptions } from './workspace-watch-policy.js'
 
-const WATCH_IGNORE_RE = /(^|[\\/])(\.(git|obsidian)|node_modules)([\\/]|$)/
+export { isAbsoluteWatchPath, isRestrictedWatchRoot } from './workspace-watch-policy.js'
 
-export function isAbsoluteWatchPath(path) {
-  return /^\//.test(path) || /^[a-zA-Z]:[\\/]/.test(path) || /^\\\\/.test(path)
-}
-
-export function isRestrictedWatchRoot(path) {
-  const normalized = (path || '').replace(/[\\/]+$/, '')
-  if (normalized === '' || normalized === '/' || normalized === '.' || normalized === '..') return true
-  if (!isAbsoluteWatchPath(normalized)) return true
-  return /^\/(dev|proc|System\/Volumes|private\/var\/(db|folders)|\.vol)(\/|$)/.test(normalized)
-}
-
-export function registerWatcherIpc(ipcMain, { sendToRenderer, watcherFactory = chokidar }) {
+export function registerWatcherIpc(ipcMain, {
+  sendToRenderer,
+  watcherFactory,
+  markdownExtensions = DEFAULT_WATCH_EXTENSIONS
+}) {
   const folderWatchers = new Map()
   const fileWatchers = new Map()
+  const fileWatcherFactory = watcherFactory || chokidar
 
   ipcMain.handle('watch:start', async (_event, dir) => {
     if (folderWatchers.has(dir)) return true
     if (isRestrictedWatchRoot(dir)) return false
 
-    const watcher = watcherFactory.watch(dir, {
-      ignored: (path) => WATCH_IGNORE_RE.test(path) || isRestrictedWatchRoot(path),
-      ignoreInitial: true,
-      depth: 12,
-      followSymlinks: false,
-      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
-    })
+    const watcher = watcherFactory
+      ? watcherFactory.watch(dir, workspaceWatchOptions(markdownExtensions))
+      : createWorkspaceWatcher(dir, markdownExtensions)
     const entry = { watcher, timer: null }
     watcher.on('error', (error) => console.error('watch:start error (ignored):', error?.message || error))
     const ping = () => {
@@ -43,16 +35,16 @@ export function registerWatcherIpc(ipcMain, { sendToRenderer, watcherFactory = c
   ipcMain.handle('watch:stop', async (_event, dir) => {
     const entry = folderWatchers.get(dir)
     if (entry) {
+      folderWatchers.delete(dir)
       clearTimeout(entry.timer)
       await entry.watcher.close()
-      folderWatchers.delete(dir)
     }
     return true
   })
 
   ipcMain.handle('watch:file', async (_event, path) => {
     if (fileWatchers.has(path)) return true
-    const watcher = watcherFactory.watch(path, {
+    const watcher = fileWatcherFactory.watch(path, {
       ignoreInitial: true,
       usePolling: true,
       interval: 1000,

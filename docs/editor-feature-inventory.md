@@ -34,7 +34,7 @@
 ## 3. Markdown / Remark / ProseMirror 插件装配
 
 - HTML node view 和 inline HTML 合并。
-- frontmatter node view 和 mid-doc frontmatter 修复。
+- frontmatter node view；仅文档顶部标准 YAML front matter 渲染为卡片，富文本卡片可直接进入 YAML 编辑态并回写 atom 属性。正文分隔线和问答标题必须保持普通 Markdown。
 - GFM autolink 非 ASCII 修复。
 - table cell `<br>` 往返。
 - `==highlight==` 高亮 mark。
@@ -48,7 +48,7 @@
 
 验证：
 
-- Markdown 基础语法、表格、代码块、HTML、frontmatter 可正常渲染和保存。
+- Markdown 基础语法、表格、代码块、HTML、frontmatter 可正常渲染、富文本编辑和保存。
 - Mermaid 和 LaTeX 同时存在时都能渲染。
 - `==text==` 高亮、review 标记、substitution 不损坏。
 - 代码块内 Tab 插入 tab，不重排整行。
@@ -72,31 +72,32 @@
 ## 5. 富文本编辑交互
 
 - Ctrl/Cmd+1..6 / 0 切换块类型。
-- 右键块菜单。
-- selection toolbar 注入标题、高亮、review 按钮。
+- 右键块菜单：一级菜单使用悬停/焦点子菜单组织“转换为”；关闭 selection toolbar 后还组织“文字格式”和“审阅标记”，并在窗口右侧反向展开。
+- selection toolbar 注入标题、高亮、review 按钮；关闭时不卸载 Crepe，只由右键回退入口承接选区操作。
 - 状态栏通过 `setBlock` 改块类型。
-- level badge 跟随当前块。
 - slash menu 本地化。
-- inline code `inclusive:false`，关闭反引号后继续输入应退出 code。
+- inline code 保持 `inclusive:false`。首个反引号和中间正文保持字面文本，只有输入最后一个闭合反引号才创建 inline-code mark；闭合事务把光标放在 mark 外。`editor-inline-code.js` 还负责点击既有 code 后的编辑态，以及首尾方向键在同一文档位置切换 DOM 边界侧，不插入占位字符。
+- ``` + Space 恢复 Crepe 标准代码块输入规则；空代码块按 Backspace 退出时，DOM 交互层在下一任务立即提交 live doc，避免快速后续文字与旧 fenced canonical 合并。
 
 验证：
 
-- 快捷键、右键菜单、toolbar、StatusBar 四条路径改块类型一致。
+- 快捷键、右键菜单子菜单、toolbar、StatusBar 四条路径改块类型一致；右键菜单内的选区格式和审阅操作必须恢复打开菜单前的精确选区。
 - 多标签时 toolbar 按钮作用于当前有选区的可见 editor。
-- 行内代码闭合后继续输入是正文。
+- 行内代码闭合前保持字面反引号和正文，闭合后继续输入是正文；点击既有 code 后，尾部按 `→` 或首部按 `←` 后继续输入也必须是正文。
 
 ## 6. 复制、粘贴、链接和代码块按钮
 
 - Ctrl/Cmd+点击链接用系统浏览器打开。
 - 富文本复制写入带 inline style 的 HTML clipboard。
-- CodeMirror 代码块复制按钮有反馈和 toast。
+- CodeMirror 代码块复制按钮只从完整 ProseMirror `code_block` 读取正文，成功写入系统剪贴板后才显示反馈和 toast；不得从虚拟化 `.cm-line` DOM 拼接全文。
 - Markdown 源码粘贴走 Milkdown parser，而不是普通纯文本。
+- 网页富文本粘贴会优先保留结构化 HTML，并规范化叶子 `section`/`div` 与微信懒加载图片，避免编号标题触发 Markdown 误判或视觉段落被合并。
 - 粘贴/拖入图片不劫持代码块、input、textarea、caption input。
 
 验证：
 
 - 富文本复制到外部编辑器保留基本样式。
-- 代码块复制按钮有反馈。
+- 超过 120 行的代码块即使 DOM 只渲染约 30–65 行，复制按钮和 `Ctrl/Cmd+A` 仍得到全文；从第一行 Shift 选择 65 行时只得到该选区。
 - Markdown 表格/标题/代码块粘贴后被解析。
 - 代码块内粘贴文本不被图片/Markdown handler 误处理。
 
@@ -120,6 +121,8 @@
 - `restoreMarkdownOffset` 把 Markdown offset 映射到 ProseMirror selection。
 - `markdownOffsetFromSelection` 把富文本 selection 映射回 Markdown offset。
 - `lastMarkdownRef` 维护当前源 Markdown 供映射使用。
+- `canonicalMarkdownRef` 仅保存 Crepe serializer 的比较基线；局部富文本编辑通过 `markdown-source-preservation.js` 映射回 `lastMarkdownRef`，不能整篇覆盖用户原始写法。
+- 智能粘贴对同时携带 Markdown 与 HTML 的剪贴板，只有 Markdown 具备 HTML 中所有关键结构/格式标记时才按 Markdown 插入；否则网页 HTML 优先，避免丢标题、加粗、链接或图片。
 - `sourceModeIds` 让源码/富文本状态按 tab 独立，而不是全局开关。
 - `sourceEditedIds` 区分“只是切换视图”和“源码真正编辑过”，未编辑源码切回富文本不能 dirty。
 - `liveContentRef` 是 source textarea 重挂后的内容来源，避免切 tab 丢掉未提交源码编辑。
@@ -129,6 +132,7 @@
 - 阅读状态切换源码/富文本视口不跳。
 - 可见光标编辑状态切换后光标仍可见且位置稳定。
 - 源码编辑后切回富文本内容更新，未编辑时不重建、不误 dirty。
+- 无编辑往返、局部富文本编辑和富文本粘贴原始 Markdown 后，未修改的空行、`-` 列表和单个 `~` 不改写；网页富文本粘贴仍保留标题、格式和图片。
 - A 标签切源码，B 标签仍富文本；切回 A 仍源码。
 - 源码模式编辑后切到其它 tab 再切回，textarea 内容仍在，保存/切富文本都正确。
 
@@ -163,12 +167,14 @@
 - Mermaid SVG lightbox。
 - Esc 关闭。
 - Ctrl+滚轮缩放。
+- 标准缩小/放大、倍率、适应窗口和 1:1 原始尺寸控制。
+- SVG `viewBox` 与图片原始宽高比精确保留，不使用固定最小画布。
 - 鼠标拖拽平移，并抑制拖拽后的 click 误关闭。
 
 验证：
 
 - 图片和 Mermaid 点击可打开。
-- 缩放、拖拽、Esc、关闭按钮正常。
+- 长条 Mermaid / 图片无方形空白，缩放、1:1、适应窗口、拖拽、Esc、关闭按钮正常。
 
 ## 10. Settings / i18n / Spellcheck
 
@@ -197,6 +203,7 @@ npm run build:mobile
 ```
 
 涉及模式切换时追加真实大文档 CDP 验证。
+涉及原文保真和智能粘贴时追加 `npm run test:markdown-preservation`、`npm run test:issue-77-ui`，详见 [markdown-source-preservation.md](./markdown-source-preservation.md)。
 
 ## 自动化测试入口
 
@@ -341,9 +348,9 @@ Find/Outline 内部状态，只通过稳定 ref 接收查找导航权和大文�
 - 源码真实编辑后同步回富文本并保持 dirty；仅查看切换不触发 dirty。
 - 查找栏保持打开时富文本↔源码往返，当前结果、选区和高亮保持。
 
-## 当前开发基线（2026-07-12）
+## 2026-07-12 开发基线（历史快照）
 
-本轮行为保持型重构已经结束，用户完成安装包回归并确认通过。当前关键文件规模：
+本轮行为保持型重构已经结束，用户完成安装包回归并确认通过。当时关键文件规模：
 
 | 文件 | 行数 | 当前职责 |
 |---|---:|---|
@@ -359,3 +366,5 @@ Find/Outline 内部状态，只通过稳定 ref 接收查找导航权和大文�
 `useSourceModeSwitch` 维护。不得为了开发速度重新向 `App.jsx` 或 `Editor.jsx` 堆积成块逻辑。
 共享 renderer 变更至少执行桌面与移动构建；高风险编辑器改动还要按
 `docs/manual-test-checklist.md` 做真实 Electron 回归。
+
+当前行数请实时读取工作树；2026-07-18 后的原始 Markdown 保真职责和回归要求以 [markdown-source-preservation.md](./markdown-source-preservation.md) 为准。
