@@ -13,12 +13,13 @@
 // main bundle evaluates. The editor mounts inside Suspense — until the chunk
 // arrives a static pane skeleton shows, then the existing loading skeleton and
 // chunked-load flow take over exactly as before.
-const Editor = lazy(() => import('../Editor.jsx'))
+import { Suspense, lazy, useRef } from 'react'
 import { Icon } from '../icons.jsx'
 import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
 import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
-import { Suspense, lazy, useRef } from 'react'
+
+const Editor = lazy(() => import('../Editor.jsx'))
 
 const editorChunkFallback = (
   <div className="editor-skeleton" aria-hidden="true">
