@@ -142,7 +142,7 @@ for (const [id, os] of Object.entries(OS_OF)) {
 // 三个平台主按钮统一走 GitHub 原始 release（海外用户首选、链接最稳）。
 // "国内加速" 走 ghfast.top 公益前缀包一层 GitHub 链接，国内下载不转圈。
 //   - Windows / macOS: GitHub 直链 + ghfast 加速
-//   - Android: GitHub 直链 + Gitee 镜像（Gitee 对 APK 更稳，不走 ghfast）
+//   - Android: 最新 release 里的 APK 直链 + ghfast 加速（见下方 setAndroid）
 // 注：macOS 主按钮 + 加速都指向安装指南页（未签名需右键打开说明）。
 const CN = 'https://ghfast.top/'
 fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
@@ -167,18 +167,24 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
       document.getElementById('dlLinux').href = deb.browser_download_url
       document.getElementById('dlLinuxCn').href = CN + deb.browser_download_url
     }
+    // Android: 最新 release 带 APK 时用它，否则保留下方固定版本
+    const apk = assets.find(a => /\.apk$/i.test(a.name))
+    if (apk) setAndroid(apk.browser_download_url)
     // macOS: 主按钮 + 国内加速都指向安装指南页（未签名构建需说明）
     const macGuide = 'https://github.com/BND-1/horseMD#%E5%AE%89%E8%A3%85'
     document.getElementById('dlMacCn').href = CN + macGuide
   })
   .catch(() => { /* 静默回退到 releases 页 */ })
 
-// Android APK — single source of truth for the version. Both the GitHub link
-// and the ghfast-wrapped 国内加速 derive from APK_VER, so a release only touches
-// this one constant. (Gitee mirror isn't synced past v0.3.1, so CN goes via
-// ghfast + GitHub like the desktop buttons.) index.html's hrefs are
-// version-agnostic (releases/latest) as the no-JS fallback.
-const APK_VER = '0.12.10'
-const APK_URL = `https://github.com/BND-1/horseMD/releases/download/v${APK_VER}/HorseMD-${APK_VER}.apk`
-document.getElementById('dlAndroid').href = APK_URL
-document.getElementById('dlAndroidGitee').href = CN + APK_URL
+// Android APK: the latest release's .apk wins (set in the fetch above); this
+// pinned version is only the fallback when the API call fails or the latest
+// release has no APK. Keep it at the newest release that ships one. (Gitee
+// mirror isn't synced past v0.3.1, so CN goes via ghfast + GitHub like the
+// desktop buttons.) index.html's hrefs (releases/latest) are the no-JS fallback.
+const APK_VER = '0.13.248'
+const APK_URL = `https://github.com/BND-1/horseMD/releases/download/v${APK_VER}/HorseMD-${APK_VER}-android.apk`
+const setAndroid = (url) => {
+  document.getElementById('dlAndroid').href = url
+  document.getElementById('dlAndroidGitee').href = CN + url
+}
+setAndroid(APK_URL)
