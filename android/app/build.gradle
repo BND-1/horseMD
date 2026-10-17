@@ -9,6 +9,12 @@ if (keystorePropsFile.exists()) {
     keystoreProps.load(new FileInputStream(keystorePropsFile))
 }
 
+// Version follows package.json (the desktop version): versionName "0.13.248",
+// versionCode major*1000000 + minor*1000 + patch, so every release upgrades.
+def appVersion = new groovy.json.JsonSlurper().parse(rootProject.file("../package.json")).version
+def appVersionParts = appVersion.tokenize('.-').take(3).collect { it.toInteger() }
+def appVersionCode = appVersionParts[0] * 1000000 + appVersionParts[1] * 1000 + appVersionParts[2]
+
 android {
     namespace = "com.horsemd.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +22,8 @@ android {
         applicationId "com.horsemd.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 605
-        versionName "0.6.5"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
