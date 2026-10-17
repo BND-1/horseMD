@@ -473,6 +473,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   this to pin the fallback path). Tests: `test:source-reprint-ui` (real Crepe,
   `__hmSourceReprintHarness` under `--horsemd-input-trace`); fuzz reports carry
   shadow stats; `scripts/lib/shadow-triage.mjs` summarizes them.
+- **Full-screen mode** (`hooks/useImmersiveMode.js`, command `view.immersive`,
+  default `Mod+Shift+Enter`, top-bar button, View menu): the `.app.hm-immersive`
+  class hides the whole shell (tabs, activity bar, sidebar, status bar, save FAB,
+  floating outline, block handles); the window is NOT resized (user choice). Esc
+  exits unless a popup owns it — decided in the CAPTURE phase, because
+  ProseMirror's base keymap prevents every Escape (selectParentNode) and the
+  slash menu has already closed by the bubble phase. Mobile also hides the system
+  status bar (`window.api.setSystemBarsHidden`). Locked by
+  `npm run test:immersive-mode-ui`.
 - **Auto-save** (`hooks/useAutoSave.js`, `settings.autoSaveDelay` ∈ 0/3/10/60 s,
   default **0 = off**, Settings › Files, #136): after N s of inactivity (and on
   window blur) a dirty tab **with a path** is written via `saveTab(id, false,

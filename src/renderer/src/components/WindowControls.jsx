@@ -5,9 +5,9 @@ import { Icon } from './icons.jsx'
 // macOS uses its native traffic lights, so this isn't rendered there.
 // On Linux we use the GNOME/GTK style (square buttons with rounded-rect hover,
 // matching VSCode on Linux). On Windows we use the traditional flat wide buttons.
-const isLinux = window.api.platform === 'linux'
-
 export default function WindowControls({ t }) {
+  // Read at render time: on mobile window.api is installed after module load.
+  const isLinux = window.api?.platform === 'linux'
   const [max, setMax] = useState(false)
   useEffect(() => {
     let alive = true

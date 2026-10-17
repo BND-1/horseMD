@@ -32,6 +32,7 @@ export default function Topbar({
   onReorder,
   onToggleSidebar,
   onToggleReadOnly,
+  onToggleImmersive,
   onToggleSplit,
   onImageHostChange,
   onOpenPalette
@@ -99,6 +100,16 @@ export default function Topbar({
           command={imageUploadCommand}
           onChange={onImageHostChange}
         />
+      )}
+      {onToggleImmersive && (
+        <button
+          className="icon-btn drag-no hm-immersive-btn"
+          title={labelWithShortcut(t('cmd.immersive'), 'view.immersive', effectiveKeybindings)}
+          aria-label={t('cmd.immersive')}
+          onClick={onToggleImmersive}
+        >
+          <Icon name="expand" size={16} />
+        </button>
       )}
       <button
         className="icon-btn drag-no"

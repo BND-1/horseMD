@@ -1139,6 +1139,7 @@ function buildMenu() {
         // Sidebar toggle is handled in the renderer as Ctrl/Cmd+Shift+B. Plain
         // Ctrl/Cmd+B remains the editor's standard bold shortcut (#67).
         { label: 'Toggle Sidebar', click: menuCmd('toggleSidebar') },
+        { label: 'Full Screen Mode', click: menuCmd('toggleImmersive') },
         { label: 'Toggle Outline', accelerator: menuAccelerator('view.showOutline'), click: menuCmd('toggleOutline') },
         { label: 'Global Search', accelerator: menuAccelerator('view.globalSearch'), click: menuCmd('globalSearch') },
         { label: 'Toggle Source Mode', accelerator: menuAccelerator('view.toggleSource'), click: menuCmd('toggleSource') },

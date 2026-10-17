@@ -364,6 +364,15 @@ export function makeCapacitorApi() {
     },
     // Export/share a saved file via the system share sheet ("Save to Files",
     // Drive, send, …) — the way to get a copy out where the user can find it.
+    // Full-screen mode (view.immersive) hides the system status bar too; the
+    // app restores it on exit. Failure is harmless (bars stay visible).
+    setSystemBarsHidden: async (hidden) => {
+      if (platform !== 'android' && platform !== 'ios') return
+      try {
+        if (hidden) await StatusBar.hide()
+        else await StatusBar.show()
+      } catch {}
+    },
     shareFile: async (path) => {
       try {
         const { uri } = await Filesystem.getUri({ path, directory: DIR })

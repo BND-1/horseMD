@@ -141,6 +141,10 @@ const standalone = [
     script: 'scripts/test-single-tilde-strike-ui.mjs'
   },
   {
+    name: 'Full-screen mode: shell hidden, document editable, Esc/shortcut/corner exit',
+    script: 'scripts/test-immersive-mode-ui.mjs'
+  },
+  {
     name: 'Image pasted into a text paragraph (empty title = no title)',
     script: 'scripts/test-image-paste-paragraph-ui.mjs'
   },

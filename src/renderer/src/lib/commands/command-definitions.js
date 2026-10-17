@@ -42,6 +42,7 @@ export const LEGACY_COMMAND_ALIASES = {
   previousTab: 'tab.previous',
   palette: 'view.commandPalette',
   toggleSidebar: 'view.toggleSidebar',
+  toggleImmersive: 'view.immersive',
   toggleFiles: 'view.showFiles',
   toggleOutline: 'view.showOutline',
   globalSearch: 'view.globalSearch',
@@ -205,6 +206,18 @@ export const COMMAND_DEFINITIONS = [
     category: COMMAND_CATEGORIES.VIEW,
     context: COMMAND_CONTEXTS.APP,
     defaultKeybindings: ['Mod+Shift+B'],
+    palette: true
+  },
+  {
+    // Full-screen reading/editing (Typora-style): hides every shell element
+    // and leaves only the document. Renderer-only (no menu accelerator), like
+    // the sidebar toggle, so the shortcut cannot double-fire.
+    id: 'view.immersive',
+    handler: 'toggleImmersive',
+    titleKey: 'cmd.immersive',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Shift+Enter'],
     palette: true
   },
   {

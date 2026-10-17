@@ -7164,3 +7164,86 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   background: var(--accent);
   margin-left: auto;
 }
+
+/* =====================================================
+   Full-screen reading/editing mode (Typora-style, view.immersive)
+   Only the document stays; the window size is untouched. Contextual editing
+   UI (selection toolbar, slash menu, find bar, menus) still appears on demand.
+   ===================================================== */
+.app.hm-immersive {
+  --activity-bar-w: 0;
+  grid-template-columns: 0 1fr;
+  grid-template-rows: 0 1fr 0;
+}
+.app.hm-immersive .activity-bar,
+.app.hm-immersive .topbar,
+.app.hm-immersive .statusbar,
+.app.hm-immersive .pane-left,
+.app.hm-immersive .pane-left-resizer,
+.app.hm-immersive .hm-scrim,
+.app.hm-immersive .floating-outline,
+.app.hm-immersive .hm-save-fab,
+.app.hm-immersive .editor-host .milkdown .milkdown-block-handle {
+  display: none !important;
+}
+.app.hm-immersive .body {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+/* The hidden top bar used to provide the space above the first line. */
+.app.hm-immersive .editor-scroll {
+  padding-top: 36px;
+}
+/* The system status bar is hidden on mobile, but a notch / home indicator
+   still covers the screen edges. Pad inside the scroller, not .body, so the
+   document background reaches the screen edges instead of the app background. */
+.app.is-mobile.hm-immersive .editor-scroll {
+  padding-top: calc(36px + var(--safe-top, env(safe-area-inset-top)));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.hm-immersive-corner {
+  position: fixed;
+  top: 10px;
+  right: 14px;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.app.is-mobile .hm-immersive-corner {
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: calc(env(safe-area-inset-right) + 10px);
+}
+.hm-immersive-exit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-editor) 88%, transparent);
+  color: var(--text-dim, var(--text));
+  cursor: pointer;
+  opacity: 0.28;
+  transition: opacity 0.15s ease;
+}
+.hm-immersive-exit:hover,
+.hm-immersive-exit:focus-visible {
+  opacity: 1;
+}
+/* Touch has no hover: keep the button findable without dominating the page. */
+.app.is-mobile .hm-immersive-exit {
+  width: 34px;
+  height: 34px;
+  opacity: 0.55;
+}
+.hm-immersive-dirty {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.8;
+}

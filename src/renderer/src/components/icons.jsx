@@ -10,6 +10,7 @@ const paths = {
   'folder-plus': 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 11v6 M9 14h6',
   collapse: 'M4 9h6V3 M20 15h-6v6 M14 10l7-7 M3 21l7-7',
   expand: 'M15 3h6v6 M9 21H3v-6 M21 3l-7 7 M3 21l7-7',
+  shrink: 'M4 14h6v6 M20 10h-6V4 M14 10l7-7 M3 21l7-7',
   plus: 'M12 5v14 M5 12h14',
   close: 'M18 6 6 18 M6 6l12 12',
   check: 'M20 6 9 17l-5-5',

@@ -47,6 +47,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useAutoSave } from './hooks/useAutoSave.js'
+import { useImmersiveMode } from './hooks/useImmersiveMode.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useDocPositions } from './hooks/useDocPositions.js'
 import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
@@ -928,6 +929,12 @@ export default function App() {
     resetCommand: resetCommandKeybindings,
     resetAll: resetAllKeybindings
   } = useKeybindings()
+  // Full-screen reading/editing: only while a document is showing.
+  const { immersive, toggleImmersive, exitImmersive } = useImmersiveMode({
+    enabled: !home && Boolean(activeTab) && activeTab?.kind !== 'settings',
+    effectiveKeybindings,
+    platform: window.api.platform
+  })
   useEffect(() => {
     window.api.setMenuKeybindings?.(buildElectronAcceleratorPayload(effectiveKeybindings))
   }, [effectiveKeybindings])
@@ -952,6 +959,7 @@ export default function App() {
     setSidebarOpen,
     setSidebarMode,
     setPaletteOpen,
+    toggleImmersive,
     newTab,
     openPaths,
     openFolder,
@@ -1090,7 +1098,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}`} style={appFontStyle}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}`} style={appFontStyle}>
       {dropOpenActive && <DropOpenOverlay t={t} />}
       <ActivityBar
         home={home}
@@ -1139,6 +1147,7 @@ export default function App() {
         onToggleSplit={toggleSplit}
         onImageHostChange={(cmd) => updateSettings({ imageUploadCommand: cmd })}
         onOpenPalette={() => setPaletteOpen(true)}
+        onToggleImmersive={home || activeTab?.kind === 'settings' ? undefined : toggleImmersive}
       />
 
       {isMobile && sidebarOpen && (
@@ -1385,8 +1394,25 @@ export default function App() {
         onSetHeadingSpacing={(v) => updateSettings({ headingSpacing: v })}
       />
 
+      {immersive && (
+        <div className="hm-immersive-corner">
+          {isTabDirty(fabTab) && (
+            <span className="hm-immersive-dirty" title={t('immersive.unsaved')} aria-label={t('immersive.unsaved')} />
+          )}
+          <button
+            type="button"
+            className="hm-immersive-exit"
+            title={t('immersive.exit')}
+            aria-label={t('immersive.exit')}
+            onClick={exitImmersive}
+          >
+            <Icon name="shrink" size={16} />
+          </button>
+        </div>
+      )}
+
       <SaveFab
-        visible={!home && activeTab?.kind !== 'settings' && isTabDirty(fabTab)}
+        visible={!immersive && !home && activeTab?.kind !== 'settings' && isTabDirty(fabTab)}
         effectiveKeybindings={effectiveKeybindings}
         onSave={() => handlers.current.save()}
       />

@@ -150,9 +150,15 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 45)
+assert.equal(COMMAND_DEFINITIONS.length, 46)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 4)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 30)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 31)
+// Full-screen reading/editing mode: renderer-only shortcut, in the palette.
+const immersiveCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'view.immersive')
+assert.ok(immersiveCommand)
+assert.deepEqual(immersiveCommand.defaultKeybindings, ['Mod+Shift+Enter'])
+assert.equal(immersiveCommand.palette, true)
+assert.equal(Boolean(immersiveCommand.electronAccelerator), false)
 const codeExitCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'editor.code.exit')
 assert.ok(codeExitCommand)
 assert.deepEqual(codeExitCommand.defaultKeybindings, ['Mod+Enter'])

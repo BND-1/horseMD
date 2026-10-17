@@ -32,6 +32,7 @@ const COMMAND_PALETTE_ICONS = {
   'file.exportPandocRtf': 'file',
   'file.exportPandocTxt': 'file',
   'view.toggleSidebar': 'sidebar',
+  'view.immersive': 'expand',
   'view.showFiles': 'folder',
   'view.showOutline': 'outline',
   'view.globalSearch': 'search',
@@ -88,6 +89,7 @@ export function createMenuHandlers({
   setSidebarOpen,
   setSidebarMode,
   setPaletteOpen,
+  toggleImmersive,
   newTab,
   openPaths,
   openFolder,
@@ -161,6 +163,7 @@ export function createMenuHandlers({
     closeTab: () => activeId && closeTab(activeId),
     palette: () => setPaletteOpen((v) => !v),
     toggleSidebar: () => setSidebarOpen((v) => !v),
+    toggleImmersive: () => toggleImmersive?.(),
     toggleOutline: () => {
       setSidebarMode('outline')
       setSidebarOpen(true)
