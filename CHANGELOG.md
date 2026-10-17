@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - **手机端（iOS / Android 自行构建的安装包）打开后一直白屏**：标题栏窗口按钮组件在模块加载时读取 `window.api.platform`，而手机端的 `window.api` 要等 Capacitor 插件加载后才设置，启动脚本因此报错、页面不渲染（自 0.6.0 起）。改为在渲染时读取。已在 iPhone 和 Android 平板实机验证。
 - 手机端全屏模式下，屏幕顶部（刘海 / 灵动岛）和底部（Home 指示条）的安全区显示应用底色，与正文背景不一致；现在安全区留白放在正文区域内，背景一直铺到屏幕边缘。
+- 开发模式（`npm run dev`）下编辑器区域因 `lazy()` 早于 React 导入而报暂时性死区错误（#150，贡献：JiaOkay）。
 
 ## [0.13.247] - 2026-10-14
 
