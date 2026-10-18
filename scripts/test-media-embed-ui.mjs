@@ -77,7 +77,9 @@ try {
   const played = await app.evaluate(`(async () => {
     const v = (${editor}).querySelector('video'); v.muted = true
     try { await v.play() } catch (e) { return String(e) }
-    await new Promise(r => setTimeout(r, 400)); const t = v.currentTime; v.pause(); return t > 0
+    // The first play cold-starts the decoder; give it up to 3 s to advance.
+    for (let i = 0; i < 30 && v.currentTime === 0; i += 1) await new Promise(r => setTimeout(r, 100))
+    const t = v.currentTime; v.pause(); return t > 0
   })()`)
   assert.equal(played, true, `video did not play: ${played}`)
   const box = await app.evaluate(`(() => { const r = (${editor}).querySelector('video').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
