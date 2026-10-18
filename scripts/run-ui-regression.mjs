@@ -149,6 +149,14 @@ const standalone = [
     script: 'scripts/test-image-paste-paragraph-ui.mjs'
   },
   {
+    name: 'Image pasted on a new empty line (Enter, then paste)',
+    script: 'scripts/test-image-paste-empty-line-ui.mjs'
+  },
+  {
+    name: 'Video / audio / iframe embeds (render, play, drop a file)',
+    script: 'scripts/test-media-embed-ui.mjs'
+  },
+  {
     name: 'Edge hard break in a typed-from-scratch document',
     script: 'scripts/test-edge-hard-break-scratch-ui.mjs'
   },

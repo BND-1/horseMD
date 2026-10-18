@@ -6,8 +6,8 @@ import { loadKatex } from '../lib/katex-lazy.js'
 // inline <span>) — Milkdown's `html` node is an inline atom, so an inline
 // fragment must render inline to sit inside a paragraph (issue #14).
 const BLOCK_TAGS =
-  'table|thead|tbody|tfoot|tr|td|th|div|details|summary|figure|figcaption|section|article|dl|center|blockquote|pre|hr|ul|ol|li|h1|h2|h3|h4|h5|h6|p|form|fieldset|nav|header|footer|main|aside'
-// Safe inline tags (formatting/semantic). Anything not here (iframe/object/embed,
+  'table|thead|tbody|tfoot|tr|td|th|div|details|summary|figure|figcaption|section|article|dl|center|blockquote|pre|hr|ul|ol|li|h1|h2|h3|h4|h5|h6|p|form|fieldset|nav|header|footer|main|aside|video|audio|iframe'
+// Safe inline tags (formatting/semantic). Anything not here (object/embed,
 // unknown tags, …) falls back to escaped-text so it can't run or break layout.
 const INLINE_TAGS =
   'span|mark|sub|sup|kbd|u|ins|del|abbr|small|font|cite|q|samp|var|time|b|i|strong|em|a|bdo|bdi|ruby|rt|rp|label|dfn|big|tt|s|strike'
@@ -104,6 +104,7 @@ function sanitizeHtml(html) {
   const tpl = document.createElement('template')
   tpl.innerHTML = html
   tpl.content.querySelectorAll('script, style').forEach((el) => el.remove())
+  sanitizeMedia(tpl.content)
   tpl.content.querySelectorAll('*').forEach((el) => {
     for (const attr of [...el.attributes]) {
       if (/^on/i.test(attr.name)) el.removeAttribute(attr.name)
@@ -119,6 +120,41 @@ function sanitizeHtml(html) {
   SANITIZE_CACHE.set(html, out)
   return out
 }
+
+// Video / audio / iframe embeds (Typora-style `<video src="a.mp4">`). Display
+// only — the saved Markdown keeps the authored HTML.
+// - <video>/<audio> always get native controls (otherwise there is no way to
+//   start playback inside the editor) and load metadata only, never autoplay.
+// - <iframe> is kept only for an https:// src and is always sandboxed, so an
+//   embedded player (Bilibili, YouTube…) can run its own scripts but cannot
+//   reach the app or navigate the window.
+const IFRAME_SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-popups'
+function sanitizeMedia(root) {
+  root.querySelectorAll('video, audio').forEach((el) => {
+    el.setAttribute('controls', '')
+    el.removeAttribute('autoplay')
+    if (!el.hasAttribute('preload')) el.setAttribute('preload', 'metadata')
+  })
+  root.querySelectorAll('iframe').forEach((el) => {
+    let src = (el.getAttribute('src') || '').trim()
+    if (src.startsWith('//')) src = `https:${src}`
+    if (!/^https:\/\//i.test(src)) {
+      el.remove()
+      return
+    }
+    el.setAttribute('src', src)
+    el.removeAttribute('srcdoc')
+    el.setAttribute('sandbox', IFRAME_SANDBOX)
+    el.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
+    el.setAttribute('allow', 'fullscreen; picture-in-picture; encrypted-media')
+    el.setAttribute('allowfullscreen', '')
+  })
+}
+
+const MEDIA_RE = /<(video|audio|iframe)\b/i
+// Clicks on a player's controls belong to the player, not ProseMirror (which
+// would turn the mousedown into a node selection and swallow the click).
+const MEDIA_TARGET = 'video, audio, iframe'
 
 // ProseMirror node view for Milkdown's `html` node. Renders recognized HTML as
 // real DOM (block tags → a block <div>, inline tags → an inline <span>); leaves
@@ -150,6 +186,14 @@ export function renderHtmlNodeView(node) {
   // node still round-trips the original bytes through attrs.value, so the
   // saved Markdown is untouched.
   if (isBlock && hasTable) renderMathInHtmlBlock(dom)
+  if (isBlock && MEDIA_RE.test(value)) {
+    dom.classList.add('hm-html-media-block')
+    return {
+      dom,
+      ignoreMutation: () => true,
+      stopEvent: (event) => Boolean(event.target?.closest?.(MEDIA_TARGET))
+    }
+  }
   return { dom, ignoreMutation: () => true, stopEvent: () => false }
 }
 

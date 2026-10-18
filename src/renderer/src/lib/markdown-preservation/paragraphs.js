@@ -1308,7 +1308,12 @@ export const preserveMiddleEmptyBlock = ({
   const nextChangedRegion = withoutStandaloneEmptyBlockLines(
     next.slice(start, nextEnd)
   )
+  // Visible text alone is not enough: an image (or other inline atom) has no
+  // visible text, so pasting one into the empty line would look unchanged and
+  // the old source — without the image — would be kept. The changed regions
+  // must also hold the same non-whitespace markup.
   const boundaryOnly = !hasDedicatedBlockSyntax(next.slice(start, nextEnd)) &&
+    previousChangedRegion.replace(/\s+/g, '') === nextChangedRegion.replace(/\s+/g, '') &&
     sourceVisibleIndex(previousChangedRegion).text === sourceVisibleIndex(nextChangedRegion).text &&
     sourceVisibleIndex(withoutStandaloneEmptyBlockLines(previous)).text ===
       sourceVisibleIndex(withoutStandaloneEmptyBlockLines(next)).text

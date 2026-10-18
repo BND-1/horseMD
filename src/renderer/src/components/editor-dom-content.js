@@ -1,5 +1,6 @@
 import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/prose/state'
+import { Slice } from '@milkdown/prose/model'
 import { copyToClipboard } from '../ui.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { resolveLocalLinkToFileUrl } from './editor-local-links.js'
@@ -108,6 +109,7 @@ export function mountEditorContentBindings({
   }
   const onDropImage = (event) => {
     if (!imageHandlingActive(event)) return
+    if (insertDroppedMedia(event)) return
     const files = [...(event.dataTransfer?.files || [])].filter((file) => file.type.startsWith('image/'))
     if (!files.length) return
     event.preventDefault()
@@ -118,6 +120,44 @@ export function mountEditorContentBindings({
       view.dispatch(view.state.tr.setSelection(TextSelection.near($pos)))
     }
     files.forEach(insertUploadedImage)
+  }
+
+  // Typora-style: a dropped video/audio file becomes `<video src="…" controls>`
+  // (relative to the document when it sits beside it). The player itself is
+  // rendered by the html node view.
+  const insertDroppedMedia = (event) => {
+    const files = [...(event.dataTransfer?.files || [])].filter((file) => mediaKindOf(file))
+    if (!files.length || !window.api?.getPathForDroppedFile) return false
+    const tags = files.map((file) => {
+      let path = ''
+      try { path = window.api.getPathForDroppedFile(file) || '' } catch {}
+      if (!path) return ''
+      const tag = mediaKindOf(file)
+      return `<${tag} src="${mediaSrcFor(path, docPath).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" controls></${tag}>`
+    }).filter(Boolean)
+    if (!tags.length) return false
+    const markdown = tags.join('\n\n')
+    const doc = crepe.editor.ctx.get(parserCtx)(markdown)
+    if (!doc?.content?.size) return false
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    const at = view.posAtCoords({ left: event.clientX, top: event.clientY })
+    if (at) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(at.pos))))
+    try {
+      markUserEdit?.()
+      const { $from, empty } = view.state.selection
+      const tr = view.state.tr
+      if (empty && $from.parent.isTextblock && $from.parent.content.size === 0) {
+        // An empty line: the player takes its place.
+        tr.replaceSelection(new Slice(doc.content, 0, 0))
+      } else {
+        // Inside text: put the player on its own line after the top-level
+        // block instead of splitting the paragraph.
+        tr.insert($from.depth ? $from.after(1) : $from.pos, doc.content)
+      }
+      view.dispatch(tr.scrollIntoView())
+    } catch {}
+    return true
   }
 
   let lastImageClick = { src: null, at: 0 }
@@ -245,16 +285,25 @@ export function mountEditorContentBindings({
 
   const baseDir = dirOf(docPath)
   if (!baseDir) return
+  // Also <video>/<audio>/<source> (and a video's poster) from raw-HTML embeds.
   const fixImage = (image) => {
     if (image.dataset.hmResolved) return
-    const raw = image.getAttribute('src') || ''
-    if (!isRelativePath(raw)) return
-    image.dataset.hmResolved = '1'
-    image.setAttribute('src', resolveToFileUrl(baseDir, raw))
+    // Mark only once something was resolved: an <img> whose src is still a
+    // data:/blob: URL may later be switched to a relative path.
+    for (const attr of image.tagName === 'VIDEO' ? ['src', 'poster'] : ['src']) {
+      const raw = image.getAttribute(attr) || ''
+      const winAbsolute = image.tagName !== 'IMG' && /^[a-zA-Z]:[\\/]/.test(raw)
+      if (!winAbsolute && !isRelativePath(raw)) continue
+      image.dataset.hmResolved = '1'
+      image.setAttribute(attr, winAbsolute ? resolveToFileUrl(raw, '') : resolveToFileUrl(baseDir, raw))
+      // A changed <source> is only picked up when its player reloads.
+      if (image.tagName === 'SOURCE') image.parentElement?.load?.()
+    }
   }
+  const MEDIA_SELECTOR = 'img, video, audio, source'
   const scanImages = (root) => {
-    if (root.tagName === 'IMG') fixImage(root)
-    else root.querySelectorAll?.('img').forEach(fixImage)
+    if (root.matches?.(MEDIA_SELECTOR)) fixImage(root)
+    else root.querySelectorAll?.(MEDIA_SELECTOR).forEach(fixImage)
   }
   scanImages(view.dom)
   let imageScanRaf = 0
@@ -276,4 +325,26 @@ export function mountEditorContentBindings({
     if (imageScanRaf) cancelAnimationFrame(imageScanRaf)
     imageObserver.disconnect()
   })
+}
+
+// Path written into a dropped media tag: relative (forward slashes) when the
+// file is inside the document's folder, otherwise the absolute path.
+export function mediaSrcFor(filePath, docPath) {
+  const file = String(filePath).replace(/\\/g, '/')
+  const base = dirOf(docPath)
+  if (base) {
+    const prefix = base.replace(/\/+$/, '') + '/'
+    const same = /^[a-zA-Z]:/.test(prefix) ? file.toLowerCase().startsWith(prefix.toLowerCase()) : file.startsWith(prefix)
+    if (same) return file.slice(prefix.length)
+  }
+  return file
+}
+
+// 'video' / 'audio' for a dropped media file (by MIME type, else extension).
+const AUDIO_NAME_RE = /\.(?:mp3|m4a|aac|wav|ogg|oga|flac|opus)$/i
+const VIDEO_NAME_RE = /\.(?:mp4|m4v|webm|ogv|mov)$/i
+function mediaKindOf(file) {
+  if (/^audio\//.test(file?.type || '') || AUDIO_NAME_RE.test(file?.name || '')) return 'audio'
+  if (/^video\//.test(file?.type || '') || VIDEO_NAME_RE.test(file?.name || '')) return 'video'
+  return null
 }

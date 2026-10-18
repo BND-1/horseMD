@@ -2912,6 +2912,20 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
   font-weight: 700;
 }
 .hm-html-block img { max-width: 100%; }
+/* Embedded video / audio / iframe players (Typora-style raw HTML). */
+.hm-html-media-block { overflow: visible; contain: none; }
+.hm-html-block video,
+.hm-html-block iframe {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: #000;
+}
+.hm-html-block video:not([height]) { height: auto; }
+.hm-html-block iframe:not([width]) { width: 100%; }
+.hm-html-block iframe:not([height]) { aspect-ratio: 16 / 9; height: auto; }
+.hm-html-block audio { display: block; max-width: 100%; }
 /* Images inside raw-HTML tables must follow the cell width instead of their
    intrinsic pixel width (e.g. gov.cn's `<img width="900">`). Table auto layout
    sizes columns from min-content, and a replaced element's intrinsic width is

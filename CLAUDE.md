@@ -315,6 +315,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   flanking rules treat CJK punctuation like ASCII punctuation and leave the
   asterisks literal, which also made the source reprint engine pause whenever a
   user bolded text next to Chinese punctuation.
+- **Media embeds** (`editor-html.js` `sanitizeMedia`, 0.13.250): `<video>` /
+  `<audio>` / `<iframe>` raw HTML render as players (Typora parity). Players
+  always get `controls`, never autoplay; iframes are kept only for `https:` and
+  always sandboxed. The node view's `stopEvent` hands player clicks to the
+  player. Relative `src`/`poster`/`<source>` resolve via the same DOM scan as
+  images (`editor-dom-content.js`). Dropping a video/audio file inserts the tag
+  (empty line → replaces it; inside text → own line after the top-level block);
+  `useDropOpen.js` must keep media drops inside the editor. CSP needs
+  `media-src … file:` and `frame-src https:`. Locked by `test:media-embed-ui`.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →

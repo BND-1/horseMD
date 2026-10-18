@@ -13,12 +13,25 @@ const isImageFile = (file) => {
   }
 }
 
+// Video/audio dropped into the editor become a `<video>`/`<audio>` embed
+// (editor-dom-content.js), like images.
+const MEDIA_NAME_RE = /\.(?:mp4|m4v|webm|ogv|mov|mp3|m4a|aac|wav|ogg|oga|flac|opus)$/i
+const MEDIA_TYPE_RE = /^(?:image|video|audio)\//
+const isEmbeddableFile = (file) => {
+  if (isImageFile(file) || MEDIA_TYPE_RE.test(file?.type || '') || MEDIA_NAME_RE.test(file?.name || '')) return true
+  try {
+    return MEDIA_NAME_RE.test(window.api.getPathForDroppedFile?.(file) || '')
+  } catch {
+    return false
+  }
+}
+
 const hasImageDropInsideEditor = (event) => {
   if (!event.target?.closest?.('.ProseMirror')) return false
   const items = [...(event.dataTransfer?.items || [])]
   const files = [...(event.dataTransfer?.files || [])]
-  return items.some((item) => item.kind === 'file' && item.type.startsWith('image/')) ||
-    files.some(isImageFile)
+  return items.some((item) => item.kind === 'file' && MEDIA_TYPE_RE.test(item.type)) ||
+    files.some(isEmbeddableFile)
 }
 
 const droppedNativePaths = (dataTransfer, accept = () => true) => {
@@ -87,7 +100,7 @@ export function useDropOpen({ enabled, openPaths, addFolder }) {
         // Let the editor insert every image in the payload, while still opening
         // any accompanying documents/folders instead of silently discarding
         // them. Synthetic/clipboard Files have no native path and are ignored.
-        const remaining = droppedNativePaths(event.dataTransfer, (file) => !isImageFile(file))
+        const remaining = droppedNativePaths(event.dataTransfer, (file) => !isEmbeddableFile(file))
         void openDroppedPaths(remaining).catch(() => {})
         return
       }

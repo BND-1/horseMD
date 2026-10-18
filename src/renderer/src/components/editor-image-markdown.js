@@ -63,3 +63,26 @@ export const imageBlockMarkdownSchema = imageBlockSchema.extendSchema((prev) => 
     }
   }
 })
+
+// Milkdown's remark-image-block turns a paragraph holding only an image into
+// an `image-block` node but drops the paragraph's `position`. The source
+// reprint engine locates every block by its source offsets, so without one it
+// cannot place an edit next to a standalone image (seen as the whole document
+// printed twice around the edit, then rejected by verification). Do the same
+// conversion first, keeping the position; Milkdown's pass then finds nothing.
+export function remarkImageBlockWithPosition() {
+  return (tree) => {
+    const walk = (parent) => {
+      if (!Array.isArray(parent?.children)) return
+      parent.children.forEach((node, index) => {
+        const only = node.type === 'paragraph' && node.children?.length === 1 ? node.children[0] : null
+        if (only?.type === 'image') {
+          parent.children[index] = { type: 'image-block', url: only.url, alt: only.alt, title: only.title, position: node.position }
+          return
+        }
+        walk(node)
+      })
+    }
+    walk(tree)
+  }
+}

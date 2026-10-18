@@ -41,7 +41,7 @@ import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatt
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
-import { imageBlockMarkdownSchema } from './editor-image-markdown.js'
+import { imageBlockMarkdownSchema, remarkImageBlockWithPosition } from './editor-image-markdown.js'
 import { remarkStripLeadingSpaceSentinel } from '../lib/markdown-leading-space.js'
 import remarkCjkFriendly from 'remark-cjk-friendly'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
@@ -254,6 +254,9 @@ export function createConfiguredCrepe({
     }))
 
     ctx.update(remarkPluginsCtx, (plugins) => [
+      // Before Milkdown's remark-image-block (registered later and appended):
+      // the same conversion, but the image block keeps its source position.
+      { plugin: remarkImageBlockWithPosition, options: undefined },
       ...plugins,
       // CJK-friendly emphasis (Typora parity): `这是**「重点」**内容` is bold.
       // Plain CommonMark flanking rules treat CJK punctuation like ASCII
