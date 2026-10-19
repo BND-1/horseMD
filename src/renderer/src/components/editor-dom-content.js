@@ -6,6 +6,7 @@ import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { resolveLocalLinkToFileUrl } from './editor-local-links.js'
 import {
   cloneSelectedCells,
+  copiedMarkdownContent,
   copiedPlainText,
   inlineRichStyles,
   materializeCopiedSoftBreaks
@@ -71,8 +72,8 @@ export function mountEditorContentBindings({
       let serialized = ''
       if (!view.state.selection.empty) {
         try {
-          const slice = view.state.selection.content()
-          const doc = view.state.schema.topNodeType.createAndFill(undefined, slice.content)
+          const content = copiedMarkdownContent(view.state.selection)
+          const doc = view.state.schema.topNodeType.createAndFill(undefined, content)
           if (doc) serialized = crepe.editor.ctx.get(serializerCtx)(doc)
         } catch {}
       }

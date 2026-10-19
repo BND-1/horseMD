@@ -112,6 +112,24 @@ const wrapOrphanTableParts = (root) => {
   })
 }
 
+// The document content to serialize as text/markdown. selection.content()
+// keeps every ancestor up to the doc, so text selected inside ONE table cell
+// became a one-cell table — and md-paste prefers text/markdown, so pasting it
+// into another cell nested a table (#151). Inside one cell, copy only the
+// cell's own content; a CellSelection (multi-cell drag) still copies a table.
+export function copiedMarkdownContent(selection) {
+  const { $from, $to } = selection
+  if (typeof selection.forEachCell !== 'function') {
+    for (let depth = $from.sharedDepth($to.pos); depth > 0; depth -= 1) {
+      const node = $from.node(depth)
+      if (node.type.name !== 'table_cell' && node.type.name !== 'table_header') continue
+      const start = $from.start(depth)
+      return node.content.cut($from.pos - start, $to.pos - start)
+    }
+  }
+  return selection.content().content
+}
+
 // A ProseMirror CellSelection (mouse drag across cells) keeps the DOM
 // selection on one cell only, so a range clone would copy that single cell.
 // Rebuild the selected rectangle from the live cell elements instead.

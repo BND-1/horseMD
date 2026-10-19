@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **表格单元格内复制部分文字会带上整个表格**（#151）：在单元格里选中一部分文字按 Ctrl/Cmd+C，剪贴板里的 Markdown 原来是一个只有一格的表格，粘贴（尤其粘到另一个单元格）时会把表格一起粘进去。现在单元格内的选区只复制文字本身（保留加粗等格式）；拖选多个单元格仍按表格复制。
+
 ## [0.13.250] - 2026-10-18
 
 ### Added

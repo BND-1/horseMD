@@ -30,6 +30,7 @@
     "test:issue-139-dom": "node scripts/test-issue-139-clipboard-dom.mjs",
     "test:context-copy": "node scripts/test-editor-context-copy.mjs",
     "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
+    "test:issue-151-cell-copy-ui": "node scripts/test-issue-151-cell-copy-ui.mjs",
     "test:single-tilde-ui": "node scripts/test-single-tilde-strike-ui.mjs",
     "test:url-typing-ui": "node scripts/test-url-typing-ui.mjs",
     "test:edge-hard-break-scratch-ui": "node scripts/test-edge-hard-break-scratch-ui.mjs",

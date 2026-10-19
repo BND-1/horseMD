@@ -169,6 +169,10 @@ const standalone = [
     script: 'scripts/test-context-copy-ui.mjs'
   },
   {
+    name: '#151 cell copy: partial cell text copies without the table',
+    script: 'scripts/test-issue-151-cell-copy-ui.mjs'
+  },
+  {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
     script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
   },
