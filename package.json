@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.250",
+  "version": "0.13.251",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -31,6 +31,14 @@
     "test:context-copy": "node scripts/test-editor-context-copy.mjs",
     "test:context-copy-ui": "node scripts/test-context-copy-ui.mjs",
     "test:issue-151-cell-copy-ui": "node scripts/test-issue-151-cell-copy-ui.mjs",
+    "test:find-open-mode-switch-ui": "node scripts/test-find-open-mode-switch-ui.mjs",
+    "test:table-paste-ui": "node scripts/test-table-paste-ui.mjs",
+    "test:list-partial-copy-ui": "node scripts/test-list-partial-copy-ui.mjs",
+    "test:codeblock-custom-language-ui": "node scripts/test-codeblock-custom-language-ui.mjs",
+    "test:pdf-empty-table-rows-ui": "node scripts/test-pdf-empty-table-rows-ui.mjs",
+    "test:theme-css": "node scripts/test-theme-css.mjs",
+    "test:md-paste-list-item": "node scripts/test-md-paste-list-item.mjs",
+    "test:custom-theme-typora-base-ui": "node scripts/test-custom-theme-typora-base-ui.mjs",
     "test:single-tilde-ui": "node scripts/test-single-tilde-strike-ui.mjs",
     "test:url-typing-ui": "node scripts/test-url-typing-ui.mjs",
     "test:edge-hard-break-scratch-ui": "node scripts/test-edge-hard-break-scratch-ui.mjs",
@@ -514,6 +522,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icons",
@@ -537,6 +551,25 @@
     },
     "deb": {
       "afterInstall": "build/linux/after-install.tpl"
+    },
+    "pacman": {
+      "artifactName": "${name}-${version}-x86_64.pkg.tar.xz",
+      "synopsis": "A warm, Typora-style Markdown editor",
+      "afterInstall": "build/linux/after-install.tpl",
+      "depends": [
+        "gtk3",
+        "nss",
+        "alsa-lib",
+        "at-spi2-core",
+        "libcups",
+        "mesa",
+        "libxkbcommon",
+        "libxcomposite",
+        "libxdamage",
+        "libxrandr",
+        "systemd-libs",
+        "xdg-utils"
+      ]
     },
     "nsis": {
       "oneClick": false,

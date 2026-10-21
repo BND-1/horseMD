@@ -4,6 +4,7 @@ export const PANDOC_FORMATS = Object.freeze({
   latex: { extension: 'tex', label: 'LaTeX' },
   odt: { extension: 'odt', label: 'OpenDocument' },
   rtf: { extension: 'rtf', label: 'Rich Text' },
+  mediawiki: { extension: 'wiki', label: 'MediaWiki', to: 'mediawiki' },
   txt: { extension: 'txt', label: 'Plain Text' }
 })
 
@@ -13,8 +14,11 @@ export function parsePandocVersion(output = '') {
   return match?.[1]?.trim() || null
 }
 
-export function buildPandocArgs({ outputPath, sourceDir }) {
+// `to` names the writer when the extension alone doesn't (.wiki); the other
+// formats keep Pandoc's choice by extension.
+export function buildPandocArgs({ outputPath, sourceDir, to }) {
   const args = ['--from=gfm+tex_math_dollars', '--standalone', '--output', outputPath]
+  if (to) args.push(`--to=${to}`)
   if (sourceDir) args.push(`--resource-path=${sourceDir}`)
   return args
 }

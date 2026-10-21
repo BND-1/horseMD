@@ -41,7 +41,7 @@ HorseMD 两个都给你：一个**单窗口**装下整个文件夹的文件树�
 - 富文本复制（带内联样式）—— 粘到公众号 / 邮件 / Notion 也能保留格式
 - **浏览器式 PDF 导出中心**（`Ctrl/Cmd+Shift+E`）—— 真实分页预览，可配置纸张、横纵向、边距、正文字号、整体缩放、目录页、书签、页眉页脚、页码和范围；公式、Mermaid、表格与图片按打印版排版，不带编辑器控件
 - **HTML 导出中心** —— 四种阅读主题、四档内容宽度、字号、行高、文档标题和可点击目录均可实时预览，保存为安全的独立 HTML 文件
-- **Pandoc 文档转换** —— 自动检测或手动选择本机 Pandoc，按需导出 Word、EPUB、LaTeX、OpenDocument、RTF 和纯文本，不在安装包中强制捆绑第三方工具
+- **Pandoc 文档转换** —— 自动检测或手动选择本机 Pandoc，按需导出 Word、EPUB、LaTeX、OpenDocument、RTF、MediaWiki 和纯文本，不在安装包中强制捆绑第三方工具
 - 相对路径图片按文件所在目录解析（仅显示用，不改动你的文件内容）
 - **双击图片放大查看**（灯箱预览，点背景 / Esc 关闭；单击仍可选中图片、加说明）
 - **原生 HTML 表格**（文档里直接写的 `<table>…</table>`）渲染成真正的表格，和 Typora 一样 —— 仅显示，源码原样保留
@@ -155,9 +155,11 @@ HorseMD 两个都给你：一个**单窗口**装下整个文件夹的文件树�
    sudo dpkg -i horse_x.x.x_amd64.deb
    sudo apt-get install -f   # 自动补齐依赖
    ```
-3. 从应用菜单启动。需要从终端启动时使用 `/opt/HorseMD/horse`。
+3. 从应用菜单启动。需要从终端启动时运行 `horse`。
 
-> 目前提供 **.deb（amd64）**；其他发行版（Fedora / Arch 等）可从源码构建（见下方「从源码构建」）。运行依赖：libgtk-3-0、libnotify4、libnss3、libxss1、libxtst6、xdg-utils、libatspi2.0-0、libuuid1、libsecret-1-0。
+**Arch Linux / Manjaro**：下载 **`horse-x.x.x-x86_64.pkg.tar.xz`**，运行 `sudo pacman -U ./horse-x.x.x-x86_64.pkg.tar.xz`（自动安装依赖）。
+
+> 目前提供 **.deb（amd64）** 和 **Arch 包（x86_64）**；其他发行版（Fedora 等）可从源码构建（见下方「从源码构建」）。运行依赖：libgtk-3-0、libnotify4、libnss3、libxss1、libxtst6、xdg-utils、libatspi2.0-0、libuuid1、libsecret-1-0。
 
 ## 社群 & 支持
 
@@ -176,7 +178,7 @@ npm install        # 若 Electron 二进制下载被墙，先设镜像：
 npm run dev        # 热重载开发模式
 npm run build      # 构建 main + preload + renderer 到 out/
 npm start          # 运行构建产物
-npm run dist       # 按当前系统出包（Windows NSIS / macOS dmg+zip / Linux deb）
+npm run dist       # 按当前系统出包（Windows NSIS / macOS dmg+zip / Linux deb + Arch pacman）
 ```
 
 用 AI 助手在本仓库里干活？先读 [docs/ai-handoff.md](./docs/ai-handoff.md)，再看 [AGENTS.md](./AGENTS.md) 和 [CLAUDE.md](./CLAUDE.md)。

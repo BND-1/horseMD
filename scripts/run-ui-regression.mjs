@@ -169,8 +169,32 @@ const standalone = [
     script: 'scripts/test-context-copy-ui.mjs'
   },
   {
+    name: 'Find bar open: an edit then a rich→source switch keeps the caret at the edit',
+    script: 'scripts/test-find-open-mode-switch-ui.mjs'
+  },
+  {
     name: '#151 cell copy: partial cell text copies without the table',
     script: 'scripts/test-issue-151-cell-copy-ui.mjs'
+  },
+  {
+    name: '#152 table paste: merged cells and pastes inside a cell keep a savable grid',
+    script: 'scripts/test-table-paste-ui.mjs'
+  },
+  {
+    name: 'List / quote partial copy: text inside one paragraph copies without its marker',
+    script: 'scripts/test-list-partial-copy-ui.mjs'
+  },
+  {
+    name: 'Code-block language picker accepts any typed language name',
+    script: 'scripts/test-codeblock-custom-language-ui.mjs'
+  },
+  {
+    name: 'PDF: a table with blank body rows keeps full row height',
+    script: 'scripts/test-pdf-empty-table-rows-ui.mjs'
+  },
+  {
+    name: 'Typora themes (#154): @import, ?t= fonts, bare element rules, raw <img>, white default page',
+    script: 'scripts/test-custom-theme-typora-base-ui.mjs'
   },
   {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',

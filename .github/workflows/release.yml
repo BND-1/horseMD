@@ -114,3 +114,25 @@ jobs:
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           gh release upload "$TAG" dist/*.deb --clobber
+
+      # Arch Linux (#153): install the pacman package in a clean archlinux
+      # container and launch it under Xvfb. Runs after the .deb upload so an
+      # Arch-only failure never blocks the Debian package.
+      - name: Verify Arch Linux package
+        if: matrix.platform == 'linux'
+        run: |
+          PKG=$(ls dist/*.pkg.tar.xz 2>/dev/null | head -1)
+          if [ -z "$PKG" ]; then
+            echo "::error::No .pkg.tar.xz file found in dist/"
+            exit 1
+          fi
+          docker run --rm --shm-size=1g -v "$PWD/dist:/dist:ro" -v "$PWD/scripts/ci:/ci:ro" \
+            archlinux:latest bash /ci/verify-arch-package.sh "/dist/$(basename "$PKG")"
+
+      - name: Upload Arch Linux package to release
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          gh release upload "$TAG" dist/*.pkg.tar.xz --clobber

@@ -15,6 +15,7 @@ description: 根据平台（Windows、macOS、Linux、Android）选择 HorseMD �
 | Apple M1/M2/M3/M4 等芯片 | `HorseMD-0.13.29-arm64.dmg` | 文件名必须包含 `arm64` |
 | Intel 芯片 Mac | `HorseMD-0.13.29.dmg` | 文件名不包含 `arm64` |
 | Linux（Ubuntu/Debian，64 位） | `horse_0.13.29_amd64.deb` | 其他发行版见 Linux 安装页 |
+| Linux（Arch / Manjaro，64 位） | `horse-0.13.251-x86_64.pkg.tar.xz` | v0.13.251 起提供，见 Linux 安装页 |
 | Android 手机或平板 | `HorseMD-0.12.10.apk` | 不要下载桌面安装包 |
 
 `0.13.29` 本次提供桌面安装包；Android 公开 APK 暂时维持 `0.12.10`。不要因为版本号较小就把 Windows 或 macOS 安装包下载到手机上。

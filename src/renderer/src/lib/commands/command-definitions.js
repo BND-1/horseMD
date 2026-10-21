@@ -36,6 +36,7 @@ export const LEGACY_COMMAND_ALIASES = {
   exportPandocLatex: 'file.exportPandocLatex',
   exportPandocOdt: 'file.exportPandocOdt',
   exportPandocRtf: 'file.exportPandocRtf',
+  exportPandocMediawiki: 'file.exportPandocMediawiki',
   exportPandocTxt: 'file.exportPandocTxt',
   closeTab: 'tab.close',
   nextTab: 'tab.next',
@@ -149,6 +150,7 @@ export const COMMAND_DEFINITIONS = [
     ['Latex', 'cmd.exportPandocLatex'],
     ['Odt', 'cmd.exportPandocOdt'],
     ['Rtf', 'cmd.exportPandocRtf'],
+    ['Mediawiki', 'cmd.exportPandocMediawiki'],
     ['Txt', 'cmd.exportPandocTxt']
   ].map(([suffix, titleKey]) => ({
     id: `file.exportPandoc${suffix}`,

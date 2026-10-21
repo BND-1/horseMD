@@ -47,6 +47,7 @@ import remarkCjkFriendly from 'remark-cjk-friendly'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
 import { safeTrailingWhitespaceTextHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
+import { createTableSpanPastePlugin, pasteIntoTableCell } from './editor-table-paste.js'
 import {
   createStrikeGuardPlugin,
   createSubstitutionLiveReconstructPlugin,
@@ -143,6 +144,8 @@ export function createConfiguredCrepe({
       },
       [Feature.CodeMirror]: {
         copyText: t('code.copy'),
+        searchPlaceholder: t('code.languageSearch'),
+        noResultText: t('code.noLanguage'),
         previewToggleText: (previewOnly) =>
           previewOnly ? t('mermaid.editCode') : t('mermaid.hideCode'),
         extensions: [tabAtCursorKeymap]
@@ -173,7 +176,11 @@ export function createConfiguredCrepe({
           ? options.transformPastedHTML(html, view)
           : html
         return normalizeWebPasteHtml(transformed)
-      }
+      },
+      // #152: a direct prop runs before Milkdown's clipboard plugin, which
+      // would replace the selection and split the surrounding table.
+      handlePaste: (view, event, slice) =>
+        pasteIntoTableCell(view, slice) || options.handlePaste?.(view, event, slice) || false
     }))
     ctx.update(nodeViewCtx, (views) => [
       ...views,
@@ -218,6 +225,10 @@ export function createConfiguredCrepe({
       createBlockHandleGutterPlugin(ctx),
       ...plugins,
       tableBreakKeymap(),
+      // #152: merged cells from Excel / web tables split into a plain grid.
+      // A plugin, not an editorViewOptionsCtx prop: that one would replace
+      // Milkdown's paste-rule runner (its empty-header-row fix runs first).
+      createTableSpanPastePlugin(),
       createInlineCodeEditingPlugin({
         onEdit: markUserEdit,
         onValueChange: onInlineCodeValueChange

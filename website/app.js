@@ -10,8 +10,8 @@ const I18N = {
     'hero.l1': '一个窗口，', 'hero.l2': '装下所有 .md 文件',
     'hero.sub': '一个免费的 Typora 平替，但不止于此。',
     'cta.win': '下载 Windows 版', 'cta.mac': 'macOS 下载 & 安装', 'cta.android': '下载安卓 APK', 'cta.linux': '下载 Linux .deb',
-    'cta.mirror': '国内加速 ↓', 'cta.mirrorAlt': '海外 GitHub ↓',
-    'hero.note': '构建未签名 — Windows：更多信息 → 仍要运行 · macOS（Apple 芯片 / Intel 均可）：右键 → 打开 · Linux：下载 .deb 后 sudo dpkg -i 安装 · 安卓：安装 APK 时允许"未知来源"',
+    'cta.mirror': '国内加速 ↓', 'cta.arch': 'Arch Linux 包 ↓', 'cta.mirrorAlt': '海外 GitHub ↓',
+    'hero.note': '构建未签名 — Windows：更多信息 → 仍要运行 · macOS（Apple 芯片 / Intel 均可）：右键 → 打开 · Linux：.deb 用 sudo dpkg -i 安装，Arch 用 sudo pacman -U 安装 · 安卓：安装 APK 时允许"未知来源"',
     'hero.caption': 'HORSEMD · 文件树 / 标签页 / 所见即所得',
     'strip.tabs': '标签页', 'strip.tree': '文件树', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 套主题',
     'features.title': '它能做什么',
@@ -31,8 +31,8 @@ const I18N = {
     'hero.l1': 'One window.', 'hero.l2': 'Every .md file.',
     'hero.sub': 'A free Typora alternative, and then some.',
     'cta.win': 'Download for Windows', 'cta.mac': 'macOS — download & install', 'cta.android': 'Download Android APK', 'cta.linux': 'Download Linux .deb',
-    'cta.mirror': 'CN mirror ↓', 'cta.mirrorAlt': 'GitHub ↓',
-    'hero.note': 'Unsigned builds — Windows: More info → Run anyway · macOS (Apple Silicon / Intel): right-click → Open · Linux: install the .deb with sudo dpkg -i · Android: allow "unknown sources" when installing the APK',
+    'cta.mirror': 'CN mirror ↓', 'cta.arch': 'Arch Linux package ↓', 'cta.mirrorAlt': 'GitHub ↓',
+    'hero.note': 'Unsigned builds — Windows: More info → Run anyway · macOS (Apple Silicon / Intel): right-click → Open · Linux: install the .deb with sudo dpkg -i, or the Arch package with sudo pacman -U · Android: allow "unknown sources" when installing the APK',
     'hero.caption': 'HORSEMD · FILE TREE / TABS / WYSIWYG',
     'strip.tabs': 'Tabs', 'strip.tree': 'File tree', 'strip.i18n': 'EN / 中文', 'strip.themes': '6 themes',
     'features.title': 'What it does',
@@ -166,6 +166,11 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
     if (deb) {
       document.getElementById('dlLinux').href = deb.browser_download_url
       document.getElementById('dlLinuxCn').href = CN + deb.browser_download_url
+    }
+    // Arch Linux: pacman 包（#153）。中文界面走国内加速
+    const arch = assets.find(a => /\.pkg\.tar\.(xz|zst)$/i.test(a.name))
+    if (arch) {
+      document.getElementById('dlArch').href = (lang === 'zh' ? CN : '') + arch.browser_download_url
     }
     // Android: 最新 release 带 APK 时用它，否则保留下方固定版本
     const apk = assets.find(a => /\.apk$/i.test(a.name))

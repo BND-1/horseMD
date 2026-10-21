@@ -13,6 +13,13 @@ assert.deepEqual(buildPandocArgs({ outputPath: '/tmp/a.docx', sourceDir: '/tmp/s
   '/tmp/a.docx',
   '--resource-path=/tmp/source dir'
 ])
-assert.deepEqual(Object.keys(PANDOC_FORMATS), ['docx', 'epub', 'latex', 'odt', 'rtf', 'txt'])
+assert.deepEqual(buildPandocArgs({ outputPath: '/tmp/a.wiki', to: PANDOC_FORMATS.mediawiki.to }), [
+  '--from=gfm+tex_math_dollars',
+  '--standalone',
+  '--output',
+  '/tmp/a.wiki',
+  '--to=mediawiki'
+])
+assert.deepEqual(Object.keys(PANDOC_FORMATS), ['docx', 'epub', 'latex', 'odt', 'rtf', 'mediawiki', 'txt'])
 
 console.log('pandoc core tests passed')

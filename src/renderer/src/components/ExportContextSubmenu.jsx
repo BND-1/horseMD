@@ -8,6 +8,7 @@ const PANDOC_FORMATS = [
   ['latex', 'export.formatLatex'],
   ['odt', 'export.formatOdt'],
   ['rtf', 'export.formatRtf'],
+  ['mediawiki', 'export.formatMediawiki'],
   ['txt', 'export.formatTxt']
 ]
 

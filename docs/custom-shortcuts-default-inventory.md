@@ -17,12 +17,14 @@
 | file.exportPandocLatex | cmd.exportPandocLatex | file | document |  |  |  |  |  | Electron menu | 是 |
 | file.exportPandocOdt | cmd.exportPandocOdt | file | document |  |  |  |  |  | Electron menu | 是 |
 | file.exportPandocRtf | cmd.exportPandocRtf | file | document |  |  |  |  |  | Electron menu | 是 |
+| file.exportPandocMediawiki | cmd.exportPandocMediawiki | file | document |  |  |  |  |  | Electron menu | 是 |
 | file.exportPandocTxt | cmd.exportPandocTxt | file | document |  |  |  |  |  | Electron menu | 是 |
 | tab.close | cmd.closeTab | file | document | Mod+W | ⌘W | Ctrl+W | CmdOrCtrl+W | CmdOrCtrl+W | Electron menu | 是 |
 | tab.next | cmd.nextTab | view | app | Ctrl+Tab | ⌃Tab | Ctrl+Tab |  |  | Renderer | 是 |
 | tab.previous | cmd.previousTab | view | app | Ctrl+Shift+Tab | ⌃⇧Tab | Ctrl+Shift+Tab |  |  | Renderer | 是 |
 | view.commandPalette | cmd.palette | view | app | Mod+P | ⌘P | Ctrl+P | CmdOrCtrl+P | CmdOrCtrl+P | Electron menu | 是 |
 | view.toggleSidebar | cmd.sidebar | view | app | Mod+Shift+B | ⌘⇧B | Ctrl+Shift+B |  |  | Renderer | 是 |
+| view.immersive | cmd.immersive | view | app | Mod+Shift+Enter | ⌘⇧Enter | Ctrl+Shift+Enter |  |  | Renderer | 是 |
 | view.showFiles | cmd.files | view | app |  |  |  |  |  | Renderer | 是 |
 | view.showOutline | cmd.outline | view | app | Mod+Shift+L | ⌘⇧L | Ctrl+Shift+L | CmdOrCtrl+Shift+L | CmdOrCtrl+Shift+L | Electron menu | 是 |
 | view.globalSearch | cmd.globalSearch | view | app | Mod+Shift+F | ⌘⇧F | Ctrl+Shift+F | CmdOrCtrl+Shift+F | CmdOrCtrl+Shift+F | Electron menu | 是 |

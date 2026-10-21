@@ -300,6 +300,101 @@ body.hm-has-custom-theme .editor-scroll {
 body.hm-has-custom-theme .editor-host {
   max-width: none;
 }
+/* Typora's base styles under a theme (#154): white page + #333 text unless
+   the theme paints its own background (customThemes.js sets the class), and
+   none of our writing-first spacing — no paragraph padding, list-item or
+   raw-HTML-block margins — so a theme that sets only `p { margin: 0 }` is as
+   compact as in Typora. A theme's own rules carry an extra ID of
+   specificity, so anything it does set still wins over these. */
+body.hm-theme-default-bg .pane-center,
+body.hm-theme-default-bg .editor-scroll {
+  background: #fff;
+  color: #333;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror p,
+body.hm-has-custom-theme .milkdown .ProseMirror li p {
+  padding: 0;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror li {
+  margin: 0;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper {
+  height: 1lh;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .hm-html-block {
+  margin: 0;
+}
+/* Links: the theme's text-decoration decides; our underline is a border. */
+body.hm-has-custom-theme .milkdown .ProseMirror a {
+  border-bottom: 0;
+}
+/* Lists: Typora draws native outside markers, so item text starts at the
+   list's padding (a theme's `ul { padding-inline-start }` / `li { padding }`)
+   and the bullet hangs in that padding. Crepe's marker is a flex label box
+   pinned to the item's top, so a theme's `li p { margin }` pushed the text
+   below the bullet. Float the label into the gutter instead: the paragraph's
+   top margin then collapses out of the item and the bullet stays on the
+   first line, like a native marker. */
+body.hm-has-custom-theme .milkdown .ProseMirror ul,
+body.hm-has-custom-theme .milkdown .ProseMirror ol {
+  padding-inline-start: 30px;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-list-item-block > .list-item {
+  display: block;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children {
+  display: block;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-list-item-block li .label-wrapper {
+  color: inherit; /* a native marker takes the item's text color */
+  float: left;
+  margin-inline-start: -24px;
+  margin-inline-end: 4px;
+}
+/* Tables: no surface, radius or header fill of our own, so a theme's
+   `tr` / `thead` colors show. Milkdown puts a <p> in every cell (Typora's
+   DOM has none), so a theme's `p { margin }` must never reach it. */
+body.hm-has-custom-theme .milkdown .ProseMirror table {
+  background: none;
+  border-radius: 0;
+  border: 0;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror th,
+body.hm-has-custom-theme .milkdown .ProseMirror td {
+  background: none;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-table-block th > p,
+body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-table-block td > p {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* Code blocks keep our CodeMirror look, but Crepe's light surface around it
+   read as a white slab on dark themes. */
+body.hm-has-custom-theme .milkdown .milkdown-code-block {
+  background: none;
+}
+/* Quotes and inline code are unstyled in Typora's base; the theme decides. */
+body.hm-has-custom-theme .milkdown .ProseMirror blockquote {
+  background: none;
+  border-radius: 0;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror blockquote::before {
+  display: none;
+}
+body.hm-has-custom-theme .milkdown .ProseMirror code:not(pre code) {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+/* A paragraph holding only a block of raw HTML is one box in Typora; the
+   trailing <br> / separator ProseMirror adds would draw an empty line under it. */
+body.hm-has-custom-theme .milkdown .ProseMirror p:has(> .hm-html-block) > br.ProseMirror-trailingBreak,
+body.hm-has-custom-theme .milkdown .ProseMirror p:has(> .hm-html-block) > img.ProseMirror-separator {
+  display: none !important; /* prosemirror.css forces inline */
+}
 /* Let the custom theme own content text colors. Our defaults (heading/emphasis
    colors etc.) are more specific than a theme's `html, body { color }`, so without
    this the theme's text would be overridden and read as low-contrast. `inherit`
@@ -2714,7 +2809,11 @@ body.hm-full-width .editor-skeleton {
   max-width: none;
 }
 .milkdown { background: transparent !important; }
-.milkdown .ProseMirror { padding: 0 !important; }
+.milkdown .ProseMirror { padding: 0; }
+body:not(.hm-has-custom-theme) .milkdown .ProseMirror { padding: 0 !important; }
+/* A custom (Typora) theme owns the #write padding (#154): without !important
+   here our zero still beats Crepe's padding, but the theme's `#write` wins. */
+body.hm-has-custom-theme .milkdown .ProseMirror { padding: 0; }
 /* The operation bar uses one fixed editor-edge rail (configured through
    BlockProvider in editor-crepe-setup.js). Two compact 28px controls fit the
    editor's 60px leading gutter in every desktop width preset. */
@@ -7260,4 +7359,14 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   border-radius: 50%;
   background: var(--accent);
   opacity: 0.8;
+}
+
+/* Code-block language picker: the "Use “name”" row (editor-codeblock-language.js)
+   replaces Milkdown's dimmed "No result" and is clickable. */
+.milkdown .milkdown-code-block .language-picker .language-list-item.no-result.hm-use-language {
+  cursor: pointer;
+  opacity: 1;
+}
+.milkdown .milkdown-code-block .language-picker .language-list-item.no-result.hm-use-language:hover {
+  background: var(--crepe-color-hover);
 }

@@ -27,18 +27,23 @@ import {
   clearSourceFindHighlight,
   findRangesInEl,
   paintFindHighlights,
+  paintSourceFindHighlight,
   revealSourceFindMatch,
   scrollRangeIntoView,
   matchIndices
 } from '../find.js'
 
-export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, viewModeKey, sourceFindActive = true, commitLive, liveContentRef }) {
+export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId, viewModeKey, sourceFindActive = true, commitLive, liveContentRef, findSwitchOwnerRef }) {
   const [find, setFind] = useState({ open: false, query: '', matches: 0, active: 0, replace: '' })
   // Current match set: Range objects (rich editor) or character offsets (source).
   const findRangesRef = useRef([])
   const findQueryRef = useRef('')
   const replaceRef = useRef('')
   const activeIdxRef = useRef(-1)
+  // performance.now() of the last find navigation (query typed, next/prev,
+  // replace). A rich/source switch keeps the find result only when this is
+  // newer than the user's last click/keystroke in the document.
+  const findNavAtRef = useRef(0)
   const findInputRef = useRef(null)
   const replaceInputRef = useRef(null)
   const sourceFindTextareaRef = useRef(null)
@@ -72,13 +77,20 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   // The active rich editor's ProseMirror view (null in source/plain-text mode).
   // Used to turn a find DOM Range into document positions for replacement.
   const richView = () => editorApis.current[activeId]?.getView?.() || null
-  const runSourceFind = (el, q, preferActive = 0) => {
+  const runSourceFind = (el, q, preferActive = 0, reveal = true) => {
     const hits = matchIndices(el.value, q)
     findRangesRef.current = hits
-    const i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
+    let i = hits.length ? Math.min(preferActive, hits.length - 1) : -1
+    if (!reveal && hits.length) {
+      // The caret owns the view: make the match at/after it current, and only
+      // paint it — never move the caret or scroll.
+      const after = hits.findIndex((hit) => hit >= el.selectionStart)
+      i = after >= 0 ? after : hits.length - 1
+    }
     activeIdxRef.current = i
     if (i >= 0 && q) {
-      revealSourceFindMatch(el, hits[i], hits[i] + q.length)
+      if (reveal) revealSourceFindMatch(el, hits[i], hits[i] + q.length)
+      else paintSourceFindHighlight(el, hits[i], hits[i] + q.length)
       sourceFindTextareaRef.current = el
     }
     setFind((f) => ({ ...f, matches: hits.length, active: i + 1 }))
@@ -87,8 +99,11 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   // Run a fresh search for `query`, scoped to the editor content. `preferActive`
   // is the 0-based match index to land on (clamped) — used after a replace to
   // stay on the next match instead of jumping back to the first.
-  const runFind = useCallback((query, preferActive = 0) => {
+  // `reveal: false` (a mode switch the caret owns) counts and paints the
+  // matches without moving the selection or the scroll position.
+  const runFind = useCallback((query, preferActive = 0, { reveal = true, navigate = true } = {}) => {
     const q = query ?? ''
+    if (navigate) findNavAtRef.current = performance.now()
     findQueryRef.current = q
     clearFindHighlights()
     const sourceEl = activeSourceTextarea()
@@ -99,25 +114,29 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
       // Source textarea: live-count + SELECT/reveal the active match. Textarea
       // selections are not reliably visible while the FindBar keeps focus, so a
       // lightweight overlay paints the current match without stealing focus.
-      runSourceFind(sourceEl, q, preferActive)
+      runSourceFind(sourceEl, q, preferActive, reveal)
       requestAnimationFrame(() => {
         const latestSourceEl = activeSourceTextarea()
-        if (latestSourceEl && findQueryRef.current === q) runSourceFind(latestSourceEl, q, preferActive)
+        if (latestSourceEl && findQueryRef.current === q) runSourceFind(latestSourceEl, q, preferActive, reveal)
       })
       return
     }
     requestAnimationFrame(() => {
       const lateSourceEl = activeSourceTextarea()
-      if (lateSourceEl && findQueryRef.current === q) runSourceFind(lateSourceEl, q, preferActive)
+      if (lateSourceEl && findQueryRef.current === q) runSourceFind(lateSourceEl, q, preferActive, reveal)
     })
     const root = richRoot()
     const ranges = q ? findRangesInEl(root, q) : []
     findRangesRef.current = ranges
-    const i = ranges.length ? Math.min(preferActive, ranges.length - 1) : -1
+    let i = ranges.length ? Math.min(preferActive, ranges.length - 1) : -1
+    if (!reveal && ranges.length) {
+      const after = rangeIndexAtCaret(ranges, richView())
+      if (after >= 0) i = after
+    }
     activeIdxRef.current = i
     if (ranges.length) {
       paintFindHighlights(ranges, i)
-      scrollRangeIntoView(ranges[i], root.closest('.editor-scroll'))
+      if (reveal) scrollRangeIntoView(ranges[i], root.closest('.editor-scroll'))
     }
     setFind((f) => ({ ...f, matches: ranges.length, active: i + 1 }))
   }, [])
@@ -126,6 +145,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   const stepFind = useCallback((backwards = false) => {
     const items = findRangesRef.current
     if (!items.length) return
+    findNavAtRef.current = performance.now()
     let i = activeIdxRef.current + (backwards ? -1 : 1)
     if (i < 0) i = items.length - 1
     if (i >= items.length) i = 0
@@ -222,9 +242,16 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   useEffect(() => {
     const previous = findContextRef.current
     findContextRef.current = { activeId, viewModeKey }
+    // A rich/source toggle records whether find or the caret owns the view
+    // (useSourceModeSwitch). Consume it once; other view changes keep the old
+    // behavior of revealing the active result.
+    const owner = findSwitchOwnerRef?.current
+    if (findSwitchOwnerRef) findSwitchOwnerRef.current = null
     if (find.open) {
-      const preferActive = previous.activeId === activeId ? Math.max(0, activeIdxRef.current) : 0
-      runFind(findQueryRef.current, preferActive)
+      const sameTab = previous.activeId === activeId
+      const preferActive = sameTab ? Math.max(0, activeIdxRef.current) : 0
+      const reveal = !sameTab || !owner || owner.id !== activeId || owner.findOwns
+      runFind(findQueryRef.current, preferActive, { reveal, navigate: false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, viewModeKey])
@@ -232,6 +259,7 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
   // Open the find bar, pre-filled with the current selection (if any) — like VS
   // Code / Typora. No selection → keep the previous query.
   const openFind = useCallback((focusReplace = false) => {
+    findNavAtRef.current = performance.now()
     let sel = ''
     const sourceEl = activeSourceTextarea()
     if (sourceEl) {
@@ -253,5 +281,16 @@ export function useFindReplace({ editorHostRef, sourceRef, editorApis, activeId,
     })
   }, [runFind, activeId])
 
-  return { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind }
+  return { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind, findNavAtRef }
+}
+
+// Index of the first find Range at or after the rich caret (-1 if none).
+function rangeIndexAtCaret(ranges, view) {
+  try {
+    const at = view?.domAtPos(view.state.selection.from)
+    if (!at) return -1
+    return ranges.findIndex((range) => range.comparePoint(at.node, at.offset) <= 0)
+  } catch {
+    return -1
+  }
 }

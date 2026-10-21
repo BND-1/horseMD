@@ -30,7 +30,8 @@ npm run guide:check    # tutorial content checks + static build
 ```
 
 `npm run dist` packages for whatever OS you run it on — **Windows NSIS** on
-Windows, **macOS dmg + zip** on macOS, and **Linux amd64 deb** on Linux. Installers
+Windows, **macOS dmg + zip** on macOS, and **Linux amd64 deb + Arch pacman
+(`.pkg.tar.xz`)** on Linux. Installers
 must be built and validated on their target OS; a dmg must be built on macOS and
 a deb must pass `dpkg-deb --info` on Linux. If the
 electron-builder binaries download slowly:
@@ -39,11 +40,17 @@ electron-builder binaries download slowly:
 Builds are **unsigned**: Windows shows SmartScreen ("更多信息 → 仍要运行");
 macOS Gatekeeper blocks first launch (right-click → Open, or
 `xattr -dr com.apple.quarantine /Applications/HorseMD.app`). Linux users should
-install only the `.deb` from the official GitHub Release. Its postinst is our
+install only the `.deb` (or, on Arch, the `.pkg.tar.xz`) from the official
+GitHub Release. Its postinst is our
 `build/linux/after-install.tpl` (`deb.afterInstall`), which always installs
 `chrome-sandbox` as `root:root 4755` — electron-builder's default probes
 `unshare` as root and leaves it 0755, which crashes on launch under Ubuntu
-24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this.
+24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this. The Arch package (#153) reuses the same template
+(`pacman.afterInstall`) and overrides `pacman.depends`: electron-builder's
+default list names packages Arch no longer ships (`http-parser`,
+`libappindicator-gtk3`), so `pacman -U` would fail. Keep the list to the
+libraries the binary actually links. `release.yml` installs and launches it in
+an `archlinux` container (`scripts/ci/verify-arch-package.sh`).
 
 ## Layout
 
@@ -193,7 +200,7 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   been distributed for testing: do not publish a lower "clean" version after
   internal builds such as `0.5.29`, because auto-update compares semver and will
   treat `0.5.5` as older than `0.5.29`.
-  Build full set: mac dmg+zip (arm64+x64) + win nsis x64 + Linux amd64 deb
+  Build full set: mac dmg+zip (arm64+x64) + win nsis x64 + Linux amd64 deb + Arch x86_64 pacman
   (`CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned Apple builds). Linux must be
   built on Ubuntu, pass `dpkg-deb --info`, and be uploaded with
   `gh release upload "$TAG" dist/*.deb --clobber` after validation.
@@ -214,6 +221,20 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   theme is active (`body.hm-has-custom-theme`) app.css yields the writing area's
   background/width AND sets content text `color: inherit` so the theme's colors win;
   the app chrome keeps its own styling. `applyTheme` preserves `hm-*` body classes.
+  Typora parity (#154): `theme-css.js` (main) inlines local `@import`s per file
+  (themes-dir only, cycles once, remote imports hoisted) and keeps url()
+  `?query`/`#hash`. `customThemes.js` re-serializes the theme via CSSOM with
+  ONE uniform extra ID: bare selectors become `#write …` (also keeps theme
+  `p, li, button` rules off the chrome), `#write`/`.markdown-body`/`body …`
+  ones get a `:not(#hm-theme)` ancestor, bare html/body/:root stay. Typora's
+  base is weak, so bare `h2 {}` must beat `.milkdown .ProseMirror h2`. User
+  snippets get the same +1 ID (no scoping) so snippet-vs-theme is unchanged.
+  Under `hm-has-custom-theme`, app.css drops our content spacing/surfaces
+  (p padding, li margin, quote/code/table fills, html-block margin, code-block
+  wrapper) and floats the Crepe list label into the gutter (native outside
+  marker); `hm-theme-default-bg` (theme paints no html/body/:root/#write
+  background) = Typora's white page + #333. `<img>` is an allowed inline raw
+  HTML tag. Locked by `test:theme-css` + `test:custom-theme-typora-base-ui`.
 - **Mermaid** (`editor-mermaid.js`): rendered through Crepe's **built-in code-block
   "preview" mechanism** (the same one LaTeX-style blocks would use), via
   `codeBlockConfig.renderPreview` + `previewOnlyByDefault`. A ` ```mermaid ` block
@@ -324,6 +345,40 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (empty line → replaces it; inside text → own line after the top-level block);
   `useDropOpen.js` must keep media drops inside the editor. CSP needs
   `media-src … file:` and `frame-src https:`. Locked by `test:media-embed-ui`.
+- **Table paste** (`editor-table-paste.js`, #152): a GFM table is a plain
+  grid with one paragraph per cell, so anything else fails the save gate
+  closed. Merged cells (colspan/rowspan from Excel/WPS/web) are split by a
+  `transformPasted` **plugin** in `prosePluginsCtx` — never put
+  `transformPasted` in `editorViewOptionsCtx`: core spreads those options last
+  and would replace Milkdown's paste-rule runner (incl. its empty-header-row
+  fix). Inside a table cell, `handlePaste` (an `editorViewOptionsCtx` direct
+  prop, so it runs before Milkdown's clipboard plugin, which replaces the
+  selection and splits the table) fills cells from the caret, growing the
+  table, or joins other blocks into the cell with hardbreaks; the Markdown
+  paste path (`editor-md-paste.js`) routes through the same function. Pasted
+  HTML is normalized first (`normalizePastedTableHtml`, called from
+  `normalizeWebPasteHtml`): a cell holds ONE paragraph and any `<tr>` with a
+  `<th>` parses as the header row, so block content in cells (paragraphs,
+  lists, headings, `<pre>`, nested tables) is flattened to inline + `<br>`,
+  body `<th>` become `<td>`, `<caption>` moves above. Locked by
+  `test:table-paste-ui`.
+- **Partial copy inside one paragraph** (`editor-copy.js`
+  `copiedMarkdownContent`): `selection.content()` keeps every ancestor, so
+  text inside one list item / quote / table cell serialized as `- x` / `> x` /
+  a one-cell table, and md-paste (which prefers text/markdown) pasted the
+  wrapper. A selection inside one paragraph copies only that paragraph's
+  inline content. A whole item still copies as a list (#98: pasting it into a
+  plain paragraph keeps the list), but md-paste inserts a SINGLE pasted list
+  item's inline content when the caret is in another list item
+  (`pasteListItemTextIntoItem`, marker-stripped source hint
+  `listItemInlineMarkdown`); two or more items paste as a list. Locked by `test:list-partial-copy-ui` and
+  `test:issue-151-cell-copy-ui`.
+- **Code-block language** (`editor-codeblock-language.js`): Milkdown's picker
+  only selects listed languages. Enter in its search box, or a click on the
+  relabelled no-result row, sets the typed name as-is (first word, no
+  backticks) via `setNodeAttribute`; the loader still highlights known
+  names/aliases. DOM-level capture listeners only — the picker is a compiled
+  Vue component. Locked by `test:codeblock-custom-language-ui`.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →
@@ -607,7 +662,9 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   remain relative to the body size.
   Table export preserves measured total width and column ratios, while
   `th/td > p` margins stay reset so document paragraph spacing cannot inflate
-  rows. Follow [`docs/pdf-visual-fidelity-runbook.md`](./docs/pdf-visual-fidelity-runbook.md)
+  rows. An empty cell is an empty `<p>` (the trailing-break is stripped), so
+  `p:empty::after { content: "\\200B" }` keeps blank rows one line tall in
+  both PDF and HTML export (`test:pdf-empty-table-rows-ui`). Follow [`docs/pdf-visual-fidelity-runbook.md`](./docs/pdf-visual-fidelity-runbook.md)
   for final-PDF X/Y coordinate checks, PNG rendering, regression commands, and
   handoff stop conditions.
 - **PDF preview cancellation**: latest-request-only does not mean destroying a

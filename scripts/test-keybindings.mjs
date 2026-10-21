@@ -150,9 +150,9 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 46)
+assert.equal(COMMAND_DEFINITIONS.length, 47)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 4)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 31)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 32)
 // Full-screen reading/editing mode: renderer-only shortcut, in the palette.
 const immersiveCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'view.immersive')
 assert.ok(immersiveCommand)

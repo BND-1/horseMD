@@ -10,7 +10,7 @@ const BLOCK_TAGS =
 // Safe inline tags (formatting/semantic). Anything not here (object/embed,
 // unknown tags, …) falls back to escaped-text so it can't run or break layout.
 const INLINE_TAGS =
-  'span|mark|sub|sup|kbd|u|ins|del|abbr|small|font|cite|q|samp|var|time|b|i|strong|em|a|bdo|bdi|ruby|rt|rp|label|dfn|big|tt|s|strike'
+  'img|span|mark|sub|sup|kbd|u|ins|del|abbr|small|font|cite|q|samp|var|time|b|i|strong|em|a|bdo|bdi|ruby|rt|rp|label|dfn|big|tt|s|strike'
 
 const BLOCK_RE = new RegExp(`^\\s*<(${BLOCK_TAGS})[\\s/>]`, 'i')
 const INLINE_RE = new RegExp(`^\\s*<(${INLINE_TAGS})[\\s/>]`, 'i')

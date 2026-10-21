@@ -203,7 +203,7 @@ async function main() {
   }
   const exportFormats = await evaluate(`(() => [...document.querySelectorAll('.context-submenu button')]
     .map((node) => node.textContent.trim()))()`)
-  if (exportFormats.length !== 8 || !exportFormats.some((text) => /HTML/i.test(text)) || !exportFormats.some((text) => /Word/i.test(text))) {
+  if (exportFormats.length !== 9 || !exportFormats.some((text) => /MediaWiki/.test(text)) || !exportFormats.some((text) => /HTML/i.test(text)) || !exportFormats.some((text) => /Word/i.test(text))) {
     throw new Error(`Export submenu formats incomplete: ${JSON.stringify(exportFormats)}`)
   }
   const submenuGeometry = await evaluate(`(() => {

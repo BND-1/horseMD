@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# HorseMD deb postinst. Based on electron-builder's default
+# HorseMD deb postinst / pacman post_install. Based on electron-builder's default
 # app-builder-lib/templates/linux/after-install.tpl, with one change (#143):
 # chrome-sandbox is ALWAYS installed as root:root 4755.
 #

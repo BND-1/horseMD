@@ -1,5 +1,6 @@
 import { createToolbarScanner } from './editor-toolbar.js'
 import { mountEditorContentBindings } from './editor-dom-content.js'
+import { mountCodeBlockLanguageInput } from './editor-codeblock-language.js'
 import { mountEditorInteractionBindings } from './editor-dom-interactions.js'
 import { mountEditorLayoutBindings } from './editor-dom-layout.js'
 
@@ -69,6 +70,8 @@ export function mountEditorDomBindings({
     getT,
     isDestroyed
   })
+
+  mountCodeBlockLanguageInput({ view, cleanups, getT, isReadOnly })
 
   const platform = window.api?.platform
   const isMobile = platform === 'ios' || platform === 'android'

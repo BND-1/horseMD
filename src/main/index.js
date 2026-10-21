@@ -13,6 +13,7 @@ import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { registerWatcherIpc } from './watchers.js'
 import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
+import { loadThemeCss } from './theme-css.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -620,22 +621,8 @@ ipcMain.handle('themes:read', async (_e, file) => {
   const root = resolve(themesDir())
   const full = resolve(root, file)
   if (full !== root && !full.startsWith(root + sep)) throw new Error('Invalid theme path.')
-  let css = await fs.readFile(full, 'utf8')
-  // Rewrite relative url(...) to absolute file:// so theme fonts/images (referenced
-  // relative to the CSS file) still load when the CSS is injected into the page.
-  const baseDir = dirname(full)
-  css = css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (m, _q, p) => {
-    const t = (p || '').trim()
-    if (!t || /^(https?:|data:|file:|blob:)/i.test(t) || t.startsWith('//') || t.startsWith('#')) {
-      return m
-    }
-    try {
-      return `url("${pathToFileURL(resolve(baseDir, t)).href}")`
-    } catch {
-      return m
-    }
-  })
-  return css
+  // Relative url(...) and local @import resolve against each CSS file (#154).
+  return loadThemeCss(full, root)
 })
 
 ipcMain.handle('themes:reveal', async () => {
@@ -1108,6 +1095,7 @@ function buildMenu() {
             { label: 'LaTeX (.tex)…', accelerator: menuAccelerator('file.exportPandocLatex'), click: menuCmd('exportPandocLatex') },
             { label: 'OpenDocument (.odt)…', accelerator: menuAccelerator('file.exportPandocOdt'), click: menuCmd('exportPandocOdt') },
             { label: 'Rich Text (.rtf)…', accelerator: menuAccelerator('file.exportPandocRtf'), click: menuCmd('exportPandocRtf') },
+            { label: 'MediaWiki (.wiki)…', accelerator: menuAccelerator('file.exportPandocMediawiki'), click: menuCmd('exportPandocMediawiki') },
             { label: 'Plain Text (.txt)…', accelerator: menuAccelerator('file.exportPandocTxt'), click: menuCmd('exportPandocTxt') }
           ]
         },

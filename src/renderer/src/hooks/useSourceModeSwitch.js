@@ -14,6 +14,7 @@ import {
 import { getTextareaSourceValue } from '../source-text-fidelity.js'
 import { fireToast } from '../ui.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
+import { traceEditorEvent } from '../components/editor-input-trace.js'
 
 // Owns rich/source view state and the caret-vs-reading-position transition.
 // Textarea editing remains uncontrolled in EditorArea; this hook only consumes
@@ -30,6 +31,7 @@ export function useSourceModeSwitch({
   focusedTabRef,
   commitAllLive,
   findStateRef,
+  findSwitchOwnerRef,
   richLoadingRef,
   tRef
 }) {
@@ -42,6 +44,7 @@ export function useSourceModeSwitch({
   const sourceRef = useRef(null)
   const sourceTextareas = useRef({})
   const caretAnchorRef = useRef(null)
+  const findOwnsSwitchRef = useRef(false)
   const viewportAnchorRef = useRef(null)
   const caretFollowRef = useRef(false)
   const preserveRichCaretFollowRef = useRef(false)
@@ -156,6 +159,26 @@ export function useSourceModeSwitch({
     }
     const view = editorApis.current[id]?.getView?.()
 
+    // An open find bar keeps its current result across the switch only when
+    // find was the user's last navigation. Once they click or type in the
+    // document, the caret owns the switch — otherwise the rebuilt search lands
+    // on its first match (often the top of the document) and the edit point is
+    // lost.
+    const findState = findStateRef.current
+    const editorInteractionAt = sourceModeRef.current
+      ? Number(sourceRef.current?.__horsemdSourceUserInputAt || 0)
+      : Number(view?.dom?.__horsemdUserInteractionAt || 0)
+    const findOwns = !!(findState.open && findState.query && findState.matches > 0 &&
+      Number(findState.navAtRef?.current || 0) >= editorInteractionAt)
+    if (findSwitchOwnerRef) findSwitchOwnerRef.current = { id, findOwns }
+    findOwnsSwitchRef.current = findOwns
+    traceEditorEvent('mode-switch', {
+      to: sourceModeRef.current ? 'rich' : 'source',
+      findOpen: !!findState.open,
+      findMatches: findState.matches ?? null,
+      findOwns
+    })
+
     if (sourceModeRef.current) {
       const sourceEl = sourceRef.current
       const sourceTextChanged = !!sourceEl &&
@@ -241,6 +264,8 @@ export function useSourceModeSwitch({
     const preserveRichCaretFollow = preserveRichCaretFollowRef.current
     if (caret == null && viewport == null && !preserveRichCaretFollow) return
     const restoreId = activeIdRef.current
+    const findOwnsSwitch = findOwnsSwitchRef.current
+    findOwnsSwitchRef.current = false
 
     caretAnchorRef.current = null
     viewportAnchorRef.current = null
@@ -259,7 +284,9 @@ export function useSourceModeSwitch({
         supersededByUserFocus = true
         return false
       }
-      if (findStateRef.current.open && findStateRef.current.query) return
+      // Find owns this switch (see toggleSource): its rebuilt active result
+      // places selection + scroll; caret/viewport passes would overwrite it.
+      if (findOwnsSwitch && findStateRef.current.open && findStateRef.current.query) return
       const view = editorApis.current[restoreId]?.getView?.()
       if (!sourceMode) {
         const baseline = richRestoreInteractionRef.current

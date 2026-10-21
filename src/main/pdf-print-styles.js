@@ -94,6 +94,9 @@ const BASE_PDF_CSS = `
   .doc th > p, .doc td > p {
     margin: 0; padding: 0; line-height: inherit;
   }
+  /* An empty cell is an empty <p>: give it one line so a blank row keeps the
+     height of a filled one instead of collapsing to its padding. */
+  .doc th > p:empty::after, .doc td > p:empty::after { content: "\\200B"; }
   .doc th { background: #f4f1ea; font-weight: 700; color: #16130e; }
   .doc tr:nth-child(even) td { background: #faf8f4; }
   .doc img, .doc svg { max-width: 100%; height: auto; display: block; margin: var(--hm-pdf-img-margin, 1em) auto; break-inside: avoid; }

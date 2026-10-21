@@ -164,7 +164,8 @@ export default function App() {
   const editorHosts = useRef({})
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
-  const findStateRef = useRef({ open: false, query: '' }) // find owns navigation while an active query survives a mode switch
+  const findStateRef = useRef({ open: false, query: '' }) // live find bar state for the mode switch (who owns the caret)
+  const findSwitchOwnerRef = useRef(null) // one-shot: toggleSource → useFindReplace, does find or the caret own this switch
   // Registry of each tab's editor API (by tab id). Several markdown editors can
   // be mounted at once (a tab stays mounted after its first activation), so a
   // single ref would get stuck on whichever editor mounted last; keying by tab
@@ -277,6 +278,7 @@ export default function App() {
     focusedTabRef,
     commitAllLive,
     findStateRef,
+    findSwitchOwnerRef,
     richLoadingRef,
     tRef
   })
@@ -856,7 +858,7 @@ export default function App() {
   const findSourceActive = sourceMode ||
     (sourceRichSplitMode && sourceRichFocusedPane === 'source') ||
     isPlainTextDoc(activeTab) || (activeTab?.heavy && !richForced.has(activeTab.id))
-  const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind } =
+  const { find, setFind, findInputRef, replaceInputRef, replaceRef, runFind, stepFind, closeFind, applyReplace, openFind, findNavAtRef } =
     useFindReplace({
       editorHostRef,
       sourceRef,
@@ -865,9 +867,10 @@ export default function App() {
       viewModeKey: `${sourceMode ? 'source' : 'rich'}:${sourceRichSplitMode ? sourceRichFocusedPane : 'single'}`,
       sourceFindActive: findSourceActive,
       commitLive,
-      liveContentRef
+      liveContentRef,
+      findSwitchOwnerRef
     })
-  findStateRef.current = { open: find.open, query: find.query }
+  findStateRef.current = { open: find.open, query: find.query, matches: find.matches, navAtRef: findNavAtRef }
 
   // Workspace-wide search (issue #120) — the third sidebar mode. Jump lands
   // the in-document FindBar on the clicked match (see useGlobalSearch).

@@ -117,9 +117,19 @@ const wrapOrphanTableParts = (root) => {
 // became a one-cell table — and md-paste prefers text/markdown, so pasting it
 // into another cell nested a table (#151). Inside one cell, copy only the
 // cell's own content; a CellSelection (multi-cell drag) still copies a table.
+// The same holds for a list item or a quote: text inside one paragraph copied
+// as "- text" / "1. text" / "> text", and pasting it into another item added
+// a nested item. PART of one paragraph copies only its inline content; the
+// whole item still copies as a list (#98).
 export function copiedMarkdownContent(selection) {
   const { $from, $to } = selection
   if (typeof selection.forEachCell !== 'function') {
+    const parent = $from.parent
+    const start = $from.start()
+    const partial = $from.pos > start || $to.pos < $from.end()
+    if ($from.sameParent($to) && parent.type.name === 'paragraph' && $from.depth > 1 && partial) {
+      return parent.copy(parent.content.cut($from.pos - start, $to.pos - start))
+    }
     for (let depth = $from.sharedDepth($to.pos); depth > 0; depth -= 1) {
       const node = $from.node(depth)
       if (node.type.name !== 'table_cell' && node.type.name !== 'table_header') continue

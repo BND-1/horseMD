@@ -115,7 +115,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     try {
       const result = await runSubprocess({
         executable: detected.path,
-        args: buildPandocArgs({ outputPath: save.filePath, sourceDir }),
+        args: buildPandocArgs({ outputPath: save.filePath, sourceDir, to: descriptor.to }),
         input: content,
         cwd: sourceDir || undefined,
         timeoutMs: 120000,

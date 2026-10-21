@@ -14,6 +14,7 @@ import { Slice, Fragment } from '@milkdown/prose/model'
 import { startsAsMermaid } from './editor-mermaid.js'
 import { normalizeDisplayMath } from './editor-math.js'
 import { hasStructuredWebHtml, normalizeWebPasteHtml } from './editor-web-paste.js'
+import { pasteIntoTableCell } from './editor-table-paste.js'
 
 function looksLikeMarkdown(text) {
   if (/^#{1,6}\s/m.test(text)) return true
@@ -197,7 +198,13 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
       handled = insert(view, Fragment.from(node))
     } else if (shouldHandleRawMarkdown) {
       const doc = parse(normalizeDisplayMath(text))
-      if (doc && doc.content && doc.content.size > 0) {
+      // In a table cell, a pasted table fills the cells and other blocks join
+      // the cell (#152); inserting them would split the table.
+      if (doc && doc.content && doc.content.size > 0 && pasteIntoTableCell(view, new Slice(doc.content, 0, 0))) {
+        handled = true
+      } else if (doc && doc.content && doc.content.size > 0 && pasteListItemTextIntoItem(view, doc.content, text, prepareRawMarkdownPaste)) {
+        handled = true
+      } else if (doc && doc.content && doc.content.size > 0) {
         cancelRawPaste = prepareRawMarkdownPaste?.({
           markdown: text,
           from: view.state.selection.from,
@@ -218,6 +225,47 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
   // build a slice from text/html and skip us).
   view.dom.addEventListener('paste', onPaste, true)
   return () => view.dom.removeEventListener('paste', onPaste, true)
+}
+
+// One list item (a whole line copied from a list, e.g. "2. text") pasted into
+// another list item: insert only its text and marks. Inserting the list
+// nested a new item with the old marker inside the target item and broke the
+// target list's structure. Two or more items, or any other block, still paste
+// as Markdown structure; pasting into a plain paragraph keeps the list (#98).
+const LIST_TYPES = new Set(['bullet_list', 'ordered_list'])
+const LIST_MARKER_RE = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/
+
+export function singleListItemInline(fragment) {
+  if (fragment.childCount !== 1) return null
+  const list = fragment.firstChild
+  if (!LIST_TYPES.has(list.type.name) || list.childCount !== 1) return null
+  const item = list.firstChild
+  if (item.type.name !== 'list_item' || item.childCount !== 1) return null
+  const paragraph = item.firstChild
+  return paragraph.type.name === 'paragraph' ? paragraph.content : null
+}
+
+// The item's own Markdown without its marker / checkbox; continuation lines
+// lose the marker-width indent. Null when the text does not look like that.
+export function listItemInlineMarkdown(text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n')
+  const match = lines[0].match(LIST_MARKER_RE)
+  if (!match) return null
+  const width = match[0].length
+  return [lines[0].slice(width), ...lines.slice(1).map((line) => line.replace(new RegExp(`^ {0,${width}}`), ''))].join('\n')
+}
+
+function pasteListItemTextIntoItem(view, fragment, text, prepareRawMarkdownPaste) {
+  const { $from, $to } = view.state.selection
+  if (!$from.sameParent($to) || $from.parent.type.name !== 'paragraph' || $from.depth < 2) return false
+  if ($from.node($from.depth - 1).type.name !== 'list_item') return false
+  const inline = singleListItemInline(fragment)
+  if (!inline || !inline.size) return false
+  const markdown = listItemInlineMarkdown(text)
+  const cancel = markdown == null ? null : prepareRawMarkdownPaste?.({ markdown, from: $from.pos, to: $to.pos })
+  if (insert(view, inline)) return true
+  cancel?.()
+  return false
 }
 
 function insert(view, fragment) {

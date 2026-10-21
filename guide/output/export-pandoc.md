@@ -27,6 +27,7 @@ HorseMD 不会在安装包中捆绑 Pandoc。你可以自行安装官方 Pandoc�
 - LaTeX（`.tex`）
 - OpenDocument（`.odt`）
 - Rich Text（`.rtf`）
+- MediaWiki（`.wiki`，维基百科等 MediaWiki 站点使用的 wiki 语法）
 - 纯文本（`.txt`）
 
 也可以按 `Ctrl/Cmd+P` 打开命令面板并搜索对应格式。导出使用当前编辑状态；不必为了导出而先保存 Markdown。

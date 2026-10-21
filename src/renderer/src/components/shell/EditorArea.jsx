@@ -193,11 +193,14 @@ export default function EditorArea({
                 onPaneFocus('source')
               }}
               onMouseUp={(e) => {
+                // A real click/keystroke (never a programmatic find selection).
+                e.currentTarget.__horsemdSourceUserInputAt = performance.now()
                 e.currentTarget.__horsemdSourceSelectionUser = true
                 e.currentTarget.__horsemdSourceViewportMoved = false
                 e.currentTarget.__horsemdSourceSelectionAt = performance.now()
               }}
               onKeyDown={(e) => {
+                e.currentTarget.__horsemdSourceUserInputAt = performance.now()
                 if (e.key !== 'Enter' || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return
                 const textarea = e.currentTarget
                 const beforeScrollTop = textarea.scrollTop
