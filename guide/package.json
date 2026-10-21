@@ -16,10 +16,11 @@
   "devDependencies": {
     "playwright-core": "1.61.1",
     "vitepress": "1.6.4",
-    "vue": "3.5.39"
+    "vue": "3.5.44"
   },
   "overrides": {
-    "vite": "6.4.3",
-    "postcss": "8.5.25"
+    "vite": "6.4.5",
+    "postcss": "8.5.25",
+    "source-map-js": "1.2.2"
   }
 }
