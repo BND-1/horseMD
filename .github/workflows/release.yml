@@ -60,12 +60,13 @@ jobs:
           cache: npm
 
       # Linux: electron-builder needs libgtk-3-dev and libnotify for desktop
-      # integration metadata; dpkg-deb is used to verify the .deb artifact.
+      # integration metadata; dpkg-deb is used to verify the .deb artifact;
+      # fpm's pacman target (Arch package, #153) shells out to bsdtar.
       - name: Install Linux desktop dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libnotify-dev dpkg
+          sudo apt-get install -y libgtk-3-dev libnotify-dev dpkg libarchive-tools
 
       - name: Install dependencies
         run: npm ci
