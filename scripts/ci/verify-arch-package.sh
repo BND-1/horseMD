@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the HorseMD pacman package in a clean Arch Linux container and
 # launches it (#153). Run by release.yml:
-#   docker run --rm --shm-size=1g -v "$PWD/dist:/dist:ro" -v "$PWD/scripts/ci:/ci:ro" \
+#   docker run --rm --privileged --shm-size=1g -v "$PWD/dist:/dist:ro" -v "$PWD/scripts/ci:/ci:ro" \
 #     archlinux:latest bash /ci/verify-arch-package.sh /dist/horse-X-x86_64.pkg.tar.xz
 set -euo pipefail
 PKG="$1"
@@ -24,25 +24,41 @@ fi
 useradd -m tester
 printf '# Arch smoke test\n\nHello from Arch.\n' > /home/tester/hello.md
 chown tester /home/tester/hello.md
-su tester -c 'cd ~ && nohup xvfb-run -a /usr/bin/horse --horsemd-input-trace --remote-debugging-port=9333 ~/hello.md > ~/horse.log 2>&1 &'
+launch() {
+  su tester -c "cd ~ && nohup xvfb-run -a /usr/bin/horse $1 --horsemd-input-trace --remote-debugging-port=9333 ~/hello.md > ~/horse.log 2>&1 &"
+  for _ in $(seq 60); do
+    if curl -fsS http://127.0.0.1:9333/json/list 2>/dev/null | grep -q 'index.html'; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+report() {
+  curl -fsS http://127.0.0.1:9333/json/list 2>/dev/null || true
+  echo "--- app log"
+  cat /home/tester/horse.log || true
+  echo "--- input trace (tail)"
+  tail -n 5 /tmp/horsemd-input-trace-*.jsonl 2>/dev/null || true
+  pkill -f /opt/HorseMD/horse || true
+  sleep 2
+}
 
-ok=0
-for _ in $(seq 60); do
-  if curl -fsS http://127.0.0.1:9333/json/list 2>/dev/null | grep -q 'index.html'; then
-    ok=1
-    break
+# The SUID sandbox needs namespaces a container may not grant (release.yml
+# runs it --privileged so it normally does). If it still cannot start, retry
+# without the sandbox: that still proves the package installs, links and
+# opens a window; the sandbox permissions are asserted above.
+if launch ""; then
+  report
+else
+  report
+  echo "::warning::sandboxed launch failed in the container; retrying with --no-sandbox"
+  if launch "--no-sandbox"; then
+    report
+  else
+    report
+    echo "::error::HorseMD did not open a window on Arch"
+    exit 1
   fi
-  sleep 1
-done
-curl -fsS http://127.0.0.1:9333/json/list 2>/dev/null || true
-echo "--- app log"
-cat /home/tester/horse.log || true
-echo "--- input trace (tail)"
-tail -n 5 /tmp/horsemd-input-trace-*.jsonl 2>/dev/null || true
-pkill -f /opt/HorseMD/horse || true
-
-if [ "$ok" != 1 ]; then
-  echo "::error::HorseMD did not open a window on Arch"
-  exit 1
 fi
 echo "✅ Arch package installs and launches"
