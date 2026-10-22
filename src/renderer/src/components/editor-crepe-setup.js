@@ -47,6 +47,8 @@ import remarkCjkFriendly from 'remark-cjk-friendly'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
 import { safeTrailingWhitespaceTextHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
+import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
+import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
 import { createTableSpanPastePlugin, pasteIntoTableCell } from './editor-table-paste.js'
 import {
   createStrikeGuardPlugin,
@@ -265,6 +267,11 @@ export function createConfiguredCrepe({
     }))
 
     ctx.update(remarkPluginsCtx, (plugins) => [
+      // Typora parity: `![](a b.png)` / `[x](my notes.md)` with a bare space
+      // in the path. First, so a lone image still becomes an image block.
+      { plugin: remarkSpacedLinkDestinations, options: undefined },
+      // CRLF files: code/math values hold `\n`, like CodeMirror's edits.
+      { plugin: remarkNormalizeCodeLineEndings, options: undefined },
       // Before Milkdown's remark-image-block (registered later and appended):
       // the same conversion, but the image block keeps its source position.
       { plugin: remarkImageBlockWithPosition, options: undefined },

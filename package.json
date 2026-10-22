@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.251",
+  "version": "0.13.252",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -39,6 +39,9 @@
     "test:theme-css": "node scripts/test-theme-css.mjs",
     "test:md-paste-list-item": "node scripts/test-md-paste-list-item.mjs",
     "test:custom-theme-typora-base-ui": "node scripts/test-custom-theme-typora-base-ui.mjs",
+    "test:spaced-link-destination": "node scripts/test-spaced-link-destination.mjs",
+    "test:spaced-image-path-ui": "node scripts/test-spaced-image-path-ui.mjs",
+    "test:crlf-code-block-enter-ui": "node scripts/test-crlf-code-block-enter-ui.mjs",
     "test:single-tilde-ui": "node scripts/test-single-tilde-strike-ui.mjs",
     "test:url-typing-ui": "node scripts/test-url-typing-ui.mjs",
     "test:edge-hard-break-scratch-ui": "node scripts/test-edge-hard-break-scratch-ui.mjs",

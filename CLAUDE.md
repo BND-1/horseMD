@@ -379,6 +379,22 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   backticks) via `setNodeAttribute`; the loader still highlights known
   names/aliases. DOM-level capture listeners only — the picker is a compiled
   Vue component. Locked by `test:codeblock-custom-language-ui`.
+- **Spaced link destinations** (`lib/remark-spaced-link-destination.js`,
+  Typora parity): `![](a b.jpg)` / `[x](my notes.md "t")` is literal text in
+  CommonMark but an image/link in Typora (Zhihu/WeChat exports use titles as
+  image names). A remark transform, FIRST in `remarkPluginsCtx` (before
+  `remarkImageBlockWithPosition`), re-scans text nodes with Typora's TypeMark
+  image/link regexes, only for destinations containing a space, and gives the
+  new nodes exact source positions (text aligned to source; escapes/entities
+  → skipped) so reprint keeps the authored bytes. Re-serialized nodes print
+  `<a b.jpg>`. Locked by `test:spaced-link-destination` +
+  `test:spaced-image-path-ui`.
+- **CRLF code values** (`lib/remark-code-line-endings.js`): micromark keeps
+  `\r\n` inside `code`/`math` values, but CodeMirror inserts `\n`, so in a
+  CRLF file every code-block Enter failed the save check (editor `x\n` vs
+  re-parsed `x\r\n`). The transform normalizes those values to `\n`; owners
+  spell line breaks with the file's EOL on write. Locked by
+  `test:crlf-code-block-enter-ui`.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →

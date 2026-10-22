@@ -197,6 +197,14 @@ const standalone = [
     script: 'scripts/test-custom-theme-typora-base-ui.mjs'
   },
   {
+    name: 'Typora parity: image/link paths with bare spaces render; edits keep authored bytes',
+    script: 'scripts/test-spaced-image-path-ui.mjs'
+  },
+  {
+    name: 'CRLF file: Enter in a new or authored code block stays in sync, file stays CRLF',
+    script: 'scripts/test-crlf-code-block-enter-ui.mjs'
+  },
+  {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
     script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
   },

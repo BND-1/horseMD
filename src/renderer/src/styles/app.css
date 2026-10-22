@@ -6163,8 +6163,18 @@ body.hm-preserve-soft-breaks
   padding: 14px 0;
   line-height: 1.6;
 }
+/* Typora keeps code text close to the prose edge. Crepe's wrapper adds 20px
+   on each side (kept for the toolbar row only, vertically) and the
+   gutter→text gap was 12 + 16 + 6px; together code started ~97px right of
+   the paragraph text. The dark editor now sits flush with the prose column
+   and code starts 10px after the line-number rule. Selector depth beats
+   Crepe's lazily-injected code-mirror.css (0-2-0). */
+.milkdown .ProseMirror .milkdown-code-block {
+  padding-left: 0;
+  padding-right: 0;
+}
 .milkdown .cm-editor .cm-content {
-  padding: 0 16px;
+  padding: 0 12px 0 0;
 }
 /* Selector depth beats Crepe's code-mirror.css (`.milkdown
    .milkdown-code-block .cm-gutters`, 0-3-0): the editor chunk is lazily
@@ -6177,7 +6187,7 @@ body.hm-preserve-soft-breaks
   color: var(--code-linenum);
   user-select: none;
   -webkit-user-select: none;
-  margin-right: 12px;
+  margin-right: 4px;
   padding: 0;
 }
 .milkdown .milkdown-code-block .cm-editor .cm-lineNumbers .cm-gutterElement {
