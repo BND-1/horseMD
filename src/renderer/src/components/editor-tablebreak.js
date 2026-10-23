@@ -25,7 +25,8 @@ const PHRASING_PARENTS = new Set([
   'emphasis',
   'strong',
   'delete',
-  'link'
+  'link',
+  'hmHtmlSpan'
 ])
 
 // --- 2. serialize: break → <br> inside a table cell ---
@@ -45,6 +46,14 @@ export function tableCellBreakHandler(node, parent, state, info) {
   // A heading is one line: `  \n` would end it and start a paragraph. Spell a
   // break inside a heading as `<br>`, which parses back to the same break.
   if (state.stack && (state.stack.includes('headingAtx') || state.stack.includes('headingSetext'))) return '<br>'
+  // HTML right after a line break: mdast-util-to-markdown turns that line
+  // break into a space (so the HTML cannot start an HTML block), losing the
+  // break: Yuque's `<font>  \n</font>` reprinted as `<font>\ </font>`. `<br>`
+  // keeps it (parsed back by brToBreakRemarkPlugin).
+  if (Array.isArray(parent?.children)) {
+    const next = parent.children[parent.children.indexOf(node) + 1]
+    if (next?.type === 'html') return '<br>'
+  }
   return defaultHandlers.break(node, parent, state, info)
 }
 

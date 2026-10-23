@@ -395,6 +395,80 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   re-parsed `x\r\n`). The transform normalizes those values to `\n`; owners
   spell line breaks with the file's EOL on write. Locked by
   `test:crlf-code-block-enter-ui`.
+- **Code-block fold** (`editor-codeblock-fold.js`): view-only toggle added
+  from outside into Crepe's Vue toolbar `.tools-button-group` (first child;
+  a MutationObserver re-adds it, and every DOM write is change-guarded or the
+  observer loops). Blocks under 8 lines and preview-only (Mermaid) blocks hide
+  it; folded = `.codemirror-host` max-height of the measured first 5 lines,
+  still scrollable (`overflow-y:auto`), + a footer-style `.hm-code-fold-bar`.
+  Focus entering the CodeMirror unfolds and scrolls the page by the window's
+  scrollTop so the clicked line stays put. Toolbar button
+  CSS must out-specify Crepe's `.tools .tools-button-group button`. Locked by
+  `test:codeblock-fold-ui`.
+- **Yuque exports** (`<font style=…>` everywhere, breaks inside `<font>`,
+  nested lists as blank + 4 spaces = indented code): the list-slot
+  fingerprint (`source-structure-fingerprint.js`) follows micromark — a line
+  4+ columns past its item (or the margin) is never a slot, `2.`/bare marker
+  right after top-level paragraph text or indented code is paragraph text,
+  and lazy/indented continuation lines do not split a list group. Milkdown's
+  default `strong`/`emphasis` stringify handlers skip attention encoding
+  (`**foo.**abc` reparses as literal `**`); `remark-text-handler.js` swaps
+  in the CJK-friendly ones (encode `&#x61;`) keeping `node.marker`, and the
+  reprint segment printer includes a neighbour ending/starting with a
+  delimiter. Locked by `test:yuque-export-edit-ui`, `test:remark-text-handler`,
+  `test:source-structure-fingerprint`, `test:source-reprint-ui`.
+- **Large-doc sync cost** (2026-10-23): one rich→source sync used to parse
+  and serialize the whole file several times. The serializer in
+  `serializerCtx` is memoized per document (and per serializer-style
+  object). The sync listens to Milkdown's `updated`, not `markdownUpdated`:
+  Milkdown serializes the whole document for markdownUpdated listeners on
+  every 200 ms pause, even while a heavy document's sync is deferred; the
+  handler serializes only when the pipeline runs now. A verified candidate's mdast seeds the
+  reprint `parseSource` cache (`rememberParsedSource`; a unified processor is
+  `typeof 'function'`, not 'object' — the cache never hit before). An
+  unforced flush returns at once when the live doc is the exact document the
+  Coordinator snapshot (or a passed committed-baseline flush check) was
+  proven for (identity or `Node.eq`). `pointerdown` marks an edit without a
+  block key (the selection has not moved yet). The dirty-reconcile timer
+  (260 ms after a DOM mutation) does not flush while a markdownUpdated
+  callback is still coming or deferred (`isMarkdownSyncPending`, capped at
+  3 s because Milkdown never delivers addToHistory:false transactions): it
+  used to run the full reprint between keystrokes and defeat the heavy-doc
+  idle deferral (4 s of 11 s on Windows). Never write `X:has(...) <descendant>` rules over the
+  editor content: Chromium restyles every match in the document on any
+  child class change (was 50 000 restyles per click on a Yuque export).
+- **Sync throttling** (`main/sync/request-pacer.js`): S3/WebDAV requests go
+  through a per-provider pacer — 429/503 retried (Retry-After or jittered
+  backoff, 8 attempts, re-signed each time), the request gap doubles per
+  throttle and decays on success. A sync stopped half way left uploaded
+  objects without a manifest; the engine now adopts an existing object with
+  identical bytes on a create-only conflict. Locked by `test:sync-throttle`.
+- **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
+  parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
+  one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
+  becomes an `hmHtmlSpan` mdast node → the `html_span` mark (attrs: exact
+  open/close tag bytes), so Yuque text takes a caret and partial selections
+  instead of being one locked atom. Pairs with no visible text (anchors,
+  Yuque's `<font>  \n</font>`), nested same-kind pairs and unbalanced tags
+  stay raw html. Stringify prints open + phrasing + close; a break inside
+  stays `  \n` (the close tag then starts the next line, as Yuque writes it).
+  Milkdown's `#moveSpaces` moves edge blanks out of EVERY mark run, so: the
+  validator and reprint compare blanks without strong/emphasis/link/html_span
+  (run-wide, not just edges) and ignore line-start blanks after a hard
+  break; reprint prints those line-start blanks via a U+E000 stand-in
+  (`&#x20;` at a line start, a space after the open tag); reprint keeps
+  html_span on a break only when it is the break's only mark; edge blanks
+  split from a span run drop the span. Adjacent identical spans merge in PM
+  (an edited block may print `<font a>x</font><font a>y</font>` as one).
+  `diffSequences` resynchronises in a window when the LCS table would be too
+  large (it used to reprint every block between two distant changes).
+  Locked by `test:html-span-edit-ui`, `test:yuque-export-edit-ui`.
+- **Input-rule anchoring** (`lib/input-rule-guards.js`): Milkdown's underscore
+  emphasis rule `/\b_(?![_\s])(.*?[^_\s])_\b/` had no `$`, so `_x_` anywhere
+  before the caret (inline code `_<font>…</font>_`) fired on every keystroke,
+  deleting a character and swallowing the typed one (pre-existing). Patched in
+  place in `inputRulesCtx` after create: anchored regexp, and every
+  non-backtick rule skips ranges that contain inline code.
 - **Inline HTML** (`editor-html.js`): Milkdown splits `<span>x</span>` into
   open/text/close atom nodes; `remarkMergeInlineHtml` coalesces a balanced
   open…close run into one html node so the node view can render it. Block tags →

@@ -185,8 +185,9 @@ function normalizeDoc(json) {
       // Whitespace at the edge of a bold/italic run cannot stay inside the
       // delimiters (`** x**` is not emphasis); the validator's semanticJson
       // treats it as non-semantic, so the oracle compares without it too.
+      const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
       const emphasized = (child) => child?.type === 'text' &&
-        (child.marks || []).some((mark) => mark.type === 'strong' || mark.type === 'emphasis' || mark.type === 'link')
+        (child.marks || []).some((mark) => INVISIBLE_ON_BLANK.has(mark.type))
       node.content.forEach((child, index) => {
         if (child.type !== 'text') return
         // A bold/italic run of only spaces is just spaces (no delimiters can
@@ -203,6 +204,22 @@ function normalizeDoc(json) {
       })
       node.content = node.content.filter((child) => !(child.type === 'text' && child.text === ''))
       // Adjacent text runs with the same marks are one run.
+      node.content = node.content.reduce((runs, child) => {
+        const previous = runs[runs.length - 1]
+        if (previous?.type === 'text' && child.type === 'text' && JSON.stringify(previous.marks || null) === JSON.stringify(child.marks || null)) {
+          previous.text += child.text
+        } else runs.push(child)
+        return runs
+      }, [])
+      // Blanks compare without those marks anywhere in a run, like the
+      // validator and the reprint engine (`**a b**` vs `**a** **b**`).
+      node.content = node.content.flatMap((child) => {
+        if (child?.type !== 'text' || !emphasized(child) || (child.marks || []).some((mark) => mark.type === 'inlineCode') || !/[^ \t][ \t]+[^ \t]/.test(child.text)) return [child]
+        const blankMarks = child.marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type))
+        return child.text.split(/([ \t]+)/).filter(Boolean).map((piece) => /^[ \t]+$/.test(piece)
+          ? (blankMarks.length ? { type: 'text', text: piece, marks: blankMarks } : { type: 'text', text: piece })
+          : { ...child, text: piece })
+      })
       node.content = node.content.reduce((runs, child) => {
         const previous = runs[runs.length - 1]
         if (previous?.type === 'text' && child.type === 'text' && JSON.stringify(previous.marks || null) === JSON.stringify(child.marks || null)) {
@@ -361,6 +378,17 @@ async function traceTails(app) {
       integrity: (tail('__hmSourceIntegrityTrace', 6) || []).map(strip),
       diff: (tail('__hmSourceIntegrityDiffTrace', 4) || []).map(strip),
       coordinator: tail('__hmSourceSyncCoordinatorTrace', 8),
+      reprint: tail('__hmSourceReprintTrace', 8),
+      reprintNow: (() => {
+        try {
+          const h = globalThis.__hmSourceReprintHarness
+          const mark = (globalThis.__hmSourceIntegrityDiffTrace || []).length
+          const r = h.reprint(h.liveSource(), h.liveDoc())
+          const diffs = (globalThis.__hmSourceIntegrityDiffTrace || []).slice(mark)
+          return { ok: r.ok, reason: r.reason, notes: (r.notes || []).slice(0, 12), markdown: r.markdown, engineDiff: diffs.slice(-1)[0] || null }
+        } catch (error) { return { error: String(error) } }
+      })(),
+      shadow: (globalThis.__hmSourceReprintShadowTrace || []).slice(-3).map((entry) => ({ phase: entry.phase, ok: entry.ok, reason: entry.reason, levels: entry.levels, engineDiff: entry.engineDiff, notes: entry.notes })),
       journal: (tail('__hmSourceSyncTransactionJournalTrace', 40) || []).map(strip),
       preserve: (tail('__hmPreserveLog', 6) || []).map(strip),
       flush: (tail('__hmFlushTrace', 10) || []).map(strip),

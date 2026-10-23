@@ -37,6 +37,8 @@ export function createEditorApi({
   serializerStyleHolder,
   hasPendingRichFlush,
   clearPendingRichFlush,
+  isLiveDocCommitted = null,
+  noteVerifiedLiveDoc = null,
   recordSourceSnapshot = null,
   publishReprint = null,
   generatedScratchRef,
@@ -225,6 +227,15 @@ export function createEditorApi({
       // An unforced flush during IME composition would sync uncommitted
       // candidate text; keep the pending flag and let compositionend publish.
       if (!force && viewRef?.current?.composing) return lastMarkdownRef.current
+      // A press or edit intent raises the pending flag before anything has
+      // changed (pointerdown fires before the selection even moves). When the
+      // live document is still the exact one the committed source was proven
+      // against, there is nothing to sync: skip the full reprint/verify, which
+      // costs seconds per click on a large file.
+      if (!force && isLiveDocCommitted?.() === true) {
+        clearPendingRichFlush?.()
+        return lastMarkdownRef.current
+      }
       // Saves and source-mode switches can occur before Milkdown publishes its
       // delayed markdownUpdated callback. Serialize the current ProseMirror
       // document instead of reading Crepe's potentially stale cached snapshot.
@@ -270,6 +281,9 @@ export function createEditorApi({
         )
         if (committedIntegrity && committedIntegrity.ok === false) {
           return failOrRescue(committedIntegrity.reason || 'source-document-mismatch')
+        }
+        if (committedIntegrity?.ok === true) {
+          noteVerifiedLiveDoc?.(viewRef.current?.state.doc, lastMarkdownRef.current, canonical)
         }
         clearPendingRichFlush?.()
         return lastMarkdownRef.current

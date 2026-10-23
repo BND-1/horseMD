@@ -205,6 +205,18 @@ const standalone = [
     script: 'scripts/test-crlf-code-block-enter-ui.mjs'
   },
   {
+    name: 'Yuque export: <font> spans, indented-code lists, in-font breaks edit and save in sync',
+    script: 'scripts/test-yuque-export-edit-ui.mjs'
+  },
+  {
+    name: 'Code-block fold: toolbar/bar toggle, caret entry unfolds, Markdown untouched',
+    script: 'scripts/test-codeblock-fold-ui.mjs'
+  },
+  {
+    name: 'Editable <font>/<span>: caret, partial selection, byte-exact typing, split, bold, anchors',
+    script: 'scripts/test-html-span-edit-ui.mjs'
+  },
+  {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
     script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
   },

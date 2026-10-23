@@ -235,6 +235,24 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
         }
         break
       }
+      case 'hmHtmlSpan': {
+        // Editable <font>/<span>: skip the authored open tag, map the
+        // content, skip the close tag.
+        const first = node.children?.[0]
+        const open = /^<(?:font|span)(?=[\s>])[^>]*>/i.exec(source.slice(cursor, bound))
+        if (Number.isInteger(startOf(first))) cursor = startOf(first)
+        else if (open) cursor += open[0].length
+        else { failed = true; return }
+        for (const child of node.children || []) visit(child, bound)
+        if (failed) return
+        if (Number.isInteger(nodeEnd)) cursor = nodeEnd
+        else {
+          const close = /^<\/(?:font|span)\s*>/i.exec(source.slice(cursor, bound))
+          if (!close) { failed = true; return }
+          cursor += close[0].length
+        }
+        break
+      }
       default:
         failed = true
     }

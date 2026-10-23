@@ -117,15 +117,56 @@ const pushLineSlots = (slots, line) => {
   }
 }
 
+// Column of the first non-blank character, with tabs to the next multiple of 4.
+const leadingColumns = (line) => {
+  let column = 0
+  for (const char of line) {
+    if (char === ' ') column += 1
+    else if (char === '\t') column += 4 - (column % 4)
+    else break
+  }
+  return column
+}
+
+// Content columns of the items a marker line opens, outermost first
+// (`- a` → [2], `1.  a` → [4], `- 1. a` → [2, 5]); a run of 5+ spaces after
+// the marker counts as one (CommonMark).
+const listContentColumns = (line) => {
+  const columns = []
+  let column = leadingColumns(line)
+  let rest = line.replace(/^[ \t]*/, '')
+  while (true) {
+    const bare = rest.match(/^([-+*]|\d{1,9}[.)])$/)
+    if (bare) {
+      columns.push(column + bare[1].length + 1)
+      return columns
+    }
+    const match = rest.match(/^([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/)
+    if (!match) return columns
+    const spacing = match[2].length
+    column += match[1].length + (spacing > 4 ? 1 : spacing)
+    columns.push(column)
+    rest = match[3]
+  }
+}
+
 const fingerprint = (markdown) => {
   const groups = []
   let group = null
   let fence = null
   let crossedNonListLine = false
+  // Content columns of the list items that are still open.
+  const openItems = []
+  // The previous line was top-level paragraph text or indented code.
+  let interruptible = false
+  // The previous line was paragraph text inside an open list item.
+  let lazyItemText = false
   for (const rawLine of String(markdown || '').split(/\r?\n/)) {
     if (fence) {
       if (closesFence(rawLine, fence)) {
         fence = null
+        interruptible = false
+        lazyItemText = false
         group = null
         crossedNonListLine = true
       }
@@ -134,26 +175,70 @@ const fingerprint = (markdown) => {
     const openedFence = openingFence(rawLine)
     if (openedFence) {
       fence = openedFence
+      lazyItemText = false
       group = null
       crossedNonListLine = true
       continue
     }
-    if (standaloneEmptyBlockLinePattern.test(rawLine)) continue
+    if (standaloneEmptyBlockLinePattern.test(rawLine)) {
+      interruptible = false
+      lazyItemText = false
+      continue
+    }
+    if (!rawLine.trim()) {
+      interruptible = false
+      lazyItemText = false
+      continue
+    }
+    const column = leadingColumns(rawLine)
     const lineSlots = []
     pushLineSlots(lineSlots, rawLine)
-    if (lineSlots.length) {
+    // Text right below an item's paragraph is a lazy continuation of that
+    // item even when it is not indented (`2. a` / `more` / `3. b` is one list).
+    const lazy = lazyItemText && !lineSlots.length && !/^ {0,3}(#{1,6}([ \t]|$)|>|`{3,}|~{3,})/.test(rawLine)
+    if (!lazy) while (openItems.length && openItems[openItems.length - 1] > column) openItems.pop()
+    const topLevel = openItems.length === 0
+    // 4+ columns past the enclosing item (or the margin) is an indented code
+    // block or paragraph text, never a list item: Yuque exports put `    - x`
+    // after a blank line, which CommonMark reads as code and Crepe prints as
+    // a fenced block.
+    if (column - (openItems[openItems.length - 1] ?? 0) >= 4) {
+      crossedNonListLine = true
+      group = null
+      if (topLevel) interruptible = true
+      lazyItemText = lazy
+      continue
+    }
+    // Right after a top-level paragraph or indented code line, the parser
+    // starts a list only with `1.` or a non-empty bullet: `2. B` or a bare `-`
+    // there is paragraph text (or a setext underline), not a list item.
+    const first = lineSlots[0]
+    const startsList = first && !(interruptible && (
+      /^[ \t]*([-+*]|\d{1,9}[.)])[ \t]*$/.test(rawLine) ||
+      (first.kind === 'ordered' && Number(first.number) !== 1)
+    ))
+    if (startsList) {
+      openItems.push(...listContentColumns(rawLine))
       if (!group || crossedNonListLine) {
         group = []
         groups.push(group)
       }
       group.push(...lineSlots)
       crossedNonListLine = false
-    } else if (rawLine.trim()) {
-      // Blank lines belong to the current Markdown block. A non-empty ordinary
-      // line is a hard fence: a list before it and a list after it are separate
-      // structural regions even when the parser later normalizes whitespace.
+      interruptible = false
+      lazyItemText = !/^[ \t]*([-+*]|\d{1,9}[.)])[ \t]*$/.test(rawLine)
+    } else if (lazy) {
+      // Continuation text of the item's paragraph (`3. a  ` / `more` /
+      // `4. b`) does not separate the items: Crepe may print the same
+      // paragraph on one line (Yuque puts the break inside `<font>`).
+    } else {
+      // A non-empty ordinary line is a hard fence: a list before it and a
+      // list after it are separate structural regions even when the parser
+      // later normalizes whitespace. Blank lines belong to the current block.
       crossedNonListLine = true
       group = null
+      if (topLevel) interruptible = !/^ {0,3}(#{1,6}([ \t]|$)|>)/.test(rawLine)
+      lazyItemText = !topLevel && !/^ {0,3}(#{1,6}([ \t]|$)|>)/.test(rawLine)
     }
   }
   return groups.map((slots) => {

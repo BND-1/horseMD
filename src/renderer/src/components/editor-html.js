@@ -1,5 +1,6 @@
 // Raw-HTML rendering for Milkdown's `html` node + block-type conversion.
 import { loadKatex } from '../lib/katex-lazy.js'
+import { convertHtmlSpans } from './editor-html-span.js'
 
 // Tags we render as real DOM instead of escaped source. Split into block vs
 // inline so the node view returns the right wrapper element (a block <div> or an
@@ -169,6 +170,10 @@ export function renderHtmlNodeView(node) {
     // Not something we render — mimic the default: escaped text in a span.
     const span = document.createElement('span')
     span.setAttribute('data-type', 'html')
+    // Milkdown's parseDOM rule reads the value back from `data-value` when
+    // ProseMirror re-reads this DOM (IME, a selection typed over): without
+    // it the node came back as an empty html node, which has no Markdown.
+    span.setAttribute('data-value', value)
     span.textContent = value
     return { dom: span, ignoreMutation: () => true }
   }
@@ -178,6 +183,7 @@ export function renderHtmlNodeView(node) {
     ? `hm-html-block${hasTable ? ' hm-html-table-block' : ''}`
     : 'hm-html-inline'
   dom.setAttribute('data-type', 'html')
+  dom.setAttribute('data-value', value)
   dom.contentEditable = 'false'
   dom.innerHTML = sanitizeHtml(value)
   // Raw-HTML table blocks carry formulas as literal `$x_1$` text — most MD
@@ -242,6 +248,21 @@ function isOpeningInlineTag(s) {
 function coalesceChildren(node) {
   if (!Array.isArray(node.children)) return
   for (const c of node.children) coalesceChildren(c)
+  // Balanced <font>/<span> pairs become editable spans first (their content
+  // is merged like any other phrasing content, below and inside them).
+  // Only inside phrasing content: at block level a `<font>` line and a
+  // `</font>` line are html blocks around whole paragraphs.
+  if (PHRASING_PARENTS.has(node.type)) {
+    const converted = convertHtmlSpans(node.children)
+    node.children = converted.children
+    for (const span of converted.spans) mergeInlineHtmlRuns(span)
+  }
+  mergeInlineHtmlRuns(node)
+}
+
+const PHRASING_PARENTS = new Set(['paragraph', 'heading', 'tableCell', 'emphasis', 'strong', 'delete', 'link', 'linkReference', 'highlight'])
+
+function mergeInlineHtmlRuns(node) {
   const kids = node.children
   const next = []
   let i = 0

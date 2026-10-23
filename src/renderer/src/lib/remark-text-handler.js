@@ -1,3 +1,5 @@
+import { cjkFriendlyToMarkdown } from 'mdast-util-to-markdown-cjk-friendly'
+
 // Milkdown's default remark `text` stringify handler has a fast path,
 // `if (/^[^*_\\]*\s+$/.test(value)) return value`, meant to keep the space
 // before a mark (`a **b**`) from being entity-encoded. It also skips every
@@ -19,7 +21,18 @@ const TRAILING_WHITESPACE_FAST_PATH = /^([^*_\\]*?)(\s+)$/
 const encodeCharacter = (character) =>
   `&#x${character.charCodeAt(0).toString(16).toUpperCase()};`
 
-export function safeTrailingWhitespaceTextHandler(node, _parent, state, info) {
+export function safeTrailingWhitespaceTextHandler(node, parent, state, info) {
+  // The CJK-friendly strong/emphasis handler (below) asks the next text node
+  // to encode its first character when it is outside the BMP (an emoji):
+  // `**foo.**&#x1F600;`. Its own text handler does that; this one replaces it.
+  if (state.cjkFriendlyEncodeAfterSupplementaryText) {
+    state.cjkFriendlyEncodeAfterSupplementaryText = false
+    const [first = ''] = [...node.value]
+    if (first) {
+      const rest = safeTrailingWhitespaceTextHandler({ ...node, value: node.value.slice(first.length) }, parent, state, { ...info, before: ';' })
+      return `&#x${first.codePointAt(0).toString(16).toUpperCase()};${rest}`
+    }
+  }
   const value = node.value
   const match = TRAILING_WHITESPACE_FAST_PATH.exec(value)
   if (!match) return state.safe(value, { ...info, encode: [] })
@@ -33,3 +46,28 @@ export function safeTrailingWhitespaceTextHandler(node, _parent, state, info) {
   }
   return state.safe(head, { ...info, after: tail[0], encode: [] }) + tail
 }
+
+// Milkdown's default strong/emphasis stringify handlers keep the authored
+// marker (`__x__` stays `__`) but skip CommonMark's attention encoding, so a
+// bold run ending in punctuation followed by a letter printed `**foo.**abc`,
+// which parses back as literal asterisks (Yuque exports: `**<font>…</font>**`
+// then typed text). The CJK-friendly handlers (the ones remark-cjk-friendly
+// registers, also handling `**「重点」**内容`) encode `**foo.**&#x61;bc`;
+// wrap them so the node's own marker is still used.
+const withMarker = (handle, option) => {
+  const wrapped = (node, parent, state, info) => {
+    const saved = state.options[option]
+    if (node?.marker) state.options[option] = node.marker
+    try {
+      return handle(node, parent, state, info)
+    } finally {
+      state.options[option] = saved
+    }
+  }
+  wrapped.peek = (node, _parent, state) => node?.marker || state.options[option] || '*'
+  return wrapped
+}
+
+const cjkAttention = cjkFriendlyToMarkdown().handlers
+export const strongStringifyHandler = withMarker(cjkAttention.strong, 'strong')
+export const emphasisStringifyHandler = withMarker(cjkAttention.emphasis, 'emphasis')

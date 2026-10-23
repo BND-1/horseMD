@@ -74,14 +74,34 @@ const isAutolinkLiteral = (node, mark) => {
     (/^www\.\S+$/i.test(text) && href === `http://${text}`) ||
     (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text) && href === `mailto:${text}`)
 }
+// Marks a blank looks the same with or without (the validator compares them
+// off whitespace; Milkdown moves edge blanks out of every mark run).
+const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
 const inlineRunsModuloAutolinks = (block) => {
   const runs = []
-  block.forEach((child) => {
-    if (!child.isText) { runs.push({ node: child }); return }
-    const marks = child.marks.filter((mark) => !isAutolinkLiteral(child, mark))
+  const push = (text, marks) => {
+    if (!text) return
     const previous = runs[runs.length - 1]
-    if (previous && previous.marks && sameMarkSet(previous.marks, marks)) previous.text += child.text
-    else runs.push({ text: child.text, marks })
+    if (previous && previous.marks && sameMarkSet(previous.marks, marks)) previous.text += text
+    else runs.push({ text, marks })
+  }
+  let afterHardBreak = false
+  block.forEach((child) => {
+    if (!child.isText) {
+      runs.push({ node: child })
+      afterHardBreak = /^hard_?break$/.test(child.type.name)
+      return
+    }
+    const marks = child.marks.filter((mark) => !isAutolinkLiteral(child, mark))
+    // Blanks at the start of the line after a line break have no Markdown
+    // spelling outside an HTML tag: compare that line start without them.
+    let text = afterHardBreak ? child.text.replace(/^[ \t]+/, '') : child.text
+    afterHardBreak = afterHardBreak && !text
+    const blankMarks = marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type.name))
+    const isCode = marks.some((mark) => mark.type.name === 'inlineCode')
+    for (const piece of isCode ? [text] : text.split(/([ \t]+)/)) {
+      push(piece, !isCode && /^[ \t]+$/.test(piece) ? blankMarks : marks)
+    }
   })
   return runs
 }
@@ -151,6 +171,27 @@ const diffSequences = (oldNodes, newNodes) => {
       else if (table[i + 1][j] >= table[i][j + 1]) i += 1
       else j += 1
     }
+  } else if (n && m) {
+    // Too big for the table (two changes far apart in a large document):
+    // walk both, and after a mismatch resynchronise on the nearest pair of
+    // equal nodes within a window. Leaving the whole middle unaligned would
+    // reprint every block between the two changes.
+    const WINDOW = 48
+    let i = 0
+    let j = 0
+    while (i < n && j < m) {
+      if (sameNode(oldMid[i], newMid[j])) { pairs.push([prefix + i, prefix + j]); i += 1; j += 1; continue }
+      let skip = null
+      for (let distance = 1; distance <= WINDOW && !skip; distance += 1) {
+        for (let a = 0; a <= distance; a += 1) {
+          const b = distance - a
+          if (i + a < n && j + b < m && sameNode(oldMid[i + a], newMid[j + b])) { skip = [a, b]; break }
+        }
+      }
+      if (!skip) { i += 1; j += 1; continue }
+      i += skip[0]
+      j += skip[1]
+    }
   }
   for (let index = 0; index < suffix; index += 1) {
     pairs.push([oldNodes.length - suffix + index, newNodes.length - suffix + index])
@@ -166,7 +207,36 @@ const lineStartOf = (source, offset) => {
 
 const LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+|$)/
 
-export function reprintSource({ source, editorDoc, previousDoc = null, parse, remark, serialize, escape = 'minimal' }) {
+// The source being reprinted is the committed baseline: the same string for
+// every keystroke until the next publish, and for each escape level of one
+// reprint. Parsing a 250 KB file twice per attempt cost seconds per pause
+// (Yuque export, 2800 inline HTML spans), so the last parse per editor
+// (`remark` is per editor) is reused. Both results are only read.
+const parsedSources = new WeakMap()
+// A unified processor is callable (typeof 'function'), so test for both.
+const cacheKey = (remark) => (remark && (typeof remark === 'object' || typeof remark === 'function') ? remark : null)
+// `parseTree` (optional) builds the editor document from the mdast already
+// made here, so the source is parsed once instead of twice.
+function parseSource(body, parse, remark, parseTree) {
+  const key = cacheKey(remark)
+  const cached = key ? parsedSources.get(key) : null
+  if (cached?.body === body) return cached
+  const mdRoot = remark.runSync(remark.parse(body), body)
+  const entry = { body, srcDoc: parseTree ? parseTree(mdRoot) : parse(body), mdRoot }
+  if (key) parsedSources.set(key, entry)
+  return entry
+}
+
+// The candidate a sync verified becomes the committed source of the next
+// sync: callers that already parsed it hand the result over, so the next
+// keystroke does not parse the whole file again.
+export function rememberParsedSource(remark, body, srcDoc, mdRoot) {
+  const key = cacheKey(remark)
+  if (!key || typeof body !== 'string' || !srcDoc || !mdRoot) return
+  parsedSources.set(key, { body, srcDoc, mdRoot })
+}
+
+export function reprintSource({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, escape = 'minimal' }) {
   // `escape: 'segment'` skips character patches: every changed text block
   // reprints whole top-level inline segments, which re-escapes literal
   // delimiters around the edit (`**` + typed text → `\*你好\*`; seed 50).
@@ -183,8 +253,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
   let srcDoc
   let mdRoot
   try {
-    srcDoc = parse(body)
-    mdRoot = remark.runSync(remark.parse(body), body)
+    ;({ srcDoc, mdRoot } = parseSource(body, parse, remark, parseTree))
   } catch (error) {
     return { ok: false, reason: 'parse-failed', notes: [String(error?.message || error)] }
   }
@@ -195,7 +264,11 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
   // (design §5): emphasis/strong/strike around only whitespace or a break
   // loses the mark; a text block's leading/trailing line breaks are dropped.
   const SPAN_MARKS = new Set(['strong', 'emphasis', 'strike_through', 'highlight'])
-  const normalizeForPrint = (node, { trimBreaks = true } = {}) => {
+  // Stand-in for a blank at the start of the line after a hard break: not
+  // whitespace, so Milkdown does not move it out of a <font>/<span> (where
+  // Yuque writes it and where it survives parsing); printed back below.
+  const LINE_START_BLANK = '\uE000'
+  const normalizeForPrint = (node, { trimBreaks = true, inCell: inCellAbove = false } = {}) => {
     if (node.isText) {
       if (node.text.trim() === '' && node.marks.some((mark) => SPAN_MARKS.has(mark.type.name))) {
         return node.mark(node.marks.filter((mark) => !SPAN_MARKS.has(mark.type.name)))
@@ -203,13 +276,19 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
       return node
     }
     if (node.isLeaf) {
-      if (/^hard_?break$/.test(node.type.name) && node.marks.length) return node.mark([])
+      // A line break inside an editable <font>/<span> stays inside it (Yuque's
+      // `text  \n</font>`). With a delimiter mark on it too the break leaves
+      // every mark, as before: keeping only the span would cross the nesting
+      // (`_<font>a_` + break + `_</font>`; Yuque's `_…</font>__<font>…_`).
+      if (/^hard_?break$/.test(node.type.name) && node.marks.length) {
+        return node.marks.every((mark) => mark.type.name === 'html_span') ? node : node.mark([])
+      }
       return node
     }
     const children = []
     // Inside a table cell a line break is a visible `<br>`: keep it.
     const inCell = /^table_(cell|header)$/.test(node.type.name)
-    node.forEach((child) => children.push(normalizeForPrint(child, { trimBreaks: trimBreaks && !inCell })))
+    node.forEach((child) => children.push(normalizeForPrint(child, { trimBreaks: trimBreaks && !inCell, inCell: inCellAbove || inCell })))
     // A heading of only spaces has no encoding beyond the empty heading
     // (`#     ` parses as `#`; seed 71).
     if (node.type.name === 'heading' && children.every((child) => child.isText && !/[^ \t]/.test(child.text))) {
@@ -253,8 +332,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
           return
         }
         const match = /^([ \t]*)([\s\S]*?)([ \t]*)$/.exec(child.text)
-        const plainMarks = child.marks.filter((mark) => !isSpan(mark))
-        const lead = index > 0 && children[index - 1]?.isText ? match[1] : ''
+        // An editable <font>/<span> leaves the blank too: alone it would print
+        // as an empty `<font …></font>` (Milkdown moves the space out), which
+        // parses back as raw html. Edge blanks of a span compare unmarked.
+        const plainMarks = child.marks.filter((mark) => !isSpan(mark) && mark.type.name !== 'html_span')
+        // At the block start too: with a span nested in bold, Milkdown's
+        // #moveSpaces hands the inner run's leading blank to the outer run as
+        // its only text child and then moves it out as TRAILING space
+        // (`**<font> b</font>**` → `**<font>b</font>** `). Split first; the
+        // block-start blank prints as `&#x20;`.
+        const lead = (index === 0 || children[index - 1]?.isText) ? match[1] : ''
         const trail = index < children.length - 1 && children[index + 1]?.isText ? match[3] : ''
         if ((!lead && !trail) || !match[2]) {
           splitEdgeBlanks.push(child)
@@ -267,10 +354,28 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
       children.splice(0, children.length, ...splitEdgeBlanks)
       // ...nor do blanks at the start of a continuation line, after a soft
       // break (CommonMark strips them; seed 129).
+      // After a hard break (outside a table cell) they are kept, spelled so
+      // they survive: Yuque's `_<font> text` holds one inside the tag, and
+      // Milkdown would move a span's edge blank out to the line start, where
+      // the parser drops it (and the next edit would reprint it again).
+      const isHardLineBreak = (child) => !inCellAbove && !inCell && /^hard_?break$/.test(child?.type?.name || '') && child.attrs?.isInline !== true
       for (let index = 1; index < children.length; index += 1) {
         const child = children[index]
-        if (child?.isText && isSoftBreak(children[index - 1]) && /^[ \t]+/.test(child.text)) {
+        if (!child?.isText || !/^[ \t]+/.test(child.text)) continue
+        if (isSoftBreak(children[index - 1])) {
           const text = child.text.replace(/^[ \t]+/, '')
+          children[index] = text ? node.type.schema.text(text, child.marks) : null
+        } else if (isHardLineBreak(children[index - 1])) {
+          const text = child.text.replace(/^[ \t]+/, (blanks) => LINE_START_BLANK.repeat(blanks.length))
+          children[index] = node.type.schema.text(text, child.marks)
+        }
+      }
+      // Blanks right before a soft break have no encoding either (2+ would
+      // make it a hard break; seed 119: a deleted link left `bet    `).
+      for (let index = 0; index < children.length - 1; index += 1) {
+        const child = children[index]
+        if (child?.isText && isSoftBreak(children[index + 1]) && /[ \t]+$/.test(child.text)) {
+          const text = child.text.replace(/[ \t]+$/, '')
           children[index] = text ? node.type.schema.text(text, child.marks) : null
         }
       }
@@ -296,6 +401,10 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
     // heading); every other mid-line `&#x20;` is a plain space.
     .replace(/(^|\n)((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?)+)&#x20;/g, `$1$2${SENTINEL} `)
     .replace(/(?<=[^\n])&#x20;/g, ' ')
+    // Line-start blanks after a hard break: `&#x20;` at the line start,
+    // a plain space after an opening tag or delimiter.
+    .replace(/(^|\n)([ \t]*(?:>[ \t]?)*)(\uE000+)/g, (_match, start, prefix, blanks) => start + prefix + '&#x20;'.repeat(blanks.length))
+    .replace(/\uE000/g, ' ')
 
   // Prefix every line after the first; blank lines get the trimmed prefix.
   const indentContinuation = (text, prefix) => text
@@ -551,9 +660,23 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
     return output
   }
 
+  // A blank looks the same with or without bold/italic/link/<font> on it, and
+  // the validator compares those marks off whitespace (Milkdown moves edge
+  // blanks out of every mark run): a blank whose only difference is such a
+  // mark is unchanged, or the next edit reprints spans the previous publish
+  // already proved equivalent. Likewise marks on a line break.
+  const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
+  const visibleMarks = (marks) => (marks || []).filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type.name))
   const sameUnit = (left, right) => {
     if (!left || !right || left.kind !== right.kind) return false
-    if (left.kind === 'char') return left.char === right.char && sameMarkSet(left.marks, right.marks)
+    if (left.kind === 'char') {
+      if (left.char !== right.char) return false
+      if (left.char === ' ' || left.char === '\t') return sameMarkSet(visibleMarks(left.marks), visibleMarks(right.marks))
+      return sameMarkSet(left.marks, right.marks)
+    }
+    if (/^hard_?break$/.test(left.node?.type?.name || '') && left.node.type === right.node?.type) {
+      return (left.node.attrs?.isInline === true) === (right.node.attrs?.isInline === true)
+    }
     return sameMarkSet(left.marks, right.marks) && sameNode(left.node, right.node)
   }
 
@@ -651,7 +774,15 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
       // Text at the start of a sentinel-led line goes in front of the
       // sentinel, so the sentinel keeps pairing with its space.
       if (from != null && p === 0 && body[from - 1] === SENTINEL) from -= 1
-      if (from != null && !exposesLineStart && !blankRun && !(code && text.includes('`'))) {
+      // Unmarked text right against a bold/italic delimiter (`**foo.**` + `a`)
+      // can stop the delimiter from closing; the segment printer sees the
+      // neighbour and encodes it (`**foo.**&#x61;`).
+      const leavesSpan = (unit) => (unit?.marks || []).some((mark) => SPAN_MARKS.has(mark.type.name) && !marks.some((own) => own.eq(mark)))
+      const againstDelimiter = from != null && !code && (
+        (leavesSpan(oldUnits[p - 1]) && /[*_~=]$/.test(body.slice(0, from))) ||
+        (leavesSpan(oldUnits[oldEnd]) && /^[*_~=]/.test(body.slice(to)))
+      )
+      if (from != null && !exposesLineStart && !blankRun && !againstDelimiter && !(code && text.includes('`'))) {
         const lineStart = !cell && !code && (p === 0 || isBreakUnit(oldUnits[p - 1]))
         let spelled = code ? text : escapeInline(text, { cell, lineStart, sentinel: p === 0 })
         // A trailing backslash would escape the authored punctuation right
@@ -680,6 +811,12 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
       if (Number.isInteger(lastTop) && oldEnd < oldUnits.length && newWindow.length && sharesMark(oldUnits[oldEnd], newWindow[newWindow.length - 1])) {
         lastTop = Math.max(lastTop, topOfOld(oldEnd))
       }
+      // A neighbour that ends (or starts) with a bold/italic delimiter is
+      // printed together with the segment: alone, new text right against
+      // `**` is spelled literally and can stop the delimiter from closing
+      // (Yuque: `**<font>…</font>**` + typed text).
+      if (Number.isInteger(firstTop) && firstTop > 0 && /[*_~=]$/.test(body.slice(map.tops[firstTop - 1].from, map.tops[firstTop - 1].to))) firstTop -= 1
+      if (Number.isInteger(lastTop) && lastTop < map.tops.length - 1 && /^[*_~=]/.test(body.slice(map.tops[lastTop + 1].from, map.tops[lastTop + 1].to))) lastTop += 1
       if (Number.isInteger(firstTop) && Number.isInteger(lastTop)) {
         let unitFrom = map.units.findIndex((unit) => unit.top === firstTop)
         let unitTo = map.units.length - [...map.units].reverse().findIndex((unit) => unit.top === lastTop)
@@ -700,8 +837,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
         // Blanks right before the line break that follows the segment have no
         // encoding (2+ would make it a hard break; fuzz seed 68).
         if (!cell && /^\r?\n/.test(body.slice(map.tops[lastTop].to, map.tops[lastTop].to + 2))) printed = printed.replace(/[ \t]+$/, '')
-        // ...and inside it (seed 119: a deleted link left `bet    ` + newline).
-        if (!cell) printed = printed.replace(/(?<!\\)[ \t]+(?=\r?\n)/g, '')
+        // ...and inside it (seed 119: a deleted link left `bet    ` + newline),
+        // unless the segment holds a hard break: `  ` + newline is then its
+        // spelling (Yuque two-space breaks inside <font>), and blanks before
+        // soft breaks were already dropped from the fragment.
+        let hardBreakInside = false
+        fragment.descendants((child) => { if (/^hard_?break$/.test(child.type.name) && child.attrs?.isInline !== true) hardBreakInside = true })
+        if (!cell && !hardBreakInside) printed = printed.replace(/(?<!\\)[ \t]+(?=\r?\n)/g, '')
         let segmentFrom = map.tops[firstTop].from
         const segmentTo = map.tops[lastTop].to
         // Nothing left before a line break: the blanks just before the segment
@@ -767,7 +909,28 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, re
     const raw = body.slice(start, end)
     const lines = raw.split(/\r?\n/)
     const open = /^([ \t]*)(`{3,}|~{3,})/.exec(lines[0])
-    if (!open || lines.length < 2) return false
+    // Indented code (Yuque writes nested lists as blank line + 4 spaces):
+    // patch it in place, keeping the indentation. Reprinting it as a fence
+    // would change what follows (`2. x` right after indented code is
+    // paragraph text; after a fence it starts a list).
+    if (!open) {
+      const lineStart = lineStartOf(body, start)
+      const indent = /^[ \t]*/.exec(body.slice(start, end))[0]
+      const before = body.slice(lineStart, start)
+      const width = (text) => text.replace(/\t/g, '    ').length
+      if (width(before.replace(/^[ \t>]*/, '') + indent) < 4 && width(before + indent) - width(frame.prefix) < 4) return false
+      const content = newNode.textContent
+      const contentLines = content.split('\n')
+      if (!content || !contentLines[0].trim() || !contentLines[contentLines.length - 1].trim()) return false
+      const lead = frame.prefix + before.slice(frame.prefix.length) + indent
+      const text = contentLines
+        .map((line, index) => (index === 0 ? indent + line : line ? lead + line : frame.prefix.replace(/[ \t]+$/, '')))
+        .join('\n')
+      replace(start, end, text)
+      notes.push({ level: 'code', at: start })
+      return true
+    }
+    if (lines.length < 2) return false
     const fence = open[2]
     const last = lines[lines.length - 1].replace(/^[ \t>]*/, '')
     if (!last.startsWith(fence[0].repeat(fence.length))) return false

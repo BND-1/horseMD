@@ -94,7 +94,14 @@ const cases = [
   { name: 'irregular ordered list: new first item takes the start number (seed 96)', source: 'x\n\n1. a\n2. b\n3. c\n1. d\n', target: 'x\n\na\n\n1. b\n2. c\n3. d\n', expected: 'x\n\na\n\n1. b\n2. c\n3. d\n' },
   { name: 'heading turned paragraph gets a blank line before the next paragraph (seed 111)', source: '# T\nnext para\n', target: 'T\n\nnext para\n', expected: 'T\n\nnext para\n' },
   { name: 'bold inside italic keeps the space before it (seed 57, Milkdown moveSpaces)', source: 'x\n\n*alph a b*\n', target: 'x\n\n*alph **a b***\n', expected: 'x\n\n*alph* ***a b***\n' },
-  { name: 'emptied list item is unchanged behaviour', source: '- a\n- b\n', target: '- a\n-\n', expected: '- a\n- \n' }
+  { name: 'emptied list item is unchanged behaviour', source: '- a\n- b\n', target: '- a\n-\n', expected: '- a\n- \n' },
+  // Yuque (面试问题.md): typing over the `<font>` after `**<font>…</font>**`
+  // puts a letter right after the closing `**`; literal, it stops closing.
+  { name: 'text typed over html right after bold is encoded (Yuque)', source: '+ **<font>max</font>**<font>：tail</font>\n+ b\n', target: '+ **<font>max</font>**&#x61;bc\n+ b\n', expected: '+ **<font>max</font>**&#x61;bc\n+ b\n' },
+  { name: 'line break inside <font> survives an item split (Yuque)', source: '1. **a**<font>  \n</font><font>b</font>\n2. c\n', target: '1. **a**<font>  \n</font><font>b</font>x\n2. y\n3. c\n', expected: '1. **a**<font>  \n   b</font>x\n2. y\n3. c\n' },
+  // (Editable spans: the break-only `<font>` and the next identical `<font>`
+  // are one span in the editor, so the edited item prints them as one.)
+  { name: 'letter added after bold ending in punctuation is encoded', source: 'x **foo.** y\n', target: 'x **foo.**&#x61; y\n', expected: 'x **foo.**&#x61; y\n' }
 ]
 
 const session = await open('source-reprint', FIXTURE)

@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { fromMarkdown } from 'mdast-util-from-markdown'
-import { safeTrailingWhitespaceTextHandler } from '../src/renderer/src/lib/remark-text-handler.js'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import remarkCjkFriendly from 'remark-cjk-friendly'
+import { emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../src/renderer/src/lib/remark-text-handler.js'
 
 const T = (value) => ({ type: 'text', value })
 const C = (value) => ({ type: 'inlineCode', value })
@@ -42,4 +45,29 @@ for (const [children, expected] of cases) {
   const expectedText = children.map(plain).join('').replace(/[ \t]+$/, '')
   assert.equal(plain(reparsed.children[0]).replace(/[ \t]+$/, ''), expectedText, `text kept: ${JSON.stringify(markdown)}`)
 }
-console.log('PASS remark text handler: trailing-whitespace fast path still escapes block syntax and leading spaces')
+// Strong/emphasis handlers (Milkdown's defaults skip attention encoding):
+// `**foo.**abc` parses back as literal asterisks, so the letter is encoded.
+{
+  const H = { text: safeTrailingWhitespaceTextHandler, strong: strongStringifyHandler, emphasis: emphasisStringifyHandler }
+  const out = (children) => toMarkdown({ type: 'root', children: [{ type: 'paragraph', children }] }, { handlers: H, encode: [] })
+  const html = (value) => ({ type: 'html', value })
+  const E = (...children) => ({ type: 'emphasis', children })
+  const attention = [
+    [[S(T('foo.')), T('abc')], '**foo.**&#x61;bc\n'],
+    [[S(html('<font>x</font>')), T('abc')], '**<font>x</font>**&#x61;bc\n'],
+    [[E(T('foo.')), T('abc')], '*foo.*&#x61;bc\n'],
+    [[T('a '), S(T('b')), T(' c')], 'a **b** c\n'],
+    [[T('这是'), S(T('「重点」')), T('内容')], '这是**「重点」**内容\n']
+  ]
+  for (const [children, expected] of attention) assert.equal(out(children), expected)
+  // The authored marker is kept.
+  assert.equal(out([{ ...S(T('b')), marker: '_' }, T(' c')]), '__b__ c\n')
+  assert.equal(out([{ ...E(T('b')), marker: '_' }, T(' c')]), '_b_ c\n')
+  // Round trip: still bold after re-parsing with the editor's parser.
+  const parseLikeEditor = (markdown) => unified().use(remarkParse).use(remarkCjkFriendly).parse(markdown)
+  for (const children of [[S(T('foo.')), T('abc')], [S(T('foo.')), T('😀 x')], [S(html('<b>x</b>')), T('abc')]]) {
+    const back = parseLikeEditor(out(children))
+    assert.equal(back.children[0].children[0].type, 'strong', `bold survives the round trip: ${out(children)}`)
+  }
+}
+console.log('PASS remark text handler: trailing-whitespace fast path still escapes block syntax and leading spaces; strong/emphasis keep attention encoding and the authored marker')

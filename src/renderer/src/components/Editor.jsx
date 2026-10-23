@@ -2,10 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   editorViewCtx,
+  inputRulesCtx,
   parserCtx,
   remarkCtx,
+  schemaCtx,
   serializerCtx
 } from '@milkdown/kit/core'
+import { ParserState } from '@milkdown/kit/transformer'
+import { memoizeLastParses } from '../lib/parse-memo.js'
+import { guardMarkInputRules } from '../lib/input-rule-guards.js'
 import './editor-codeblock-eager.js' // side effect: root-fix #25 — eager, non-tearing code-block node view
 import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js' // #126 cap: lazy mount for block-heavy docs
 import './editor-table-click.js' // side effect: single click in a table cell places the caret
@@ -118,6 +123,7 @@ import {
   transactionTopLevelRange
 } from '../lib/source-sync/editor-only-document.js'
 import { reprintVerified } from '../lib/source-reprint/index.js'
+import { rememberParsedSource } from '../lib/source-reprint/reprint.js'
 import { SOURCE_SYNC_OWNERS } from '../lib/source-sync/proof.js'
 import { withoutEmptyContainerParagraphs } from '../lib/source-sync/validator.js'
 import { createTopLevelBlockRemovalTransactionSourceSyncOwner } from '../lib/source-sync/top-level-block-removal-transaction-owner.js'
@@ -324,6 +330,12 @@ export default function Editor({
     let pendingRichBlockKey = null
     let richDirtyReconcileTimer = 0
     let cancelDeferredMarkdownSync = () => {}
+    // True while a markdownUpdated callback for the live document is still
+    // coming (Milkdown's 200 ms debounce) or queued (heavy-doc deferral).
+    let isMarkdownSyncPending = () => false
+    // Last document Milkdown's listener delivered (its debounce fired); the
+    // loaded document until the first delivery.
+    let deliveredDoc = null
     let transactionSourcePendingPublish = false
     let transactionSourcePendingDoc = null
     let transactionSourceBlockHints = []
@@ -352,8 +364,11 @@ export default function Editor({
         return null
       }
     }
-    const markUserEdit = (ttl = 8000) => {
-      const blockKey = currentRichBlockKey()
+    const markUserEdit = (ttl = 8000, { pointer = false } = {}) => {
+      // A press arrives before the selection moves, so the current block is
+      // the one being LEFT: it must not become the pending block (the first
+      // keystroke after clicking elsewhere would then force a full flush).
+      const blockKey = pointer ? null : currentRichBlockKey()
       // Milkdown batches markdownUpdated for about 200 ms. If the user edits
       // one block, immediately moves to another, then edits again, a single
       // callback can contain unrelated heading/list/quote deltas that no
@@ -387,7 +402,9 @@ export default function Editor({
     // callback, but HorseMD's immediate dirty hint must then be cleared. This
     // one-shot reconciliation runs only after a real DOM mutation and only
     // while the regular listener has not already settled the change.
-    const scheduleRichDirtyReconcile = (delayMs = 260) => {
+    let richDirtyReconcileSince = 0
+    const scheduleRichDirtyReconcile = (delayMs = 260, { keepSince = false } = {}) => {
+      if (!keepSince || !richDirtyReconcileSince) richDirtyReconcileSince = Date.now()
       if (richDirtyReconcileTimer) clearTimeout(richDirtyReconcileTimer)
       richDirtyReconcileTimer = window.setTimeout(() => {
         richDirtyReconcileTimer = 0
@@ -405,6 +422,17 @@ export default function Editor({
           scheduleRichDirtyReconcile(120)
           return
         }
+        // The regular sync is still on its way: on a large document it is
+        // deliberately deferred until typing pauses, and flushing here would
+        // run the full reprint + verification in the middle of typing anyway
+        // (seconds per pause on Windows). Check again after it had its turn.
+        // Bounded: Milkdown never delivers addToHistory:false transactions,
+        // so after a few seconds fall back to the flush.
+        if (isMarkdownSyncPending() && Date.now() - richDirtyReconcileSince < 3000) {
+          scheduleRichDirtyReconcile(400, { keepSince: true })
+          return
+        }
+        richDirtyReconcileSince = 0
         const markdown = apiRef.current?.flushMarkdown?.()
         if (typeof markdown === 'string') onChange?.(markdown, false)
       }, delayMs)
@@ -570,11 +598,45 @@ export default function Editor({
       const remark = crepe.editor.ctx.get(remarkCtx)
       return transactionMarkdownOffsets.resolve({ markdown, pmPos, doc, remark })
     }
+    // One sync verifies the same candidate against the same document several
+    // times (reprint escape levels, trace shadow, owners); each is a full
+    // parse/serialize, seconds on a 250 KB file. Remember the last of each.
+    const lastValidationParse = { markdown: null, doc: null }
+    // Parse a candidate through mdast (what Milkdown's parser does inside) and
+    // keep the mdast: once published, the candidate is the next sync's
+    // committed source, which the reprint engine would otherwise parse again.
+    const parseCandidate = (markdown, parser) => {
+      if (typeof markdown !== 'string' || markdown.startsWith('\uFEFF')) return parser(markdown)
+      let remark
+      let mdRoot
+      let doc
+      try {
+        remark = crepe.editor.ctx.get(remarkCtx)
+        mdRoot = remark.runSync(remark.parse(markdown), markdown)
+        const state = new ParserState(crepe.editor.ctx.get(schemaCtx))
+        state.next(mdRoot)
+        doc = state.toDoc()
+      } catch {
+        return parser(markdown)
+      }
+      rememberParsedSource(remark, markdown, doc, mdRoot)
+      parser.prime?.(markdown, doc)
+      return doc
+    }
+    const lastValidationCanonical = { doc: null, markdown: null }
     const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
       const serializer = crepe.editor.ctx.get(serializerCtx)
-      const parsed = parser(markdown)
-      const expectedCanonical = canonicalForSource(serializer(expectedDoc))
+      if (lastValidationParse.markdown !== markdown || !lastValidationParse.doc) {
+        lastValidationParse.doc = parseCandidate(markdown, parser)
+        lastValidationParse.markdown = markdown
+      }
+      const parsed = lastValidationParse.doc
+      if (lastValidationCanonical.doc !== expectedDoc) {
+        lastValidationCanonical.markdown = canonicalForSource(serializer(expectedDoc))
+        lastValidationCanonical.doc = expectedDoc
+      }
+      const expectedCanonical = lastValidationCanonical.markdown
       const inheritedSemanticOptions = sourceSyncBridge?.getSemanticOptions(expectedDoc) || {}
       const mergedSemanticOptions = {
         ...inheritedSemanticOptions,
@@ -1912,6 +1974,12 @@ export default function Editor({
     }
     const reprintDeps = () => ({
       parse: (markdown) => crepe.editor.ctx.get(parserCtx)(markdown),
+      // Same as `parse`, from the mdast the engine already built.
+      parseTree: (tree) => {
+        const state = new ParserState(crepe.editor.ctx.get(schemaCtx))
+        state.next(tree)
+        return state.toDoc()
+      },
       remark: crepe.editor.ctx.get(remarkCtx),
       serialize: (node) => crepe.editor.ctx.get(serializerCtx)(node),
       equivalent: (markdown, expectedDoc) => validateTransactionMarkdown({
@@ -1971,6 +2039,8 @@ export default function Editor({
     // cannot express returns null and the established owners/legacy path runs
     // unchanged. `globalThis.__hmSourceReprintPrimary = false` disables it.
     let publishingReprint = false
+    // Last document whose committed source a full flush check verified.
+    let verifiedLiveDoc = null
     const publishReprint = ({ canonical, boundary, notifyChange = true, allowDegraded = false }) => {
       if (globalThis.__hmSourceReprintPrimary === false) return null
       if (generatedScratchRef.current || viewRef.current?.composing) return null
@@ -3784,13 +3854,27 @@ export default function Editor({
           markdownSyncLastMs = performance.now() - started
         }
       }
-      api.markdownUpdated((_ctx, md) => {
+      // Listen to `updated` (the document), not `markdownUpdated`: Milkdown
+      // serializes the whole document for markdownUpdated listeners on every
+      // 200 ms typing pause, even while a large document's sync is deferred
+      // and that string is never used (~0.5 s per pause on Windows). The
+      // document is serialized here only when the pipeline runs now (the
+      // memoized serializer, so the pipeline's own calls reuse it).
+      isMarkdownSyncPending = () => {
+        if (markdownSyncDeferTimer) return true
+        const doc = viewRef.current?.state.doc
+        // Milkdown only skips its callback when the document equals the one
+        // it delivered last (e.g. typed and reverted): then nothing is coming.
+        return Boolean(doc && deliveredDoc && doc !== deliveredDoc && !doc.eq(deliveredDoc))
+      }
+      api.updated((_ctx, doc) => {
+        deliveredDoc = doc
         // Cold start: the FIRST callback on a large document must not pay the
         // full pipeline synchronously just to learn it is heavy (CPU profile
         // of the redis doc: whole-doc remark reparse dominates). Seed the
         // metric from the document size; a real measurement replaces it after
         // the first deferred run.
-        if (markdownSyncLastMs === 0 && md && md.length > 100000) {
+        if (markdownSyncLastMs === 0 && doc?.content?.size > 100000) {
           markdownSyncLastMs = 1000
         }
         const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS
@@ -3823,6 +3907,13 @@ export default function Editor({
           }
           markdownSyncDeferSince = 0
         }
+        let md
+        try {
+          md = crepe.editor.ctx.get(serializerCtx)(doc)
+        } catch {
+          reportSourceSyncFailure('source-serialization-failed')
+          return
+        }
         runMarkdownSyncPipeline(md)
       })
       cleanups.push(() => cancelDeferredMarkdownSync())
@@ -3836,6 +3927,33 @@ export default function Editor({
             crepe.destroy()
             return
           }
+          // Mark input rules fire only on what was just typed, never inside
+          // inline code (Milkdown's underscore rule lacked its `$` anchor).
+          try {
+            guardMarkInputRules(crepe.editor.ctx.get(inputRulesCtx), crepe.editor.ctx.get(schemaCtx))
+          } catch { /* keep Milkdown's rules */ }
+          // Reuse parses of the same Markdown across the sync's checks.
+          try {
+            crepe.editor.ctx.set(parserCtx, memoizeLastParses(crepe.editor.ctx.get(parserCtx)))
+          } catch { /* keep the plain parser */ }
+          // Serializing the whole document is ~0.4 s on a 350 KB file and one
+          // sync did it up to three times for the same document (Milkdown's
+          // listener, the flush, the validator). Documents are immutable, so
+          // the result is reused per document — and per serializer style
+          // object, which source-mode replaceMarkdown swaps out.
+          try {
+            const baseSerializer = crepe.editor.ctx.get(serializerCtx)
+            const serialized = new WeakMap()
+            const memoSerializer = (doc) => {
+              const keyed = doc && typeof doc === 'object'
+              const hit = keyed ? serialized.get(doc) : null
+              if (hit && hit.style === serializerStyleHolder.style) return hit.markdown
+              const markdown = baseSerializer(doc)
+              if (keyed) serialized.set(doc, { style: serializerStyleHolder.style, markdown })
+              return markdown
+            }
+            crepe.editor.ctx.set(serializerCtx, memoSerializer)
+          } catch { /* keep the plain serializer */ }
 
           // P7 root fix: mirror the authored list spelling in the serializer
           // (bullet, ordered delimiter, loose/tight, hard-break, strong). The
@@ -4100,6 +4218,22 @@ export default function Editor({
           serializerStyleHolder,
           hasPendingRichFlush: () => richFlushPending,
           clearPendingRichFlush: clearRichFlushPending,
+          // ProseMirror documents are immutable: the same object means not a
+          // single change since the Coordinator verified the source for it.
+          isLiveDocCommitted: () => {
+            if (!ready || generatedScratchRef.current) return false
+            const doc = viewRef.current?.state.doc
+            if (!doc) return false
+            // Equal content (Node.eq: same types, attrs, marks and text) has
+            // the same Markdown, e.g. a character typed and deleted again.
+            const pairs = (pair) => Boolean(pair?.doc && (pair.doc === doc || pair.doc.eq(doc)) &&
+              pair.source === lastMarkdownRef.current &&
+              pair.canonical === canonicalMarkdownRef.current)
+            return pairs(sourceSyncBridge?.getSnapshot?.()) || pairs(verifiedLiveDoc)
+          },
+          // The flush's full committed-baseline check passed for this exact
+          // document (covers the opened file before any publish).
+          noteVerifiedLiveDoc: (doc, source, canonical) => { verifiedLiveDoc = { doc, source, canonical } },
           recordSourceSnapshot: sourceSnapshotHistory.record,
           generatedScratchRef,
           getGeneratedScratchMarkdown: (canonical) => generatedScratchMarkdownForCanonical(canonical, true),
@@ -4240,6 +4374,7 @@ export default function Editor({
             { owner: 'bootstrap', reason: 'initial-editor-source-pair' }
           )
           ready = true
+          if (!deliveredDoc) deliveredDoc = viewRef.current?.state.doc || null
           interactionReadyRef.current = true
           // Test-only harness for the source reprint engine (R1, see
           // docs/source-reprint-architecture.md): the real Crepe parser,
@@ -4247,6 +4382,7 @@ export default function Editor({
           if (window.api?.inputTraceEnabled === true) {
             globalThis.__hmSourceReprintHarness = {
               parse: (markdown) => crepe.editor.ctx.get(parserCtx)(markdown),
+              parseTree: (markdown) => { const r = crepe.editor.ctx.get(remarkCtx); return reprintDeps().parseTree(r.runSync(r.parse(markdown), markdown)) },
               serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc),
               remark: () => crepe.editor.ctx.get(remarkCtx),
               schema: () => view.state.schema,

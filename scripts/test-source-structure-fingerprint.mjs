@@ -105,14 +105,19 @@ assert.equal(
   'exiting an empty list item drops the item and its <br /> placeholder without changing list groups'
 )
 
+// A blank line before each paragraph: a line right below an item is that
+// item's lazy continuation, not a fence.
 const preexistingSourceSlots = [
   '- source-only',
+  '',
   'plain fence'
 ].join('\n')
 const preexistingCanonicalSlots = [
   '- canonical-a',
+  '',
   'plain fence',
   '- canonical-b',
+  '',
   'tail fence'
 ].join('\n')
 assert.equal(
@@ -170,5 +175,43 @@ assert.equal(
   false,
   'new ordered slot numbering remains strict even when the trusted old numbers differ'
 )
+
+// Yuque export (面试问题.md): `    - x` after a blank line is an indented code
+// block, which Crepe prints fenced. It is not a list slot, so the authored
+// file and canonical agree, and a new item in the next list stays provable.
+{
+  const source = 'para\n\n    - x\n    - y\n2. B\n\n+ a one\n+ b two\n'
+  // micromark: `2. B` right after indented code is paragraph text (an
+  // ordered list must start at 1 to interrupt it), so canonical escapes it.
+  const canonical = 'para\n\n```\n- x\n- y\n```\n\n2\\. B\n\n* a one\n* b two\n'
+  assert.equal(areMarkdownListSlotsEquivalent(source, canonical), true, 'indented code is not a list slot')
+  assert.equal(
+    areMarkdownListSlotTransitionsEquivalent(
+      source, source.replace('+ a one\n', '+ a one\n+ c\n'),
+      canonical, canonical.replace('* a one\n', '* a one\n* c\n'),
+      { strictOrderedNumbers: true, strictNesting: true }
+    ),
+    true,
+    'adding an item after indented code is provable'
+  )
+  // Inside a list item, 4 columns past the margin is still a nested item.
+  assert.equal(markdownListSlotFingerprint('- a\n  - b\n    - c\n').flat().length, 3, 'nested items keep their slots')
+  assert.equal(markdownListSlotFingerprint('1. x\n\n   para\n\n   - y\n').flat().length, 2, 'item after a continuation paragraph keeps its slot')
+  assert.equal(markdownListSlotFingerprint('- a\n\n      code\n      - not a list\n').flat().length, 1, 'code inside an item is not a slot')
+  assert.equal(markdownListSlotFingerprint('para\n2. B\n').flat().length, 0, 'ordered item not starting at 1 cannot interrupt a paragraph')
+  assert.equal(markdownListSlotFingerprint('para\n1. B\n').flat().length, 1, '1. interrupts a paragraph')
+  assert.equal(markdownListSlotFingerprint('2. a\nlazy\n3. b\n').flat().length, 2, 'lazy continuation keeps the list open')
+  assert.equal(markdownListSlotFingerprint('head:\n  - - meta\n    - property: x\n').flat().length, 3, 'nested markers on one line open every level')
+  // Yuque puts the hard break inside `<font>`; Crepe prints the item on one
+  // line. The lazy continuation must not split the list into two groups.
+  assert.equal(
+    areMarkdownListSlotsEquivalent(
+      '3. **A**<font>  \n</font><font>B</font>\n4. **C**<font>  \n</font><font>D</font>\n',
+      '3. **A**<font>\\ </font><font>B</font>\n4. **C**<font>\\ </font><font>D</font>\n'
+    ),
+    true,
+    'lazy continuation lines keep items in one group'
+  )
+}
 
 console.log('PASS source structure fingerprint: list slots are fail-closed without normalizing marker spelling')

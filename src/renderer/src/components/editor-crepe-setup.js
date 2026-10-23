@@ -39,13 +39,14 @@ import { createTaskListInputPlugin } from './editor-task-list.js'
 import { createSourceTransactionDispatch } from './editor-source-transactions.js'
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
+import { htmlSpanFeatures, htmlSpanStringifyHandler } from './editor-html-span.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import { imageBlockMarkdownSchema, remarkImageBlockWithPosition } from './editor-image-markdown.js'
 import { remarkStripLeadingSpaceSentinel } from '../lib/markdown-leading-space.js'
 import remarkCjkFriendly from 'remark-cjk-friendly'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
-import { safeTrailingWhitespaceTextHandler } from '../lib/remark-text-handler.js'
+import { emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
 import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
@@ -261,8 +262,11 @@ export function createConfiguredCrepe({
       handlers: {
         ...(opts?.handlers || {}),
         text: safeTrailingWhitespaceTextHandler,
+        strong: strongStringifyHandler,
+        emphasis: emphasisStringifyHandler,
         break: tableCellBreakHandler,
-        highlight: highlightStringifyHandler
+        highlight: highlightStringifyHandler,
+        hmHtmlSpan: htmlSpanStringifyHandler
       }
     }))
 
@@ -297,6 +301,7 @@ export function createConfiguredCrepe({
   )
   crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(highlightFeatures)
+  crepe.editor.use(htmlSpanFeatures)
   crepe.editor.use(frontmatterSchema)
 
   return crepe

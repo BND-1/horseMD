@@ -390,9 +390,15 @@ body.hm-has-custom-theme .milkdown .ProseMirror code:not(pre code) {
   font-size: inherit;
 }
 /* A paragraph holding only a block of raw HTML is one box in Typora; the
-   trailing <br> / separator ProseMirror adds would draw an empty line under it. */
-body.hm-has-custom-theme .milkdown .ProseMirror p:has(> .hm-html-block) > br.ProseMirror-trailingBreak,
-body.hm-has-custom-theme .milkdown .ProseMirror p:has(> .hm-html-block) > img.ProseMirror-separator {
+   trailing <br> / separator ProseMirror adds would draw an empty line under it.
+   Sibling selectors, not `p:has(> .hm-html-block) > br…`: Chromium answers a
+   :has() rule's invalidation by restyling EVERY trailing break/separator in
+   the document whenever any child changes class (e.g. an inline HTML node
+   gaining selection on click) — 50 000 restyles per click on a Yuque export,
+   even with no custom theme active. */
+body.hm-has-custom-theme .milkdown .ProseMirror p > .hm-html-block:first-child + img.ProseMirror-separator,
+body.hm-has-custom-theme .milkdown .ProseMirror p > .hm-html-block:first-child + br.ProseMirror-trailingBreak,
+body.hm-has-custom-theme .milkdown .ProseMirror p > .hm-html-block:first-child + img.ProseMirror-separator + br.ProseMirror-trailingBreak {
   display: none !important; /* prosemirror.css forces inline */
 }
 /* Let the custom theme own content text colors. Our defaults (heading/emphasis
@@ -7379,4 +7385,59 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 }
 .milkdown .milkdown-code-block .language-picker .language-list-item.no-result.hm-use-language:hover {
   background: var(--crepe-color-hover);
+}
+
+/* Code-block folding (editor-codeblock-fold.js): view-only, the Markdown is
+   untouched. The toolbar button shows only on blocks long enough to fold and
+   not on preview-only blocks (Mermaid diagram shown without its code). */
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-code-fold-button {
+  padding: 4px 8px;
+}
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-code-fold-button svg {
+  fill: none;
+}
+.milkdown .milkdown-code-block:not(.hm-code-foldable) .tools .tools-button-group button.hm-code-fold-button,
+.milkdown .milkdown-code-block:has(.codemirror-host.hidden) .tools .tools-button-group button.hm-code-fold-button {
+  display: none;
+}
+/* Keep the toolbar's buttons visible while folded: the state stays readable. */
+.milkdown .milkdown-code-block.hm-code-folded .tools .tools-button-group button {
+  opacity: 1;
+}
+/* Folded = a 5-line window that still scrolls (wheel/trackpad), not a
+   hard clip. A thin scrollbar keeps the dark surface clean. */
+.milkdown .milkdown-code-block.hm-code-folded .codemirror-host {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--code-linenum-border) transparent;
+}
+/* The windowed editor loses its bottom edge; the bar closes it as the code
+   block's own footer: same surface, border and radius, then the editor's
+   usual outer gap below. */
+.milkdown .milkdown-code-block > .hm-code-fold-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 0 calc(var(--editor-para-spacing, 0.8em) * 0.6);
+  padding: 5px 10px 6px;
+  border: 1px solid var(--code-block-border);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0 0 var(--editor-block-radius) var(--editor-block-radius);
+  background: var(--code-block-bg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--code-linenum);
+  cursor: pointer;
+  user-select: none;
+}
+.milkdown .milkdown-code-block > .hm-code-fold-bar svg {
+  width: 14px;
+  height: 14px;
+}
+.milkdown .milkdown-code-block > .hm-code-fold-bar:hover {
+  color: var(--code-linenum-active);
+  background: color-mix(in srgb, var(--code-block-bg) 92%, #fff);
 }

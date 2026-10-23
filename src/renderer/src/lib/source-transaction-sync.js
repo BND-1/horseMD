@@ -395,30 +395,38 @@ const semanticJson = (node, {
         const { marks: _dropped, ...rest } = child
         return marks.length ? { ...rest, marks } : rest
       })
-      const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link'])
+      // Editable <font>/<span> (html_span) too: Milkdown moves edge spaces out
+      // of it the same way (`<font>a</font> <font>b</font>` for `a b` across
+      // a reopened span), and a space looks the same inside or outside.
+      const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link', 'html_span'])
+      // Every run of blanks compares without those marks — at the edge of a
+      // run (Milkdown moves edge blanks out) and inside it (`<font>a</font>
+      // <font>b</font>` after a reprinted span is `a b` in one span). The
+      // source reprint engine compares blanks the same way. Other marks
+      // (code, strike, highlight) stay strict.
       next.content = next.content.flatMap((child) => {
-        if (
-          child?.type !== 'text' ||
-          !Array.isArray(child.marks) ||
-          !child.marks.length ||
-          !child.marks.every((mark) => invisibleOnWhitespace.has(mark?.type))
-        ) return [child]
+        if (child?.type !== 'text' || !Array.isArray(child.marks) || !child.marks.length) return [child]
+        if (child.marks.some((mark) => mark?.type === 'inlineCode')) return [child]
+        if (!child.marks.some((mark) => invisibleOnWhitespace.has(mark?.type))) return [child]
         const text = String(child.text || '')
-        const match = text.match(/^([ \t]*)([\s\S]*?)([ \t]*)$/)
-        // A run of ONLY whitespace in bold/italic (the text of `*x*` deleted
-        // down to its spaces) cannot be spelled at all: compare it unmarked
-        // (fuzz seeds 49/73).
-        if (match && !match[2] && text) {
-          const { marks, ...rest } = child
-          return [rest]
-        }
-        if (!match || (!match[1] && !match[3]) || !match[2]) return [child]
+        if (!/[ \t]/.test(text)) return [child]
         const { marks, ...rest } = child
-        return [
-          ...(match[1] ? [{ ...rest, text: match[1] }] : []),
-          { ...child, text: match[2] },
-          ...(match[3] ? [{ ...rest, text: match[3] }] : [])
-        ]
+        const blankMarks = marks.filter((mark) => !invisibleOnWhitespace.has(mark?.type))
+        return text.split(/([ \t]+)/).filter(Boolean).map((piece) => {
+          if (!/^[ \t]+$/.test(piece)) return { ...child, text: piece }
+          return blankMarks.length ? { ...rest, text: piece, marks: blankMarks } : { ...rest, text: piece }
+        })
+      })
+      // Blanks at the start of the line after a hard break have no Markdown
+      // spelling outside an HTML tag (the parser strips a line's leading
+      // whitespace). Yuque writes `<font> text`, which keeps it, but a
+      // reprinted span has its edge blank moved out of the tag by Milkdown;
+      // compare that line start without the blank.
+      next.content = next.content.flatMap((child, index, all) => {
+        const previous = all[index - 1]
+        if (child?.type !== 'text' || !/^hard_?break$/.test(previous?.type || '')) return [child]
+        const text = String(child.text || '').replace(/^[ \t]+/, '')
+        return text ? [{ ...child, text }] : []
       })
       // Two adjacent lists of the same kind are one list in Markdown
       // (CommonMark merges them across a blank line; seeds 122/132).

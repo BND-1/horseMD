@@ -357,7 +357,7 @@ export function mountEditorInteractionBindings({
     noteUserInteraction()
     // Preview-side pointer interactions may select/copy or establish scroll
     // ownership, but they are not edits and must never produce a dirty state.
-    if (!isReadOnly?.()) markUserEdit()
+    if (!isReadOnly?.()) markUserEdit(undefined, { pointer: true })
   }
 
   view.dom.addEventListener('keydown', onKeydown, true)

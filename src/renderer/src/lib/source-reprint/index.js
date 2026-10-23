@@ -9,12 +9,12 @@ export { buildInlineMap, pmInlineUnits } from './inline-map.js'
  * must compare parse(markdown) with `doc` directly (never via canonical).
  * Minimal escaping first (writes exactly what was typed), then full escaping.
  */
-export function reprintVerified({ source, editorDoc, previousDoc = null, parse, remark, serialize, equivalent }) {
+export function reprintVerified({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, equivalent }) {
   let last = null
   for (const escape of ['minimal', 'full', 'segment']) {
     let result
     try {
-      result = reprintSource({ source, editorDoc, previousDoc, parse, remark, serialize, escape })
+      result = reprintSource({ source, editorDoc, previousDoc, parse, parseTree, remark, serialize, escape })
     } catch (error) {
       return { ok: false, reason: 'reprint-threw', error: String(error?.stack || error) }
     }
