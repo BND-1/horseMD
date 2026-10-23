@@ -98,6 +98,11 @@ const cases = [
   // Yuque (面试问题.md): typing over the `<font>` after `**<font>…</font>**`
   // puts a letter right after the closing `**`; literal, it stops closing.
   { name: 'text typed over html right after bold is encoded (Yuque)', source: '+ **<font>max</font>**<font>：tail</font>\n+ b\n', target: '+ **<font>max</font>**&#x61;bc\n+ b\n', expected: '+ **<font>max</font>**&#x61;bc\n+ b\n' },
+  // Yuque nests lists as blank + 4 spaces (indented code). Backspace joining
+  // the paragraph between the list and that code leaves code right after a
+  // list, where indented code has no spelling: it is fenced (fuzz seed 47).
+  { name: 'indented code kept after what became a list is fenced (Yuque)', source: '1. a\n\ntail\n\n    - x\n    - y\n\nend\n', target: '1. atail\n\n```\n- x\n- y\n```\n\nend\n', expected: '1. atail\n\n```\n- x\n- y\n```\n\nend\n' },
+  { name: 'paragraph `2.` after the newly fenced code stays text (Yuque)', source: '1. a\n\ntail\n\n    - x\n2. end\n', target: '1. atail\n\n```\n- x\n```\n\n2\\. end\n', expected: '1. atail\n\n```\n- x\n```\n2\\. end\n' },
   { name: 'line break inside <font> survives an item split (Yuque)', source: '1. **a**<font>  \n</font><font>b</font>\n2. c\n', target: '1. **a**<font>  \n</font><font>b</font>x\n2. y\n3. c\n', expected: '1. **a**<font>  \n   b</font>x\n2. y\n3. c\n' },
   // (Editable spans: the break-only `<font>` and the next identical `<font>`
   // are one span in the editor, so the edited item prints them as one.)

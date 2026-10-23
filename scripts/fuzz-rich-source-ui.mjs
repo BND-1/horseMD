@@ -197,6 +197,10 @@ function normalizeDoc(json) {
           return
         }
         if (emphasized(child)) child.text = child.text.trim()
+        // A blank-only run BETWEEN two such runs is a real space
+        // (`<font>a</font> <font>b</font>` vs one `<font>a b</font>`): keep it;
+        // the run-wide blank split below compares the two spellings equal.
+        else if (/^[ \t]+$/.test(child.text) && emphasized(node.content[index - 1]) && emphasized(node.content[index + 1])) return
         else {
           if (emphasized(node.content[index + 1])) child.text = child.text.replace(/[ \t]+$/, '')
           if (emphasized(node.content[index - 1])) child.text = child.text.replace(/^[ \t]+/, '')

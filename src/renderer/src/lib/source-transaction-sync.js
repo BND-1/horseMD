@@ -906,7 +906,137 @@ export const areSourceSyncNodesSemanticallyEqual = (left, right) => {
   return a && b && JSON.stringify(a) === JSON.stringify(b)
 }
 
+// Per-block memo of the comparison (large-document sync cost, 2026-10-23).
+// ProseMirror nodes are immutable and an edit keeps every untouched block's
+// node — in the editor and, with the incremental parse, in the parsed
+// candidate — so each top-level block's semantic form is computed once.
+// The document-level steps of semanticJson are replayed on those units:
+// empty top-level paragraphs/headings dropped, single images unified,
+// adjacent same-kind lists merged (head of the first). Path-bound options
+// (and any option this memo does not know) take the full comparison.
+const MEMO_FLAGS = [
+  'ignoreTrailingEmptyListItemParagraph',
+  'ignoreTrailingEmptyListItemParagraphAfterNestedStructure',
+  'ignoreTrailingEmptyBlockquoteParagraph',
+  'ignoreAllTableColumnWidths',
+  'ignoreEmptyContainerParagraphs',
+  'inlineTextual',
+  'literalEmphasis'
+]
+const MEMO_PATH_OPTIONS = [
+  'ignoreTrailingEmptyBlockquoteParagraphPaths',
+  'ignoreSingleTrailingSpaceBeforeEmptyBlockquoteParagraphPaths',
+  'ignoreTrailingEmptyListItemPaths',
+  'ignoreTableColumnWidthPaths'
+]
+// Not read by semanticJson: harmless to the memo.
+const MEMO_KNOWN = new Set([...MEMO_FLAGS, ...MEMO_PATH_OPTIONS, 'recordDifference', 'relaxOrderedNumbers', 'ignoreEmptyListItemParagraphBeforeNestedStructure'])
+const semanticMemoKey = (options) => {
+  for (const name of Object.keys(options)) {
+    if (!MEMO_KNOWN.has(name)) return null
+  }
+  // Read by areSourceDocumentsEquivalent itself (a cross-block rewrite).
+  if (options.ignoreEmptyListItemParagraphBeforeNestedStructure) return null
+  for (const name of MEMO_PATH_OPTIONS) {
+    const value = options[name]
+    if (value != null && !(Array.isArray(value) && value.length === 0)) return null
+  }
+  return MEMO_FLAGS.map((name) => (options[name] ? '1' : '0')).join('')
+}
+const semanticUnits = new WeakMap()
+const semanticUnit = (node, options, key) => {
+  let byKey = semanticUnits.get(node)
+  if (!byKey) {
+    byKey = new Map()
+    semanticUnits.set(node, byKey)
+  }
+  const hit = byKey.get(key)
+  if (hit) return hit
+  const value = semanticJson(node, options)
+  let unit
+  if (!value) unit = { kind: 'none' }
+  else if ((value.type === 'paragraph' || value.type === 'heading') && !value.content?.length) unit = { kind: 'drop' }
+  else if (value.type === 'image-block') {
+    unit = { kind: 'atom', text: JSON.stringify({ type: 'image-unit', src: value.attrs?.src ?? null }) }
+  } else if (value.type === 'paragraph' && value.content?.length === 1 && value.content[0]?.type === 'image') {
+    unit = { kind: 'atom', text: JSON.stringify({ type: 'image-unit', src: value.content[0].attrs?.src ?? null }) }
+  } else if (value.type === 'bullet_list' || value.type === 'ordered_list') {
+    const { content, ...head } = value
+    unit = { kind: 'list', type: value.type, head: JSON.stringify(head), items: (content || []).map((item) => JSON.stringify(item)) }
+  } else unit = { kind: 'atom', text: JSON.stringify(value) }
+  byKey.set(key, unit)
+  return unit
+}
+const semanticRuns = (doc, options, key) => {
+  const runs = []
+  let ok = true
+  doc.forEach((child) => {
+    if (!ok) return
+    const unit = semanticUnit(child, options, key)
+    if (unit.kind === 'none') { ok = false; return }
+    if (unit.kind === 'drop') return
+    const last = runs[runs.length - 1]
+    if (unit.kind === 'list' && last?.kind === 'list' && last.type === unit.type) last.parts.push(unit.items)
+    else if (unit.kind === 'list') runs.push({ kind: 'list', type: unit.type, head: unit.head, parts: [unit.items] })
+    else runs.push(unit)
+  })
+  return ok ? runs : null
+}
+const sameItems = (left, right) => {
+  let leftCount = 0
+  let rightCount = 0
+  for (const part of left) leftCount += part.length
+  for (const part of right) rightCount += part.length
+  if (leftCount !== rightCount) return false
+  let rp = 0
+  let ri = 0
+  for (const part of left) {
+    for (const item of part) {
+      while (ri >= right[rp].length) { rp += 1; ri = 0 }
+      if (item !== right[rp][ri]) return false
+      ri += 1
+    }
+  }
+  return true
+}
+// true when provably equal; null when the full comparison must decide.
+const memoizedDocumentsEquivalent = (parsed, expected, options) => {
+  const key = semanticMemoKey(options)
+  if (key == null || parsed.type?.name !== 'doc' || expected.type?.name !== 'doc' || parsed.type !== expected.type) return null
+  if (JSON.stringify(parsed.attrs || {}) !== JSON.stringify(expected.attrs || {})) return null
+  const left = semanticRuns(parsed, options, key)
+  const right = semanticRuns(expected, options, key)
+  if (!left || !right || left.length !== right.length) return null
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]
+    const b = right[index]
+    if (a === b) continue
+    if (a.kind !== b.kind) return null
+    if (a.kind === 'atom' ? a.text !== b.text : a.type !== b.type || a.head !== b.head || !sameItems(a.parts, b.parts)) return null
+  }
+  return true
+}
+
 export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => {
+  if (parsed?.forEach && expected?.forEach) {
+    let fast = null
+    try {
+      fast = memoizedDocumentsEquivalent(parsed, expected, options)
+    } catch {
+      fast = null
+    }
+    if (fast === true) {
+      if (globalThis.__hmSemanticMemoCheck === true) {
+        const full = JSON.stringify(semanticJson(parsed, options)) === JSON.stringify(semanticJson(expected, options))
+        if (!full) {
+          if (!Array.isArray(globalThis.__hmSemanticMemoMismatch)) globalThis.__hmSemanticMemoMismatch = []
+          globalThis.__hmSemanticMemoMismatch.push({ at: Date.now() })
+          return false
+        }
+      }
+      return true
+    }
+  }
   const left = semanticJson(parsed, options)
   const right = semanticJson(expected, options)
   if (!left || !right) return false

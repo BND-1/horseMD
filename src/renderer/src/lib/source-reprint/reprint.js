@@ -13,6 +13,7 @@
 
 import { Fragment } from '@milkdown/prose/model'
 import { buildInlineMap, pmInlineUnits } from './inline-map.js'
+import { cachedParse, parseMarkdownCached, rememberParse } from './incremental-parse.js'
 
 const SENTINEL = '​'
 
@@ -210,20 +211,25 @@ const LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+|$)/
 // The source being reprinted is the committed baseline: the same string for
 // every keystroke until the next publish, and for each escape level of one
 // reprint. Parsing a 250 KB file twice per attempt cost seconds per pause
-// (Yuque export, 2800 inline HTML spans), so the last parse per editor
-// (`remark` is per editor) is reused. Both results are only read.
-const parsedSources = new WeakMap()
+// (Yuque export, 2800 inline HTML spans), so recent parses per editor
+// (`remark` is per editor) are reused, and a new text is parsed
+// incrementally from a cached neighbour (incremental-parse.js). Results are
+// only read.
+const legacyParsed = new WeakMap()
 // A unified processor is callable (typeof 'function'), so test for both.
 const cacheKey = (remark) => (remark && (typeof remark === 'object' || typeof remark === 'function') ? remark : null)
 // `parseTree` (optional) builds the editor document from the mdast already
 // made here, so the source is parsed once instead of twice.
-function parseSource(body, parse, remark, parseTree) {
+function parseSource(body, parse, remark, parseTree, schema) {
   const key = cacheKey(remark)
-  const cached = key ? parsedSources.get(key) : null
+  if (key && schema && typeof remark.parse === 'function' && typeof remark.runSync === 'function') {
+    return parseMarkdownCached(remark, schema, body)
+  }
+  const cached = key ? legacyParsed.get(key) : null
   if (cached?.body === body) return cached
   const mdRoot = remark.runSync(remark.parse(body), body)
   const entry = { body, srcDoc: parseTree ? parseTree(mdRoot) : parse(body), mdRoot }
-  if (key) parsedSources.set(key, entry)
+  if (key) legacyParsed.set(key, entry)
   return entry
 }
 
@@ -233,7 +239,9 @@ function parseSource(body, parse, remark, parseTree) {
 export function rememberParsedSource(remark, body, srcDoc, mdRoot) {
   const key = cacheKey(remark)
   if (!key || typeof body !== 'string' || !srcDoc || !mdRoot) return
-  parsedSources.set(key, { body, srcDoc, mdRoot })
+  if (cachedParse(remark, body)) return
+  rememberParse(remark, { body, srcDoc, mdRoot, counts: null, noDefs: false })
+  legacyParsed.set(key, { body, srcDoc, mdRoot })
 }
 
 export function reprintSource({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, escape = 'minimal' }) {
@@ -253,7 +261,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   let srcDoc
   let mdRoot
   try {
-    ;({ srcDoc, mdRoot } = parseSource(body, parse, remark, parseTree))
+    ;({ srcDoc, mdRoot } = parseSource(body, parse, remark, parseTree, editorDoc?.type?.schema))
   } catch (error) {
     return { ok: false, reason: 'parse-failed', notes: [String(error?.message || error)] }
   }
@@ -1280,6 +1288,44 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         text += pairSeparator(srcNode, left.node, item.node, frame, raw, separator)
       }
       if (!item.md) text += item.text
+    }
+    // An indented code block kept right after what is now a list would read
+    // as that list's continuation — indented code has no spelling there — so
+    // it is fenced, like Typora writes code. Yuque exports nest lists as
+    // "blank + 4 spaces" (indented code); Backspace joining the paragraph
+    // between the list and that code made every later edit pause (fuzz,
+    // Yuque fixture seeds 46/47).
+    // `2. text` is paragraph text only where it cannot start a list (right
+    // after indented code — micromark; Yuque writes it there). A kept
+    // paragraph like that whose predecessor changed is escaped (`2\. text`),
+    // unless that predecessor is still authored indented code.
+    const isIndentedCode = (md) => {
+      if (md?.type !== 'code') return false
+      const at = startOf(md)
+      return lineStartOf(body, at) === at && /^(?: {4}|\t)/.test(body.slice(at, at + 4))
+    }
+    const escapeOrderedLead = (md) => {
+      const at = startOf(md)
+      if (md?.type !== 'paragraph' || lineStartOf(body, at) !== at) return
+      const marker = /^(\d{1,9})[.)]/.exec(body.slice(at, at + 11))
+      if (marker) replace(at + marker[1].length, at + marker[1].length, '\\')
+    }
+    if (next && srcNode.type.name === 'doc') {
+      const before = sequence[sequence.length - 2]
+      // An indented code block kept right after what is now a list would
+      // read as that list's continuation — indented code has no spelling
+      // there — so it is fenced, like Typora writes code. Yuque nests lists
+      // as "blank + 4 spaces" (indented code); Backspace joining the
+      // paragraph between the list and that code made every later edit
+      // pause (fuzz, Yuque fixture seeds 46/47).
+      if (next.node.type.name === 'code_block' && isList(before?.node) && isIndentedCode(next.md) && gap.newTo < newNodes.length) {
+        const fenced = printBlock(newNodes[gap.newTo], newNode, mdNode, gap.newTo)
+        if (fenced == null || !/^(```|~~~)/.test(fenced)) return false
+        replace(startOf(next.md), endOf(next.md), fenced)
+        escapeOrderedLead(kids[nextIndex + 1])
+      } else if (!(before?.md && isIndentedCode(before.md))) {
+        escapeOrderedLead(next.md)
+      }
     }
     // `from`/`to` exclude the unchanged neighbours' own bytes.
     replace(from, to, text)

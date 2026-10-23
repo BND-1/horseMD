@@ -217,6 +217,10 @@ const standalone = [
     script: 'scripts/test-html-span-edit-ui.mjs'
   },
   {
+    name: 'Incremental parse: identical to the full parse under random Markdown edits',
+    script: 'scripts/test-incremental-parse-ui.mjs'
+  },
+  {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
     script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
   },

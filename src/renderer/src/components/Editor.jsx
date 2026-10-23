@@ -123,7 +123,14 @@ import {
   transactionTopLevelRange
 } from '../lib/source-sync/editor-only-document.js'
 import { reprintVerified } from '../lib/source-reprint/index.js'
-import { rememberParsedSource } from '../lib/source-reprint/reprint.js'
+import { incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
+// Self-check build (VITE_HM_SYNC_SELF_CHECK=1, used by the regression and
+// fuzz runs): the incremental parse and the per-block comparison memo are
+// re-checked against the full computation on every sync.
+if (import.meta.env?.VITE_HM_SYNC_SELF_CHECK === '1') {
+  globalThis.__hmIncrementalParseCheck = true
+  globalThis.__hmSemanticMemoCheck = true
+}
 import { SOURCE_SYNC_OWNERS } from '../lib/source-sync/proof.js'
 import { withoutEmptyContainerParagraphs } from '../lib/source-sync/validator.js'
 import { createTopLevelBlockRemovalTransactionSourceSyncOwner } from '../lib/source-sync/top-level-block-removal-transaction-owner.js'
@@ -438,6 +445,11 @@ export default function Editor({
       }, delayMs)
     }
     const hasRecentUserEdit = () => Date.now() <= userEditUntil
+    // A document whose sync is worth deferring while typing and warming up
+    // after opening. Yuque exports are mostly tag bytes: 350 KB of source is
+    // under 100 000 of document content.
+    const isLargeSyncDocument = (doc) => (doc?.content?.size || 0) > 50000 ||
+      String(lastMarkdownRef.current ?? '').length > 150000
     const clearRichFlushPending = () => {
       cancelDeferredMarkdownSync()
       richFlushPending = false
@@ -607,19 +619,19 @@ export default function Editor({
     // committed source, which the reprint engine would otherwise parse again.
     const parseCandidate = (markdown, parser) => {
       if (typeof markdown !== 'string' || markdown.startsWith('\uFEFF')) return parser(markdown)
-      let remark
-      let mdRoot
       let doc
       try {
-        remark = crepe.editor.ctx.get(remarkCtx)
-        mdRoot = remark.runSync(remark.parse(markdown), markdown)
-        const state = new ParserState(crepe.editor.ctx.get(schemaCtx))
-        state.next(mdRoot)
-        doc = state.toDoc()
+        // Reparses only the blocks the edit touched (incremental-parse.js);
+        // unchanged blocks keep their nodes, so the comparison skips them.
+        doc = parseMarkdownCached(crepe.editor.ctx.get(remarkCtx), crepe.editor.ctx.get(schemaCtx), markdown, {
+          onMismatch: (report) => {
+            traceEditorEvent('incremental-parse-mismatch', report)
+            fireToast(`增量解析与整篇解析不一致（${report.length}）`, { sticky: true })
+          }
+        }).srcDoc
       } catch {
         return parser(markdown)
       }
-      rememberParsedSource(remark, markdown, doc, mdRoot)
       parser.prime?.(markdown, doc)
       return doc
     }
@@ -3877,7 +3889,10 @@ export default function Editor({
         if (markdownSyncLastMs === 0 && doc?.content?.size > 100000) {
           markdownSyncLastMs = 1000
         }
-        const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS
+        // A large document stays deferred while typing even once its sync is
+        // fast (incremental parse): a sync per keystroke still costs more
+        // than one after the pause.
+        const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS || isLargeSyncDocument(doc)
         const activelyEditing = ready && !appending &&
           !pendingRawMarkdownPasteRef.current && !wholeDocumentReplacementPending &&
           !programmaticReplaceRef.current && !viewRef.current?.composing &&
@@ -4376,6 +4391,38 @@ export default function Editor({
           ready = true
           if (!deliveredDoc) deliveredDoc = viewRef.current?.state.doc || null
           interactionReadyRef.current = true
+          // Large documents: warm the sync caches while idle after opening.
+          // The first edit's sync would otherwise parse the whole committed
+          // source and compute every block's comparison form (~0.3 s for a
+          // 350 KB Yuque export on an M-series Mac). Skipped once editing has
+          // started (that sync fills the same caches).
+          if (isLargeSyncDocument(view.state.doc)) {
+            const warm = () => {
+              globalThis.__hmSyncWarmup = { at: Date.now(), skipped: true }
+              if (destroyed || hasRecentUserEdit() || viewRef.current?.composing) return
+              const started = performance.now()
+              globalThis.__hmSyncWarmup.skipped = false
+              try {
+                const source = String(lastMarkdownRef.current ?? '').replace(/^\uFEFF/, '')
+                if (!source) return
+                const entry = parseMarkdownCached(crepe.editor.ctx.get(remarkCtx), crepe.editor.ctx.get(schemaCtx), source)
+                const liveDoc = viewRef.current?.state.doc
+                if (liveDoc && entry?.srcDoc) {
+                  areSourceDocumentsEquivalent(entry.srcDoc, liveDoc, {
+                    ignoreAllTableColumnWidths: true,
+                    ignoreEmptyContainerParagraphs: true,
+                    recordDifference: false
+                  })
+                }
+              } catch { /* warm-up only */ }
+              globalThis.__hmSyncWarmup.ms = Math.round(performance.now() - started)
+            }
+            const warmTimer = setTimeout(() => {
+              if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 })
+              else warm()
+            }, 1000)
+            cleanups.push(() => clearTimeout(warmTimer))
+          }
           // Test-only harness for the source reprint engine (R1, see
           // docs/source-reprint-architecture.md): the real Crepe parser,
           // serializer and remark chain, exposed only under input trace.
@@ -4391,6 +4438,53 @@ export default function Editor({
               liveSource: () => lastMarkdownRef.current,
               equivalent: (markdown, doc) => validateTransactionMarkdown({ markdown, expectedDoc: doc }) === true,
               reprint: (source, doc, previousDoc = null) => reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
+              ,
+              // Differential check of the incremental parse: each text is
+              // parsed incrementally from the previous RESULT (so splices
+              // build on splices) and compared with a full parse.
+              incrementalParseChain: (texts) => {
+                const remark = crepe.editor.ctx.get(remarkCtx)
+                const schema = view.state.schema
+                let base = parseMarkdownFull(remark, schema, texts[0])
+                const out = { used: 0, full: 0, mismatches: [] }
+                for (let index = 1; index < texts.length; index += 1) {
+                  const markdown = texts[index]
+                  const full = parseMarkdownFull(remark, schema, markdown)
+                  let entry = null
+                  try { entry = incrementalParse(base, markdown, remark, schema) } catch (error) { out.mismatches.push({ index, threw: String(error?.stack || error).slice(0, 400) }) }
+                  if (!entry) { out.full += 1; base = full; continue }
+                  out.used += 1
+                  const docSame = full.srcDoc.eq(entry.srcDoc)
+                  const treeSame = JSON.stringify(full.mdRoot) === JSON.stringify(entry.mdRoot)
+                  const countsSame = JSON.stringify(full.counts) === JSON.stringify(entry.counts)
+                  if (!docSame || !treeSame || !countsSame) {
+                    out.mismatches.push({ index, docSame, treeSame, countsSame, previous: texts[index - 1], markdown })
+                    base = full
+                  } else base = entry
+                }
+                return out
+              },
+              debugIncremental: (previous, markdown) => {
+                const remark = crepe.editor.ctx.get(remarkCtx)
+                const schema = view.state.schema
+                const base = parseMarkdownFull(remark, schema, previous)
+                const entry = incrementalParse(base, markdown, remark, schema)
+                const full = parseMarkdownFull(remark, schema, markdown)
+                if (!entry) return { used: false }
+                const strip = (n) => JSON.stringify(n, (k, v) => (k === 'position' ? undefined : v))
+                const kids = (root) => root.children.map((c) => ({ type: c.type, s: c.position?.start?.offset, e: c.position?.end?.offset }))
+                const fk = full.mdRoot.children, ek = entry.mdRoot.children
+                let first = -1
+                for (let i = 0; i < Math.max(fk.length, ek.length); i += 1) if (JSON.stringify(fk[i]) !== JSON.stringify(ek[i])) { first = i; break }
+                return { window: entry.incremental, first, fullKid: fk[first] && { type: fk[first].type, pos: fk[first].position, text: markdown.slice(fk[first].position?.start?.offset, fk[first].position?.end?.offset).slice(0, 300), sameNoPos: strip(fk[first]) === strip(ek[first]) }, incKid: ek[first] && { type: ek[first].type, pos: ek[first].position, text: markdown.slice(ek[first].position?.start?.offset, ek[first].position?.end?.offset).slice(0, 300) }, fullKids: kids(full.mdRoot).slice(Math.max(0, first - 3), first + 3), incKids: kids(entry.mdRoot).slice(Math.max(0, first - 3), first + 3), baseKids: kids(base.mdRoot) }
+              },
+              semanticMemoCheck: (left, right, options = {}) => {
+                const previous = globalThis.__hmSemanticMemoCheck
+                globalThis.__hmSemanticMemoCheck = true
+                const before = (globalThis.__hmSemanticMemoMismatch || []).length
+                try { areSourceDocumentsEquivalent(left, right, options) } finally { globalThis.__hmSemanticMemoCheck = previous }
+                return (globalThis.__hmSemanticMemoMismatch || []).length === before
+              }
             }
           }
           try { view.setProps({ editable: () => !readOnlyRef.current }) } catch { /* editor teardown */ }

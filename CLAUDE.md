@@ -437,6 +437,27 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   idle deferral (4 s of 11 s on Windows). Never write `X:has(...) <descendant>` rules over the
   editor content: Chromium restyles every match in the document on any
   child class change (was 50 000 restyles per click on a Yuque export).
+  Incremental parse (`lib/source-reprint/incremental-parse.js`): the
+  reprint base and the verified candidate are parsed by reparsing only the
+  changed top-level blocks of a cached neighbour (3 entries per editor) and
+  reusing the rest (mdast positions shifted, ProseMirror nodes reused). The
+  window is cut only where micromark's state is empty (after a real
+  paragraph + blank line, a heading or a thematic break) and must END in the
+  same kind of closed block in its own parse (an unclosed fence/`$$`/HTML
+  block falls back). Always full: any `]:` in the text (definitions are
+  global and remark-inline-links deletes them), a file starting with
+  `---`/`+++` (an unclosed frontmatter fence turns every later list into
+  paragraph text), BOM. `areSourceDocumentsEquivalent` memoizes each
+  top-level node's semantic form (WeakMap) and replays the doc-level steps
+  (drop empty top-level paragraphs, image units, merge adjacent same-kind
+  lists); path-bound or unknown options take the full comparison. Large
+  docs (> 100 000 content size) stay deferred while typing even though the
+  sync is now fast. `VITE_HM_SYNC_SELF_CHECK=1 npm run build` re-checks both
+  against the full computation on every sync (toast on difference); run the
+  regression/fuzz with it after touching either. Locked by
+  `test:incremental-parse-ui` (seeded random edits, chained splices).
+  Measurements, design and the remaining list: `docs/performance-large-doc.md`
+  (2026-10-23 archive); benches in `scripts/perf/`.
 - **Sync throttling** (`main/sync/request-pacer.js`): S3/WebDAV requests go
   through a per-provider pacer — 429/503 retried (Retry-After or jittered
   backoff, 8 attempts, re-signed each time), the request gap doubles per
