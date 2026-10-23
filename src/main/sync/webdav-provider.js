@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'node:crypto'
+import { RequestPacer, throttleHint } from './request-pacer.js'
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -51,12 +52,13 @@ function encodePath(path) {
 }
 
 export class WebDavProvider {
-  constructor({ endpoint, username, password, request, allowInsecure = false, prefix = '', userAgent = '' }) {
+  constructor({ endpoint, username, password, request, allowInsecure = false, prefix = '', userAgent = '', pacer = new RequestPacer() }) {
     if (typeof request !== 'function') throw new Error('WebDAV requires a network request function.')
     this.baseUrl = normalizeEndpoint(endpoint, { allowInsecure })
     this.request = request
     this.prefix = String(prefix || '').replace(/^\/+|\/+$/g, '')
     this.userAgent = String(userAgent || '').trim()
+    this.pacer = pacer
     this.authorization = username || password
       ? `Basic ${Buffer.from(`${username || ''}:${password || ''}`).toString('base64')}`
       : null
@@ -75,10 +77,10 @@ export class WebDavProvider {
   }
 
   async requestPath(path, init = {}) {
-    return this.request(this.urlFor(path), {
+    return this.pacer.run(() => this.request(this.urlFor(path), {
       ...init,
       headers: this.headers(init.headers)
-    })
+    }))
   }
 
   async testConnection() {
@@ -87,7 +89,7 @@ export class WebDavProvider {
       headers: { Depth: '0' }
     })
     if (![200, 207].includes(response.status)) {
-      throw new Error(`WebDAV 连接失败（HTTP ${response.status}）。请检查地址、账号和权限。`)
+      throw new Error(`WebDAV 连接失败（HTTP ${response.status}${throttleHint(response.status)}）。请检查地址、账号和权限。`)
     }
     const probePath = `HorseMD/.connection-check/${randomUUID()}`
     let revision = null
@@ -106,21 +108,21 @@ export class WebDavProvider {
   async stat(path) {
     const response = await this.requestPath(path, { method: 'PROPFIND', headers: { Depth: '0' } })
     if (response.status === 404) return null
-    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法读取文件信息（HTTP ${response.status}）。`)
+    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法读取文件信息（HTTP ${response.status}${throttleHint(response.status)}）。`)
     return parsePropfind(await response.text())[0] || null
   }
 
   async list(path = '') {
     const response = await this.requestPath(path, { method: 'PROPFIND', headers: { Depth: '1' } })
     if (response.status === 404) return []
-    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法列出同步目录（HTTP ${response.status}）。`)
+    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法列出同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
     return parsePropfind(await response.text())
   }
 
   async get(path) {
     const response = await this.requestPath(path, { method: 'GET' })
     if (response.status === 404) return null
-    if (!response.ok) throw new Error(`WebDAV 下载失败（HTTP ${response.status}）。`)
+    if (!response.ok) throw new Error(`WebDAV 下载失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
     return {
       bytes: Buffer.from(await response.arrayBuffer()),
       revision: response.headers.get('etag')?.replace(/^"|"$/g, '') || null
@@ -134,7 +136,7 @@ export class WebDavProvider {
       current = current ? `${current}/${segment}` : segment
       const response = await this.requestPath(current, { method: 'MKCOL' })
       if (![200, 201, 204, 405].includes(response.status)) {
-        throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}）。`)
+        throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
       }
     }
   }
@@ -147,7 +149,7 @@ export class WebDavProvider {
     if (createOnly) headers['if-none-match'] = '*'
     const response = await this.requestPath(path, { method: 'PUT', headers, body: bytes })
     if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
-    if (!response.ok) throw new Error(`WebDAV 上传失败（HTTP ${response.status}）。`)
+    if (!response.ok) throw new Error(`WebDAV 上传失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
     const writtenRevision = response.headers.get('etag')?.replace(/^"|"$/g, '') || null
     // Apache DAV and several self-hosted servers omit ETag on PUT. Fetch the
     // metadata immediately so the next sync still has a conditional revision.
@@ -160,6 +162,6 @@ export class WebDavProvider {
     const response = await this.requestPath(path, { method: 'DELETE', headers })
     if ([200, 204, 404].includes(response.status)) return true
     if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
-    throw new Error(`WebDAV 删除失败（HTTP ${response.status}）。`)
+    throw new Error(`WebDAV 删除失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
   }
 }

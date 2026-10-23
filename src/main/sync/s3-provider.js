@@ -3,6 +3,7 @@ import { HttpRequest } from '@smithy/protocol-http'
 import { Sha256 } from '@aws-crypto/sha256-js'
 import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'node:crypto'
+import { RequestPacer, throttleHint } from './request-pacer.js'
 
 const parser = new XMLParser({ removeNSPrefix: true, ignoreAttributes: false })
 const asArray = (value) => value == null ? [] : Array.isArray(value) ? value : [value]
@@ -21,17 +22,18 @@ function parseList(xml) {
 }
 
 async function failureCode(response) {
+  const hint = throttleHint(response.status)
   try {
     const body = await response.text()
     const code = parser.parse(body)?.Error?.Code
-    return code ? ` ${code}` : ''
+    return (code ? ` ${code}` : '') + hint
   } catch {
-    return ''
+    return hint
   }
 }
 
 export class S3Provider {
-  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, request, prefix = '', allowInsecure = false, userAgent = '' }) {
+  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, request, prefix = '', allowInsecure = false, userAgent = '', pacer = new RequestPacer() }) {
     const url = new URL(endpoint)
     if (!['https:', 'http:'].includes(url.protocol)) throw new Error('S3 Endpoint 无效。')
     if (url.protocol !== 'https:' && !allowInsecure) throw new Error('S3 连接必须使用 HTTPS。')
@@ -41,6 +43,7 @@ export class S3Provider {
     this.prefix = clean(prefix)
     this.request = request
     this.userAgent = String(userAgent || '').trim()
+    this.pacer = pacer
     // object keys are encoded segment-by-segment before both signing and
     // net.fetch. Escaping again here turns a Chinese filename's `%E4...` into
     // `%25E4...` in the canonical request and MinIO rejects the signature.
@@ -49,7 +52,12 @@ export class S3Provider {
 
   objectKey(path = '') { return [this.prefix, clean(path)].filter(Boolean).join('/') }
 
-  async signedRequest(method, path = '', { headers = {}, body = null, query = {} } = {}) {
+  // Every attempt is signed anew (fresh x-amz-date) by the pacer's retry.
+  async signedRequest(method, path = '', options = {}) {
+    return this.pacer.run(() => this.signedRequestOnce(method, path, options))
+  }
+
+  async signedRequestOnce(method, path = '', { headers = {}, body = null, query = {} } = {}) {
     const key = this.objectKey(path)
     const base = new URL(this.endpoint)
     base.pathname = `${base.pathname.replace(/\/$/, '')}/${encodePathSegment(this.bucket)}${key ? `/${key.split('/').map(encodePathSegment).join('/')}` : ''}`

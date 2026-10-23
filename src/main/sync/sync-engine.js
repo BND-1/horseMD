@@ -180,14 +180,23 @@ export class SyncEngine {
             createOnly: !item.remote
           })
         } catch (error) {
-          // A reset remote may have lost its manifest while retaining ordinary
-          // objects. This path is available only after an explicit push; retain
-          // the untracked object before replacing it with the local source.
-          if (prepared.strategy !== 'push' || item.remote) throw error
-          const untracked = await this.provider.get(item.path)
+          if (item.remote) throw error
+          let untracked = null
+          try { untracked = await this.provider.get(item.path) } catch { throw error }
           if (!untracked) throw error
-          await this.provider.put(trashPath(stamp, item.path), untracked.bytes, { createOnly: true })
-          uploaded = await this.provider.put(item.path, bytes, { revision: untracked.revision })
+          if (sha256(untracked.bytes) === sha256(bytes)) {
+            // An interrupted sync (e.g. stopped by HTTP 429) uploaded this file
+            // but never wrote the manifest. Same bytes: adopt the object, so a
+            // retry resumes instead of failing on every uploaded file.
+            uploaded = { revision: untracked.revision }
+          } else {
+            // A reset remote may have lost its manifest while retaining ordinary
+            // objects. This path is available only after an explicit push; retain
+            // the untracked object before replacing it with the local source.
+            if (prepared.strategy !== 'push') throw error
+            await this.provider.put(trashPath(stamp, item.path), untracked.bytes, { createOnly: true })
+            uploaded = await this.provider.put(item.path, bytes, { revision: untracked.revision })
+          }
         }
         manifest.files[item.path] = { ...item.local, revision: uploaded.revision, updatedAt: now() }
         delete manifest.tombstones[item.path]
