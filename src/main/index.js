@@ -543,9 +543,17 @@ registerSyncServiceIpc(ipcMain, {
   syncService: new SyncService({
     getUserDataPath: () => app.getPath('userData'),
     safeStorage,
-    request: (url, init) => net.fetch(url, init)
+    request: (url, init) => net.fetch(url, init),
+    // Sync requests in the input trace (#161): method, URL, status, timing.
+    traceLog: inputTraceEnabled
+      ? (entry) => {
+        const line = JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n'
+        inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
+      }
+      : null
   }),
-  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id,
+  sendToRenderer
 })
 
 registerWatcherIpc(ipcMain, { sendToRenderer, markdownExtensions: MD_EXTS })

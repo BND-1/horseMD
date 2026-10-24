@@ -1,4 +1,5 @@
 import Toggle from '../ui/Toggle.jsx'
+import { DEFAULT_OUTLINE_LEVEL, OUTLINE_DEFAULT_LEVELS } from '../../settings.js'
 
 export default function EditorSettings({
   settings, onUpdateSettings, t
@@ -86,6 +87,26 @@ export default function EditorSettings({
                 onClick={() => onUpdateSettings({ inlineMathDeleteMode: mode })}
               >
                 {t(`settings.inlineMathDelete.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t('settings.outlineDefaultLevel')}</div>
+            <div className="settings-row-desc">{t('settings.outlineDefaultLevelDesc')}</div>
+          </div>
+          <div className="settings-segmented">
+            {OUTLINE_DEFAULT_LEVELS.map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={`settings-segmented-option${(settings.outlineDefaultLevel ?? DEFAULT_OUTLINE_LEVEL) === level ? ' active' : ''}`}
+                onClick={() => onUpdateSettings({ outlineDefaultLevel: level })}
+              >
+                {level === 0
+                  ? t('settings.outlineDefaultLevel.all')
+                  : t('settings.outlineDefaultLevel.level', { n: level })}
               </button>
             ))}
           </div>

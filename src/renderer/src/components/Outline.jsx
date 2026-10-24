@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../i18n.jsx'
 import { Icon } from './icons.jsx'
-import { defaultCollapsedHeadings, headingDepths, headingHasChildren } from './outline-model.js'
+import { headingHasChildren, recordFoldEntry, resolveCollapsedHeadings } from './outline-model.js'
 import { haveSameHeadingParent } from '../outline-reorder.js'
 
 // Outline panel. The heading list comes from the parent (App), which reads the
@@ -9,7 +9,16 @@ import { haveSameHeadingParent } from '../outline-reorder.js'
 // listed, no matter how its source wrote it (ATX `#`, Setext, or HTML <h1>),
 // and the list stays in lockstep with jumpToHeading (same DOM order).
 
-export default function Outline({ headings = [], activeIndex = -1, onJump, onMoveHeading, loading = false }) {
+export default function Outline({
+  headings = [],
+  activeIndex = -1,
+  onJump,
+  onMoveHeading,
+  loading = false,
+  docKey = null,
+  defaultLevel = 2,
+  folds = null
+}) {
   const { t } = useI18n()
   const activeRef = useRef(null) // the visible row that represents activeIndex
   const panelRef = useRef(null) // the scroll container (.outline-list)
@@ -17,15 +26,25 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, onMov
   const lastScrolledRef = useRef(-1) // dedupe — only act on a real active change
   const draggingIndexRef = useRef(-1)
 
-  // Collapsed set: indices of headings whose children are hidden.
-  const [collapsed, setCollapsed] = useState(new Set())
+  // Fold memory entry for this document (#122). App owns it per tab
+  // (hooks/useOutlineFolds.js) so folds survive tab switches and the
+  // expand/collapse-all commands work while this panel is hidden. Without a
+  // `folds` store the panel keeps a local entry.
+  const [localEntry, setLocalEntry] = useState(null)
+  const entry = folds ? folds.get(docKey) : localEntry
+  const writeEntry = (next) => {
+    if (folds) folds.set(docKey, next)
+    else setLocalEntry(next)
+  }
+  // Collapsed set: indices of headings whose children are hidden. Derived from
+  // structural paths, so heading text edits and moves keep the user's folds
+  // (#70) and branches without a recorded choice use the default level.
+  const collapsed = useMemo(
+    () => resolveCollapsedHeadings(headings, entry, defaultLevel),
+    [headings, entry, defaultLevel]
+  )
   const [draggingIndex, setDraggingIndex] = useState(-1)
   const [dropTarget, setDropTarget] = useState(null)
-
-  // Last-seen outline structure. Collapse state is index-based in rendering,
-  // but user edits commonly change only heading text. Preserve collapse state
-  // across pure text edits and remap it by hierarchy path when headings move.
-  const prevStructureRef = useRef(null)
 
   // A heading `i` is a parent (has foldable children) if a later heading has a
   // deeper level before an equal-or-shallower level re-appears.
@@ -66,73 +85,20 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, onMov
   }
 
   const toggle = (i) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) {
-        next.delete(i)
-      } else {
-        next.add(i)
-      }
-      return next
-    })
+    const next = new Set(collapsed)
+    if (next.has(i)) next.delete(i)
+    else next.add(i)
+    writeEntry(recordFoldEntry(headings, next, entry))
   }
 
-  const expandAll = () => setCollapsed(new Set())
-  const collapseAll = () => setCollapsed(new Set(headings.map((_, index) => index).filter(hasChildren)))
-
-  const structureFor = (items) => {
-    const depths = headingDepths(items)
-    const counters = []
-    return items.map((heading, index) => {
-      const depth = depths[index]
-      counters.length = depth + 1
-      counters[depth] = (counters[depth] || 0) + 1
-      for (let i = depth + 1; i < counters.length; i++) counters[i] = 0
-      return {
-        level: heading.level,
-        depth,
-        path: counters.slice(0, depth + 1).join('.')
-      }
-    })
+  const expandAll = () => {
+    if (folds) folds.expandAll(docKey)
+    else setLocalEntry({ collapsed: new Set(), known: new Set(), rest: 'expanded' })
   }
-
-  // Preserve collapsed state across heading text edits (#70). Resetting on a
-  // `level:text` signature made any title rename collapse the outline back to
-  // defaults. The structural path keeps the user's fold choices attached to
-  // the same hierarchy branch while still falling back to sensible defaults
-  // for newly-added branches.
-  useLayoutEffect(() => {
-    const nextStructure = structureFor(headings)
-    const prevStructure = prevStructureRef.current
-    if (!prevStructure) {
-      prevStructureRef.current = nextStructure
-      setCollapsed(defaultCollapsedHeadings(headings))
-      return
-    }
-
-    const prevSig = prevStructure.map((item) => `${item.level}:${item.path}`).join('\n')
-    const nextSig = nextStructure.map((item) => `${item.level}:${item.path}`).join('\n')
-    if (prevSig === nextSig) {
-      prevStructureRef.current = nextStructure
-      return
-    }
-
-    setCollapsed((current) => {
-      const previousCollapsedPaths = new Set(
-        [...current]
-          .map((index) => prevStructure[index]?.path)
-          .filter(Boolean)
-      )
-      const defaults = defaultCollapsedHeadings(headings)
-      const next = new Set()
-      nextStructure.forEach((item, index) => {
-        if (!headingHasChildren(headings, index)) return
-        if (previousCollapsedPaths.has(item.path) || defaults.has(index)) next.add(index)
-      })
-      return next
-    })
-    prevStructureRef.current = nextStructure
-  }, [headings])
+  const collapseAll = () => {
+    if (folds) folds.collapseAll(docKey)
+    else setLocalEntry({ collapsed: new Set(), known: new Set(), rest: 'collapsed' })
+  }
 
   const activeDisplayIndex =
     activeIndex >= 0 && activeIndex < headings.length
@@ -182,8 +148,10 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, onMov
   }, [headings.length])
 
   const foldable = headings.map((_, i) => i).filter(hasChildren)
-  const isCollapsed = foldable.length > 0 && foldable.every((index) => collapsed.has(index))
-  const toggleAll = isCollapsed ? expandAll : collapseAll
+  // Any folded branch → the head button expands everything (one click from
+  // the default partially-folded state, #122); nothing folded → collapse all.
+  const anyCollapsed = foldable.some((index) => collapsed.has(index))
+  const toggleAll = anyCollapsed ? expandAll : collapseAll
   const clearDragState = () => {
     draggingIndexRef.current = -1
     setDraggingIndex(-1)
@@ -204,11 +172,11 @@ export default function Outline({ headings = [], activeIndex = -1, onJump, onMov
             <button
               className="outline-head-btn"
               onClick={toggleAll}
-              title={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
+              title={anyCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
               disabled={foldable.length === 0}
-              aria-label={isCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
+              aria-label={anyCollapsed ? t('outline.expandAll') : t('outline.collapseAll')}
             >
-              <Icon name={isCollapsed ? 'expand' : 'collapse'} size={15} />
+              <Icon name={anyCollapsed ? 'expand' : 'collapse'} size={15} />
             </button>
           </span>
         )}

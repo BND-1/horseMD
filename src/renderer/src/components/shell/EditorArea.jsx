@@ -162,7 +162,7 @@ export default function EditorArea({
                 el.__horsemdSourceSelectionBaseline = `${el.selectionStart || 0}:${el.selectionEnd || 0}`
               }
               if (el.__horsemdSourceViewportMoved == null) el.__horsemdSourceViewportMoved = false
-              if (tab.restoreOffset != null && !el.__horsemdDocPosRestored) {
+              if (tab.restoreOffset != null && (tab.restoreNonce ?? 0) === tab.reloadNonce && !el.__horsemdDocPosRestored) {
                 el.__horsemdDocPosRestored = true
                 try {
                   const off = Math.max(0, Math.min(tab.restoreOffset, el.value.length))
@@ -299,8 +299,11 @@ export default function EditorArea({
                 onRichEditPending={() => markRichEditPending(tab.id)}
                 onReady={(api) => {
                   registerEditorApi(tab.id, api)
-                  if (tab.restoreOffset != null && !restoredDocPosRef.current.has(tab.id)) {
-                    restoredDocPosRef.current.add(tab.id)
+                  // One restore per mount generation: the open-time position
+                  // (restoreNonce 0) or an external-change reload (#158).
+                  const restoreKey = `${tab.id}:${tab.reloadNonce}`
+                  if (tab.restoreOffset != null && (tab.restoreNonce ?? 0) === tab.reloadNonce && !restoredDocPosRef.current.has(restoreKey)) {
+                    restoredDocPosRef.current.add(restoreKey)
                     // Set the caret without scrolling/focusing (a reading open
                     // must not steal focus), then restore the saved viewport.
                     try {

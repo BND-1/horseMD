@@ -28,6 +28,7 @@ export const LEGACY_COMMAND_ALIASES = {
   openFolder: 'workspace.openFolder',
   save: 'file.save',
   saveAs: 'file.saveAs',
+  renameFile: 'file.rename',
   attachFile: 'file.attach',
   exportPdf: 'file.exportPdf',
   exportHtml: 'file.exportHtml',
@@ -109,6 +110,18 @@ export const COMMAND_DEFINITIONS = [
     context: COMMAND_CONTEXTS.DOCUMENT,
     defaultKeybindings: ['Mod+Shift+S'],
     electronAccelerator: true,
+    palette: true
+  },
+  {
+    // F2 (issue #156): the file-tree row that has focus, else the current
+    // document — inline in the file tree when its row is showing, otherwise
+    // the rename dialog. Renderer-only, like view.toggleSidebar.
+    id: 'file.rename',
+    handler: 'renameFile',
+    titleKey: 'cmd.renameFile',
+    category: COMMAND_CATEGORIES.FILE,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['F2'],
     palette: true
   },
   {
@@ -239,6 +252,28 @@ export const COMMAND_DEFINITIONS = [
     context: COMMAND_CONTEXTS.APP,
     defaultKeybindings: ['Mod+Shift+L'],
     electronAccelerator: true,
+    palette: true
+  },
+  {
+    // Outline fold all (#122). Renderer-only capture-phase shortcuts (no menu
+    // accelerator, no double fire); they act on the active document's fold
+    // memory, so they also work while the outline panel is hidden.
+    // ProseMirror owns Mod+[ / Mod+] (list lift/sink), not Mod+Alt+[ / ].
+    id: 'outline.expandAll',
+    handler: 'outlineExpandAll',
+    titleKey: 'cmd.outlineExpandAll',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Alt+BracketRight'],
+    palette: true
+  },
+  {
+    id: 'outline.collapseAll',
+    handler: 'outlineCollapseAll',
+    titleKey: 'cmd.outlineCollapseAll',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Alt+BracketLeft'],
     palette: true
   },
   {

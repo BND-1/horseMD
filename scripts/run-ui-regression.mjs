@@ -233,8 +233,36 @@ const standalone = [
     script: 'scripts/test-sync-throttle-ui.mjs'
   },
   {
+    name: 'Cloud sync #161: confirm disabled while syncing, no-answer request times out, reload keeps state',
+    script: 'scripts/test-sync-issue-161-ui.mjs'
+  },
+  {
+    name: 'Sync request timeout and credential-free trace (pure)',
+    script: 'scripts/test-sync-request.mjs'
+  },
+  {
     name: 'Image host: upload command runs with the login-shell PATH (Finder launch, #160)',
     script: 'scripts/test-image-host-path-ui.mjs'
+  },
+  {
+    name: 'External change keeps the reader in place (rich in place, source scroll+caret, #158)',
+    script: 'scripts/test-external-reload-position-ui.mjs'
+  },
+  {
+    name: 'F2 rename: inline tree / folder / dialog; open tabs follow tree renames (#156)',
+    script: 'scripts/test-rename-f2-ui.mjs'
+  },
+  {
+    name: 'Outline default level, one-click expand all, Mod+Alt+[ / ], per-doc folds (#122)',
+    script: 'scripts/test-outline-default-level-ui.mjs'
+  },
+  {
+    name: 'Chinese / English document fonts render separately (legacy single font kept)',
+    script: 'scripts/test-font-cjk-latin-ui.mjs'
+  },
+  {
+    name: 'Settings fit a phone screen; typography preview page is padded',
+    script: 'scripts/test-settings-mobile-width-ui.mjs'
   },
   {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',

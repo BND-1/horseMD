@@ -22,6 +22,10 @@ export const PAGE_WIDTH_PRESETS = [
 // Auto-save inactivity delays offered in Settings › Files (seconds; 0 = off).
 export const AUTO_SAVE_DELAYS = [0, 3, 10, 60]
 
+// Outline tiers expanded when a document is first shown (#122; 0 = all).
+export const OUTLINE_DEFAULT_LEVELS = [1, 2, 3, 4, 0]
+export const DEFAULT_OUTLINE_LEVEL = 2
+
 // Editor body font size (px). Applies only to the document content, not the app
 // chrome (tabs / sidebar / status bar).
 export const FONT_SIZE_MIN = 12
@@ -88,6 +92,9 @@ const round1 = (n) => Math.round(n * 10) / 10
 // falls back gracefully.
 export const DEFAULT_FONT_WRITE =
   "'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Source Han Sans SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif"
+// Latin part of DEFAULT_FONT_WRITE: what letters use when only the Chinese
+// font is customised.
+export const DEFAULT_FONT_LATIN = "'Helvetica Neue', Helvetica, Arial"
 export const DEFAULT_FONT_MONO =
   "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Courier New', monospace"
 
@@ -131,6 +138,21 @@ export const fontStack = (name, base) => {
   return n ? `'${n}', ${base}` : null
 }
 
+// Document font with separate English and Chinese fonts: English first, so
+// letters, digits and Latin punctuation use it, while CJK characters (which
+// an English font does not contain) fall through to the Chinese font. An
+// unset English font keeps the default Latin fonts in front, so the Chinese
+// font's own Latin glyphs are not used unless chosen as the English font too.
+export const writeFontStack = (latin, cjk) => {
+  const clean = (name) => (name || '').trim().replace(/'/g, '')
+  const l = clean(latin)
+  const c = clean(cjk)
+  if (!l && !c) return null
+  return [l ? `'${l}'` : DEFAULT_FONT_LATIN, c ? `'${c}'` : null, DEFAULT_FONT_WRITE]
+    .filter(Boolean)
+    .join(', ')
+}
+
 export const DEFAULT_SETTINGS = {
   // Manual keeps the selected built-in/imported theme unchanged. System chooses
   // one of the saved built-in day/night themes when the OS appearance changes.
@@ -146,7 +168,11 @@ export const DEFAULT_SETTINGS = {
   headingSpacing: DEFAULT_HEADING_SPACING,
   // Document (writing) + code font overrides (issue #38). Empty = use the
   // default stack; otherwise the name leads the stack (e.g. a Nerd Font).
+  // Document fonts: `fontWrite` is the Chinese (CJK) font, `fontWriteLatin`
+  // the English one. Before they were split, `fontWrite` applied to all
+  // text; such settings load with fontWriteLatin = fontWrite (same look).
   fontWrite: '',
+  fontWriteLatin: '',
   fontMono: '',
   // Empty = no image host: pasted/uploaded images keep the default behavior
   // (a local object URL). When set, it's run like Typora's "custom command":
@@ -186,6 +212,9 @@ export const DEFAULT_SETTINGS = {
   // loses focus). 0 = off. Untitled tabs, external-change conflicts and
   // unmappable rich edits are never auto-saved — see hooks/useAutoSave.js.
   autoSaveDelay: 0,
+  // Outline default expansion (#122): how many heading tiers the outline shows
+  // for a document seen for the first time this session. 0 = everything.
+  outlineDefaultLevel: DEFAULT_OUTLINE_LEVEL,
   // Desktop: closing the window hides it to the system tray instead of quitting,
   // so the app keeps running in the background (tray icon / Alt+M restore it).
   // Default off — "close quits" stays the long-standing behavior; the tray is
@@ -269,9 +298,15 @@ export function loadSettings() {
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
       autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,
+      outlineDefaultLevel: OUTLINE_DEFAULT_LEVELS.includes(raw.outlineDefaultLevel)
+        ? raw.outlineDefaultLevel
+        : DEFAULT_OUTLINE_LEVEL,
       closeToTray: raw.closeToTray === true,
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
+      fontWriteLatin: typeof raw.fontWriteLatin === 'string'
+        ? raw.fontWriteLatin
+        : typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontMono: typeof raw.fontMono === 'string' ? raw.fontMono : '',
       userCss: typeof raw.userCss === 'string' ? raw.userCss : '',
       userCssSnippets: normalizeUserCssSnippets(raw.userCssSnippets, raw.userCss),

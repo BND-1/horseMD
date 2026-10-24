@@ -22,6 +22,7 @@ const COMMAND_PALETTE_ICONS = {
   'workspace.openFolder': 'folder',
   'file.save': 'save',
   'file.saveAs': 'save',
+  'file.rename': 'pencil',
   'file.attach': 'paperclip',
   'file.exportPdf': 'file',
   'file.exportHtml': 'globe',
@@ -36,6 +37,8 @@ const COMMAND_PALETTE_ICONS = {
   'view.immersive': 'expand',
   'view.showFiles': 'folder',
   'view.showOutline': 'outline',
+  'outline.expandAll': 'expand',
+  'outline.collapseAll': 'collapse',
   'view.globalSearch': 'search',
   'view.toggleSource': 'code',
   'view.cycleTheme': 'moon',
@@ -66,6 +69,8 @@ export const SETTINGS_BACKGROUND_HANDLERS = new Set([
   'exportPandocTxt',
   'toggleSidebar',
   'toggleOutline',
+  'outlineExpandAll',
+  'outlineCollapseAll',
   'toggleFiles',
   'toggleSource',
   'find',
@@ -92,6 +97,9 @@ export function createMenuHandlers({
   setSidebarMode,
   setPaletteOpen,
   toggleImmersive,
+  outlineFolds,
+  outlineDocId,
+  renameFile,
   newTab,
   openPaths,
   openFolder,
@@ -154,6 +162,7 @@ export function createMenuHandlers({
       if (id) saveTab(id, true)
     },
     attachFile: attachFiles,
+    renameFile: () => renameFile?.(),
     exportPdf: () => exportRendered('pdf'),
     exportHtml: () => exportRendered('html'),
     exportPandocDocx: () => exportPandoc('docx'),
@@ -171,6 +180,10 @@ export function createMenuHandlers({
       setSidebarMode('outline')
       setSidebarOpen(true)
     },
+    // Fold memory of the document the outline follows (#122); the Outline
+    // panel re-reads it, so this works whether or not the panel is shown.
+    outlineExpandAll: () => outlineFolds?.expandAll(outlineDocId),
+    outlineCollapseAll: () => outlineFolds?.collapseAll(outlineDocId),
     toggleFiles: () => {
       setSidebarMode('files')
       setSidebarOpen(true)
@@ -307,6 +320,40 @@ export function useGlobalKeys({
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [handlers, keybindings, platform, activeTabKind])
+
+  // Outline expand / collapse all (#122): capture phase so the shortcut works
+  // with the caret in the editor; renderer-only (no menu accelerator).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (activeTabKind === 'settings') return
+      const expand = keybindingMatchesEvent(keybindings['outline.expandAll']?.[0], e, platform)
+      const collapse = !expand && keybindingMatchesEvent(keybindings['outline.collapseAll']?.[0], e, platform)
+      if (!expand && !collapse) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (expand) handlers.current.outlineExpandAll?.()
+      else handlers.current.outlineCollapseAll?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [handlers, keybindings, platform, activeTabKind])
+  // Rename (F2 by default, #156). Not while typing in a field (the tree's
+  // own rename input, the find bar, dialogs); the source textarea is the
+  // document, so it counts as the editor.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!keybindingMatchesEvent(keybindings['file.rename']?.[0], e, platform)) return
+      const target = e.target
+      if (target?.tagName === 'INPUT' || target?.tagName === 'SELECT') return
+      if (target?.tagName === 'TEXTAREA' && !target.classList?.contains('source-editor')) return
+      if (document.querySelector('.hm-rename-modal')) return
+      e.preventDefault()
+      e.stopPropagation()
+      handlers.current.renameFile?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [handlers, keybindings, platform])
 
   // Mod+F = find, Mod+Alt+F = replace (opens the bar and focuses the replace
   // field). Capture phase so it beats any editor binding.

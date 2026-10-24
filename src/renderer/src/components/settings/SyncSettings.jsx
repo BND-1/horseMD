@@ -227,7 +227,7 @@ function IconAction({ icon, label, className = '', ...props }) {
   </button>
 }
 
-function SyncPlanPreview({ preview, onConfirm, onClose, t }) {
+function SyncPlanPreview({ preview, onConfirm, onClose, busy = false, t }) {
   // Empty folders (S3 "path/" markers) count like files: creating one in the
   // cloud is an upload, creating it here a download.
   const labelFor = (operation) => {
@@ -258,7 +258,7 @@ function SyncPlanPreview({ preview, onConfirm, onClose, t }) {
         </ul>
       </div>}
       {preview.requiresConfirmation && <div className="sync-preview-actions">
-        <button className="settings-action-btn" type="button" onClick={onConfirm}>{t(`sync.confirm.${preview.strategy}`)}</button>
+        <button className="settings-action-btn" type="button" disabled={busy} onClick={onConfirm}>{busy ? t('sync.syncing') : t(`sync.confirm.${preview.strategy}`)}</button>
         <button className="settings-link-btn" type="button" onClick={onClose}>{t('sync.cancel')}</button>
       </div>}
     </section>
@@ -360,7 +360,8 @@ export default function SyncSettings({
     try {
       return await action()
     } catch (cause) {
-      setError(cause?.message || String(cause))
+      // Electron prefixes main-process errors with the IPC channel name.
+      setError(String(cause?.message || cause).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, ''))
       return null
     }
   }
@@ -588,7 +589,7 @@ export default function SyncSettings({
               onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}
               t={t}
             />}
-            {activePreview && <SyncPlanPreview preview={activePreview} onConfirm={confirmRun} onClose={() => setPreview(null)} t={t} />}
+            {activePreview && <SyncPlanPreview preview={activePreview} busy={busy} onConfirm={confirmRun} onClose={() => setPreview(null)} t={t} />}
           </div>
         })}
         {localOnly.map((rootPath) => <div className="sync-folder-row" key={rootPath}>

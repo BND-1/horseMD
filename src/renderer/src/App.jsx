@@ -30,7 +30,7 @@ import {
   applyTableAutoWrap,
   applySoftBreakDisplay,
   fontStack,
-  DEFAULT_FONT_WRITE,
+  writeFontStack,
   DEFAULT_FONT_MONO
 } from './settings.js'
 import {
@@ -43,6 +43,7 @@ import { fireToast } from './ui.js'
 import { useFindReplace } from './hooks/useFindReplace.js'
 import { useGlobalSearch } from './hooks/useGlobalSearch.js'
 import { useOutline } from './hooks/useOutline.js'
+import { useOutlineFolds } from './hooks/useOutlineFolds.js'
 import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
@@ -578,6 +579,7 @@ export default function App() {
     closeOthers,
     renameTabFile,
     commitTabRename,
+    retargetTabs,
     duplicateTabFile,
     deleteTabFile,
     writeTab,
@@ -619,7 +621,10 @@ export default function App() {
     requestHtmlExport,
     requestPandocExport,
     setSidebarOpen,
-    initialFolderRoots: initialFolderRoots
+    initialFolderRoots: initialFolderRoots,
+    editorApis,
+    sourceTextareas,
+    editorHosts
   })
 
   useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
@@ -788,6 +793,8 @@ export default function App() {
     ((sourceMode || (sourceRichSplitMode && sourceRichFocusedPane === 'source')) && outlineId === activeId)
   )
   const richLoading = !!outlineId && richLoadingIds.has(outlineId)
+  // Per-document outline fold memory + default expansion level (#122).
+  const outlineFolds = useOutlineFolds(settings.outlineDefaultLevel)
   // The compact navigator is a separate reading affordance on the opposite
   // side of the editor. Keep it available when the full sidebar outline is
   // open as well; hiding it made the right-side navigation appear to vanish.
@@ -898,6 +905,21 @@ export default function App() {
     return activeId
   }
 
+  // Rename command (F2, #156): the focused file-tree row (file or folder),
+  // else the current document — inline in the tree when its row is showing,
+  // otherwise the rename dialog.
+  const sidebarApiRef = useRef(null)
+  const renameFileCommand = () => {
+    const row = document.activeElement?.closest?.('.tree-row[data-path]')
+    if (row && sidebarApiRef.current?.startRename(row.dataset.path)) return
+    if (home) return
+    const id = pickEditableId()
+    const tab = tabsRef.current.find((x) => x.id === id)
+    if (!tab?.path || tab.kind === 'settings') return
+    if (sidebarOpen && sidebarMode === 'files' && sidebarApiRef.current?.startRename(tab.path)) return
+    renameTabFile(id)
+  }
+
   const { attachFiles } = useAttachments({
     pickEditableId,
     tabsRef,
@@ -967,6 +989,9 @@ export default function App() {
     setSidebarMode,
     setPaletteOpen,
     toggleImmersive,
+    outlineFolds,
+    outlineDocId: outlineId,
+    renameFile: renameFileCommand,
     newTab,
     openPaths,
     openFolder,
@@ -1096,7 +1121,10 @@ export default function App() {
   // temporarily apply it so the preview + editor react live — no click needed.
   // Cleared on leave/close; pick writes to settings (the persistent value).
   const [hoverFont, setHoverFont] = useState({})
-  const fwStack = fontStack(hoverFont.write ?? settings.fontWrite, DEFAULT_FONT_WRITE)
+  const fwStack = writeFontStack(
+    hoverFont.latin ?? settings.fontWriteLatin,
+    hoverFont.write ?? settings.fontWrite
+  )
   const fmStack = fontStack(hoverFont.mono ?? settings.fontMono, DEFAULT_FONT_MONO)
   const appFontStyle = {
     ...(fwStack ? { '--font-write': fwStack } : {}),
@@ -1182,6 +1210,8 @@ export default function App() {
                 syncSupported={syncWorkspaces.supported}
                 syncFolderPaths={syncWorkspaces.registered.map((entry) => entry.rootPath)}
                 onEnableSyncFolder={enableSyncFolder}
+                onPathMoved={retargetTabs}
+                apiRef={sidebarApiRef}
               />
             ) : sidebarMode === 'search' ? (
               <GlobalSearchPanel
@@ -1200,6 +1230,9 @@ export default function App() {
                 loading={richLoading}
                 onJump={jumpToHeading}
                 onMoveHeading={isMobile ? undefined : moveOutlineHeading}
+                docKey={outlineId}
+                defaultLevel={settings.outlineDefaultLevel}
+                folds={outlineFolds}
               />
             )
           )}

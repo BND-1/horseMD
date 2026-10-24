@@ -26,6 +26,7 @@ import {
 } from '../paths.js'
 import { fireToast } from '../ui.js'
 import { getSavedDocPosition } from '../lib/doc-positions.js'
+import { mapOffsetThroughChange } from '../lib/offset-through-change.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 import { useWorkspace } from './useWorkspace.js'
 
@@ -54,7 +55,10 @@ export function useFileOps({
   requestHtmlExport,
   requestPandocExport,
   setSidebarOpen,
-  initialFolderRoots
+  initialFolderRoots,
+  editorApis,
+  sourceTextareas,
+  editorHosts
 }) {
   const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen })
   const { bumpRefresh } = workspace
@@ -296,6 +300,34 @@ export function useFileOps({
       )
     }
   }, [tabsRef, setRenameState, setTabs, bumpRefresh, tRef])
+
+  // A file or folder renamed / moved in the file tree: open tabs at (or
+  // under) the old path now point at the new one. Before, the tab kept the
+  // old path, so a later save recreated the file under its old name.
+  const retargetTabs = useCallback((oldPath, newPath) => {
+    if (!oldPath || !newPath) return
+    const from = oldPath.replace(/\\/g, '/').replace(/\/+$/, '')
+    const apply = (list) => {
+      let changed = false
+      const next = list.map((t) => {
+        if (!t.path) return t
+        const norm = t.path.replace(/\\/g, '/')
+        if (norm !== from && !norm.startsWith(from + '/')) return t
+        changed = true
+        const path = norm === from ? newPath : newPath + t.path.slice(from.length)
+        return { ...t, path, title: baseName(path) }
+      })
+      return changed ? next : list
+    }
+    tabsRef.current = apply(tabsRef.current)
+    setTabs(apply)
+    setRecents((prev) => prev.map((r) => {
+      const norm = (r.path || '').replace(/\\/g, '/')
+      if (norm !== from && !norm.startsWith(from + '/')) return r
+      const path = norm === from ? newPath : newPath + r.path.slice(from.length)
+      return { ...r, path, name: baseName(path), dir: dirName(path) }
+    }))
+  }, [tabsRef, setTabs, setRecents])
 
   const duplicateTabFile = useCallback(async (id) => {
     const tab = tabsRef.current.find((t) => t.id === id)
@@ -608,34 +640,85 @@ export function useFileOps({
     watchedRef.current = want
   }, [tabs])
 
+  // Adopt a file another program changed (issue #158: the reader must stay
+  // where they were, not jump to the top). A mounted rich editor takes the new
+  // Markdown in place — the same replaceMarkdown path a source-mode edit uses,
+  // so unchanged blocks keep their DOM and the viewport does not move. A
+  // textarea (source mode, plain text, heavy docs) or an unmounted tab is
+  // remounted with its caret mapped through the change and its scrollTop.
   const reloadTabFromDisk = useCallback(async (id, path) => {
     commitAllLive() // so the "don't clobber unsaved" check below sees live edits
+    let content
+    let mtimeMs
     try {
-      const { content, mtimeMs } = await window.api.readFile(path)
-      setTabs((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t
-          // Bail if the user has started editing since the change fired —
-          // never clobber unsaved work.
-          if (isTabDirty(t)) return t
-          if (t.content === content) return { ...t, mtimeMs }
-          // Adopt the on-disk content: drop any stale live-edit entry so the
-          // textarea (keyed by reloadNonce) remounts with the new defaultValue.
-          liveContentRef.current.delete(id)
-          return {
-            ...t,
-            content,
-            savedContent: content,
-            mtimeMs,
-            reloadNonce: t.reloadNonce + 1,
-            heavy: isHeavyDoc(content)
-          }
-        })
-      )
+      ({ content, mtimeMs } = await window.api.readFile(path))
     } catch {
-      /* file vanished mid-reload; leave the tab as-is */
+      return // file vanished mid-reload; leave the tab as-is
     }
-  }, [commitAllLive, setTabs, liveContentRef])
+    commitAllLive()
+    const current = tabsRef.current.find((t) => t.id === id)
+    // Never clobber unsaved work (the user may have typed since it fired).
+    if (!current || isTabDirty(current)) return
+    const adopt = (patch) => {
+      const apply = (list) => list.map((t) => {
+        if (t.id !== id || isTabDirty(t)) return t
+        if (t.content === content) return { ...t, mtimeMs }
+        liveContentRef.current.delete(id)
+        return { ...t, content, savedContent: content, mtimeMs, ...patch(t) }
+      })
+      tabsRef.current = apply(tabsRef.current)
+      setTabs(apply)
+    }
+    if (current.content === content) {
+      adopt(() => ({}))
+      return
+    }
+
+    const api = editorApis?.current?.[id]
+    const textarea = sourceTextareas?.current?.[id]
+    const scroller = editorHosts?.current?.[id]
+    if (api?.replaceMarkdown && !textarea && scroller) {
+      const scrollTop = scroller.scrollTop
+      let caret = null
+      try { caret = api.markdownOffsetFromSelection?.() ?? null } catch { caret = null }
+      if (api.replaceMarkdown(content)) {
+        const mapped = mapOffsetThroughChange(current.content, content, caret)
+        if (mapped != null) {
+          try { api.restoreMarkdownOffset?.(mapped, false) } catch { /* caret stays where PM mapped it */ }
+        }
+        // A hidden tab (display:none) reads 0; leave its kept offset alone.
+        if (scroller.offsetParent && scroller.scrollTop !== scrollTop) scroller.scrollTop = scrollTop
+        // `heavy` is left alone: flipping it would swap the rich editor for a
+        // textarea under the reader. It is re-evaluated on the next open.
+        adopt(() => ({}))
+        return
+      }
+    }
+
+    // Remount. EditorArea applies restoreOffset/restoreScrollTop once for
+    // the mount whose reloadNonce equals restoreNonce.
+    let offset = null
+    let restoreScrollTop = null
+    if (textarea) {
+      offset = textarea.selectionStart ?? null
+      restoreScrollTop = textarea.scrollTop || null
+    } else if (api) {
+      try { offset = api.markdownOffsetFromSelection?.() ?? null } catch { offset = null }
+      restoreScrollTop = scroller?.scrollTop || null
+    } else if ((current.restoreNonce ?? 0) === current.reloadNonce) {
+      // Never mounted yet: carry the pending open-time restore forward.
+      offset = current.restoreOffset ?? null
+      restoreScrollTop = current.restoreScrollTop ?? null
+    }
+    const restoreOffset = mapOffsetThroughChange(current.content, content, offset)
+    adopt((t) => ({
+      reloadNonce: t.reloadNonce + 1,
+      heavy: isHeavyDoc(content),
+      restoreOffset,
+      restoreScrollTop,
+      restoreNonce: t.reloadNonce + 1
+    }))
+  }, [commitAllLive, setTabs, tabsRef, liveContentRef, editorApis, sourceTextareas, editorHosts])
 
   useEffect(() => {
     const off = window.api.onFileChanged(({ path, mtimeMs }) => {
@@ -673,6 +756,7 @@ export function useFileOps({
     closeOthers,
     renameTabFile,
     commitTabRename,
+    retargetTabs,
     duplicateTabFile,
     deleteTabFile,
     writeTab,

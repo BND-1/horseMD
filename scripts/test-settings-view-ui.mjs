@@ -193,7 +193,7 @@ async function main() {
         throw new Error('Full-width setting did not visibly widen the preview: ' + JSON.stringify({ widePreviewWidth, fullPreviewWidth }))
       }
       const fontFields = [...document.querySelectorAll('.settings-font-field')].filter(visible)
-      if (fontFields.length < 2) throw new Error('Missing font picker fields')
+      if (fontFields.length < 3) throw new Error('Missing font picker fields')
       fontFields[0].click()
       await sleep(500)
       const writeFontOption = [...document.querySelectorAll('.settings-font-option')].filter(visible)
@@ -211,7 +211,7 @@ async function main() {
       if (!/Codex Sans/.test(appRoot.style.getPropertyValue('--font-write'))) {
         throw new Error('Write font selection did not update app CSS var')
       }
-      const monoField = [...document.querySelectorAll('.settings-font-field')].filter(visible)[1]
+      const monoField = [...document.querySelectorAll('.settings-font-field')].filter(visible)[2] // Chinese, English, code
       monoField.click()
       await sleep(300)
       const monoSearch = document.querySelector('.settings-font-search')

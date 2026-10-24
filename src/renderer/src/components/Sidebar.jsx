@@ -26,7 +26,11 @@ export default function Sidebar({
   refreshNonce,
   syncSupported = false,
   syncFolderPaths = [],
-  onEnableSyncFolder
+  onEnableSyncFolder,
+  // Open tabs follow a file/folder renamed or moved in the tree.
+  onPathMoved,
+  // Filled with { startRename(path) } for the rename command (F2, #156).
+  apiRef
 }) {
   const { t } = useI18n()
   const copyText = (text) => copyToClipboard(text, t('code.copied'))
@@ -198,6 +202,7 @@ export default function Sidebar({
       window.alert(isExistsError(e) ? t('err.nameExists') : (t('err.move') || 'Could not move: ') + e.message)
       return
     }
+    onPathMoved?.(srcPath, join(destDir, baseName(srcPath)))
     await refreshParentOf(srcPath)
     if (childrenMap[destDir] !== undefined) await loadDir(destDir)
     setExpanded((s) => new Set(s).add(destDir))
@@ -236,6 +241,7 @@ export default function Sidebar({
     committingRef.current = true
     try {
       await window.api.rename(path, join(parentDir(path), clean))
+      onPathMoved?.(path, join(parentDir(path), clean))
       await refreshParentOf(path)
     } catch (e) {
       window.alert(isExistsError(e) ? t('err.nameExists') : (t('err.rename') || 'Could not rename: ') + e.message)
@@ -243,6 +249,28 @@ export default function Sidebar({
       committingRef.current = false
     }
   }
+
+  // Inline rename of a row that is currently shown (not a workspace root).
+  // Returns false when the row is not in the tree, so the caller can fall
+  // back to the rename dialog.
+  const treeRef = useRef(null)
+  const startRenameRef = useRef(null)
+  startRenameRef.current = (path) => {
+    if (!path || isRootPath(path)) return false
+    const key = normalizePathKey(path)
+    const row = [...(treeRef.current?.querySelectorAll('.tree-row[data-path]') || [])]
+      .find((el) => normalizePathKey(el.dataset.path) === key)
+    if (!row) return false
+    row.scrollIntoView?.({ block: 'nearest' })
+    setMenu(null)
+    setRename({ path: row.dataset.path, value: baseName(row.dataset.path) })
+    return true
+  }
+  useEffect(() => {
+    if (!apiRef) return
+    apiRef.current = { startRename: (path) => startRenameRef.current?.(path) ?? false }
+    return () => { apiRef.current = null }
+  }, [apiRef])
 
   // Empty state: no folder roots yet.
   if (!folderRoots.length) {
@@ -332,6 +360,10 @@ export default function Sidebar({
           ref={isActive ? activeRowRef : undefined}
           className={`tree-row${isActive ? ' active' : ''}${isDropTarget ? ' drag-over' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
+          data-path={node.path}
+          // Focusable on click, so F2 renames the row the user picked
+          // (a folder too) rather than the open document.
+          tabIndex={-1}
           draggable={!renaming && !isRoot}
           onDragStart={(e) => {
             if (isRoot) {
@@ -442,6 +474,7 @@ export default function Sidebar({
         </div>
       </div>
       <div
+        ref={treeRef}
         className={`tree${dragOver === defaultRoot ? ' drag-over-root' : ''}`}
         {...(defaultRoot ? dropProps(defaultRoot) : {})}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, node: null, isRoot: false }) }}

@@ -69,6 +69,16 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             t={t}
           />
           <FontPicker
+            label={t('settings.fontWriteLatin')}
+            value={settings.fontWriteLatin || ''}
+            placeholder={t('settings.fontWritePlaceholder')}
+            fonts={fontFamilies}
+            onLoadFonts={ensureFonts}
+            onChange={(fontWriteLatin) => onUpdateSettings({ fontWriteLatin })}
+            onHover={(f) => onHoverFont((h) => ({ ...h, latin: f }))}
+            t={t}
+          />
+          <FontPicker
             label={t('settings.fontMono')}
             value={settings.fontMono || ''}
             placeholder={t('settings.fontMonoPlaceholder')}

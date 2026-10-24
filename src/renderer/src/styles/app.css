@@ -1900,6 +1900,9 @@ body.resizing-pane .pane-left-resizer::before {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+/* A clicked row keeps focus (tabIndex -1) so F2 renames it (#156). */
+.tree-row:focus { outline: none; }
+.tree-row:focus:not(.active) { background: var(--hover); }
 /* Drag-and-drop: the folder under the pointer gets a clear drop-target ring. */
 .tree-row.drag-over {
   background: var(--accent-soft);
@@ -4418,6 +4421,13 @@ body.hm-full-width .source-editor {
   font-family: var(--font-write);
   --hm-list-marker-color: color-mix(in srgb, var(--text) 72%, var(--accent) 28%);
 }
+/* The preview sits inside .milkdown, where the editor rule
+   `body:not(.hm-has-custom-theme) .milkdown .ProseMirror` (0,3,1) zeroes
+   padding with !important (the real editor pads its wrapper instead), so
+   the text sat against the page edge. (0,4,0) beats it. */
+.settings-preview-shell .settings-preview .ProseMirror.markdown-body {
+  padding: 26px clamp(22px, 6vw, 56px) 36px !important;
+}
 .settings-preview h1 {
   font-size: 2.05em;
   margin: 0 0 0.45em;
@@ -5615,6 +5625,14 @@ body.hm-full-width .source-editor {
   padding: 7px 10px;
 }
 .app.is-mobile .settings-sections {
+  /* The page is a column here: `margin: 0 auto` from the desktop rule
+     disables stretching, so the sections grew to their content width
+     (530px on a 390px phone) and ran off the right edge. */
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  min-height: 0;
   padding: 24px 14px 64px;
 }
 .app.is-mobile .settings-typo-controls {

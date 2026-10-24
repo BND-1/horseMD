@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 // Local sync-workspace registration is deliberately separate from useWorkspace:
 // the latter owns visible multi-root file trees and watchers, while this hook
@@ -12,10 +12,34 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
   // Live progress of the running sync: { rootPath, completed, total, waiting }.
   // `waiting` is set while the cloud service throttles uploads.
   const [progress, setProgress] = useState(null)
+  // Folders whose sync this window started and is still awaiting (#161):
+  // a second start is refused here, and only the call that started a sync
+  // clears its busy state — a refused call used to clear it while the first
+  // sync kept running, so the page showed "done" and invited another click.
+  const runningRef = useRef(new Set())
+  const keyOf = (rootPath) => String(rootPath || '').replace(/[\\/]+$/, '').toLowerCase()
+
+  // A window opened while a sync runs (macOS keeps the app alive with no
+  // window) shows it as running; its progress still arrives here.
+  useEffect(() => {
+    let cancelled = false
+    window.api.syncStatus?.().then((status) => {
+      const rootPath = status?.running?.[0]
+      if (!cancelled && rootPath && !runningRef.current.size) setBusyRoot(rootPath)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => window.api.onSyncProgress?.((event) => {
     if (!event?.rootPath) return
-    if (event.done) { setProgress(null); return }
+    if (event.done) {
+      setProgress(null)
+      // A sync started by an earlier window has no awaiting call here.
+      if (!runningRef.current.has(keyOf(event.rootPath))) {
+        setBusyRoot((current) => (keyOf(current) === keyOf(event.rootPath) ? null : current))
+      }
+      return
+    }
     setProgress((current) => {
       const base = current?.rootPath === event.rootPath ? current : { rootPath: event.rootPath, completed: 0, total: 0, waiting: null, paused: false, stopping: false }
       if (event.control) {
@@ -138,8 +162,17 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
     }
   }, [refresh])
   const run = useCallback(async (rootPath, strategy = 'merge') => {
+    const key = keyOf(rootPath)
+    if (runningRef.current.has(key)) throw new Error('这个文件夹正在同步，请等它完成，或先点「停止」。')
+    runningRef.current.add(key)
     setBusyRoot(rootPath)
-    try { return await window.api.syncRun(rootPath, strategy) } finally { setBusyRoot(null); setProgress(null) }
+    try {
+      return await window.api.syncRun(rootPath, strategy)
+    } finally {
+      runningRef.current.delete(key)
+      setBusyRoot((current) => (keyOf(current) === key ? null : current))
+      setProgress((current) => (keyOf(current?.rootPath) === key ? null : current))
+    }
   }, [])
 
   // 'pause' | 'resume' | 'stop' for the running sync of `rootPath`.

@@ -69,6 +69,7 @@ const api = {
   onSyncProgress: on('sync:progress'),
   // action: 'pause' | 'resume' | 'stop'
   syncControl: (rootPath, action) => ipcRenderer.invoke('sync:control', rootPath, action),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncListRemoteWorkspaces: (connectionId) => ipcRenderer.invoke('sync:remoteWorkspaceList', connectionId),
   syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
 

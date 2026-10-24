@@ -64,8 +64,8 @@ async function main() {
         throw new Error('settings preview is missing common Markdown elements: ' + missingPreviewElements.join(', '))
       }
       const rows = [...document.querySelectorAll('.settings-typo-row')].filter(visible)
-      if (rows.length !== 4) throw new Error('expected three paired typography rows plus heading spacing')
-      const expectedChildren = [2, 2, 2, 1]
+      if (rows.length !== 4) throw new Error('expected font row, two paired typography rows, heading spacing')
+      const expectedChildren = [3, 2, 2, 1] // fonts: Chinese, English, code
       for (const [index, row] of rows.entries()) {
         const children = [...row.children].filter(visible)
         if (children.length !== expectedChildren[index]) {
@@ -77,7 +77,7 @@ async function main() {
           throw new Error('typography controls are not arranged as a desktop pair: ' + index)
         }
       }
-      if (rows[0].querySelectorAll('.settings-font-row').length !== 2 ||
+      if (rows[0].querySelectorAll('.settings-font-row').length !== 3 ||
         rows.slice(1, 3).some((row) => row.querySelectorAll('.hm-adjust-group').length !== 2) ||
         rows[3].querySelectorAll('.hm-adjust-group').length !== 1) {
         throw new Error('typography row grouping is incorrect')

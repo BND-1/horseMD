@@ -7,6 +7,7 @@ import { SyncControl } from './sync/sync-control.js'
 import { bindSyncWorkspace, joinSyncWorkspace, readWorkspaceRegistry } from './sync-workspaces.js'
 
 import { RequestPacer } from './sync/request-pacer.js'
+import { createSyncRequest } from './sync/sync-request.js'
 
 // UI tests shorten the throttling waits (minutes in production) to seconds.
 const testPacerOptions = () => {
@@ -22,8 +23,15 @@ const legacyRemotePrefix = (workspaceId) => `HorseMD/v1/workspaces/${workspaceId
 const manifestPath = '.horsemd/manifest.json'
 
 export class SyncService {
-  constructor({ getUserDataPath, safeStorage, request }) {
+  constructor({ getUserDataPath, safeStorage, request: rawRequest, traceLog = null }) {
     this.getUserDataPath = getUserDataPath
+    // Timeout + optional trace for every provider request (#161). Tests may
+    // shorten the timeout (HORSEMD_TEST_SYNC_REQUEST_TIMEOUT_MS).
+    const testTimeout = Number(process.env.HORSEMD_TEST_SYNC_REQUEST_TIMEOUT_MS)
+    const request = createSyncRequest(rawRequest, {
+      log: traceLog,
+      ...(Number.isFinite(testTimeout) && testTimeout > 0 ? { baseTimeoutMs: testTimeout } : {})
+    })
     this.request = request
     this.credentials = new CredentialStore({ userDataPath: getUserDataPath(), safeStorage })
     this.connections = new ConnectionRegistry({
@@ -33,6 +41,7 @@ export class SyncService {
       createS3Provider: (config) => new S3Provider({ ...config, request, pacer: newPacer() })
     })
     this.running = new Set()
+    this.runningPaths = new Map()
     // rootPath (lower-cased) -> SyncControl of the running sync.
     this.controls = new Map()
   }
@@ -134,14 +143,21 @@ export class SyncService {
     const key = rootPath.toLowerCase()
     if (this.running.has(key)) throw new Error('这个文件夹正在同步。')
     this.running.add(key)
+    this.runningPaths.set(key, rootPath)
     const control = new SyncControl({ onChange: (state) => onProgress?.({ control: state }) })
     this.controls.set(key, control)
     try {
       return await (await this.engineFor(rootPath, onProgress, control)).execute(null, strategy)
     } finally {
       this.running.delete(key)
+      this.runningPaths.delete(key)
       this.controls.delete(key)
     }
+  }
+
+  // Folders with a sync in progress (a reopened window asks, #161).
+  status() {
+    return { running: [...this.runningPaths.values()] }
   }
 
   // Pause / resume / stop the running sync of a folder (false when none runs).
@@ -152,7 +168,7 @@ export class SyncService {
   }
 }
 
-export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender }) {
+export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, sendToRenderer = null }) {
   const trusted = (event) => {
     if (isTrustedSender(event)) return
     throw new Error('Untrusted renderer.')
@@ -193,14 +209,24 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender }
     trusted(event)
     // Progress (and long throttling waits) go to the window that started it.
     const sender = event.sender
+    // On macOS the window can be closed and reopened while the sync runs:
+    // the new window gets the progress through sendToRenderer.
     const report = (progress) => {
-      try { if (!sender.isDestroyed()) sender.send('sync:progress', { rootPath, ...progress }) } catch { /* window gone */ }
+      const payload = { rootPath, ...progress }
+      try {
+        if (!sender.isDestroyed()) sender.send('sync:progress', payload)
+        else sendToRenderer?.('sync:progress', payload)
+      } catch { /* window gone */ }
     }
     try {
       return await syncService.run(rootPath, strategy, report)
     } finally {
       report({ done: true })
     }
+  })
+  ipcMain.handle('sync:status', async (event) => {
+    trusted(event)
+    return syncService.status()
   })
   ipcMain.handle('sync:control', async (event, rootPath, action) => {
     trusted(event)

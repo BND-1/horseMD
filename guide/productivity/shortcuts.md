@@ -44,8 +44,10 @@ HorseMD 会阻止普通单字母、`Enter`、`Tab`、`Esc`、复制、粘贴、�
 | 命令面板 | `Ctrl/Cmd+P` |
 | 查找 | `Ctrl/Cmd+F` |
 | 加粗 | `Ctrl/Cmd+B` |
+| 重命名文件 | `F2` |
 | 切换侧边栏 | `Ctrl/Cmd+Shift+B` |
 | 切换大纲 | `Ctrl/Cmd+Shift+L` |
+| 大纲全部展开 / 全部折叠 | `Ctrl/Cmd+Alt+]` / `Ctrl/Cmd+Alt+[` |
 | 切换源码模式 | `Ctrl/Cmd+/` |
 | 切换主题 | `Ctrl/Cmd+Shift+T` |
 | 标题 1～6 | `Ctrl/Cmd+1`～`Ctrl/Cmd+6` |

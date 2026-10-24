@@ -302,6 +302,36 @@ guide/                 VitePress user tutorial + versioned current-app screensho
     tabs = N mounted editors — filter `.ProseMirror` by `offsetParent`; place
     carets with real `Input.dispatchMouseEvent` (a raw DOM selection doesn't sync
     PM state).
+- **Outline folds** (#122): `settings.outlineDefaultLevel` ∈ 1/2/3/4/0
+  (`OUTLINE_DEFAULT_LEVELS`, default 2, 0 = all; Settings › Editor) feeds
+  `defaultCollapsedHeadings(headings, tiers)` — by hierarchy depth, not level
+  numbers. Fold state is a per-tab entry in `hooks/useOutlineFolds.js`
+  (structural paths + `known` + `rest` from expand/collapse-all; pure logic in
+  `outline-model.js`), so folds survive tab switches and text edits; changing
+  the setting clears the memory. Head button: any branch folded → expand all,
+  else collapse all. Commands `outline.expandAll` / `outline.collapseAll`
+  (`Mod+Alt+]` / `Mod+Alt+[`) are renderer-only capture listeners that write
+  the memory, so they work with the panel hidden. Locked by
+  `test:outline-default-level` + `test:outline-default-level-ui`.
+- **External change reload** (`useFileOps.js` `reloadTabFromDisk`, #158):
+  a clean tab whose file another program changed takes the new Markdown IN
+  PLACE when its rich editor is mounted and no source textarea is (the
+  source-mode `replaceMarkdown` path: programmatic, not dirty, unchanged
+  blocks keep their DOM, so the viewport stays); the caret is mapped through
+  the change (`lib/offset-through-change.js`) and restored without scrolling.
+  Textareas / unmounted tabs remount (reloadNonce) with
+  `restoreOffset`/`restoreScrollTop` + `restoreNonce`; EditorArea applies a
+  restore only for the mount generation whose reloadNonce equals restoreNonce
+  (open-time positions have none = 0), so other remounts never jump to a
+  stale spot. `heavy` is not flipped in place. Undo can revert the reload
+  (like a source-mode edit). Locked by `test:external-reload-position-ui`.
+- **Rename (F2, #156)**: command `file.rename` (renderer-only capture
+  listener; skipped in inputs / the rename dialog). Tree rows are focusable
+  (`tabIndex -1`, `data-path`): a focused row is renamed, else the current
+  document — inline via the Sidebar's `apiRef.startRename(path)` when its row
+  is rendered, else the RenameModal. Tree renames/moves call `onPathMoved` →
+  `retargetTabs` (exact path or folder prefix; recents too). Locked by
+  `test:rename-f2-ui`.
 - **Outline in source mode** (`useOutline.js` + `scrollAnchor.parseSourceHeadings`,
   #40): the outline used to blank in source mode. Now `mode-source-headings.js`
   parses CommonMark/GFM headings from the textarea (also used by caret fallback),
@@ -490,6 +520,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   empty: 数据胶囊 deletes "folder/" RECURSIVELY (all objects under it, even
   without a marker), and WebDAV DELETE on a collection is recursive too.
   Locked by `test:sync-empty`.
+  Requests (#161): every provider request goes through
+  `sync/sync-request.js` (in SyncService): a deadline over the WHOLE
+  exchange (60 s + bytes at 32 KB/s; the body is read there) — before, a
+  request the service never answered kept the folder locked ("这个文件夹正在
+  同步") until restart. With --horsemd-input-trace each request is logged
+  (method, credential-free URL, status, bytes, ms; never headers). Renderer
+  `useSyncWorkspaces.run` refuses a second start and only the starting call
+  clears busy; the plan's confirm is disabled while busy; `sync:status`
+  restores the busy state in a reloaded / reopened window (progress falls
+  back to `sendToRenderer`). Locked by `test:sync-request`,
+  `test:sync-issue-161-ui`.
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
@@ -782,6 +823,14 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   use Electron's `net.fetch` (Chromium stack), not Node's global `fetch` (its
   c-ares resolver can abort an unsigned app under launchd).
 - **Don't commit `dist/` or `out/`** (gitignored). `build/icon.*` IS tracked.
+- **Chinese / English document fonts**: `settings.fontWrite` is the Chinese
+  font, `settings.fontWriteLatin` the English one; `writeFontStack(latin,
+  cjk)` builds English → Chinese → default (unset English = the default
+  Latin fonts, so letters never take the Chinese font's Latin glyphs unless
+  chosen). Per-glyph fallback does the split (English fonts have no CJK).
+  Settings saved before the split (no `fontWriteLatin` key) load with
+  `fontWriteLatin = fontWrite` → same look. Locked by `test:font-cjk-latin-ui`
+  (rendered fonts via `CSS.getPlatformFontsForNode`).
 - **Font settings (#38)**: `settings.fontWrite` / `settings.fontMono` (empty =
   default stack) are applied as inline CSS vars `--font-write` / `--font-mono` on
   the `.app` root div (so they beat `body.light/dark` AND the `.app.is-win`

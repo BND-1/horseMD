@@ -12,7 +12,8 @@ const keyCode = (value) => {
     ArrowUp: 38,
     ArrowRight: 39,
     ArrowDown: 40,
-    Delete: 46
+    Delete: 46,
+    F2: 113
   }
   if (special[value]) return special[value]
   if (value.length !== 1) return 0

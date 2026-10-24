@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.254",
+  "version": "0.13.255",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -122,6 +122,7 @@
     "test:system-theme-ui": "node scripts/test-system-theme-ui.mjs",
     "test:macos-window-reopen": "node scripts/test-macos-window-reopen.mjs",
     "test:outline-reorder": "node scripts/test-outline-reorder.mjs",
+    "test:outline-default-level": "node scripts/test-outline-default-level.mjs",
     "test:issue-82-ui": "node scripts/test-issue-82-outline-reorder-ui.mjs",
     "test:keybindings": "node scripts/test-keybindings.mjs",
     "test:keybindings-ui": "node scripts/test-settings-keybindings-ui.mjs",
@@ -418,7 +419,15 @@
     "test:preserve-large-doc-perf": "node scripts/test-preserve-large-doc-perf.mjs",
     "test:main-watchers": "node scripts/test-main-watchers.mjs",
     "test:workspace-watcher": "node scripts/test-workspace-watcher.mjs",
-    "test:workspace-startup-ui": "node scripts/test-workspace-startup-ui.mjs"
+    "test:workspace-startup-ui": "node scripts/test-workspace-startup-ui.mjs",
+    "test:offset-through-change": "node scripts/test-offset-through-change.mjs",
+    "test:external-reload-position-ui": "node scripts/test-external-reload-position-ui.mjs",
+    "test:rename-f2-ui": "node scripts/test-rename-f2-ui.mjs",
+    "test:outline-default-level-ui": "node scripts/test-outline-default-level-ui.mjs",
+    "test:font-cjk-latin-ui": "node scripts/test-font-cjk-latin-ui.mjs",
+    "test:settings-mobile-width-ui": "node scripts/test-settings-mobile-width-ui.mjs",
+    "test:sync-request": "node scripts/test-sync-request.mjs",
+    "test:sync-issue-161-ui": "node scripts/test-sync-issue-161-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
