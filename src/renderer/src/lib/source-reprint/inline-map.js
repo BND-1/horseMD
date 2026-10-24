@@ -215,6 +215,8 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
       case 'emphasis':
       case 'delete':
       case 'highlight':
+      case 'subscript':
+      case 'superscript':
       case 'link':
       case 'linkReference': {
         // Opening syntax: skip to the first child's position when known,
@@ -223,14 +225,14 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
         if (Number.isInteger(startOf(first))) {
           cursor = startOf(first)
         } else {
-          const open = /^(?:\*{1,3}|_{1,3}|~{1,2}|={2}|\[|<mark\b[^>]*>)/.exec(source.slice(cursor, bound))
+          const open = /^(?:\*{1,3}|_{1,3}|~{1,2}|\^|={2}|\[|<mark\b[^>]*>)/.exec(source.slice(cursor, bound))
           if (open) cursor += open[0].length
         }
         for (const child of node.children || []) visit(child, bound)
         if (Number.isInteger(nodeEnd)) cursor = nodeEnd
         else {
           // Inline `](url "t")`, full `][ref]`, collapsed `[]` / shortcut `]`.
-          const close = /^(?:\*{1,3}|_{1,3}|~{1,2}|={2}|<\/mark>|\]\((?:[^()\n]|\([^()\n]*\))*\)|\]\[[^\]\n]*\]|\])/.exec(source.slice(cursor, bound))
+          const close = /^(?:\*{1,3}|_{1,3}|~{1,2}|\^|={2}|<\/mark>|\]\((?:[^()\n]|\([^()\n]*\))*\)|\]\[[^\]\n]*\]|\])/.exec(source.slice(cursor, bound))
           if (close) cursor += close[0].length
         }
         break

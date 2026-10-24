@@ -21,7 +21,31 @@ const TRAILING_WHITESPACE_FAST_PATH = /^([^*_\\]*?)(\s+)$/
 const encodeCharacter = (character) =>
   `&#x${character.charCodeAt(0).toString(16).toUpperCase()};`
 
+// GFM strikethrough escapes EVERY `~` in text, but with `singleTilde: false`
+// (Typora parity) only `~~` strikes: a lone tilde typed or pasted as text —
+// `1~2天`, `H~2~O` with subscript off — was saved as `1\~2天` / `H\~2\~O`,
+// backslashes the user never typed (and, once subscript was turned on, the
+// escaped `~2~` stayed text). Unescape a `\~` whose neighbours are ordinary
+// characters; at a text-node edge it stays escaped (the next node may start
+// with `~`). With subscript on (editor-subsup.js) every `~` must stay escaped.
+let loneTildesNeedEscape = false
+export function setLoneTildeEscaping(value) { loneTildesNeedEscape = value === true }
+const unescapeLoneTildes = (text) => {
+  if (loneTildesNeedEscape || !text.includes('\\~')) return text
+  return text.replace(/\\~/g, (match, at, all) => {
+    const before = all[at - 1]
+    const after = all[at + 2]
+    if (before == null || after == null) return match
+    if (before === '~' || after === '~' || all.slice(at + 2, at + 4) === '\\~' || all.slice(at - 2, at) === '\\~') return match
+    return '~'
+  })
+}
+
 export function safeTrailingWhitespaceTextHandler(node, parent, state, info) {
+  return unescapeLoneTildes(textHandler(node, parent, state, info))
+}
+
+function textHandler(node, parent, state, info) {
   // The CJK-friendly strong/emphasis handler (below) asks the next text node
   // to encode its first character when it is outside the BMP (an emoji):
   // `**foo.**&#x1F600;`. Its own text handler does that; this one replaces it.
@@ -29,7 +53,7 @@ export function safeTrailingWhitespaceTextHandler(node, parent, state, info) {
     state.cjkFriendlyEncodeAfterSupplementaryText = false
     const [first = ''] = [...node.value]
     if (first) {
-      const rest = safeTrailingWhitespaceTextHandler({ ...node, value: node.value.slice(first.length) }, parent, state, { ...info, before: ';' })
+      const rest = textHandler({ ...node, value: node.value.slice(first.length) }, parent, state, { ...info, before: ';' })
       return `&#x${first.codePointAt(0).toString(16).toUpperCase()};${rest}`
     }
   }

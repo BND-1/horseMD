@@ -270,6 +270,12 @@ export function rememberParse(remark, entry) {
   caches.set(key, entries.slice(0, MAX_ENTRIES))
 }
 
+// A parse option changed: cached trees were made under the old one.
+export function forgetParses(remark) {
+  const key = cacheKey(remark)
+  if (key) caches.delete(key)
+}
+
 export function cachedParse(remark, body) {
   const key = cacheKey(remark)
   return (key && (caches.get(key) || []).find((entry) => entry.body === body)) || null

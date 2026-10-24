@@ -12,6 +12,9 @@ function normalizeUserAgent(value) {
   return userAgent
 }
 
+// Not persisted: tells the form the uploads were throttled during the test.
+const withCheck = (connection, check) => (check?.uploadThrottled ? { ...connection, uploadThrottled: true } : connection)
+
 function publicConnection(entry) {
   const { credentialId, ...publicEntry } = entry
   return publicEntry
@@ -58,7 +61,7 @@ export class ConnectionRegistry {
     if (!String(password || '')) throw new Error('请填写 WebDAV 密码或应用专用密码。')
     const normalizedUserAgent = normalizeUserAgent(userAgent)
     const provider = this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent: normalizedUserAgent })
-    await provider.testConnection()
+    const check = await provider.testConnection()
     const id = randomUUID()
     const credentialId = `webdav:${id}`
     await this.credentialStore.set(credentialId, { password: String(password) })
@@ -76,7 +79,7 @@ export class ConnectionRegistry {
     }
     connections.push(connection)
     await writeConnections(this.userDataPath, connections)
-    return publicConnection(connection)
+    return withCheck(publicConnection(connection), check)
   }
 
   async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false, userAgent = '' }) {
@@ -90,7 +93,7 @@ export class ConnectionRegistry {
     }
     const normalizedUserAgent = normalizeUserAgent(userAgent)
     const provider = this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent: normalizedUserAgent })
-    await provider.testConnection()
+    const check = await provider.testConnection()
     const id = randomUUID()
     const credentialId = `s3:${id}`
     await this.credentialStore.set(credentialId, { secretAccessKey: String(secretAccessKey) })
@@ -110,7 +113,7 @@ export class ConnectionRegistry {
     }
     connections.push(connection)
     await writeConnections(this.userDataPath, connections)
-    return publicConnection(connection)
+    return withCheck(publicConnection(connection), check)
   }
 
   async update(id, config) {
@@ -130,12 +133,12 @@ export class ConnectionRegistry {
       if (!password) throw new Error('请填写 WebDAV 密码或应用专用密码。')
       const allowInsecure = Boolean(config.allowInsecure)
       const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
-      await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
+      const check = await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
       const next = { ...current, name, endpoint, username, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (password !== credential?.password) await this.credentialStore.set(current.credentialId, { password })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)
-      return publicConnection(next)
+      return withCheck(publicConnection(next), check)
     }
 
     if (current.type === 's3') {
@@ -152,12 +155,12 @@ export class ConnectionRegistry {
       if (!accessKeyId || !secretAccessKey) throw new Error('请填写 S3 Access Key 和 Secret Key。')
       const allowInsecure = Boolean(config.allowInsecure)
       const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
-      await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent }).testConnection()
+      const check = await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent }).testConnection()
       const next = { ...current, name, endpoint, bucket, region, accessKeyId, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (secretAccessKey !== credential?.secretAccessKey) await this.credentialStore.set(current.credentialId, { secretAccessKey })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)
-      return publicConnection(next)
+      return withCheck(publicConnection(next), check)
     }
 
     throw new Error('不支持的云端连接类型。')

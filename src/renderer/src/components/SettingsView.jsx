@@ -80,6 +80,8 @@ export default function SettingsView({
             registered={syncWorkspaces?.registered}
             connections={syncWorkspaces?.connections}
             busyRoot={syncWorkspaces?.busyRoot}
+            progress={syncWorkspaces?.progress}
+            onControlSync={syncWorkspaces?.controlSync}
             loading={syncWorkspaces?.loading}
             onEnableFolder={onEnableSyncFolder}
             onAddSyncFolder={onAddSyncFolder}

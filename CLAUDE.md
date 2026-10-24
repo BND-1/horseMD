@@ -45,7 +45,12 @@ GitHub Release. Its postinst is our
 `build/linux/after-install.tpl` (`deb.afterInstall`), which always installs
 `chrome-sandbox` as `root:root 4755` — electron-builder's default probes
 `unshare` as root and leaves it 0755, which crashes on launch under Ubuntu
-24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this. The Arch package (#153) reuses the same template
+24.04+'s AppArmor userns restriction (#143). `release.yml` asserts this. Packaging runs with `USE_HARD_LINKS=false`
+(#157): on CI electron-builder hard-links copies of one source file, so
+`resources/icons/32x32.png` became a hard link to the hicolor icon and dpkg
+failed with "Invalid cross-device link" where `/opt` is its own mount
+(deepin 25); `release.yml` rejects any hard link in the .deb / pacman
+package. The Arch package (#153) reuses the same template
 (`pacman.afterInstall`) and overrides `pacman.depends`: electron-builder's
 default list names packages Arch no longer ships (`http-parser`,
 `libappindicator-gtk3`), so `pacman -U` would fail. Keep the list to the
@@ -463,7 +468,28 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   backoff, 8 attempts, re-signed each time), the request gap doubles per
   throttle and decays on success. A sync stopped half way left uploaded
   objects without a manifest; the engine now adopts an existing object with
-  identical bytes on a create-only conflict. Locked by `test:sync-throttle`.
+  identical bytes on a create-only conflict. 数据胶囊 (measured 2026-10-23)
+  limits only PUTs: ~200, then every PUT is 429 for ~20 min with no
+  Retry-After. After the short retries the pacer probes every 2 min (up to
+  45 min) and reports `{locked, resumeAt}` via `onThrottle` → `sync:progress`
+  → Settings › Sync; after a lock, PUTs stay ≥ 10 s apart. Write and read
+  gaps are tracked separately (reads are never slowed by upload throttling).
+  Pause / continue / stop (`sync/sync-control.js`, IPC `sync:control`): the
+  engine checks the control between files; the pacer sleeps through it, so a
+  stop ends a throttling wait at once. A stop commits the completed part
+  (manifest first, quick retries only, then local state — the two must agree,
+  else the next sync would take new local files for remote changes); if the
+  manifest cannot be written, nothing is recorded and the next run resumes by
+  adopting identical objects (also for modified files, If-Match 412).
+  Locked by `test:sync-throttle`, `test:sync-control`, `test:sync-throttle-ui`.
+  Empty folders (`scanLocalEmptyDirs`, `buildDirPlan`, manifest/state
+  `dirs`): only leaf folders with nothing in them are tracked; S3 writes a
+  zero-byte "path/" marker (`createDirectory`), WebDAV a collection. A folder
+  that holds (or receives) files is just forgotten (`forgetDir`) — never
+  deleted. `removeDirectory` deletes only after a listing / PROPFIND shows it
+  empty: 数据胶囊 deletes "folder/" RECURSIVELY (all objects under it, even
+  without a marker), and WebDAV DELETE on a collection is recursive too.
+  Locked by `test:sync-empty`.
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
@@ -484,6 +510,27 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `diffSequences` resynchronises in a window when the LCS table would be too
   large (it used to reprint every block between two distant changes).
   Locked by `test:html-span-edit-ui`, `test:yuque-export-edit-ui`.
+- **Typed HTML tags** (`editor-html-input.js`, Typora parity): typing the `>`
+  of a tag (or `-->`) in rich mode replaces the raw text — back to the
+  matching `<name …>` for a closing tag — with the editor's own parse of it
+  (html atom / editable `<font>`/`<span>`), keeping the surrounding marks.
+  Before, typed tags stayed text and saved as `\<tag>`. Skipped: inline code,
+  code blocks, mixed marks/atoms, a block tag (`<div>`, `<p>`…) at the start
+  of a text block (Markdown makes the whole paragraph an HTML block). Locked
+  by `test:html-tag-input-ui`.
+- **Subscript / superscript** (`editor-subsup.js`, Typora parity): `H~2~O`
+  / `x^2^`, each behind a setting (`markdownSubscript` / `markdownSuperscript`,
+  default OFF like Typora — Chinese `1~2天，100~200元` would subscript the
+  middle), read live (`markdownSyntaxRef`): toggling re-parses the open
+  documents (flush unforced → reset parse caches → replaceMarkdown, not
+  dirty). With subscript OFF a lone `~` is not escaped on save
+  (`setLoneTildeEscaping`); only `~~` is.
+  A remark transform splits ONE text node, aligned to the source (escaped
+  `\~` never delimits; unalignable nodes are left alone), content without
+  unescaped whitespace (`\ ` = space), positioned so reprint keeps bytes
+  (inline-map treats the nodes like `delete`). Marks always exist; parseDOM
+  (own `.hm-sub/.hm-sup` copies) and input rules only when on; `^`/`~` added
+  to stringify `unsafe` when on. Locked by `test:subsup-ui`.
 - **Input-rule anchoring** (`lib/input-rule-guards.js`): Milkdown's underscore
   emphasis rule `/\b_(?![_\s])(.*?[^_\s])_\b/` had no `$`, so `_x_` anywhere
   before the caret (inline code `_<font>…</font>_`) fired on every keystroke,
@@ -681,6 +728,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `img-src` MUST include `http:` — without it those images render as broken
   (CSP-blocked), which presents as "pasted image doesn't display" even though the
   upload succeeded.
+- **User command PATH** (`main/shell-path.js`, #160): a macOS app started
+  from Finder / the Dock has PATH=/usr/bin:/bin:/usr/sbin:/sbin, so npm /
+  Homebrew / nvm tools (`picgo`, itself `#!/usr/bin/env node`) were "command
+  not found". The image-host command runs with `userCommandEnv()`: the login
+  shell's PATH (`$SHELL -ilc`, markers, 5 s timeout, resolved once at startup)
+  + process PATH + common tool dirs. Windows unchanged. Locked by
+  `test:shell-path`, `test:image-host-path-ui`.
 - **Renderer CSP** (`src/renderer/index.html`, the `Content-Security-Policy` meta):
   `img-src 'self' data: https: http: blob:` — `http:` is intentional (local picbeds
   / http image hosts, Typora-compatible). `script-src 'self'` (no `'unsafe-inline'`)

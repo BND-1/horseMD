@@ -26,6 +26,8 @@ export function memoizeLastParses(parse, size = 3) {
     entries.unshift({ markdown, doc })
     if (entries.length > size) entries.length = size
   }
+  // A parse option changed (Settings › Markdown syntax): drop every result.
+  memo.clear = () => { entries.length = 0 }
   memo.unmemoized = parse
   return memo
 }

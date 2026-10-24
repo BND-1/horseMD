@@ -221,6 +221,22 @@ const standalone = [
     script: 'scripts/test-incremental-parse-ui.mjs'
   },
   {
+    name: 'Subscript ~x~ / superscript ^x^: off by default, render, typing, bytes kept',
+    script: 'scripts/test-subsup-ui.mjs'
+  },
+  {
+    name: 'Typed HTML tags become HTML (span pair, void, inline, inside <font>), saved raw',
+    script: 'scripts/test-html-tag-input-ui.mjs'
+  },
+  {
+    name: 'Cloud sync: an upload lock (数据胶囊-style 429) is waited out with progress shown',
+    script: 'scripts/test-sync-throttle-ui.mjs'
+  },
+  {
+    name: 'Image host: upload command runs with the login-shell PATH (Finder launch, #160)',
+    script: 'scripts/test-image-host-path-ui.mjs'
+  },
+  {
     name: 'Blockquote transients: space+Enter, pending text+Enter, empty fill, quote-list tail',
     script: 'scripts/test-blockquote-transient-trace-regressions-ui.mjs'
   },

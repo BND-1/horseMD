@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { baseName } from '../../paths.js'
 import { Icon } from '../icons.jsx'
 
@@ -57,6 +57,9 @@ function ConnectionForm({ connection = null, type: requestedType = 'webdav', onS
   })
   const [invalidFields, setInvalidFields] = useState(null)
   const [submitError, setSubmitError] = useState('')
+  // The test can take several seconds (retries on a throttled service):
+  // show it and ignore repeated clicks.
+  const [busy, setBusy] = useState(false)
 
   const update = (key) => (event) => {
     setForm((current) => ({ ...current, [key]: event.target.value }))
@@ -71,6 +74,8 @@ function ConnectionForm({ connection = null, type: requestedType = 'webdav', onS
   }
   const submit = async (event) => {
     event.preventDefault()
+    if (busy) return
+    setBusy(true)
     // Only clear the form when the connection was actually accepted — a
     // failed submit (bad endpoint, auth rejected) must keep everything the
     // user typed so they can correct one field instead of retyping all.
@@ -80,6 +85,8 @@ function ConnectionForm({ connection = null, type: requestedType = 'webdav', onS
       accepted = Boolean(await onSubmit(type, form, connection?.id))
     } catch (cause) {
       failure = cause
+    } finally {
+      setBusy(false)
     }
     if (accepted) {
       setInvalidFields(null)
@@ -193,7 +200,7 @@ function ConnectionForm({ connection = null, type: requestedType = 'webdav', onS
       />
     </>}
       <div className="sync-form-actions">
-        <button className="settings-action-btn" type="submit">{editing ? t('sync.testAndUpdate') : t('sync.testAndSave')}</button>
+        <button className="settings-action-btn" type="submit" disabled={busy}>{busy ? t('sync.testing') : editing ? t('sync.testAndUpdate') : t('sync.testAndSave')}</button>
         {editing && <button className="settings-link-btn" type="button" onClick={onCancel}>{t('sync.cancel')}</button>}
       </div>
   </form>
@@ -221,13 +228,16 @@ function IconAction({ icon, label, className = '', ...props }) {
 }
 
 function SyncPlanPreview({ preview, onConfirm, onClose, t }) {
+  // Empty folders (S3 "path/" markers) count like files: creating one in the
+  // cloud is an upload, creating it here a download.
   const labelFor = (operation) => {
-    if (operation.type === 'upload') return t('sync.operationUpload')
-    if (operation.type === 'download') return t('sync.operationDownload')
+    if (operation.type === 'upload' || operation.type === 'createRemoteDir') return t('sync.operationUpload')
+    if (operation.type === 'download' || operation.type === 'createLocalDir') return t('sync.operationDownload')
     if (operation.type === 'conflict') return t('sync.operationConflict')
     return t('sync.operationDelete')
   }
-  const changes = preview.data.operations.filter((operation) => operation.type !== 'keep')
+  const isFolder = (operation) => /Dir$/.test(operation.type)
+  const changes = preview.data.operations.filter((operation) => !['keep', 'keepDir', 'forgetDir'].includes(operation.type))
   return (
     <section className="sync-plan-preview" aria-label={t('sync.previewTitle')}>
       <div className="sync-plan-preview-head">
@@ -243,7 +253,7 @@ function SyncPlanPreview({ preview, onConfirm, onClose, t }) {
         <ul>
           {changes.map((operation) => <li key={`${operation.type}:${operation.path}`}>
             <span>{labelFor(operation)}</span>
-            <code title={operation.path}>{operation.path}</code>
+            <code title={operation.path}>{isFolder(operation) ? `${operation.path}/` : operation.path}</code>
           </li>)}
         </ul>
       </div>}
@@ -270,12 +280,46 @@ function RemoteResetDialog({ recovery, onPush, onPull, onCancel, t }) {
   </div>
 }
 
+// Running sync: file count, or the long wait while the service throttles,
+// with pause / continue / stop.
+function SyncProgressLine({ progress, onControl, t }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!progress.waiting) return undefined
+    const timer = setInterval(() => setNow(Date.now()), 10000)
+    return () => clearInterval(timer)
+  }, [progress.waiting])
+  const done = progress.completed || 0
+  const total = progress.total || 0
+  let text = ''
+  if (progress.stopping) text = t('sync.stopping', { done, total })
+  else if (progress.paused) text = t(progress.holding ? 'sync.paused' : 'sync.pausing', { done, total })
+  else if (progress.waiting) {
+    const minutes = Math.max(1, Math.ceil((progress.waiting.resumeAt - now) / 60000))
+    const waited = Math.max(0, Math.round((progress.waiting.waitedMs + Math.max(0, now - (progress.waiting.receivedAt || now))) / 60000))
+    text = t('sync.throttled', { done, total, minutes, waited })
+  } else if (total) text = t('sync.progress', { done, total })
+  else text = t('sync.syncing')
+  const state = progress.stopping ? 'stopping' : progress.paused ? 'paused' : progress.waiting ? 'waiting' : ''
+  return <div className={`sync-progress-line ${state}`.trim()}>
+    <span role="status">{text}</span>
+    {!progress.stopping && onControl && <span className="sync-progress-actions">
+      <button type="button" className="settings-link-btn sync-pause-btn" onClick={() => onControl(progress.paused ? 'resume' : 'pause')}>
+        {progress.paused ? t('sync.resume') : t('sync.pause')}
+      </button>
+      <button type="button" className="settings-link-btn sync-stop-btn" onClick={() => onControl('stop')}>{t('sync.stop')}</button>
+    </span>}
+  </div>
+}
+
 export default function SyncSettings({
   folderRoots = [],
   registered = [],
   connections = [],
   loading,
   busyRoot,
+  progress = null,
+  onControlSync,
   onEnableFolder,
   onAddSyncFolder,
   onRemoveFolder,
@@ -334,12 +378,13 @@ export default function SyncSettings({
     } else {
       setOpenForms((current) => ({ ...current, [type]: false }))
     }
+    if (connection.uploadThrottled) setNotice(t('sync.connectionSavedThrottled'))
     return true
   }
 
   const testConnection = async (connectionId) => {
     const result = await safely(() => onTestConnection(connectionId))
-    if (result) setNotice(t('sync.connectionTestPassed'))
+    if (result) setNotice(t(result.uploadThrottled ? 'sync.connectionTestThrottled' : 'sync.connectionTestPassed'))
   }
 
   const prepareSync = async (entry, strategy = 'merge', { previewOnly = false } = {}) => {
@@ -355,7 +400,8 @@ export default function SyncSettings({
       return
     }
     const done = await safely(() => onRun(entry.rootPath, strategy))
-    if (done) {
+    if (done?.stopped) setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
+    else if (done) {
       markSyncComplete(entry.rootPath)
       setNotice(t('sync.syncCompleted', done.summary))
     }
@@ -396,7 +442,10 @@ export default function SyncSettings({
 
   const confirmRun = async () => {
     const done = await safely(() => onRun(preview.entry.rootPath, preview.strategy))
-    if (done) {
+    if (done?.stopped) {
+      setPreview(null)
+      setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
+    } else if (done) {
       setPreview(null)
       markSyncComplete(preview.entry.rootPath)
       setNotice(t('sync.syncCompleted', done.summary))
@@ -534,6 +583,11 @@ export default function SyncSettings({
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
+            {busy && <SyncProgressLine
+              progress={progress?.rootPath === entry.rootPath ? progress : { rootPath: entry.rootPath, completed: 0, total: 0 }}
+              onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}
+              t={t}
+            />}
             {activePreview && <SyncPlanPreview preview={activePreview} onConfirm={confirmRun} onClose={() => setPreview(null)} t={t} />}
           </div>
         })}

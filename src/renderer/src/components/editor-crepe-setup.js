@@ -3,9 +3,12 @@ import {
   editorViewOptionsCtx,
   nodeViewCtx,
   prosePluginsCtx,
+  remarkCtx,
   remarkPluginsCtx,
-  remarkStringifyOptionsCtx
+  remarkStringifyOptionsCtx,
+  schemaCtx
 } from '@milkdown/kit/core'
+import { createHtmlTagInputPlugin } from './editor-html-input.js'
 import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
@@ -40,6 +43,7 @@ import { createSourceTransactionDispatch } from './editor-source-transactions.js
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
 import { htmlSpanFeatures, htmlSpanStringifyHandler } from './editor-html-span.js'
+import { createSubSupFeatures, subscriptStringifyHandler, superscriptStringifyHandler } from './editor-subsup.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import { imageBlockMarkdownSchema, remarkImageBlockWithPosition } from './editor-image-markdown.js'
@@ -113,8 +117,12 @@ export function createConfiguredCrepe({
   onFrontmatterValueChange,
   onInlineCodeValueChange,
   onSlashCommand,
-  onSourceTransactions
+  onSourceTransactions,
+  // () => { subscript, superscript }: Typora's `H~2~O` / `x^2^` (Settings),
+  // read live.
+  getMarkdownSyntax = () => ({})
 }) {
+  const subSup = createSubSupFeatures(getMarkdownSyntax)
   const t = getT
   const platform = window.api?.platform
   const isMobile = platform === 'ios' || platform === 'android'
@@ -225,6 +233,8 @@ export function createConfiguredCrepe({
     ctx.update(prosePluginsCtx, (plugins) => [
       createStrikeGuardPlugin(),
       createAngleAutolinkInputPlugin(),
+      // Typing the `>` of an HTML tag makes it HTML (Typora parity).
+      createHtmlTagInputPlugin({ getRemark: () => ctx.get(remarkCtx), getSchema: () => ctx.get(schemaCtx) }),
       createBlockHandleGutterPlugin(ctx),
       ...plugins,
       tableBreakKeymap(),
@@ -266,8 +276,13 @@ export function createConfiguredCrepe({
         emphasis: emphasisStringifyHandler,
         break: tableCellBreakHandler,
         highlight: highlightStringifyHandler,
-        hmHtmlSpan: htmlSpanStringifyHandler
-      }
+        hmHtmlSpan: htmlSpanStringifyHandler,
+        subscript: subscriptStringifyHandler,
+        superscript: superscriptStringifyHandler
+      },
+      // With the syntax on, a literal `^` must not pair up on reparse (`~`
+      // is already escaped by GFM strikethrough's own unsafe pattern).
+      unsafe: subSup.attachUnsafe([...(opts?.unsafe || [])])
     }))
 
     ctx.update(remarkPluginsCtx, (plugins) => [
@@ -302,7 +317,9 @@ export function createConfiguredCrepe({
   crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(highlightFeatures)
   crepe.editor.use(htmlSpanFeatures)
+  crepe.editor.use(subSup.features)
   crepe.editor.use(frontmatterSchema)
 
+  crepe.hmSyncSubSupUnsafe = subSup.syncUnsafe
   return crepe
 }

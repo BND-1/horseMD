@@ -41,3 +41,31 @@ export async function scanLocalWorkspace(rootPath, { maxFiles = 20000 } = {}) {
   await walk(rootPath)
   return files
 }
+
+// Empty directories (#: S3 has no directories, so an empty folder only exists
+// remotely as a "path/" marker object). Returns the leaf directories with no
+// syncable entry at all, as POSIX paths. A folder with files (or with other
+// folders) is implied by its contents and needs no marker.
+export async function scanLocalEmptyDirs(rootPath) {
+  const dirs = new Set()
+  async function walk(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+    let children = 0
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        if (INTERNAL_DIRS.has(entry.name)) continue
+        children += 1
+        await walk(join(dir, entry.name))
+      } else if (entry.isFile()) {
+        children += 1
+      }
+    }
+    const relativePath = relative(rootPath, dir)
+    if (children === 0 && relativePath && !relativePath.startsWith(`..${sep}`) && !isInternalRelativePath(relativePath)) {
+      dirs.add(relativePath.replace(/\\/g, '/'))
+    }
+  }
+  await walk(rootPath)
+  return dirs
+}

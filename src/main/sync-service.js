@@ -3,7 +3,19 @@ import { ConnectionRegistry } from './sync/connections.js'
 import { WebDavProvider } from './sync/webdav-provider.js'
 import { S3Provider } from './sync/s3-provider.js'
 import { SyncEngine } from './sync/sync-engine.js'
+import { SyncControl } from './sync/sync-control.js'
 import { bindSyncWorkspace, joinSyncWorkspace, readWorkspaceRegistry } from './sync-workspaces.js'
+
+import { RequestPacer } from './sync/request-pacer.js'
+
+// UI tests shorten the throttling waits (minutes in production) to seconds.
+const testPacerOptions = () => {
+  try { return JSON.parse(process.env.HORSEMD_TEST_SYNC_PACER || 'null') } catch { return null }
+}
+const newPacer = () => {
+  const options = testPacerOptions()
+  return options ? new RequestPacer(options) : new RequestPacer()
+}
 
 const compactRemotePrefix = (workspaceId) => `HorseMD/${workspaceId}`
 const legacyRemotePrefix = (workspaceId) => `HorseMD/v1/workspaces/${workspaceId}`
@@ -17,10 +29,12 @@ export class SyncService {
     this.connections = new ConnectionRegistry({
       userDataPath: getUserDataPath(),
       credentialStore: this.credentials,
-      createWebDavProvider: (config) => new WebDavProvider({ ...config, request }),
-      createS3Provider: (config) => new S3Provider({ ...config, request })
+      createWebDavProvider: (config) => new WebDavProvider({ ...config, request, pacer: newPacer() }),
+      createS3Provider: (config) => new S3Provider({ ...config, request, pacer: newPacer() })
     })
     this.running = new Set()
+    // rootPath (lower-cased) -> SyncControl of the running sync.
+    this.controls = new Map()
   }
 
   async addWebDavConnection(config) {
@@ -82,7 +96,7 @@ export class SyncService {
     return bindSyncWorkspace(this.getUserDataPath(), entry.rootPath, connectionId)
   }
 
-  async engineFor(rootPath) {
+  async engineFor(rootPath, onProgress = null, control = null) {
     const entry = (await readWorkspaceRegistry(this.getUserDataPath()))
       .find((workspace) => workspace.rootPath.toLowerCase() === rootPath.replace(/[\\/]+$/, '').toLowerCase())
     if (!entry?.connectionId) throw new Error('请先为这个文件夹选择云端连接。')
@@ -98,12 +112,17 @@ export class SyncService {
       }
     }
     provider ||= compactProvider
+    if (onProgress && provider.pacer) provider.pacer.onThrottle = (event) => onProgress({ throttle: event })
+    // Throttling waits end at once on stop and hold while paused.
+    if (control && provider.pacer) provider.pacer.sleep = (ms) => control.sleep(ms)
     return new SyncEngine({
       userDataPath: this.getUserDataPath(),
       rootPath: entry.rootPath,
       workspaceId: entry.workspaceId,
       provider,
-      deviceName: 'HorseMD'
+      deviceName: 'HorseMD',
+      onProgress,
+      control
     })
   }
 
@@ -111,15 +130,25 @@ export class SyncService {
     return (await this.engineFor(rootPath)).preview(strategy)
   }
 
-  async run(rootPath, strategy = 'merge') {
+  async run(rootPath, strategy = 'merge', onProgress = null) {
     const key = rootPath.toLowerCase()
     if (this.running.has(key)) throw new Error('这个文件夹正在同步。')
     this.running.add(key)
+    const control = new SyncControl({ onChange: (state) => onProgress?.({ control: state }) })
+    this.controls.set(key, control)
     try {
-      return await (await this.engineFor(rootPath)).execute(null, strategy)
+      return await (await this.engineFor(rootPath, onProgress, control)).execute(null, strategy)
     } finally {
       this.running.delete(key)
+      this.controls.delete(key)
     }
+  }
+
+  // Pause / resume / stop the running sync of a folder (false when none runs).
+  control(rootPath, action) {
+    const control = this.controls.get(String(rootPath || '').toLowerCase())
+    if (!control || !['pause', 'resume', 'stop'].includes(action)) return false
+    return control[action]()
   }
 }
 
@@ -162,7 +191,20 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender }
   })
   ipcMain.handle('sync:run', async (event, rootPath, strategy) => {
     trusted(event)
-    return syncService.run(rootPath, strategy)
+    // Progress (and long throttling waits) go to the window that started it.
+    const sender = event.sender
+    const report = (progress) => {
+      try { if (!sender.isDestroyed()) sender.send('sync:progress', { rootPath, ...progress }) } catch { /* window gone */ }
+    }
+    try {
+      return await syncService.run(rootPath, strategy, report)
+    } finally {
+      report({ done: true })
+    }
+  })
+  ipcMain.handle('sync:control', async (event, rootPath, action) => {
+    trusted(event)
+    return syncService.control(rootPath, action)
   })
   ipcMain.handle('sync:remoteWorkspaceList', async (event, connectionId) => { trusted(event); return syncService.listRemoteWorkspaces(connectionId) })
   ipcMain.handle('sync:workspaceJoin', async (event, rootPath, connectionId, workspaceId) => { trusted(event); return syncService.joinWorkspace(rootPath, connectionId, workspaceId) })

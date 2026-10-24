@@ -11,10 +11,10 @@ export async function readSyncState(userDataPath, workspaceId) {
   try {
     const raw = JSON.parse(await fs.readFile(statePathFor(userDataPath, workspaceId), 'utf8'))
     if (raw?.version !== STATE_VERSION || raw.workspaceId !== workspaceId || !raw.files) throw new Error('invalid')
-    return { version: STATE_VERSION, workspaceId, files: raw.files }
+    return { version: STATE_VERSION, workspaceId, files: raw.files, dirs: Array.isArray(raw.dirs) ? raw.dirs : [] }
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.message === 'invalid') {
-      return { version: STATE_VERSION, workspaceId, files: {} }
+      return { version: STATE_VERSION, workspaceId, files: {}, dirs: [] }
     }
     throw error
   }

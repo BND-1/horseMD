@@ -7441,3 +7441,32 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   color: var(--code-linenum-active);
   background: color-mix(in srgb, var(--code-block-bg) 92%, #fff);
 }
+
+/* Subscript `H~2~O` / superscript `x^2^` (editor-subsup.js): keep the line
+   box height of the paragraph (the browser default raises it). */
+.milkdown .ProseMirror sub.hm-sub,
+.milkdown .ProseMirror sup.hm-sup {
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+/* Running cloud sync: progress / throttling wait under the folder row. */
+.sync-progress-line {
+  margin: 4px 0 2px 29px;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+.sync-progress-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.sync-progress-line.waiting,
+.sync-progress-line.paused {
+  color: var(--warning, #b7791f);
+}
+.sync-progress-actions {
+  display: inline-flex;
+  gap: 10px;
+}

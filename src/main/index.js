@@ -14,6 +14,7 @@ import { registerWatcherIpc } from './watchers.js'
 import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 import { loadThemeCss } from './theme-css.js'
+import { userCommandEnv, userCommandPath } from './shell-path.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -447,6 +448,9 @@ app.on('open-file', (event, path) => {
 })
 
 app.whenReady().then(() => {
+  // Resolve the login-shell PATH in the background, so the first pasted image
+  // does not wait for it (issue #160).
+  userCommandPath().catch(() => {})
   // Win/Linux: argv carries the launched file/folder. Merge into the launch
   // queue (macOS open-file events already pushed above). Delivered on the
   // renderer's app-ready signal (#36).
@@ -639,12 +643,16 @@ ipcMain.handle('themes:reveal', async () => {
 // would otherwise be wrongly matched as the upload URL). The PicGo desktop app
 // (PicGo.exe) prints nothing useful to stdout but writes `![](url)` to the
 // clipboard — the caller falls back to that (see image:upload).
-function runUploadCommand(command, file) {
+// The command runs with the user's command-line PATH: an app started from
+// Finder / the Dock only has /usr/bin:/bin, so `picgo upload` (npm, Homebrew,
+// nvm) was "command not found" (issue #160).
+async function runUploadCommand(command, file) {
+  const env = await userCommandEnv().catch(() => process.env)
   return new Promise((resolve) => {
     const full = `${command} "${file}"`
     exec(
       full,
-      { timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+      { timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env },
       (err, stdout, stderr) => {
         resolve({
           url: parseUploadedUrl(stdout || ''),
@@ -655,6 +663,16 @@ function runUploadCommand(command, file) {
       }
     )
   })
+}
+
+// "picgo: command not found" / "'picgo' is not recognized…": say what to do.
+function commandNotFoundHint(command, output) {
+  const text = String(output || '')
+  if (!/command not found|not found|is not recognized|No such file or directory|ENOENT/i.test(text)) return ''
+  const name = String(command).trim().split(/\s+/)[0]
+  return process.platform === 'win32'
+    ? `\n找不到命令「${name}」。请在设置里填写它的完整路径（在命令提示符里运行 where ${name} 查看）。`
+    : `\n找不到命令「${name}」。请在设置里填写它的完整路径（在终端里运行 which ${name} 查看），或确认它已安装。`
 }
 
 // PicGo desktop (and uploaders that don't print to stdout) write the result to
@@ -764,7 +782,8 @@ ipcMain.handle('image:upload', async (_e, command, name, bytes) => {
     // returns), so poll for it instead of a single read (which races).
     if (!url) url = await waitForClipboardUrl(beforeClip)
     if (url) return { ok: true, url }
-    return { ok: false, error: (res.stderr || res.stdout || res.error || '').slice(-500) || 'No URL in command output or clipboard.' }
+    const output = (res.stderr || res.stdout || res.error || '').slice(-500)
+    return { ok: false, error: (output || 'No URL in command output or clipboard.') + commandNotFoundHint(cmd, output) }
   } catch (e) {
     return { ok: false, error: e?.message || String(e) }
   } finally {

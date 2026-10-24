@@ -35,4 +35,6 @@ description: 在 HorseMD 中粘贴、拖入和上传图片，并配置自定义�
 
 ::: warning 先在终端验证命令
 HorseMD 不负责安装 PicGo 或其他上传工具。命令应在终端中可以独立运行，并且只把可信 URL 输出到标准输出。留空会恢复默认本地图片行为。
+
+命令会使用你终端里的 PATH，用 npm、Homebrew 或 nvm 安装的 `picgo` 直接写 `picgo upload` 即可。如果提示「找不到命令」，在终端里运行 `which picgo`，把得到的完整路径（例如 `/opt/homebrew/bin/picgo upload`）填进设置。
 :::

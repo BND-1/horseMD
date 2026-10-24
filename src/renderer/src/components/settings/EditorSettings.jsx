@@ -22,6 +22,31 @@ export default function EditorSettings({
         </div>
       </section>
       <section className="settings-block">
+        <h2 className="settings-block-title">{t('settings.markdownSyntax')}</h2>
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t('settings.subscript')}</div>
+            <div className="settings-row-desc">{t('settings.subscriptDesc')}</div>
+          </div>
+          <Toggle
+            checked={settings.markdownSubscript === true}
+            onChange={(markdownSubscript) => onUpdateSettings({ markdownSubscript })}
+            label={t('settings.subscript')}
+          />
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t('settings.superscript')}</div>
+            <div className="settings-row-desc">{t('settings.superscriptDesc')}</div>
+          </div>
+          <Toggle
+            checked={settings.markdownSuperscript === true}
+            onChange={(markdownSuperscript) => onUpdateSettings({ markdownSuperscript })}
+            label={t('settings.superscript')}
+          />
+        </div>
+      </section>
+      <section className="settings-block">
         <h2 className="settings-block-title">{t('settings.editing')}</h2>
         <div className="settings-row">
           <div className="settings-row-text">

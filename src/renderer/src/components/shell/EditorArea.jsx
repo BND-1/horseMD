@@ -48,6 +48,7 @@ export default function EditorArea({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  markdownSyntax,
   selectionToolbar,
   readOnly,
   effectiveKeybindings,
@@ -289,6 +290,7 @@ export default function EditorArea({
                 imageUploadCommand={imageUploadCommand}
                 spellcheck={spellcheck}
                 inlineMathDeleteMode={inlineMathDeleteMode}
+                markdownSyntax={markdownSyntax}
                 selectionToolbar={selectionToolbar}
                 readOnly={readOnly || isSourceRichSplit}
                 effectiveKeybindings={effectiveKeybindings}

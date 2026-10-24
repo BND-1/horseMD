@@ -76,25 +76,27 @@ export class WebDavProvider {
     }
   }
 
-  async requestPath(path, init = {}) {
+  async requestPath(path, init = {}, { quick = false } = {}) {
     return this.pacer.run(() => this.request(this.urlFor(path), {
       ...init,
       headers: this.headers(init.headers)
-    }))
+    }), { write: init.method === 'PUT', quick })
   }
 
   async testConnection() {
     const response = await this.requestPath('', {
       method: 'PROPFIND',
       headers: { Depth: '0' }
-    })
+    }, { quick: true })
     if (![200, 207].includes(response.status)) {
       throw new Error(`WebDAV 连接失败（HTTP ${response.status}${throttleHint(response.status)}）。请检查地址、账号和权限。`)
     }
     const probePath = `HorseMD/.connection-check/${randomUUID()}`
     let revision = null
     try {
-      revision = (await this.put(probePath, Buffer.alloc(0), { createOnly: true })).revision
+      const uploaded = await this.put(probePath, Buffer.alloc(0), { createOnly: true, quick: true })
+      if (uploaded.throttled) return { ok: true, uploadThrottled: true }
+      revision = uploaded.revision
       await this.delete(probePath, { revision })
     } catch (error) {
       if (revision) {
@@ -129,25 +131,27 @@ export class WebDavProvider {
     }
   }
 
-  async ensureDirectory(path) {
+  async ensureDirectory(path, { quick = false } = {}) {
     const segments = String(path || '').split('/').filter(Boolean)
     let current = ''
     for (const segment of segments) {
       current = current ? `${current}/${segment}` : segment
-      const response = await this.requestPath(current, { method: 'MKCOL' })
+      const response = await this.requestPath(current, { method: 'MKCOL' }, { quick })
+      if (quick && (response.status === 429 || response.status === 503)) return false
       if (![200, 201, 204, 405].includes(response.status)) {
         throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
       }
     }
   }
 
-  async put(path, bytes, { revision = null, createOnly = false, contentType = 'application/octet-stream' } = {}) {
+  async put(path, bytes, { revision = null, createOnly = false, contentType = 'application/octet-stream', quick = false } = {}) {
     const slash = String(path).lastIndexOf('/')
-    if (slash > 0) await this.ensureDirectory(String(path).slice(0, slash))
+    if (slash > 0 && await this.ensureDirectory(String(path).slice(0, slash), { quick }) === false) return { revision: null, throttled: true }
     const headers = { 'content-type': contentType }
     if (revision) headers['if-match'] = `"${revision}"`
     if (createOnly) headers['if-none-match'] = '*'
-    const response = await this.requestPath(path, { method: 'PUT', headers, body: bytes })
+    const response = await this.requestPath(path, { method: 'PUT', headers, body: bytes }, { quick })
+    if (quick && (response.status === 429 || response.status === 503)) return { revision: null, throttled: true }
     if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
     if (!response.ok) throw new Error(`WebDAV 上传失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
     const writtenRevision = response.headers.get('etag')?.replace(/^"|"$/g, '') || null
@@ -155,6 +159,23 @@ export class WebDavProvider {
     // metadata immediately so the next sync still has a conditional revision.
     if (writtenRevision) return { revision: writtenRevision }
     return { revision: (await this.stat(path))?.etag || null }
+  }
+
+  // Empty folder: a real collection (MKCOL, parents first).
+  async createDirectory(path) {
+    await this.ensureDirectory(path)
+    return true
+  }
+
+  // DELETE on a collection removes everything inside it, so only a folder
+  // that is still empty is removed (PROPFIND Depth 1 lists only itself).
+  async removeDirectory(path) {
+    const entries = await this.list(path)
+    if (entries.length > 1) return false
+    if (entries.length === 0) return true
+    const response = await this.pacer.run(() => this.request(`${this.urlFor(path)}/`, { method: 'DELETE', headers: this.headers() }))
+    if ([200, 204, 404].includes(response.status)) return true
+    throw new Error(`WebDAV 无法删除空文件夹“${path}”（HTTP ${response.status}${throttleHint(response.status)}）。`)
   }
 
   async delete(path, { revision = null } = {}) {

@@ -123,7 +123,7 @@ import {
   transactionTopLevelRange
 } from '../lib/source-sync/editor-only-document.js'
 import { reprintVerified } from '../lib/source-reprint/index.js'
-import { incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
+import { forgetParses, incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
 // Self-check build (VITE_HM_SYNC_SELF_CHECK=1, used by the regression and
 // fuzz runs): the incremental parse and the per-block comparison memo are
 // re-checked against the full computation on every sync.
@@ -170,6 +170,7 @@ export default function Editor({
   imageUploadCommand,
   spellcheck,
   inlineMathDeleteMode,
+  markdownSyntax,
   selectionToolbar,
   onToggleSourceRichSplit,
   readOnly = false,
@@ -192,6 +193,11 @@ export default function Editor({
   // re-applied by the effect when the pref changes.
   const spellcheckRef = useRef(spellcheck)
   spellcheckRef.current = spellcheck
+  // Read live by the parser and input rules (editor-subsup.js); a change
+  // re-renders the open document (effect below).
+  const markdownSyntaxRef = useRef(markdownSyntax)
+  markdownSyntaxRef.current = markdownSyntax
+  const resetParseCachesRef = useRef(null)
   const inlineMathDeleteModeRef = useRef(inlineMathDeleteMode || 'protect')
   inlineMathDeleteModeRef.current = inlineMathDeleteMode || 'protect'
   // The Crepe toolbar remains mounted so changing this setting is immediate and
@@ -219,6 +225,24 @@ export default function Editor({
     const v = viewRef.current
     if (v?.dom) v.dom.setAttribute('spellcheck', spellcheck ? 'true' : 'false')
   }, [spellcheck])
+  // Settings › Markdown syntax changed: the same Markdown now parses
+  // differently, so drop every cached parse and re-render the document from
+  // its current source (nothing is written; the source is unchanged).
+  const syntaxKey = `${markdownSyntax?.subscript === true}|${markdownSyntax?.superscript === true}`
+  const syntaxKeyRef = useRef(syntaxKey)
+  useEffect(() => {
+    if (syntaxKeyRef.current === syntaxKey) return
+    syntaxKeyRef.current = syntaxKey
+    const api = apiRef.current
+    // Take the source BEFORE the escape list follows the new setting (a
+    // flush afterwards would re-escape literal `a^2^` as `a\^2\^`). Unforced:
+    // the committed source as is, unless a rich edit is still pending.
+    let markdown = null
+    try { markdown = api?.flushMarkdown?.() } catch { markdown = null }
+    resetParseCachesRef.current?.()
+    if (typeof markdown !== 'string') return
+    try { api.replaceMarkdown?.(markdown) } catch { /* editor teardown */ }
+  }, [syntaxKey])
   // Keep native selection and scrolling available while making the underlying
   // ProseMirror view genuinely non-editable. A CSS-only lock still accepts
   // paste/drop and lets input rules mutate the document.
@@ -636,6 +660,16 @@ export default function Editor({
       return doc
     }
     const lastValidationCanonical = { doc: null, markdown: null }
+    resetParseCachesRef.current = () => {
+      lastValidationParse.markdown = null
+      lastValidationParse.doc = null
+      lastValidationCanonical.doc = null
+      try {
+        forgetParses(crepe.editor.ctx.get(remarkCtx))
+        crepe.editor.ctx.get(parserCtx).clear?.()
+        crepe.hmSyncSubSupUnsafe?.()
+      } catch { /* editor not created yet */ }
+    }
     const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
       const serializer = crepe.editor.ctx.get(serializerCtx)
@@ -1939,6 +1973,7 @@ export default function Editor({
       notify: fireToast,
       copyText: copyToClipboard,
       getInlineMathDeleteMode: () => inlineMathDeleteModeRef.current,
+      getMarkdownSyntax: () => markdownSyntaxRef.current || {},
       markUserEdit,
       isReadOnly: () => readOnlyRef.current,
       onFrontmatterValueChange: handleFrontmatterValueChange,

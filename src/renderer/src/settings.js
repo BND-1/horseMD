@@ -158,6 +158,11 @@ export const DEFAULT_SETTINGS = {
   // attribute on the Crepe `.ProseMirror` contenteditable; other surfaces (the
   // source textarea, inputs) always opt out via spellCheck={false}.
   spellcheck: false,
+  // Typora's subscript `H~2~O` / superscript `x^2^` syntax. Off by default
+  // like Typora: Chinese prose uses `~` for ranges (`1~2天，100~200元`).
+  // Read when an editor is created (applies to documents opened afterwards).
+  markdownSubscript: false,
+  markdownSuperscript: false,
   // Last-chosen PDF export density preset (comfort/standard/compact). Persisted
   // so the user's "compact format" choice survives across exports.
   lastPdfDensityPreset: 'standard',
@@ -257,6 +262,8 @@ export function loadSettings() {
       imageUploadCommand:
         typeof raw.imageUploadCommand === 'string' ? raw.imageUploadCommand : '',
       spellcheck: raw.spellcheck === true,
+      markdownSubscript: raw.markdownSubscript === true,
+      markdownSuperscript: raw.markdownSuperscript === true,
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
       selectionToolbar: raw.selectionToolbar !== false,
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,

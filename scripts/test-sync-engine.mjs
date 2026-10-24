@@ -24,6 +24,9 @@ class MemoryProvider {
     this.objects.delete(path)
     return true
   }
+  // Empty folders: S3-style "path/" markers.
+  async createDirectory(path) { this.objects.set(`${path}/`, { bytes: Buffer.alloc(0), revision: String(++this.revision) }); return true }
+  async removeDirectory(path) { this.objects.delete(`${path}/`); return true }
 }
 
 const root = await fs.mkdtemp(join(tmpdir(), 'horsemd-sync-engine-'))
@@ -71,6 +74,9 @@ try {
   assert.equal(deletion.summary.delete, 1)
   await makeEngine(localB, userDataB, 'Phone').execute(deletion)
   await assert.rejects(fs.stat(join(localB, 'assets', 'photo.bin')), { code: 'ENOENT' })
+  // The folder that became empty on A is kept, and stays on B too.
+  assert.ok(provider.objects.has('assets/'), 'the now-empty folder is synced as a folder')
+  assert.ok((await fs.stat(join(localB, 'assets'))).isDirectory())
   assert.equal((await provider.get('assets/photo.bin')), null)
   assert.equal([...provider.objects.keys()].some((path) => path.includes('/assets/photo.bin') && path.startsWith('.horsemd/trash/')), true)
 

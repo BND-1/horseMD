@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { scanLocalWorkspace, sha256 } from './local-files.js'
-import { buildDirectionalSyncPlan, buildSyncPlan, makeConflictPath } from './sync-plan.js'
+import { scanLocalEmptyDirs, scanLocalWorkspace, sha256 } from './local-files.js'
+import { buildDirPlan, buildDirectionalSyncPlan, buildSyncPlan, DIR_OPERATION_TYPES, DIR_SUMMARY_KEY, makeConflictPath } from './sync-plan.js'
 import { readSyncState, writeSyncState } from './sync-state.js'
+import { isSyncStopped } from './sync-control.js'
 
 const MANIFEST_VERSION = 1
 const now = () => new Date().toISOString()
@@ -11,7 +12,7 @@ const manifestPath = '.horsemd/manifest.json'
 const trashPath = (stamp, path) => `.horsemd/trash/${stamp}/${path}`
 
 function normalizeManifest(input, workspaceId) {
-  if (!input) return { version: MANIFEST_VERSION, workspaceId, files: {}, tombstones: {} }
+  if (!input) return { version: MANIFEST_VERSION, workspaceId, files: {}, tombstones: {}, dirs: {} }
   if (input.version !== MANIFEST_VERSION || input.workspaceId !== workspaceId) {
     throw new Error('远端同步目录不是当前 HorseMD 工作区。')
   }
@@ -19,7 +20,9 @@ function normalizeManifest(input, workspaceId) {
     version: MANIFEST_VERSION,
     workspaceId,
     files: input.files && typeof input.files === 'object' ? input.files : {},
-    tombstones: input.tombstones && typeof input.tombstones === 'object' ? input.tombstones : {}
+    tombstones: input.tombstones && typeof input.tombstones === 'object' ? input.tombstones : {},
+    // Empty folders (S3 "path/" markers / WebDAV collections).
+    dirs: input.dirs && typeof input.dirs === 'object' ? input.dirs : {}
   }
 }
 
@@ -104,19 +107,22 @@ async function archiveRemoteToTrash(provider, item, stamp) {
 }
 
 export class SyncEngine {
-  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null }) {
+  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null, control = null }) {
     this.userDataPath = userDataPath
     this.provider = provider
     this.rootPath = rootPath
     this.workspaceId = workspaceId
     this.deviceName = deviceName
     this.onProgress = onProgress
+    // Optional SyncControl: pause / resume / stop between files.
+    this.control = control
   }
 
   async preview(strategy = 'merge') {
     if (!['merge', 'push', 'pull'].includes(strategy)) throw new Error('同步方向无效。')
-    const [localFiles, state, remote] = await Promise.all([
+    const [localFiles, localDirs, state, remote] = await Promise.all([
       scanLocalWorkspace(this.rootPath),
+      scanLocalEmptyDirs(this.rootPath),
       readSyncState(this.userDataPath, this.workspaceId),
       readRemoteManifest(this.provider, this.workspaceId)
     ])
@@ -140,15 +146,63 @@ export class SyncEngine {
         conflictSuffix: `来自 ${this.deviceName} 的冲突副本`
       })
       : buildDirectionalSyncPlan({ localFiles, remoteFiles: remote.manifest.files, strategy })
+    // Empty folders run after the files (a folder that just received a file
+    // is no longer empty and is never removed).
+    // Files that still exist once the file operations are done: a folder
+    // whose last file is being deleted becomes an empty folder to keep.
+    const remainingFiles = new Set([...localFiles.keys(), ...Object.keys(remote.manifest.files)])
+    for (const item of plan.operations) if (item.type === 'deleteRemote' || item.type === 'deleteLocal') remainingFiles.delete(item.path)
+    const dirOperations = buildDirPlan({
+      localDirs,
+      remoteDirs: remote.manifest.dirs,
+      previousDirs: state.dirs,
+      localFiles: [...remainingFiles],
+      strategy
+    })
+    for (const item of dirOperations) {
+      plan.operations.push(item)
+      if (DIR_SUMMARY_KEY[item.type]) plan.summary[DIR_SUMMARY_KEY[item.type]] += 1
+    }
     return {
       status: 'ready',
       strategy,
       localFiles,
+      localDirs,
       state,
       remote,
       plan,
       summary: summaryWithBytes(plan),
       operations: plan.operations.map(publicOperation)
+    }
+  }
+
+  // One empty-folder operation. `dirs` collects the folders known on both
+  // sides for the final state; `previousDirs` is updated in step for a
+  // stopped run's partial commit.
+  async syncDirectory(item, manifest, dirs, previousDirs) {
+    if (item.type === 'createRemoteDir') {
+      await this.provider.createDirectory(item.path)
+      manifest.dirs[item.path] = { updatedAt: now() }
+      dirs.add(item.path); previousDirs.add(item.path)
+    } else if (item.type === 'createLocalDir') {
+      await fs.mkdir(assertSafeRelative(this.rootPath, item.path), { recursive: true })
+      dirs.add(item.path); previousDirs.add(item.path)
+    } else if (item.type === 'deleteRemoteDir') {
+      await this.provider.removeDirectory(item.path)
+      delete manifest.dirs[item.path]
+      dirs.delete(item.path); previousDirs.delete(item.path)
+    } else if (item.type === 'forgetDir') {
+      // No longer an empty folder (it holds files): stop tracking, touch nothing.
+      delete manifest.dirs[item.path]
+      dirs.delete(item.path); previousDirs.delete(item.path)
+    } else if (item.type === 'deleteLocalDir') {
+      try {
+        // rmdir, never recursive: a folder that received anything stays.
+        await fs.rmdir(assertSafeRelative(this.rootPath, item.path))
+      } catch (error) {
+        if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error?.code)) throw error
+      }
+      dirs.delete(item.path); previousDirs.delete(item.path)
     }
   }
 
@@ -158,18 +212,33 @@ export class SyncEngine {
       throw new Error('云端工作区已被清空或替换。请明确选择上传本地或下载云端，HorseMD 不会自动删除本地文件。')
     }
     const { localFiles, state, remote, plan } = prepared
+    // Empty folders present on both sides after this run.
+    const dirs = new Set(plan.operations.filter((item) => item.type === 'keepDir').map((item) => item.path))
+    const previousDirs = new Set(state.dirs || [])
     const manifest = structuredClone(remote.manifest)
     const stamp = now().replace(/[:.]/g, '-')
     const files = new Map(localFiles)
-    const total = plan.operations.filter((item) => item.type !== 'keep').length
+    const total = plan.operations.filter((item) => !['keep', 'keepDir', 'forgetDir'].includes(item.type)).length
     let completed = 0
+    this.onProgress?.({ completed, total })
 
+    // Paths whose local and remote sides are known to agree after this run
+    // (for a stopped run's partial commit).
+    const settled = new Set(plan.operations.filter((item) => item.type === 'keep').map((item) => item.path))
     const progress = (item) => {
       completed += 1
+      settled.add(item.path)
       this.onProgress?.({ completed, total, type: item.type, path: item.path })
     }
+    try {
     for (const item of plan.operations) {
-      if (item.type === 'keep') continue
+      if (item.type === 'keep' || item.type === 'keepDir') continue
+      await this.control?.checkpoint()
+      if (DIR_OPERATION_TYPES.has(item.type)) {
+        await this.syncDirectory(item, manifest, dirs, previousDirs)
+        if (item.type !== 'forgetDir') progress(item)
+        continue
+      }
       if (item.type === 'upload') {
         if (item.preserveRemote) await archiveRemoteToTrash(this.provider, item, stamp)
         const bytes = await readLocalBytes(this.rootPath, item.path)
@@ -180,15 +249,19 @@ export class SyncEngine {
             createOnly: !item.remote
           })
         } catch (error) {
-          if (item.remote) throw error
+          if (isSyncStopped(error)) throw error
           let untracked = null
-          try { untracked = await this.provider.get(item.path) } catch { throw error }
+          try { untracked = await this.provider.get(item.path) } catch (readError) { throw isSyncStopped(readError) ? readError : error }
           if (!untracked) throw error
           if (sha256(untracked.bytes) === sha256(bytes)) {
             // An interrupted sync (e.g. stopped by HTTP 429) uploaded this file
             // but never wrote the manifest. Same bytes: adopt the object, so a
             // retry resumes instead of failing on every uploaded file.
+            // Same for a modified file: the object already holds these bytes,
+            // only the manifest still names the older revision.
             uploaded = { revision: untracked.revision }
+          } else if (item.remote) {
+            throw error
           } else {
             // A reset remote may have lost its manifest while retaining ordinary
             // objects. This path is available only after an explicit push; retain
@@ -234,6 +307,7 @@ export class SyncEngine {
           await writeLocalBytes(this.rootPath, item.path, remoteBytes.bytes)
           files.set(item.path, { ...item.remote, sha256: sha256(remoteBytes.bytes) })
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
+          settled.add(localConflict)
           manifest.files[localConflict] = {
             sha256: sha256(localBytes), size: localBytes.byteLength, revision: uploadedConflict.revision, updatedAt: now()
           }
@@ -251,6 +325,7 @@ export class SyncEngine {
           await moveLocalToTrash(this.rootPath, item.path, stamp)
           files.delete(item.path)
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
+          settled.add(localConflict)
           manifest.files[localConflict] = {
             sha256: sha256(localBytes), size: localBytes.byteLength, revision: uploadedConflict.revision, updatedAt: now()
           }
@@ -258,11 +333,46 @@ export class SyncEngine {
       }
       progress(item)
     }
+    } catch (error) {
+      if (!isSyncStopped(error)) throw error
+      // Stopped by the user: record what was completed, so the next sync
+      // continues from here. Unfinished paths keep their previous state and
+      // manifest entries (exactly as before this run).
+      let recorded = false
+      if (completed > 0) {
+        if (this.control) this.control.finalizing = true
+        const partial = { ...state.files }
+        for (const path of settled) {
+          const entry = files.get(path)
+          if (entry?.sha256) partial[path] = { sha256: entry.sha256 }
+          else delete partial[path]
+        }
+        // Short retries only (a stop usually happens during an upload lock).
+        // The local state is written only after the manifest: the two must
+        // agree, or the next sync would take this device's new files for
+        // remote changes. Without them the next sync still resumes (identical
+        // objects are adopted).
+        try {
+          const written = await this.provider.put(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2) + '\n'), {
+            revision: remote.revision,
+            createOnly: !remote.exists,
+            contentType: 'application/json',
+            quick: true
+          })
+          if (!written?.throttled) {
+            await writeSyncState(this.userDataPath, { version: 1, workspaceId: this.workspaceId, files: partial, dirs: [...previousDirs] })
+            recorded = true
+          }
+        } catch { /* the next sync resumes from the objects themselves */ }
+      }
+      return { stopped: true, recorded, completed, total, summary: summaryWithBytes(plan), conflicts: plan.summary.conflict }
+    }
 
     const nextState = {
       version: 1,
       workspaceId: this.workspaceId,
-      files: Object.fromEntries([...files].map(([path, entry]) => [path, { sha256: entry.sha256 }]))
+      files: Object.fromEntries([...files].map(([path, entry]) => [path, { sha256: entry.sha256 }])),
+      dirs: [...dirs].sort()
     }
     // The manifest is committed last. If another device changed it, conditional
     // write fails before local state advances, so the next run re-plans safely.

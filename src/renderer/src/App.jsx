@@ -424,6 +424,10 @@ export default function App() {
   useEffect(() => {
     applySoftBreakDisplay(settings.preserveSoftBreaks)
   }, [settings.preserveSoftBreaks])
+  const markdownSyntax = useMemo(() => ({
+    subscript: settings.markdownSubscript === true,
+    superscript: settings.markdownSuperscript === true
+  }), [settings.markdownSubscript, settings.markdownSuperscript])
   useEffect(() => {
     applyUserCss(settings.userCssSnippets)
   }, [settings.userCssSnippets])
@@ -1248,6 +1252,7 @@ export default function App() {
             imageUploadCommand={settings.imageUploadCommand}
             spellcheck={settings.spellcheck}
             inlineMathDeleteMode={settings.inlineMathDeleteMode}
+            markdownSyntax={markdownSyntax}
             selectionToolbar={settings.selectionToolbar}
             readOnly={mobileReadOnly}
             effectiveKeybindings={effectiveKeybindings}

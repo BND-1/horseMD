@@ -66,6 +66,9 @@ const api = {
     ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId),
   syncPreview: (rootPath, strategy) => ipcRenderer.invoke('sync:preview', rootPath, strategy),
   syncRun: (rootPath, strategy) => ipcRenderer.invoke('sync:run', rootPath, strategy),
+  onSyncProgress: on('sync:progress'),
+  // action: 'pause' | 'resume' | 'stop'
+  syncControl: (rootPath, action) => ipcRenderer.invoke('sync:control', rootPath, action),
   syncListRemoteWorkspaces: (connectionId) => ipcRenderer.invoke('sync:remoteWorkspaceList', connectionId),
   syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
 

@@ -9,6 +9,33 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(supported)
   const [busyRoot, setBusyRoot] = useState(null)
+  // Live progress of the running sync: { rootPath, completed, total, waiting }.
+  // `waiting` is set while the cloud service throttles uploads.
+  const [progress, setProgress] = useState(null)
+
+  useEffect(() => window.api.onSyncProgress?.((event) => {
+    if (!event?.rootPath) return
+    if (event.done) { setProgress(null); return }
+    setProgress((current) => {
+      const base = current?.rootPath === event.rootPath ? current : { rootPath: event.rootPath, completed: 0, total: 0, waiting: null, paused: false, stopping: false }
+      if (event.control) {
+        const paused = event.control.paused ?? (event.control.stopping ? false : base.paused)
+        return {
+          ...base,
+          paused,
+          // Requested → holding once the file in flight has finished.
+          holding: paused ? (event.control.holding ?? base.holding ?? false) : false,
+          stopping: event.control.stopping === true || base.stopping
+        }
+      }
+      if (event.throttle) {
+        const { locked, resumed, resumeAt, waitedMs } = event.throttle
+        if (resumed) return { ...base, waiting: null }
+        return locked ? { ...base, waiting: { resumeAt, waitedMs, receivedAt: Date.now() } } : base
+      }
+      return { ...base, completed: event.completed ?? base.completed, total: event.total ?? base.total, waiting: null }
+    })
+  }), [])
 
   const refresh = useCallback(async () => {
     if (!supported || !window.api.syncListWorkspaces) {
@@ -112,8 +139,11 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
   }, [refresh])
   const run = useCallback(async (rootPath, strategy = 'merge') => {
     setBusyRoot(rootPath)
-    try { return await window.api.syncRun(rootPath, strategy) } finally { setBusyRoot(null) }
+    try { return await window.api.syncRun(rootPath, strategy) } finally { setBusyRoot(null); setProgress(null) }
   }, [])
+
+  // 'pause' | 'resume' | 'stop' for the running sync of `rootPath`.
+  const controlSync = useCallback(async (rootPath, action) => window.api.syncControl?.(rootPath, action), [])
 
   const registeredByPath = useMemo(
     () => new Map(registered.map((entry) => [entry.rootPath.replace(/[\\/]+$/, '').toLowerCase(), entry])),
@@ -126,6 +156,8 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
     registered,
     connections,
     busyRoot,
+    progress,
+    controlSync,
     registeredByPath,
     refresh,
     enableFolder,
