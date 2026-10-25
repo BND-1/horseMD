@@ -299,8 +299,19 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
 
   const removeResizeGuide = (intent) => intent?.guide?.remove()
 
+  // Live collection: reading it costs nothing until tables exist.
+  const tableBlocks = host.getElementsByClassName('milkdown-table-block')
+  const tableQueryAll = (selector) => [...tableBlocks].flatMap((block) => [...block.querySelectorAll(selector)])
+
   const fix = () => {
     raf = 0
+    // Everything below is about table controls. It runs on every DOM change
+    // and selection change, so a document without tables returns at once —
+    // no whole-document query and no forced layout per keystroke.
+    if (!tableBlocks.length) {
+      needsColumnWidthSync = false
+      return
+    }
     if (needsColumnWidthSync) {
       // Crepe owns the table node view instead of ProseMirror's default
       // TableView, so it needs a colgroup only after a table transaction. Do
@@ -316,16 +327,16 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       bottom: Math.min(window.innerHeight, scrollRect.bottom) - margin
     }
 
-    host.querySelectorAll('.milkdown-table-block').forEach((block) => {
+    for (const block of [...tableBlocks]) {
       const controlsOpen = !!block.querySelector('.button-group[data-show="true"]')
       block.classList.toggle('hm-table-controls-open', controlsOpen)
-    })
+    }
 
     // Crepe positions its add-column/add-row indicator relative to its internal
     // wrapper. Table margins and scrolling can leave that indicator starting
     // above the visible grid. Snap it to the actual table bounds so the yellow
     // line covers the column/row boundary it represents.
-    host.querySelectorAll('.milkdown-table-block .line-handle').forEach((handle) => {
+    tableQueryAll('.line-handle').forEach((handle) => {
       if (handle.dataset.show !== 'true' || handle.offsetParent === null) {
         setTranslate(handle, 0, 0)
         return
@@ -348,7 +359,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       }
     })
 
-    host.querySelectorAll('.milkdown-table-block .line-handle').forEach((handle) => {
+    tableQueryAll('.line-handle').forEach((handle) => {
       const button = handle.querySelector('.add-button')
       if (!button) return
       if (handle.dataset.show !== 'true' || handle.offsetParent === null) {
@@ -374,7 +385,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       setTranslate(button, shiftX, shiftY)
     })
 
-    host.querySelectorAll('.milkdown-table-block .cell-handle').forEach((handle) => {
+    tableQueryAll('.cell-handle').forEach((handle) => {
       const group = handle.querySelector('.button-group')
       if (handle.dataset.show !== 'true' || handle.offsetParent === null) {
         setTranslate(handle, 0, 0)
@@ -745,11 +756,24 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
     event.preventDefault()
     event.stopPropagation()
   }
+  const touchesTable = (node) => {
+    const element = node?.nodeType === 1 ? node : node?.parentElement
+    return Boolean(element && (element.closest?.('.milkdown-table-block') ||
+      element.classList?.contains('milkdown-table-block') ||
+      element.querySelector?.('.milkdown-table-block')))
+  }
   const observer = new MutationObserver((mutations) => {
-    const syncColumnWidths = mutations.some((mutation) => (
-      mutation.type === 'childList' ||
+    // Column widths change only through table mutations (a table added or
+    // removed, or a change inside one) — not every keystroke in a paragraph.
+    const syncColumnWidths = tableBlocks.length > 0 && mutations.some((mutation) => (
       mutation.attributeName === 'data-colwidth' ||
-      mutation.attributeName === 'colspan'
+      mutation.attributeName === 'colspan' ||
+      (mutation.type === 'childList' && (
+        touchesTable(mutation.target) ||
+        [...mutation.addedNodes, ...mutation.removedNodes].some((node) => node.nodeType === 1 && (
+          node.classList?.contains('milkdown-table-block') || node.querySelector?.('.milkdown-table-block')
+        ))
+      ))
     ))
     if (tableControlScrollGuard) {
       const guardedWrapper = getTableWrapper(tableControlScrollGuard.tableIndex)

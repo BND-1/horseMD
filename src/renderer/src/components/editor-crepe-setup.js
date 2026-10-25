@@ -195,7 +195,7 @@ export function createConfiguredCrepe({
     }))
     ctx.update(nodeViewCtx, (views) => [
       ...views,
-      ['html', (node) => renderHtmlNodeView(node)],
+      ['html', (node, view, getPos) => renderHtmlNodeView(node, view, getPos)],
       ['frontmatter', (node, view, getPos) => renderFrontmatterNodeView(node, view, getPos, {
         labels: {
           edit: t('frontmatter.edit'),

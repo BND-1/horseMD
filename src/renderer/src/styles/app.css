@@ -2860,6 +2860,29 @@ body.hm-has-custom-theme .milkdown .ProseMirror { padding: 0; }
 .hm-html-block pre {
   white-space: pre;
 }
+/* Inline <svg> source rendered as an image (editor-html.js, #162). Alone in
+   its paragraph it is a block; next to text it sits in the line. An SVG with
+   no width fills the line, as it would inline in a page. */
+.milkdown .ProseMirror .hm-html-svg img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  vertical-align: middle;
+  border-radius: 0;
+  box-shadow: none;
+}
+.milkdown .ProseMirror .hm-html-svg-block {
+  display: block;
+  margin: 0.6em 0;
+}
+.milkdown .ProseMirror .hm-html-svg-block img {
+  display: block;
+  margin: 0 auto;
+}
+.milkdown .ProseMirror .hm-html-svg-block.hm-html-svg-fluid img {
+  width: 100%;
+}
 /* YAML front matter card (--- block at the top of a doc). */
 .hm-frontmatter-wrap { margin: 0 0 1.25em; }
 .hm-frontmatter {
@@ -3158,6 +3181,12 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
 }
 .hm-image-lightbox img {
   cursor: grab;
+}
+/* SVG images (#162): sized to fit the window by Editor.jsx; white like the
+   Mermaid lightbox, since a transparent diagram drawn for a light page is
+   unreadable on the overlay. */
+.hm-image-lightbox img.hm-lightbox-vector {
+  background: #fff;
 }
 .hm-lightbox-svg svg {
   display: block;

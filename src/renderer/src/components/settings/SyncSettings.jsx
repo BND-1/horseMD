@@ -237,7 +237,9 @@ function SyncPlanPreview({ preview, onConfirm, onClose, busy = false, t }) {
     return t('sync.operationDelete')
   }
   const isFolder = (operation) => /Dir$/.test(operation.type)
-  const changes = preview.data.operations.filter((operation) => !['keep', 'keepDir', 'forgetDir'].includes(operation.type))
+  // System files (.DS_Store…) removed from the cloud are housekeeping, not a
+  // change to the user's files: not listed (and not counted as deletions).
+  const changes = preview.data.operations.filter((operation) => !operation.systemFile && !['keep', 'keepDir', 'forgetDir'].includes(operation.type))
   return (
     <section className="sync-plan-preview" aria-label={t('sync.previewTitle')}>
       <div className="sync-plan-preview-head">

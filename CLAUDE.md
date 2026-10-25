@@ -380,6 +380,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (empty line → replaces it; inside text → own line after the top-level block);
   `useDropOpen.js` must keep media drops inside the editor. CSP needs
   `media-src … file:` and `frame-src https:`. Locked by `test:media-embed-ui`.
+- **Inline SVG** (`editor-html.js` `renderSvgNodeView`, #162): an html node
+  whose value is one `<svg>…</svg>` renders as an `<img>` of a
+  `data:image/svg+xml` copy of the markup (scripts dropped; root
+  `font-family` = the editor font when the SVG sets none) — never as live
+  DOM: an image runs no script and keeps each SVG's ids and `<style>` to
+  itself (two AI diagrams both using `id="g"` would repaint each other).
+  Alone in its paragraph → block (no width → fills the line); next to text →
+  inline icon. The export snapshot keeps that layout with preserved inline
+  styles (`materializeInlineSvgForExport`); SVG images open in the lightbox
+  fitted to the window on white (`hm-lightbox-vector`). `![](x.svg)` was
+  already an ordinary image. Locked by `test:svg-render-ui`.
 - **Table paste** (`editor-table-paste.js`, #152): a GFM table is a plain
   grid with one paragraph per cell, so anything else fails the save gate
   closed. Merged cells (colspan/rowspan from Excel/WPS/web) are split by a
@@ -493,6 +504,24 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `test:incremental-parse-ui` (seeded random edits, chained splices).
   Measurements, design and the remaining list: `docs/performance-large-doc.md`
   (2026-10-23 archive); benches in `scripts/perf/`.
+  Incremental serialization (2026-10-24, `lib/incremental-serialize.js`,
+  inside the memo serializer): the document is kept as segments of
+  top-level children (runs of adjacent lists never split — bullets
+  alternate) holding their in-context text; an edit serializes a window
+  (changed segments + one unchanged neighbour each side) and splices the
+  middle only when the window output starts / ends with the neighbours'
+  cached text, else full. The tail segment keeps the final newline
+  (Milkdown's empty-last-paragraph `<br />` rule reads the LIVE view's last
+  child). Only the live document (`isPrimary`) or a document sharing half
+  its nodes with the base may rebase/bootstrap — the sync also serializes
+  one-block helper docs and freshly parsed docs. Heading-id-only twins reuse
+  the bytes and re-key the base (`adoptEquivalent`). Wide middle segments
+  are re-split at idle time. Self-check build compares every result;
+  normal builds verify one in 100 at idle and disable on mismatch. Locked
+  by `test:incremental-serialize-ui` (random edits, fixture + optional
+  `HM_INCREMENTAL_SERIALIZE_DOC`). Bench for the user-facing operations
+  (tab switch, typing, Backspace, Bold/Italic, heading level, scroll;
+  `PROFILE=1`, `TIMELINE=1`): `scripts/perf/bench-heavy-ops.mjs`.
 - **Sync throttling** (`main/sync/request-pacer.js`): S3/WebDAV requests go
   through a per-provider pacer — 429/503 retried (Retry-After or jittered
   backoff, 8 attempts, re-signed each time), the request gap doubles per
@@ -531,6 +560,18 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   restores the busy state in a reloaded / reopened window (progress falls
   back to `sendToRenderer`). Locked by `test:sync-request`,
   `test:sync-issue-161-ui`.
+  Trash copy + system files (#161 follow-up, `sync/sync-ignore.js`): a
+  cloud file is backed up to `.horsemd/trash/<stamp>/` before it is deleted
+  or replaced — by S3 server-side copy (`S3Provider.copy`, CopyObject;
+  nothing downloaded) when the copy's ETag equals the planned revision,
+  else download + sha256 compare + upload as before (WebDAV always).
+  数据胶囊 (measured 2026-10-25) ignores `x-amz-copy-source-if-match` and
+  answers a missing source with 200 + empty ETag, so only the ETag
+  comparison counts. `.DS_Store` / `._*` / `Thumbs.db` / `desktop.ini` never
+  sync (by file name; other dot files do); one in the cloud is deleted
+  there without a trash copy, hidden from the preview list and not counted
+  as a deletion; a folder holding only those is an empty folder (and is
+  removed with them). Locked by `test:sync-trash-copy`.
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)

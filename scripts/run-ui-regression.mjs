@@ -157,6 +157,10 @@ const standalone = [
     script: 'scripts/test-media-embed-ui.mjs'
   },
   {
+    name: 'SVG files and inline <svg> (render, lightbox, bytes, PDF/HTML export)',
+    script: 'scripts/test-svg-render-ui.mjs'
+  },
+  {
     name: 'Edge hard break in a typed-from-scratch document',
     script: 'scripts/test-edge-hard-break-scratch-ui.mjs'
   },
@@ -219,6 +223,10 @@ const standalone = [
   {
     name: 'Incremental parse: identical to the full parse under random Markdown edits',
     script: 'scripts/test-incremental-parse-ui.mjs'
+  },
+  {
+    name: 'Incremental serialization: identical to the full serialization under random edits',
+    script: 'scripts/test-incremental-serialize-ui.mjs'
   },
   {
     name: 'Subscript ~x~ / superscript ^x^: off by default, render, typing, bytes kept',

@@ -1,4 +1,5 @@
 import { basename, dirname, extname, join } from 'node:path/posix'
+import { isSystemJunkPath } from './sync-ignore.js'
 
 const normalizePath = (value) => String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
 
@@ -23,6 +24,16 @@ function operation(type, path, details = {}) {
   return { type, path, ...details }
 }
 
+// A system file (.DS_Store…, sync-ignore.js) is never uploaded, downloaded or
+// deleted locally. One already in the cloud (uploaded before this rule, or by
+// an older HorseMD) is removed there — without a trash copy, it is not a note.
+// Returns true when the path was handled.
+function planSystemFile(operations, path, remoteEntry) {
+  if (!isSystemJunkPath(path)) return false
+  if (remoteEntry) operations.push(operation('deleteRemote', path, { remote: remoteEntry, systemFile: true }))
+  return true
+}
+
 // Build a deterministic file-level plan. `previousEntries` represents the
 // content hash at the last fully committed sync. A null hash means deletion.
 // The engine intentionally never picks a silent winner for divergent changes.
@@ -37,6 +48,7 @@ export function buildSyncPlan({ localFiles, remoteFiles, previousEntries, confli
     const localEntry = local.get(path) || null
     const remoteEntry = remote.get(path) || null
     const previousEntry = previous.get(path) || null
+    if (planSystemFile(operations, path, remoteEntry)) continue
     const localHash = hashOf(localEntry)
     const remoteHash = hashOf(remoteEntry)
     const previousHash = hashOf(previousEntry)
@@ -90,6 +102,7 @@ export function buildSyncPlan({ localFiles, remoteFiles, previousEntries, confli
     if (item.type === 'keep') result.unchanged += 1
     else if (item.type === 'upload') result.upload += 1
     else if (item.type === 'download') result.download += 1
+    else if (item.systemFile) { /* system-file cleanup: not a deletion of the user's files */ }
     else if (item.type === 'deleteRemote' || item.type === 'deleteLocal') result.delete += 1
     else if (item.type === 'conflict') result.conflict += 1
     return result
@@ -111,6 +124,7 @@ export function buildDirectionalSyncPlan({ localFiles, remoteFiles, strategy }) 
   for (const path of [...allPaths].sort()) {
     const localEntry = local.get(path) || null
     const remoteEntry = remote.get(path) || null
+    if (planSystemFile(operations, path, remoteEntry)) continue
     const localHash = hashOf(localEntry)
     const remoteHash = hashOf(remoteEntry)
     if (strategy === 'push') {
@@ -137,6 +151,7 @@ export function buildDirectionalSyncPlan({ localFiles, remoteFiles, strategy }) 
     if (item.type === 'keep') result.unchanged += 1
     else if (item.type === 'upload') result.upload += 1
     else if (item.type === 'download') result.download += 1
+    else if (item.systemFile) { /* system-file cleanup: not a deletion of the user's files */ }
     else if (item.type === 'deleteRemote' || item.type === 'deleteLocal') result.delete += 1
     return result
   }, { upload: 0, download: 0, delete: 0, conflict: 0, unchanged: 0 })

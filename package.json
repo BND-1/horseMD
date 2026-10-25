@@ -54,6 +54,7 @@
     "test:image-paste-paragraph-ui": "node scripts/test-image-paste-paragraph-ui.mjs",
     "test:image-paste-empty-line-ui": "node scripts/test-image-paste-empty-line-ui.mjs",
     "test:media-embed-ui": "node scripts/test-media-embed-ui.mjs",
+    "test:svg-render-ui": "node scripts/test-svg-render-ui.mjs",
     "test:immersive-mode-ui": "node scripts/test-immersive-mode-ui.mjs",
     "test:editor-style-cascade-ui": "node scripts/test-editor-style-cascade-ui.mjs",
     "test:source-map": "node scripts/test-editor-source-map.mjs",
@@ -209,6 +210,7 @@
     "test:sync-throttle-ui": "node scripts/test-sync-throttle-ui.mjs",
     "test:sync-control": "node scripts/test-sync-control.mjs",
     "test:sync-empty": "node scripts/test-sync-empty.mjs",
+    "test:sync-trash-copy": "node scripts/test-sync-trash-copy.mjs",
     "test:shell-path": "node scripts/test-shell-path.mjs",
     "test:image-host-path-ui": "node scripts/test-image-host-path-ui.mjs",
     "test:sync-credentials": "node scripts/test-sync-credentials.mjs",
@@ -427,7 +429,8 @@
     "test:font-cjk-latin-ui": "node scripts/test-font-cjk-latin-ui.mjs",
     "test:settings-mobile-width-ui": "node scripts/test-settings-mobile-width-ui.mjs",
     "test:sync-request": "node scripts/test-sync-request.mjs",
-    "test:sync-issue-161-ui": "node scripts/test-sync-issue-161-ui.mjs"
+    "test:sync-issue-161-ui": "node scripts/test-sync-issue-161-ui.mjs",
+    "test:incremental-serialize-ui": "node scripts/test-incremental-serialize-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

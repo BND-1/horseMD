@@ -434,16 +434,49 @@ const pmPosFromItemIndex = (block, index) => {
 //
 // Keep all block correspondence rules centralized here: this is a cache of the
 // existing mapping model, not a second mapping algorithm.
-export function createPmPosToMarkdownOffsetMapper(markdown, doc, remark) {
-  if (!markdown || !doc || !remark) return null
+// The block lists are read-only once built, so they are reused: a tab switch
+// saves every open document's caret (useDocPositions), and each call used to
+// re-parse the whole Markdown (~120 ms for a 250 K-char file on an M-series
+// Mac, more on Windows) although neither the text nor the document changed.
+// Keyed by the Markdown string (a few entries) and the immutable PM document.
+const MD_BLOCK_CACHE_SIZE = 4
+const mdBlockCache = []
+const pmBlockCache = new WeakMap()
+
+const mdBlocksFor = (markdown, remark) => {
+  const index = mdBlockCache.findIndex((entry) => entry.remark === remark && entry.markdown === markdown)
+  if (index >= 0) {
+    const [entry] = mdBlockCache.splice(index, 1)
+    mdBlockCache.unshift(entry)
+    return entry.blocks
+  }
   let tree
   try {
     tree = remark.runSync(remark.parse(markdown), markdown)
   } catch {
     return null
   }
-  const mdBlocks = collectMdBlocks(markdown, tree)
-  const pmBlocks = collectPmBlocks(doc)
+  const blocks = collectMdBlocks(markdown, tree)
+  mdBlockCache.unshift({ remark, markdown, blocks })
+  mdBlockCache.length = Math.min(mdBlockCache.length, MD_BLOCK_CACHE_SIZE)
+  return blocks
+}
+
+const pmBlocksFor = (doc) => {
+  if (!doc || typeof doc !== 'object') return collectPmBlocks(doc)
+  let blocks = pmBlockCache.get(doc)
+  if (!blocks) {
+    blocks = collectPmBlocks(doc)
+    pmBlockCache.set(doc, blocks)
+  }
+  return blocks
+}
+
+export function createPmPosToMarkdownOffsetMapper(markdown, doc, remark) {
+  if (!markdown || !doc || !remark) return null
+  const mdBlocks = mdBlocksFor(markdown, remark)
+  if (!mdBlocks) return null
+  const pmBlocks = pmBlocksFor(doc)
   const mdByPmIndex = new Map()
 
   return (pmPos) => {
@@ -470,14 +503,9 @@ export function pmPosToMarkdownOffset(markdown, pmPos, doc, remark) {
 
 export function markdownOffsetToPmPos(markdown, rawOffset, doc, remark) {
   if (!markdown || !doc || !remark) return null
-  let tree
-  try {
-    tree = remark.runSync(remark.parse(markdown), markdown)
-  } catch {
-    return null
-  }
-  const mdBlocks = collectMdBlocks(markdown, tree)
-  const pmBlocks = collectPmBlocks(doc)
+  const mdBlocks = mdBlocksFor(markdown, remark)
+  if (!mdBlocks) return null
+  const pmBlocks = pmBlocksFor(doc)
   const mdIndex = nearestMdBlockIndex(mdBlocks, rawOffset)
   if (mdIndex < 0) return null
   const md = mdBlocks[mdIndex]

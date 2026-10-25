@@ -5,6 +5,7 @@ import { scanLocalEmptyDirs, scanLocalWorkspace, sha256 } from './local-files.js
 import { buildDirPlan, buildDirectionalSyncPlan, buildSyncPlan, DIR_OPERATION_TYPES, DIR_SUMMARY_KEY, makeConflictPath } from './sync-plan.js'
 import { readSyncState, writeSyncState } from './sync-state.js'
 import { isSyncStopped } from './sync-control.js'
+import { isSystemJunkPath } from './sync-ignore.js'
 
 const MANIFEST_VERSION = 1
 const now = () => new Date().toISOString()
@@ -99,11 +100,56 @@ async function moveLocalToTrash(rootPath, relativePath, stamp) {
   }
 }
 
+// An empty folder, or one holding only system files (.DS_Store…, which are
+// never synced): Finder writes a .DS_Store into a folder just by showing it,
+// and the folder would then never go away.
+async function removeEmptyLocalDir(target) {
+  try {
+    await fs.rmdir(target)
+  } catch (error) {
+    if (!['ENOTEMPTY', 'EEXIST'].includes(error?.code)) throw error
+    const entries = await fs.readdir(target, { withFileTypes: true })
+    if (!entries.length || !entries.every((entry) => entry.isFile() && isSystemJunkPath(entry.name))) throw error
+    for (const entry of entries) await fs.unlink(join(target, entry.name))
+    await fs.rmdir(target)
+  }
+}
+
+// Before a cloud file is deleted or replaced, a copy goes to the cloud trash
+// (.horsemd/trash/<stamp>/…), and the file must still be the version this
+// sync planned for. Returns { revision } of the file, or null when it is gone.
+// - Server-side copy first (S3 CopyObject, as rclone's --backup-dir does):
+//   nothing is downloaded. Accepted only when the copy reports the planned
+//   ETag; a provider without copy, or a copy that cannot prove the version,
+//   falls back to download + compare + upload.
+// - #161: 七牛 never answered the GET of one image, so deleting a folder
+//   locally stopped the sync at its backup.
+async function backupRemoteToTrash(provider, path, expected, stamp) {
+  const target = trashPath(stamp, path)
+  let copied = false
+  if (typeof provider.copy === 'function' && expected?.revision) {
+    let result
+    try {
+      result = await provider.copy(path, target, { revision: expected.revision })
+    } catch (error) {
+      if (!error?.copyUnsupported) throw error
+      result = undefined
+    }
+    if (result === null) return null
+    if (result?.revision && result.revision === expected.revision) return { revision: expected.revision }
+    copied = result !== undefined
+  }
+  const existing = await provider.get(path)
+  if (!existing) return null
+  verifyRemoteBytes(path, expected, existing.bytes)
+  // A copy whose ETag could not prove the version (some services re-tag
+  // copies) is replaced by the bytes just verified.
+  await provider.put(target, existing.bytes, copied ? {} : { createOnly: true })
+  return { revision: existing.revision }
+}
+
 async function archiveRemoteToTrash(provider, item, stamp) {
-  const existing = await provider.get(item.path)
-  if (!existing) return
-  verifyRemoteBytes(item.path, item.remote || item.previous, existing.bytes)
-  await provider.put(trashPath(stamp, item.path), existing.bytes, { createOnly: true })
+  await backupRemoteToTrash(provider, item.path, item.remote || item.previous, stamp)
 }
 
 export class SyncEngine {
@@ -198,7 +244,7 @@ export class SyncEngine {
     } else if (item.type === 'deleteLocalDir') {
       try {
         // rmdir, never recursive: a folder that received anything stays.
-        await fs.rmdir(assertSafeRelative(this.rootPath, item.path))
+        await removeEmptyLocalDir(assertSafeRelative(this.rootPath, item.path))
       } catch (error) {
         if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error?.code)) throw error
       }
@@ -280,13 +326,23 @@ export class SyncEngine {
         verifyRemoteBytes(item.path, item.remote, remoteFile.bytes)
         await writeLocalBytes(this.rootPath, item.path, remoteFile.bytes)
         files.set(item.path, { ...item.remote, sha256: sha256(remoteFile.bytes) })
-      } else if (item.type === 'deleteRemote') {
-        const existing = await this.provider.get(item.path)
-        if (existing) {
-          verifyRemoteBytes(item.path, item.remote || item.previous, existing.bytes)
-          await this.provider.put(trashPath(stamp, item.path), existing.bytes, { createOnly: true })
-          await this.provider.delete(item.path, { revision: existing.revision })
+      } else if (item.type === 'deleteRemote' && item.systemFile) {
+        // A .DS_Store (…) in the cloud: removed without a trash copy. Never
+        // fails the sync — if it cannot be removed now, it stays listed and
+        // the next sync tries again.
+        let removed = false
+        try {
+          removed = await this.provider.delete(item.path, { revision: item.remote?.revision || null })
+        } catch (error) {
+          if (isSyncStopped(error)) throw error
         }
+        if (removed) {
+          delete manifest.files[item.path]
+          manifest.tombstones[item.path] = { deletedAt: now() }
+        }
+      } else if (item.type === 'deleteRemote') {
+        const existing = await backupRemoteToTrash(this.provider, item.path, item.remote || item.previous, stamp)
+        if (existing) await this.provider.delete(item.path, { revision: existing.revision })
         delete manifest.files[item.path]
         manifest.tombstones[item.path] = { deletedAt: now() }
         files.delete(item.path)

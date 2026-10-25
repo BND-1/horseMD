@@ -138,6 +138,34 @@ export class S3Provider {
     return { revision: response.headers.get('etag')?.replace(/^"|"$/g, '') || null }
   }
 
+  // Server-side copy (CopyObject) for the cloud trash: nothing is downloaded.
+  // `revision`: copy only that version (x-amz-copy-source-if-match). Returns
+  // { revision } — the copy's ETag, which the engine compares with the planned
+  // one, since not every service checks the condition — or null when the
+  // source is gone. A service that has no copy, or refuses it, throws with
+  // `copyUnsupported` so the engine falls back to download + upload.
+  async copy(fromPath, toPath, { revision = null } = {}) {
+    const source = `/${encodePathSegment(this.bucket)}/${this.objectKey(fromPath).split('/').map(encodePathSegment).join('/')}`
+    const headers = { 'x-amz-copy-source': source }
+    if (revision) headers['x-amz-copy-source-if-match'] = `"${revision}"`
+    const response = await this.signedRequest('PUT', toPath, { headers })
+    if (response.status === 404) return null
+    if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
+    // CopyObject can answer 200 with an <Error> body.
+    const text = response.ok ? await response.text() : ''
+    const parsed = (() => { try { return parser.parse(text) } catch { return null } })()
+    if (!response.ok || parsed?.Error) {
+      const code = parsed?.Error?.Code ? ` ${parsed.Error.Code}` : (response.ok ? '' : await failureCode(response))
+      if (/NoSuchKey/.test(code)) return null
+      if (/PreconditionFailed/.test(code)) throw new Error('远端文件已被其他设备修改，请重新同步。')
+      const error = new Error(`S3 复制失败（HTTP ${response.status}${code}）。`)
+      if (response.ok || [400, 403, 405, 501].includes(response.status)) error.copyUnsupported = true
+      throw error
+    }
+    const etag = parsed?.CopyObjectResult?.ETag ?? response.headers.get('etag')
+    return { revision: etag ? String(etag).replace(/^"|"$/g, '') : null }
+  }
+
   // Empty folder: a zero-byte object whose key ends in "/" — what the AWS
   // console, rclone and S3 browsers create and show as a folder. Removing it
   // never touches objects inside the folder.

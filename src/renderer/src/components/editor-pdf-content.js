@@ -317,6 +317,23 @@ const flattenCodeMirrorBlocks = (clone) => {
   })
 }
 
+// Inline `<svg>` source renders as an <img> (editor-html.js). The export CSS
+// makes every image a centred block, so keep an icon in its line and let an
+// SVG without a width fill the line, as in the editor.
+const materializeInlineSvgForExport = (clone) => {
+  clone.querySelectorAll('.hm-html-svg > img').forEach((image) => {
+    const host = image.parentElement
+    if (!host.classList.contains('hm-html-svg-block')) {
+      image.setAttribute('style', 'display:inline-block;margin:0;vertical-align:middle;border-radius:0')
+    } else if (host.classList.contains('hm-html-svg-fluid')) {
+      image.setAttribute('style', 'width:100%;border-radius:0')
+    } else {
+      image.setAttribute('style', 'border-radius:0')
+    }
+    image.setAttribute('data-hm-pdf-preserve', '')
+  })
+}
+
 const stripEditorAttributes = (clone) => {
   clone.querySelectorAll('*').forEach((el) => {
     if (el.closest('[data-hm-pdf-preserve]')) return
@@ -379,6 +396,7 @@ export async function createPdfSourceFromEditor(root, { codeBlocks } = {}) {
   })
 
   await materializeCodePreviewsForExport(clone, mermaidPreviews)
+  materializeInlineSvgForExport(clone)
   materializeTaskListsForExport(clone)
   materializeTableLayoutsForExport(root, clone)
   stripEditorOnlyForExport(clone)

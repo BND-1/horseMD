@@ -6,9 +6,13 @@ import { useCallback, useEffect, useRef } from 'react'
 import { flushDocPositionSave, queueDocPositionSave } from '../lib/doc-positions.js'
 
 export function useDocPositions({ tabsRef, activeId, editorApis, sourceTextareas, editorHosts }) {
-  const saveAllPositions = useCallback(() => {
+  // `onlyIds`: save just these tabs. A tab switch passes the tab being left —
+  // the others have not moved since they were left, and each save maps the
+  // caret through the document's Markdown blocks.
+  const saveAllPositions = useCallback((onlyIds = null) => {
     const positions = {}
     for (const tab of tabsRef.current) {
+      if (onlyIds && !onlyIds.includes(tab.id)) continue
       if (tab.kind === 'settings' || !tab.path) continue
       const api = editorApis.current[tab.id]
       const textarea = sourceTextareas.current[tab.id]
@@ -43,17 +47,43 @@ export function useDocPositions({ tabsRef, activeId, editorApis, sourceTextareas
 
   // Persist when the active tab changes; the leaving tab's editor is still
   // mounted and readable at that point (hidden panes keep their PM selection).
+  // The save runs when idle, not inside the click that switched tabs: the left
+  // tab is hidden and its selection does not change meanwhile, and the switch
+  // should paint first. A pending save is flushed before the next one.
   const lastActiveId = useRef(activeId)
+  const pendingSave = useRef(null)
+  const flushPendingSave = useCallback(() => {
+    const pending = pendingSave.current
+    if (!pending) return
+    pendingSave.current = null
+    pending.cancel()
+    saveAllPositions([pending.id])
+  }, [saveAllPositions])
   useEffect(() => {
     if (lastActiveId.current !== activeId) {
-      saveAllPositions()
+      flushPendingSave()
+      const id = lastActiveId.current
       lastActiveId.current = activeId
+      if (id) {
+        const run = () => {
+          if (pendingSave.current?.id !== id) return
+          pendingSave.current = null
+          saveAllPositions([id])
+        }
+        const idle = typeof window.requestIdleCallback === 'function'
+        const handle = idle ? window.requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 300)
+        pendingSave.current = {
+          id,
+          cancel: () => (idle ? window.cancelIdleCallback(handle) : clearTimeout(handle))
+        }
+      }
     }
-  }, [activeId, saveAllPositions])
+  }, [activeId, saveAllPositions, flushPendingSave])
 
   // Flush the last edits/positions synchronously when the window closes.
   useEffect(() => {
     const flush = () => {
+      if (pendingSave.current) { pendingSave.current.cancel(); pendingSave.current = null }
       saveAllPositions()
       flushDocPositionSave()
     }

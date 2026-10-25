@@ -360,16 +360,43 @@ export default function StatusBar({
   // Windows. Update immediately on tab switch (different id) so the count tracks
   // the active doc without the debounce delay; a trailing fire after the last
   // edit keeps the final value correct.
-  const [s, setS] = useState(() => stats(tab?.content))
+  // The count runs when the main thread is idle (a timer task could land in
+  // the middle of typing: ~15–25 ms per run on Windows for a 250 K-char
+  // document), and is cached per tab, so switching back to an unchanged tab
+  // shows it at once instead of recomputing inside the click.
+  const cacheRef = useRef(new Map())
+  const statsFor = (id, content) => {
+    const hit = cacheRef.current.get(id)
+    if (hit && hit.content === content) return hit.stats
+    const next = stats(content)
+    cacheRef.current.set(id, { content, stats: next })
+    return next
+  }
+  const [s, setS] = useState(() => statsFor(tab?.id, tab?.content))
   const lastTabId = useRef(tab?.id)
   useEffect(() => {
-    if (lastTabId.current !== tab?.id) {
-      lastTabId.current = tab?.id
-      setS(stats(tab?.content))
+    const id = tab?.id
+    const content = tab?.content
+    const switched = lastTabId.current !== id
+    lastTabId.current = id
+    const hit = cacheRef.current.get(id)
+    if (hit && hit.content === content) {
+      setS(hit.stats)
       return
     }
-    const id = setTimeout(() => setS(stats(tab?.content)), 400)
-    return () => clearTimeout(id)
+    const run = () => setS(statsFor(id, content))
+    const idle = typeof window.requestIdleCallback === 'function'
+    let idleHandle = 0
+    const whenIdle = () => {
+      if (idle) idleHandle = window.requestIdleCallback(run, { timeout: 1000 })
+      else run()
+    }
+    // A switched-to tab updates soon; an edit waits for the typing pause.
+    const timer = setTimeout(whenIdle, switched ? 0 : 400)
+    return () => {
+      clearTimeout(timer)
+      if (idleHandle) window.cancelIdleCallback(idleHandle)
+    }
   }, [tab?.id, tab?.content])
   const dirty = isTabDirty(tab)
   return (

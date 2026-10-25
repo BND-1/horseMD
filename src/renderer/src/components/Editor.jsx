@@ -124,12 +124,15 @@ import {
 } from '../lib/source-sync/editor-only-document.js'
 import { reprintVerified } from '../lib/source-reprint/index.js'
 import { forgetParses, incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
+import { createIncrementalSerializer } from '../lib/incremental-serialize.js'
+import { Transform } from '@milkdown/kit/prose/transform'
 // Self-check build (VITE_HM_SYNC_SELF_CHECK=1, used by the regression and
 // fuzz runs): the incremental parse and the per-block comparison memo are
 // re-checked against the full computation on every sync.
 if (import.meta.env?.VITE_HM_SYNC_SELF_CHECK === '1') {
   globalThis.__hmIncrementalParseCheck = true
   globalThis.__hmSemanticMemoCheck = true
+  globalThis.__hmIncrementalSerializeCheck = true
 }
 import { SOURCE_SYNC_OWNERS } from '../lib/source-sync/proof.js'
 import { withoutEmptyContainerParagraphs } from '../lib/source-sync/validator.js'
@@ -164,6 +167,24 @@ const liveEditors = new Set()
  *   - Status bar:      always-visible switcher (wired from App via onReady)
  *   - Plus Crepe's built-in slash menu (`/`) and block handle.
  */
+// SVG images (#162) are vector: open them fitted to the window, keeping their
+// ratio, instead of at the 300×150 an SVG without a width defaults to.
+const isVectorImageSrc = (src) => /^data:image\/svg\+xml|\.svg(?:[?#]|$)/i.test(src || '')
+const fitVectorLightboxImage = (event) => {
+  const image = event.currentTarget
+  if (!image.classList.contains('hm-lightbox-vector')) return
+  const width = image.naturalWidth
+  const height = image.naturalHeight
+  if (!width || !height) return
+  const maxHeight = parseFloat(getComputedStyle(image).maxHeight)
+  const scale = Math.min(
+    (window.innerWidth * 0.9) / width,
+    (Number.isFinite(maxHeight) ? maxHeight : window.innerHeight * 0.95 - 64) / height
+  )
+  image.style.width = `${width * scale}px`
+  image.style.height = `${height * scale}px`
+}
+
 export default function Editor({
   initialContent,
   docPath,
@@ -216,6 +237,9 @@ export default function Editor({
   effectiveKeybindingsRef.current = effectiveKeybindings
   const hostRef = useRef(null)
   const viewRef = useRef(null)
+  // Incremental serializer of this editor (lib/incremental-serialize.js).
+  const incrementalSerializerRef = useRef(null)
+  const fullSerializerRef = useRef(null)
   const apiRef = useRef(null)
   const crepeRef = useRef(null)
   const lastBlockRef = useRef(null)
@@ -3994,12 +4018,55 @@ export default function Editor({
           try {
             const baseSerializer = crepe.editor.ctx.get(serializerCtx)
             const serialized = new WeakMap()
+            // Milkdown's heading-id plugin follows every heading edit with a
+            // transaction that only rewrites heading `id`s, and the heading
+            // serializer writes `level` only: such a document serializes to
+            // the same bytes as the one before it. The sync used to
+            // serialize the whole document again for it twice (~0.1 s each
+            // on Windows for a 250 K-char file) on every heading change.
+            const recent = []
+            const incrementalSerializer = createIncrementalSerializer({
+              serialize: baseSerializer,
+              scheduleIdle: (run) => (typeof requestIdleCallback === 'function'
+                ? requestIdleCallback(run, { timeout: 2000 })
+                : setTimeout(run, 50)),
+              check: () => globalThis.__hmIncrementalSerializeCheck === true,
+              isPrimary: (doc) => doc === viewRef.current?.state.doc,
+              onMismatch: (report) => {
+                traceEditorEvent('incremental-serialize-mismatch', report)
+                if (globalThis.__hmIncrementalSerializeCheck === true) {
+                  fireToast(`增量序列化与整篇序列化不一致（${report.reason}）`, { sticky: true })
+                }
+              }
+            })
+            incrementalSerializerRef.current = incrementalSerializer
+            fullSerializerRef.current = baseSerializer
+            // Diagnostics (perf benches): every editor's counters.
+            ;(globalThis.__hmIncrementalSerializeAll ??= []).push({
+              stats: incrementalSerializer.stats,
+              children: () => viewRef.current?.state.doc.childCount ?? 0
+            })
             const memoSerializer = (doc) => {
               const keyed = doc && typeof doc === 'object'
+              const style = serializerStyleHolder.style
               const hit = keyed ? serialized.get(doc) : null
-              if (hit && hit.style === serializerStyleHolder.style) return hit.markdown
-              const markdown = baseSerializer(doc)
-              if (keyed) serialized.set(doc, { style: serializerStyleHolder.style, markdown })
+              if (hit && hit.style === style) return hit.markdown
+              if (keyed) {
+                const twin = recent.find((entry) => entry.style === style && entry.doc.deref?.() && sameIgnoringHeadingIds(entry.doc.deref(), doc))
+                if (twin) {
+                  serialized.set(doc, { style, markdown: twin.markdown })
+                  incrementalSerializer.adoptEquivalent(twin.doc.deref(), doc)
+                  return twin.markdown
+                }
+              }
+              // Large documents: only the changed blocks are serialized again
+              // (lib/incremental-serialize.js; proven per call, else full).
+              const markdown = keyed ? incrementalSerializer.serialize(doc, style) : baseSerializer(doc)
+              if (keyed) {
+                serialized.set(doc, { style, markdown })
+                recent.unshift({ doc: new WeakRef(doc), style, markdown })
+                recent.length = Math.min(recent.length, 2)
+              }
               return markdown
             }
             crepe.editor.ctx.set(serializerCtx, memoSerializer)
@@ -4474,6 +4541,18 @@ export default function Editor({
               equivalent: (markdown, doc) => validateTransactionMarkdown({ markdown, expectedDoc: doc }) === true,
               reprint: (source, doc, previousDoc = null) => reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
               ,
+              // Incremental serialization (lib/incremental-serialize.js):
+              // counters, and serialize a document through it (the test then
+              // compares with `serialize` of a fresh full serializer).
+              incrementalSerializeStats: () => ({ ...incrementalSerializerRef.current?.stats, enabled: incrementalSerializerRef.current?.enabled }),
+              serializeFull: (doc) => fullSerializerRef.current?.(doc),
+              newTransform: (doc) => new Transform(doc),
+              // Start over from the live document (as after opening it).
+              incrementalSerializeRebase: () => {
+                const live = viewRef.current?.state.doc
+                incrementalSerializerRef.current?.forget()
+                return live ? incrementalSerializerRef.current?.serialize(live, serializerStyleHolder.style)?.length : null
+              },
               // Differential check of the incremental parse: each text is
               // parsed incrementally from the previous RESULT (so splices
               // build on splices) and compared with a full parse.
@@ -4854,7 +4933,7 @@ export default function Editor({
         >
           {zoom.type === 'svg'
             ? <div ref={lightboxContentRef} className="hm-lightbox-svg" dangerouslySetInnerHTML={{ __html: zoom.html }} onClick={(e) => e.stopPropagation()} />
-            : <img ref={lightboxContentRef} src={zoom.src} alt="" onClick={(e) => e.stopPropagation()} />
+            : <img ref={lightboxContentRef} src={zoom.src} alt="" className={isVectorImageSrc(zoom.src) ? 'hm-lightbox-vector' : undefined} onLoad={fitVectorLightboxImage} onClick={(e) => e.stopPropagation()} />
           }
           <div className="hm-lightbox-controls" onClick={(e) => e.stopPropagation()}>
             <button title={t('lightbox.zoomOut')} aria-label={t('lightbox.zoomOut')} onClick={zoomOut}>

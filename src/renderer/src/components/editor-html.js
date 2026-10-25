@@ -162,8 +162,10 @@ const MEDIA_TARGET = 'video, audio, iframe'
 // unsafe/unknown html nodes to the default escaped-text rendering. The node is
 // an atom (no editable content), so we ignore inner DOM mutations — the original
 // HTML round-trips through attrs.value when saving.
-export function renderHtmlNodeView(node) {
+export function renderHtmlNodeView(node, view, getPos) {
   const value = node.attrs?.value || ''
+  const svg = SVG_RE.test(value) ? svgImageSrc(value) : null
+  if (svg) return renderSvgNodeView(value, svg, view, getPos)
   const isBlock = BLOCK_RE.test(value)
   const isInline = !isBlock && INLINE_RE.test(value)
   if (!isBlock && !isInline) {
@@ -200,6 +202,66 @@ export function renderHtmlNodeView(node) {
       stopEvent: (event) => Boolean(event.target?.closest?.(MEDIA_TARGET))
     }
   }
+  return { dom, ignoreMutation: () => true, stopEvent: () => false }
+}
+
+// Inline `<svg>…</svg>` (issue #162; AI tools hand out diagrams as SVG
+// source). Rendered as an <img> of the same markup, not as live DOM: inside an
+// image the SVG runs no script, and its <style> rules and ids stay inside it
+// (two AI diagrams both using `id="g"` for a gradient would otherwise paint
+// each other's fills, and a <style> would restyle the whole page). The
+// lightbox and PDF/HTML export take it like any image. Display only — the
+// node keeps the authored bytes in attrs.value.
+const SVG_RE = /^\s*<svg[\s>][\s\S]*<\/svg>\s*$/i
+const SVG_CACHE = new Map()
+const SVG_NS = 'http://www.w3.org/2000/svg'
+// The document font, for text the SVG does not give a font: inline in a page
+// it would inherit the paragraph font, inside an image it gets the browser
+// default serif.
+const editorFontFamily = () => {
+  const host = document.querySelector('.milkdown .ProseMirror') || document.body
+  return getComputedStyle(host).fontFamily || 'sans-serif'
+}
+function svgImageSrc(value) {
+  const font = editorFontFamily()
+  const key = `${font}\n${value}`
+  if (SVG_CACHE.has(key)) return SVG_CACHE.get(key)
+  let out = null
+  const tpl = document.createElement('template')
+  tpl.innerHTML = value.trim()
+  const nodes = [...tpl.content.childNodes].filter((n) => n.nodeType !== Node.TEXT_NODE || n.nodeValue.trim())
+  const svg = nodes.length === 1 ? nodes[0] : null
+  if (svg && svg.namespaceURI === SVG_NS && svg.localName === 'svg') {
+    svg.querySelectorAll('script').forEach((el) => el.remove())
+    if (!svg.hasAttribute('font-family') && !/font(-family)?\s*:/i.test(svg.getAttribute('style') || '')) {
+      svg.setAttribute('font-family', font)
+    }
+    const hasSize = svg.hasAttribute('width')
+    const markup = new XMLSerializer().serializeToString(svg)
+    out = { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, hasSize }
+  }
+  if (SVG_CACHE.size >= SANITIZE_CACHE_MAX) SVG_CACHE.delete(SVG_CACHE.keys().next().value)
+  SVG_CACHE.set(key, out)
+  return out
+}
+function renderSvgNodeView(value, svg, view, getPos) {
+  // Alone in its paragraph (an HTML block) it is a block figure; next to text
+  // it sits in the line like an icon.
+  let alone = false
+  try {
+    const pos = typeof getPos === 'function' ? getPos() : null
+    if (Number.isFinite(pos)) alone = view.state.doc.resolve(pos).parent.childCount === 1
+  } catch { /* view not ready: inline */ }
+  const dom = document.createElement('span')
+  dom.className = `hm-html-svg${alone ? ' hm-html-svg-block' : ''}${svg.hasSize ? '' : ' hm-html-svg-fluid'}`
+  dom.setAttribute('data-type', 'html')
+  dom.setAttribute('data-value', value)
+  dom.contentEditable = 'false'
+  const img = document.createElement('img')
+  img.src = svg.src
+  img.alt = ''
+  img.draggable = false
+  dom.appendChild(img)
   return { dom, ignoreMutation: () => true, stopEvent: () => false }
 }
 

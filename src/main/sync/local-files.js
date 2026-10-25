@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
+import { isSystemJunkPath } from './sync-ignore.js'
 
 const INTERNAL_DIRS = new Set(['.horsemd', '.git', '.obsidian', 'node_modules'])
 
@@ -27,6 +28,8 @@ export async function scanLocalWorkspace(rootPath, { maxFiles = 20000 } = {}) {
         continue
       }
       if (!entry.isFile()) continue
+      // .DS_Store / Thumbs.db / desktop.ini / ._*: never synced (sync-ignore.js).
+      if (isSystemJunkPath(entry.name)) continue
       if (files.size >= maxFiles) throw new Error(`同步文件数量超过上限（${maxFiles}）。`)
       const relativePath = relative(rootPath, fullPath)
       if (!relativePath || relativePath.startsWith(`..${sep}`) || isInternalRelativePath(relativePath)) continue
@@ -57,7 +60,8 @@ export async function scanLocalEmptyDirs(rootPath) {
         if (INTERNAL_DIRS.has(entry.name)) continue
         children += 1
         await walk(join(dir, entry.name))
-      } else if (entry.isFile()) {
+      } else if (entry.isFile() && !isSystemJunkPath(entry.name)) {
+        // A folder holding only a .DS_Store is an empty folder to sync.
         children += 1
       }
     }

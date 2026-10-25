@@ -188,6 +188,22 @@ function normalizeDoc(json) {
       const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
       const emphasized = (child) => child?.type === 'text' &&
         (child.marks || []).some((mark) => INVISIBLE_ON_BLANK.has(mark.type))
+      // Edge blanks of a run that touches another such run are a real space
+      // between the two runs, wherever they sit: `<font>a </font><font>b</font>`
+      // (live, blanks inside the first run) saves as
+      // `<font>a</font> <font>b</font>` (blank run between). Split them out as
+      // a plain blank run first, so the rule below sees one spelling
+      // (yuque fuzz seeds 42 / 48, 2026-10-24: 4 spaces, visible text equal).
+      node.content = node.content.flatMap((child, index) => {
+        if (!emphasized(child) || child.text.trim() === '') return [child]
+        const lead = child.text.match(/^[ \t]*/)[0]
+        const trail = child.text.match(/[ \t]*$/)[0]
+        const out = []
+        if (lead && emphasized(node.content[index - 1])) out.push({ type: 'text', text: lead })
+        out.push(child)
+        if (trail && emphasized(node.content[index + 1])) out.push({ type: 'text', text: trail })
+        return out
+      })
       node.content.forEach((child, index) => {
         if (child.type !== 'text') return
         // A bold/italic run of only spaces is just spaces (no delimiters can
