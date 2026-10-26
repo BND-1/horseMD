@@ -252,12 +252,22 @@ export class SyncEngine {
     }
   }
 
-  async execute(preview = null, strategy = 'merge') {
+  // `safeOnly` (automatic sync): the plan is the one computed here, right
+  // before running — never one the window previewed minutes ago. A plan
+  // that deletes or has a conflict is not run ({ needsConfirmation }), and
+  // one with nothing to do returns { idle } without touching the cloud (no
+  // manifest PUT every few minutes; 数据胶囊 limits PUTs).
+  async execute(preview = null, strategy = 'merge', { safeOnly = false } = {}) {
     const prepared = preview || await this.preview(strategy)
+    if (safeOnly && prepared.status !== 'ready') return { needsConfirmation: true, reason: prepared.status, summary: prepared.summary }
     if (prepared.status !== 'ready') {
       throw new Error('云端工作区已被清空或替换。请明确选择上传本地或下载云端，HorseMD 不会自动删除本地文件。')
     }
     const { localFiles, state, remote, plan } = prepared
+    if (safeOnly) {
+      if (prepared.summary.delete > 0 || prepared.summary.conflict > 0) return { needsConfirmation: true, reason: 'changes', summary: prepared.summary }
+      if (!plan.operations.some((item) => !['keep', 'keepDir', 'forgetDir'].includes(item.type))) return { idle: true, summary: prepared.summary }
+    }
     // Empty folders present on both sides after this run.
     const dirs = new Set(plan.operations.filter((item) => item.type === 'keepDir').map((item) => item.path))
     const previousDirs = new Set(state.dirs || [])

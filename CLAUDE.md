@@ -572,6 +572,26 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   there without a trash copy, hidden from the preview list and not counted
   as a deletion; a folder holding only those is an empty folder (and is
   removed with them). Locked by `test:sync-trash-copy`.
+  七牛 (#161, measured 2026-10-26 with a real bucket): every download
+  carries `content-disposition: …filename="<key>"` with the key's Chinese
+  as raw UTF-8. Electron's `net.fetch` throws on that header inside its own
+  listener (uncaught, swallowed by the process guard) and never settles, so
+  every Chinese-named download hit the 60 s timeout. Sync requests use
+  `sync/electron-request.js` (`net.request`, raw headers → non-Latin-1
+  values passed on as UTF-8 bytes, `cache: 'no-store'` — net.fetch served
+  manifest GETs from the HTTP cache); do not switch back to net.fetch.
+  七牛 also writes ETags as `&#34;…&#34;` in XML, so both XML parsers use
+  `htmlEntities: true` (numeric references; `&amp;` still decoded once).
+  Locked by `test:sync-electron-request` (bare Electron + raw server).
+  Automatic sync (`hooks/useAutoSync.js`, `settings.syncAutoMinutes` ∈
+  0/5/15/30/60, default off, Settings › 云同步 › 同步文件夹): every N
+  minutes each bound folder runs `sync:run` with `{ safeOnly: true }` —
+  main re-plans right before running (never a stale renderer preview) and
+  returns `{ needsConfirmation }` for deletions / conflicts / an emptied
+  cloud (nothing touched; one toast per situation, a warning line under the
+  folder) and `{ idle }` with no request that writes when nothing changed.
+  A tick is skipped while any sync runs. Locked by `test:sync-auto` +
+  `test:auto-sync-ui` (`globalThis.__hmAutoSyncTick` runs a tick).
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
@@ -785,24 +805,30 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   ProseMirror's base keymap prevents every Escape (selectParentNode) and the
   slash menu has already closed by the bubble phase. Mobile also hides the system
   status bar (`window.api.setSystemBarsHidden`). Desktop edge reveal
-  (`.hm-immersive-edges` + `hm-reveal`): the pointer within 4 px of the top,
-  bottom OR left edge (no button pressed) slides the WHOLE shell in — top
-  bar, status bar, activity bar + open sidebar, in the normal window
-  arrangement — as fixed overlays, after the pointer rests 180 ms at the edge (crossing
-  it on the way to the Dock / menu bar and leaving the window reveals
-  nothing), and out 450 ms after the pointer leaves all of them. The
-  document slides right just enough to clear the sidebar (`.pane-center`
-  transform `--hm-reveal-shift`, re-measured when the sidebar opens/closes
-  and after every click while out — a tab or source/rich switch moves the
-  text; measure against the transform's CURRENT animated value). The hide
-  timer checks where the pointer last was (`pointerStays`), not focus: a
-  click on a bar moves focus without moving the pointer;
-  a window too narrow for that lays it out beside the sidebar
-  (`--hm-reveal-inset`) (held while
-  a `.menu-backdrop` is open or a text field inside has focus). Hidden bars
-  sit outside the window with `-webkit-app-region: no-drag`, so the top of
-  the document never drags the window. Locked by
-  `npm run test:immersive-mode-ui`.
+  (`.hm-immersive-edges` + `hm-reveal`): the pointer within 16 px of the
+  top (the empty space above the first line) or 10 px of the bottom / left
+  edge (no button pressed) slides the WHOLE shell in — top bar, status bar,
+  activity bar + open sidebar, in the normal window arrangement — as fixed
+  overlays, after the pointer rests 100 ms in the zone (crossing it on the
+  way to the Dock / menu bar and leaving the window reveals nothing), and
+  out 450 ms after the pointer leaves all of them. In 0.26 s
+  (decelerating), out 0.2 s, with a fade; static shadow, `will-change`
+  bars. The document slides right just enough to clear the sidebar: an
+  INLINE `transform` (or, in a window too narrow for that, `margin-left`)
+  on `.pane-center`, measured on the plain layout BEFORE the reveal and
+  committed in the same task (`flushSync`), so bars and text start in the
+  same frame; re-measured when the sidebar opens/closes and after every
+  click while out (measure against the transform's CURRENT animated
+  value). Never a CSS variable on `.app` / `.pane-center` (inherited: every
+  change restyled the ~6 000 elements of a long document, 10+ ms in the
+  slide's first frame), and never a `.app.hm-… X *` rule (a universal
+  descendant makes every `hm-reveal` toggle restyle the whole app). The
+  hide timer checks where the pointer last was (`pointerStays`), not
+  focus: a click on a bar moves focus without moving the pointer (held
+  while a `.menu-backdrop` is open or a text field inside has focus).
+  Hidden bars sit outside the window with `-webkit-app-region: no-drag`
+  (named drag elements only), so the top of the document never drags the
+  window. Locked by `npm run test:immersive-mode-ui`.
 - **Reading mode** (#163, `hooks/useReadingMode.js`, `settings.readingMode`,
   command `view.readingMode`, default `Mod+Shift+R`, status-bar switch,
   persisted): desktop documents become read-only through the same `readOnly`

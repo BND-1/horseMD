@@ -56,6 +56,7 @@ import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
 import { useSplitScrollSync } from './hooks/useSplitScrollSync.js'
 import { useAttachments } from './hooks/useAttachments.js'
 import { useSyncWorkspaces } from './hooks/useSyncWorkspaces.js'
+import { useAutoSync } from './hooks/useAutoSync.js'
 import { usePdfExport } from './hooks/usePdfExport.js'
 import { useHtmlExport } from './hooks/useHtmlExport.js'
 import { usePandocExport } from './hooks/usePandocExport.js'
@@ -634,6 +635,7 @@ export default function App() {
   useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
 
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
+  const autoSyncStatus = useAutoSync({ sync: syncWorkspaces, minutes: settings.syncAutoMinutes, tRef })
   const addDroppedFolder = useCallback((path) => {
     addFolder(path)
     // A dropped directory is a workspace action. Reveal the file tree even on
@@ -1402,6 +1404,7 @@ export default function App() {
               globalShortcutStatus={globalShortcutStatus}
               cloudSync={syncWorkspaces.supported}
               syncWorkspaces={syncWorkspaces}
+              autoSyncStatus={autoSyncStatus}
               folderRoots={folderRoots}
               onEnableSyncFolder={enableSyncFolder}
               onAddSyncFolder={addSyncFolder}

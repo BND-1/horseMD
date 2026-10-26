@@ -65,7 +65,7 @@ const api = {
   syncBindWorkspaceConnection: (rootPath, connectionId) =>
     ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId),
   syncPreview: (rootPath, strategy) => ipcRenderer.invoke('sync:preview', rootPath, strategy),
-  syncRun: (rootPath, strategy) => ipcRenderer.invoke('sync:run', rootPath, strategy),
+  syncRun: (rootPath, strategy, options) => ipcRenderer.invoke('sync:run', rootPath, strategy, options),
   onSyncProgress: on('sync:progress'),
   // action: 'pause' | 'resume' | 'stop'
   syncControl: (rootPath, action) => ipcRenderer.invoke('sync:control', rootPath, action),

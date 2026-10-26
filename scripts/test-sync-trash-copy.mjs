@@ -224,6 +224,12 @@ try {
       // engine trusts a copy only when its ETag equals the planned one.
       reply = { status: 200, body: '<CopyObjectResult><ETag>""</ETag></CopyObjectResult>' }
       assert.deepEqual(await s3.copy('a', 'b', { revision: 'x' }), { revision: '' })
+      // 七牛 (measured 2026-10-26) escapes the quotes as &#34; — in copy
+      // results and in listings. Undecoded, no copy ever proved its version.
+      reply = { status: 200, body: '<CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ETag>&#34;ecaafc5f&#34;</ETag></CopyObjectResult>' }
+      assert.deepEqual(await s3.copy('a', 'b', { revision: 'ecaafc5f' }), { revision: 'ecaafc5f' })
+      reply = { status: 200, body: '<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>HorseMD/ws/a&amp;b &#x6B22;.md</Key><ETag>&#34;e1&#34;</ETag><Size>3</Size></Contents></ListBucketResult>' }
+      assert.deepEqual((await s3.list('')).map(({ href, etag }) => ({ href, etag })), [{ href: 'a&b 欢.md', etag: 'e1' }])
       reply = { status: 200, body: '<Error><Code>InternalError</Code></Error>' }
       await assert.rejects(s3.copy('a', 'b'), (error) => error.copyUnsupported === true)
       reply = { status: 501, body: '<Error><Code>NotImplemented</Code></Error>' }

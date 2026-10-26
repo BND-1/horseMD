@@ -139,7 +139,7 @@ export class SyncService {
     return (await this.engineFor(rootPath)).preview(strategy)
   }
 
-  async run(rootPath, strategy = 'merge', onProgress = null) {
+  async run(rootPath, strategy = 'merge', onProgress = null, { safeOnly = false } = {}) {
     const key = rootPath.toLowerCase()
     if (this.running.has(key)) throw new Error('这个文件夹正在同步。')
     this.running.add(key)
@@ -147,7 +147,7 @@ export class SyncService {
     const control = new SyncControl({ onChange: (state) => onProgress?.({ control: state }) })
     this.controls.set(key, control)
     try {
-      return await (await this.engineFor(rootPath, onProgress, control)).execute(null, strategy)
+      return await (await this.engineFor(rootPath, onProgress, control)).execute(null, strategy, { safeOnly })
     } finally {
       this.running.delete(key)
       this.runningPaths.delete(key)
@@ -205,7 +205,7 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     trusted(event)
     return syncService.preview(rootPath, strategy)
   })
-  ipcMain.handle('sync:run', async (event, rootPath, strategy) => {
+  ipcMain.handle('sync:run', async (event, rootPath, strategy, options) => {
     trusted(event)
     // Progress (and long throttling waits) go to the window that started it.
     const sender = event.sender
@@ -219,7 +219,9 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
       } catch { /* window gone */ }
     }
     try {
-      return await syncService.run(rootPath, strategy, report)
+      // safeOnly: automatic sync (hooks/useAutoSync.js) — merge only.
+      const safeOnly = options?.safeOnly === true
+      return await syncService.run(rootPath, safeOnly ? 'merge' : strategy, report, { safeOnly })
     } finally {
       report({ done: true })
     }

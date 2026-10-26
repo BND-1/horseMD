@@ -2,10 +2,13 @@ import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'node:crypto'
 import { RequestPacer, throttleHint } from './request-pacer.js'
 
+// htmlEntities: numeric character references (&#34;) are standard XML; see
+// s3-provider.js (七牛 escapes quotes that way).
 const parser = new XMLParser({
   ignoreAttributes: false,
   removeNSPrefix: true,
-  textNodeName: '#text'
+  textNodeName: '#text',
+  htmlEntities: true
 })
 
 const asArray = (value) => (value == null ? [] : Array.isArray(value) ? value : [value])

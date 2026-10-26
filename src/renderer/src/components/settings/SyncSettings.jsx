@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { baseName } from '../../paths.js'
 import { Icon } from '../icons.jsx'
+import { SYNC_AUTO_MINUTES } from '../../settings.js'
 
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
 
@@ -282,6 +283,23 @@ function RemoteResetDialog({ recovery, onPush, onPull, onCancel, t }) {
   </div>
 }
 
+// Last automatic sync of one folder (hooks/useAutoSync.js).
+function AutoSyncLine({ status, t }) {
+  const time = new Date(status.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const summary = status.summary || {}
+  let text = ''
+  if (status.kind === 'done') text = t('sync.auto.done', { time, upload: summary.upload || 0, download: summary.download || 0 })
+  else if (status.kind === 'idle') text = t('sync.auto.idle', { time })
+  else if (status.kind === 'confirm') text = status.reason === 'changes'
+    ? t('sync.auto.needsConfirm', { time, delete: summary.delete || 0, conflict: summary.conflict || 0 })
+    : t('sync.auto.remoteReset', { time })
+  else if (status.kind === 'stopped') text = t('sync.auto.stopped', { time })
+  else if (status.kind === 'error') text = t('sync.auto.failed', { time, msg: status.message })
+  if (!text) return null
+  const warn = status.kind === 'confirm' || status.kind === 'error'
+  return <div className={`sync-auto-line${warn ? ' warn' : ''}`}>{text}</div>
+}
+
 // Running sync: file count, or the long wait while the service throttles,
 // with pause / continue / stop.
 function SyncProgressLine({ progress, onControl, t }) {
@@ -335,6 +353,9 @@ export default function SyncSettings({
   onRun,
   onListRemoteWorkspaces,
   onJoinWorkspace,
+  autoSyncStatus = {},
+  settings = {},
+  onUpdateSettings,
   t
 }) {
   const [openForms, setOpenForms] = useState({ webdav: false, s3: false })
@@ -528,6 +549,24 @@ export default function SyncSettings({
         <Icon name="info" size={15} />
         <span>{t('sync.localFolderTip')}</span>
       </div>
+      {onUpdateSettings && <div className="settings-row sync-auto-row">
+        <div className="settings-row-text">
+          <div className="settings-row-label">{t('sync.auto.label')}</div>
+          <div className="settings-row-desc">{t('sync.auto.desc')}</div>
+        </div>
+        <div className="settings-segmented">
+          {SYNC_AUTO_MINUTES.map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              className={`settings-segmented-option${(settings.syncAutoMinutes || 0) === minutes ? ' active' : ''}`}
+              onClick={() => onUpdateSettings({ syncAutoMinutes: minutes })}
+            >
+              {minutes === 0 ? t('sync.auto.off') : t('sync.auto.minutes', { n: minutes })}
+            </button>
+          ))}
+        </div>
+      </div>}
       {loading && <div className="sync-empty">{t('sync.loading')}</div>}
       {!loading && <div className="sync-folder-list">
         {registered.map((entry) => {
@@ -586,6 +625,7 @@ export default function SyncSettings({
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
+            {!busy && entry.connectionId && autoSyncStatus[pathKey(entry.rootPath)] && <AutoSyncLine status={autoSyncStatus[pathKey(entry.rootPath)]} t={t} />}
             {busy && <SyncProgressLine
               progress={progress?.rootPath === entry.rootPath ? progress : { rootPath: entry.rootPath, completed: 0, total: 0 }}
               onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}

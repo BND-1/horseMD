@@ -22,6 +22,9 @@ export const PAGE_WIDTH_PRESETS = [
 // Auto-save inactivity delays offered in Settings › Files (seconds; 0 = off).
 export const AUTO_SAVE_DELAYS = [0, 3, 10, 60]
 
+// Automatic cloud sync intervals offered in Settings › Sync (minutes; 0 = off).
+export const SYNC_AUTO_MINUTES = [0, 5, 15, 30, 60]
+
 // Outline tiers expanded when a document is first shown (#122; 0 = all).
 export const OUTLINE_DEFAULT_LEVELS = [1, 2, 3, 4, 0]
 export const DEFAULT_OUTLINE_LEVEL = 2
@@ -212,6 +215,10 @@ export const DEFAULT_SETTINGS = {
   // loses focus). 0 = off. Untitled tabs, external-change conflicts and
   // unmappable rich edits are never auto-saved — see hooks/useAutoSave.js.
   autoSaveDelay: 0,
+  // Automatic sync: minutes between two-way syncs of every folder bound to a
+  // cloud connection. 0 = off. Deletions / conflicts still wait for the user
+  // — see hooks/useAutoSync.js.
+  syncAutoMinutes: 0,
   // Outline default expansion (#122): how many heading tiers the outline shows
   // for a document seen for the first time this session. 0 = everything.
   outlineDefaultLevel: DEFAULT_OUTLINE_LEVEL,
@@ -302,6 +309,7 @@ export function loadSettings() {
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
       autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,
+      syncAutoMinutes: SYNC_AUTO_MINUTES.includes(raw.syncAutoMinutes) ? raw.syncAutoMinutes : 0,
       outlineDefaultLevel: OUTLINE_DEFAULT_LEVELS.includes(raw.outlineDefaultLevel)
         ? raw.outlineDefaultLevel
         : DEFAULT_OUTLINE_LEVEL,

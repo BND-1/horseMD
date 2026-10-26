@@ -110,7 +110,7 @@ try {
   console.log(`Crepe instances: baseline ${baseline}, after closing 5 tabs ${after} (mounted editors ${mounted})`)
   assert.ok(after <= baseline + 1, `closed tabs keep their editors: ${after} Crepe instances (baseline ${baseline})`)
 
-  const toast = await app.evaluate(`[...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' | ')`)
+  const toast = await app.evaluate(`[...document.querySelectorAll('.hm-toast')].map((t) => t.textContent).join(' | ')`)
   assert.ok(!/不一致|mismatch/i.test(toast), `unexpected toast: ${toast}`)
   console.log('closed-tab memory: PASS')
 } finally {

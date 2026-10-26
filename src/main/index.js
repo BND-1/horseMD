@@ -10,6 +10,7 @@ import { registerDocumentIpc } from './documents.js'
 import { registerFileSystemIpc } from './filesystem.js'
 import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
 import { registerSyncServiceIpc, SyncService } from './sync-service.js'
+import { createElectronRequest } from './sync/electron-request.js'
 import { registerWatcherIpc } from './watchers.js'
 import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
@@ -543,7 +544,9 @@ registerSyncServiceIpc(ipcMain, {
   syncService: new SyncService({
     getUserDataPath: () => app.getPath('userData'),
     safeStorage,
-    request: (url, init) => net.fetch(url, init),
+    // net.request, not net.fetch: 七牛 sends non-ASCII header bytes that make
+    // net.fetch hang (sync/electron-request.js).
+    request: createElectronRequest(net),
     // Sync requests in the input trace (#161): method, URL, status, timing.
     traceLog: inputTraceEnabled
       ? (entry) => {

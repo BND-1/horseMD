@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 
 // Full-screen reading/editing mode (Typora-style): the shell (tabs, activity
@@ -39,11 +40,15 @@ const escOwnedElsewhere = (event) => {
   return Boolean(document.querySelector(ESC_OWNERS))
 }
 
-// Distance from the window edge that counts as "at the edge", how long the
+// Distance from each window edge that counts as "at the edge", how long the
 // pointer rests there before the bars come out, and how long it may be away
-// before they slide out (crossing a gap or overshooting is fine).
-const EDGE_PX = 4
-const REVEAL_DWELL_MS = 180
+// before they slide out (crossing a gap or overshooting is fine). The top
+// zone is the empty space above the first line (36 px in full screen); a
+// 4 px zone with a 180 ms rest was hard to hit. Passing through 10–16 px on
+// the way to the Dock / menu bar takes a frame or two, far under the rest.
+const TOP_EDGE_PX = 16
+const SIDE_EDGE_PX = 10
+const REVEAL_DWELL_MS = 100
 const HIDE_DELAY_MS = 450
 // Space kept between the revealed sidebar and the document text.
 const CLEARANCE_PX = 24
@@ -55,9 +60,55 @@ const REVEAL_PARTS = '.topbar, .statusbar, .activity-bar, .pane-left, .pane-left
 const REVEAL_HOLDERS = '.menu-backdrop'
 
 const atEdge = (event) =>
-  event.clientY <= EDGE_PX ||
-  event.clientY >= window.innerHeight - 1 - EDGE_PX ||
-  event.clientX <= EDGE_PX
+  event.clientY <= TOP_EDGE_PX ||
+  event.clientY >= window.innerHeight - 1 - SIDE_EDGE_PX ||
+  event.clientX <= SIDE_EDGE_PX
+
+// How the document makes room for the revealed sidebar, measured on the
+// plain layout: { shift } slides it right (a transform: no re-layout), or
+// { inset } lays it out beside the sidebar when the window is too narrow.
+// Written as the pane's own inline transform / margin — NOT a CSS variable
+// on .app or the pane: a custom property is inherited, and changing it
+// restyled every element of the document (≈ 6 000 on a long one, 10+ ms)
+// in the first frame of the slide.
+function revealRoom() {
+  const centre = document.querySelector('.app .pane-center')
+  if (!centre) return null
+  const pane = document.querySelector('.app .pane-left:not(.collapsed)')
+  const activity = document.querySelector('.app .activity-bar')
+  const cover = (activity?.offsetWidth || 0) + (pane?.offsetWidth || 0)
+  const text = [...centre.querySelectorAll('.ProseMirror, textarea.source-editor')].find((node) => node.offsetParent)
+  if (!text) return { centre, cover, shift: 0, inset: 0 }
+  // Without what is applied right now (the slide animates: read its current
+  // value) — the plain position of the characters.
+  const matrix = getComputedStyle(centre).transform
+  const moved = matrix && matrix !== 'none' ? new DOMMatrixReadOnly(matrix).m41 : 0
+  const inset = parseFloat(centre.style.marginLeft) || 0
+  // Already laid out beside an unchanged sidebar: the margin re-flowed the
+  // text, so its position no longer tells the plain one — keep it.
+  if (inset && inset === cover) return { centre, cover, shift: 0, inset }
+  const rect = text.getBoundingClientRect()
+  const left = rect.left - moved - inset + (parseFloat(getComputedStyle(text).paddingLeft) || 0)
+  const right = rect.right - moved - inset
+  const shift = Math.max(0, Math.round(cover + CLEARANCE_PX - left))
+  if (shift && right + shift > window.innerWidth) return { centre, cover, shift: 0, inset: cover }
+  return { centre, cover, shift, inset: 0 }
+}
+
+function applyRoom(room) {
+  if (!room?.centre) return
+  const transform = room.shift ? `translateX(${room.shift}px)` : ''
+  const margin = room.inset ? `${room.inset}px` : ''
+  if (room.centre.style.transform !== transform) room.centre.style.transform = transform
+  if (room.centre.style.marginLeft !== margin) room.centre.style.marginLeft = margin
+}
+
+function clearRoom() {
+  const centre = document.querySelector('.app .pane-center')
+  if (!centre) return
+  if (centre.style.transform) centre.style.transform = ''
+  if (centre.style.marginLeft) centre.style.marginLeft = ''
+}
 
 const isTextField = (node) =>
   node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT')
@@ -127,11 +178,23 @@ export function useImmersiveMode({ enabled, effectiveKeybindings, platform, reve
       if (showTimer) clearTimeout(showTimer)
       showTimer = 0
     }
+    // The bars (class, via React) and the document (inline transform) must
+    // start moving in the same frame: commit synchronously, then place the
+    // document with the room measured while it was still plain.
+    const show = () => {
+      const room = revealRoom()
+      flushSync(() => setReveal(true))
+      applyRoom(room)
+    }
+    const hide = () => {
+      flushSync(() => setReveal(false))
+      clearRoom()
+    }
     const scheduleShow = () => {
       if (showTimer) return
       showTimer = setTimeout(() => {
         showTimer = 0
-        setReveal(true)
+        show()
       }, REVEAL_DWELL_MS)
     }
     const holds = () => {
@@ -144,7 +207,7 @@ export function useImmersiveMode({ enabled, effectiveKeybindings, platform, reve
       if (hideTimer) return
       hideTimer = setTimeout(() => {
         hideTimer = 0
-        if (revealRef.current && !pointerStays && !holds()) setReveal(false)
+        if (revealRef.current && !pointerStays && !holds()) hide()
       }, HIDE_DELAY_MS)
     }
     const onMove = (event) => {
@@ -178,66 +241,23 @@ export function useImmersiveMode({ enabled, effectiveKeybindings, platform, reve
     return () => {
       cancelHide()
       cancelShow()
+      clearRoom()
       window.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseout', onOut)
       document.removeEventListener('focusout', onFocusOut)
     }
   }, [active, revealEdges])
 
-  // How far the document slides right so the revealed sidebar never covers
-  // its text. Re-measured when the sidebar opens, closes or is resized while
-  // the bars are out (e.g. its activity-bar button was clicked).
+  // While the bars are out, keep the document clear of the sidebar when it
+  // opens, closes or is resized, or a click swaps what is shown (another
+  // tab, source/rich, a file from the sidebar). The first placement happens
+  // in show(), before the slide starts.
   useEffect(() => {
-    const app = document.querySelector('.app')
-    if (!app) return undefined
-    const clear = () => {
-      app.style.removeProperty('--hm-reveal-shift')
-      app.style.removeProperty('--hm-reveal-inset')
-    }
     if (!(active && reveal)) {
-      clear()
+      clearRoom()
       return undefined
     }
-    let current = 0
-    let inset = 0
-    const measure = () => {
-      const pane = document.querySelector('.app .pane-left:not(.collapsed)')
-      const activity = document.querySelector('.app .activity-bar')
-      const cover = (activity?.offsetWidth || 0) + (pane?.offsetWidth || 0)
-      const text = [...document.querySelectorAll('.pane-center .ProseMirror, .pane-center textarea.source-editor')]
-        .find((node) => node.offsetParent)
-      // Where the characters start without the current shift: the element's
-      // edge plus its padding (the source textarea spans the pane).
-      if (inset) {
-        if (inset === cover) return // already laid out beside the sidebar
-        inset = 0 // the sidebar changed: measure the plain layout again
-        app.style.removeProperty('--hm-reveal-inset')
-      }
-      // Remove the slide as it is right now (it animates, so not `current`).
-      const centre = document.querySelector('.app .pane-center')
-      const matrix = centre ? getComputedStyle(centre).transform : 'none'
-      const moved = matrix && matrix !== 'none' ? new DOMMatrixReadOnly(matrix).m41 : 0
-      const rect = text?.getBoundingClientRect()
-      const box = rect && { left: rect.left - moved, right: rect.right - moved }
-      const left = box ? box.left + (parseFloat(getComputedStyle(text).paddingLeft) || 0) : 0
-      const shift = Math.max(0, Math.round(cover + CLEARANCE_PX - left))
-      // A narrow window has no room to slide the text over: lay the document
-      // out beside the sidebar instead (once, like the normal window).
-      if (box && shift && box.right + shift > window.innerWidth) {
-        inset = cover
-        current = 0
-        app.style.removeProperty('--hm-reveal-shift')
-        app.style.setProperty('--hm-reveal-inset', `${cover}px`)
-        return
-      }
-      if (shift === current) return
-      current = shift
-      app.style.setProperty('--hm-reveal-shift', `${shift}px`)
-    }
-    measure()
-    // A click on a bar can swap what is shown (another tab, source/rich, a
-    // file from the sidebar): measure again once it has rendered, and again
-    // after a slower document has mounted.
+    const measure = () => applyRoom(revealRoom())
     const timers = new Set()
     const later = () => {
       requestAnimationFrame(() => requestAnimationFrame(measure))
@@ -253,7 +273,10 @@ export function useImmersiveMode({ enabled, effectiveKeybindings, platform, reve
       observer.observe(pane, { attributes: true, attributeFilter: ['class', 'style'] })
       pane.addEventListener('transitionend', measure)
     }
+    // Revealed some other way than show() (none today): place it next frame.
+    const first = requestAnimationFrame(measure)
     return () => {
+      cancelAnimationFrame(first)
       document.removeEventListener('click', later, true)
       for (const id of timers) clearTimeout(id)
       observer.disconnect()

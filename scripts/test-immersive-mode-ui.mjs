@@ -134,18 +134,38 @@ try {
   const sidebarOpen = await app.evaluate(`(() => { const p = document.querySelector('.pane-left'); return Boolean(p && !p.classList.contains('collapsed')) })()`)
   const allOut = (c) => c.topbar && c.status && c.activity && (!sidebarOpen || c.sidebar)
   const noneOut = (c) => !c.topbar && !c.status && !c.activity && !c.sidebar
+  // The zones reach 16 px from the top (the empty space above the first
+  // line) and 10 px from the bottom / left — the inner end of each is
+  // checked here (a 4 px zone was hard to hit).
   const revealEdges = [
-    ['top', { x: centre.x, y: 1 }, { x: centre.x, y: 20 }],
-    ['bottom', { x: centre.x, y: size.h - 2 }, { x: centre.x, y: size.h - 12 }],
-    ['left', { x: 1, y: centre.y }, { x: 24, y: centre.y }]
+    ['top', { x: centre.x, y: 14 }, { x: centre.x, y: 20 }],
+    ['bottom', { x: centre.x, y: size.h - 9 }, { x: centre.x, y: size.h - 12 }],
+    ['left', { x: 8, y: centre.y }, { x: 24, y: centre.y }]
   ]
   for (const [name, edge, onBar] of revealEdges) {
+    // When the bars start to slide, the document's room is already set (same
+    // task): it never trails the bars by a frame. It was a CSS variable on
+    // .app, measured after the reveal, which restyled the whole document.
+    await app.evaluate(`(() => {
+      const app = document.querySelector('.app')
+      globalThis.__revealStart = null
+      const mo = new MutationObserver(() => {
+        if (globalThis.__revealStart || !app.classList.contains('hm-reveal')) return
+        const centre = document.querySelector('.pane-center')
+        globalThis.__revealStart = { transform: centre.style.transform, margin: centre.style.marginLeft, appVars: app.getAttribute('style') || '' }
+        mo.disconnect()
+      })
+      mo.observe(app, { attributes: true, attributeFilter: ['class'] })
+    })()`)
     await move(edge.x, edge.y)
     const out = await waitFor(async () => { const c = await chrome(); return allOut(c) && c }, `${name} edge did not reveal every bar`)
+    const start = await app.evaluate('globalThis.__revealStart')
+    assert.ok(!sidebarOpen || /translateX\(\d+px\)/.test(start?.transform) || /\d+px/.test(start?.margin), `${name}: the document's room was not set when the bars started: ${JSON.stringify(start)}`)
+    assert.ok(!/--hm-reveal/.test(start?.appVars || ''), `${name}: a CSS variable on .app restyles the whole document: ${start?.appVars}`)
     assert.equal(out.immersive, true, `${name} reveal left full-screen mode`)
     assert.equal(await docTop(), top0, `${name} reveal moved the document vertically`)
     // The text slides right to clear the sidebar; nothing covers it.
-    await sleep(400) // let the 0.18 s slide finish
+    await sleep(450) // let the 0.26 s slide finish
     const clear = await gap()
     assert.ok(clear.textLeft >= clear.coverRight + 8, `${name}: the sidebar covers the text: ${JSON.stringify(clear)}`)
     assert.ok(clear.textLeft - clear.coverRight <= 60, `${name}: the document slid too far: ${JSON.stringify(clear)}`)
@@ -226,7 +246,7 @@ try {
   // Crossing an edge on the way out (Dock, menu bar) reveals nothing: a
   // brief touch, or touching it and leaving the window.
   await move(centre.x, size.h - 2)
-  await sleep(60)
+  await sleep(30)
   await move(centre.x, centre.y)
   await sleep(500)
   assert.equal(noneOut(await chrome()), true, 'a brief edge touch revealed the bars')

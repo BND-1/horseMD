@@ -161,13 +161,15 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
       setBusyRoot(null)
     }
   }, [refresh])
-  const run = useCallback(async (rootPath, strategy = 'merge') => {
+  // options.safeOnly: automatic sync — main re-plans and refuses deletions /
+  // conflicts ({ needsConfirmation }); nothing to do → { idle }.
+  const run = useCallback(async (rootPath, strategy = 'merge', options = undefined) => {
     const key = keyOf(rootPath)
     if (runningRef.current.has(key)) throw new Error('这个文件夹正在同步，请等它完成，或先点「停止」。')
     runningRef.current.add(key)
     setBusyRoot(rootPath)
     try {
-      return await window.api.syncRun(rootPath, strategy)
+      return await window.api.syncRun(rootPath, strategy, options)
     } finally {
       runningRef.current.delete(key)
       setBusyRoot((current) => (keyOf(current) === key ? null : current))

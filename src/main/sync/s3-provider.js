@@ -5,7 +5,12 @@ import { XMLParser } from 'fast-xml-parser'
 import { randomUUID } from 'node:crypto'
 import { RequestPacer, throttleHint } from './request-pacer.js'
 
-const parser = new XMLParser({ removeNSPrefix: true, ignoreAttributes: false })
+// htmlEntities: decode numeric character references (&#34;), standard XML
+// that fast-xml-parser leaves as text by default. 七牛 (measured 2026-10-26)
+// writes every ETag as <ETag>&#34;…&#34;</ETag>, so a copy's ETag never
+// matched the planned one and each trash backup downloaded the file again.
+// (&amp;… is still decoded once only.)
+const parser = new XMLParser({ removeNSPrefix: true, ignoreAttributes: false, htmlEntities: true })
 const asArray = (value) => value == null ? [] : Array.isArray(value) ? value : [value]
 const clean = (value) => String(value || '').replace(/^\/+|\/+$/g, '')
 // encodeURIComponent deliberately leaves !'()* unescaped, while SigV4's

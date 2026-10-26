@@ -7374,6 +7374,11 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
    bar + open sidebar — in OVER the document (fixed, so the document never
    moves); it slides out when the pointer leaves all of them. Hidden ones sit outside the window and take no
    window drag region (only a revealed bar drags the window). */
+.app.hm-immersive-edges {
+  /* In: decelerate onto place; out: a little quicker, accelerating away. */
+  --hm-reveal-in: 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  --hm-reveal-out: 0.2s cubic-bezier(0.4, 0, 0.9, 0.6);
+}
 .app.hm-immersive-edges .topbar,
 .app.hm-immersive-edges .statusbar,
 .app.hm-immersive-edges .activity-bar,
@@ -7382,10 +7387,15 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   position: fixed;
   z-index: 1350;
   visibility: hidden;
+  opacity: 0;
+  /* Own compositor layers from the start: the slide never waits for one. The
+     shadow is static (animating it repainted the bars every frame). */
+  will-change: transform, opacity;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
   transition:
-    transform 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out),
-    visibility 0s linear 0.18s;
+    transform var(--hm-reveal-out),
+    opacity var(--hm-reveal-out),
+    visibility 0s linear 0.2s;
 }
 .app.hm-immersive-edges .pane-left.collapsed { display: none !important; }
 /* Same arrangement as the normal window, laid over the document. */
@@ -7416,29 +7426,28 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .app.hm-reveal .activity-bar,
 .app.hm-reveal .pane-left {
   visibility: visible;
+  opacity: 1;
   transform: none;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
   transition:
-    transform 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out),
+    transform var(--hm-reveal-in),
+    opacity 0.16s ease-out,
     visibility 0s;
 }
-.app.hm-immersive-edges:not(.hm-reveal) .topbar,
-.app.hm-immersive-edges:not(.hm-reveal) .topbar *,
-.app.hm-immersive-edges:not(.hm-reveal) .activity-bar,
-.app.hm-immersive-edges:not(.hm-reveal) .activity-bar * {
+/* Hidden bars never drag the window. Only the elements that declare a drag
+   region are named: a `.topbar *` rule here made every hm-reveal toggle
+   restyle the WHOLE app (a universal descendant invalidates the subtree). */
+.app.hm-immersive-edges:not(.hm-reveal) :is(.topbar, .topbar .tabs, .topbar .tabs-scroll, .topbar-spacer, .activity-bar, .activity-spacer) {
   -webkit-app-region: no-drag !important;
 }
-/* The document slides right just enough to clear the revealed sidebar
-   (--hm-reveal-shift, measured by useImmersiveMode) — a transform, so the
-   text never re-lays out. A window too narrow for that lays the document out
-   beside the sidebar instead (--hm-reveal-inset), like the normal window. */
+/* The document slides right just enough to clear the revealed sidebar: an
+   inline transform set by useImmersiveMode (no re-layout), or, in a window
+   too narrow for that, an inline margin that lays it out beside the sidebar
+   like the normal window. Same timing as the bars. */
 .app.hm-immersive-edges .pane-center {
-  transition: transform 0.18s var(--ease-out);
+  transition: transform var(--hm-reveal-out);
 }
 .app.hm-reveal .pane-center {
-  transform: translateX(var(--hm-reveal-shift, 0px));
-  margin-left: var(--hm-reveal-inset, 0px);
+  transition: transform var(--hm-reveal-in);
 }
 /* The top bar has its own full-screen button; the corner one would cover it. */
 .app.hm-reveal .hm-immersive-corner {
@@ -7595,6 +7604,18 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .sync-progress-actions {
   display: inline-flex;
   gap: 10px;
+}
+/* Automatic sync (hooks/useAutoSync.js): interval row + last result per folder. */
+.sync-auto-row {
+  margin-bottom: 8px;
+}
+.sync-auto-line {
+  margin: 4px 0 2px 29px;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+.sync-auto-line.warn {
+  color: var(--warning, #b7791f);
 }
 
 /* Heading folds (editor-heading-fold.js). Hidden blocks are top-level
