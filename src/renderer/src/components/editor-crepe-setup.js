@@ -36,6 +36,7 @@ import {
   createBlockHandleGutterPlugin,
   getBlockHandlePosition
 } from './editor-block-handle-guard.js'
+import { createHeadingFoldPlugin } from './editor-heading-fold.js'
 import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
@@ -237,6 +238,8 @@ export function createConfiguredCrepe({
       createHtmlTagInputPlugin({ getRemark: () => ctx.get(remarkCtx), getSchema: () => ctx.get(schemaCtx) }),
       createBlockHandleGutterPlugin(ctx),
       ...plugins,
+      // View-only heading folds (decorations; never written to Markdown).
+      createHeadingFoldPlugin(getT),
       tableBreakKeymap(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace

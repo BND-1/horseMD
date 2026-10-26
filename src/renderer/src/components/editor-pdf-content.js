@@ -17,6 +17,8 @@ const stripEditorOnlyForExport = (clone) => {
     )
     .forEach((el) => el.remove())
   clone.querySelectorAll('script, iframe, object, embed, form').forEach((el) => el.remove())
+  clone.querySelectorAll('.hm-fold-hidden, .hm-heading-folded')
+    .forEach((el) => el.classList.remove('hm-fold-hidden', 'hm-heading-folded'))
 }
 
 const cleanMathForExport = (math, { display } = {}) => {

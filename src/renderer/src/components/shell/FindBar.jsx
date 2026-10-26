@@ -13,7 +13,8 @@ export default function FindBar({
   onNext,
   onClose,
   onReplace,
-  onReplaceAll
+  onReplaceAll,
+  readOnly = false
 }) {
   return (
     <div className="findbar">
@@ -42,6 +43,8 @@ export default function FindBar({
           <Icon name="close" size={14} />
         </button>
       </div>
+      {/* Read-only documents (reading mode #163) can be searched, not edited. */}
+      {!readOnly && (
       <div className="findbar-row">
         <Icon name="replace" size={14} />
         <input
@@ -73,6 +76,7 @@ export default function FindBar({
           {t('find.replaceAll')}
         </button>
       </div>
+      )}
     </div>
   )
 }

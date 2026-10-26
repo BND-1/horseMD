@@ -16,6 +16,7 @@
 //   isMobile / setSidebarOpen / setHome — drawer affordances for jumpToHeading
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseSourceHeadings, scrollSourceToHeading } from '../scrollAnchor.js'
+import { revealFoldedContent } from '../find.js'
 import { textareaOffsetAtScrollTop } from '../textarea-metrics.js'
 
 // Shared heading selector — used by jumpToHeading, the scrollspy, and the list
@@ -59,6 +60,8 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
   // docs + competes with anchoring during the animation.
   const jumpAndStabilize = (host, el) => {
     if (!host || !el) return false
+    // A heading inside a folded section: open the section first.
+    revealFoldedContent(el)
     forcedActiveRef.current = getHeadings(host).indexOf(el)
     host.style.overflowAnchor = 'none'
     clearTimeout(anchorTimerRef.current)
@@ -222,7 +225,10 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
       const base = scroller.getBoundingClientRect().top
       const top0 = scroller.scrollTop
       tops = new Array(els.length)
-      for (let i = 0; i < els.length; i++) tops[i] = els[i].getBoundingClientRect().top - base + top0
+      // A heading inside a folded section has no box (NaN = skipped below).
+      for (let i = 0; i < els.length; i++) {
+        tops[i] = els[i].getClientRects().length ? els[i].getBoundingClientRect().top - base + top0 : NaN
+      }
       builtAt = Date.now()
     }
     const compute = () => {
@@ -248,6 +254,7 @@ export function useOutline({ getEditorHost, getSourceTextarea, home, sidebarOpen
         const limit = scroller.scrollTop + 90
         idx = 0
         for (let i = 0; i < tops.length; i++) {
+          if (Number.isNaN(tops[i])) continue
           if (tops[i] <= limit) idx = i
           else break
         }

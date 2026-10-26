@@ -232,15 +232,24 @@ function renderReadMode(card, view, part, options, pluginKey) {
     actions.appendChild(button)
   }
 
-  addButton('pencil', 'review.editMarkup', 'Edit markup', () =>
-    renderEditMode(card, view, part, options, pluginKey)
-  )
-  addButton('check', 'review.doneMarkup', 'Done', () =>
-    removeAnnotationMarkup(view, part, options, pluginKey), 'hm-review-card-primary'
-  )
-  addButton('close', 'review.deleteMarkup', 'Delete', () =>
-    removeAnnotationMarkup(view, part, options, pluginKey), 'hm-review-card-action-danger'
-  )
+  // A read-only document (reading mode #163, the source/rich preview) keeps
+  // the copy actions only; the click re-checks in case the mode changed while
+  // the card was open.
+  const writable = (run) => () => {
+    if (view?.editable === false) return
+    run()
+  }
+  if (view?.editable !== false) {
+    addButton('pencil', 'review.editMarkup', 'Edit markup', writable(() =>
+      renderEditMode(card, view, part, options, pluginKey)
+    ))
+    addButton('check', 'review.doneMarkup', 'Done', writable(() =>
+      removeAnnotationMarkup(view, part, options, pluginKey)), 'hm-review-card-primary'
+    )
+    addButton('close', 'review.deleteMarkup', 'Delete', writable(() =>
+      removeAnnotationMarkup(view, part, options, pluginKey)), 'hm-review-card-action-danger'
+    )
+  }
   addButton('copy', 'review.copyMarkup', 'Copy markup', () => {
     if (!validateAnnotationRange(view, annotation)) {
       notify(options, 'review.stale', 'Review note changed')

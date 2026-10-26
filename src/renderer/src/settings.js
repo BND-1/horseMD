@@ -229,6 +229,10 @@ export const DEFAULT_SETTINGS = {
   userCssSnippets: DEFAULT_USER_CSS_SNIPPETS,
   // Mobile-only reading lock. Desktop intentionally never consumes this value.
   mobileReadOnly: false,
+  // Desktop reading mode (#163): every document is shown read-only (select,
+  // copy, find, outline, export still work). Kept apart from mobileReadOnly so
+  // the two platforms never inherit each other's lock.
+  readingMode: false,
   // Wide tables scroll by default. Readers who prefer a print-like layout can
   // opt into wrapping every column into the current writing width instead.
   tableAutoWrap: false
@@ -311,6 +315,7 @@ export function loadSettings() {
       userCss: typeof raw.userCss === 'string' ? raw.userCss : '',
       userCssSnippets: normalizeUserCssSnippets(raw.userCssSnippets, raw.userCss),
       mobileReadOnly: raw.mobileReadOnly === true,
+      readingMode: raw.readingMode === true,
       tableAutoWrap: raw.tableAutoWrap === true,
       lastPdfDensityPreset: ['comfort', 'standard', 'compact'].includes(raw.lastPdfDensityPreset)
         ? raw.lastPdfDensityPreset

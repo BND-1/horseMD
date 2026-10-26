@@ -39,6 +39,9 @@ const COMMAND_PALETTE_ICONS = {
   'view.showOutline': 'outline',
   'outline.expandAll': 'expand',
   'outline.collapseAll': 'collapse',
+  'editor.fold.toggle': 'collapse',
+  'editor.fold.all': 'collapse',
+  'editor.fold.none': 'expand',
   'view.globalSearch': 'search',
   'view.toggleSource': 'code',
   'view.cycleTheme': 'moon',
@@ -71,6 +74,9 @@ export const SETTINGS_BACKGROUND_HANDLERS = new Set([
   'toggleOutline',
   'outlineExpandAll',
   'outlineCollapseAll',
+  'headingFoldToggle',
+  'headingFoldAll',
+  'headingUnfoldAll',
   'toggleFiles',
   'toggleSource',
   'find',
@@ -80,6 +86,20 @@ export const SETTINGS_BACKGROUND_HANDLERS = new Set([
   'reviewSubstitute',
   'reviewHighlight',
   'reviewCopyPrompt',
+  'reviewAcceptAll',
+  'reviewRejectAll'
+])
+
+// Commands that change a document. While the document is read-only (desktop
+// reading mode #163, the mobile lock) they show a hint instead of running;
+// menu, palette and shortcuts all dispatch through createMenuHandlers.
+export const READ_ONLY_BLOCKED_HANDLERS = new Set([
+  'attachFile',
+  'replace',
+  'reviewAdd',
+  'reviewDelete',
+  'reviewSubstitute',
+  'reviewHighlight',
   'reviewAcceptAll',
   'reviewRejectAll'
 ])
@@ -97,8 +117,12 @@ export function createMenuHandlers({
   setSidebarMode,
   setPaletteOpen,
   toggleImmersive,
+  toggleReadingMode,
+  isReadOnly,
+  onReadOnlyBlocked,
   outlineFolds,
   outlineDocId,
+  headingFold,
   renameFile,
   newTab,
   openPaths,
@@ -145,7 +169,7 @@ export function createMenuHandlers({
       sourcePath: tab?.path || null
     })
   }
-  return {
+  const handlers = {
     home: () => {
       setHome(true)
       if (isMobile) setSidebarOpen(false) // jump straight to Home, don't leave the drawer over it
@@ -184,6 +208,9 @@ export function createMenuHandlers({
     // panel re-reads it, so this works whether or not the panel is shown.
     outlineExpandAll: () => outlineFolds?.expandAll(outlineDocId),
     outlineCollapseAll: () => outlineFolds?.collapseAll(outlineDocId),
+    headingFoldToggle: () => headingFold?.('toggle'),
+    headingFoldAll: () => headingFold?.('foldAll'),
+    headingUnfoldAll: () => headingFold?.('unfoldAll'),
     toggleFiles: () => {
       setSidebarMode('files')
       setSidebarOpen(true)
@@ -214,8 +241,20 @@ export function createMenuHandlers({
     reviewHighlight: () => review.applyReviewMarkupToActive(REVIEW_KINDS.highlight),
     reviewCopyPrompt: () => review.copyReviewPrompt(),
     reviewAcceptAll: () => review.applyReviewDecisionToActive('accept'),
-    reviewRejectAll: () => review.applyReviewDecisionToActive('reject')
+    reviewRejectAll: () => review.applyReviewDecisionToActive('reject'),
+    toggleReadingMode: () => toggleReadingMode?.()
   }
+  for (const name of READ_ONLY_BLOCKED_HANDLERS) {
+    const run = handlers[name]
+    handlers[name] = (...args) => {
+      if (isReadOnly?.()) {
+        onReadOnlyBlocked?.()
+        return undefined
+      }
+      return run(...args)
+    }
+  }
+  return handlers
 }
 
 // Global menu IPC + keyboard shortcuts. `handlers` is the ref returned by
@@ -333,6 +372,24 @@ export function useGlobalKeys({
       e.stopPropagation()
       if (expand) handlers.current.outlineExpandAll?.()
       else handlers.current.outlineCollapseAll?.()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [handlers, keybindings, platform, activeTabKind])
+  // Heading folds in the document: capture phase too (works in reading mode).
+  useEffect(() => {
+    const bindings = [
+      ['editor.fold.toggle', 'headingFoldToggle'],
+      ['editor.fold.all', 'headingFoldAll'],
+      ['editor.fold.none', 'headingUnfoldAll']
+    ]
+    const onKey = (e) => {
+      if (activeTabKind === 'settings') return
+      const hit = bindings.find(([id]) => keybindingMatchesEvent(keybindings[id]?.[0], e, platform))
+      if (!hit) return
+      e.preventDefault()
+      e.stopPropagation()
+      handlers.current[hit[1]]?.()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)

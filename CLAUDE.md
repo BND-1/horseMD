@@ -784,8 +784,76 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   exits unless a popup owns it — decided in the CAPTURE phase, because
   ProseMirror's base keymap prevents every Escape (selectParentNode) and the
   slash menu has already closed by the bubble phase. Mobile also hides the system
-  status bar (`window.api.setSystemBarsHidden`). Locked by
+  status bar (`window.api.setSystemBarsHidden`). Desktop edge reveal
+  (`.hm-immersive-edges` + `hm-reveal`): the pointer within 4 px of the top,
+  bottom OR left edge (no button pressed) slides the WHOLE shell in — top
+  bar, status bar, activity bar + open sidebar, in the normal window
+  arrangement — as fixed overlays, after the pointer rests 180 ms at the edge (crossing
+  it on the way to the Dock / menu bar and leaving the window reveals
+  nothing), and out 450 ms after the pointer leaves all of them. The
+  document slides right just enough to clear the sidebar (`.pane-center`
+  transform `--hm-reveal-shift`, re-measured when the sidebar opens/closes
+  and after every click while out — a tab or source/rich switch moves the
+  text; measure against the transform's CURRENT animated value). The hide
+  timer checks where the pointer last was (`pointerStays`), not focus: a
+  click on a bar moves focus without moving the pointer;
+  a window too narrow for that lays it out beside the sidebar
+  (`--hm-reveal-inset`) (held while
+  a `.menu-backdrop` is open or a text field inside has focus). Hidden bars
+  sit outside the window with `-webkit-app-region: no-drag`, so the top of
+  the document never drags the window. Locked by
   `npm run test:immersive-mode-ui`.
+- **Reading mode** (#163, `hooks/useReadingMode.js`, `settings.readingMode`,
+  command `view.readingMode`, default `Mod+Shift+R`, status-bar switch,
+  persisted): desktop documents become read-only through the same `readOnly`
+  prop the mobile lock (`settings.mobileReadOnly`, mobile only) and the
+  source/rich preview use — `editable` false, contentEditable false, the
+  capture-phase key/beforeinput/paste/drop blocks in `editor-dom-interactions.js`,
+  readOnly source textareas. App-level writers are blocked too:
+  `READ_ONLY_BLOCKED_HANDLERS` in `menuHandlers.js` (replace, attach,
+  review commands → hint toast), no replace row in the find bar, no outline
+  drag, review cards keep only their copy actions. A plain click opens a link
+  (Ctrl/Cmd still needed while editing). External-change reloads still apply.
+  Entering with the caret in the editor is safe: Chromium moves focus off the
+  now non-editable view, so ProseMirror keymaps (Mod-B…) never run. Locked
+  by `test:reading-mode-ui`.
+- **Heading folds** (`editor-heading-fold.js`, a raw plugin in
+  `prosePluginsCtx`): a folded top-level heading hides every top-level block
+  after it up to the next heading of the same or a higher level. View-only:
+  plugin state (heading positions mapped through each transaction) + node
+  decorations (`hm-fold-hidden` → `display:none`); nothing reaches the
+  Markdown, never dirty, not saved. The selection never stays in hidden
+  content: a non-fold transaction whose selection lands there opens the folds
+  around it; a fold action that would hide the caret moves it to the folded
+  heading's end (appendTransaction). Toggles are an overlay after the editor
+  DOM (outside the contenteditable), right after the heading text — the
+  leading gutter is the block handle's. Hover shows one, folded headings keep
+  one, Alt-click = every heading of that level. App code talks to it through
+  a `hm-heading-fold` CustomEvent on the editor DOM (`toggle`/`foldAll`/
+  `unfoldAll`; `reveal` dispatched on a hidden element by `find.js`
+  `scrollRangeIntoView` and the outline's `jumpAndStabilize`). The outline
+  scrollspy skips box-less (hidden) headings. Export suspends the folds while
+  the snapshot measures the live DOM. Commands `editor.fold.toggle`
+  (`Mod+Alt+Period`) / `editor.fold.all` / `editor.fold.none` are
+  renderer-only capture listeners (reading mode moves focus off the editor);
+  the context menu offers fold / fold every H<n> / unfold all, also when
+  read-only. Locked by `test:heading-fold-ui`.
+- **Closed tabs release their editor** (2026-10-26, Windows "twice
+  Typora's memory"): every closed tab used to stay in memory (15 rounds of
+  opening/closing 5 files: 184 → 465 MB, 228 Crepe instances). Anything
+  app-wide or module-level must not hold an editor strongly — an editor's
+  `getT`, remark processor, view or ctx closes over its whole setup scope.
+  Register per-editor entries with a `cleanups.push` removal
+  (`__hmIncrementalSerializeAll`, the trace harness), hold processors in
+  caches through `WeakRef` (`editor-source-map.js` block cache), reach a
+  translator from shared code via `lib/live-translator.js`, and stop idle
+  work on destroy (`incrementalSerializer.dispose()`): an idle serialize
+  after destroy throws `editorView not found` in Milkdown's paragraph rule,
+  and the console keeps the uncaught error — and through its stack, the
+  editor. Milkdown's own `$command` objects remember the most recently
+  created editor (one at most; library). Diagnose with a heap snapshot and
+  shortest retainer paths (ignore WeakMap key→value edges). Locked by
+  `test:closed-tab-memory-ui`.
 - **Auto-save** (`hooks/useAutoSave.js`, `settings.autoSaveDelay` ∈ 0/3/10/60 s,
   default **0 = off**, Settings › Files, #136): after N s of inactivity (and on
   window blur) a dirty tab **with a path** is written via `saveTab(id, false,

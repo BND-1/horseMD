@@ -25,6 +25,7 @@ import { copyToClipboard, fireToast } from '../ui.js'
 import { Icon } from './icons.jsx'
 import { createImagePersister } from './editor-image-persistence.js'
 import { normalizeDisplayMath } from './editor-math.js'
+import { runHeadingFold } from './editor-heading-fold.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
 import { convertSourceParagraphLineToList } from './editor-block-list-source.js'
@@ -4040,11 +4041,20 @@ export default function Editor({
               }
             })
             incrementalSerializerRef.current = incrementalSerializer
+            cleanups.push(() => incrementalSerializer.dispose())
             fullSerializerRef.current = baseSerializer
-            // Diagnostics (perf benches): every editor's counters.
-            ;(globalThis.__hmIncrementalSerializeAll ??= []).push({
+            // Diagnostics (perf benches): every open editor's counters. The
+            // entry is removed on destroy — it captures this editor, so a
+            // closed tab would otherwise keep its whole editor alive.
+            const diagnostics = {
               stats: incrementalSerializer.stats,
               children: () => viewRef.current?.state.doc.childCount ?? 0
+            }
+            ;(globalThis.__hmIncrementalSerializeAll ??= []).push(diagnostics)
+            cleanups.push(() => {
+              const all = globalThis.__hmIncrementalSerializeAll
+              const index = all ? all.indexOf(diagnostics) : -1
+              if (index >= 0) all.splice(index, 1)
             })
             const memoSerializer = (doc) => {
               const keyed = doc && typeof doc === 'object'
@@ -4529,7 +4539,7 @@ export default function Editor({
           // docs/source-reprint-architecture.md): the real Crepe parser,
           // serializer and remark chain, exposed only under input trace.
           if (window.api?.inputTraceEnabled === true) {
-            globalThis.__hmSourceReprintHarness = {
+            const harness = globalThis.__hmSourceReprintHarness = {
               parse: (markdown) => crepe.editor.ctx.get(parserCtx)(markdown),
               parseTree: (markdown) => { const r = crepe.editor.ctx.get(remarkCtx); return reprintDeps().parseTree(r.runSync(r.parse(markdown), markdown)) },
               serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc),
@@ -4600,6 +4610,11 @@ export default function Editor({
                 return (globalThis.__hmSemanticMemoMismatch || []).length === before
               }
             }
+            // It captures this editor: drop it with the editor (a closed tab
+            // must not stay in memory through it).
+            cleanups.push(() => {
+              if (globalThis.__hmSourceReprintHarness === harness) delete globalThis.__hmSourceReprintHarness
+            })
           }
           try { view.setProps({ editable: () => !readOnlyRef.current }) } catch { /* editor teardown */ }
           if (view.dom) {
@@ -4705,6 +4720,10 @@ export default function Editor({
     if (!changed) setCtxMenu(null)
     return changed
   }
+  const pickHeadingFold = (meta) => {
+    setCtxMenu(null)
+    runHeadingFold(viewRef.current, meta)
+  }
   const pickListConversion = (targetType, listPos, anchorPos) =>
     apiRef.current?.convertList(targetType, listPos, anchorPos)
   const pickBlockListConversion = (targetType, blockPos) => apiRef.current?.convertBlockToList(targetType, blockPos)
@@ -4772,6 +4791,44 @@ export default function Editor({
               <span className="block-menu-name">{t('editor.copy')}</span>
               <span className="block-menu-sc">{window.api?.platform === 'darwin' ? '⌘C' : 'Ctrl+C'}</span>
             </button>
+            {ctxMenu.headingFold && (ctxMenu.headingFold.foldable || ctxMenu.headingFold.anyFolded) && (
+              <>
+                <div className="block-menu-divider" />
+                {ctxMenu.headingFold.foldable && (
+                  <button
+                    className="block-menu-item"
+                    data-heading-fold="toggle"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickHeadingFold({ action: 'toggle', pos: ctxMenu.headingFold.pos })}
+                  >
+                    <span className="block-menu-short" aria-hidden="true">{ctxMenu.headingFold.folded ? '▸' : '▾'}</span>
+                    <span className="block-menu-name">{t(ctxMenu.headingFold.folded ? 'fold.menu.unfold' : 'fold.menu.fold')}</span>
+                    <span className="block-menu-sc">{getCommandShortcut('editor.fold.toggle', effectiveKeybindings)}</span>
+                  </button>
+                )}
+                <button
+                  className="block-menu-item"
+                  data-heading-fold="level"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pickHeadingFold({ action: 'level', level: ctxMenu.headingFold.level, fold: true })}
+                >
+                  <span className="block-menu-short" aria-hidden="true">H{ctxMenu.headingFold.level}</span>
+                  <span className="block-menu-name">{t('fold.menu.foldLevel', { level: ctxMenu.headingFold.level })}</span>
+                </button>
+                {ctxMenu.headingFold.anyFolded && (
+                  <button
+                    className="block-menu-item"
+                    data-heading-fold="unfoldAll"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickHeadingFold({ action: 'unfoldAll' })}
+                  >
+                    <span className="block-menu-short" aria-hidden="true">▾</span>
+                    <span className="block-menu-name">{t('fold.menu.unfoldAll')}</span>
+                    <span className="block-menu-sc">{getCommandShortcut('editor.fold.none', effectiveKeybindings)}</span>
+                  </button>
+                )}
+              </>
+            )}
             {!ctxMenu.copyOnly && (<>
             <div className="block-menu-divider" />
             {ctxMenu.showTextFormatting && (

@@ -49,6 +49,7 @@ import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useAutoSave } from './hooks/useAutoSave.js'
 import { useImmersiveMode } from './hooks/useImmersiveMode.js'
+import { useReadingMode } from './hooks/useReadingMode.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
 import { useDocPositions } from './hooks/useDocPositions.js'
 import { useSplitSourceRichSync } from './hooks/useSplitSourceRichSync.js'
@@ -154,9 +155,12 @@ export default function App() {
   const effectiveTheme = followsSystemTheme
     ? (systemIsDark ? settings.systemDarkTheme : settings.systemLightTheme)
     : theme
-  // This preference is deliberately consumed only by Capacitor builds. Desktop
-  // keeps its normal editable surface even when it shares the same preferences.
+  // Read-only documents: the mobile lock (Capacitor builds only) or the
+  // desktop reading mode (#163). Each platform reads only its own setting, so
+  // shared preferences never carry one platform's lock to the other.
   const mobileReadOnly = isMobile && settings.mobileReadOnly
+  const readingMode = !isMobile && settings.readingMode === true
+  const readOnly = mobileReadOnly || readingMode
 
   const editorHostRef = useRef(null) // active rich editor's scroll container
   // Every mounted rich editor's scroll container, keyed by tab id. Split-view
@@ -958,11 +962,25 @@ export default function App() {
     resetCommand: resetCommandKeybindings,
     resetAll: resetAllKeybindings
   } = useKeybindings()
-  // Full-screen reading/editing: only while a document is showing.
-  const { immersive, toggleImmersive, exitImmersive } = useImmersiveMode({
+  // Reading mode (#163): read-only documents; the hint only while one shows.
+  const { toggleReadingMode, notifyBlocked: notifyReadOnlyBlocked } = useReadingMode({
+    readingMode,
     enabled: !home && Boolean(activeTab) && activeTab?.kind !== 'settings',
     effectiveKeybindings,
-    platform: window.api.platform
+    platform: window.api.platform,
+    updateSettings,
+    t
+  })
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+
+  // Full-screen reading/editing: only while a document is showing.
+  const { immersive, reveal: immersiveReveal, toggleImmersive, exitImmersive } = useImmersiveMode({
+    enabled: !home && Boolean(activeTab) && activeTab?.kind !== 'settings',
+    effectiveKeybindings,
+    platform: window.api.platform,
+    // Touch screens have no hover edge.
+    revealEdges: !isMobile
   })
   useEffect(() => {
     window.api.setMenuKeybindings?.(buildElectronAcceleratorPayload(effectiveKeybindings))
@@ -989,8 +1007,22 @@ export default function App() {
     setSidebarMode,
     setPaletteOpen,
     toggleImmersive,
+    toggleReadingMode: isMobile ? undefined : toggleReadingMode,
+    isReadOnly: () => readOnlyRef.current,
+    onReadOnlyBlocked: () => {
+      if (isMobile) fireToast(t('mobile.readOnlyBlocked'))
+      else notifyReadOnlyBlocked()
+    },
     outlineFolds,
     outlineDocId: outlineId,
+    headingFold: (action) => {
+      // The editor being worked in: the focused one (split view), else the
+      // active pane's visible editor.
+      const focused = document.activeElement?.closest?.('.ProseMirror')
+      const dom = focused || [...(editorHostRef.current?.querySelectorAll('.ProseMirror') || [])]
+        .find((el) => el.offsetParent)
+      dom?.dispatchEvent(new CustomEvent('hm-heading-fold', { detail: { action } }))
+    },
     renameFile: renameFileCommand,
     newTab,
     openPaths,
@@ -1133,7 +1165,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}`} style={appFontStyle}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}${immersive && !isMobile ? ' hm-immersive-edges' : ''}${immersiveReveal ? ' hm-reveal' : ''}`} style={appFontStyle}>
       {dropOpenActive && <DropOpenOverlay t={t} />}
       <ActivityBar
         home={home}
@@ -1229,7 +1261,7 @@ export default function App() {
                 activeIndex={activeHeading}
                 loading={richLoading}
                 onJump={jumpToHeading}
-                onMoveHeading={isMobile ? undefined : moveOutlineHeading}
+                onMoveHeading={isMobile || readOnly ? undefined : moveOutlineHeading}
                 docKey={outlineId}
                 defaultLevel={settings.outlineDefaultLevel}
                 folds={outlineFolds}
@@ -1260,8 +1292,9 @@ export default function App() {
               onPrev={stepFind}
               onNext={stepFind}
               onClose={closeFind}
-              onReplace={applyReplace}
-              onReplaceAll={applyReplace}
+              readOnly={readOnly}
+              onReplace={readOnly ? undefined : applyReplace}
+              onReplaceAll={readOnly ? undefined : applyReplace}
             />
           )}
 
@@ -1287,7 +1320,7 @@ export default function App() {
             inlineMathDeleteMode={settings.inlineMathDeleteMode}
             markdownSyntax={markdownSyntax}
             selectionToolbar={settings.selectionToolbar}
-            readOnly={mobileReadOnly}
+            readOnly={readOnly}
             effectiveKeybindings={effectiveKeybindings}
             editorAreaRef={editorAreaRef}
             editorHostRef={editorHostRef}
@@ -1422,7 +1455,9 @@ export default function App() {
         sourceMode={sourceMode}
         onToggleSource={toggleSourceView}
         activeBlock={activeBlock}
-        onPickBlock={mobileReadOnly ? undefined : (id) => editorApis.current[activeId]?.setBlock(id)}
+        onPickBlock={readOnly ? undefined : (id) => editorApis.current[activeId]?.setBlock(id)}
+        readingMode={readingMode}
+        onToggleReadingMode={home || activeTab?.kind === 'settings' ? undefined : toggleReadingMode}
         pageWidth={settings.pageWidth}
         onSetPageWidth={(w) => updateSettings({ pageWidth: w })}
         fontSize={settings.fontSize}

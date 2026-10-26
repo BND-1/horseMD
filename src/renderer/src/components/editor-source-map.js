@@ -443,8 +443,10 @@ const MD_BLOCK_CACHE_SIZE = 4
 const mdBlockCache = []
 const pmBlockCache = new WeakMap()
 
+// The processor is held weakly: it belongs to one editor, and a strong
+// reference here kept up to four closed tabs' editors in memory.
 const mdBlocksFor = (markdown, remark) => {
-  const index = mdBlockCache.findIndex((entry) => entry.remark === remark && entry.markdown === markdown)
+  const index = mdBlockCache.findIndex((entry) => entry.remark.deref() === remark && entry.markdown === markdown)
   if (index >= 0) {
     const [entry] = mdBlockCache.splice(index, 1)
     mdBlockCache.unshift(entry)
@@ -457,7 +459,7 @@ const mdBlocksFor = (markdown, remark) => {
     return null
   }
   const blocks = collectMdBlocks(markdown, tree)
-  mdBlockCache.unshift({ remark, markdown, blocks })
+  mdBlockCache.unshift({ remark: new WeakRef(remark), markdown, blocks })
   mdBlockCache.length = Math.min(mdBlockCache.length, MD_BLOCK_CACHE_SIZE)
   return blocks
 }

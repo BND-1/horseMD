@@ -187,8 +187,18 @@ export function paintFindHighlights(ranges, activeIdx) {
     CSS.highlights.set(FIND_HL_CUR, cur)
   }
 }
+// A match inside a folded heading section opens that section first.
+export function revealFoldedContent(node) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement
+  const hidden = el?.closest?.('.hm-fold-hidden')
+  if (!hidden) return false
+  hidden.dispatchEvent(new CustomEvent('hm-heading-fold', { bubbles: true, detail: { action: 'reveal' } }))
+  return true
+}
+
 export function scrollRangeIntoView(range, scroller) {
   if (!range || !scroller) return
+  revealFoldedContent(range.startContainer)
   const rect = range.getBoundingClientRect()
   const sr = scroller.getBoundingClientRect()
   if (!rect.height && !rect.width) return

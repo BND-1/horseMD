@@ -150,15 +150,29 @@ assert.deepEqual(saveKeybindingState({
 
 const commandsWithDefaults = COMMAND_DEFINITIONS.filter((command) => command.defaultKeybindings?.length)
 assert.ok(commandsWithDefaults.length >= 15)
-assert.equal(COMMAND_DEFINITIONS.length, 50)
+assert.equal(COMMAND_DEFINITIONS.length, 54)
 assert.equal(COMMAND_DEFINITIONS.filter((command) => command.configurable === false).length, 4)
-assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 35)
+assert.equal(COMMAND_DEFINITIONS.filter((command) => command.palette).length, 39)
 // Full-screen reading/editing mode: renderer-only shortcut, in the palette.
 const immersiveCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'view.immersive')
 assert.ok(immersiveCommand)
 assert.deepEqual(immersiveCommand.defaultKeybindings, ['Mod+Shift+Enter'])
 assert.equal(immersiveCommand.palette, true)
 assert.equal(Boolean(immersiveCommand.electronAccelerator), false)
+const readingCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'view.readingMode')
+assert.ok(readingCommand)
+assert.deepEqual(readingCommand.defaultKeybindings, ['Mod+Shift+R'])
+assert.equal(readingCommand.palette, true)
+assert.equal(Boolean(readingCommand.electronAccelerator), false)
+// Heading folds: renderer-only shortcuts (they must work in reading mode).
+const foldCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'editor.fold.toggle')
+assert.ok(foldCommand)
+assert.deepEqual(foldCommand.defaultKeybindings, ['Mod+Alt+Period'])
+assert.equal(Boolean(foldCommand.electronAccelerator), false)
+for (const id of ['editor.fold.all', 'editor.fold.none']) {
+  const command = COMMAND_DEFINITIONS.find((entry) => entry.id === id)
+  assert.ok(command?.palette && command.handler)
+}
 const codeExitCommand = COMMAND_DEFINITIONS.find((command) => command.id === 'editor.code.exit')
 assert.ok(codeExitCommand)
 assert.deepEqual(codeExitCommand.defaultKeybindings, ['Mod+Enter'])

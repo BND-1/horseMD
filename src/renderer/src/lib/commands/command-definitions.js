@@ -45,8 +45,12 @@ export const LEGACY_COMMAND_ALIASES = {
   palette: 'view.commandPalette',
   toggleSidebar: 'view.toggleSidebar',
   toggleImmersive: 'view.immersive',
+  toggleReadingMode: 'view.readingMode',
   toggleFiles: 'view.showFiles',
   toggleOutline: 'view.showOutline',
+  headingFoldToggle: 'editor.fold.toggle',
+  headingFoldAll: 'editor.fold.all',
+  headingUnfoldAll: 'editor.fold.none',
   globalSearch: 'view.globalSearch',
   toggleSource: 'view.toggleSource',
   toggleTheme: 'view.cycleTheme',
@@ -236,6 +240,18 @@ export const COMMAND_DEFINITIONS = [
     palette: true
   },
   {
+    // Reading mode (#163): documents become read-only so selecting and
+    // copying can never edit them. Renderer-only, like view.immersive.
+    id: 'view.readingMode',
+    handler: 'toggleReadingMode',
+    titleKey: 'cmd.readingMode',
+    fallbackTitle: 'Reading Mode',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Shift+R'],
+    palette: true
+  },
+  {
     id: 'view.showFiles',
     handler: 'toggleFiles',
     titleKey: 'cmd.files',
@@ -274,6 +290,39 @@ export const COMMAND_DEFINITIONS = [
     category: COMMAND_CATEGORIES.VIEW,
     context: COMMAND_CONTEXTS.APP,
     defaultKeybindings: ['Mod+Alt+BracketLeft'],
+    palette: true
+  },
+  {
+    // Heading folds in the document (view-only). Renderer-only capture
+    // listeners like the outline ones, so they also work in reading mode
+    // (focus leaves the read-only editor, ProseMirror keymaps never run).
+    id: 'editor.fold.toggle',
+    handler: 'headingFoldToggle',
+    titleKey: 'cmd.foldHeading',
+    fallbackTitle: 'Fold / Unfold Heading',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: ['Mod+Alt+Period'],
+    palette: true
+  },
+  {
+    id: 'editor.fold.all',
+    handler: 'headingFoldAll',
+    titleKey: 'cmd.foldAllHeadings',
+    fallbackTitle: 'Fold All Headings',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: [],
+    palette: true
+  },
+  {
+    id: 'editor.fold.none',
+    handler: 'headingUnfoldAll',
+    titleKey: 'cmd.unfoldAllHeadings',
+    fallbackTitle: 'Unfold All Headings',
+    category: COMMAND_CATEGORIES.VIEW,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: [],
     palette: true
   },
   {

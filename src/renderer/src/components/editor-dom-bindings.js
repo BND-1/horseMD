@@ -69,6 +69,7 @@ export function mountEditorDomBindings({
     prepareRawMarkdownPaste,
     setZoom,
     getT,
+    isReadOnly,
     isDestroyed
   })
 

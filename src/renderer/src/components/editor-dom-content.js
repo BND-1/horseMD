@@ -25,13 +25,23 @@ export function mountEditorContentBindings({
   prepareRawMarkdownPaste,
   setZoom,
   getT,
+  isReadOnly,
   isDestroyed
 }) {
   const onLinkClick = (event) => {
-    if (!(event.ctrlKey || event.metaKey)) return
+    // Editing needs Ctrl/Cmd (a plain click places the caret in the link
+    // text). A read-only document has no caret, so a plain click opens the
+    // link — unless the click ended a text selection (#163: select to copy).
     const anchor = event.target.closest?.('a')
     const href = anchor?.getAttribute('href')
     if (!href) return
+    if (!(event.ctrlKey || event.metaKey)) {
+      if (!isReadOnly?.()) return
+      // A non-editable page follows <a href> itself; never let it navigate.
+      event.preventDefault()
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed) return
+    }
     if (/^(https?:|mailto:)/i.test(href)) {
       event.preventDefault()
       event.stopPropagation()

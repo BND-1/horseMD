@@ -3887,6 +3887,9 @@ body.hm-full-width .source-editor {
   outline: none;
   box-shadow: var(--focus-ring);
 }
+/* Reading mode on (#163): the status-bar switch stays visibly lit so a
+   read-only document never looks like a frozen editor. */
+.status-btn.hm-reading-btn.active { color: var(--accent); }
 /* Floating Save action button — bottom-right of the editor area, only while the
    active tab is dirty. An icon disc by default; on hover it gracefully expands
    into a pill revealing the "Save" label (so it stays light over the content and
@@ -7366,6 +7369,82 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   grid-column: 1 / -1;
   grid-row: 1 / -1;
 }
+/* Desktop edge reveal (useImmersiveMode): the pointer at the top, bottom or
+   left window edge slides the whole shell — top bar, status bar, activity
+   bar + open sidebar — in OVER the document (fixed, so the document never
+   moves); it slides out when the pointer leaves all of them. Hidden ones sit outside the window and take no
+   window drag region (only a revealed bar drags the window). */
+.app.hm-immersive-edges .topbar,
+.app.hm-immersive-edges .statusbar,
+.app.hm-immersive-edges .activity-bar,
+.app.hm-immersive-edges .pane-left {
+  display: flex !important;
+  position: fixed;
+  z-index: 1350;
+  visibility: hidden;
+  transition:
+    transform 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    visibility 0s linear 0.18s;
+}
+.app.hm-immersive-edges .pane-left.collapsed { display: none !important; }
+/* Same arrangement as the normal window, laid over the document. */
+.app.hm-immersive-edges .topbar {
+  top: 0; left: 48px; right: 0;
+  height: var(--topbar-h);
+  transform: translateY(-100%);
+}
+.app.is-mac.hm-immersive-edges .topbar { left: 0; }
+.app.hm-immersive-edges .statusbar {
+  bottom: 0; left: 48px; right: 0;
+  height: var(--status-h);
+  transform: translateY(100%);
+}
+.app.hm-immersive-edges .activity-bar {
+  top: 0; bottom: 0; left: 0;
+  width: 48px;
+  transform: translateX(-100%);
+}
+/* macOS: the top bar spans the width, the activity bar starts below it. */
+.app.is-mac.hm-immersive-edges .activity-bar { top: var(--topbar-h); }
+.app.hm-immersive-edges .pane-left {
+  top: var(--topbar-h); bottom: var(--status-h); left: 48px;
+  transform: translateX(calc(-100% - 48px));
+}
+.app.hm-reveal .topbar,
+.app.hm-reveal .statusbar,
+.app.hm-reveal .activity-bar,
+.app.hm-reveal .pane-left {
+  visibility: visible;
+  transform: none;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+  transition:
+    transform 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    visibility 0s;
+}
+.app.hm-immersive-edges:not(.hm-reveal) .topbar,
+.app.hm-immersive-edges:not(.hm-reveal) .topbar *,
+.app.hm-immersive-edges:not(.hm-reveal) .activity-bar,
+.app.hm-immersive-edges:not(.hm-reveal) .activity-bar * {
+  -webkit-app-region: no-drag !important;
+}
+/* The document slides right just enough to clear the revealed sidebar
+   (--hm-reveal-shift, measured by useImmersiveMode) — a transform, so the
+   text never re-lays out. A window too narrow for that lays the document out
+   beside the sidebar instead (--hm-reveal-inset), like the normal window. */
+.app.hm-immersive-edges .pane-center {
+  transition: transform 0.18s var(--ease-out);
+}
+.app.hm-reveal .pane-center {
+  transform: translateX(var(--hm-reveal-shift, 0px));
+  margin-left: var(--hm-reveal-inset, 0px);
+}
+/* The top bar has its own full-screen button; the corner one would cover it. */
+.app.hm-reveal .hm-immersive-corner {
+  opacity: 0;
+  pointer-events: none;
+}
 /* The hidden top bar used to provide the space above the first line. */
 .app.hm-immersive .editor-scroll {
   padding-top: 36px;
@@ -7516,4 +7595,55 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .sync-progress-actions {
   display: inline-flex;
   gap: 10px;
+}
+
+/* Heading folds (editor-heading-fold.js). Hidden blocks are top-level
+   children with a decoration class (view-only, never in the Markdown). The
+   toggles live in an overlay after the editor DOM, right after the heading
+   text — the leading gutter belongs to the block handle. */
+.milkdown .ProseMirror > .hm-fold-hidden {
+  display: none !important;
+}
+.hm-fold-layer {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 5;
+}
+.hm-fold-layer .hm-fold-toggle {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 13px/1 var(--font-ui);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.hm-fold-layer .hm-fold-toggle:hover {
+  opacity: 1;
+  background: var(--hover);
+  color: var(--text);
+}
+.hm-fold-layer .hm-fold-toggle[data-folded="true"] {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.hm-fold-layer .hm-fold-toggle[data-folded="true"]:hover {
+  background: var(--accent-glow);
+}
+.hm-fold-layer .hm-fold-dots {
+  letter-spacing: 1px;
+}
+@media print {
+  .hm-fold-layer { display: none; }
 }

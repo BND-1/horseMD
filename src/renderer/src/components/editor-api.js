@@ -13,6 +13,7 @@ import { normalizeDisplayMath } from './editor-math.js'
 import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
+import { suspendHeadingFolds } from './editor-heading-fold.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 import {
@@ -63,7 +64,13 @@ export function createEditorApi({
     v.state.doc.descendants((node) => {
       if (node.type.name === 'code_block') codeBlocks.push({ text: node.textContent, language: String(node.attrs.language || '') })
     })
-    return createPdfSourceFromEditor(v.dom, { codeBlocks })
+    // Folded sections are hidden DOM: show them while the snapshot measures.
+    const resumeFolds = suspendHeadingFolds(v)
+    try {
+      return await createPdfSourceFromEditor(v.dom, { codeBlocks })
+    } finally {
+      resumeFolds()
+    }
   }
 
   const serializeCurrentDocument = () => {

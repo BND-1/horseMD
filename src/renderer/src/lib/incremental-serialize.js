@@ -74,6 +74,10 @@ export function createIncrementalSerializer({
   // { doc, style, children, segs: [{ count, text }] }
   let base = null
   let disabled = false
+  // Set when the editor is destroyed: idle work scheduled before must not
+  // run its serializer any more (Milkdown's paragraph rule reads the
+  // destroyed view and throws; an uncaught error keeps the editor alive).
+  let disposed = false
   let bootstrapping = null
   let served = 0
   const stats = { incremental: 0, full: 0, fallback: 0, bootstraps: 0 }
@@ -100,11 +104,12 @@ export function createIncrementalSerializer({
     const job = { doc, style, full, children, groups, texts: [], next: 0 }
     bootstrapping = job
     const step = (deadline) => {
-      if (bootstrapping !== job || disabled) return
+      if (bootstrapping !== job || disabled || disposed) return
       while (job.next < groups.length) {
         if (deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() < 2 && job.texts.length) break
         const group = groups[job.next]
-        const part = serialize(makeDoc(doc, [...children.slice(group.start, group.start + group.count), sentinel]))
+        let part
+        try { part = serialize(makeDoc(doc, [...children.slice(group.start, group.start + group.count), sentinel])) } catch { part = null }
         if (typeof part !== 'string' || !part.endsWith(SENTINEL_SUFFIX)) {
           bootstrapping = null
           return // unusual output (an unknown separator rule): stay full
@@ -151,7 +156,7 @@ export function createIncrementalSerializer({
   const REFINE_COUNT = 8
   const refineLater = (seg) => {
     scheduleIdle(() => {
-      if (disabled || !base) return
+      if (disabled || disposed || !base) return
       const index = base.segs.indexOf(seg)
       const fail = (why) => { stats.refineFail = stats.refineFail || {}; stats.refineFail[why] = (stats.refineFail[why] || 0) + 1 }
       if (index < 0) return fail('gone')
@@ -166,7 +171,8 @@ export function createIncrementalSerializer({
       if (groups.length < 2) return fail('one-group')
       const texts = []
       for (const group of groups) {
-        const part = serialize(makeDoc(base.doc, [...children.slice(group.start, group.start + group.count), sentinel]))
+        let part
+        try { part = serialize(makeDoc(base.doc, [...children.slice(group.start, group.start + group.count), sentinel])) } catch { part = null }
         if (typeof part !== 'string' || !part.endsWith(SENTINEL_SUFFIX)) return fail('sentinel')
         texts.push(part.slice(0, -SENTINEL_SUFFIX.length))
       }
@@ -292,7 +298,7 @@ export function createIncrementalSerializer({
   const verifyLater = (doc, style, text) => {
     const ref = typeof WeakRef === 'function' ? new WeakRef(doc) : { deref: () => doc }
     scheduleIdle(() => {
-      if (disabled) return
+      if (disabled || disposed) return
       const target = ref.deref()
       if (!target) return
       let expected
@@ -359,6 +365,8 @@ export function createIncrementalSerializer({
       if (next.childCount !== previous.childCount) return
       base = { doc: next, style: base.style, segs: base.segs, children: childrenOf(next) }
     },
-    forget () { base = null; bootstrapping = null }
+    forget () { base = null; bootstrapping = null },
+    // The editor is gone: drop the cached document and stop idle work.
+    dispose () { disposed = true; base = null; bootstrapping = null }
   }
 }

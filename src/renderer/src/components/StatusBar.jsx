@@ -336,6 +336,8 @@ export default function StatusBar({
   effectiveKeybindings,
   sourceMode,
   onToggleSource,
+  readingMode,
+  onToggleReadingMode,
   pageWidth,
   onSetPageWidth,
   fontSize,
@@ -460,6 +462,16 @@ export default function StatusBar({
         ) : (
           <>
             {tab && <StatsControl stats={s} />}
+            {onToggleReadingMode && (
+              <button
+                className={`status-btn hm-reading-btn${readingMode ? ' active' : ''}`}
+                onClick={onToggleReadingMode}
+                aria-pressed={readingMode}
+                title={labelWithShortcut(t('tip.toggleReading'), 'view.readingMode', effectiveKeybindings)}
+              >
+                <Icon name={readingMode ? 'book' : 'pencil'} size={14} /> {readingMode ? t('status.reading') : t('status.editing')}
+              </button>
+            )}
             <button
               className="status-btn"
               onClick={onToggleSource}

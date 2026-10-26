@@ -145,6 +145,18 @@ const standalone = [
     script: 'scripts/test-immersive-mode-ui.mjs'
   },
   {
+    name: 'Reading mode (#163): read-only documents, select/copy/find/links work, nothing edits',
+    script: 'scripts/test-reading-mode-ui.mjs'
+  },
+  {
+    name: 'Heading folds: view-only, caret never hidden, outline/find open folds, export complete',
+    script: 'scripts/test-heading-fold-ui.mjs'
+  },
+  {
+    name: 'Closed tabs release their editors (heap snapshot Crepe count)',
+    script: 'scripts/test-closed-tab-memory-ui.mjs'
+  },
+  {
     name: 'Image pasted into a text paragraph (empty title = no title)',
     script: 'scripts/test-image-paste-paragraph-ui.mjs'
   },

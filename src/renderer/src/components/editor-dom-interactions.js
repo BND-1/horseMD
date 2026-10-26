@@ -8,6 +8,7 @@ import {
 } from './editor-code-block-exit.js'
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 import { captureEditorContextCopy } from './editor-context-copy.js'
+import { headingFoldContext } from './editor-heading-fold.js'
 import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
@@ -175,8 +176,12 @@ export function mountEditorInteractionBindings({
     // do not collapse them into a neighbouring ProseMirror caret to open a menu.
     if (isReadOnly?.() || copySelection?.kind === 'code') {
       event.preventDefault()
-      setCtxMenu(copySelection ? {
-        x: event.clientX, y: event.clientY, copySelection, copyOnly: true
+      // Folding is view-only, so a read-only heading still offers it.
+      const readView = viewRef.current || view
+      const at = copySelection?.kind === 'code' ? null : readView.posAtCoords({ left: event.clientX, top: event.clientY })
+      const headingFold = at ? headingFoldContext(readView.state, at.pos) : null
+      setCtxMenu(copySelection || headingFold ? {
+        x: event.clientX, y: event.clientY, copySelection, copyOnly: true, headingFold
       } : null)
       return
     }
@@ -291,6 +296,7 @@ export function mountEditorInteractionBindings({
         setCtxMenu({
           x: event.clientX,
           y: event.clientY,
+          headingFold: headingFoldContext(currentView.state, at.pos),
           listConversion,
           blockPos,
           blockListConvertible,

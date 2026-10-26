@@ -15,6 +15,7 @@
 import { Plugin } from '@milkdown/prose/state'
 import { loadKatex } from '../lib/katex-lazy.js'
 import { inlineMathAtCaret } from './editor-inline-math.js'
+import { rememberTranslator, translate } from '../lib/live-translator.js'
 
 // Chars that signal the content is actually math (not prose). Without one of
 // these, `$5`/`$cost` would pop a pointless preview.
@@ -101,7 +102,7 @@ const clearInlineEditor = (editor) => {
   }))
 }
 
-const enhanceInlineEditor = (popup, getT) => {
+const enhanceInlineEditor = (popup) => {
   if (!popup || popup.querySelector('.hm-inline-math-clear')) return
   const confirm = popup.querySelector('button')
   if (!confirm) return
@@ -109,8 +110,9 @@ const enhanceInlineEditor = (popup, getT) => {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'hm-inline-math-clear'
-  button.textContent = getT?.('math.clear') || 'Clear'
-  button.title = getT?.('math.clear') || 'Clear'
+  const label = translate('math.clear')
+  button.textContent = label && label !== 'math.clear' ? label : 'Clear'
+  button.title = button.textContent
   button.addEventListener('mousedown', (event) => event.preventDefault())
   button.addEventListener('click', (event) => {
     event.preventDefault()
@@ -120,14 +122,15 @@ const enhanceInlineEditor = (popup, getT) => {
   confirm.insertAdjacentElement('afterend', button)
 }
 
-const mountInlineEditListeners = (getT) => {
+// Mounted once for the whole app: nothing here may capture an editor.
+const mountInlineEditListeners = () => {
   if (innerEditListenersMounted) return
   innerEditListenersMounted = true
   const schedule = (event) => {
     const editor = event.target?.closest?.('.milkdown-latex-inline-edit .ProseMirror')
     if (!editor) return
     requestAnimationFrame(() => {
-      enhanceInlineEditor(editor.closest('.milkdown-latex-inline-edit'), getT)
+      enhanceInlineEditor(editor.closest('.milkdown-latex-inline-edit'))
       previewInlineEditor(editor)
     })
   }
@@ -141,28 +144,29 @@ const mountInlineEditListeners = (getT) => {
     }, 0)
   }, true)
   const observer = new MutationObserver(() => {
-    document.querySelectorAll('.milkdown-latex-inline-edit').forEach((popup) => enhanceInlineEditor(popup, getT))
+    document.querySelectorAll('.milkdown-latex-inline-edit').forEach((popup) => enhanceInlineEditor(popup))
   })
   observer.observe(document.body, { childList: true, subtree: true })
 }
 
-function getTip(getT) {
+function getTip() {
   if (tip) return tip
   tip = document.createElement('div')
   tip.className = 'hm-math-preview'
   tip.style.display = 'none'
   document.body.appendChild(tip)
-  mountInlineEditListeners(getT)
+  mountInlineEditListeners()
   return tip
 }
 
 export function mathPreviewPlugin(getT) {
+  rememberTranslator(getT)
   let raf = 0
-  const hide = () => { const t = getTip(getT); t.style.display = 'none' }
+  const hide = () => { const t = getTip(); t.style.display = 'none' }
 
   const render = (view) => {
     raf = 0
-    const t = getTip(getT)
+    const t = getTip()
     const { state } = view
     const { selection } = state
     if (!view.hasFocus() || !selection.empty) return hide()

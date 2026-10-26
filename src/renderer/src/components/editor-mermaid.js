@@ -27,7 +27,6 @@ let renderQueue = Promise.resolve()
 const previewBlockByCallback = new WeakMap()
 const latestPreviewSource = new WeakMap()
 const pendingPreviewRefresh = new WeakMap()
-let previewTranslator = null
 let mermaidMod = null
 let mermaidTheme = null // theme mermaid was last initialize()d for
 let idSeq = 0 // monotonic render id (guaranteed unique, unlike Math.random)
@@ -145,7 +144,7 @@ const escapeHtml = (s) =>
 // kicks the async render and updates via setPreview when it lands.
 export function createMermaidPreviewRenderer(getT) {
   const t = (k) => (getT ? getT(k) : k)
-  previewTranslator = t
+  rememberTranslator(getT)
   return (language, text, setPreview) => {
     const lang = String(language || '').toLowerCase()
     if (lang !== 'mermaid') return null
@@ -282,7 +281,7 @@ export function refreshMermaidPreviewFromCodeBlock(block, source) {
     if (!panel) return
     const update = () => {
       if (!block.isConnected || latestPreviewSource.get(block) !== normalized) return
-      panel.innerHTML = previewHtml(normalized, previewTranslator || ((key) => key), update)
+      panel.innerHTML = previewHtml(normalized, translate, update)
     }
     update()
   }, 120)
@@ -294,6 +293,7 @@ export function refreshMermaidPreviewFromCodeBlock(block, source) {
 // unsafe: labels can legitimately contain strings such as "flowchart TD" or
 // "sequenceDiagram", which previously split one diagram into duplicate blocks.
 import { Plugin, PluginKey } from '@milkdown/prose/state'
+import { rememberTranslator, translate } from '../lib/live-translator.js'
 const DIRECTIONS = '(?:TB|TD|BT|RL|LR)'
 const DIAGRAM_HEADER_SOURCE =
   '(?:(?:flowchart|graph)\\s+' + DIRECTIONS + '\\b' +
