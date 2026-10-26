@@ -197,6 +197,26 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `closeTab`).
 - **App version** is injected at build time via Vite `define` (`__APP_VERSION__`
   in `electron.vite.config.mjs`, from `package.json`); shown on the welcome page.
+  Main has the same define: in an unpackaged run (dev, tests)
+  `app.getVersion()` is Electron's own version.
+- **In-app update** (#164, `main/updater.js` + pure `main/update-core.js`,
+  `UpdateToast.jsx`, `hooks/useUpdateDownload.js`): the prompt offers「直接下载」
+  and「去 GitHub 查看」(Settings › About too). Main downloads only assets of the
+  release it fetched itself (HTTPS; never a renderer URL) through net.request,
+  with progress / cancel / 60 s stall timeout, and verifies SHA-256 against the
+  release's `SHA256SUMS.txt` (mismatch → deleted). Modes: Windows `install`
+  (NSIS `--updated /S --force-run`, what electron-updater runs); macOS
+  `install` (zip unpacked + Info.plist version checked; a detached script
+  swaps `/Applications/HorseMD.app` after exit and opens it — Squirrel.Mac
+  needs a signed app) or `open` (the dmg, when the bundle is not replaceable:
+  read-only, /Volumes, AppTranslocation); Linux `reveal` (deb / pacman to
+  Downloads — installing needs root). 「重启并安装」 quits through `quitApp`
+  (the unsaved-changes confirm can cancel; `app:cancel-close` drops the
+  pending install); the installer / script starts in `will-quit`. Refused when
+  `!app.isPackaged`. `HORSEMD_TEST_UPDATE_FEED` points the feed at a local
+  server (http://127.0.0.1 assets allowed then). Locked by `test:update-core`,
+  `test:update-ui`; end-to-end checked on a packaged app (mini 2026-10-26:
+  0.13.256 → 0.13.999 swapped and reopened).
 - **Releases** (GitHub): tag = `vX.X.X`, title = **`HorseMD vX.X.X`** (all 14
   historical releases unified to this format 2026-07-04 — keep it consistent).
   Release notes: Chinese, start directly with content (no HorseMD intro),
@@ -584,7 +604,8 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `htmlEntities: true` (numeric references; `&amp;` still decoded once).
   Locked by `test:sync-electron-request` (bare Electron + raw server).
   Automatic sync (`hooks/useAutoSync.js`, `settings.syncAutoMinutes` ∈
-  0/5/15/30/60, default off, Settings › 云同步 › 同步文件夹): every N
+  0/5/15/30/60, default off, its own block under 同步文件夹 in Settings ›
+  云同步, showing the next round time): every N
   minutes each bound folder runs `sync:run` with `{ safeOnly: true }` —
   main re-plans right before running (never a stale renderer preview) and
   returns `{ needsConfirmation }` for deletions / conflicts / an emptied
@@ -828,7 +849,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   while a `.menu-backdrop` is open or a text field inside has focus).
   Hidden bars sit outside the window with `-webkit-app-region: no-drag`
   (named drag elements only), so the top of the document never drags the
-  window. Locked by `npm run test:immersive-mode-ui`.
+  window. First-use hint (`hint`, `.hm-immersive-hint`): entering shows a
+  pill ("any of the top / bottom / left edges") + a glow on the three edges
+  for 4.5 s, `pointer-events: none`; never again once the bars were
+  revealed, at most 3 times (`localStorage horsemd.immersiveHint.v1`).
+  Locked by `npm run test:immersive-mode-ui`.
 - **Reading mode** (#163, `hooks/useReadingMode.js`, `settings.readingMode`,
   command `view.readingMode`, default `Mod+Shift+R`, status-bar switch,
   persisted): desktop documents become read-only through the same `readOnly`

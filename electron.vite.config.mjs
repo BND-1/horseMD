@@ -9,6 +9,11 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 
 export default defineConfig({
   main: {
+    // The updater compares against the package version; unpackaged runs
+    // (dev, tests) would otherwise get Electron's own from app.getVersion().
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version)
+    },
     build: {
       rollupOptions: {
         input: {

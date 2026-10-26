@@ -28,9 +28,15 @@ export default function UpdateChecker({ t }) {
           {status === 'available' && info && (
             <span>
               {t('settings.newVersionAvailable', { v: info.latest })}
+              {info.download && <>
+                {' · '}
+                <button className="settings-inline-link" onClick={() => window.dispatchEvent(new CustomEvent('hm:update-download', { detail: info }))}>
+                  {t('update.direct')}
+                </button>
+              </>}
               {' · '}
               <button className="settings-inline-link" onClick={() => info.url && window.api.openExternal(info.url)}>
-                {t('update.download')} →
+                {info.download ? t('update.github') : t('update.download')} →
               </button>
             </span>
           )}

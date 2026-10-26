@@ -24,7 +24,7 @@ export default function SettingsView({
   globalShortcutStatus,
   cloudSync,
   syncWorkspaces,
-  autoSyncStatus,
+  autoSync,
   folderRoots,
   onEnableSyncFolder,
   onAddSyncFolder,
@@ -97,7 +97,7 @@ export default function SettingsView({
             onListRemoteWorkspaces={syncWorkspaces?.listRemoteWorkspaces}
             onJoinWorkspace={syncWorkspaces?.joinWorkspace}
             onRun={syncWorkspaces?.run}
-            autoSyncStatus={autoSyncStatus}
+            autoSync={autoSync}
             settings={settings}
             onUpdateSettings={onUpdateSettings}
             t={t}

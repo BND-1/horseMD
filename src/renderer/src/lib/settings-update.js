@@ -7,7 +7,11 @@ export function resolveUpdateCheckState(result) {
       status: 'available',
       info: {
         latest: result.latest,
-        url: result.url || ''
+        current: result.current,
+        url: result.url || '',
+        name: result.name || '',
+        notes: result.notes || '',
+        download: result.download || null
       }
     }
   }

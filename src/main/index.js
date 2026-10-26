@@ -11,6 +11,7 @@ import { registerFileSystemIpc } from './filesystem.js'
 import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
 import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { createElectronRequest } from './sync/electron-request.js'
+import { registerUpdater } from './updater.js'
 import { registerWatcherIpc } from './watchers.js'
 import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
@@ -513,6 +514,8 @@ app.on('before-quit', () => {
 // relaunch (or another app) can register the same combination again.
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  // A downloaded update the user chose to install starts now (detached).
+  updater.runPendingInstall()
 })
 
 app.on('window-all-closed', () => {
@@ -1026,41 +1029,26 @@ ipcMain.on('app:confirm-close', () => {
 // (e.g. the macOS traffic light) isn't mistaken for a quit.
 ipcMain.on('app:cancel-close', () => {
   isQuitting = false
+  updater.cancelPendingInstall()
 })
 
-// ----------------------------- update check --------------------------------
-// Notify-only update check: ask GitHub for the latest *published* release
-// (drafts/prereleases are excluded by this endpoint) and report its version so
-// the renderer can show a "new version available" prompt. No download here.
-ipcMain.handle('update:check', async () => {
-  try {
-    // Use Electron's net (Chromium's network stack), NOT Node's global fetch:
-    // Node's fetch resolves DNS via the bundled c-ares, which can abort() the
-    // whole main process for an unsigned app launched by Finder/launchd (observed
-    // as an instant crash on open). net.fetch goes through Chromium's resolver,
-    // which fails gracefully instead of crashing.
-    const res = await net.fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'HorseMD-Updater' },
-      // Notify-only check: never let a stalled network (api.github.com is
-      // unreachable on some connections) hold the request open — bail early.
-      signal: AbortSignal.timeout(8000)
-    })
-    if (!res.ok) return { ok: false }
-    const data = await res.json()
-    const latest = String(data.tag_name || '').replace(/^v/i, '')
-    return {
-      ok: true,
-      latest,
-      current: app.getVersion(),
-      url: data.html_url || 'https://github.com/BND-1/horseMD/releases',
-      // The release notes (Markdown) so the prompt can show "what's new". Capped
-      // so a huge changelog can't bloat the IPC payload / the toast.
-      name: typeof data.name === 'string' ? data.name : '',
-      notes: typeof data.body === 'string' ? data.body.slice(0, 4000) : ''
+// ----------------------------- update --------------------------------------
+// In-app update (#164): check, download (verified) and install on restart —
+// see updater.js. "Restart and install" quits through the tray-quit path, so
+// the renderer's unsaved-changes confirm still decides.
+const updater = registerUpdater({
+  app,
+  ipcMain,
+  net,
+  shell,
+  sendToRenderer: (channel, payload) => sendToRenderer(channel, payload),
+  requestQuit: () => quitApp(),
+  log: inputTraceEnabled
+    ? (entry) => {
+      const line = JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n'
+      inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
     }
-  } catch {
-    return { ok: false }
-  }
+    : null
 })
 
 ipcMain.handle('menu:setKeybindings', async (_event, accelerators) => {

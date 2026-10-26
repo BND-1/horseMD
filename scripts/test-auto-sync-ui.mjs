@@ -85,6 +85,7 @@ const ui = () => app.evaluate(`({
   line: document.querySelector('.sync-auto-line')?.textContent || '',
   warn: !!document.querySelector('.sync-auto-line.warn'),
   active: document.querySelector('.sync-auto-row .settings-segmented-option.active')?.textContent || '',
+  state: document.querySelector('.sync-auto-state')?.textContent || '',
   // Every toast fired (fireToast → 'hm:toast'); the page shows one at a time.
   toasts: (globalThis.__testToasts || []).slice(),
   tick: typeof globalThis.__hmAutoSyncTick === 'function'
@@ -135,6 +136,7 @@ try {
   await app.evaluate(`[...document.querySelectorAll('.sync-auto-row .settings-segmented-option')].find((b) => /^5/.test(b.textContent)).click()`)
   const on = await waitFor((s) => s.tick, 'choosing 5 min did not start the timer')
   assert.match(on.active, /5/)
+  assert.match(on.state, /每 5 分钟同步 1 个文件夹 · 下次约 \d{2}:\d{2}|Syncing 1 folder\(s\) every 5 min/, `state line: ${on.state}`)
 
   // 1. Nothing changed.
   const before = writes
@@ -156,6 +158,7 @@ try {
   await tick()
   const confirm = await waitFor((s) => /需要你确认|need your confirmation/.test(s.line), 'deletion was not held back')
   assert.equal(confirm.warn, true)
+  assert.ok(!/\b0 项|\b0 (deletion|conflict)/.test(confirm.line), `zero counts are not listed: ${confirm.line}`)
   assert.ok(cloudNotes().includes('note-1.md'), 'cloud file not deleted unattended')
   const confirmToasts = confirm.toasts.filter((t) => /自动同步在等你确认|is waiting/.test(t))
   assert.equal(confirmToasts.length, 1, `one toast: ${JSON.stringify(confirm.toasts)}`)

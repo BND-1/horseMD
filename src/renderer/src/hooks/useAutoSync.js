@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { fireToast } from '../ui.js'
 
+// "2 项删除、1 项冲突" — only the kinds that are there.
+export const pendingChanges = (summary = {}, t) => [
+  summary.delete ? t('sync.auto.partDelete', { n: summary.delete }) : '',
+  summary.conflict ? t('sync.auto.partConflict', { n: summary.conflict }) : ''
+].filter(Boolean).join(t('sync.auto.partJoin'))
+
 const keyOf = (rootPath) => String(rootPath || '').replace(/[\\/]+$/, '').toLowerCase()
 const nameOf = (entry) => entry.name || String(entry.rootPath || '').split(/[\\/]/).filter(Boolean).pop() || entry.rootPath
 
@@ -14,17 +20,24 @@ const nameOf = (entry) => entry.name || String(entry.rootPath || '').split(/[\\/
 // Folders run one after another; a tick is skipped while any sync runs
 // (a manual one, or a long throttling wait). Toasts only for something the
 // user must act on, once per distinct situation; the result of every run is
-// kept per folder (`status`) for the Settings row.
+// kept per folder (`byFolder`) for the Settings rows, and `nextAt` is when the
+// next round starts (null when off).
 export function useAutoSync({ sync, minutes, tRef }) {
   const enabled = sync.supported && minutes > 0
   const [status, setStatus] = useState({})
+  const [nextAt, setNextAt] = useState(null)
   const syncRef = useRef(sync)
   syncRef.current = sync
   const passRef = useRef(false)
   const noticeRef = useRef(new Map()) // folder key → last notice signature
 
   useEffect(() => {
-    if (!enabled) return undefined
+    if (!enabled) {
+      setNextAt(null)
+      return undefined
+    }
+    const interval = minutes * 60000
+    setNextAt(Date.now() + interval)
     const record = (key, value) => setStatus((current) => ({ ...current, [key]: { at: Date.now(), ...value } }))
     const noticeOnce = (key, signature, message) => {
       if (noticeRef.current.get(key) === signature) return
@@ -32,6 +45,7 @@ export function useAutoSync({ sync, minutes, tRef }) {
       fireToast(message, { duration: 8000 })
     }
     const tick = async () => {
+      setNextAt(Date.now() + interval)
       if (passRef.current) return
       passRef.current = true
       try {
@@ -46,7 +60,7 @@ export function useAutoSync({ sync, minutes, tRef }) {
               record(key, { kind: 'confirm', reason: result.reason, summary: result.summary })
               const summary = result.summary || {}
               noticeOnce(key, `confirm:${result.reason}:${summary.delete}:${summary.conflict}`, result.reason === 'changes'
-                ? tRef.current('sync.auto.needsConfirmToast', { name: nameOf(entry), delete: summary.delete || 0, conflict: summary.conflict || 0 })
+                ? tRef.current('sync.auto.needsConfirmToast', { name: nameOf(entry), changes: pendingChanges(summary, tRef.current) })
                 : tRef.current('sync.auto.remoteResetToast', { name: nameOf(entry) }))
             } else if (result?.stopped) {
               record(key, { kind: 'stopped' })
@@ -67,7 +81,7 @@ export function useAutoSync({ sync, minutes, tRef }) {
         passRef.current = false
       }
     }
-    const timer = setInterval(tick, minutes * 60000)
+    const timer = setInterval(tick, interval)
     // Tests run a tick without waiting minutes (test:auto-sync-ui).
     globalThis.__hmAutoSyncTick = tick
     return () => {
@@ -76,5 +90,5 @@ export function useAutoSync({ sync, minutes, tRef }) {
     }
   }, [enabled, minutes, tRef])
 
-  return status
+  return { byFolder: status, nextAt }
 }

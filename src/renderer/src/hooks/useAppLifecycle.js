@@ -180,7 +180,7 @@ export function useAppLifecycle({
       if (!alive || !r?.ok || !r.latest) return
       const dismissed = localStorage.getItem(UPDATE_DISMISS_KEY)
       if (isNewerVersion(r.latest, r.current) && r.latest !== dismissed) {
-        setUpdate({ latest: r.latest, current: r.current, url: r.url, notes: r.notes, name: r.name })
+        setUpdate({ latest: r.latest, current: r.current, url: r.url, notes: r.notes, name: r.name, download: r.download || null })
       }
     }).catch(() => {})
     return () => {
@@ -244,5 +244,10 @@ export function useAppLifecycle({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { update, dismissUpdate, toast, setToast, flushSession }
+  // Hide without remembering the version as dismissed (a download keeps
+  // running) / show again (download finished, or started from Settings).
+  const hideUpdate = useCallback(() => setUpdate(null), [])
+  const showUpdate = useCallback((info) => { if (info?.latest) setUpdate(info) }, [])
+
+  return { update, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession }
 }

@@ -17,6 +17,7 @@ import FindBar from './components/shell/FindBar.jsx'
 import EditorArea from './components/shell/EditorArea.jsx'
 import DropOpenOverlay from './components/shell/DropOpenOverlay.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
+import { useUpdateDownload } from './hooks/useUpdateDownload.js'
 import RenameModal from './components/RenameModal.jsx'
 import {
   loadSettings,
@@ -635,7 +636,7 @@ export default function App() {
   useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
 
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
-  const autoSyncStatus = useAutoSync({ sync: syncWorkspaces, minutes: settings.syncAutoMinutes, tRef })
+  const autoSync = useAutoSync({ sync: syncWorkspaces, minutes: settings.syncAutoMinutes, tRef })
   const addDroppedFolder = useCallback((path) => {
     addFolder(path)
     // A dropped directory is a workspace action. Reveal the file tree even on
@@ -977,7 +978,7 @@ export default function App() {
   readOnlyRef.current = readOnly
 
   // Full-screen reading/editing: only while a document is showing.
-  const { immersive, reveal: immersiveReveal, toggleImmersive, exitImmersive } = useImmersiveMode({
+  const { immersive, reveal: immersiveReveal, hint: immersiveHint, toggleImmersive, exitImmersive } = useImmersiveMode({
     enabled: !home && Boolean(activeTab) && activeTab?.kind !== 'settings',
     effectiveKeybindings,
     platform: window.api.platform,
@@ -1054,7 +1055,7 @@ export default function App() {
   // flushSession is also used by the window-close guard; update/toast/
   // dismissUpdate/setToast feed the JSX. These are read only inside effect/event
   // closures, so defining them here is safe (resolved at commit/call time).
-  const { update, dismissUpdate, toast, setToast, flushSession } = useAppLifecycle({
+  const { update, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession } = useAppLifecycle({
     session,
     tabs,
     activePath,
@@ -1077,6 +1078,27 @@ export default function App() {
     setHome,
     tRef
   })
+  // In-app update download (#164). Closing the prompt while a download runs
+  // only hides it (the version is not dismissed); it comes back when the
+  // download is done. Settings › About starts it with 'hm:update-download'.
+  const updateDl = useUpdateDownload()
+  const lastUpdateRef = useRef(null)
+  if (update) lastUpdateRef.current = update
+  const closeUpdate = useCallback(() => {
+    if (updateDl.state.status === 'downloading' || updateDl.state.status === 'ready') hideUpdate()
+    else dismissUpdate()
+  }, [updateDl.state.status, hideUpdate, dismissUpdate])
+  useEffect(() => {
+    if (updateDl.state.status === 'ready' && !update && lastUpdateRef.current) showUpdate(lastUpdateRef.current)
+  }, [updateDl.state.status]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onStart = (event) => {
+      if (event.detail?.latest) showUpdate(event.detail)
+      updateDl.start()
+    }
+    window.addEventListener('hm:update-download', onStart)
+    return () => window.removeEventListener('hm:update-download', onStart)
+  }, [showUpdate, updateDl.start]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A rich input can be visibly committed while Milkdown's 200ms Markdown
   // listener is still pending. Before writing an unsaved scratch session during
@@ -1404,7 +1426,7 @@ export default function App() {
               globalShortcutStatus={globalShortcutStatus}
               cloudSync={syncWorkspaces.supported}
               syncWorkspaces={syncWorkspaces}
-              autoSyncStatus={autoSyncStatus}
+              autoSync={autoSync}
               folderRoots={folderRoots}
               onEnableSyncFolder={enableSyncFolder}
               onAddSyncFolder={addSyncFolder}
@@ -1472,6 +1494,19 @@ export default function App() {
         headingSpacing={settings.headingSpacing}
         onSetHeadingSpacing={(v) => updateSettings({ headingSpacing: v })}
       />
+
+      {immersiveHint && !immersiveReveal && (
+        <div className="hm-immersive-hint">
+          <span className="hm-immersive-edge top" aria-hidden="true" />
+          <span className="hm-immersive-edge bottom" aria-hidden="true" />
+          <span className="hm-immersive-edge left" aria-hidden="true" />
+          <div className="hm-immersive-hint-pill" role="status">
+            <span>{t('immersive.hint')}</span>
+            <span className="hm-immersive-hint-sep" />
+            <span className="hm-immersive-hint-esc"><kbd>Esc</kbd>{t('immersive.hintEsc')}</span>
+          </div>
+        </div>
+      )}
 
       {immersive && (
         <div className="hm-immersive-corner">
@@ -1577,11 +1612,18 @@ export default function App() {
           latest={update.latest}
           current={update.current}
           notes={update.notes}
-          onDownload={() => {
+          download={update.download}
+          dl={updateDl.state}
+          onDirect={updateDl.start}
+          onGitHub={() => {
             window.api.openExternal(update.url)
-            dismissUpdate()
+            if (updateDl.state.status !== 'downloading') dismissUpdate()
           }}
-          onDismiss={dismissUpdate}
+          onCancel={updateDl.cancel}
+          onInstall={updateDl.install}
+          onShowFile={updateDl.showFile}
+          onHide={hideUpdate}
+          onDismiss={closeUpdate}
         />
       )}
     </div>

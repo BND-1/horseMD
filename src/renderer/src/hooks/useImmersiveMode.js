@@ -110,12 +110,28 @@ function clearRoom() {
   if (centre.style.marginLeft) centre.style.marginLeft = ''
 }
 
+// First-use hint (desktop): entering full screen briefly says that ANY of
+// the three edges brings the shell back, and the edges glow once. Shown until
+// the user has revealed the bars once, at most HINT_MAX times. Remembered in
+// this browser only (a convenience; losing it just shows the hint again).
+const HINT_KEY = 'horsemd.immersiveHint.v1'
+const HINT_MAX = 3
+const HINT_DELAY_MS = 250
+export const HINT_MS = 4500
+const readHint = () => {
+  try { return JSON.parse(localStorage.getItem(HINT_KEY) || '{}') || {} } catch { return {} }
+}
+const writeHint = (value) => {
+  try { localStorage.setItem(HINT_KEY, JSON.stringify(value)) } catch { /* storage unavailable */ }
+}
+
 const isTextField = (node) =>
   node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT')
 
 export function useImmersiveMode({ enabled, effectiveKeybindings, platform, revealEdges = true }) {
   const [immersive, setImmersive] = useState(false)
   const [reveal, setReveal] = useState(false)
+  const [hint, setHint] = useState(false)
   const active = immersive && enabled
 
   const toggleImmersive = useCallback(() => setImmersive((value) => !value), [])
@@ -285,9 +301,33 @@ export function useImmersiveMode({ enabled, effectiveKeybindings, platform, reve
   }, [active, reveal])
 
   useEffect(() => {
+    if (!active || !revealEdges) {
+      setHint(false)
+      return undefined
+    }
+    const seen = readHint()
+    if (seen.learned || (seen.shown || 0) >= HINT_MAX) return undefined
+    writeHint({ ...seen, shown: (seen.shown || 0) + 1 })
+    const show = setTimeout(() => setHint(true), HINT_DELAY_MS)
+    const hide = setTimeout(() => setHint(false), HINT_DELAY_MS + HINT_MS)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(hide)
+      setHint(false)
+    }
+  }, [active, revealEdges])
+  // Revealing the bars once means the user found it: no more hints.
+  useEffect(() => {
+    if (!(active && reveal)) return
+    setHint(false)
+    const seen = readHint()
+    if (!seen.learned) writeHint({ ...seen, learned: true })
+  }, [active, reveal])
+
+  useEffect(() => {
     window.api?.setSystemBarsHidden?.(active)
   }, [active])
   useEffect(() => () => { window.api?.setSystemBarsHidden?.(false) }, [])
 
-  return { immersive: active, reveal: active && reveal, toggleImmersive, exitImmersive: () => setImmersive(false) }
+  return { immersive: active, reveal: active && reveal, hint: active && hint, toggleImmersive, exitImmersive: () => setImmersive(false) }
 }

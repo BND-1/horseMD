@@ -819,7 +819,76 @@ button:focus-visible,
 }
 
 .update-toast-foot {
+  display: flex;
+  gap: 8px;
   padding: 14px 16px 16px;
+}
+.update-toast-foot > * {
+  flex: 1 1 0;
+}
+/* Direct download (#164): progress, done and error lines above the buttons. */
+.update-toast-progress {
+  padding: 12px 16px 0;
+}
+.update-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.update-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+.update-progress-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.update-toast-done,
+.update-toast-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 16px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.update-toast-done {
+  color: var(--text);
+}
+.update-toast-done svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+.update-toast-error {
+  color: var(--danger, #c0392b);
+}
+.update-toast-size {
+  margin-left: 6px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.update-toast-secondary {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.update-toast-secondary:hover {
+  background: var(--hover);
 }
 .update-toast-primary {
   width: 100%;
@@ -840,9 +909,11 @@ button:focus-visible,
   transform: translateY(1px);
 }
 .update-toast-close {
-  position: absolute;
-  top: 11px;
-  right: 11px;
+  /* In the head row, centred with the icon and title (it used to sit in the
+     corner, above the version line). */
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
   width: 22px;
   height: 22px;
   display: grid;
@@ -7512,6 +7583,110 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   opacity: 0.8;
 }
 
+/* First-use hint (useImmersiveMode): a pill under the top edge and a glow on
+   the three edges that bring the shell back. 4.5 s in total (HINT_MS): fade
+   in, hold, fade out; the edges pulse twice. Never takes the pointer — the
+   edges must stay reachable while it shows; revealed bars cover it. */
+.hm-immersive-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 1340;
+  pointer-events: none;
+}
+.hm-immersive-hint-pill {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(680px, calc(100vw - 120px));
+  padding: 6px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: hm-hint-pill 4.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hm-immersive-hint-pill > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-immersive-hint-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+.hm-immersive-hint-esc {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.hm-immersive-hint-esc kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: 600 11px/1.4 var(--font-ui);
+}
+.hm-immersive-edge {
+  position: absolute;
+  opacity: 0;
+  animation: hm-hint-edge 4.5s ease-in-out both;
+}
+.hm-immersive-edge.top,
+.hm-immersive-edge.bottom {
+  left: 0;
+  right: 0;
+  height: 6px;
+}
+.hm-immersive-edge.top {
+  top: 0;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 80%, transparent), transparent);
+}
+.hm-immersive-edge.bottom {
+  bottom: 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 80%, transparent), transparent);
+}
+.hm-immersive-edge.left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--accent) 80%, transparent), transparent);
+}
+@keyframes hm-hint-pill {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  8% { opacity: 1; transform: translate(-50%, 0); }
+  88% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -4px); }
+}
+@keyframes hm-hint-edge {
+  0%, 6% { opacity: 0; }
+  18% { opacity: 1; }
+  32% { opacity: 0.25; }
+  46% { opacity: 1; }
+  64%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hm-immersive-hint-pill { animation-name: hm-hint-fade; }
+  .hm-immersive-edge { animation: none; opacity: 0.6; }
+}
+@keyframes hm-hint-fade {
+  0%, 100% { opacity: 0; }
+  6%, 92% { opacity: 1; }
+}
+
 /* Code-block language picker: the "Use “name”" row (editor-codeblock-language.js)
    replaces Milkdown's dimmed "No result" and is clickable. */
 .milkdown .milkdown-code-block .language-picker .language-list-item.no-result.hm-use-language {
@@ -7605,9 +7780,52 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   display: inline-flex;
   gap: 10px;
 }
-/* Automatic sync (hooks/useAutoSync.js): interval row + last result per folder. */
+/* Automatic sync (hooks/useAutoSync.js): its own section — one card with the
+   interval row and the two rules; the last result shows under each folder. */
+.sync-auto-card {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  padding: 6px 14px;
+}
 .sync-auto-row {
-  margin-bottom: 8px;
+  padding: 8px 0;
+}
+.sync-auto-state.on {
+  color: var(--accent-strong);
+}
+.sync-auto-rules {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0 8px;
+  border-top: 1px solid var(--border-soft);
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.sync-auto-rules li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.sync-auto-rules svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--accent-strong);
+}
+/* Narrow settings pane: the interval buttons go under the label. */
+@media (max-width: 760px) {
+  .sync-auto-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .sync-auto-row .settings-segmented {
+    align-self: flex-start;
+    flex-wrap: wrap;
+  }
 }
 .sync-auto-line {
   margin: 4px 0 2px 29px;

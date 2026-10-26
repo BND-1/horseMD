@@ -48,7 +48,7 @@ sudo pacman -U ./horse-0.13.251-x86_64.pkg.tar.xz
 
 pacman 会同时安装缺少的系统依赖（gtk3、nss、alsa-lib 等，都来自官方仓库）。安装包未签名，本地安装默认不要求签名；如果你的 `pacman.conf` 把 `LocalFileSigLevel` 设成了 `Required`，请临时改回 `Optional`。
 
-更新时下载新版后重复同一条命令；卸载用 `sudo pacman -R horse`。
+更新时下载新版后重复同一条命令；卸载用 `sudo pacman -R horse`。HorseMD 提示“发现新版本”时，点“直接下载”会把对应的安装包下载到“下载”文件夹并打开所在位置（安装需要管理员密码，所以仍需运行上面的命令）。
 
 ## 启动
 

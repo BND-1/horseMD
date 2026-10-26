@@ -73,6 +73,29 @@ try {
   assert.equal(inside.corner, true, 'exit button missing')
   assert.ok(inside.left <= 1 && inside.top <= 1 && inside.width >= inside.innerWidth - 2, `document does not fill the window: ${JSON.stringify(inside)}`)
 
+  // First-use hint: says that ANY of the three edges brings the shell back,
+  // the three edges glow, and it never takes the pointer. A reveal while it
+  // shows works and ends it; once revealed, it is never shown again (step 6).
+  const hintState = () => app.evaluate(`(() => {
+    const hint = document.querySelector('.hm-immersive-hint')
+    return hint && { text: hint.textContent, edges: hint.querySelectorAll('.hm-immersive-edge').length, pointer: getComputedStyle(hint).pointerEvents }
+  })()`)
+  const hint = await waitFor(hintState, 'no first-use hint on entering full screen')
+  assert.match(hint.text, /上边、下边或左边任意一处|top, bottom or left edge/, `hint text: ${hint.text}`)
+  assert.match(hint.text, /Esc/)
+  assert.equal(hint.edges, 3, 'all three edges glow')
+  assert.equal(hint.pointer, 'none', 'the hint must not take the pointer')
+  {
+    const half = await app.evaluate('Math.round(innerWidth / 2)')
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: half, y: 300, button: 'none' })
+    await sleep(200)
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: half, y: 4, button: 'none' })
+    await waitFor(async () => (await chrome()).topbar, 'the top edge did not reveal while the hint showed')
+    assert.equal(await hintState(), null, 'the hint stays after the user found the edge')
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: half, y: 300, button: 'none' })
+    await waitFor(async () => !(await chrome()).topbar, 'bars did not slide out after the hint check')
+  }
+
   // 2. Still editable; an unsaved change shows the dot, never the save FAB.
   await clickEnd('尾段')
   await typeTextLikeUser(send, '全屏输入')
@@ -115,6 +138,8 @@ try {
   // document, which does not move; leaving them all slides it out.
   await clickSelector('.hm-immersive-btn')
   await waitFor(async () => (await chrome()).immersive, 'did not re-enter for the edge check')
+  await sleep(900)
+  assert.equal(await hintState(), null, 'the hint came back after the user had revealed the bars')
   const docTop = () => app.evaluate(`Math.round((${editor}).getBoundingClientRect().top)`)
   const move = async (x, y, buttons = 0) => send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons, button: buttons ? 'left' : 'none' })
   const size = await app.evaluate('({ w: innerWidth, h: innerHeight })')

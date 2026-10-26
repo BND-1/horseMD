@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { baseName } from '../../paths.js'
 import { Icon } from '../icons.jsx'
 import { SYNC_AUTO_MINUTES } from '../../settings.js'
+import { pendingChanges } from '../../hooks/useAutoSync.js'
 
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
 
@@ -291,13 +292,50 @@ function AutoSyncLine({ status, t }) {
   if (status.kind === 'done') text = t('sync.auto.done', { time, upload: summary.upload || 0, download: summary.download || 0 })
   else if (status.kind === 'idle') text = t('sync.auto.idle', { time })
   else if (status.kind === 'confirm') text = status.reason === 'changes'
-    ? t('sync.auto.needsConfirm', { time, delete: summary.delete || 0, conflict: summary.conflict || 0 })
+    ? t('sync.auto.needsConfirm', { time, changes: pendingChanges(summary, t) })
     : t('sync.auto.remoteReset', { time })
   else if (status.kind === 'stopped') text = t('sync.auto.stopped', { time })
   else if (status.kind === 'error') text = t('sync.auto.failed', { time, msg: status.message })
   if (!text) return null
   const warn = status.kind === 'confirm' || status.kind === 'error'
   return <div className={`sync-auto-line${warn ? ' warn' : ''}`}>{text}</div>
+}
+
+// Automatic sync: its own section under the folders it applies to.
+function AutoSyncSettings({ minutes, folderCount, nextAt, onChange, t }) {
+  const next = nextAt ? new Date(nextAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+  let state = ''
+  if (minutes > 0) state = folderCount ? t('sync.auto.stateOn', { n: minutes, count: folderCount, time: next }) : t('sync.auto.stateNoFolder', { n: minutes })
+  return <section className="settings-block sync-auto">
+    <h2 className="settings-block-title">{t('sync.auto.label')}</h2>
+    <p className="settings-block-desc">{t('sync.auto.desc')}</p>
+    <div className="sync-auto-card">
+      <div className="settings-row sync-auto-row">
+        <div className="settings-row-text">
+          <div className="settings-row-label">{t('sync.auto.interval')}</div>
+          <div className={`settings-row-desc sync-auto-state${minutes > 0 ? ' on' : ''}`}>{state || t('sync.auto.stateOff')}</div>
+        </div>
+        <div className="settings-segmented" role="radiogroup" aria-label={t('sync.auto.interval')}>
+          {SYNC_AUTO_MINUTES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={minutes === value}
+              className={`settings-segmented-option${minutes === value ? ' active' : ''}`}
+              onClick={() => onChange(value)}
+            >
+              {value === 0 ? t('sync.auto.off') : t('sync.auto.minutes', { n: value })}
+            </button>
+          ))}
+        </div>
+      </div>
+      <ul className="sync-auto-rules">
+        <li><Icon name="check" size={13} />{t('sync.auto.ruleSafe')}</li>
+        <li><Icon name="info" size={13} />{t('sync.auto.ruleSaved')}</li>
+      </ul>
+    </div>
+  </section>
 }
 
 // Running sync: file count, or the long wait while the service throttles,
@@ -353,7 +391,7 @@ export default function SyncSettings({
   onRun,
   onListRemoteWorkspaces,
   onJoinWorkspace,
-  autoSyncStatus = {},
+  autoSync = null,
   settings = {},
   onUpdateSettings,
   t
@@ -549,24 +587,6 @@ export default function SyncSettings({
         <Icon name="info" size={15} />
         <span>{t('sync.localFolderTip')}</span>
       </div>
-      {onUpdateSettings && <div className="settings-row sync-auto-row">
-        <div className="settings-row-text">
-          <div className="settings-row-label">{t('sync.auto.label')}</div>
-          <div className="settings-row-desc">{t('sync.auto.desc')}</div>
-        </div>
-        <div className="settings-segmented">
-          {SYNC_AUTO_MINUTES.map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              className={`settings-segmented-option${(settings.syncAutoMinutes || 0) === minutes ? ' active' : ''}`}
-              onClick={() => onUpdateSettings({ syncAutoMinutes: minutes })}
-            >
-              {minutes === 0 ? t('sync.auto.off') : t('sync.auto.minutes', { n: minutes })}
-            </button>
-          ))}
-        </div>
-      </div>}
       {loading && <div className="sync-empty">{t('sync.loading')}</div>}
       {!loading && <div className="sync-folder-list">
         {registered.map((entry) => {
@@ -625,7 +645,7 @@ export default function SyncSettings({
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
-            {!busy && entry.connectionId && autoSyncStatus[pathKey(entry.rootPath)] && <AutoSyncLine status={autoSyncStatus[pathKey(entry.rootPath)]} t={t} />}
+            {!busy && entry.connectionId && autoSync?.byFolder?.[pathKey(entry.rootPath)] && <AutoSyncLine status={autoSync.byFolder[pathKey(entry.rootPath)]} t={t} />}
             {busy && <SyncProgressLine
               progress={progress?.rootPath === entry.rootPath ? progress : { rootPath: entry.rootPath, completed: 0, total: 0 }}
               onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}
@@ -645,6 +665,14 @@ export default function SyncSettings({
         </div>)}
       </div>}
     </section>
+
+    {onUpdateSettings && <AutoSyncSettings
+      minutes={settings.syncAutoMinutes || 0}
+      folderCount={registered.filter((entry) => entry.connectionId).length}
+      nextAt={autoSync?.nextAt}
+      onChange={(syncAutoMinutes) => onUpdateSettings({ syncAutoMinutes })}
+      t={t}
+    />}
 
     {recovery && <RemoteResetDialog
       recovery={recovery}

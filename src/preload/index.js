@@ -127,8 +127,14 @@ const api = {
   toggleWindowVisibility: () => ipcRenderer.invoke('window:toggleVisibility'),
   setGlobalShortcuts: (accelerators) => ipcRenderer.invoke('window:setGlobalShortcuts', accelerators),
 
-  // update check (notify-only)
+  // in-app update (#164): check, download (verified in main), install on restart
   checkUpdate: () => ipcRenderer.invoke('update:check'),
+  updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateCancel: () => ipcRenderer.invoke('update:cancel'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateShowFile: () => ipcRenderer.invoke('update:showFile'),
+  updateGetState: () => ipcRenderer.invoke('update:getState'),
+  onUpdateState: on('update:state'),
   setMenuKeybindings: (accelerators) => ipcRenderer.invoke('menu:setKeybindings', accelerators),
   getMenuKeybindings: () => ipcRenderer.invoke('menu:getKeybindings'),
   getMenuSnapshot: () => ipcRenderer.invoke('menu:getSnapshot'),

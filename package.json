@@ -435,6 +435,8 @@
     "test:sync-electron-request": "node scripts/test-sync-electron-request.mjs",
     "test:sync-auto": "node scripts/test-sync-auto.mjs",
     "test:auto-sync-ui": "node scripts/test-auto-sync-ui.mjs",
+    "test:update-core": "node scripts/test-update-core.mjs",
+    "test:update-ui": "node scripts/test-update-ui.mjs",
     "test:sync-issue-161-ui": "node scripts/test-sync-issue-161-ui.mjs",
     "test:incremental-serialize-ui": "node scripts/test-incremental-serialize-ui.mjs"
   },
