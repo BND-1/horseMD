@@ -14,10 +14,20 @@ export function parsePandocVersion(output = '') {
   return match?.[1]?.trim() || null
 }
 
+// Whether this Pandoc's gfm reader knows `$…$` math (`pandoc
+// --list-extensions=gfm` lists "+tex_math_dollars" or "-tex_math_dollars").
+// Pandoc 2.10 and older do not (#167: "The extension tex_math_dollars is not
+// supported for gfm" — e.g. 2.9.2.1, Ubuntu 22.04's package); 2.11–2.18 list
+// it off, 2.19+ on by default.
+export function gfmSupportsMathDollars(listExtensionsOutput = '') {
+  return /^[+-]tex_math_dollars\s*$/m.test(String(listExtensionsOutput))
+}
+
 // `to` names the writer when the extension alone doesn't (.wiki); the other
-// formats keep Pandoc's choice by extension.
-export function buildPandocArgs({ outputPath, sourceDir, to }) {
-  const args = ['--from=gfm+tex_math_dollars', '--standalone', '--output', outputPath]
+// formats keep Pandoc's choice by extension. `mathDollars` false (old Pandoc):
+// plain gfm, formulas stay as text.
+export function buildPandocArgs({ outputPath, sourceDir, to, mathDollars = true }) {
+  const args = [mathDollars ? '--from=gfm+tex_math_dollars' : '--from=gfm', '--standalone', '--output', outputPath]
   if (to) args.push(`--to=${to}`)
   if (sourceDir) args.push(`--resource-path=${sourceDir}`)
   return args

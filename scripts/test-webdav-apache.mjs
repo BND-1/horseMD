@@ -92,9 +92,20 @@ DocumentRoot "${documentRoot}"
   assert.notEqual(updated.revision, created.revision)
   await provider.delete('nested/note.md', { revision: updated.revision })
   assert.equal(await provider.get('nested/note.md'), null)
+
+  // A new workspace, as the app opens it: every path under HorseMD/<id>,
+  // which does not exist yet. Apache answers 409 to a PUT / MKCOL under a
+  // missing collection, so the prefix has to be created first (the first
+  // sync of every new WebDAV workspace failed with "上传失败（HTTP 409）").
+  const workspace = new WebDavProvider({ endpoint, allowInsecure: true, prefix: 'HorseMD/2f1c-new-workspace', request: fetch })
+  assert.ok((await workspace.put('a.md', Buffer.from('# a\n'), { createOnly: true })).revision, 'root file of a new workspace')
+  assert.ok((await workspace.put('子/b.md', Buffer.from('# b\n'), { createOnly: true })).revision, 'nested file of a new workspace')
+  assert.equal(await workspace.createDirectory('空/层'), true)
+  assert.equal((await readFile(join(documentRoot, 'HorseMD/2f1c-new-workspace/子/b.md'), 'utf8')), '# b\n')
+  assert.equal(await workspace.removeDirectory('空/层'), true)
 } finally {
   await stop(apache)
   await rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS WebDAV provider: real Apache DAV transfer, list, conditional update and delete')
+console.log('PASS WebDAV provider: real Apache DAV transfer, list, conditional update and delete, a new workspace under a missing HorseMD/<id> prefix')

@@ -38,9 +38,33 @@ const sha = createHash('sha256').update(zip).digest('hex')
 
 let corrupt = false
 let slow = true
+// Phase 2 (mirrors): how each source behaves — 'ok' | 'slow' | 'corrupt' | 'fail'.
+const behave = { direct: 'ok', m1: 'ok', m2: 'ok' }
+const hits = [] // [source, 'probe' | 'full']
+const sendZip = async (req, res, source) => {
+  const mode = source === 'direct' && behave.direct === 'ok' ? (corrupt ? 'corrupt' : slow ? 'slow' : 'ok') : behave[source]
+  const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '')
+  hits.push([source, range ? 'probe' : 'full'])
+  if (mode === 'fail') { res.writeHead(500); return res.end('mirror down') }
+  const whole = mode === 'corrupt' ? Buffer.from(zip).fill(7, 1000, 2000) : zip
+  const body = range ? whole.subarray(Number(range[1]), Number(range[2]) + 1) : whole
+  res.writeHead(range ? 206 : 200, { 'content-type': 'application/zip', 'content-length': body.length })
+  for (let off = 0; off < body.length; off += 64 * 1024) {
+    if (res.destroyed) return
+    res.write(body.subarray(off, off + 64 * 1024))
+    if (mode === 'slow') await sleep(source === 'direct' && slow ? 60 : 250)
+  }
+  return res.end()
+}
 const server = http.createServer(async (req, res) => {
   const base = `http://127.0.0.1:${server.address().port}`
-  if (req.url === '/release') {
+  const mirror = /^\/(m1|m2)\/(.*)$/.exec(req.url)
+  if (mirror) {
+    // A mirror proxies a full URL: /m1/http://127.0.0.1:port/dl/<zip>
+    if (mirror[2].endsWith(`/dl/${zipName}`)) return sendZip(req, res, mirror[1])
+    res.writeHead(404); return res.end()
+  }
+  if (req.url === '/release' || req.url === '/release?digest=1') {
     res.writeHead(200, { 'content-type': 'application/json' })
     return res.end(JSON.stringify({
       tag_name: `v${VERSION}`,
@@ -48,7 +72,7 @@ const server = http.createServer(async (req, res) => {
       name: `HorseMD v${VERSION}`,
       body: '## ✨ 新功能\n- 应用内更新',
       assets: [
-        { name: zipName, size: zip.length, browser_download_url: `${base}/dl/${zipName}` },
+        { name: zipName, size: zip.length, browser_download_url: `${base}/dl/${zipName}`, ...(req.url.includes('digest') ? { digest: `sha256:${sha}` } : {}) },
         { name: `HorseMD-${VERSION}-arm64.dmg`, size: 10, browser_download_url: `${base}/dl/x.dmg` },
         { name: 'SHA256SUMS.txt', size: 100, browser_download_url: `${base}/dl/SHA256SUMS.txt` },
         { name: 'evil.zip', size: 1, browser_download_url: 'http://evil.example/evil.zip' }
@@ -59,16 +83,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' })
     return res.end(`${sha}  ${zipName}\n`)
   }
-  if (req.url === `/dl/${zipName}`) {
-    const body = corrupt ? Buffer.from(zip).fill(7, 1000, 2000) : zip
-    res.writeHead(200, { 'content-type': 'application/zip', 'content-length': body.length })
-    for (let off = 0; off < body.length; off += 64 * 1024) {
-      if (res.destroyed) return
-      res.write(body.subarray(off, off + 64 * 1024))
-      if (slow) await sleep(60)
-    }
-    return res.end()
-  }
+  if (req.url === `/dl/${zipName}`) return sendZip(req, res, 'direct')
   res.writeHead(404); res.end()
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -177,7 +192,48 @@ try {
   })()
   assert.match(settingsRow, /直接下载/)
   assert.match(settingsRow, /去 GitHub 查看/)
-  console.log('PASS update UI: two choices, checksum rejected + deleted, progress + cancel, hide while downloading and back when ready, zip unpacked + version checked, no install unpackaged, Settings offers both')
+
+  // 7. Mirrors: GitHub slow, mirror 1 fast, mirror 2 down → mirror 1, said
+  // in the progress line; the probes use Range requests.
+  await stopBuiltElectron(app, { removeProfile: true })
+  await rm(updateDir, { recursive: true, force: true })
+  const port = server.address().port
+  const launchMirrors = () => launchBuiltElectron({
+    profileDir: join(root, 'profile-mirrors'), port: 29720 + process.pid % 50,
+    appArgs: ['--horsemd-input-trace'],
+    env: { ...process.env, HORSEMD_TEST_UPDATE_FEED: `${feed}?digest=1`, HORSEMD_TEST_UPDATE_MIRRORS: `http://127.0.0.1:${port}/m1/,http://127.0.0.1:${port}/m2/` }
+  })
+  corrupt = false; slow = true
+  Object.assign(behave, { direct: 'ok', m1: 'ok', m2: 'fail' })
+  hits.length = 0
+  app = await launchMirrors()
+  await waitFor((s) => s?.buttons.some((b) => /直接下载/.test(b)), 'no prompt (mirrors)')
+  assert.ok(await click('直接下载'))
+  const viaMirror = await waitFor((s) => /加速/.test(s?.progress || '') || s?.buttons.some((b) => /重启并安装/.test(b)), 'never showed the mirror')
+  const fullFrom = () => hits.filter(([, kind]) => kind === 'full').map(([source]) => source)
+  await waitFor((s) => s?.buttons.some((b) => /重启并安装/.test(b)), 'mirror download did not finish', 30000)
+  assert.deepEqual(new Set(hits.filter(([, kind]) => kind === 'probe').map(([source]) => source)), new Set(['direct', 'm1', 'm2']), `every source probed with Range: ${JSON.stringify(hits)}`)
+  assert.deepEqual(fullFrom(), ['m1'], `downloaded from the fastest mirror only: ${JSON.stringify(hits)}`)
+  if (/加速/.test(viaMirror.progress)) assert.match(viaMirror.progress, /经 127\.0\.0\.1:\d+ 加速/)
+  assert.equal(createHash('sha256').update(await readFile(join(updateDir, zipName))).digest('hex'), sha)
+
+  // 8. The fastest mirror sends wrong bytes → checksum (GitHub's digest)
+  // rejects it and the next source is used; the result is the real file.
+  await stopBuiltElectron(app, { removeProfile: true })
+  await rm(updateDir, { recursive: true, force: true })
+  Object.assign(behave, { direct: 'ok', m1: 'corrupt', m2: 'slow' })
+  slow = true
+  hits.length = 0
+  app = await launchMirrors()
+  await waitFor((s) => s?.buttons.some((b) => /直接下载/.test(b)), 'no prompt (corrupt mirror)')
+  assert.ok(await click('直接下载'))
+  await waitFor((s) => s?.buttons.some((b) => /重启并安装/.test(b)), 'no fallback after a corrupt mirror', 40000)
+  const order = fullFrom()
+  assert.equal(order[0], 'm1', `the corrupt mirror was tried first: ${JSON.stringify(hits)}`)
+  assert.ok(order.length >= 2 && order[order.length - 1] !== 'm1', `another source finished it: ${JSON.stringify(hits)}`)
+  assert.equal(createHash('sha256').update(await readFile(join(updateDir, zipName))).digest('hex'), sha)
+  assert.match(await readFile(join(updateDir, 'app', 'HorseMD.app', 'Contents', 'Info.plist'), 'utf8'), new RegExp(VERSION.replace(/\./g, '\\.')))
+  console.log('PASS update UI: two choices, checksum rejected + deleted, progress + cancel, hide while downloading and back when ready, zip unpacked + version checked, no install unpackaged, Settings offers both; mirrors probed with Range, fastest used and named, a corrupt mirror rejected by the GitHub digest and the next source used')
 } finally {
   if (app) await stopBuiltElectron(app, { removeProfile: true })
   server.close()

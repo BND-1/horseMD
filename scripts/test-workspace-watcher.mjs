@@ -7,6 +7,10 @@ import { performance } from 'node:perf_hooks'
 import { createWorkspaceWatcher } from '../src/main/workspace-watcher.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+// Both watch modes: chokidar (macOS / Linux) and one recursive fs.watch
+// (Windows default, so folders holding subfolders stay renamable).
+for (const native of [false, true]) {
+const mode = native ? 'recursive fs.watch' : 'chokidar'
 const root = await fs.mkdtemp(join(tmpdir(), 'horsemd-workspace-worker-'))
 let watcher
 let heartbeat
@@ -40,7 +44,7 @@ try {
     lastTick = now
     ticks += 1
   }, 25)
-  watcher = createWorkspaceWatcher(root)
+  watcher = createWorkspaceWatcher(root, undefined, { native })
   watcher.on('error', (error) => { throw error })
   for (const event of ['add', 'unlink', 'addDir', 'unlinkDir']) {
     watcher.on(event, (path) => events.push({ event, path }))
@@ -52,7 +56,8 @@ try {
   ])
   assert(watched.entries < 30, `Unrelated data files were registered: ${watched.entries} entries`)
   assert.equal(events.length, 0, 'initial enumeration must not emit file-tree changes')
-  assert(ticks > 0, 'main event loop did not run during worker initialization')
+  // The recursive watch is ready within a tick; the lag check still applies.
+  assert(native || ticks > 0, 'main event loop did not run during worker initialization')
   assert(maxLag < 1000, `main event loop stalled during initialization: ${maxLag}ms`)
 
   const added = join(root, 'new.MARKDOWN')
@@ -76,6 +81,23 @@ try {
   await fs.rmdir(nested)
   await waitForEvent('unlinkDir', nested)
 
+  // A folder holding a subfolder can be renamed while it is watched
+  // (Windows refused this with one chokidar handle per folder: EPERM), and
+  // the rename reaches the tree.
+  const outer = join(root, 'outer')
+  await fs.mkdir(join(outer, 'inner'), { recursive: true })
+  await fs.writeFile(join(outer, 'inner', 'deep.md'), '# deep\n')
+  await waitForEvent('add', join(outer, 'inner', 'deep.md'))
+  await sleep(300)
+  const moved = join(root, 'outer-renamed')
+  if (native || process.platform !== 'win32') {
+    await fs.rename(outer, moved)
+    await waitForEvent('unlinkDir', outer)
+    await waitForEvent('addDir', moved)
+    await fs.rename(join(moved, 'inner'), join(moved, 'Inner'))
+    await waitForEvent('addDir', join(moved, 'Inner'))
+  }
+
   const data = join(root, 'new.bin')
   await fs.writeFile(data, 'data')
   await sleep(500)
@@ -89,12 +111,13 @@ try {
   await sleep(150)
   assert.equal(events.length, count, 'a stopped worker emitted a late notification')
 
-  const initializing = createWorkspaceWatcher(root)
+  const initializing = createWorkspaceWatcher(root, undefined, { native })
   initializing.on('error', (error) => { throw error })
   await initializing.close()
-  console.log(`PASS workspace worker: non-document filtering, add/rename/delete, directory events, cancellation; main loop max lag ${Math.round(maxLag)}ms`)
+  console.log(`PASS workspace worker (${mode}): non-document filtering, add/rename/delete, directory events, renaming a folder with subfolders, cancellation; main loop max lag ${Math.round(maxLag)}ms`)
 } finally {
   clearInterval(heartbeat)
   if (watcher) await watcher.close()
   await fs.rm(root, { recursive: true, force: true })
+}
 }

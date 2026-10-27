@@ -115,6 +115,57 @@ async function removeEmptyLocalDir(target) {
   }
 }
 
+const isDeletion = (item) => (item.type === 'deleteLocal' || item.type === 'deleteRemote' ? 1 : 0)
+
+// After a file deleted on another device is moved out of its folder: the
+// folders it leaves empty go too, deepest first, up to (never including) the
+// workspace root. Otherwise a renamed or deleted folder stayed here empty,
+// the next sync took it for a new empty folder and sent it back to the cloud
+// and every device. Only empty folders (or system files only) are removed;
+// one that still holds anything stops the walk. A folder the cloud keeps as
+// an empty folder is created again by the folder step that runs afterwards.
+async function removeEmptiedParents(rootPath, relativePath) {
+  const parts = String(relativePath).replace(/\\/g, '/').split('/').filter(Boolean)
+  for (let depth = parts.length - 1; depth > 0; depth -= 1) {
+    const dir = parts.slice(0, depth).join('/')
+    if (dir === '.horsemd' || dir.startsWith('.horsemd/')) return
+    try {
+      await removeEmptyLocalDir(assertSafeRelative(rootPath, dir))
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      return
+    }
+  }
+}
+
+// The cloud side of the same: folders whose last file this run deleted there.
+// WebDAV folders are real collections, and some S3 services (数据胶囊)
+// create a "folder/" object for every folder a key passes through, so a
+// renamed folder stayed in the cloud, empty. Deepest first; a folder that
+// still lists anything (removeDirectory checks right before deleting) or is
+// kept as an empty folder is left alone. Best effort: a failure here never
+// fails the sync, it only leaves an empty folder behind as before.
+async function removeEmptiedRemoteParents(provider, deletedPaths, manifest, keepDirs) {
+  if (typeof provider.removeDirectory !== 'function') return
+  const candidates = new Set()
+  for (const path of deletedPaths) {
+    const parts = String(path).split('/').filter(Boolean)
+    for (let depth = parts.length - 1; depth > 0; depth -= 1) candidates.add(parts.slice(0, depth).join('/'))
+  }
+  const remaining = Object.keys(manifest.files)
+  const holdsFile = (dir) => remaining.some((path) => path.startsWith(`${dir}/`))
+  const ordered = [...candidates].sort((a, b) => b.split('/').length - a.split('/').length || a.localeCompare(b))
+  for (const dir of ordered) {
+    if (dir === '.horsemd' || dir.startsWith('.horsemd/')) continue
+    if (keepDirs.has(dir) || manifest.dirs[dir] || holdsFile(dir)) continue
+    try {
+      await provider.removeDirectory(dir)
+    } catch (error) {
+      if (isSyncStopped(error)) throw error
+    }
+  }
+}
+
 // Before a cloud file is deleted or replaced, a copy goes to the cloud trash
 // (.horsemd/trash/<stamp>/…), and the file must still be the version this
 // sync planned for. Returns { revision } of the file, or null when it is gone.
@@ -192,6 +243,14 @@ export class SyncEngine {
         conflictSuffix: `来自 ${this.deviceName} 的冲突副本`
       })
       : buildDirectionalSyncPlan({ localFiles, remoteFiles: remote.manifest.files, strategy })
+    // Deletions run before everything else. On a case-insensitive disk
+    // (macOS, Windows) a case-only rename — notes/ → Notes/ — is a download of
+    // "Notes/a.md" plus a delete of "notes/a.md": the same file. Download
+    // first wrote into it and the delete then moved the only copy to the
+    // trash; the next sync sent that deletion to the cloud and every device
+    // (it only worked when the new name sorted after the old one). Same on a
+    // case-insensitive WebDAV server for upload + deleteRemote.
+    plan.operations.sort((a, b) => isDeletion(b) - isDeletion(a))
     // Empty folders run after the files (a folder that just received a file
     // is no longer empty and is never removed).
     // Files that still exist once the file operations are done: a folder
@@ -286,10 +345,23 @@ export class SyncEngine {
       settled.add(item.path)
       this.onProgress?.({ completed, total, type: item.type, path: item.path })
     }
+    // Remote folders emptied by this run's deletions, cleaned once right
+    // after the deletions (they run first) — before any upload: on a
+    // case-insensitive server, Notes/a.md uploaded while the emptied notes/
+    // still existed landed in notes/ (old case kept on the server).
+    const deletedRemote = []
+    const keepDirs = new Set(plan.operations.filter((item) => ['keepDir', 'createRemoteDir'].includes(item.type)).map((item) => item.path))
+    let remotePruned = false
+    const pruneRemote = async () => {
+      if (remotePruned) return
+      remotePruned = true
+      if (deletedRemote.length) await removeEmptiedRemoteParents(this.provider, deletedRemote, manifest, keepDirs)
+    }
     try {
     for (const item of plan.operations) {
       if (item.type === 'keep' || item.type === 'keepDir') continue
       await this.control?.checkpoint()
+      if (!isDeletion(item)) await pruneRemote()
       if (DIR_OPERATION_TYPES.has(item.type)) {
         await this.syncDirectory(item, manifest, dirs, previousDirs)
         if (item.type !== 'forgetDir') progress(item)
@@ -356,8 +428,10 @@ export class SyncEngine {
         delete manifest.files[item.path]
         manifest.tombstones[item.path] = { deletedAt: now() }
         files.delete(item.path)
+        deletedRemote.push(item.path)
       } else if (item.type === 'deleteLocal') {
         await moveLocalToTrash(this.rootPath, item.path, stamp)
+        await removeEmptiedParents(this.rootPath, item.path)
         files.delete(item.path)
       } else if (item.type === 'conflict') {
         // The remote original becomes canonical. The local modification is kept
@@ -399,6 +473,7 @@ export class SyncEngine {
       }
       progress(item)
     }
+    await pruneRemote()
     } catch (error) {
       if (!isSyncStopped(error)) throw error
       // Stopped by the user: record what was completed, so the next sync

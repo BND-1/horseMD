@@ -134,7 +134,28 @@ export class WebDavProvider {
     }
   }
 
+  // The workspace prefix (HorseMD/<id>) itself: a WebDAV server answers 409
+  // to MKCOL / PUT under a collection that does not exist (RFC 4918 — WsgiDAV,
+  // Apache, Nextcloud), so a new workspace's first upload failed. Created
+  // once per provider; the engine never deletes it.
+  async ensurePrefix({ quick = false } = {}) {
+    if (this.prefixReady || !this.prefix) return true
+    let current = ''
+    for (const segment of this.prefix.split('/').filter(Boolean)) {
+      current = current ? `${current}/${segment}` : segment
+      const url = new URL(encodePath(current), this.baseUrl).toString()
+      const response = await this.pacer.run(() => this.request(url, { method: 'MKCOL', headers: this.headers() }), { quick })
+      if (quick && (response.status === 429 || response.status === 503)) return false
+      if (![200, 201, 204, 405].includes(response.status)) {
+        throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
+      }
+    }
+    this.prefixReady = true
+    return true
+  }
+
   async ensureDirectory(path, { quick = false } = {}) {
+    if (await this.ensurePrefix({ quick }) === false) return false
     const segments = String(path || '').split('/').filter(Boolean)
     let current = ''
     for (const segment of segments) {
@@ -149,6 +170,7 @@ export class WebDavProvider {
 
   async put(path, bytes, { revision = null, createOnly = false, contentType = 'application/octet-stream', quick = false } = {}) {
     const slash = String(path).lastIndexOf('/')
+    if (await this.ensurePrefix({ quick }) === false) return { revision: null, throttled: true }
     if (slash > 0 && await this.ensureDirectory(String(path).slice(0, slash), { quick }) === false) return { revision: null, throttled: true }
     const headers = { 'content-type': contentType }
     if (revision) headers['if-match'] = `"${revision}"`

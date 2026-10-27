@@ -45,6 +45,7 @@ export default function DocumentToolsSettings({ t }) {
         <div className="hm-pandoc-tool-copy">
           <strong>{t(`pandoc.detect.${status}`)}</strong>
           {status === 'available' && <small>{t('pandoc.versionPath', { version: info.version || '—', path: info.path || '—' })}</small>}
+          {status === 'available' && info.mathDollars === false && <small className="warning">{t('pandoc.oldMath', { version: info.version || '—' })}</small>}
           {status === 'missing' && <small>{t('pandoc.installSummary')}</small>}
           {error && <small className="error">{error}</small>}
         </div>

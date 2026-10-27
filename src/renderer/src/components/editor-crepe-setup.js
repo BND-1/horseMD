@@ -22,6 +22,7 @@ import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from '.
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
+import { isSvgCodeLanguage, requestSvgCodeBlockScan, svgCodePreviewHtml } from './editor-svg-codeblock.js'
 import {
   tableBreakKeymap,
   tableCellBreakHandler,
@@ -216,13 +217,25 @@ export function createConfiguredCrepe({
     const mermaidRender = createMermaidPreviewRenderer(getT)
     ctx.update(codeBlockConfig.key, (v) => {
       const prevRender = v.renderPreview
+      // ```svg (#166): highlighted as XML (CodeMirror's XML entry lists svg
+      // only as a file extension, which the code-block loader never matches).
+      const xml = (v.languages || []).find((language) => language.name === 'XML')
+      const svgLanguage = xml && LanguageDescription.of({
+        name: 'SVG',
+        alias: ['svg'],
+        extensions: ['svg'],
+        load: () => xml.load()
+      })
       return {
         ...v,
-        languages: [mermaidLanguage, ...(v.languages || [])],
+        languages: [mermaidLanguage, ...(svgLanguage ? [svgLanguage] : []), ...(v.languages || [])],
         renderPreview: (language, text, setPreview) => {
+          // The language or text of a block changed: its 图/代码 switch follows.
+          requestSvgCodeBlockScan()
           if ((language || '').toLowerCase() === 'mermaid') {
             return mermaidRender(language, text, setPreview)
           }
+          if (isSvgCodeLanguage(language)) return svgCodePreviewHtml(text, t)
           return prevRender ? prevRender(language, text, setPreview) : null
         },
         previewOnlyByDefault: true,

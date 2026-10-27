@@ -33,9 +33,31 @@ class MemoryStore {
   async removeDirectory(path) { this.objects.delete(`${path}/`); return true }
 }
 
+// 数据胶囊-like: every folder a key passes through gets a "folder/" object,
+// and DELETE "folder/" is refused unless only the marker is left (what
+// S3Provider.removeDirectory checks first).
+class AutoFolderStore extends MemoryStore {
+  async put(path, bytes, options) {
+    const result = await super.put(path, bytes, options)
+    const parts = path.split('/')
+    for (let depth = 1; depth < parts.length; depth += 1) {
+      const marker = `${parts.slice(0, depth).join('/')}/`
+      if (!this.objects.has(marker)) this.objects.set(marker, { bytes: Buffer.alloc(0), revision: String(++this.revision) })
+    }
+    return result
+  }
+  async removeDirectory(path) {
+    const marker = `${path}/`
+    if ([...this.objects.keys()].some((key) => key.startsWith(marker) && key !== marker)) return false
+    this.objects.delete(marker)
+    return true
+  }
+}
+
 async function tree(dir, prefix = '') {
   const out = []
-  for (const entry of (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+  // Code-unit order: localeCompare sorts Chinese by pinyin on Windows.
+  for (const entry of (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
     if (entry.name === '.horsemd') continue
     const path = prefix + entry.name
     if (entry.isDirectory()) { out.push(`${path}/`); out.push(...await tree(join(dir, entry.name), `${path}/`)) }
@@ -189,4 +211,59 @@ try {
   assert.deepEqual(calls.splice(0), ['PROPFIND /dav/x', 'DELETE /dav/x/'])
 }
 
-console.log('PASS sync empty: empty files and empty folders sync both ways (S3 "path/" markers, WebDAV collections), only empty folders are removed')
+// 8. A folder renamed (or deleted) on one device: on the other, its files go
+//    to the trash and the folders they leave empty go with them. Before, the
+//    old folder stayed there empty, the next sync took it for a new empty
+//    folder and put it back in the cloud — and on every device.
+{
+  const root = await fs.mkdtemp(join(tmpdir(), 'horsemd-sync-rename-'))
+  try {
+    const A = join(root, 'A')
+    const B = join(root, 'B')
+    await fs.mkdir(join(A, '旧名', '子'), { recursive: true })
+    await fs.mkdir(join(A, '留着'), { recursive: true })
+    await fs.writeFile(join(A, '旧名', 'a.md'), 'a\n')
+    await fs.writeFile(join(A, '旧名', '子', 'b.md'), 'b\n')
+    await fs.writeFile(join(A, '留着', 'c.md'), 'c\n')
+    await fs.writeFile(join(A, '留着', 'd.md'), 'd\n')
+    await fs.mkdir(B)
+    const store = new AutoFolderStore()
+    const workspaceId = randomUUID()
+    const sync = (dir) => new SyncEngine({ rootPath: dir, userDataPath: join(root, `profile-${dir === A ? 'A' : 'B'}`), workspaceId, provider: store, deviceName: dir === A ? 'A' : 'B' }).execute(null, 'merge')
+    await sync(A)
+    await sync(B)
+    // Finder left a .DS_Store in the old folder on B (never synced).
+    await fs.writeFile(join(B, '旧名', '子', '.DS_Store'), 'x')
+
+    await fs.rename(join(A, '旧名'), join(A, '新名'))
+    // A empties 留着 but keeps the folder: it must stay an (empty) folder.
+    await fs.rm(join(A, '留着', 'c.md'))
+    await fs.rm(join(A, '留着', 'd.md'))
+    await sync(A)
+    const pulled = await sync(B)
+    assert.equal(pulled.summary.delete, 4)
+    const expected = ['新名/', '新名/a.md 2B', '新名/子/', '新名/子/b.md 2B', '留着/']
+    assert.deepEqual(await tree(B), expected, 'the renamed folder is gone, the emptied-but-kept one stays')
+    // Settled: nothing goes back up, A never gets the old folder again.
+    const again = await sync(B)
+    assert.deepEqual([again.summary.upload, again.summary.download, again.summary.delete], [0, 0, 0])
+    const back = await sync(A)
+    assert.deepEqual([back.summary.upload, back.summary.download, back.summary.delete], [0, 0, 0])
+    assert.deepEqual(await tree(A), expected)
+    assert.deepEqual([...store.objects.keys()].filter((key) => !key.startsWith('.horsemd')).sort(),
+      ['新名/', '新名/a.md', '新名/子/', '新名/子/b.md', '留着/'],
+      'the old folder is gone from the cloud too; the kept empty folder keeps its marker')
+
+    // A folder that still holds something of B's own is never removed.
+    await fs.writeFile(join(B, '新名', '子', 'mine.md'), 'mine\n')
+    await fs.rm(join(A, '新名', '子'), { recursive: true })
+    await sync(A)
+    const kept = await sync(B)
+    assert.equal(kept.summary.delete, 1)
+    assert.deepEqual(await tree(B), ['新名/', '新名/a.md 2B', '新名/子/', '新名/子/mine.md 5B', '留着/'])
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+}
+
+console.log('PASS sync empty: empty files and empty folders sync both ways (S3 "path/" markers, WebDAV collections), only empty folders are removed, a folder renamed or deleted elsewhere leaves no empty copy behind')

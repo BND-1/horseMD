@@ -10,6 +10,7 @@ export default function PandocExportStatus({ state, onDismiss, onInstall, t }) {
         <div className="hm-pandoc-status-copy">
           <h2 id="hm-pandoc-title">{t(`pandoc.status.${state.status}`)}</h2>
           <p>{state.status === 'running' ? t('pandoc.runningHelp') : state.status === 'success' ? t('pandoc.successHelp', { path: state.path }) : state.error}</p>
+          {state.status === 'success' && state.mathUnsupported && <p className="warning">{t('pandoc.oldMath', { version: state.version || '—' })}</p>}
           {state.status === 'success' && state.warning && <p className="warning">{t('pandoc.successWarning', { msg: state.warning })}</p>}
         </div>
         {state.status === 'error' && state.code === 'not-installed' && <button type="button" onClick={onInstall}>{t('pandoc.install')}</button>}

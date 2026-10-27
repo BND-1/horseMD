@@ -111,7 +111,10 @@ export default function UpdateToast({ t, latest, current, notes, download, dl = 
             <div className="update-progress-bar" style={{ width: `${percent}%` }} />
           </div>
           <div className="update-progress-text">
-            <span>{t('update.downloading', { percent })}</span>
+            <span>
+              {dl.via ? t('update.downloading', { percent }) : t('update.probing')}
+              {dl.via && dl.via !== 'direct' ? <span className="update-progress-via">{t('update.via', { host: dl.via })}</span> : null}
+            </span>
             <span>{total ? `${mb(dl.received)} / ${mb(total)}` : mb(dl.received)}</span>
           </div>
         </div>

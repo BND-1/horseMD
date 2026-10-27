@@ -222,6 +222,39 @@ const editorFontFamily = () => {
   const host = document.querySelector('.milkdown .ProseMirror') || document.body
   return getComputedStyle(host).fontFamily || 'sans-serif'
 }
+// The size an SVG draws at by itself, in CSS px: width/height (px or
+// unitless; one of them + the viewBox ratio), else the viewBox. null = no
+// fixed size (a percentage or other unit, or neither) — the caller lets it
+// fill the line.
+function intrinsicSvgSize(svg) {
+  const length = (name) => {
+    const m = String(svg.getAttribute(name) || '').trim().match(/^(\d+(?:\.\d+)?)(?:px)?$/i)
+    return m && Number(m[1]) > 0 ? Number(m[1]) : null
+  }
+  const box = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number)
+  const ratio = box.length === 4 && box.every(Number.isFinite) && box[2] > 0 && box[3] > 0 ? box[3] / box[2] : null
+  let width = length('width')
+  let height = length('height')
+  if (width && !height && ratio) height = width * ratio
+  if (height && !width && ratio) width = height / ratio
+  if (!width && !height && ratio && !svg.hasAttribute('width') && !svg.hasAttribute('height')) {
+    width = box[2]
+    height = box[3]
+  }
+  return width && height ? { width, height } : null
+}
+
+// A ```svg code block's text (#166) → the same image #162 uses, or null when
+// it is not one <svg> element. A file's XML declaration, doctype and
+// comments around the element are allowed (what an .svg file starts with).
+const SVG_PROLOG_RE = /^\s*(?:(?:<\?xml[\s\S]*?\?>|<!DOCTYPE[^>]*>|<!--[\s\S]*?-->)\s*)*/i
+const SVG_EPILOG_RE = /(?:\s*<!--[\s\S]*?-->)*\s*$/
+export function svgCodeImage(code) {
+  const value = String(code || '').replace(SVG_PROLOG_RE, '').replace(SVG_EPILOG_RE, '')
+  if (!SVG_RE.test(value)) return null
+  return svgImageSrc(value)
+}
+
 function svgImageSrc(value) {
   const font = editorFontFamily()
   const key = `${font}\n${value}`
@@ -237,8 +270,9 @@ function svgImageSrc(value) {
       svg.setAttribute('font-family', font)
     }
     const hasSize = svg.hasAttribute('width')
+    const size = intrinsicSvgSize(svg)
     const markup = new XMLSerializer().serializeToString(svg)
-    out = { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, hasSize }
+    out = { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, hasSize, width: size?.width || null, height: size?.height || null }
   }
   if (SVG_CACHE.size >= SANITIZE_CACHE_MAX) SVG_CACHE.delete(SVG_CACHE.keys().next().value)
   SVG_CACHE.set(key, out)

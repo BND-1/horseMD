@@ -203,8 +203,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `UpdateToast.jsx`, `hooks/useUpdateDownload.js`): the prompt offers「直接下载」
   and「去 GitHub 查看」(Settings › About too). Main downloads only assets of the
   release it fetched itself (HTTPS; never a renderer URL) through net.request,
-  with progress / cancel / 60 s stall timeout, and verifies SHA-256 against the
-  release's `SHA256SUMS.txt` (mismatch → deleted). Modes: Windows `install`
+  with progress / background / cancel, and verifies SHA-256 — taken from
+  GitHub only: the API's asset `digest`, else `SHA256SUMS.txt` from
+  github.com (mismatch → deleted). Sources (`update-core.js`
+  `downloadSources` / `rankSources`): GitHub + public mirrors (ghfast.top,
+  gh-proxy.com) probed at once (Range, ≤ 512 KB / 5 s), fastest first,
+  GitHub kept when ≥ 70 % of the best; a source that errors, sends nothing
+  for 30 s or fails the checksum hands over to the next. Mirrors carry
+  bytes only. Measured 2026-10-26: Windows PC in China — GitHub no answer
+  in 5 s, gh-proxy chosen, 129 MB in 35 s; mini in the UK — GitHub chosen.
+  The prompt says「经 <host> 加速」when a mirror is used.
+  `HORSEMD_TEST_UPDATE_MIRRORS` replaces the mirror list in tests. Modes: Windows `install`
   (NSIS `--updated /S --force-run`, what electron-updater runs); macOS
   `install` (zip unpacked + Info.plist version checked; a detached script
   swaps `/Applications/HorseMD.app` after exit and opens it — Squirrel.Mac
@@ -411,6 +420,16 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   styles (`materializeInlineSvgForExport`); SVG images open in the lightbox
   fitted to the window on white (`hm-lightbox-vector`). `![](x.svg)` was
   already an ordinary image. Locked by `test:svg-render-ui`.
+- **SVG code blocks** (`editor-svg-codeblock.js`, #166): a ```` ```svg ````
+  block's preview is Crepe's `renderPreview` (like Mermaid) returning the
+  #162 image (`svgCodeImage`: prolog/comments allowed, scripts dropped,
+  never live DOM) at its intrinsic size (width/height, else viewBox),
+  scaled down only. A 图 | 代码 switch replaces Crepe's preview toggle and
+  drives it (图 = Crepe's preview-only state; 代码 = code + preview with
+  the panel hidden, `hm-svg-mode-code`); typing in a focused block whose
+  preview appears switches it to 代码. View-only, works read-only. Export
+  always shows the picture. Highlighted as XML (an `SVG` language entry).
+  Locked by `test:svg-codeblock-ui`.
 - **Table paste** (`editor-table-paste.js`, #152): a GFM table is a plain
   grid with one paragraph per cell, so anything else fails the save gate
   closed. Merged cells (colspan/rowspan from Excel/WPS/web) are split by a
@@ -592,6 +611,34 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   there without a trash copy, hidden from the preview list and not counted
   as a deletion; a folder holding only those is an empty folder (and is
   removed with them). Locked by `test:sync-trash-copy`.
+  Renamed / deleted folders (2026-10-27): a file deleted on another device
+  takes the local folders it leaves empty with it (`removeEmptiedParents`,
+  rmdir only, system files ignored) — before, the old folder stayed empty,
+  the next sync uploaded it as a new empty folder and it came back on every
+  device. Right after the deletions (before any upload), cloud folders
+  emptied by this run's deletions are removed too — later, a case-insensitive
+  WebDAV server put Notes/a.md into the still-present notes/
+  (`removeEmptiedRemoteParents`, deepest first,
+  via `removeDirectory`'s emptiness check, best effort): WebDAV collections
+  and 数据胶囊's automatic "folder/" objects stayed behind. Tracked empty
+  folders are skipped (the folder step recreates / keeps them). Locked by
+  `test:sync-empty` §8.
+  Moves / renames (2026-10-27): there is no rename operation — a move is a
+  delete of the old path + an upload of the new one. Deletions run FIRST
+  (`prepare` sorts them ahead): on a case-insensitive disk a case-only
+  rename (notes/ → Notes/) is a download and a delete of the SAME file;
+  download-first moved the only copy to the trash and the next sync spread
+  the deletion everywhere. Locked by `test:sync-move` (13 scenarios: moves,
+  case-only renames, concurrent edit / new file / different moves on the
+  other device, swaps; `HM_SYNC_MOVE_WEBDAV` + `_ROOT` run them against a
+  real server, e.g. WsgiDAV, and check its disk); end-to-end checked with two
+  HorseMD instances on 数据胶囊 and Windows ⇄ macOS on 七牛.
+  WebDAV workspace prefix (2026-10-27): `HorseMD/<id>` was never created, and
+  a standard server (Apache, WsgiDAV, Nextcloud) answers 409 to PUT / MKCOL
+  under a missing collection — every new WebDAV workspace failed its first
+  sync with「上传失败（HTTP 409）」. `ensurePrefix` creates it once per
+  provider. The mock servers accepted anything; `test:webdav-apache` now
+  covers a prefixed new workspace on real Apache.
   七牛 (#161, measured 2026-10-26 with a real bucket): every download
   carries `content-disposition: …filename="<key>"` with the key's Chinese
   as raw UTF-8. Electron's `net.fetch` throws on that header inside its own
@@ -979,7 +1026,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   renderer drops non-absolute/restricted folder roots (`sanitizeFolderRoots` +
   `isRestrictedPath` in `paths.js`, mirroring main's `isRestrictedRoot`); and a
   process-level `unhandledRejection`/`uncaughtException` guard in `main/index.js`
-  is the final safety net. Don't remove these. Also: main-process network calls
+  is the final safety net. Don't remove these. On Windows the folder watcher
+  (`workspace-watcher-worker.js`) is ONE recursive `fs.watch` on the root,
+  not chokidar (2026-10-27): chokidar opens a handle per folder and Windows
+  refuses to rename a folder while anything inside is open, so with a
+  workspace open no folder holding subfolders could be renamed, in HorseMD's
+  tree or in Explorer (EPERM). Same events / filters; macOS and Linux keep
+  chokidar. `test:workspace-watcher` runs both modes. Also: main-process network calls
   use Electron's `net.fetch` (Chromium stack), not Node's global `fetch` (its
   c-ares resolver can abort an unsigned app under launchd).
 - **Don't commit `dist/` or `out/`** (gitignored). `build/icon.*` IS tracked.
@@ -1066,6 +1119,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   false`; 2-min timeout. The source file's directory is passed as
   `--resource-path` so relative images resolve. Only the chosen executable
   path is persisted (`userData/document-tools.json`).
+  Detection also reads `--list-extensions=gfm` (#167): Pandoc ≤ 2.10 rejects
+  `gfm+tex_math_dollars` ("not supported for gfm", e.g. Ubuntu 22.04's 2.9),
+  so those get plain `--from=gfm` (formulas as text) and a hint
+  (`mathUnsupported`, `pandoc.oldMath`); 2.11+ keep `gfm+tex_math_dollars`.
+  Checked with real 2.9.2.1 / 2.10 / 2.11 / 2.14 / 2.19 / 3.0 / 3.1 / 3.12.
 - **AI Phase 0** (`src/shared/ai-contracts.js` + `src/main/ai/`): pure, no-UI,
   no-network contracts (`AiRequest`, `ProviderAdapter`, `ContextSnapshot` with
   sha256 revision, `ChangeProposal` with before-check + stale refusal). **Not

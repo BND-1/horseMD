@@ -84,3 +84,46 @@ export function plistVersion(xml) {
   const m = String(xml || '').match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)
   return m ? m[1].trim() : null
 }
+
+// Download sources for a release asset: GitHub itself, then public GitHub
+// download mirrors. From mainland China github.com often runs at ~10–50 KB/s
+// (a 130 MB installer: hours) while a mirror gives ~0.3–0.9 MB/s (measured
+// 2026-10-26 on the Windows test PC). Mirrors only carry bytes: the SHA-256
+// always comes from GitHub (the API's asset digest, else SHA256SUMS.txt
+// fetched from github.com), so a bad mirror can waste a download, never
+// install something else. Public mirrors come and go — several are tried.
+export const DEFAULT_MIRRORS = ['https://ghfast.top/', 'https://gh-proxy.com/']
+const GITHUB_DOWNLOAD = /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//
+
+export function downloadSources(url, mirrors = DEFAULT_MIRRORS, { anyUrl = false } = {}) {
+  const sources = [{ url, via: 'direct' }]
+  if (anyUrl || GITHUB_DOWNLOAD.test(url)) {
+    for (const prefix of mirrors) sources.push({ url: prefix + url, via: hostOf(prefix) })
+  }
+  return sources
+}
+
+export function hostOf(url) {
+  try { return new URL(url).host } catch { return String(url || '') }
+}
+
+// probes: [{ source, speed (bytes/s), ok }]. Fastest first; GitHub itself
+// wins when it is at least DIRECT_SHARE of the best (one hop fewer, no third
+// party). Sources whose probe failed stay at the end, as a last resort.
+export const DIRECT_SHARE = 0.7
+export function rankSources(probes) {
+  const ok = probes.filter((p) => p.ok && p.speed > 0).sort((a, b) => b.speed - a.speed)
+  const failed = probes.filter((p) => !(p.ok && p.speed > 0))
+  const direct = ok.find((p) => p.source.via === 'direct')
+  if (direct && ok.length && direct !== ok[0] && direct.speed >= ok[0].speed * DIRECT_SHARE) {
+    ok.splice(ok.indexOf(direct), 1)
+    ok.unshift(direct)
+  }
+  return [...ok, ...failed].map((p) => p.source)
+}
+
+// "sha256:<hex>" (GitHub's asset digest) → hex, else null.
+export function digestSha256(digest) {
+  const m = String(digest || '').match(/^sha256:([0-9a-fA-F]{64})$/)
+  return m ? m[1].toLowerCase() : null
+}

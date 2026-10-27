@@ -19,7 +19,7 @@ export function usePandocExport() {
         setPandocExportState({ status: 'error', format: payload.format, error: result?.error || '', warning: null, code: result?.code || null, path: null })
         return
       }
-      setPandocExportState({ status: 'success', format: payload.format, error: null, warning: result.warning || null, code: null, path: result.path })
+      setPandocExportState({ status: 'success', format: payload.format, error: null, warning: result.warning || null, mathUnsupported: !!result.mathUnsupported, version: result.version || '', code: null, path: result.path })
     } catch (error) {
       runningRef.current = false
       setPandocExportState({ status: 'error', format: payload.format, error: error instanceof Error ? error.message : String(error || ''), warning: null, code: null, path: null })

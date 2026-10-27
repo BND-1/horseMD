@@ -3,6 +3,10 @@
 import assert from 'node:assert/strict'
 import {
   compareVersions,
+  DEFAULT_MIRRORS,
+  digestSha256,
+  downloadSources,
+  rankSources,
   macBundlePath,
   macBundleReplaceable,
   parseChecksums,
@@ -61,4 +65,39 @@ assert.equal(macBundleReplaceable('/private/var/folders/x/AppTranslocation/ABC/d
 assert.equal(plistVersion('<dict><key>CFBundleShortVersionString</key>\n\t<string>0.13.257</string></dict>'), '0.13.257')
 assert.equal(plistVersion('<dict></dict>'), null)
 
-console.log('PASS update core: asset per platform / install mode, checksums, versions, macOS bundle paths')
+// Download sources: GitHub first, then the mirrors — only for GitHub release
+// downloads (any other URL is used as is).
+const gh = 'https://github.com/BND-1/horseMD/releases/download/v0.13.257/HorseMD-Setup-0.13.257.exe'
+assert.deepEqual(downloadSources(gh).map((x) => x.via), ['direct', ...DEFAULT_MIRRORS.map((m) => new URL(m).host)])
+assert.equal(downloadSources(gh)[1].url, DEFAULT_MIRRORS[0] + gh)
+assert.deepEqual(downloadSources('https://example.com/x.exe').map((x) => x.via), ['direct'])
+assert.deepEqual(downloadSources('https://github.com/BND-1/horseMD/archive/main.zip').map((x) => x.via), ['direct'])
+assert.equal(downloadSources('http://127.0.0.1:1/x', ['http://127.0.0.1:2/m/'], { anyUrl: true })[1].url, 'http://127.0.0.1:2/m/http://127.0.0.1:1/x')
+
+// Ranking by measured speed (Windows test PC in China, 2026-10-26: GitHub
+// ~11–50 KB/s, ghfast.top ~850 KB/s, gh-proxy.com ~265 KB/s).
+const src = (via) => ({ url: via, via })
+const order = (probes) => rankSources(probes).map((x) => x.via)
+assert.deepEqual(order([
+  { source: src('direct'), ok: true, speed: 50e3 },
+  { source: src('ghfast.top'), ok: true, speed: 850e3 },
+  { source: src('gh-proxy.com'), ok: true, speed: 265e3 }
+]), ['ghfast.top', 'gh-proxy.com', 'direct'])
+// GitHub is preferred when it is close enough to the fastest (≥ 70 %).
+assert.deepEqual(order([
+  { source: src('direct'), ok: true, speed: 8e6 },
+  { source: src('ghfast.top'), ok: true, speed: 10e6 }
+]), ['direct', 'ghfast.top'])
+// A failed probe stays as a last resort, in its original order.
+assert.deepEqual(order([
+  { source: src('direct'), ok: false, speed: 0 },
+  { source: src('ghfast.top'), ok: false, speed: 0 },
+  { source: src('gh-proxy.com'), ok: true, speed: 1e5 }
+]), ['gh-proxy.com', 'direct', 'ghfast.top'])
+assert.deepEqual(order([{ source: src('direct'), ok: false, speed: 0 }]), ['direct'])
+
+assert.equal(digestSha256('sha256:AA6F60F734E1A50EDBCCBFEA45EAA5DD6A6930A8587806FFD0E3135D76701A8C'), 'aa6f60f734e1a50edbccbfea45eaa5dd6a6930a8587806ffd0e3135d76701a8c')
+assert.equal(digestSha256('sha512:abc'), null)
+assert.equal(digestSha256(undefined), null)
+
+console.log('PASS update core: asset per platform / install mode, checksums, versions, macOS bundle paths, download sources (GitHub / mirrors) ranked by speed, asset digests')

@@ -11,9 +11,11 @@ const workerModuleUrl = new URL(
 // builder unpacks this entry and its shared chunks beside app.asar.
 const workerUrl = new URL(workerModuleUrl.href.replace('/app.asar/', '/app.asar.unpacked/'))
 
-export function createWorkspaceWatcher(dir, extensions = DEFAULT_WATCH_EXTENSIONS) {
+// native: one recursive fs.watch instead of chokidar (default on Windows;
+// tests force either mode).
+export function createWorkspaceWatcher(dir, extensions = DEFAULT_WATCH_EXTENSIONS, { native } = {}) {
   const watcher = new EventEmitter()
-  const worker = new Worker(workerUrl, { workerData: { dir, extensions } })
+  const worker = new Worker(workerUrl, { workerData: { dir, extensions, native } })
   let closed = false
   let closePromise = null
   worker.on('message', ({ event, path, message, watched }) => {

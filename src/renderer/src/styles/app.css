@@ -851,6 +851,9 @@ button:focus-visible,
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.update-progress-via {
+  color: var(--faint, var(--muted));
+}
 .update-toast-done,
 .update-toast-error {
   display: flex;
@@ -7695,6 +7698,55 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 }
 .milkdown .milkdown-code-block .language-picker .language-list-item.no-result.hm-use-language:hover {
   background: var(--crepe-color-hover);
+}
+
+/* ```svg code blocks (editor-svg-codeblock.js, #166): the picture is Crepe's
+   preview panel; 代码 shows the code with that panel hidden. The 图 | 代码
+   switch replaces Crepe's preview toggle and stays visible (its state is the
+   block's state). The image keeps its own size, scaled down to the line. */
+.milkdown .milkdown-code-block.hm-svg-code-block .tools .tools-button-group button.preview-toggle-button {
+  display: none;
+}
+.milkdown .milkdown-code-block.hm-svg-mode-code .preview-panel {
+  display: none;
+}
+.milkdown .milkdown-code-block .preview img.hm-svg-code-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+.milkdown .milkdown-code-block .preview img.hm-svg-code-image.hm-svg-code-fluid {
+  width: 100%;
+}
+.milkdown .milkdown-code-block .preview .hm-svg-code-error {
+  padding: 8px 4px;
+  color: var(--crepe-color-error, #c0392b);
+  font-size: 13px;
+}
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-svg-mode {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 100px;
+  background: var(--crepe-color-secondary);
+}
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-svg-mode[hidden] {
+  display: none;
+}
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-svg-mode button {
+  opacity: 1;
+  padding: 2px 10px;
+  border-radius: 100px;
+  background: transparent;
+}
+.milkdown .milkdown-code-block .tools .tools-button-group .hm-svg-mode button[aria-pressed='true'] {
+  background: var(--crepe-color-surface);
+  color: var(--crepe-color-on-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 /* Code-block folding (editor-codeblock-fold.js): view-only, the Markdown is

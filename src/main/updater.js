@@ -21,11 +21,15 @@ import { promisify } from 'node:util'
 import { createElectronRequest } from './sync/electron-request.js'
 import {
   compareVersions,
+  DEFAULT_MIRRORS,
+  digestSha256,
+  downloadSources,
   macBundlePath,
   macBundleReplaceable,
   parseChecksums,
   pickUpdateAsset,
-  plistVersion
+  plistVersion,
+  rankSources
 } from './update-core.js'
 
 const execFileAsync = promisify(execFile)
@@ -36,7 +40,14 @@ const FEED = TEST_FEED || 'https://api.github.com/repos/BND-1/horseMD/releases/l
 // from 127.0.0.1).
 const allowedUrl = (url) => /^https:\/\//.test(url) || (Boolean(TEST_FEED) && /^http:\/\/127\.0\.0\.1[:/]/.test(url))
 const RELEASES_PAGE = 'https://github.com/BND-1/horseMD/releases'
-const STALL_MS = 60000
+// A source that sends nothing for this long is dropped for the next one.
+const STALL_MS = 30000
+// Source probe: up to PROBE_BYTES or PROBE_MS from each source at once.
+const PROBE_BYTES = 512 * 1024
+const PROBE_MS = 5000
+// Tests replace the public mirrors with local ones (comma-separated prefixes).
+const TEST_MIRRORS = process.env.HORSEMD_TEST_UPDATE_MIRRORS || ''
+const MIRRORS = TEST_MIRRORS ? TEST_MIRRORS.split(',').filter(Boolean) : DEFAULT_MIRRORS
 // Packaged: package.json's version (app.getVersion()). Unpackaged (dev,
 // tests): app.getVersion() is Electron's own, so the build-time define.
 /* global __APP_VERSION__ */
@@ -104,7 +115,7 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
       notes: typeof data.body === 'string' ? data.body.slice(0, 4000) : '',
       assets: (Array.isArray(data.assets) ? data.assets : [])
         .filter((asset) => asset && typeof asset.name === 'string' && allowedUrl(String(asset.browser_download_url || '')))
-        .map((asset) => ({ name: asset.name, url: asset.browser_download_url, size: Number(asset.size) || 0 }))
+        .map((asset) => ({ name: asset.name, url: asset.browser_download_url, size: Number(asset.size) || 0, sha256: digestSha256(asset.digest) }))
     }
     return release
   }
@@ -137,45 +148,78 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
     return res.text()
   }
 
-  async function download() {
-    if (state.status === 'downloading') return state
-    if (state.status === 'ready' && state.version === release?.version) return state
-    if (!release) await fetchRelease()
-    if (compareVersions(release.version, currentVersion(app)) <= 0) throw new Error('已经是最新版本。')
-    const picked = target()
-    if (!picked) throw new Error('这个系统没有可以直接下载的安装包，请到 GitHub 下载。')
-    const { asset, mode } = picked
-    controller = new AbortController()
-    cancelling = false
-    const { signal } = controller
-    const version = release.version
-    publish({ status: 'downloading', version, mode, name: asset.name, received: 0, total: asset.size })
-    trace({ step: 'download', version, asset: asset.name, mode })
+  const abortError = () => Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })
 
+  // The SHA-256 the download must have — from GitHub only: the API's asset
+  // digest, else SHA256SUMS.txt from github.com itself (never a mirror).
+  async function expectedSha(asset, signal) {
+    if (asset.sha256) return asset.sha256
     const sumsAsset = release.assets.find((item) => item.name === 'SHA256SUMS.txt')
-    if (!sumsAsset) throw new Error('这个版本缺少校验文件（SHA256SUMS.txt），为安全起见不能直接下载。')
+    if (!sumsAsset) throw new Error('这个版本缺少校验信息，为安全起见不能直接下载。')
     const expected = parseChecksums(await readText(sumsAsset.url, signal)).get(asset.name)
     if (!expected) throw new Error(`校验文件里没有 ${asset.name}，为安全起见不能直接下载。`)
+    return expected
+  }
 
-    // install: a private folder; open / reveal: the user's Downloads.
-    const dir = mode === 'install' ? join(app.getPath('temp'), 'horsemd-update', version) : app.getPath('downloads')
-    await fsp.mkdir(dir, { recursive: true })
-    const file = join(dir, asset.name)
-    const part = `${file}.part`
-    const res = await request(asset.url, { method: 'GET', signal, headers: { 'User-Agent': 'HorseMD-Updater' } })
-    if (!res.ok || !res.body) throw new Error(`下载失败（HTTP ${res.status}）。`)
-    const total = Number(res.headers.get('content-length')) || asset.size
-    const hash = createHash('sha256')
-    const out = fs.createWriteStream(part)
-    let received = 0
-    let lastSent = 0
+  // Every source at once, up to PROBE_BYTES / PROBE_MS each: bytes per
+  // second decides the order (update-core rankSources).
+  async function probeSources(sources, signal) {
+    if (sources.length < 2) return sources
+    const results = await Promise.all(sources.map(async (source) => {
+      const ctl = new AbortController()
+      const onAbort = () => ctl.abort()
+      signal.addEventListener('abort', onAbort, { once: true })
+      const timer = setTimeout(() => ctl.abort(), PROBE_MS)
+      const started = Date.now()
+      let bytes = 0
+      let status = 0
+      const speed = () => bytes / Math.max(0.05, (Date.now() - started) / 1000)
+      try {
+        const res = await request(source.url, { method: 'GET', signal: ctl.signal, headers: { 'User-Agent': 'HorseMD-Updater', Range: `bytes=0-${PROBE_BYTES - 1}` } })
+        status = res.status
+        if (!(res.status === 200 || res.status === 206) || !res.body) return { source, ok: false, speed: 0, status }
+        const reader = res.body.getReader()
+        while (bytes < PROBE_BYTES) {
+          const { done, value } = await reader.read()
+          if (done) break
+          bytes += value.length
+        }
+        ctl.abort() // a server that ignores Range sends the whole file
+        return { source, ok: true, speed: speed(), status }
+      } catch {
+        return { source, ok: bytes > 0, speed: speed(), status }
+      } finally {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', onAbort)
+      }
+    }))
+    trace({ step: 'probe', results: results.map((r) => ({ via: r.source.via, status: r.status, kbps: Math.round(r.speed / 1024), ok: r.ok })) })
+    if (signal.aborted) throw abortError()
+    return rankSources(results)
+  }
+
+  // One source: stream into `part` while hashing. Nothing for STALL_MS ends
+  // this attempt only (the next source is tried); the user's cancel ends all.
+  async function fetchTo(source, part, sizeHint, signal) {
+    const attempt = new AbortController()
+    const onAbort = () => attempt.abort()
+    signal.addEventListener('abort', onAbort, { once: true })
+    let stalled = false
     let stall = null
     const armStall = () => {
       clearTimeout(stall)
-      stall = setTimeout(() => controller?.abort(new Error('stall')), STALL_MS)
+      stall = setTimeout(() => { stalled = true; attempt.abort() }, STALL_MS)
     }
+    const out = fs.createWriteStream(part)
+    const hash = createHash('sha256')
+    let received = 0
+    let lastSent = 0
     try {
       armStall()
+      const res = await request(source.url, { method: 'GET', signal: attempt.signal, headers: { 'User-Agent': 'HorseMD-Updater' } })
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+      const total = Number(res.headers.get('content-length')) || sizeHint
+      publish({ ...state, received: 0, total, via: source.via })
       const reader = res.body.getReader()
       for (;;) {
         const { done, value } = await reader.read()
@@ -191,20 +235,71 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
         }
       }
       await new Promise((resolve, reject) => out.end((error) => (error ? reject(error) : resolve())))
+      return { sha: hash.digest('hex'), received, total }
     } catch (error) {
       out.destroy()
       await fsp.rm(part, { force: true })
-      if (signal.aborted && signal.reason?.message === 'stall') throw new Error('下载长时间没有进展，已停止。请检查网络后重试。')
-      throw error
+      if (signal.aborted) throw abortError()
+      throw new Error(stalled ? `${STALL_MS / 1000} 秒没有进展` : String(error?.message || error).replace(/^Error: /, ''))
     } finally {
       clearTimeout(stall)
+      signal.removeEventListener('abort', onAbort)
     }
-    const got = hash.digest('hex')
-    if (got !== expected) {
-      await fsp.rm(part, { force: true })
-      trace({ step: 'checksum-mismatch', asset: asset.name })
-      throw new Error('下载的文件校验不一致，已删除。请重试，或到 GitHub 下载。')
+  }
+
+  async function download() {
+    if (state.status === 'downloading') return state
+    if (state.status === 'ready' && state.version === release?.version) return state
+    if (!release) await fetchRelease()
+    if (compareVersions(release.version, currentVersion(app)) <= 0) throw new Error('已经是最新版本。')
+    const picked = target()
+    if (!picked) throw new Error('这个系统没有可以直接下载的安装包，请到 GitHub 下载。')
+    const { asset, mode } = picked
+    controller = new AbortController()
+    cancelling = false
+    const { signal } = controller
+    const version = release.version
+    publish({ status: 'downloading', version, mode, name: asset.name, received: 0, total: asset.size, via: null })
+    trace({ step: 'download', version, asset: asset.name, mode })
+
+    const expected = await expectedSha(asset, signal)
+    // install: a private folder; open / reveal: the user's Downloads.
+    const dir = mode === 'install' ? join(app.getPath('temp'), 'horsemd-update', version) : app.getPath('downloads')
+    await fsp.mkdir(dir, { recursive: true })
+    const file = join(dir, asset.name)
+    const part = `${file}.part`
+
+    // GitHub or a mirror, fastest first; the next one on failure, stall or
+    // a checksum mismatch.
+    const sources = await probeSources(downloadSources(asset.url, MIRRORS, { anyUrl: Boolean(TEST_MIRRORS) }), signal)
+    let fetched = null
+    let mismatch = false
+    const failures = []
+    for (const source of sources) {
+      trace({ step: 'source', via: source.via })
+      try {
+        const result = await fetchTo(source, part, asset.size, signal)
+        if (result.sha !== expected) {
+          await fsp.rm(part, { force: true })
+          mismatch = true
+          failures.push(`${source.via}: checksum`)
+          trace({ step: 'checksum-mismatch', via: source.via, asset: asset.name })
+          continue
+        }
+        fetched = { ...result, via: source.via }
+        break
+      } catch (error) {
+        if (signal.aborted) throw error
+        failures.push(`${source.via}: ${error.message}`)
+        trace({ step: 'source-failed', via: source.via, message: error.message.slice(0, 200) })
+      }
     }
+    if (!fetched) {
+      throw new Error(mismatch
+        ? '下载的文件校验不一致，已删除。请重试，或到 GitHub 下载。'
+        : `下载失败（${failures.join('；')}）。请检查网络后重试，或到 GitHub 下载。`)
+    }
+    const { received, total, via } = fetched
     await fsp.rm(file, { force: true })
     await fsp.rename(part, file)
 
@@ -221,10 +316,10 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
       if (plistVersion(plist) !== version) throw new Error('更新包的版本号不对，已停止。')
     }
     controller = null
-    trace({ step: 'ready', version, asset: asset.name })
+    trace({ step: 'ready', version, asset: asset.name, via })
     if (mode === 'open') shell.openPath(file)
     if (mode === 'reveal') shell.showItemInFolder(file)
-    publish({ status: 'ready', version, mode, name: asset.name, received, total, file, installFrom })
+    publish({ status: 'ready', version, mode, name: asset.name, received, total, via, file, installFrom })
     return state
   }
 

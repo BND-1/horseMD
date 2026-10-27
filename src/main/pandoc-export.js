@@ -1,7 +1,7 @@
 import { app, dialog, shell } from 'electron'
 import fs from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join } from 'node:path'
-import { buildPandocArgs, PANDOC_FORMATS, parsePandocVersion, summarizePandocStderr } from './pandoc-core.js'
+import { buildPandocArgs, gfmSupportsMathDollars, PANDOC_FORMATS, parsePandocVersion, summarizePandocStderr } from './pandoc-core.js'
 import { runSubprocess } from './subprocess.js'
 import { getSaveDirFor, recordSaveDir } from './export-prefs.js'
 
@@ -35,7 +35,15 @@ const probePandoc = async (path) => {
     const result = await runSubprocess({ executable: path, args: ['--version'], timeoutMs: 5000 })
     if (result.timedOut || result.code !== 0) return null
     const version = parsePandocVersion(result.stdout)
-    return version ? { available: true, path, version } : null
+    if (!version) return null
+    let mathDollars = false
+    try {
+      const listed = await runSubprocess({ executable: path, args: ['--list-extensions=gfm'], timeoutMs: 5000 })
+      mathDollars = !listed.timedOut && listed.code === 0 && gfmSupportsMathDollars(listed.stdout)
+    } catch {
+      mathDollars = false
+    }
+    return { available: true, path, version, mathDollars }
   } catch {
     return null
   }
@@ -115,7 +123,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     try {
       const result = await runSubprocess({
         executable: detected.path,
-        args: buildPandocArgs({ outputPath: save.filePath, sourceDir, to: descriptor.to }),
+        args: buildPandocArgs({ outputPath: save.filePath, sourceDir, to: descriptor.to, mathDollars: detected.mathDollars }),
         input: content,
         cwd: sourceDir || undefined,
         timeoutMs: 120000,
@@ -130,6 +138,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
         ok: true,
         path: save.filePath,
         version: detected.version,
+        mathUnsupported: !detected.mathDollars,
         warning: summarizePandocStderr(result.stderr)
       }
     } catch (error) {

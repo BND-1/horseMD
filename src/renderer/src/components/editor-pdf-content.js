@@ -1,5 +1,7 @@
 import { loadKatex } from '../lib/katex-lazy.js'
 import { renderMermaidForExport } from './editor-mermaid.js'
+import { svgCodeImage } from './editor-html.js'
+import { isSvgCodeLanguage } from './editor-svg-codeblock.js'
 import { materializeCopiedSoftBreaks } from './editor-copy.js'
 
 const EXPORT_PREVIEW_DEADLINE_MS = 12000
@@ -113,7 +115,32 @@ const materializeMermaidPreview = (block, svgMarkup) => {
   return true
 }
 
+// ```svg (#166): exported as its picture, whichever of 图 / 代码 the block
+// shows — the same image as an inline <svg> (#162): vector in the PDF,
+// embedded in HTML, at its own size (scaled down to the page).
+const materializeSvgCodePreview = (block) => {
+  const image = svgCodeImage(codeBlockText(block))
+  if (!image) return false
+  const doc = block.ownerDocument
+  const wrapper = doc.createElement('figure')
+  wrapper.className = 'hm-pdf-diagram hm-pdf-svg'
+  wrapper.setAttribute('data-hm-pdf-preserve', '')
+  const img = doc.createElement('img')
+  img.src = image.src
+  img.alt = ''
+  img.setAttribute('style', image.width
+    ? `width:${Math.round(image.width)}px;max-width:100%;height:auto;border-radius:0`
+    : 'width:100%;height:auto;border-radius:0')
+  wrapper.appendChild(img)
+  block.replaceWith(wrapper)
+  return true
+}
+
 const CODE_PREVIEW_EXPORTERS = [
+  {
+    matches: isSvgCodeLanguage,
+    materialize: (block) => materializeSvgCodePreview(block)
+  },
   {
     matches: isLatexLanguage,
     materialize: (block) => materializeLatexPreview(block)
