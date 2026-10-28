@@ -4,6 +4,11 @@ import { basename, delimiter, dirname, isAbsolute, join } from 'node:path'
 import { buildPandocArgs, gfmSupportsMathDollars, PANDOC_FORMATS, parsePandocVersion, summarizePandocStderr } from './pandoc-core.js'
 import { runSubprocess } from './subprocess.js'
 import { getSaveDirFor, recordSaveDir } from './export-prefs.js'
+import { applyPandocFigures } from './pandoc-figures.js'
+
+// Formats whose output carries images (Typora puts rendered diagrams into
+// docx / epub too). MediaWiki and plain text keep the source.
+const FIGURE_FORMATS = new Set(['docx', 'odt', 'epub', 'rtf', 'latex'])
 
 const MAX_MARKDOWN_BYTES = 50 * 1024 * 1024
 const CONFIG_FILE = 'document-tools.json'
@@ -97,7 +102,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     return { ok: true, ...selected, custom: true }
   }
 
-  const exportDocument = async ({ markdown, format, defaultName, sourcePath } = {}) => {
+  const exportDocument = async ({ markdown, format, defaultName, sourcePath, figures = [] } = {}) => {
     const descriptor = PANDOC_FORMATS[format]
     if (!descriptor) return { ok: false, code: 'unsupported-format', error: 'Unsupported Pandoc format.' }
     const content = String(markdown || '')
@@ -120,11 +125,33 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     await recordSaveDir(sourcePath, dirname(save.filePath))
 
     const sourceDir = typeof sourcePath === 'string' && isAbsolute(sourcePath) ? dirname(sourcePath) : null
+    // Rendered figures (Mermaid / SVG as PNG, see pandoc-figures.js): in a
+    // temporary folder Pandoc embeds from, or — LaTeX references image files —
+    // in "<name>-figures" next to the .tex.
+    let input = content
+    let tempDir = null
+    let figureCount = 0
     try {
+      if (Array.isArray(figures) && figures.length && FIGURE_FORMATS.has(format)) {
+        let dir
+        let prefix = ''
+        if (format === 'latex') {
+          const folder = `${basename(save.filePath).replace(/\.[^.]+$/, '')}-figures`
+          dir = join(dirname(save.filePath), folder)
+          prefix = `${folder}/`
+        } else {
+          tempDir = await fs.mkdtemp(join(app.getPath('temp'), 'horsemd-pandoc-'))
+          dir = tempDir
+        }
+        const applied = await applyPandocFigures({ markdown: content, figures, dir, prefix, html: format === 'epub' })
+        input = applied.markdown
+        figureCount = applied.count
+        if (!figureCount && format === 'latex') await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
+      }
       const result = await runSubprocess({
         executable: detected.path,
-        args: buildPandocArgs({ outputPath: save.filePath, sourceDir, to: descriptor.to, mathDollars: detected.mathDollars }),
-        input: content,
+        args: buildPandocArgs({ outputPath: save.filePath, sourceDir, to: descriptor.to, mathDollars: detected.mathDollars, resourceDirs: tempDir ? [tempDir] : [], delimiter }),
+        input,
         cwd: sourceDir || undefined,
         timeoutMs: 120000,
         env: process.env
@@ -133,18 +160,41 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
       if (result.code !== 0) {
         return { ok: false, code: 'pandoc-failed', error: result.stderr.trim() || `Pandoc exited with code ${result.code}.` }
       }
-      shell.showItemInFolder(save.filePath)
+      // Nothing is opened here: the success dialog asks (open the file / show
+      // it in its folder), through openResult below.
+      lastExportPath = save.filePath
       return {
         ok: true,
         path: save.filePath,
         version: detected.version,
         mathUnsupported: !detected.mathDollars,
+        figures: figureCount,
         warning: summarizePandocStderr(result.stderr)
       }
     } catch (error) {
       return { ok: false, code: 'start-failed', error: error?.message || String(error) }
+    } finally {
+      if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
     }
   }
 
-  return { detect, chooseExecutable, exportDocument }
+  // The success dialog's buttons. Only the file this module just wrote can be
+  // opened — the renderer names an action, never a path.
+  let lastExportPath = null
+  const openResult = async (kind) => {
+    if (!lastExportPath) return { ok: false, error: 'No exported file.' }
+    try {
+      await fs.access(lastExportPath)
+    } catch {
+      return { ok: false, code: 'missing', error: lastExportPath }
+    }
+    if (kind === 'folder') {
+      shell.showItemInFolder(lastExportPath)
+      return { ok: true }
+    }
+    const error = await shell.openPath(lastExportPath)
+    return error ? { ok: false, error } : { ok: true }
+  }
+
+  return { detect, chooseExecutable, exportDocument, openResult }
 }

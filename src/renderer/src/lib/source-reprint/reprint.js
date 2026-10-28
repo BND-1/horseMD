@@ -916,7 +916,11 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const end = endOf(mdNode)
     const raw = body.slice(start, end)
     const lines = raw.split(/\r?\n/)
-    const open = /^([ \t]*)(`{3,}|~{3,})/.exec(lines[0])
+    // `$$` math blocks (lang LaTeX, remark-math) are fenced like code: the
+    // content lines sit between the `$$` lines, which stay authored.
+    const open = mdNode?.lang === 'LaTeX'
+      ? /^([ \t]*)(`{3,}|~{3,}|\${2,})/.exec(lines[0])
+      : /^([ \t]*)(`{3,}|~{3,})/.exec(lines[0])
     // Indented code (Yuque writes nested lists as blank line + 4 spaces):
     // patch it in place, keeping the indentation. Reprinting it as a fence
     // would change what follows (`2. x` right after indented code is
@@ -1337,6 +1341,12 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   if (!ok) return { ok: false, reason: 'reprint-unexpressible', notes }
 
   // Apply edits back to front; overlapping edits mean a logic error.
+  // A block without source offsets (a remark transform that dropped
+  // `position`) must never be spliced: slice(undefined) is the whole text,
+  // which printed the document twice around the edit.
+  if (edits.some((edit) => !Number.isInteger(edit.from) || !Number.isInteger(edit.to) || edit.from > edit.to)) {
+    return { ok: false, reason: 'reprint-unpositioned', notes }
+  }
   edits.sort((left, right) => right.from - left.from || right.to - left.to)
   let markdown = body
   let floor = Infinity

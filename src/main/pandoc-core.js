@@ -5,7 +5,8 @@ export const PANDOC_FORMATS = Object.freeze({
   odt: { extension: 'odt', label: 'OpenDocument' },
   rtf: { extension: 'rtf', label: 'Rich Text' },
   mediawiki: { extension: 'wiki', label: 'MediaWiki', to: 'mediawiki' },
-  txt: { extension: 'txt', label: 'Plain Text' }
+  // Pandoc cannot infer a writer from .txt (it wrote Markdown): `plain`.
+  txt: { extension: 'txt', label: 'Plain Text', to: 'plain' }
 })
 
 export function parsePandocVersion(output = '') {
@@ -26,10 +27,13 @@ export function gfmSupportsMathDollars(listExtensionsOutput = '') {
 // `to` names the writer when the extension alone doesn't (.wiki); the other
 // formats keep Pandoc's choice by extension. `mathDollars` false (old Pandoc):
 // plain gfm, formulas stay as text.
-export function buildPandocArgs({ outputPath, sourceDir, to, mathDollars = true }) {
+// resourceDirs: extra folders searched before the source folder (rendered
+// figures); `delimiter` is path.delimiter of the running platform.
+export function buildPandocArgs({ outputPath, sourceDir, to, mathDollars = true, resourceDirs = [], delimiter = ':' }) {
   const args = [mathDollars ? '--from=gfm+tex_math_dollars' : '--from=gfm', '--standalone', '--output', outputPath]
   if (to) args.push(`--to=${to}`)
-  if (sourceDir) args.push(`--resource-path=${sourceDir}`)
+  const dirs = [...resourceDirs, sourceDir].filter(Boolean)
+  if (dirs.length) args.push(`--resource-path=${dirs.join(delimiter)}`)
   return args
 }
 

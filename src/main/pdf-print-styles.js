@@ -104,6 +104,7 @@ const BASE_PDF_CSS = `
   .doc figure {
     margin: var(--hm-pdf-figure-margin, 1.1em) 0; text-align: center; break-inside: avoid; page-break-inside: avoid;
   }
+  .doc figcaption { margin-top: -0.4em; color: #6b6458; font-size: 0.88em; line-height: 1.5; }
   .doc .hm-pdf-diagram svg {
     width: auto; height: auto; max-width: 100%; max-height: 85vh; margin: 0 auto;
   }

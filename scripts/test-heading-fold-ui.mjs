@@ -228,7 +228,9 @@ try {
   await openPalette('HTML')
   await waitFor(() => app.evaluate("document.querySelector('.hm-html-preview')?.dataset.previewStatus === 'ready'"), 'HTML preview not ready', 150)
   const html = await app.evaluate("document.querySelector('.hm-html-preview iframe')?.srcdoc || ''")
-  for (const piece of ['一节正文', 'A正文', 'B正文', '小节B', 'const a = 1', '列二']) assert.ok(html.includes(piece), `export misses ${piece}`)
+  // Text, not markup: code is split into syntax-coloured spans.
+  const exportedText = html.replace(/<[^>]+>/g, '')
+  for (const piece of ['一节正文', 'A正文', 'B正文', '小节B', 'const a = 1', '列二']) assert.ok(exportedText.includes(piece), `export misses ${piece}`)
   assert.ok(!html.includes('hm-fold-hidden'), 'export carries the fold class')
   await pressKey(send, { key: 'Escape', code: 'Escape' })
   await waitFor(() => app.evaluate("!document.querySelector('.hm-html-studio')"), 'HTML studio did not close')

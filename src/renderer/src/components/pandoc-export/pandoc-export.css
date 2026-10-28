@@ -81,3 +81,71 @@
 @keyframes hm-pandoc-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Success: file name, its folder, then the actions on their own row. */
+.hm-pandoc-status-dialog.success {
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  row-gap: 16px;
+  width: min(520px, 100%);
+}
+
+.hm-pandoc-status-copy p.hm-pandoc-file {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Wrapped, not cut: the last folders are the useful part of a long path. */
+.hm-pandoc-status-copy p.hm-pandoc-dir {
+  overflow-wrap: anywhere;
+}
+
+.hm-pandoc-status-copy p.error {
+  margin-top: 6px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.hm-pandoc-status-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hm-pandoc-status-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.hm-pandoc-status-actions button:hover:not(:disabled) {
+  background: var(--hover, var(--accent-soft));
+}
+
+.hm-pandoc-status-actions button.primary {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.hm-pandoc-status-actions button.primary:hover:not(:disabled) {
+  background: var(--accent-strong, var(--accent));
+}
+
+.hm-pandoc-status-actions button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.hm-pandoc-status-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

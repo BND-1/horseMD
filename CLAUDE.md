@@ -778,7 +778,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   inherits Crepe's `block-edit.css` theme + the bounds-fixer in
   `editor-dom-bindings.js` (which keys off those classes).
 - **Math**: enable `CrepeFeature.Latex` (off by default). Block math needs `$$` on
-  their own lines. Long display math scrolls (`.katex-display { overflow-x:auto }`).
+  their own lines. Crepe's `remarkMathBlock` rebuilds every `math` node as a
+  `code` node (lang LaTeX) WITHOUT `position`, so the source reprint engine
+  sliced at `undefined` (the whole document printed twice around the edit)
+  and every edit inside a `$$` block — a new 公式 from the slash menu or one
+  read from the file — ended in「富文本与源码不一致」(Windows trace
+  2026-10-27; 0.13.257 too). `lib/remark-math-block-position.js` does the
+  same conversion first, keeping the position (registered before Crepe's
+  plugins, like `remarkImageBlockWithPosition`); `patchCodeBlock` treats `$$`
+  as a fence for LaTeX nodes (only the content lines change); `reprintSource`
+  refuses any edit without integer offsets (`reprint-unpositioned`). Locked
+  by `test:math-block-edit-ui`. Long display math scrolls (`.katex-display { overflow-x:auto }`).
   Inline math `$x^2$` converts only on the closing `$` (Milkdown input rule
   `/\$([^$]+)\$/`), so there's no preview while typing the content. `editor-math-preview.js`
   (#45) adds a live KaTeX tooltip near the caret while typing an unclosed `$<mathy>`
@@ -1108,6 +1118,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   textarea live buffer, or `flushMarkdown()` in rich mode — never a stale React
   tab snapshot), and export must not change dirty/cursor/disk. See
   [`docs/document-export-architecture.md`](./docs/document-export-architecture.md).
+- **Export snapshot fidelity** (2026-10-27): image blocks export as
+  `<figure><img><figcaption>` (the caption was Crepe's `<input>`, a text box
+  under every captioned image; read from the live input before the first
+  await); code rows `.hm-code-line` need the template rules in BOTH
+  templates (HTML had none: every line on one line); code gets the editor's
+  oneDark colours as inline styles (`lib/export-code-highlight.js`, same
+  @codemirror/language-data parser; ivory / white rules skipped for paper);
+  HTML block math is `display: block math` (plain `block` left it
+  left-aligned). Locked by `test:export-fidelity-ui`.
 - **HTML export** (`html-export.js` + `html-document.js`): the main-process
   preview returns an opaque token; the saved file is the SAME bytes the token
   refers to (no re-render on save). Output is no-script: the snapshot strips
@@ -1123,7 +1142,28 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `gfm+tex_math_dollars` ("not supported for gfm", e.g. Ubuntu 22.04's 2.9),
   so those get plain `--from=gfm` (formulas as text) and a hint
   (`mathUnsupported`, `pandoc.oldMath`); 2.11+ keep `gfm+tex_math_dollars`.
-  Checked with real 2.9.2.1 / 2.10 / 2.11 / 2.14 / 2.19 / 3.0 / 3.1 / 3.12.
+  Checked with real 2.9.2.1 / 2.10 / 2.11 / 2.14 / 2.19 / 3.0 / 3.1 / 3.12
+  (Windows too: 2.9.2.1 and 3.12.1 through the menu).
+  Figures (2026-10-27, Typora parity — its docx/epub exports carry the
+  rendered diagrams): Pandoc reads the source, so Mermaid / ```svg / an
+  `<svg>` paragraph / a local `.svg` image reached Word as code or not at
+  all. `lib/pandoc-figures.js` (renderer, lazy-loaded) finds them by mdast
+  position and makes SVG data URLs (`renderMermaidForExport`,
+  `svgCodeImage`: scripts dropped, intrinsic size); main
+  (`pandoc-figures.js`) rasterizes each in an offscreen window as an <img>
+  (foreignObject labels paint, scripts never run) at 2× with a 192-dpi pHYs,
+  then replaces ONLY the rendered ranges (`pandoc-figures-core.js`
+  validates offsets) — docx/odt/rtf via a temp resource dir (removed after),
+  EPUB as a sized raw `<img>` (EPUB ignores DPI), LaTeX into
+  `<name>-figures/` beside the .tex; MediaWiki / txt unchanged. Locked by
+  `test:pandoc-figures` + `test:pandoc-figures-ui`. `txt` uses `--to=plain`
+  (Pandoc wrote Markdown for .txt).
+  Success dialog (`PandocExportStatus.jsx`): file name + folder, then 打开文件
+  (focused, Enter) / 在文件夹中显示 / 关闭 (Esc). Nothing opens by itself.
+  `pandoc:openResult` takes only 'file' | 'folder' — main opens the path it
+  just wrote (`lastExportPath`), never one from the renderer; a failed or
+  missing open keeps the dialog with the reason. Locked by
+  `test:pandoc-export-ui` (fake `pandoc` script, stubbed shell).
 - **AI Phase 0** (`src/shared/ai-contracts.js` + `src/main/ai/`): pure, no-UI,
   no-network contracts (`AiRequest`, `ProviderAdapter`, `ContextSnapshot` with
   sha256 revision, `ChangeProposal` with before-check + stale refusal). **Not

@@ -22,6 +22,7 @@ import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from '.
 import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
+import { remarkMathBlockWithPosition } from '../lib/remark-math-block-position.js'
 import { isSvgCodeLanguage, requestSvgCodeBlockScan, svgCodePreviewHtml } from './editor-svg-codeblock.js'
 import {
   tableBreakKeymap,
@@ -310,6 +311,8 @@ export function createConfiguredCrepe({
       // Before Milkdown's remark-image-block (registered later and appended):
       // the same conversion, but the image block keeps its source position.
       { plugin: remarkImageBlockWithPosition, options: undefined },
+      // Same for `$$` math blocks (Crepe's remarkMathBlock drops the position).
+      { plugin: remarkMathBlockWithPosition, options: undefined },
       ...plugins,
       // CJK-friendly emphasis (Typora parity): `这是**「重点」**内容` is bold.
       // Plain CommonMark flanking rules treat CJK punctuation like ASCII

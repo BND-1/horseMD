@@ -1,4 +1,5 @@
 import { loadKatex } from '../lib/katex-lazy.js'
+import { highlightCodeLines } from '../lib/export-code-highlight.js'
 import { renderMermaidForExport } from './editor-mermaid.js'
 import { svgCodeImage } from './editor-html.js'
 import { isSvgCodeLanguage } from './editor-svg-codeblock.js'
@@ -309,10 +310,26 @@ const materializeHtmlBlockMath = async (root) => {
   }
 }
 
+// Syntax colours (lib/export-code-highlight.js), computed before the
+// synchronous flatten below.
+const EXPORT_HIGHLIGHT = Symbol('horsemd-export-highlight')
+const highlightCodeBlocksForExport = async (clone) => {
+  for (const block of clone.querySelectorAll('.milkdown-code-block')) {
+    const code = block[EXPORT_CODE]
+    if (!code?.text || !block.querySelector('.cm-editor')) continue
+    try {
+      block[EXPORT_HIGHLIGHT] = await highlightCodeLines(code.text, code.language)
+    } catch {
+      block[EXPORT_HIGHLIGHT] = null
+    }
+  }
+}
+
 const flattenCodeMirrorBlocks = (clone) => {
   const doc = clone.ownerDocument
   clone.querySelectorAll('.cm-editor').forEach((cm) => {
     const fullCode = cm.closest('.milkdown-code-block')?.[EXPORT_CODE]
+    const highlighted = cm.closest('.milkdown-code-block')?.[EXPORT_HIGHLIGHT]
     const lines = fullCode
       ? fullCode.text.split('\n')
       : [...cm.querySelectorAll('.cm-line')].map((line) => line.textContent)
@@ -333,7 +350,18 @@ const flattenCodeMirrorBlocks = (clone) => {
         num.textContent = String(index + 1)
         const text = doc.createElement('span')
         text.className = 'hm-code-line-text'
-        text.textContent = lineText
+        const segments = highlighted?.length === lines.length ? highlighted[index] : null
+        if (segments) {
+          for (const [part, style] of segments) {
+            if (!style) { text.appendChild(doc.createTextNode(part)); continue }
+            const token = doc.createElement('span')
+            token.setAttribute('style', style)
+            token.textContent = part
+            text.appendChild(token)
+          }
+        } else {
+          text.textContent = lineText
+        }
         row.appendChild(num)
         row.appendChild(text)
         code.appendChild(row)
@@ -349,6 +377,30 @@ const flattenCodeMirrorBlocks = (clone) => {
 // Inline `<svg>` source renders as an <img> (editor-html.js). The export CSS
 // makes every image a centred block, so keep an icon in its line and let an
 // SVG without a width fill the line, as in the editor.
+// Image blocks: Crepe's caption is an <input> (placeholder 写图片说明), which
+// exported as a text box under every image with alt text. Export a <figure>
+// with the image and, when there is one, a <figcaption>. `captions` are read
+// from the live editor (an input's typed value is not an attribute).
+const materializeImageBlocksForExport = (clone, captions) => {
+  const doc = clone.ownerDocument
+  clone.querySelectorAll('.milkdown-image-block').forEach((block, index) => {
+    const image = block.querySelector('img')
+    if (!image) {
+      block.remove()
+      return
+    }
+    const figure = doc.createElement('figure')
+    figure.appendChild(image)
+    const caption = String(captions[index] ?? '').trim()
+    if (caption) {
+      const figcaption = doc.createElement('figcaption')
+      figcaption.textContent = caption
+      figure.appendChild(figcaption)
+    }
+    block.replaceWith(figure)
+  })
+}
+
 const materializeInlineSvgForExport = (clone) => {
   clone.querySelectorAll('.hm-html-svg > img').forEach((image) => {
     const host = image.parentElement
@@ -400,6 +452,9 @@ export async function createPdfSourceFromEditor(root, { codeBlocks } = {}) {
     if (blocks.length !== codeBlocks.length) throw new Error('Export code-block snapshot is not ready; please retry.')
     blocks.forEach((block, index) => { block[EXPORT_CODE] = codeBlocks[index] })
   }
+  const imageCaptions = [...root.querySelectorAll('.milkdown-image-block')].map((block) =>
+    block.querySelector('input.caption-input, input')?.value ?? ''
+  )
   const imageSources = [...root.querySelectorAll('img')].map((image) =>
     image.currentSrc || image.getAttribute('src') || ''
   )
@@ -426,9 +481,11 @@ export async function createPdfSourceFromEditor(root, { codeBlocks } = {}) {
 
   await materializeCodePreviewsForExport(clone, mermaidPreviews)
   materializeInlineSvgForExport(clone)
+  materializeImageBlocksForExport(clone, imageCaptions)
   materializeTaskListsForExport(clone)
   materializeTableLayoutsForExport(root, clone)
   stripEditorOnlyForExport(clone)
+  await highlightCodeBlocksForExport(clone)
   flattenCodeMirrorBlocks(clone)
   await replaceKatexWithMathml(clone)
   stripEditorAttributes(clone)

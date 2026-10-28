@@ -31,6 +31,7 @@ const api = {
   detectPandoc: () => ipcRenderer.invoke('pandoc:detect'),
   selectPandocExecutable: () => ipcRenderer.invoke('pandoc:selectExecutable'),
   exportWithPandoc: (payload) => ipcRenderer.invoke('pandoc:export', payload),
+  openPandocResult: (kind) => ipcRenderer.invoke('pandoc:openResult', kind),
   allowLocalFonts: () => ipcRenderer.invoke('permissions:allowLocalFonts'),
 
   // fs

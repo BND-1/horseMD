@@ -173,6 +173,26 @@ const standalone = [
     script: 'scripts/test-svg-render-ui.mjs'
   },
   {
+    name: '```svg code blocks: 图 | 代码 switch, intrinsic size, export (#166)',
+    script: 'scripts/test-svg-codeblock-ui.mjs'
+  },
+  {
+    name: '$$ math blocks: typing in a slash-menu 公式 block and in LF / CRLF file blocks stays in sync',
+    script: 'scripts/test-math-block-edit-ui.mjs'
+  },
+  {
+    name: 'Pandoc export dialog: open file / show in folder / close, failures explained',
+    script: 'scripts/test-pandoc-export-ui.mjs'
+  },
+  {
+    name: 'Pandoc export: Mermaid / SVG figures reach Word, EPUB, LaTeX as rendered PNGs',
+    script: 'scripts/test-pandoc-figures-ui.mjs'
+  },
+  {
+    name: 'PDF / HTML export: image captions, code rows with syntax colours, centred math',
+    script: 'scripts/test-export-fidelity-ui.mjs'
+  },
+  {
     name: 'Edge hard break in a typed-from-scratch document',
     script: 'scripts/test-edge-hard-break-scratch-ui.mjs'
   },

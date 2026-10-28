@@ -9,7 +9,20 @@ export function usePandocExport() {
     runningRef.current = true
     setPandocExportState({ status: 'running', format: payload.format, error: null, warning: null, code: null, path: null })
     try {
-      const result = await window.api.exportWithPandoc(payload)
+      // Mermaid / SVG figures go in as rendered images (lib/pandoc-figures.js).
+      let figures = []
+      try {
+        // Loaded on demand: it pulls in the editor's SVG / Mermaid helpers.
+        const { collectPandocFigures } = await import('../lib/pandoc-figures.js')
+        figures = await collectPandocFigures(payload.markdown, {
+          format: payload.format,
+          sourcePath: payload.sourcePath,
+          readFile: window.api.readFile
+        })
+      } catch {
+        figures = []
+      }
+      const result = await window.api.exportWithPandoc({ ...payload, figures })
       runningRef.current = false
       if (result?.canceled) {
         setPandocExportState(null)

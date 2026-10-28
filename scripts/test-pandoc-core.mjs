@@ -29,5 +29,7 @@ assert.equal(gfmSupportsMathDollars(''), false)
 assert.equal(buildPandocArgs({ outputPath: '/tmp/a.docx', mathDollars: false })[0], '--from=gfm')
 
 assert.deepEqual(Object.keys(PANDOC_FORMATS), ['docx', 'epub', 'latex', 'odt', 'rtf', 'mediawiki', 'txt'])
+// .txt is not a writer Pandoc infers (it wrote Markdown): plain text.
+assert.equal(PANDOC_FORMATS.txt.to, 'plain')
 
 console.log('pandoc core tests passed')

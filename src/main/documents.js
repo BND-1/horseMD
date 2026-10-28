@@ -67,4 +67,7 @@ export function registerDocumentIpc(ipcMain, { getMainWindow, getUserDataPath, m
   ipcMain.handle('pandoc:export', (event, payload) => trusted(event)
     ? pandocExport.exportDocument(payload)
     : { ok: false, error: 'Untrusted renderer.' })
+  ipcMain.handle('pandoc:openResult', (event, kind) => trusted(event)
+    ? pandocExport.openResult(kind === 'folder' ? 'folder' : 'file')
+    : { ok: false, error: 'Untrusted renderer.' })
 }
