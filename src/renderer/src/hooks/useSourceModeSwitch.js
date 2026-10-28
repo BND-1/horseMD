@@ -13,6 +13,7 @@ import {
 } from '../scrollAnchor.js'
 import { getTextareaSourceValue } from '../source-text-fidelity.js'
 import { fireToast } from '../ui.js'
+import { syncReportAction } from '../lib/sync-diagnostics.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 import { traceEditorEvent } from '../components/editor-input-trace.js'
 
@@ -139,6 +140,7 @@ export function useSourceModeSwitch({
       // renderer memory: offer the same recovery copy the save path uses.
       const tab = tabsRef.current.find((item) => item.id === id)
       const recoveryMarkdown = editorApis.current[id]?.getRecoveryMarkdown?.()
+      const action = syncReportAction(editorApis.current[id]?.getSyncReport?.('source-switch'), tRef.current('syncReport.button'), tRef.current('syncReport.hint'))
       if (tab && typeof recoveryMarkdown === 'string') {
         try {
           const recovery = await saveSourceSyncRecovery({
@@ -147,14 +149,14 @@ export function useSourceModeSwitch({
             markdown: recoveryMarkdown
           })
           if (recovery.ok) {
-            fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true })
+            fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true, action })
             return false
           }
         } catch {
           // Fall through to the paused-source message.
         }
       }
-      fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+      fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true, action })
       return false
     }
     const view = editorApis.current[id]?.getView?.()

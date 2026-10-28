@@ -193,6 +193,10 @@ const standalone = [
     script: 'scripts/test-export-fidelity-ui.mjs'
   },
   {
+    name: 'Sync diagnostics: 查看详情 on the mismatch toast, editable report, copy, WeChat, prefilled GitHub issue',
+    script: 'scripts/test-sync-report-ui.mjs'
+  },
+  {
     name: 'Edge hard break in a typed-from-scratch document',
     script: 'scripts/test-edge-hard-break-scratch-ui.mjs'
   },

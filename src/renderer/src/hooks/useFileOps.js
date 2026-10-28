@@ -25,6 +25,7 @@ import {
   isHeavyDoc
 } from '../paths.js'
 import { fireToast } from '../ui.js'
+import { syncReportAction } from '../lib/sync-diagnostics.js'
 import { getSavedDocPosition } from '../lib/doc-positions.js'
 import { mapOffsetThroughChange } from '../lib/offset-through-change.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
@@ -45,6 +46,7 @@ export function useFileOps({
   getMarkdownForTab,
   getSettledMarkdownForTab,
   getRecoveryMarkdownForTab,
+  getSyncReportForTab,
   waitForPdfSourceForTab,
   isMobile,
   t,
@@ -483,11 +485,13 @@ export function useFileOps({
         // writes a recovery copy on the user's behalf.
         if (auto) return { skipped: 'source-sync' }
         const recoveryMarkdown = getRecoveryMarkdownForTab?.(id)
+        // 查看详情 on every toast of this path (lib/sync-diagnostics.js).
+        const action = syncReportAction(getSyncReportForTab?.(id, 'save'), tRef.current('syncReport.button'), tRef.current('syncReport.hint'))
         if (typeof recoveryMarkdown !== 'string') {
-          fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true })
+          fireToast(tRef.current('save.sourceSyncFailed'), { sticky: true, action })
           return
         }
-        fireToast(tRef.current('save.sourceSyncRecoveryPrompt'), { sticky: true })
+        fireToast(tRef.current('save.sourceSyncRecoveryPrompt'), { sticky: true, action })
         try {
           const recovery = await saveSourceSyncRecovery({
             api: window.api,
@@ -495,7 +499,7 @@ export function useFileOps({
             markdown: recoveryMarkdown
           })
           if (!recovery.ok) return
-          fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true })
+          fireToast(tRef.current('save.sourceSyncRecoverySaved', { path: recovery.path }), { sticky: true, action })
         } catch (error) {
           fireToast(tRef.current('save.failed', { msg: error?.message || String(error) }), { sticky: true })
         }
@@ -543,6 +547,7 @@ export function useFileOps({
       commitAllLive,
       getMarkdownForTab,
       getRecoveryMarkdownForTab,
+      getSyncReportForTab,
       getSettledMarkdownForTab,
       writeTab,
       isMobile,

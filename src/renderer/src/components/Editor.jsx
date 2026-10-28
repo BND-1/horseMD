@@ -41,6 +41,8 @@ import { useEditorLightboxControls } from './editor-lightbox.js'
 import { applyImageText, createConfiguredCrepe } from './editor-crepe-setup.js'
 import { mountEditorDomBindings } from './editor-dom-bindings.js'
 import { mountEditorInputTrace, traceEditorEvent } from './editor-input-trace.js'
+import { mountSyncEventLog } from './editor-sync-event-log.js'
+import { buildSyncReport, changedRegion, createSyncEventLog, syncReportAction } from '../lib/sync-diagnostics.js'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
 import {
   generatedScratchMarkdown,
@@ -54,7 +56,7 @@ import {
   replaceMarkdownListBlock,
   restoreTypedBulletMarker
 } from '../markdown-source-preservation.js'
-import { pmPosToMarkdownOffset } from './editor-source-map.js'
+import { createPmPosToMarkdownOffsetMapper, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
 import { createEditorTransactionTracer } from './editor-transaction-trace.js'
 import { reconcileUnchangedSourceResult } from '../lib/source-sync/unchanged-source-result.js'
@@ -349,6 +351,40 @@ export default function Editor({
     let hasSyntheticEmptyTitle = false
     let createRaf = 0
     const cleanups = []
+    // Sync diagnostics (lib/sync-diagnostics.js): the last input events, and a
+    // snapshot taken when sync fails — the report itself is built only when
+    // the user opens it.
+    const syncEventLog = createSyncEventLog()
+    const captureSyncReport = (reason, where) => {
+      const doc = viewRef.current?.state.doc
+      const source = lastMarkdownRef.current || ''
+      const events = syncEventLog.entries()
+      const at = new Date().toISOString()
+      return () => {
+        let region = null
+        try {
+          if (doc && crepeRef.current) {
+            const ctx = crepeRef.current.editor.ctx
+            const sourceDoc = ctx.get(parserCtx)(source)
+            const mapOffset = createPmPosToMarkdownOffsetMapper(source, sourceDoc, ctx.get(remarkCtx))
+            region = changedRegion({ source, sourceDoc, editorDoc: doc, mapOffset, serialize: ctx.get(serializerCtx) })
+          }
+        } catch (error) {
+          region = { error: error?.message || String(error) }
+        }
+        return buildSyncReport({
+          version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '',
+          platform: window.api?.platform,
+          userAgent: navigator.userAgent,
+          where,
+          reason,
+          at,
+          source,
+          region,
+          events
+        })
+      }
+    }
     const canonicalForSource = (markdown) => {
       const canonical = normalizeReviewMarkupMarkdown(markdown)
       if (!hasSyntheticEmptyTitle) return canonical
@@ -2230,10 +2266,10 @@ export default function Editor({
       return coordinated
     }
     let lastSourceSyncWarning = null
-    const reportSourceSyncFailure = (reason) => {
+    const reportSourceSyncFailure = (reason, { rescue = true } = {}) => {
       // Last resort before pausing: the degraded source reprint, still
       // verified directly against the editor document.
-      try {
+      if (rescue) try {
         const doc = viewRef.current?.state.doc
         if (doc && !generatedScratchRef.current && !viewRef.current?.composing) {
           const canonical = canonicalForSource(crepe.editor.ctx.get(serializerCtx)(doc))
@@ -2281,7 +2317,10 @@ export default function Editor({
           )
         })
       }
-      fireToast(tRef.current('save.sourceSyncMismatch'), { sticky: true })
+      fireToast(tRef.current('save.sourceSyncMismatch'), {
+        sticky: true,
+        action: syncReportAction(captureSyncReport(signature, 'edit'), tRef.current('syncReport.button'), tRef.current('syncReport.hint'))
+      })
     }
 
     const pushStructuralTransactionTrace = (entry, value) => {
@@ -4306,6 +4345,7 @@ export default function Editor({
           view,
           cleanups
         })
+        mountSyncEventLog({ view, log: syncEventLog, cleanups })
 
         // Typora-style new document: first line is an empty Heading 1 (title),
         // with an empty paragraph below it. The title is there if you want it,
@@ -4465,6 +4505,7 @@ export default function Editor({
           flushMarkdown,
           flushMarkdownSettled,
           getRecoveryMarkdown,
+          getSyncReport: (where) => captureSyncReport('rich-edit-not-mapped', where),
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
           markdownOffsetFromViewportTop
@@ -4541,6 +4582,13 @@ export default function Editor({
           if (window.api?.inputTraceEnabled === true) {
             const harness = globalThis.__hmSourceReprintHarness = {
               parse: (markdown) => crepe.editor.ctx.get(parserCtx)(markdown),
+              // Sync diagnostics test (test:sync-report-ui): a failure that
+              // skips the degraded rescue, as a real unmappable edit would,
+              // with the source left at its last synced state (`staleSource`).
+              forceSyncFailure: (reason, staleSource) => {
+                if (typeof staleSource === 'string') lastMarkdownRef.current = staleSource
+                return reportSourceSyncFailure(reason, { rescue: false })
+              },
               parseTree: (markdown) => { const r = crepe.editor.ctx.get(remarkCtx); return reprintDeps().parseTree(r.runSync(r.parse(markdown), markdown)) },
               serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc),
               remark: () => crepe.editor.ctx.get(remarkCtx),

@@ -198,7 +198,8 @@ export function useAppLifecycle({
       const sticky = typeof d === 'object' && !!d?.sticky
       const duration = typeof d === 'object' ? d?.duration : undefined
       if (!msg) return
-      setToast({ msg, key: Date.now() + Math.random(), sticky })
+      const action = sticky && typeof d?.action?.run === 'function' && d.action.label ? d.action : null
+      setToast({ msg, key: Date.now() + Math.random(), sticky, action })
       clearTimeout(timer)
       // duration wins; otherwise sticky stays until ✕, plain toasts hide quickly.
       const ms = duration || (sticky ? 0 : 1600)

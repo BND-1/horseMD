@@ -152,8 +152,18 @@ try {
   await key('ArrowLeft', 37)
   await key('Home', 36)
   for (let line = 0; line < 65; line++) await key('ArrowDown', 40, 8)
+  // The test window is never shown, so animation frames are rare: CodeMirror's
+  // scroll-caret-into-view request from the arrow keys can still be pending
+  // and would be applied by the next page scroll (pulling the page back to
+  // the code block under a later right-click). Wait until it has measured.
+  const codeSettled = () => waitFor(() => app.evaluate(`(() => {
+    const v = (${editor}).querySelector('.milkdown-code-block .cm-content')?.cmTile?.root?.view
+    return !v || (v.measureScheduled === -1 && v.viewState.scrollTarget == null)
+  })()`), 'CodeMirror did not finish measuring')
+  await codeSettled()
   const partialCopy = await copyFromMenu(await getVisibleCodePoint())
   assert.equal(partialCopy.plain, code.split('\n').slice(0, 65).join('\n') + '\n', 'partial code selection expanded or was truncated')
+  await codeSettled()
 
   await click(await select('p', 'First bold text.'), 'right')
   assert.equal(await app.evaluate(`(() => {

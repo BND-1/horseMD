@@ -36,6 +36,8 @@ const original = [
   '',
   '批注{==重点==}{>>说明<<}文字',
   '',
+  '行内 `inlineCodeSample` 代码',
+  '',
   '尾段',
   ''
 ].join('\n')
@@ -188,6 +190,39 @@ try {
   await pressKey(send, { key: 'Escape' })
   await sleep(200)
   assert.equal(await text(), baseline, 'review card changed the document')
+
+  // 4c. Inline code (#163 follow-up): a click or double-click keeps the
+  // rendered look — no backtick delimiters, no editing state — and the
+  // text can still be selected.
+  // Visible backticks only (the read-only view hides any left from editing).
+  const delimiters = () => app.evaluate(`[...(${editor}).querySelectorAll('.hm-inline-code-delimiter')].filter(n => n.getClientRects().length).length`)
+  const inlineCode = `[...(${editor}).querySelectorAll('code')].find(n => n.textContent === 'inlineCodeSample')`
+  const ic = await rectOf(inlineCode)
+  assert.ok(ic, 'inline code missing')
+  await click({ x: ic.x, y: ic.y })
+  await sleep(200)
+  assert.equal(await delimiters(), 0, 'a click on inline code showed the backticks in reading mode')
+  await mouse('mousePressed', { x: ic.x, y: ic.y }, 2)
+  await mouse('mouseReleased', { x: ic.x, y: ic.y }, 2)
+  await sleep(250)
+  assert.equal(await delimiters(), 0, 'a double-click on inline code showed the backticks in reading mode')
+  assert.match(await app.evaluate('getSelection().toString()'), /inlineCodeSample/, 'double-click did not select the inline code')
+  assert.equal(await text(), baseline, 'inline code click changed the document')
+
+  // 4d. Clicked into inline code while editing, then reading mode: the
+  // backticks go away; back in editing a click shows them again.
+  await toggleShortcut()
+  await waitFor(async () => (await state()).editable === 'true', 'shortcut did not leave reading mode')
+  // ProseMirror counts a click within 500 ms of the double-click at the same
+  // spot as a triple click (selects the paragraph); wait like a person would.
+  await sleep(600)
+  await click({ x: ic.x, y: ic.y })
+  await waitFor(async () => (await delimiters()) === 2, 'editing: a click on inline code did not show the backticks')
+  await toggleShortcut()
+  await waitFor(async () => (await state()).editable === 'false', 'shortcut did not enter reading mode')
+  await sleep(200)
+  assert.equal(await delimiters(), 0, 'backticks stayed after entering reading mode')
+  assert.equal(await text(), baseline, 'inline code round trip changed the document')
 
   // 5. Entering with the caret in the editor: Mod+B / Mod+Alt+H must not
   // reformat (Chromium moves focus off the now non-editable view).

@@ -269,6 +269,9 @@ export function createInlineCodeEditingPlugin({ onEdit, onValueChange } = {}) {
       },
 
       handleClick(view, pos, event) {
+        // Reading mode (#163): a click on inline code is a reading click —
+        // no editing state, no backticks; the text stays selectable.
+        if (view.editable === false) return false
         const target = event.target
         const code = target?.closest?.('code')
         if (!code || !view.dom.contains(code)) return false

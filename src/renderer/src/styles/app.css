@@ -1557,13 +1557,19 @@ button:focus-visible,
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px 0 0;
+  border: none;
+  border-radius: 7px;
   color: var(--bg-editor);
-  background: rgba(255, 255, 255, 0.16);
+  background: transparent;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease;
 }
-.hm-toast-close:active { background: rgba(255, 255, 255, 0.3); }
+.hm-toast-close:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+.hm-toast-close:active { background: rgba(255, 255, 255, 0.2); }
 @keyframes hm-toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -6366,6 +6372,11 @@ body.hm-preserve-soft-breaks
 .milkdown .ProseMirror .hm-inline-code-delimiter.close {
   margin-left: 1px;
 }
+/* Reading mode (#163): a read-only view never shows the editing backticks,
+   even when inline code was being edited as reading mode started. */
+.milkdown .ProseMirror[contenteditable="false"] .hm-inline-code-delimiter {
+  display: none;
+}
 
 /* Lists — compact, writing-first spacing.
    Crepe renders each marker in `.label-wrapper`, not through `::marker`.
@@ -7938,3 +7949,263 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 @media print {
   .hm-fold-layer { display: none; }
 }
+
+/* ---- Sync error details (查看详情, lib/sync-diagnostics.js) ----
+   Quiet cards in the update prompt's family: one accent button per
+   surface, everything else neutral. */
+.hm-toast.sticky.has-action {
+  display: block;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 18px 18px 14px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  font-weight: 400;
+}
+.hm-alert-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.hm-alert-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+.hm-alert-text { min-width: 0; flex: 1; }
+.hm-alert-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-strong);
+}
+.hm-toast.sticky.has-action .hm-toast-msg {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  white-space: normal;
+}
+.hm-toast-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.hm-alert-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 14px;
+}
+.hm-alert-secondary,
+.hm-toast.sticky .hm-toast-action {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+.hm-alert-secondary {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.hm-alert-secondary:hover { background: var(--hover); color: var(--text); }
+.hm-toast.sticky .hm-toast-action {
+  padding: 7px 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.hm-toast.sticky .hm-toast-action:hover { filter: brightness(1.07); }
+
+.hm-sync-report-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 259;
+  background: rgba(0, 0, 0, 0.16);
+  animation: menuFadeIn 0.15s var(--ease-out);
+}
+.hm-sync-report {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 260;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 24px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  outline: none;
+  animation: hm-toast-center-in 0.18s var(--ease-out);
+}
+.hm-sync-report-x {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hm-sync-report-x:hover { background: var(--hover); color: var(--text); }
+.hm-sync-report-title {
+  padding-right: 28px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.hm-sync-report-note {
+  margin: 6px 0 0;
+  padding-right: 12px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.hm-sync-report-send {
+  margin-top: 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.hm-sync-report-way {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.hm-sync-report-way + .hm-sync-report-way { border-top: 1px solid var(--border-soft); }
+.hm-sync-report-way-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--hover);
+}
+.hm-sync-report-way-icon.wechat { color: #07a352; background: rgba(7, 193, 96, 0.12); }
+.hm-sync-report-way-text { flex: 1; min-width: 0; }
+.hm-sync-report-way-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.hm-sync-report-way-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.hm-sync-report-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.hm-sync-report-id svg { color: var(--faint); }
+.hm-sync-report-id:hover, .hm-sync-report-id:hover svg { color: var(--accent-strong); }
+.hm-sync-report-btn {
+  flex: none;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+.hm-sync-report-btn:hover { background: var(--hover); }
+.hm-sync-report-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.hm-sync-report-btn.primary:hover { filter: brightness(1.07); }
+.hm-sync-report-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 4px 6px 4px 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hm-sync-report-toggle:hover { color: var(--text); }
+.hm-sync-report-toggle svg { transition: transform 0.15s ease; }
+.hm-sync-report-toggle.open svg { transform: rotate(90deg); }
+.hm-sync-report-text {
+  flex: none;
+  height: 220px;
+  min-height: 120px;
+  margin-top: 8px;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--code-bg, var(--bg-editor));
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.hm-sync-report-text:focus { border-color: var(--border); }
+.hm-sync-report-status {
+  display: none;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--success, var(--accent-strong));
+}
+.hm-sync-report-status.show { display: flex; }
+.hm-sync-report-status.error { color: var(--danger); }
+.hm-sync-report-status svg { flex: none; margin-top: 3px; }

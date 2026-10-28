@@ -821,6 +821,23 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   immediate save or source switch can lose the last input after reopen.
   `saveTab()` must call `getMarkdownForTab()` and update `tabsRef` before writing;
   `commitAllLive()` alone covers only uncontrolled source textareas.
+- **Sync diagnostics** (`lib/sync-diagnostics.js`, `editor-sync-event-log.js`,
+  `SyncReportDialog.jsx`): users hit「检测到富文本与源码不一致」/ the save-time
+  recovery prompt without --horsemd-input-trace, so nothing reached us. Every
+  editor keeps the last 40 input events in memory (passive capture
+  listeners: keys, beforeinput, IME, paste/cut/drop, clicks, each with the
+  caret's block path). A failure keeps the stale source + the live doc
+  (references only); the toast asks the user to send the details (`action.hint`) and its
+  prominent「查看详情」button (toast `action`) builds the
+  report lazily: version, OS, reason, the differing top-level blocks (heading
+  ids ignored) as raw source (CRLF ␍ / tab → visible) and as the editor
+  serializes them, the events. The dialog's text is editable; 复制 /「在 GitHub
+  提交」(bug form prefilled via URL params; > 7000 chars → copied + paste
+  prompt) use the box. 「复制，微信发给作者」copies it and shows the author's
+  WeChat ID (`AUTHOR_WECHAT`, public in guide/community.md; copyable). Save (`useFileOps`) and source-switch recovery toasts
+  carry the same button (`getSyncReport`). The trace harness has
+  `forceSyncFailure(reason, staleSource)`. Locked by `test:sync-diagnostics` +
+  `test:sync-report-ui`.
 - **Rich/source pause families (0.13.235)** — found by
   `scripts/fuzz-rich-source-ui.mjs` (seeded real-Electron random editing; oracle =
   live PM doc vs Save → cold reopen, plus mismatch toasts). Fixes, each locked by
@@ -921,7 +938,9 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `READ_ONLY_BLOCKED_HANDLERS` in `menuHandlers.js` (replace, attach,
   review commands → hint toast), no replace row in the find bar, no outline
   drag, review cards keep only their copy actions. A plain click opens a link
-  (Ctrl/Cmd still needed while editing). External-change reloads still apply.
+  (Ctrl/Cmd still needed while editing). A click on inline code does not enter
+  its editing state (no backtick delimiters; `editor-inline-code.js` skips
+  `view.editable === false`, and a read-only view hides any left over). External-change reloads still apply.
   Entering with the caret in the editor is safe: Chromium moves focus off the
   now non-editable view, so ProseMirror keymaps (Mod-B…) never run. Locked
   by `test:reading-mode-ui`.

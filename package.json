@@ -1,6 +1,6 @@
 {
   "name": "horse",
-  "version": "0.13.258",
+  "version": "0.13.259",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -58,6 +58,8 @@
     "test:svg-codeblock-ui": "node scripts/test-svg-codeblock-ui.mjs",
     "test:pandoc-export-ui": "node scripts/test-pandoc-export-ui.mjs",
     "test:math-block-edit-ui": "node scripts/test-math-block-edit-ui.mjs",
+    "test:sync-diagnostics": "node scripts/test-sync-diagnostics.mjs",
+    "test:sync-report-ui": "node scripts/test-sync-report-ui.mjs",
     "test:pandoc-figures": "node scripts/test-pandoc-figures.mjs",
     "test:pandoc-figures-ui": "node scripts/test-pandoc-figures-ui.mjs",
     "test:export-fidelity-ui": "node scripts/test-export-fidelity-ui.mjs",

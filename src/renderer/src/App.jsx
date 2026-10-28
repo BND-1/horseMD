@@ -19,6 +19,7 @@ import DropOpenOverlay from './components/shell/DropOpenOverlay.jsx'
 import UpdateToast from './components/UpdateToast.jsx'
 import { useUpdateDownload } from './hooks/useUpdateDownload.js'
 import RenameModal from './components/RenameModal.jsx'
+import SyncReportDialog from './components/SyncReportDialog.jsx'
 import {
   loadSettings,
   saveSettings,
@@ -567,6 +568,9 @@ export default function App() {
   const getRecoveryMarkdownForTab = useCallback((id) => (
     editorApis.current[id]?.getRecoveryMarkdown?.() ?? null
   ), [editorApis])
+  const getSyncReportForTab = useCallback((id, where) => (
+    editorApis.current[id]?.getSyncReport?.(where) ?? null
+  ), [editorApis])
 
   // Source/rich view state and anchor restoration live in useSourceModeSwitch.
 
@@ -617,6 +621,7 @@ export default function App() {
     getMarkdownForTab,
     getSettledMarkdownForTab,
     getRecoveryMarkdownForTab,
+    getSyncReportForTab,
     waitForPdfSourceForTab,
     isMobile,
     t,
@@ -1539,7 +1544,24 @@ export default function App() {
         onOpenFile={(p) => { openPaths([p]); if (isMobile) setSidebarOpen(false) }}
       />
 
-      {toast && (
+      {toast?.action ? (
+        // An error toast with an action (查看详情): a light card like the
+        // update prompt — icon, title, message, the ask, 关闭 / action.
+        <div className="hm-toast sticky has-action" role="alertdialog" key={toast.key}>
+          <div className="hm-alert-head">
+            <span className="hm-alert-icon"><Icon name="alert" size={18} /></span>
+            <div className="hm-alert-text">
+              <div className="hm-alert-title">{t('syncReport.toastTitle')}</div>
+              <div className="hm-toast-msg">{toast.msg}</div>
+              {toast.action.hint && <div className="hm-toast-hint">{toast.action.hint}</div>}
+            </div>
+          </div>
+          <div className="hm-alert-foot">
+            <button className="hm-alert-secondary" onClick={() => setToast(null)}>{t('syncReport.close')}</button>
+            <button className="hm-toast-action" onClick={() => toast.action.run()}>{toast.action.label}</button>
+          </div>
+        </div>
+      ) : toast && (
         <div className={`hm-toast${toast.sticky ? ' sticky' : ''}`} role="status" key={toast.key}>
           <span className="hm-toast-msg">{toast.msg}</span>
           {toast.sticky && (
@@ -1549,6 +1571,8 @@ export default function App() {
           )}
         </div>
       )}
+
+      <SyncReportDialog t={t} />
 
       {renameState && (
         <RenameModal

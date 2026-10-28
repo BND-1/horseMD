@@ -1008,6 +1008,19 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const encodedNew = name === 'table_row' || name === 'table_header_row'
       ? newNodes
       : newNodes.filter((node) => !isEditorOnly(node) || emptiedSlots.has(node))
+    // Top level, empty paragraphs between two blocks (Enter on an empty line)
+    // are spelled like an emptied one (Typora): each adds a blank line to the
+    // gap of a block printed next to it. Counted per encoded block.
+    if (name === 'doc') {
+      const counts = []
+      let run = 0
+      for (const node of newNodes) {
+        if (isEditorOnly(node) && !emptiedSlots.has(node)) { run += 1; continue }
+        counts.push(counts.length ? run : 0)
+        run = 0
+      }
+      blankRunsBefore.set(encodedNew, counts)
+    }
     if (name === 'table_row' || name === 'table_header_row') {
       // Extra trailing EMPTY cells are prosemirror-tables padding for a short
       // authored row (design §5): no encoding, the authored row stays short.
@@ -1246,6 +1259,8 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // Replace old children [oldFrom, oldTo) by new children [newFrom, newTo).
   // The replaced range includes the gaps to the unchanged neighbours, so each
   // boundary gets a separator chosen for that exact pair of blocks.
+  // encodedNew (doc level) → empty paragraphs right before each block.
+  const blankRunsBefore = new WeakMap()
   const replaceRegion = (srcNode, mdNode, kids, newNode, gap, frame, separator, newNodes, oldChildren) => {
     const printedNew = []
     for (let index = gap.newFrom; index < gap.newTo; index += 1) {
@@ -1253,12 +1268,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       if (isBlankParagraph(node)) continue // no encoding
       const printed = printBlock(node, newNode, mdNode, index)
       if (printed == null) return false
-      printedNew.push({ node, text: indentContinuation(printed, frame.prefix) })
+      printedNew.push({ node, text: indentContinuation(printed, frame.prefix), newIndex: index })
     }
     const prevIndex = gap.oldFrom - 1
     const nextIndex = gap.oldTo
-    const prev = prevIndex >= 0 ? { node: oldChildren[prevIndex], md: kids[prevIndex], index: prevIndex } : null
-    const next = nextIndex < kids.length ? { node: oldChildren[nextIndex], md: kids[nextIndex], index: nextIndex } : null
+    const prev = prevIndex >= 0 ? { node: oldChildren[prevIndex], md: kids[prevIndex], index: prevIndex, newIndex: gap.newFrom - 1 } : null
+    const next = nextIndex < kids.length ? { node: oldChildren[nextIndex], md: kids[nextIndex], index: nextIndex, newIndex: gap.newTo } : null
+    const blankRuns = blankRunsBefore.get(newNodes)
     const from = prev ? endOf(prev.md) : (gap.oldTo > gap.oldFrom ? startOf(kids[gap.oldFrom]) : next ? startOf(next.md) : null)
     const to = next ? startOf(next.md) : (gap.oldTo > gap.oldFrom ? endOf(kids[gap.oldTo - 1]) : prev ? endOf(prev.md) : null)
     if (from == null || to == null) return false
@@ -1289,7 +1305,8 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         if (insertionOnly && srcNode.type.name === 'doc' && typeof raw === 'string' && /^(?:[ \t]*\r?\n){3,}[ \t]*$/.test(raw)) {
           raw = '\n\n'
         }
-        text += pairSeparator(srcNode, left.node, item.node, frame, raw, separator)
+        const blanks = blankRuns && (!left.md || !item.md) ? blankRuns[item.newIndex] || 0 : 0
+        text += blanks ? '\n'.repeat(2 * (blanks + 1)) : pairSeparator(srcNode, left.node, item.node, frame, raw, separator)
       }
       if (!item.md) text += item.text
     }

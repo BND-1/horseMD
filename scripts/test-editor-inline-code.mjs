@@ -157,6 +157,11 @@ state = EditorState.create({
 assert.ok(inlineCodeMarkBefore(state, 3))
 view = mockView(state)
 const codeElement = {}
+// Reading mode (#163): a read-only view leaves the click to the browser —
+// no editing state, so no backticks.
+assert.equal(plugin.props.handleClick({ ...view, editable: false }, 3, {
+  target: { closest: (selector) => selector === 'code' ? codeElement : null }
+}), false)
 assert.equal(plugin.props.handleClick(view, 3, {
   target: { closest: (selector) => selector === 'code' ? codeElement : null }
 }), true)
