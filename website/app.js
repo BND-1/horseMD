@@ -186,7 +186,7 @@ fetch('https://api.github.com/repos/BND-1/horseMD/releases/latest')
 // release has no APK. Keep it at the newest release that ships one. (Gitee
 // mirror isn't synced past v0.3.1, so CN goes via ghfast + GitHub like the
 // desktop buttons.) index.html's hrefs (releases/latest) are the no-JS fallback.
-const APK_VER = '0.13.258'
+const APK_VER = '0.13.259'
 const APK_URL = `https://github.com/BND-1/horseMD/releases/download/v${APK_VER}/HorseMD-${APK_VER}-android.apk`
 const setAndroid = (url) => {
   document.getElementById('dlAndroid').href = url
