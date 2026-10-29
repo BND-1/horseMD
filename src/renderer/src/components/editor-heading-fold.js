@@ -6,16 +6,30 @@
 // hidden blocks); nothing is written to the Markdown, the document never turns
 // dirty, and the folds are not saved (like code folds in an editor).
 //
+// A fold remembers where its section ended when it was folded (`end`,
+// mapped through edits so that text inserted exactly there stays outside):
+// blocks added right after the folded content stay visible, as in Obsidian /
+// Feishu. A fold never reaches past the next heading of the same or a higher
+// level.
+//
 // Nothing is ever typed into hidden content: when the selection lands inside
 // a folded section (arrow keys, find, outline jump, undo, search result), the
 // folds around it open. A fold command that would hide the caret moves it to
-// the end of the folded heading first.
+// the end of the folded heading first. Enter at the end of a folded heading
+// starts a new paragraph after the folded content (the next visible line) and
+// keeps the fold; Backspace in that still-empty paragraph removes it and goes
+// back to the heading's end. A folded heading carries its section: copying
+// or cutting a selection that covers the whole heading takes the folded
+// content too (`foldedSelectionRange`, used by the copy/cut handlers), and
+// dragging it by the block handle moves (Alt/Ctrl: copies) the whole section,
+// still folded at the drop point.
 //
 // The toggle buttons live in an overlay next to the editor DOM (never inside
 // the contenteditable), right after the heading text, so they never collide
 // with the block handle in the leading gutter.
 import { AllSelection, NodeSelection, Plugin, PluginKey, TextSelection } from '@milkdown/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/prose/view'
+import { dropPoint } from '@milkdown/prose/transform'
 
 export const headingFoldKey = new PluginKey('hm-heading-fold')
 // CustomEvent dispatched on (or inside) the editor DOM by the app:
@@ -31,44 +45,65 @@ const TOUCH = () => ['ios', 'android'].includes(globalThis.window?.api?.platform
 const isHeading = (node) => node?.type?.name === 'heading'
 const levelOf = (node) => Number(node.attrs.level) || 1
 
-// One pass over the top-level blocks. For every folded heading that hides at
-// least one block: its section range and hidden count. `hidden` lists each
-// hidden block once (nested folds hide the same blocks).
-export function computeFolds(doc, foldedPositions) {
-  const folded = new Set(foldedPositions)
-  const sections = new Map() // heading pos -> { from, to, level, count }
-  const hidden = []
-  const stack = [] // open sections: { pos, level, folded }
-  let openFolded = 0
-  const close = (entry, at) => {
-    const info = sections.get(entry.pos)
-    if (info) info.to = at
+// `folds`: [{ pos, end }] (or bare heading positions = fold to the natural
+// end). For every folded heading that hides at least one block: its section
+// range and hidden count. `hidden` lists each hidden block once (nested folds
+// hide the same blocks).
+export function computeFolds(doc, folds) {
+  const wanted = new Map()
+  for (const fold of folds) {
+    if (typeof fold === 'number') wanted.set(fold, null)
+    else if (fold && Number.isFinite(fold.pos)) wanted.set(fold.pos, Number.isFinite(fold.end) ? fold.end : null)
   }
+  const starts = [] // top-level block offsets, then the document end
+  const naturalEnd = new Map() // heading pos -> next same-or-higher heading (or doc end)
+  const stack = []
   doc.forEach((child, offset) => {
-    if (isHeading(child)) {
-      const level = levelOf(child)
-      while (stack.length && stack[stack.length - 1].level >= level) {
-        const entry = stack.pop()
-        if (entry.folded) openFolded -= 1
-        close(entry, offset)
-      }
-    }
-    if (openFolded > 0) {
-      hidden.push({ from: offset, to: offset + child.nodeSize })
-      for (const entry of stack) if (entry.folded) sections.get(entry.pos).count += 1
-    }
-    if (isHeading(child)) {
-      const isFolded = folded.has(offset)
-      stack.push({ pos: offset, level: levelOf(child), folded: isFolded })
-      if (isFolded) {
-        openFolded += 1
-        sections.set(offset, { from: offset + child.nodeSize, to: doc.content.size, level: levelOf(child), count: 0 })
-      }
-    }
+    starts.push(offset)
+    if (!isHeading(child)) return
+    const level = levelOf(child)
+    while (stack.length && stack[stack.length - 1].level >= level) naturalEnd.set(stack.pop().pos, offset)
+    stack.push({ pos: offset, level })
   })
-  for (const [pos, info] of sections) if (!info.count) sections.delete(pos)
-  return { positions: [...sections.keys()], sections, hidden }
+  for (const entry of stack) naturalEnd.set(entry.pos, doc.content.size)
+  starts.push(doc.content.size)
+  const indexOf = new Map(starts.map((offset, index) => [offset, index]))
+  // A remembered end that no longer falls between top-level blocks (an edit
+  // joined across it) snaps to the start of the block it falls in.
+  const snap = (pos) => {
+    const clamped = Math.max(0, Math.min(pos, doc.content.size))
+    const $pos = doc.resolve(clamped)
+    return $pos.depth === 0 ? clamped : $pos.before(1)
+  }
+  const sections = new Map() // heading pos -> { from, to, level, count }
+  const ranges = []
+  for (const [pos, remembered] of wanted) {
+    if (!naturalEnd.has(pos)) continue
+    const node = doc.nodeAt(pos)
+    const from = pos + node.nodeSize
+    const natural = naturalEnd.get(pos)
+    const to = remembered == null ? natural : Math.max(from, Math.min(snap(remembered), natural))
+    const count = indexOf.get(to) - indexOf.get(from)
+    if (!(count > 0)) continue
+    sections.set(pos, { from, to, level: levelOf(node), count })
+    ranges.push({ from, to })
+  }
+  const hidden = []
+  if (ranges.length) {
+    ranges.sort((a, b) => a.from - b.from)
+    let r = 0
+    let reach = -1
+    doc.forEach((child, offset) => {
+      while (r < ranges.length && ranges[r].from <= offset) reach = Math.max(reach, ranges[r++].to)
+      if (offset + child.nodeSize <= reach) hidden.push({ from: offset, to: offset + child.nodeSize })
+    })
+  }
+  const positions = [...sections.keys()].sort((a, b) => a - b)
+  return { positions, sections, hidden }
 }
+
+// The folds to keep in plugin state: every section's heading and its end.
+const foldsOf = (info) => info.positions.map((pos) => ({ pos, end: info.sections.get(pos).to }))
 
 // Does the top-level heading at `pos` have anything to fold?
 export function headingHasSection(doc, pos) {
@@ -131,41 +166,129 @@ const buildDecorations = (doc, info) => {
 
 const EMPTY = { folded: [], info: { positions: [], sections: new Map(), hidden: [] }, decorations: DecorationSet.empty, suspended: false }
 
-const applyAction = (meta, folded, doc) => {
-  const set = new Set(folded)
+const applyAction = (meta, folds, doc) => {
+  const map = new Map(folds.map((fold) => [fold.pos, fold]))
+  const add = (pos) => { if (!map.has(pos)) map.set(pos, { pos, end: null }) }
   switch (meta.action) {
     case 'toggle':
-      if (set.has(meta.pos)) set.delete(meta.pos)
-      else set.add(meta.pos)
+      if (map.has(meta.pos)) map.delete(meta.pos)
+      else add(meta.pos)
       break
     case 'fold':
-      set.add(meta.pos)
+      add(meta.pos)
       break
     case 'unfold':
-      set.delete(meta.pos)
+      map.delete(meta.pos)
       break
     case 'level': {
       const positions = topLevelHeadingPositions(doc, meta.level)
-      positions.forEach((pos) => (meta.fold ? set.add(pos) : set.delete(pos)))
+      positions.forEach((pos) => (meta.fold ? add(pos) : map.delete(pos)))
       break
     }
     case 'foldAll':
-      topLevelHeadingPositions(doc).forEach((pos) => set.add(pos))
+      topLevelHeadingPositions(doc).forEach(add)
       break
     case 'unfoldAll':
-      set.clear()
+      map.clear()
       break
     case 'reveal':
-      for (const pos of meta.positions || []) set.delete(pos)
+      for (const pos of meta.positions || []) map.delete(pos)
+      break
+    case 'foldRange':
+      map.set(meta.pos, { pos: meta.pos, end: meta.end })
       break
     default:
       break
   }
-  return [...set]
+  return [...map.values()]
+}
+
+const plainKey = (event, key) => event.key === key && !event.shiftKey && !event.altKey &&
+  !event.ctrlKey && !event.metaKey && !event.isComposing && event.keyCode !== 229
+
+// The visible folded heading the caret sits at the end of, or -1.
+const foldedHeadingAtCaret = (state, plugin) => {
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return -1
+  const { $from } = selection
+  if ($from.depth !== 1 || !isHeading($from.parent) || $from.parentOffset !== $from.parent.content.size) return -1
+  const pos = $from.before(1)
+  if (!plugin.info.sections.has(pos) || plugin.info.hidden.some((range) => range.from === pos)) return -1
+  return pos
+}
+
+// Enter at the end of a folded heading: a new paragraph after the folded
+// content (the next visible line); the fold stays.
+export function enterAfterFoldedHeading(view) {
+  const { state } = view
+  const plugin = headingFoldKey.getState(state)
+  const paragraph = state.schema.nodes.paragraph
+  if (!plugin || plugin.suspended || !paragraph) return false
+  const pos = foldedHeadingAtCaret(state, plugin)
+  if (pos < 0) return false
+  const at = plugin.info.sections.get(pos).to
+  const tr = state.tr.insert(at, paragraph.create())
+  tr.setSelection(TextSelection.create(tr.doc, at + 1)).scrollIntoView()
+  view.dispatch(tr)
+  return true
+}
+
+// Backspace in an empty paragraph right after folded content (the line Enter
+// above made): remove it and go back to the end of the folded heading,
+// instead of joining into the hidden block (which would open the fold).
+export function backspaceAfterFold(view) {
+  const { state } = view
+  const plugin = headingFoldKey.getState(state)
+  if (!plugin || plugin.suspended || !plugin.info.sections.size) return false
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return false
+  const { $from } = selection
+  if ($from.depth !== 1 || $from.parent.type.name !== 'paragraph' || $from.parent.content.size) return false
+  const start = $from.before(1)
+  const hiddenFrom = new Set(plugin.info.hidden.map((range) => range.from))
+  let heading = -1
+  for (const [pos, section] of plugin.info.sections) if (section.to === start && !hiddenFrom.has(pos)) heading = pos
+  if (heading < 0) return false
+  const node = state.doc.nodeAt(heading)
+  const tr = state.tr.delete(start, start + $from.parent.nodeSize)
+  tr.setSelection(TextSelection.create(tr.doc, heading + node.nodeSize - 1)).scrollIntoView()
+  view.dispatch(tr)
+  return true
+}
+
+// The range to copy / cut for the current selection when it covers the whole
+// text of a visible folded heading whose section it does not reach: from the
+// selection (a heading start → the heading node) to the section end. Null
+// otherwise (a partial heading, no folds, empty selection).
+export function foldedSelectionRange(state) {
+  const plugin = headingFoldKey.getState(state)
+  if (!plugin || plugin.suspended || !plugin.info.sections.size || state.selection.empty) return null
+  let { from } = state.selection
+  const { to } = state.selection
+  const hiddenFrom = new Set(plugin.info.hidden.map((range) => range.from))
+  let end = to
+  for (const [pos, section] of plugin.info.sections) {
+    if (hiddenFrom.has(pos) || section.to <= to) continue
+    const node = state.doc.nodeAt(pos)
+    if (from <= pos + 1 && to >= pos + node.nodeSize - 1) end = Math.max(end, section.to)
+  }
+  if (end === to) return null
+  const $from = state.doc.resolve(from)
+  if ($from.depth === 1 && $from.parentOffset === 0) from = $from.before(1)
+  return { from, to: end }
+}
+
+const foldKeyDown = (view, event) => {
+  if (!view.editable) return false
+  let handled = false
+  if (plainKey(event, 'Enter')) handled = enterAfterFoldedHeading(view)
+  else if (plainKey(event, 'Backspace')) handled = backspaceAfterFold(view)
+  if (handled) event.preventDefault?.()
+  return handled
 }
 
 // Actions that may hide the caret on purpose (it is moved, not unfolded).
-const FOLDING_ACTIONS = new Set(['toggle', 'fold', 'level', 'foldAll'])
+const FOLDING_ACTIONS = new Set(['toggle', 'fold', 'level', 'foldAll', 'foldRange'])
 
 export function createHeadingFoldPlugin(getT) {
   const t = (key, fallback, vars = {}) => {
@@ -174,6 +297,9 @@ export function createHeadingFoldPlugin(getT) {
     for (const [name, v] of Object.entries(vars)) text = text.replace(`{${name}}`, String(v))
     return text
   }
+
+  // A block-handle drag of a folded heading: { slice, from, to }.
+  let sectionDrag = null
 
   return new Plugin({
     key: headingFoldKey,
@@ -188,14 +314,18 @@ export function createHeadingFoldPlugin(getT) {
           if (prev.suspended || state.selection instanceof AllSelection) return prev
           const around = hiddenSectionsAt(prev.info, selectionPoint(state.selection), state.selection instanceof NodeSelection)
           if (!around.length) return prev
-          const info = computeFolds(state.doc, prev.folded.filter((pos) => !around.includes(pos)))
+          const info = computeFolds(state.doc, prev.folded.filter((fold) => !around.includes(fold.pos)))
           if (!info.positions.length) return EMPTY
-          return { folded: info.positions, info, decorations: buildDecorations(state.doc, info), suspended: false }
+          return { folded: foldsOf(info), info, decorations: buildDecorations(state.doc, info), suspended: false }
         }
         let folded = prev.folded
         if (tr.docChanged && folded.length) {
-          folded = folded.map((pos) => tr.mapping.map(pos, 1))
-            .filter((pos) => {
+          // The heading moves with text inserted in front of it; the end stays
+          // in front of text inserted exactly there (that text is visible).
+          // A deleted heading's fold goes (it used to land on the next heading).
+          folded = folded.filter((fold) => !tr.mapping.mapResult(fold.pos, 1).deleted)
+            .map((fold) => ({ pos: tr.mapping.map(fold.pos, 1), end: fold.end == null ? null : tr.mapping.map(fold.end, -1) }))
+            .filter(({ pos }) => {
               if (pos < 0 || pos >= state.doc.content.size) return false
               return isHeading(state.doc.nodeAt(pos)) && state.doc.resolve(pos).depth === 0
             })
@@ -209,11 +339,11 @@ export function createHeadingFoldPlugin(getT) {
         if (!suspended && !FOLDING_ACTIONS.has(meta?.action) && (tr.selectionSet || tr.docChanged) &&
           !(state.selection instanceof AllSelection) && info.sections.size) {
           const around = hiddenSectionsAt(info, selectionPoint(state.selection), state.selection instanceof NodeSelection)
-          if (around.length) info = computeFolds(state.doc, info.positions.filter((pos) => !around.includes(pos)))
+          if (around.length) info = computeFolds(state.doc, foldsOf(info).filter((fold) => !around.includes(fold.pos)))
         }
         if (!info.positions.length && !prev.folded.length && !suspended && !prev.suspended) return EMPTY
         return {
-          folded: info.positions,
+          folded: foldsOf(info),
           info,
           decorations: suspended ? DecorationSet.empty : buildDecorations(state.doc, info),
           suspended
@@ -235,7 +365,43 @@ export function createHeadingFoldPlugin(getT) {
         .setMeta('addToHistory', false)
     },
     props: {
-      decorations: (state) => headingFoldKey.getState(state)?.decorations
+      decorations: (state) => headingFoldKey.getState(state)?.decorations,
+      // DOM keydown runs before every plugin's keymap (Milkdown's Enter would
+      // split the heading first); handleKeyDown covers the synthetic Enter
+      // ProseMirror sends on Android.
+      handleDOMEvents: { keydown: foldKeyDown },
+      handleKeyDown: foldKeyDown,
+      // Drop of a dragged folded section: move (or copy) the whole section
+      // and keep it folded where it lands.
+      handleDrop(view, event, _slice, moved) {
+        const drag = sectionDrag
+        sectionDrag = null
+        if (!drag || view.dragging?.slice !== drag.slice || !view.editable) return false
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY })
+        if (!at) return false
+        const { state } = view
+        let insertPos = dropPoint(state.doc, at.pos, drag.slice)
+        if (insertPos == null) insertPos = at.pos
+        event.preventDefault()
+        if (moved && insertPos >= drag.from && insertPos <= drag.to) return true // onto itself
+        const tr = state.tr
+        if (moved) tr.delete(drag.from, drag.to)
+        const pos = tr.mapping.map(insertPos)
+        tr.replaceRange(pos, pos, drag.slice)
+        let start = pos
+        let end = pos
+        tr.mapping.maps[tr.mapping.maps.length - 1].forEach((_from, _to, newFrom, newTo) => { start = newFrom; end = newTo })
+        const heading = tr.doc.nodeAt(start)
+        if (isHeading(heading) && tr.doc.resolve(start).depth === 0) {
+          tr.setSelection(NodeSelection.create(tr.doc, start))
+          tr.setMeta(headingFoldKey, { action: 'foldRange', pos: start, end })
+        } else {
+          tr.setSelection(TextSelection.near(tr.doc.resolve(start)))
+        }
+        view.focus()
+        view.dispatch(tr.setMeta('uiEvent', 'drop').scrollIntoView())
+        return true
+      }
     },
     view(editorView) {
       const root = editorView.dom.parentElement
@@ -402,6 +568,28 @@ export function createHeadingFoldPlugin(getT) {
         if (event.detail) event.detail.handled = true
       }
 
+      // After the block handle's dragstart (Milkdown selected the heading
+      // node and set view.dragging to it alone): drag the whole section.
+      const onDragStart = (event) => {
+        sectionDrag = null
+        const dragging = editorView.dragging
+        const sel = editorView.state.selection
+        if (!dragging || !(sel instanceof NodeSelection) || !isHeading(sel.node) || sel.$from.depth !== 0) return
+        const { info, suspended } = headingFoldKey.getState(editorView.state)
+        const section = info.sections.get(sel.from)
+        if (suspended || !section || info.hidden.some((range) => range.from === sel.from)) return
+        const slice = editorView.state.doc.slice(sel.from, section.to)
+        editorView.dragging = { slice, move: dragging.move }
+        sectionDrag = { slice, from: sel.from, to: section.to }
+        if (event.dataTransfer) {
+          const { dom, text } = editorView.serializeForClipboard(slice)
+          event.dataTransfer.setData('text/html', dom.innerHTML)
+          event.dataTransfer.setData('text/plain', text)
+        }
+      }
+      const onDragEnd = () => { sectionDrag = null }
+      document.addEventListener('dragstart', onDragStart)
+      document.addEventListener('dragend', onDragEnd)
       root?.addEventListener('pointermove', onMove, true)
       root?.addEventListener('pointerleave', onLeave)
       editorView.dom.addEventListener(HEADING_FOLD_EVENT, onFoldEvent)
@@ -418,6 +606,8 @@ export function createHeadingFoldPlugin(getT) {
           destroyed = true
           if (raf) cancelAnimationFrame(raf)
           resize?.disconnect()
+          document.removeEventListener('dragstart', onDragStart)
+          document.removeEventListener('dragend', onDragEnd)
           root?.removeEventListener('pointermove', onMove, true)
           root?.removeEventListener('pointerleave', onLeave)
           editorView.dom.removeEventListener(HEADING_FOLD_EVENT, onFoldEvent)

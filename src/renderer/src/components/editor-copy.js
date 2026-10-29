@@ -44,7 +44,9 @@ export function materializeCopiedSoftBreaks(root) {
   })
 }
 
-export function copiedPlainText(root, fallback = '') {
+// `layout`: always read the text through layout (a copy built from the
+// document, e.g. a folded section, has no selection text to fall back to).
+export function copiedPlainText(root, fallback = '', { layout = false } = {}) {
   // Lists need a manual serialization: Chromium's innerText does not include
   // ::marker content, so an <ol> copy would lose its numbers in the plain
   // flavor entirely (WeChat sometimes prefers text/plain). Render each item
@@ -56,7 +58,7 @@ export function copiedPlainText(root, fallback = '') {
   // Tables also go through layout: innerText separates cells with tabs and
   // rows with newlines, while Selection.toString() put every cell on its own
   // line between blank lines.
-  if (!root.querySelector('br, table')) return fallback
+  if (!layout && !root.querySelector('br, table')) return fallback
   return readClipboardProbe(root.cloneNode(true)) || fallback
 }
 

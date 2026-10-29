@@ -3,8 +3,9 @@
 // touching the document: never dirty, saved bytes unchanged, export complete.
 // Covers the hover toggle, Alt-click (every heading of that level), the
 // shortcut, the context menu, the palette, the outline jump into a folded
-// section, the caret never staying in hidden content, typing right after a
-// folded heading, source/rich switching, reading mode and HTML export.
+// section, the caret never staying in hidden content, Enter / Backspace /
+// typing at a folded heading (the next visible line, fold kept), source/rich
+// switching, reading mode and HTML export.
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -94,6 +95,9 @@ const toggles = () => app.evaluate(`[...document.querySelectorAll('.hm-fold-togg
   const r = b.getBoundingClientRect()
   return { pos: b.dataset.pos, folded: b.dataset.folded === 'true', x: r.left + r.width / 2, y: r.top + r.height / 2, left: r.left, top: r.top, h: r.height }
 })`)
+// The toggles are drawn in the next animation frame (rare in a hidden
+// window, e.g. over ssh on Windows): wait for them.
+const foldedToggles = (n, message) => waitFor(async () => (await toggles()).filter((b) => b.folded).length === n, `${message}: expected ${n} folded toggles`)
 const dirty = () => app.evaluate("Boolean(document.querySelector('.status-dot.mod'))")
 const selectionHidden = () => app.evaluate(`(() => {
   const node = getSelection().anchorNode
@@ -154,7 +158,7 @@ try {
   // The folded toggle stays when the pointer leaves.
   await mouse('mouseMoved', { x: body.left + 4, y: body.y })
   await sleep(250)
-  assert.equal((await toggles()).filter((b) => b.folded).length, 1)
+  await foldedToggles(1, 'folded toggle count')
 
   // 3. Click again unfolds.
   await click({ x: folded.x, y: folded.y })
@@ -175,7 +179,7 @@ try {
   const h3 = await hoverToggle({ tag: 'h3', text: '小节A' })
   await click({ x: h3.x, y: h3.y }, { modifiers: ALT })
   await waitFor(async () => (await shownBlocks()) === '文档|引言段|第一节|一节正文|小节A|小节B|第二节|二节正文|尾段', `Alt-click did not fold every H3: ${await shownBlocks()}`)
-  assert.equal((await toggles()).filter((b) => b.folded).length, 2)
+  await foldedToggles(2, 'folded toggle count')
 
   // 6. Context menu on a heading: unfold all.
   const h2b = await textRect(block('h2', '第二节'))
@@ -206,10 +210,13 @@ try {
   await waitFor(() => app.evaluate("[...document.querySelectorAll('.outline-item')].some(n => n.textContent.includes('小节B'))"), 'outline does not list headings inside the fold')
   await app.evaluate("[...document.querySelectorAll('.outline-item')].find(n => n.textContent.includes('小节B')).click()")
   await waitFor(async () => (await shownBlocks()) === ALL, 'outline jump did not open the folded section')
-  await sleep(600)
-  const target = await rectOf(block('h3', '小节B'))
-  const viewport = await app.evaluate('innerHeight')
-  assert.ok(target.h > 0 && target.top > 0 && target.bottom < viewport, `outline jump target not on screen: ${JSON.stringify({ target, viewport })}`)
+  // The jump scroll is animated per frame (slow in a hidden window): wait.
+  const onScreen = async () => {
+    const target = await rectOf(block('h3', '小节B'))
+    const viewport = await app.evaluate('innerHeight')
+    return target.h > 0 && target.top > 0 && target.bottom < viewport ? true : null
+  }
+  await waitFor(onScreen, `outline jump target not on screen: ${JSON.stringify({ target: await rectOf(block('h3', '小节B')), viewport: await app.evaluate('innerHeight') })}`)
 
   // 9. Source mode and back keeps the folds and the bytes.
   await click({ x: (await hoverToggle(H1)).x, y: (await hoverToggle(H1)).y })
@@ -245,26 +252,83 @@ try {
   await app.evaluate("document.querySelector('.hm-reading-btn').click()")
   await waitFor(() => app.evaluate(`(${editor}).contentEditable === 'true'`), 'reading mode did not end')
 
-  // 12. Typing right after a folded heading: Enter at its end makes a new
-  //     paragraph inside the section, so the section opens; the save writes
-  //     exactly the typed change.
+  // 12. Enter at the end of a folded heading goes to the next visible line:
+  //     a new paragraph after the folded content; the fold stays. Backspace
+  //     in that empty line goes back to the heading's end, still folded.
+  //     Typing there and saving writes the line before the next H2; unfolding
+  //     shows it after the section's last block.
+  const FOLDED = '文档|引言段|第一节|第二节|二节正文|尾段'
   await click({ x: (await hoverToggle(H1)).x, y: (await hoverToggle(H1)).y })
-  await waitFor(async () => !(await shownBlocks()).includes('A正文'), 'fold before typing')
+  await waitFor(async () => (await shownBlocks()) === FOLDED, 'fold before typing')
   const head = await textRect(block('h2', '第一节'))
   await click({ x: head.right - 2, y: head.y })
+  const caretIn = (tag, value) => app.evaluate(`(() => {
+    const node = getSelection().anchorNode
+    const el = node?.nodeType === 1 ? node : node?.parentElement
+    const top = el && [...(${editor}).children].find((n) => n.contains(el))
+    return Boolean(top?.matches(${JSON.stringify(tag)}) && top.textContent.trim() === ${JSON.stringify(value)})
+  })()`)
+  await pressKey(send, { key: 'Enter', code: 'Enter' })
+  await waitFor(async () => (await shownBlocks()) === '文档|引言段|第一节||第二节|二节正文|尾段', `Enter on a folded heading: ${await shownBlocks()}`)
+  assert.equal(await selectionHidden(), false)
+  await foldedToggles(1, 'the fold opened on Enter')
+  await pressKey(send, { key: 'Backspace', code: 'Backspace' })
+  await waitFor(async () => (await shownBlocks()) === FOLDED, `Backspace in the new line: ${await shownBlocks()}`)
+  assert.equal(await caretIn('h2', '第一节'), true, 'Backspace did not return to the folded heading')
+  assert.equal(await text(), baseline, 'Enter + Backspace changed the document')
   await pressKey(send, { key: 'Enter', code: 'Enter' })
   await typeTextLikeUser(send, '新段')
-  await waitFor(async () => (await shownBlocks()).includes('新段') && (await shownBlocks()).includes('A正文'), `typing after a folded heading: ${await shownBlocks()}`)
-  assert.equal(await selectionHidden(), false)
+  await waitFor(async () => (await shownBlocks()) === '文档|引言段|第一节|新段|第二节|二节正文|尾段', `typing after a folded heading: ${await shownBlocks()}`)
+  assert.equal(await caretIn('p', '新段'), true)
+  await foldedToggles(1, 'the fold opened while typing')
   await waitFor(() => app.evaluate("!!document.querySelector('.hm-save-fab')"), 'save button did not appear')
   await app.evaluate("document.querySelector('.hm-save-fab').click()")
   await waitFor(async () => (await readFile(file, 'utf8')) !== original, 'save did not write')
-  assert.equal(await readFile(file, 'utf8'), original.replace('## 第一节\n\n', '## 第一节\n\n新段\n\n'))
+  assert.equal(await readFile(file, 'utf8'), original.replace('B正文\n\n## 第二节', 'B正文\n\n新段\n\n## 第二节'))
+  const foldedToggle = (await toggles()).find((b) => b.folded)
+  await click({ x: foldedToggle.x, y: foldedToggle.y })
+  await waitFor(async () => (await shownBlocks()) === ALL.replace('B正文|', 'B正文|新段|'), `unfold after typing: ${await shownBlocks()}`)
+
+  // 12b. A folded section that runs to the end of the document: Enter on its
+  //      heading adds the line at the very end.
+  const H2b = { tag: 'h2', text: '第二节' }
+  await click({ x: (await hoverToggle(H2b)).x, y: (await hoverToggle(H2b)).y })
+  await waitFor(async () => (await shownBlocks()).endsWith('|第二节'), `fold to the end: ${await shownBlocks()}`)
+  // A click on the heading is a click on the heading: the hidden last block's
+  // empty box used to make every click count as "below the content" (an
+  // empty paragraph appended, caret thrown to the end).
+  const beforeClick = await text()
+  const blockCount = () => app.evaluate(`(${editor}).pmViewDesc.node.childCount`)
+  const blocksBeforeClick = await blockCount()
+  const head2 = await textRect(block('h2', '第二节'))
+  await click({ x: head2.right - 2, y: head2.y })
+  assert.equal(await blockCount(), blocksBeforeClick, 'clicking a folded last heading added a block')
+  assert.equal(await text(), beforeClick)
+  assert.equal(await caretIn('h2', '第二节'), true, 'the click did not put the caret in the heading')
+  await pressKey(send, { key: 'Enter', code: 'Enter' })
+  await typeTextLikeUser(send, '结尾')
+  await waitFor(async () => (await shownBlocks()).endsWith('|第二节|结尾'), `Enter on a folded last section: ${await shownBlocks()}`)
+  assert.equal(await selectionHidden(), false)
+  await foldedToggles(1, 'the last fold opened')
+  await waitFor(() => app.evaluate("!!document.querySelector('.hm-save-fab')"), 'save button did not appear (2)')
+  await app.evaluate("document.querySelector('.hm-save-fab').click()")
+  await waitFor(async () => (await readFile(file, 'utf8')).includes('结尾'), 'save did not write (2)')
+  assert.equal(await readFile(file, 'utf8'), original.replace('B正文\n\n## 第二节', 'B正文\n\n新段\n\n## 第二节').replace('尾段\n', '尾段\n\n结尾\n'))
+  // Back to the heading, then a click in the blank area below the folded
+  // last section: a new empty line under the heading, outside the fold.
+  for (let i = 0; i < 3; i += 1) await pressKey(send, { key: 'Backspace', code: 'Backspace' })
+  await waitFor(async () => (await shownBlocks()).endsWith('|第二节'), `Backspace back to the folded last heading: ${await shownBlocks()}`)
+  assert.equal(await caretIn('h2', '第二节'), true)
+  const under = await rectOf(block('h2', '第二节'))
+  await click({ x: under.x, y: under.bottom + 80 })
+  await waitFor(async () => (await shownBlocks()).endsWith('|第二节|'), `blank-area click under a folded last section: ${await shownBlocks()}`)
+  assert.equal(await selectionHidden(), false)
+  await foldedToggles(1, 'the blank-area click opened the fold')
 
   // 13. The trace log shows no source-sync pause / mismatch.
   const toastsSeen = await app.evaluate("[...document.querySelectorAll('.hm-toast-msg')].map(n => n.textContent).join('|')")
   assert.ok(!/不一致|暂停/.test(toastsSeen), `unexpected toast: ${toastsSeen}`)
-  console.log('PASS heading fold UI: hover/click, shortcut, Alt-click, context menu, palette, outline jump, source switch, export, reading mode, typing + save')
+  console.log('PASS heading fold UI: hover/click, shortcut, Alt-click, context menu, palette, outline jump, source switch, export, reading mode, Enter after a folded heading = next visible line (fold kept; Backspace back), typing + save')
 } finally {
   await stopBuiltElectron(app)
 }

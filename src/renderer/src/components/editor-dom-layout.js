@@ -850,7 +850,11 @@ export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, 
     if (event.target.closest?.('button, input, textarea, select, a')) return
     const nestedEditable = event.target.closest?.('[contenteditable="true"]')
     if (nestedEditable && nestedEditable !== view.dom) return
-    const lastBlock = view.dom.lastElementChild
+    // The last block on screen: a folded heading's section at the end of the
+    // document is display:none (its box is 0,0, so every click counted as
+    // "below the content").
+    let lastBlock = view.dom.lastElementChild
+    while (lastBlock && !lastBlock.getClientRects().length) lastBlock = lastBlock.previousElementSibling
     const contentBottom = lastBlock?.getBoundingClientRect().bottom ?? view.dom.getBoundingClientRect().top
     if (event.clientY <= contentBottom + 1) return
     if (scrollEl) {
@@ -864,7 +868,11 @@ export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, 
     const { state } = view
     const paragraphType = state.schema.nodes.paragraph
     const trailingNode = state.doc.lastChild
-    const hasTrailingEmptyParagraph = trailingNode?.type === paragraphType && trailingNode.content.size === 0
+    // A hidden (folded) empty last paragraph is not reused: the caret would
+    // land in folded content and open the fold. A new one after it stays
+    // outside the fold.
+    const hasTrailingEmptyParagraph = trailingNode?.type === paragraphType && trailingNode.content.size === 0 &&
+      Boolean(view.dom.lastElementChild?.getClientRects().length)
     let tr = state.tr
     if (paragraphType && !hasTrailingEmptyParagraph) {
       markUserEdit()

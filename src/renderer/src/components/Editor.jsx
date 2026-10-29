@@ -4213,7 +4213,22 @@ export default function Editor({
                 if (!Number.isFinite(rawFrom) || !Number.isFinite(rawTo)) return null
                 const start = Math.min(rawFrom, rawTo)
                 const end = Math.max(rawFrom, rawTo)
-                next = source.slice(0, start) + markdown + source.slice(end)
+                let before = source.slice(0, start)
+                let after = source.slice(end)
+                // Pasted into an empty top-level paragraph (a new line after
+                // Enter): that line has no bytes in the source, so the paste
+                // landed right against the block before it (`尾段\n## 标题`).
+                // The pasted blocks get a blank line on each side (Typora).
+                const $from = oldDoc.resolve(from)
+                if (from === to && $from.depth === 1 && $from.parent.type.name === 'paragraph' && !$from.parent.content.size) {
+                  const eol = source.includes('\r\n') ? '\r\n' : '\n'
+                  if (before.trim()) before = before.replace(/[ \t]*(?:\r?\n[ \t]*)*$/, '') + eol + eol
+                  const tail = after.replace(/^(?:[ \t]*\r?\n)+/, '')
+                  after = tail.trim() ? eol + eol + tail : (/\n$/.test(source) ? eol : '')
+                  next = before + markdown.replace(/(?:\r?\n)+$/, '') + after
+                } else {
+                  next = before + markdown + after
+                }
               } catch {
                 return null
               }

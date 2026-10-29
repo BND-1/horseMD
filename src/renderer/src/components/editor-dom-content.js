@@ -14,6 +14,7 @@ import {
 import { attachMdPasteHandler } from './editor-md-paste.js'
 import { attachPlainTextDropHandler } from './editor-drop-text.js'
 import { hasStructuredWebHtml } from './editor-web-paste.js'
+import { foldedSelectionRange } from './editor-heading-fold.js'
 
 export function mountEditorContentBindings({
   view,
@@ -56,16 +57,23 @@ export function mountEditorContentBindings({
     }
   }
 
-  const onCopy = (event) => {
+  // A selection covering a folded heading copies its folded section too
+  // (`foldedSelectionRange`). The hidden blocks are display:none (CodeMirror
+  // renders no lines there), so that copy is built from the document, not
+  // from the DOM selection.
+  const fillClipboard = (event, folded) => {
     const selection = window.getSelection()
-    const selectedCells = view.hasFocus() ? cloneSelectedCells(view) : null
-    if (!selectedCells) {
-      if (!selection || selection.isCollapsed || !view.dom.contains(selection.anchorNode)) return
-      if (selection.anchorNode?.parentElement?.closest?.('.cm-editor')) return
+    const selectedCells = !folded && view.hasFocus() ? cloneSelectedCells(view) : null
+    if (!selectedCells && !folded) {
+      if (!selection || selection.isCollapsed || !view.dom.contains(selection.anchorNode)) return false
+      if (selection.anchorNode?.parentElement?.closest?.('.cm-editor')) return false
     }
     try {
       const wrapper = document.createElement('div')
-      wrapper.appendChild(selectedCells || selection.getRangeAt(0).cloneContents())
+      const foldedSlice = folded ? view.state.doc.slice(folded.from, folded.to) : null
+      wrapper.appendChild(foldedSlice
+        ? view.serializeForClipboard(foldedSlice).dom
+        : selectedCells || selection.getRangeAt(0).cloneContents())
       materializeCopiedSoftBreaks(wrapper)
       // A mid-list selection clones <li> without its list wrapper. Whether the
       // items were ordered is only visible in the LIVE dom — inspect it before
@@ -78,16 +86,18 @@ export function mountEditorContentBindings({
       // Plain text must be derived AFTER the clipboard transform: Milkdown's
       // in-item marker span ("1.") becomes its own line in the raw clone, so
       // text-only paste targets showed the number split from its text.
-      const plain = copiedPlainText(wrapper, selection?.toString() || '')
+      const plain = foldedSlice
+        ? copiedPlainText(wrapper, foldedSlice.content.textBetween(0, foldedSlice.content.size, '\n\n'), { layout: true })
+        : copiedPlainText(wrapper, selection?.toString() || '')
       let serialized = ''
       if (!view.state.selection.empty) {
         try {
-          const content = copiedMarkdownContent(view.state.selection)
+          const content = foldedSlice ? foldedSlice.content : copiedMarkdownContent(view.state.selection)
           const doc = view.state.schema.topNodeType.createAndFill(undefined, content)
           if (doc) serialized = crepe.editor.ctx.get(serializerCtx)(doc)
         } catch {}
       }
-      if (!wrapper.innerHTML.trim() && !plain) return
+      if (!wrapper.innerHTML.trim() && !plain) return false
       event.clipboardData.setData(
         'text/html',
         `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:#24292f;">${wrapper.innerHTML}</div>`
@@ -97,9 +107,27 @@ export function mountEditorContentBindings({
         event.clipboardData.setData('text/markdown', serialized)
       }
       event.preventDefault()
+      return true
     } catch {
       // Fall back to the browser's default copy behavior.
+      return false
     }
+  }
+  const onCopy = (event) => {
+    fillClipboard(event, view.hasFocus() || view.dom.contains(window.getSelection()?.anchorNode) ? foldedSelectionRange(view.state) : null)
+  }
+  // Cut of a folded heading takes its section with it (ProseMirror's own cut
+  // would remove the heading alone and leave the content to the heading
+  // before). Read-only views never get here (capture-phase block).
+  const onCut = (event) => {
+    if (!view.editable) return
+    const folded = foldedSelectionRange(view.state)
+    if (!folded || !fillClipboard(event, folded)) return
+    event.stopPropagation()
+    markUserEdit?.()
+    const tr = view.state.tr.delete(folded.from, folded.to)
+    tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(folded.from, tr.doc.content.size))))
+    view.dispatch(tr.scrollIntoView().setMeta('uiEvent', 'cut'))
   }
 
   const imageHandlingActive = (event) =>
@@ -269,6 +297,7 @@ export function mountEditorContentBindings({
   view.dom.addEventListener('click', onCaptionButton)
   view.dom.addEventListener('click', onCopyButton, true)
   view.dom.addEventListener('copy', onCopy, true)
+  view.dom.addEventListener('cut', onCut, true)
   view.dom.addEventListener('paste', onPasteImage, true)
   view.dom.addEventListener('drop', onDropImage, true)
   cleanups.push(
@@ -291,6 +320,7 @@ export function mountEditorContentBindings({
   cleanups.push(() => view.dom.removeEventListener('click', onCaptionButton))
   cleanups.push(() => view.dom.removeEventListener('click', onCopyButton, true))
   cleanups.push(() => view.dom.removeEventListener('copy', onCopy, true))
+  cleanups.push(() => view.dom.removeEventListener('cut', onCut, true))
   cleanups.push(() => view.dom.removeEventListener('paste', onPasteImage, true))
   cleanups.push(() => view.dom.removeEventListener('drop', onDropImage, true))
 
