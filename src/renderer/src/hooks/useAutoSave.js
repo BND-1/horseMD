@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { fireToast } from '../ui.js'
 import { isTabDirty } from '../lib/tab-state.js'
 
@@ -13,6 +13,11 @@ import { isTabDirty } from '../lib/tab-state.js'
 // since HorseMD last read/wrote it is never overwritten. This hook only
 // schedules, de-duplicates feedback, and pauses a conflicted tab until its
 // mtime changes (explicit save or reload).
+//
+// Returns { active, isAutoSaved(tab) }: whether this tab's edits will be
+// written without the user (a path, auto-save on, not paused by a conflict /
+// pending images / an error / a source-sync pause). The floating Save button
+// is hidden for those (VS Code / Office: no save button under auto-save).
 export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
   const enabled = !isMobile && delaySec > 0
   const saveRef = useRef(saveTab)
@@ -22,6 +27,18 @@ export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
   const savingRef = useRef(new Set())
   const blockedRef = useRef(new Map()) // tab id → tab.mtimeMs at conflict time
   const noticeRef = useRef(new Set()) // one-shot notices already shown
+  // Tabs whose auto-save is paused (they need an explicit save): the Save
+  // button shows for them again.
+  const [paused, setPaused] = useState(() => new Set())
+  const setPausedFor = useCallback((id, on) => {
+    setPaused((prev) => {
+      if (prev.has(id) === on) return prev
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
 
   const eligible = (tab) =>
     !!tab && !!tab.path && tab.kind !== 'settings' && isTabDirty(tab) &&
@@ -45,6 +62,8 @@ export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
     savingRef.current.add(id)
     try {
       const result = await saveRef.current(id, false, { auto: true })
+      const stuck = !!(result?.conflict || result?.error || result?.skipped === 'pending-images' || result?.skipped === 'source-sync')
+      if (stuck || result?.ok) setPausedFor(id, stuck)
       if (result?.conflict) {
         blockedRef.current.set(id, tab.mtimeMs)
         noticeOnce(
@@ -77,6 +96,8 @@ export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
     const live = new Set()
     for (const tab of tabs) {
       live.add(tab.id)
+      // Saved some other way (explicit save, reload): nothing is waiting.
+      if (!isTabDirty(tab)) setPausedFor(tab.id, false)
       const blockedAt = blockedRef.current.get(tab.id)
       if (blockedRef.current.has(tab.id) && blockedAt !== tab.mtimeMs) blockedRef.current.delete(tab.id)
       if (seenRef.current.get(tab.id) === tab) continue
@@ -93,6 +114,7 @@ export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
       timers.delete(id)
     }
     for (const id of [...seenRef.current.keys()]) if (!live.has(id)) seenRef.current.delete(id)
+    for (const id of paused) if (!live.has(id)) setPausedFor(id, false)
   }, [tabs, enabled, delaySec])
 
   // Leaving the window is a natural checkpoint: flush every eligible tab now.
@@ -114,4 +136,10 @@ export function useAutoSave({ tabs, delaySec, saveTab, isMobile, tRef }) {
     for (const timer of timersRef.current.values()) clearTimeout(timer)
     timersRef.current.clear()
   }, [])
+
+  const isAutoSaved = useCallback(
+    (tab) => enabled && !!tab?.path && tab.kind !== 'settings' && !paused.has(tab.id),
+    [enabled, paused]
+  )
+  return { active: enabled, isAutoSaved }
 }

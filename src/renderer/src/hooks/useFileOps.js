@@ -35,10 +35,25 @@ import { useWorkspace } from './useWorkspace.js'
 // Every successful save → automatic sync of its folder (hooks/useAutoSync.js).
 const notifySaved = (path) => window.dispatchEvent(new CustomEvent('hm:file-saved', { detail: { path } }))
 
+// Cmd/Ctrl+S under auto-save: say twice that it is not needed, then stay quiet.
+const AUTO_SAVE_HINT_KEY = 'horsemd.autosaveHint.v1'
+const AUTO_SAVE_HINT_TIMES = 2
+function takeAutoSaveHint() {
+  try {
+    const shown = Number(localStorage.getItem(AUTO_SAVE_HINT_KEY)) || 0
+    if (shown >= AUTO_SAVE_HINT_TIMES) return false
+    localStorage.setItem(AUTO_SAVE_HINT_KEY, String(shown + 1))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function useFileOps({
   tabs,
   setTabs,
   tabsRef,
+  autoSaveActiveRef,
   setActiveId,
   setHome,
   setSplitId,
@@ -463,7 +478,10 @@ export function useFileOps({
   // pasted images (that rewrite remounts the editor under the caret), never
   // overwrites a file changed/removed on disk since `expectedMtimeMs`, and
   // reports failures to the caller instead of toasting.
-  const writeTab = useCallback(async (tab, targetPath, { auto = false, expectedMtimeMs } = {}) => {
+  // `keepVersion` (Cmd/Ctrl+S while auto-save is on): main also keeps the
+  // written content as a history version, and the first two times the toast
+  // says saving by hand is no longer needed.
+  const writeTab = useCallback(async (tab, targetPath, { auto = false, expectedMtimeMs, keepVersion = false } = {}) => {
     try {
       // Move pasted images (base64 blobs / global paste-folder files) into the
       // doc's ./assets and rewrite links to relative paths, so the saved file is
@@ -474,7 +492,7 @@ export function useFileOps({
       const result = await window.api.writeFile(
         targetPath,
         written,
-        auto && typeof expectedMtimeMs === 'number' ? { expectedMtimeMs } : undefined
+        auto && typeof expectedMtimeMs === 'number' ? { expectedMtimeMs } : keepVersion ? { keepVersion: true } : undefined
       )
       if (result?.conflict) return { conflict: result.conflict }
       const { mtimeMs } = result
@@ -522,7 +540,8 @@ export function useFileOps({
       } else {
         // Desktop: a brief "Saved ✓" so Ctrl+S / the save button give feedback
         // (Typora-style). Short-lived so it doesn't linger over writing.
-        fireToast(tRef.current('save.saved'), { duration: 1500 })
+        if (keepVersion && takeAutoSaveHint()) fireToast(tRef.current('save.savedAutoHint'), { duration: 3500 })
+        else fireToast(tRef.current('save.saved'), { duration: 1500 })
       }
       return { ok: true }
     } catch (e) {
@@ -667,7 +686,7 @@ export function useFileOps({
         const handled = await saveOverExternalChange(tab)
         if (handled) return handled
       }
-      return writeTab(tab, target)
+      return writeTab(tab, target, { keepVersion: !!tab.path && target === tab.path && !!autoSaveActiveRef?.current })
     },
     [
       commitAllLive,

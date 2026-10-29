@@ -7892,6 +7892,31 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .sync-auto-line.warn {
   color: var(--warning, #b7791f);
 }
+/* A folder whose automatic sync waits for the user: what happened + the
+   choices, in place (SyncSettings SyncAttention). */
+.sync-attention {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  margin: 8px 0 4px 29px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--warning, #b7791f) 45%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning, #b7791f) 8%, var(--bg-elevated));
+}
+.sync-attention-icon { margin-top: 1px; color: var(--warning, #b7791f); }
+.sync-attention-copy { display: grid; gap: 4px; min-width: 0; }
+.sync-attention-copy strong { font-size: 13px; color: var(--text-strong); }
+.sync-attention-copy p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text); }
+.sync-attention-copy small { font-size: 11.5px; color: var(--muted); }
+.sync-attention-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.sync-attention-actions .settings-action-btn.primary {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+.sync-attention-actions .settings-action-btn.primary:hover { filter: brightness(1.05); }
+@media (max-width: 680px) { .sync-attention { margin-left: 0; } }
 
 /* Heading folds (editor-heading-fold.js). Hidden blocks are top-level
    children with a decoration class (view-only, never in the Markdown). The
@@ -8494,7 +8519,91 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   .hm-history-actions { flex-wrap: wrap; }
   .hm-history-status { flex-basis: 100%; }
 }
-/* Settings › Files › 历史版本 */
+/* Settings › 通用 › 保存与恢复: auto-save row, then the history card. */
+.hm-history-card {
+  margin-top: 14px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.hm-history-card-head {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.hm-history-card-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.hm-history-card-title { display: grid; gap: 3px; min-width: 0; }
+.hm-history-card-title strong { font-size: 13.5px; color: var(--text-strong); }
+.hm-history-card-title small { font-size: 12px; line-height: 1.55; color: var(--muted); }
+.hm-history-card-usage { margin: 14px 0 6px 40px; }
+.hm-history-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.hm-history-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+.hm-history-card-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.hm-history-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 0 0 40px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.hm-history-card-row .settings-row-desc { max-width: 380px; }
+.hm-history-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 12px 0 0 40px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.hm-history-card-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.hm-history-card-tip svg { flex: none; }
+.hm-history-card .settings-action-btn { display: inline-flex; align-items: center; gap: 6px; }
+.hm-history-card > .hm-history-settings-error { margin: 8px 0 0 40px; }
+@media (max-width: 680px) {
+  .hm-history-card-usage, .hm-history-card-row, .hm-history-card-foot, .hm-history-card > .hm-history-settings-error { margin-left: 0; }
+  .hm-history-card-row { flex-direction: column; align-items: flex-start; }
+}
 .hm-history-settings-actions {
   flex: none;
   display: flex;

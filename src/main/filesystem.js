@@ -3,7 +3,7 @@ import { constants as fsConstants, existsSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { conflictCopyName, conflictSuffixFor } from './sync/conflict-name.js'
 import { writeFileAtomic } from './atomic-write.js'
-import { historyStore, recordBeforeSave, recordBeforeTrash } from './history/history-service.js'
+import { historyStore, recordBeforeSave, recordBeforeTrash, recordManualSave } from './history/history-service.js'
 
 export { writeFileAtomic }
 
@@ -131,6 +131,8 @@ export function registerFileSystemIpc(ipcMain, { shell, markdownPattern }) {
     // The version this save replaces goes to the local history first.
     await recordBeforeSave(path, content)
     await writeFileAtomic(path, content)
+    // Cmd/Ctrl+S with auto-save on: the saved content is a version too.
+    if (options?.keepVersion) await recordManualSave(path, content)
     const stat = await fs.stat(path)
     return { mtimeMs: stat.mtimeMs }
   })

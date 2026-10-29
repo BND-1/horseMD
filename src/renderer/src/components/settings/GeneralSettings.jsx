@@ -1,7 +1,8 @@
 import { LANGS } from '../../i18n.jsx'
 import Toggle from '../ui/Toggle.jsx'
+import SaveRecoverySettings from './SaveRecoverySettings.jsx'
 
-export default function GeneralSettings({ lang, setLang, settings, onUpdateSettings, t }) {
+export default function GeneralSettings({ lang, setLang, settings, onUpdateSettings, syncAutoSave = false, t }) {
   const closeToTray = settings.closeToTray === true
   const supportsTray = window.api?.capabilities?.closeToTray === true
 
@@ -31,6 +32,7 @@ export default function GeneralSettings({ lang, setLang, settings, onUpdateSetti
           />
         </div>
       </section>
+      <SaveRecoverySettings settings={settings} onUpdateSettings={onUpdateSettings} syncAutoSave={syncAutoSave} t={t} />
       {supportsTray && (
         <section className="settings-block">
           <h2 className="settings-block-title">{t('settings.window')}</h2>

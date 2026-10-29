@@ -389,6 +389,14 @@ export class SyncEngine {
       return {
         status: 'remote-reset',
         strategy,
+        // What the user chooses between (Settings › 云同步 shows it): files
+        // here, files the cloud manifest still lists (0 = empty / missing).
+        counts: {
+          local: localFiles.size,
+          tracked: Object.keys(state.files || {}).length,
+          remote: Object.keys(remote.manifest?.files || {}).length,
+          remoteExists: remote.exists === true
+        },
         localFiles,
         state,
         remote,

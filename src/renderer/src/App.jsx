@@ -174,6 +174,9 @@ export default function App() {
   // outline navigation uses this without repointing editorHostRef, which remains
   // the source/find/mode-switch contract for the active left tab.
   const editorHosts = useRef({})
+  // Whether auto-save is on (set by useAutoSave below; read by an explicit
+  // save: Cmd/Ctrl+S then keeps a history version and hints once or twice).
+  const autoSaveActiveRef = useRef(false)
   const editorAreaRef = useRef(null) // flex row holding the editor panes (for split-drag math)
   const richLoadingRef = useRef(false) // live mirror of richLoading (chunked large-doc load) for the mode-switch effect
   const findStateRef = useRef({ open: false, query: '' }) // live find bar state for the mode switch (who owns the caret)
@@ -618,6 +621,7 @@ export default function App() {
     tabs,
     setTabs,
     tabsRef,
+    autoSaveActiveRef,
     setActiveId,
     setHome,
     setSplitId,
@@ -652,7 +656,8 @@ export default function App() {
   // Automatic sync of a cloud-bound folder pairs with auto-save (Obsidian-like):
   // edits are saved after SYNC_AUTO_SAVE_DELAY s when the user's own is off.
   const syncAutoSave = syncWorkspaces.supported && settings.syncAuto && syncWorkspaces.registered.some((entry) => entry.connectionId)
-  useAutoSave({ tabs, delaySec: settings.autoSaveDelay || (syncAutoSave ? SYNC_AUTO_SAVE_DELAY : 0), saveTab, isMobile, tRef })
+  const autoSave = useAutoSave({ tabs, delaySec: settings.autoSaveDelay || (syncAutoSave ? SYNC_AUTO_SAVE_DELAY : 0), saveTab, isMobile, tRef })
+  autoSaveActiveRef.current = autoSave.active
   const openSyncSettings = useCallback(() => {
     setSettingsViewState((current) => ({ ...current, activeSection: 'sync' }))
     openSettingsTab()
@@ -1570,7 +1575,7 @@ export default function App() {
       )}
 
       <SaveFab
-        visible={!immersive && !home && activeTab?.kind !== 'settings' && isTabDirty(fabTab)}
+        visible={!immersive && !home && activeTab?.kind !== 'settings' && isTabDirty(fabTab) && !autoSave.isAutoSaved(fabTab)}
         effectiveKeybindings={effectiveKeybindings}
         onSave={() => handlers.current.save()}
       />

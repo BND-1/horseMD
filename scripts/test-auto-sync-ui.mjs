@@ -6,8 +6,11 @@
 // - nothing changed → "已是最新", no write request reaches the cloud;
 // - edited + new files → uploaded, "上传 2"; a save → its folder syncs;
 // - a local deletion runs automatically ("删除 1");
-// - a mass deletion pauses: cloud untouched, a warning line + ONE toast,
-//   status bar 需要确认; the user's「双向同步」confirm runs it;
+// - a mass deletion pauses: cloud untouched, an attention box under the
+//   folder + ONE toast, status bar 需要确认; its「查看要删除的文件…」runs it
+//   after the confirm;
+// - the cloud copy gone: the box says 本地有 N 个文件，云端是空的 and offers
+//   only「用本地文件重新上传」(+ stop), which re-uploads after the confirm;
 // - a cloud error → "同步失败" line, ONE toast per error streak, status bar
 //   同步出错;
 // - the interval persists across a restart; the switch stops the timers.
@@ -86,8 +89,11 @@ const openSync = () => app.evaluate(`(async () => {
   return !!document.querySelector('.sync-auto-row')
 })()`)
 const ui = () => app.evaluate(`({
-  line: document.querySelector('.sync-auto-line')?.textContent || '',
-  warn: !!document.querySelector('.sync-auto-line.warn'),
+  // The last result under the folder: a line, or — when it waits for the
+  // user — the attention box with the choices.
+  line: (document.querySelector('.sync-auto-line') || document.querySelector('.sync-attention'))?.textContent || '',
+  warn: !!document.querySelector('.sync-auto-line.warn, .sync-attention'),
+  attention: [...document.querySelectorAll('.sync-attention button')].map((b) => b.textContent.trim()),
   active: document.querySelector('.sync-auto-row .settings-segmented-option.active')?.textContent || '',
   state: document.querySelector('.sync-auto-state')?.textContent || '',
   on: document.querySelector('.sync-auto .hm-toggle')?.getAttribute('aria-checked') === 'true',
@@ -106,15 +112,18 @@ const shot = async (name) => {
   await writeFile(join(process.env.HM_AUTO_SYNC_SHOT, `${name}.png`), Buffer.from(image.data ?? image.result?.data ?? '', 'base64'))
 }
 const saved = (path) => app.evaluate(`globalThis.__hmAutoSyncSaved(${JSON.stringify(path)})`)
-const twoWaySync = () => app.evaluate(`(async () => {
+// A button of the attention box, then the plan's confirm (and wait for it).
+const attentionAction = (label) => app.evaluate(`(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-  ;[...document.querySelectorAll('.sync-icon-btn')].find((button) => /Two-way sync|双向同步/.test(button.title)).click()
+  const button = [...document.querySelectorAll('.sync-attention button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)})
+  if (!button) return { clicked: false }
+  button.click()
   for (let i = 0; i < 40 && !document.querySelector('.sync-plan-preview .settings-action-btn'); i += 1) await sleep(100)
   const confirm = document.querySelector('.sync-plan-preview .settings-action-btn')
-  const note = document.querySelector('.sync-plan-preview-note')?.textContent || ''
+  const note = document.querySelector('.sync-plan-preview')?.textContent || ''
   confirm?.click()
   for (let i = 0; i < 80 && !/同步完成|Sync complete/.test(document.querySelector('.sync-notice')?.textContent || ''); i += 1) await sleep(100)
-  return { confirmed: !!confirm, note }
+  return { clicked: true, confirmed: !!confirm, note }
 })()`)
 const toastCount = (state, re) => state.toasts.filter((t) => re.test(t)).length
 const recordToasts = () => app.evaluate(`(() => {
@@ -195,7 +204,8 @@ try {
   await waitFor((s) => /上传 12|uploaded 12/.test(s.line), 'bulk files not uploaded')
   for (let i = 0; i < 12; i += 1) await rm(join(notes, `bulk-${i}.md`))
   await tick()
-  const paused = await waitFor((s) => /暂停：这次要删除 12 个文件|would delete 12 files/.test(s.line), 'mass deletion did not pause')
+  const paused = await waitFor((s) => /这次同步要删除 12 个文件|would delete 12 files/.test(s.line), 'mass deletion did not pause')
+  assert.deepEqual(paused.attention, ['查看要删除的文件…', '停止同步这个文件夹'], `attention choices: ${paused.attention}`)
   assert.equal(paused.warn, true)
   assert.ok(cloudNotes().includes('bulk-0.md'), 'cloud files not deleted unattended')
   assert.equal(toastCount(paused, /自动同步已暂停|is paused/), 1, `one toast: ${JSON.stringify(paused.toasts)}`)
@@ -204,12 +214,29 @@ try {
   await tick()
   await sleep(500)
   assert.equal(toastCount(await ui(), /自动同步已暂停|is paused/), 1, 'the same situation is not toasted again')
-  const confirmed = await twoWaySync()
-  assert.ok(confirmed.confirmed, 'two-way sync asked before a mass deletion')
+  const confirmed = await attentionAction('查看要删除的文件…')
+  assert.ok(confirmed.clicked && confirmed.confirmed, 'the attention box opened the plan with a confirm')
   assert.match(confirmed.note, /删除 12 个文件|delete 12 files/)
   assert.ok(!cloudNotes().some((name) => name.startsWith('bulk-')), 'confirmed deletion ran')
   await tick()
   await waitFor((s) => /已是最新|up to date/.test(s.line), 'not idle after the confirmed sync')
+
+  // 4b. The cloud copy is gone (cleared on the web / another device): the
+  // folder says what is where and offers to upload it again — no download
+  // choice when the cloud is empty; nothing is touched until confirmed.
+  for (const key of [...store.keys()]) store.delete(key)
+  await tick()
+  const reset = await waitFor((s) => /本地有 3 个文件，云端是空的/.test(s.line), 'remote reset did not show what is where')
+  assert.match(reset.line, /云端找不到这个文件夹的同步内容/)
+  assert.deepEqual(reset.attention, ['用本地文件重新上传', '停止同步这个文件夹'], `reset choices: ${reset.attention}`)
+  assert.match(reset.status, /需要确认|Needs review/)
+  assert.equal(cloudNotes().length, 0, 'nothing uploaded before the user chose')
+  await shot('auto-sync-remote-reset')
+  const reuploaded = await attentionAction('用本地文件重新上传')
+  assert.ok(reuploaded.clicked && reuploaded.confirmed, 're-upload asked for confirmation')
+  assert.deepEqual(cloudNotes(), ['new.md', 'note-0.md', 'note-2.md'], 'files uploaded again')
+  await tick()
+  await waitFor((s) => /已是最新|up to date/.test(s.line) && !s.attention.length, 'not back to normal after the re-upload')
 
   // 5. Cloud errors: one toast per streak, the status bar shows it.
   fail = true

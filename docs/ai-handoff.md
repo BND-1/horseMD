@@ -70,7 +70,7 @@
 **机器变更**：开发机换为 Mac mini（用户 `yangtingyi_macmini`，仓库 `~/vibe_the_wrold/horseMD`，**1080p 非 Retina、DPR=1**）。下文所有 `/Users/yangtingyi/vibe_everything/...`、`/var/folders/4y/...`、历史 PID 均属旧机器，不可沿用；`run-ui-regression` 中两份"真实大文档"在本机不存在会被跳过。
 
 **本轮改动（0.13.234）**：
-- **#136 自动保存**（`hooks/useAutoSave.js`，设置 › 文件与图片，`settings.autoSaveDelay` 0/3/10/60 秒，**默认关闭**）：停止输入 N 秒后、或窗口失焦时，对有路径的脏标签走与 Cmd/Ctrl+S 相同的 `saveTab` 路径（`{auto:true}` 静默模式）。自动模式绝不：弹保存对话框、写恢复副本、归档粘贴图片（`data:`/`paste-images` 链接需手动保存一次）、覆盖外部已修改/删除的文件（`fs:writeFile` 新增 `expectedMtimeMs` 守卫，冲突时该标签暂停到 mtime 变化）。
+- **#136 自动保存**（`hooks/useAutoSave.js`，设置 › 通用 › 保存与恢复，`settings.autoSaveDelay` 0/3/10/60 秒，**默认关闭**）：停止输入 N 秒后、或窗口失焦时，对有路径的脏标签走与 Cmd/Ctrl+S 相同的 `saveTab` 路径（`{auto:true}` 静默模式）。自动模式绝不：弹保存对话框、写恢复副本、归档粘贴图片（`data:`/`paste-images` 链接需手动保存一次）、覆盖外部已修改/删除的文件（`fs:writeFile` 新增 `expectedMtimeMs` 守卫，冲突时该标签暂停到 mtime 变化）。
 - **保存竞态修复**（手动保存同样受益）：`writeTab` 原先以写盘后的最新 `t.content` 作为 `savedContent`，写盘期间的输入会被误标为已保存（关闭时不再提示）；现以实际写入字节为准，`pendingRichEdit` 改在 `saveTab` 解析 live markdown 时清除。
 - **#138 分屏 + 源码模式右栏消失**：`EditorArea.jsx` 富文本栏可见性自 `606bfc6`（2026-08-04）起误用 `!sourceMode`（作用于所有栏），左栏切源码时右栏文档被隐藏；改为 `!(sourceMode && isLeft)`。
 - **#143 Linux deb 启动即崩**：新增 `build/linux/after-install.tpl`（`deb.afterInstall`），始终 `chown root:root` + `chmod 4755 chrome-sandbox`；`release.yml` 校验 postinst。**尚未在 Ubuntu 实机验证**（本机无 Docker/Linux）。

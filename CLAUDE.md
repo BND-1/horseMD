@@ -603,7 +603,7 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   cannot keep the bytes), `history:restore` keeps the current file first.
   `fs:rename` moves a file's / folder's history. Retention: all < 1 h,
   hourly < 1 day, daily < 30 days, weekly up to `historyRetentionDays`
-  (30/90/365, Settings › Files); pinned never pruned; 1 GB cap, oldest
+  (30/90/365, Settings › 通用 › 保存与恢复, `SaveRecoverySettings.jsx`); pinned never pruned; 1 GB cap, oldest
   first; unreferenced content collected after a minute (re-used content is
   touched). The root is resolved lazily (after --user-data-dir). Renderer:
   `HistoryDialog` / `DeletedFilesDialog` (opened via `lib/history-ui.js`
@@ -710,7 +710,14 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   history); brakes return `{ needsConfirmation, reason }` and touch nothing:
   `remote-reset`, `mass-delete` (`massDeletion`: > 50 % of tracked files
   and ≥ 10, or ≥ 100; deletions whose content reappears = moves, not
-  counted). Manual 双向同步 runs without a preview unless it is a mass
+  counted). A folder that waits shows `SyncAttention` under it in Settings ›
+  云同步 (what happened — `counts` from the remote-reset preview: files here /
+  in the cloud — and the choices: re-upload, use the cloud's files only when
+  it still lists some, review the deletions, stop syncing; each opens the
+  confirmable plan); the first one scrolls into view, so the status bar's
+  需要确认 lands on it. A one-line status with the choices behind the
+  双向同步 icon told users nothing (mini 2026-10-29: a cleared 数据胶囊
+  workspace). Manual 双向同步 runs without a preview unless it is a mass
   deletion (the brake is automatic-only, so a confirmed run goes through).
   Both-sides edits of a text file (`sync-base.js`: last-synced content per
   file in `userData/sync/base/<ws>`, backfilled after a commit) merge with
@@ -1067,7 +1074,7 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   shortest retainer paths (ignore WeakMap key→value edges). Locked by
   `test:closed-tab-memory-ui`.
 - **Auto-save** (`hooks/useAutoSave.js`, `settings.autoSaveDelay` ∈ 0/3/10/60 s,
-  default **0 = off**, Settings › Files, #136): after N s of inactivity (and on
+  default **0 = off**, Settings › 通用 › 保存与恢复 (Typora: General › Save & Recover), #136): after N s of inactivity (and on
   window blur) a dirty tab **with a path** is written via `saveTab(id, false,
   { auto: true })` — the same live-markdown + source-sync integrity gate as
   Cmd/Ctrl+S, but silent. Auto mode never: opens a dialog, writes a recovery
@@ -1078,6 +1085,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `savedContent: written` (the bytes written, never the newer `t.content`), and
   `saveTab` clears `pendingRichEdit` when it resolves the live markdown, not
   after the write — so typing during an in-flight save keeps the tab dirty.
+  While auto-save will write a tab (`useAutoSave` → `isAutoSaved`: a path,
+  auto-save on, not paused by a conflict / pending images / an error / a
+  source-sync pause) the floating Save button is hidden (VS Code / Office);
+  untitled and paused tabs keep it. An explicit save under auto-save
+  (`keepVersion`) also keeps the written content as a `manual` (手动保存)
+  history version (Sketch: ⌘S = a version), and the first two times the
+  toast says saving by hand is not needed (`horsemd.autosaveHint.v1`).
   Locked by `npm run test:autosave-ui`.
 - **Image host** (`ImageHostButton` + `image:upload` IPC): a Typora-style custom
   command. Renderer reads the file bytes and calls main, which writes a temp file,

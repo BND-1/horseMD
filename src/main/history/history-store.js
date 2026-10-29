@@ -23,7 +23,7 @@ const gunzip = promisify(gunzipCb)
 
 export const HOUR = 3600000
 export const DAY = 24 * HOUR
-export const REASONS = new Set(['save', 'sync-overwrite', 'sync-delete', 'delete', 'restore', 'merge'])
+export const REASONS = new Set(['save', 'manual', 'sync-overwrite', 'sync-delete', 'delete', 'restore', 'merge'])
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
 // Keys are case-insensitive where the disk is (macOS, Windows).
@@ -259,7 +259,7 @@ export class HistoryStore {
       files += 1
       versions += index.versions.length
     }
-    return { bytes, versions, files }
+    return { bytes, versions, files, capBytes: this.capBytes }
   }
 
   async clear() {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { baseName } from '../../paths.js'
 import { Icon } from '../icons.jsx'
 import { SYNC_AUTO_MINUTES } from '../../settings.js'
@@ -272,16 +272,63 @@ function SyncPlanPreview({ preview, onConfirm, onClose, busy = false, t }) {
   )
 }
 
-function RemoteResetDialog({ recovery, onPush, onPull, onCancel, t }) {
+// What the cloud lost, in numbers: files here, files the cloud still lists.
+function remoteResetText(counts, t) {
+  if (!counts) return t('sync.attn.loading')
+  const remote = counts.remote > 0 ? t('sync.attn.remoteSome', { n: counts.remote }) : t('sync.attn.remoteEmpty')
+  return t('sync.attn.resetBody', { local: counts.local, remote })
+}
+
+function RemoteResetDialog({ recovery, onPush, onPull, onStop, onCancel, t }) {
+  const counts = recovery.data?.counts || null
   return <div className="sync-preview" role="dialog" aria-modal="true" aria-label={t('sync.remoteResetTitle')}>
     <div className="sync-preview-card">
       <h2>{t('sync.remoteResetTitle')}</h2>
-      <p>{t('sync.remoteResetDesc')}</p>
+      <p>{remoteResetText(counts, t)}</p>
       <p>{t('sync.remoteResetSafety')}</p>
       <div className="sync-preview-actions">
-        <button className="settings-action-btn" type="button" onClick={() => onPush(recovery.entry)}>{t('sync.pushLocal')}</button>
-        <button className="settings-link-btn" type="button" onClick={() => onPull(recovery.entry)}>{t('sync.pullRemote')}</button>
+        <button className="settings-action-btn" type="button" onClick={() => onPush(recovery.entry)}>{t('sync.attn.reupload')}</button>
+        {counts?.remote > 0 && <button className="settings-link-btn" type="button" onClick={() => onPull(recovery.entry)}>{t('sync.attn.download')}</button>}
+        <button className="settings-link-btn" type="button" onClick={() => onStop(recovery.entry)}>{t('sync.attn.stop')}</button>
         <button className="settings-link-btn" type="button" onClick={onCancel}>{t('sync.cancel')}</button>
+      </div>
+    </div>
+  </div>
+}
+
+// A folder whose automatic sync stopped to ask (mass deletion, or the cloud
+// copy is gone / replaced): what happened and the choices, right under the
+// folder (Dropbox / OneDrive show sync issues with their fixes in place —
+// a one-line status with the choices behind an icon told the user nothing).
+// The first one scrolls into view, so the status bar's 需要确认 lands here.
+function SyncAttention({ entry, status, busy, onPreview, onReview, onPush, onPull, onStop, t }) {
+  const ref = useRef(null)
+  const reset = status.reason !== 'mass-delete'
+  const [counts, setCounts] = useState(null)
+  useEffect(() => {
+    if (!reset) return undefined
+    let alive = true
+    Promise.resolve(onPreview?.(entry.rootPath, 'merge'))
+      .then((data) => { if (alive) setCounts(data?.counts || { local: 0, remote: 0 }) })
+      .catch(() => { if (alive) setCounts(null) })
+    return () => { alive = false }
+  }, [reset, entry.rootPath, status.at])
+  useEffect(() => {
+    if (document.querySelector('.sync-attention') === ref.current) ref.current?.scrollIntoView({ block: 'center' })
+  }, [])
+  const time = new Date(status.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return <div ref={ref} className="sync-attention" role="alert">
+    <Icon name="info" size={16} className="sync-attention-icon" />
+    <div className="sync-attention-copy">
+      <strong>{reset ? t('sync.attn.resetTitle') : t('sync.attn.massTitle', { n: status.summary?.delete || 0 })}</strong>
+      <p>{reset ? remoteResetText(counts, t) : t('sync.attn.massBody')}</p>
+      <small>{t('sync.attn.paused', { time })}</small>
+      <div className="sync-attention-actions">
+        {reset ? <>
+          <button type="button" className="settings-action-btn primary" disabled={busy} onClick={() => onPush(entry)}>{t('sync.attn.reupload')}</button>
+          {counts?.remote > 0 && <button type="button" className="settings-action-btn" disabled={busy} onClick={() => onPull(entry)}>{t('sync.attn.download')}</button>}
+        </> : <button type="button" className="settings-action-btn primary" disabled={busy} onClick={() => onReview(entry)}>{t('sync.attn.review')}</button>}
+        <button type="button" className="settings-link-btn" disabled={busy} onClick={() => onStop(entry)}>{t('sync.attn.stop')}</button>
       </div>
     </div>
   </div>
@@ -605,7 +652,9 @@ export default function SyncSettings({
           const selectedConnection = connectionFor(entry)
           const remote = remoteChoices[pathKey(entry.rootPath)]
           const busy = busyRoot === entry.rootPath
-          const state = busy ? 'syncing' : syncStates[pathKey(entry.rootPath)]
+          // A folder waiting for the user shows no ✓ (its box says why).
+          const waiting = autoSync?.byFolder?.[syncKey(entry.rootPath)]?.kind === 'confirm'
+          const state = busy ? 'syncing' : waiting ? null : syncStates[pathKey(entry.rootPath)]
           const activePreview = preview?.entry.rootPath === entry.rootPath ? preview : null
           return <div className="sync-workspace-item" key={entry.rootPath}>
             <div className="sync-folder-row">
@@ -657,7 +706,19 @@ export default function SyncSettings({
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
-            {!busy && entry.connectionId && autoSync?.byFolder?.[syncKey(entry.rootPath)] && <AutoSyncLine status={autoSync.byFolder[syncKey(entry.rootPath)]} t={t} />}
+            {!busy && entry.connectionId && autoSync?.byFolder?.[syncKey(entry.rootPath)] && (autoSync.byFolder[syncKey(entry.rootPath)].kind === 'confirm'
+              ? <SyncAttention
+                  entry={entry}
+                  status={autoSync.byFolder[syncKey(entry.rootPath)]}
+                  busy={!!busyRoot}
+                  onPreview={onPreview}
+                  onReview={(item) => prepareSync(item)}
+                  onPush={(item) => prepareSync(item, 'push')}
+                  onPull={(item) => prepareSync(item, 'pull')}
+                  onStop={(item) => safely(() => onRemoveFolder(item.rootPath))}
+                  t={t}
+                />
+              : <AutoSyncLine status={autoSync.byFolder[syncKey(entry.rootPath)]} t={t} />)}
             {busy && <SyncProgressLine
               progress={progress?.rootPath === entry.rootPath ? progress : { rootPath: entry.rootPath, completed: 0, total: 0 }}
               onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}
@@ -692,6 +753,7 @@ export default function SyncSettings({
       recovery={recovery}
       onPush={(entry) => { setRecovery(null); prepareSync(entry, 'push') }}
       onPull={(entry) => { setRecovery(null); prepareSync(entry, 'pull') }}
+      onStop={(entry) => { setRecovery(null); safely(() => onRemoveFolder(entry.rootPath)) }}
       onCancel={() => setRecovery(null)}
       t={t}
     />}

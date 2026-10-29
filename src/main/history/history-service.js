@@ -62,6 +62,21 @@ export async function recordBeforeSave(path, nextContent) {
   }
 }
 
+// A Cmd/Ctrl+S while auto-save is on (Sketch: ⌘S saves a version): the
+// content just written becomes a version of its own, never throttled, so a
+// manual save is a point the user can come back to. Same size limit as saves.
+export async function recordManualSave(path, content) {
+  const store = historyStore()
+  if (!store) return
+  try {
+    const bytes = Buffer.from(String(content ?? ''), 'utf8')
+    if (!bytes.byteLength || bytes.byteLength > MAX_TEXT_BYTES) return
+    await store.record(path, bytes, 'manual', { force: true })
+  } catch (error) {
+    console.warn('history: could not keep the manually saved version:', error?.message || error)
+  }
+}
+
 // Before an in-app deletion (to the system trash): a copy in 「最近删除」.
 export async function recordBeforeTrash(path) {
   const store = historyStore()

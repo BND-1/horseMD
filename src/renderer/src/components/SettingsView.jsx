@@ -44,6 +44,7 @@ export default function SettingsView({
             setLang={setLang}
             settings={settings}
             onUpdateSettings={onUpdateSettings}
+            syncAutoSave={syncAutoSave}
             t={t}
           />
         )}
@@ -74,7 +75,7 @@ export default function SettingsView({
           />
         )}
         {active === 'files' && (
-          <FilesSettings settings={settings} onUpdateSettings={onUpdateSettings} syncAutoSave={syncAutoSave} t={t} />
+          <FilesSettings settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
         )}
         {active === 'sync' && cloudSync && (
           <SyncSettings

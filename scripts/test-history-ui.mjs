@@ -122,15 +122,20 @@ try {
   await pressKey(send, { key: 'Escape', code: 'Escape' })
   await waitFor(() => evaluate("!document.querySelector('.hm-history')"), 'Esc closes the emptied dialog')
 
-  // 6. The history is in the profile; Settings › Files shows the space used.
-  if (process.env.HM_HISTORY_SHOT) {
-    await evaluate(`[...document.querySelectorAll('button')].find(n => /设置|Settings/.test(n.title || n.getAttribute('aria-label') || ''))?.click()`)
-    await sleep(600)
-    await evaluate(`[...document.querySelectorAll('button, [role=tab], a')].find(n => n.textContent.trim() === '文件与图片')?.click()`)
-    await sleep(600)
-    await evaluate(`[...document.querySelectorAll('h2, h3, .settings-block-title, .settings-heading')].find(n => /历史版本/.test(n.textContent))?.scrollIntoView({ block: 'start' })`)
-    await shot('settings')
-  }
+  // 6. The history is in the profile.
+  // Settings › 通用 › 保存与恢复: the history card shows the space used
+  // against the cap and the file / version counts.
+  await evaluate(`[...document.querySelectorAll('button')].find(n => /设置|Settings/.test(n.title || n.getAttribute('aria-label') || ''))?.click()`)
+  await waitFor(() => evaluate("Boolean(document.querySelector('.settings-nav-item'))"), 'settings page')
+  await evaluate(`[...document.querySelectorAll('.settings-nav-item')].find(n => n.textContent.trim() === '通用')?.click()`)
+  const card = await waitFor(async () => { const text = await evaluate("document.querySelector('.hm-history-card .hm-history-card-numbers')?.textContent || ''"); return /上限/.test(text) && text }, 'history card in 通用')
+  assert.match(card, /已用 .+，上限 1 GB/, `usage line: ${card}`)
+  assert.match(card, /\d+ 个文件 · \d+ 个版本/, `counts: ${card}`)
+  await evaluate("document.querySelector('.hm-save-recovery')?.scrollIntoView({ block: 'start' })")
+  await shot('settings')
+  await evaluate(`[...document.querySelectorAll('.settings-nav-item')].find(n => n.textContent.trim() === '文件与图片')?.click()`)
+  await sleep(300)
+  assert.ok(!(await evaluate("Boolean(document.querySelector('.hm-history-card'))")), 'history must not be in 文件与图片 any more')
   assert.ok((await readdir(join(profile, 'history'))).includes('objects'), 'history under userData')
   const toasts = await evaluate("[...document.querySelectorAll('.hm-toast-msg, .hm-toast')].map((n) => n.textContent).join('|')")
   assert.ok(!/不一致|暂停/.test(toasts), `no source-sync toast: ${toasts}`)

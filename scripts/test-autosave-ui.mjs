@@ -1,5 +1,5 @@
 // Real Electron regression for auto-save (#136): default off, enabled from
-// Settings › Files, inactivity debounce in rich and source mode, and the
+// Settings › 通用 › 保存与恢复, inactivity debounce in rich and source mode, and the
 // external-change conflict guard (never overwrite a file changed on disk;
 // an explicit save merges, or — when both changed the same lines — keeps the
 // disk version and saves the editor text as a conflict copy, see
@@ -32,9 +32,23 @@ const click = async (point) => {
   await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point })
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point })
 }
-// SaveFab renders only while the active tab is dirty (position:fixed, so
-// offsetParent is always null — test presence, not offsetParent).
-const dirty = () => app.evaluate(`Boolean(document.querySelector('.hm-save-fab'))`)
+// The active tab's unsaved dot. (The floating Save button is hidden while
+// auto-save will write the tab — it shows only when auto-save is off or
+// paused; position:fixed, so test presence, not offsetParent.)
+const dirty = () => app.evaluate(`Boolean(document.querySelector('.tab.active .tab-close.dirty'))`)
+const fab = () => app.evaluate(`Boolean(document.querySelector('.hm-save-fab'))`)
+const toastText = () => app.evaluate(`[...document.querySelectorAll('.hm-toast-msg')].map((node) => node.textContent).join(' | ')`)
+// Cmd/Ctrl+S is a native menu accelerator (CDP key events never reach the
+// menu): run the same 'save' handler through the command palette.
+const ctrlS = () => runCommand('保存')
+const runCommand = async (title) => {
+  assert.ok(await app.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(n => /command palette|命令面板/i.test(n.title || n.getAttribute('aria-label') || '')); b?.click(); return Boolean(b) })()`), 'palette button not found')
+  await waitFor(() => app.evaluate(`Boolean(document.querySelector('.palette input'))`), 'palette did not open')
+  await app.evaluate(`document.querySelector('.palette input').focus()`)
+  await app.send('Input.insertText', { text: title })
+  await sleep(200)
+  assert.ok(await app.evaluate(`(() => { const item = [...document.querySelectorAll('.palette-item')].find(n => n.querySelector('.pi-title')?.textContent.trim() === ${JSON.stringify(title)}); item?.click(); return Boolean(item) })()`), `palette item ${title} not found`)
+}
 const placeCaretAtParagraphEnd = async (text) => {
   const point = await app.evaluate(`((text) => {
     const pm = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
@@ -79,6 +93,7 @@ try {
   await sleep(4500)
   assert.equal(await disk(), original, 'auto-save must be off by default')
   assert.equal(await dirty(), true, 'edited tab must be dirty while auto-save is off')
+  assert.equal(await fab(), true, 'save button must show while auto-save is off')
 
   // 2. Enable 3 s from Settings › Files through the real UI.
   assert.ok(await app.evaluate(`(() => {
@@ -88,7 +103,9 @@ try {
     return Boolean(button)
   })()`), 'settings button not found')
   await sleep(300)
-  assert.ok(await clickByText('.settings-nav-item', '/^(Files & images|文件与图片)$/'), 'files settings section not found')
+  // Settings › 通用 › 保存与恢复 (moved out of 文件与图片).
+  assert.ok(await clickByText('.settings-nav-item', '/^(General|通用)$/'), 'general settings section not found')
+  assert.ok(await app.evaluate(`Boolean([...document.querySelectorAll('.settings-block-title')].find((n) => /保存与恢复|Save & recover/.test(n.textContent)))`), '保存与恢复 block missing in 通用')
   await sleep(200)
   assert.ok(await clickByText('.settings-segmented-option', '/^(3s|3 秒)$/'), 'auto-save 3s option not found')
   await sleep(200)
@@ -104,6 +121,8 @@ try {
   await typeTextLikeUser(app.send, ' two', { delayMs: 400 })
   const midBurst = await disk()
   assert.equal(midBurst, '# Auto save\n\nFirst line one\n', 'auto-save fired before the inactivity delay elapsed')
+  assert.equal(await dirty(), true, 'mid-burst tab must be dirty')
+  assert.equal(await fab(), false, 'save button must stay hidden while auto-save will write the tab')
   await waitFor(async () => (await disk()) === '# Auto save\n\nFirst line one two\n', 'rich edit was not auto-saved after idling', 60)
   await waitFor(async () => !(await dirty()), 'tab stayed dirty after the second auto-save')
 
@@ -131,6 +150,7 @@ try {
   await sleep(5000)
   assert.equal(await disk(), external, 'auto-save overwrote a file changed in another application')
   assert.equal(await dirty(), true, 'conflicted tab must stay dirty')
+  assert.equal(await fab(), true, 'save button must come back when auto-save is paused')
   const toast = await app.evaluate(`document.body.textContent`)
   assert.ok(/自动保存已暂停|Auto save paused/.test(toast), 'conflict notice was not shown')
   // Further typing stays paused (no retry overwrite).
@@ -153,8 +173,41 @@ try {
   await typeTextLikeUser(app.send, ' four')
   await waitFor(async () => (await copyDisk()).includes('four'), 'auto-save did not resume on the conflict copy', 80)
   assert.equal(await disk(), external)
+  await waitFor(async () => !(await fab()), 'save button stayed after auto-save resumed')
 
-  console.log('PASS auto-save: default off, settings enable, rich/source debounce, external-change guard, explicit save keeps both (conflict copy), auto-save resumes on the copy')
+  // 7. Cmd/Ctrl+S under auto-save still saves at once, keeps the content as
+  // a 手动保存 history version, and says twice that it is not needed.
+  const copyPath = join(root, copyName)
+  await app.evaluate(`localStorage.removeItem('horsemd.autosaveHint.v1')`)
+  const manualVersions = () => app.evaluate(`window.api.historyList(${JSON.stringify(copyPath)}).then((res) => (res?.versions || []).filter((v) => v.reason === 'manual').length)`)
+  const before = await manualVersions()
+  await typeTextLikeUser(app.send, ' five')
+  await ctrlS()
+  await waitFor(async () => (await copyDisk()).includes('five'), 'Ctrl+S did not save at once', 20)
+  await waitFor(async () => /不用再手动保存|no need to save by hand/.test(await toastText()), 'first Ctrl+S did not hint')
+  await waitFor(async () => (await manualVersions()) === before + 1, 'Ctrl+S did not keep a 手动保存 version')
+  await sleep(3800)
+  await placeCaretAtParagraphEnd('First line')
+  await typeTextLikeUser(app.send, ' six')
+  await ctrlS()
+  await waitFor(async () => /不用再手动保存|no need to save by hand/.test(await toastText()), 'second Ctrl+S did not hint')
+  await sleep(3800)
+  await ctrlS()
+  await waitFor(async () => /已保存 ✓|Saved ✓/.test(await toastText()), 'third Ctrl+S did not confirm the save')
+  assert.ok(!/不用再手动保存|no need to save by hand/.test(await toastText()), 'hinted a third time')
+  // Same content as the last manual version: no duplicate.
+  await sleep(500)
+  assert.equal(await manualVersions(), before + 2, 'unchanged Ctrl+S added a duplicate version')
+
+  // 8. An untitled tab cannot be auto-saved: its Save button shows.
+  await runCommand('新建文件')
+  await waitFor(() => app.evaluate(`/未命名|Untitled/.test(document.querySelector('.tab.active')?.textContent || '')`), 'new untitled tab did not open')
+  await sleep(600)
+  await app.evaluate(`[...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)?.focus()`)
+  await typeTextLikeUser(app.send, 'draft')
+  await waitFor(() => fab(), 'save button not shown for an untitled tab under auto-save')
+
+  console.log('PASS auto-save: default off, settings enable, rich/source debounce, external-change guard, explicit save keeps both (conflict copy), auto-save resumes on the copy; Save button only when auto-save is off / paused / untitled; Ctrl+S keeps a 手动保存 version and hints twice')
 } finally {
   if (app) await stopBuiltElectron(app, { removeProfile: false })
   await rm(root, { recursive: true, force: true })
