@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // Local sync-workspace registration is deliberately separate from useWorkspace:
 // the latter owns visible multi-root file trees and watchers, while this hook
 // owns only the folders a user explicitly opted into for future cloud sync.
-export function useSyncWorkspaces({ folderRoots, addFolder }) {
+// getDirtyPaths(): absolute paths of files open with unsaved edits; every run
+// passes them so the sync never downloads over / deletes them (the save that
+// follows would overwrite the other device's version — docs/cloud-sync-review.md R1).
+export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null }) {
   const supported = window.api.capabilities?.cloudSync !== false
   const [registered, setRegistered] = useState([])
   const [connections, setConnections] = useState([])
@@ -169,13 +172,14 @@ export function useSyncWorkspaces({ folderRoots, addFolder }) {
     runningRef.current.add(key)
     setBusyRoot(rootPath)
     try {
-      return await window.api.syncRun(rootPath, strategy, options)
+      const dirtyPaths = getDirtyPaths?.() || []
+      return await window.api.syncRun(rootPath, strategy, dirtyPaths.length ? { ...(options || {}), dirtyPaths } : options)
     } finally {
       runningRef.current.delete(key)
       setBusyRoot((current) => (keyOf(current) === key ? null : current))
       setProgress((current) => (keyOf(current?.rootPath) === key ? null : current))
     }
-  }, [])
+  }, [getDirtyPaths])
 
   // 'pause' | 'resume' | 'stop' for the running sync of `rootPath`.
   const controlSync = useCallback(async (rootPath, action) => window.api.syncControl?.(rootPath, action), [])

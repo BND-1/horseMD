@@ -65,8 +65,11 @@ try {
   assert.equal(conflict.summary.conflict, 1)
   await makeEngine(localB, userDataB, 'Phone').execute(conflict)
   assert.equal(await fs.readFile(join(localB, 'note.md'), 'utf8'), '# From A\n')
-  assert.equal(await fs.readFile(join(localB, 'note (来自 Phone 的冲突副本).md'), 'utf8'), '# From B\n')
-  assert.equal((await provider.get('note (来自 Phone 的冲突副本).md')).bytes.toString(), '# From B\n')
+  // "note (冲突副本 Phone 2026-10-29 1432).md": device name + time.
+  const copyName = (await fs.readdir(localB)).find((name) => /^note \(冲突副本 Phone \d{4}-\d{2}-\d{2} \d{4}\)\.md$/.test(name))
+  assert.ok(copyName, 'conflict copy named after the device and time')
+  assert.equal(await fs.readFile(join(localB, copyName), 'utf8'), '# From B\n')
+  assert.equal((await provider.get(copyName)).bytes.toString(), '# From B\n')
 
   await fs.rm(join(localA, 'assets', 'photo.bin'))
   await makeEngine(localA, userDataA, 'Mac').execute()

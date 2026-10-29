@@ -561,6 +561,37 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `HM_INCREMENTAL_SERIALIZE_DOC`). Bench for the user-facing operations
   (tab switch, typing, Backspace, Bold/Italic, heading level, scroll;
   `PROFILE=1`, `TIMELINE=1`): `scripts/perf/bench-heavy-ops.mjs`.
+- **Cloud sync review + roadmap**: [`docs/cloud-sync-review.md`](./docs/cloud-sync-review.md)
+  (2026-10-29) — current behaviour, the data-safety audit (`node
+  scripts/audit-sync-safety.mjs`, `scripts/audit-sync-dirty-tab-ui.mjs`; 7
+  risks incl. an unsaved-tab overwrite that loses the other device's edit),
+  industry research and the P0–P3 plan. Update its log when sync changes.
+- **Sync data safety (P0, 2026-10-29)**: the engine never overwrites,
+  deletes or conflict-replaces a local file that is (a) open in a tab with
+  unsaved edits — the renderer passes `dirtyPaths` with every `sync:run`
+  (`useSyncWorkspaces` `getDirtyPaths`) → `busyPaths` — or (b) changed
+  since the scan (`localStillAsPlanned` re-hashes right before the write;
+  a throttled run can sit between plan and write for 20 min). Those paths
+  are `deferred`: state / manifest left exactly as before, so the next run
+  sees a conflict. Automatic (`safeOnly`) runs HOLD deletions and conflicts
+  (`held`, same untouched-state rule — a held deletion must never come back
+  as a "new cloud file") and run everything else. Conflict copies are
+  `name (冲突副本 <host> <YYYY-MM-DD HHmm>).md` (`sync/conflict-name.js`,
+  host name via `deviceLabel`), never an existing name, never overwritten.
+  Uploads record the hash of the bytes actually sent. A lost manifest race
+  is tagged `manifestChanged` and `SyncService.run` re-plans (3 tries).
+  Save over an external change (`useFileOps` `saveOverExternalChange`):
+  three-way merge (`lib/three-way-merge.js`, node-diff3; base = the tab's
+  `savedContent`), merged text shown in place (`adoptDiskContent`, shared
+  with the external reload); overlapping edits keep the disk version and
+  save the editor text as a conflict copy the tab moves to. Saves are atomic
+  (`writeFileAtomic`: copy with metadata — `/bin/cp -p` on macOS keeps
+  Finder tags — write, fsync, rename; hard links / failures write in place;
+  Windows replaces a file held open by moving it aside first). Temp files
+  (`*.hmtmp`, the sync's `.<pid>.<uuid>.tmp`) never sync. Locked by
+  `test:sync-safety`, `test:atomic-save`, `test:save-external-merge-ui`,
+  `test:sync-auto`, `test:autosave-ui`; `npm run audit:sync-safety` reports
+  the remaining risks.
 - **Sync throttling** (`main/sync/request-pacer.js`): S3/WebDAV requests go
   through a per-provider pacer — 429/503 retried (Retry-After or jittered
   backoff, 8 attempts, re-signed each time), the request gap doubles per
@@ -947,9 +978,31 @@ guide/                 VitePress user tutorial + versioned current-app screensho
 - **Heading folds** (`editor-heading-fold.js`, a raw plugin in
   `prosePluginsCtx`): a folded top-level heading hides every top-level block
   after it up to the next heading of the same or a higher level. View-only:
-  plugin state (heading positions mapped through each transaction) + node
-  decorations (`hm-fold-hidden` → `display:none`); nothing reaches the
-  Markdown, never dirty, not saved. The selection never stays in hidden
+  plugin state (`{pos, end}` per fold: the heading maps with assoc 1, the
+  section end remembered at fold time with assoc -1, capped at the next
+  same-or-higher heading) + node decorations (`hm-fold-hidden` →
+  `display:none`); nothing reaches the Markdown, never dirty, not saved.
+  Enter at the end of a folded heading inserts a paragraph AT the end (the
+  next visible line, Obsidian/Feishu) and keeps the fold — it used to split
+  the heading into the section and open it; Backspace in that empty line
+  deletes it and returns to the heading end (`handleDOMEvents.keydown`, so it
+  runs before Milkdown's keymaps; `handleKeyDown` for Android's synthetic
+  Enter). The blank-area click (`editor-dom-layout.js`) measures the last
+  VISIBLE block: a folded last section is display:none, so every click
+  counted as "below the content" (empty paragraph appended, caret thrown to
+  the end). A folded heading carries its section: copy / cut of a selection
+  covering the whole heading text take the section (`foldedSelectionRange`
+  → `editor-dom-content.js` builds that clipboard from the document —
+  hidden CodeMirror blocks render no lines — and plain text via layout);
+  a block-handle drag of it (`dragstart` on document after Milkdown's,
+  `view.dragging` swapped for the section slice, plugin `handleDrop`) moves
+  / Alt-copies the whole section and folds it again where it lands
+  (`foldRange`). A deleted heading's fold is dropped (`mapResult.deleted`;
+  it used to land on the next heading). Locked by
+  `test:heading-fold-section-ui`. Raw Markdown paste into an empty
+  top-level paragraph (`prepareRawMarkdownPaste`) pads the pasted bytes with
+  a blank line each side — the empty line has no source bytes, so a paste
+  after Enter wrote `尾段\n## 标题`. The selection never stays in hidden
   content: a non-fold transaction whose selection lands there opens the folds
   around it; a fold action that would hide the caret moves it to the folded
   heading's end (appendTransaction). Toggles are an overlay after the editor

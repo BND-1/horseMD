@@ -6,6 +6,7 @@ import { buildDirPlan, buildDirectionalSyncPlan, buildSyncPlan, DIR_OPERATION_TY
 import { readSyncState, writeSyncState } from './sync-state.js'
 import { isSyncStopped } from './sync-control.js'
 import { isSystemJunkPath } from './sync-ignore.js'
+import { conflictSuffixFor } from './conflict-name.js'
 
 const MANIFEST_VERSION = 1
 const now = () => new Date().toISOString()
@@ -117,6 +118,33 @@ async function removeEmptyLocalDir(target) {
 
 const isDeletion = (item) => (item.type === 'deleteLocal' || item.type === 'deleteRemote' ? 1 : 0)
 
+
+// Is the local file still what the plan saw? A file saved after the scan
+// (sync can wait minutes for a throttled service) must never be overwritten
+// or removed by this run. `plannedSha` null = the plan saw no file there.
+async function localStillAsPlanned(rootPath, relativePath, plannedSha) {
+  let bytes
+  try {
+    bytes = await fs.readFile(assertSafeRelative(rootPath, relativePath))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return !plannedSha
+    throw error
+  }
+  return Boolean(plannedSha) && sha256(bytes) === plannedSha
+}
+
+// Operations an automatic (safeOnly) run leaves for the user: deletions of
+// the user's files and conflicts. Everything else runs.
+const isHeldInSafeMode = (item) => (
+  (item.type === 'deleteRemote' && !item.systemFile) ||
+  item.type === 'deleteLocal' ||
+  item.type === 'conflict' ||
+  item.type === 'deleteRemoteDir' ||
+  item.type === 'deleteLocalDir'
+)
+// Operations that write or remove the local file at item.path.
+const touchesLocalFile = (item) => ['download', 'deleteLocal', 'conflict'].includes(item.type)
+
 // After a file deleted on another device is moved out of its folder: the
 // folders it leaves empty go too, deepest first, up to (never including) the
 // workspace root. Otherwise a renamed or deleted folder stayed here empty,
@@ -204,7 +232,7 @@ async function archiveRemoteToTrash(provider, item, stamp) {
 }
 
 export class SyncEngine {
-  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null, control = null }) {
+  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null, control = null, busyPaths = [] }) {
     this.userDataPath = userDataPath
     this.provider = provider
     this.rootPath = rootPath
@@ -213,6 +241,56 @@ export class SyncEngine {
     this.onProgress = onProgress
     // Optional SyncControl: pause / resume / stop between files.
     this.control = control
+    // Relative paths of files open with unsaved edits in the editor: this run
+    // never downloads over, deletes or conflict-replaces them (the save that
+    // follows would overwrite the other device's version). Lower-cased:
+    // macOS / Windows disks are case-insensitive.
+    this.busyPaths = new Set([...busyPaths].map((path) => String(path).replace(/\\/g, '/').toLowerCase()))
+  }
+
+  isBusy(path) {
+    return this.busyPaths.has(String(path).toLowerCase())
+  }
+
+  // A free conflict-copy path: neither on disk, in the cloud manifest, nor
+  // handed out earlier in this run (case-insensitive).
+  async freeConflictPath(path, suffix, taken) {
+    for (let n = 1; n < 100; n += 1) {
+      const candidate = makeConflictPath(path, n === 1 ? suffix : `${suffix} ${n}`)
+      if (taken.has(candidate.toLowerCase())) continue
+      taken.add(candidate.toLowerCase())
+      try {
+        await fs.access(assertSafeRelative(this.rootPath, candidate))
+        continue
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error
+      }
+      return candidate
+    }
+    throw new Error(`“${path}”的冲突副本太多，请先整理后再同步。`)
+  }
+
+  // Writes the conflict copy locally and to the cloud under a free name; a
+  // name taken in the cloud by an object the manifest does not list moves on
+  // to the next name. Returns { path, revision }.
+  async writeConflictCopy(path, bytes, taken) {
+    const suffix = conflictSuffixFor(this.deviceName)
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = await this.freeConflictPath(path, suffix, taken)
+      let uploaded
+      try {
+        uploaded = await this.provider.put(candidate, bytes, { createOnly: true })
+      } catch (error) {
+        if (isSyncStopped(error)) throw error
+        let existing = null
+        try { existing = await this.provider.get(candidate) } catch (readError) { throw isSyncStopped(readError) ? readError : error }
+        if (!existing) throw error
+        continue
+      }
+      await writeLocalBytes(this.rootPath, candidate, bytes)
+      return { path: candidate, revision: uploaded.revision }
+    }
+    throw new Error(`无法为“${path}”保存冲突副本，请重新同步。`)
   }
 
   async preview(strategy = 'merge') {
@@ -240,7 +318,7 @@ export class SyncEngine {
         localFiles,
         remoteFiles: remote.manifest.files,
         previousEntries: state.files,
-        conflictSuffix: `来自 ${this.deviceName} 的冲突副本`
+        conflictSuffix: conflictSuffixFor(this.deviceName)
       })
       : buildDirectionalSyncPlan({ localFiles, remoteFiles: remote.manifest.files, strategy })
     // Deletions run before everything else. On a case-insensitive disk
@@ -323,9 +401,40 @@ export class SyncEngine {
       throw new Error('云端工作区已被清空或替换。请明确选择上传本地或下载云端，HorseMD 不会自动删除本地文件。')
     }
     const { localFiles, state, remote, plan } = prepared
+    // Paths this run leaves exactly as they were (state entry, manifest
+    // entry, local file): automatic runs hold deletions and conflicts for the
+    // user; files open with unsaved edits, or saved after the scan, are
+    // deferred. The next run sees them again (a deferred download becomes a
+    // conflict once the local file has changed).
+    const held = { delete: 0, conflict: 0 }
+    const untouched = new Set()
+    const untouchedDirs = new Set()
+    const deferred = []
+    const skip = (item) => {
+      if (DIR_OPERATION_TYPES.has(item.type)) untouchedDirs.add(item.path)
+      else untouched.add(item.path)
+    }
     if (safeOnly) {
-      if (prepared.summary.delete > 0 || prepared.summary.conflict > 0) return { needsConfirmation: true, reason: 'changes', summary: prepared.summary }
-      if (!plan.operations.some((item) => !['keep', 'keepDir', 'forgetDir'].includes(item.type))) return { idle: true, summary: prepared.summary }
+      for (const item of plan.operations) {
+        if (!isHeldInSafeMode(item)) continue
+        item.held = true
+        skip(item)
+        if (item.type === 'conflict') held.conflict += 1
+        else held.delete += 1
+      }
+    }
+    for (const item of plan.operations) {
+      if (item.held || !touchesLocalFile(item) || !this.isBusy(item.path)) continue
+      item.deferred = true
+      skip(item)
+      deferred.push(item.path)
+    }
+    const runnable = (item) => !item.held && !item.deferred && !['keep', 'keepDir', 'forgetDir'].includes(item.type)
+    const extra = { ...(held.delete || held.conflict ? { held } : {}), ...(deferred.length ? { deferred } : {}) }
+    if (safeOnly && !plan.operations.some(runnable)) {
+      return held.delete || held.conflict
+        ? { needsConfirmation: true, reason: 'changes', summary: prepared.summary, ...extra }
+        : { idle: true, summary: prepared.summary, ...extra }
     }
     // Empty folders present on both sides after this run.
     const dirs = new Set(plan.operations.filter((item) => item.type === 'keepDir').map((item) => item.path))
@@ -333,7 +442,9 @@ export class SyncEngine {
     const manifest = structuredClone(remote.manifest)
     const stamp = now().replace(/[:.]/g, '-')
     const files = new Map(localFiles)
-    const total = plan.operations.filter((item) => !['keep', 'keepDir', 'forgetDir'].includes(item.type)).length
+    const total = plan.operations.filter(runnable).length
+    // Conflict-copy names already in use (lower-cased).
+    const takenNames = new Set([...localFiles.keys(), ...Object.keys(remote.manifest.files)].map((path) => path.toLowerCase()))
     let completed = 0
     this.onProgress?.({ completed, total })
 
@@ -359,8 +470,20 @@ export class SyncEngine {
     }
     try {
     for (const item of plan.operations) {
-      if (item.type === 'keep' || item.type === 'keepDir') continue
+      if (item.type === 'keep' || item.type === 'keepDir' || item.held || item.deferred) continue
       await this.control?.checkpoint()
+      // Saved after the scan? Then this run leaves the file alone (R9 in
+      // docs/cloud-sync-review.md: the download used to overwrite it).
+      if (touchesLocalFile(item) && !item.preserveLocal &&
+        !(await localStillAsPlanned(this.rootPath, item.path, localFiles.get(item.path)?.sha256 || null))) {
+        item.deferred = true
+        skip(item)
+        deferred.push(item.path)
+        extra.deferred = deferred
+        completed += 1
+        this.onProgress?.({ completed, total, type: item.type, path: item.path, deferred: true })
+        continue
+      }
       if (!isDeletion(item)) await pruneRemote()
       if (DIR_OPERATION_TYPES.has(item.type)) {
         await this.syncDirectory(item, manifest, dirs, previousDirs)
@@ -370,6 +493,10 @@ export class SyncEngine {
       if (item.type === 'upload') {
         if (item.preserveRemote) await archiveRemoteToTrash(this.provider, item, stamp)
         const bytes = await readLocalBytes(this.rootPath, item.path)
+        // The manifest records the bytes actually uploaded: a save after the
+        // scan made it record the scanned hash, and the other device then
+        // failed every download of the file ("已在同步期间变化", R5).
+        const uploadedSha = sha256(bytes)
         let uploaded
         try {
           uploaded = await this.provider.put(item.path, bytes, {
@@ -399,8 +526,9 @@ export class SyncEngine {
             uploaded = await this.provider.put(item.path, bytes, { revision: untracked.revision })
           }
         }
-        manifest.files[item.path] = { ...item.local, revision: uploaded.revision, updatedAt: now() }
+        manifest.files[item.path] = { ...item.local, sha256: uploadedSha, size: bytes.byteLength, revision: uploaded.revision, updatedAt: now() }
         delete manifest.tombstones[item.path]
+        files.set(item.path, { ...(files.get(item.path) || item.local), sha256: uploadedSha, size: bytes.byteLength })
       } else if (item.type === 'download') {
         if (item.preserveLocal) await moveLocalToTrash(this.rootPath, item.path, stamp)
         const remoteFile = await this.provider.get(item.path)
@@ -441,9 +569,13 @@ export class SyncEngine {
           const remoteBytes = await this.provider.get(item.path)
           if (!remoteBytes) throw new Error(`远端冲突文件“${item.path}”在同步中消失。`)
           verifyRemoteBytes(item.path, item.remote, remoteBytes.bytes)
-          const localConflict = makeConflictPath(item.path, `来自 ${this.deviceName} 的冲突副本`)
-          await writeLocalBytes(this.rootPath, localConflict, localBytes)
-          const uploadedConflict = await this.provider.put(localConflict, localBytes, { createOnly: true })
+          const copy = await this.writeConflictCopy(item.path, localBytes, takenNames)
+          const localConflict = copy.path
+          const uploadedConflict = copy
+          // The local file must still be the bytes copied just now.
+          if (sha256(await readLocalBytes(this.rootPath, item.path)) !== sha256(localBytes)) {
+            throw new Error(`“${item.path}”在同步中又被修改，请重新同步。`)
+          }
           await writeLocalBytes(this.rootPath, item.path, remoteBytes.bytes)
           files.set(item.path, { ...item.remote, sha256: sha256(remoteBytes.bytes) })
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
@@ -459,9 +591,9 @@ export class SyncEngine {
           files.set(item.path, { ...item.remote, sha256: sha256(remoteBytes.bytes) })
         } else if (item.local) {
           const localBytes = await readLocalBytes(this.rootPath, item.path)
-          const localConflict = makeConflictPath(item.path, `来自 ${this.deviceName} 的冲突副本`)
-          await writeLocalBytes(this.rootPath, localConflict, localBytes)
-          const uploadedConflict = await this.provider.put(localConflict, localBytes, { createOnly: true })
+          const copy = await this.writeConflictCopy(item.path, localBytes, takenNames)
+          const localConflict = copy.path
+          const uploadedConflict = copy
           await moveLocalToTrash(this.rootPath, item.path, stamp)
           files.delete(item.path)
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
@@ -509,20 +641,44 @@ export class SyncEngine {
       return { stopped: true, recorded, completed, total, summary: summaryWithBytes(plan), conflicts: plan.summary.conflict }
     }
 
+    const nextFiles = Object.fromEntries([...files].map(([path, entry]) => [path, { sha256: entry.sha256 }]))
+    for (const path of untouched) {
+      if (state.files[path]) nextFiles[path] = state.files[path]
+      else delete nextFiles[path]
+    }
+    for (const path of untouchedDirs) {
+      if (previousDirs.has(path)) dirs.add(path)
+      else dirs.delete(path)
+    }
     const nextState = {
       version: 1,
       workspaceId: this.workspaceId,
-      files: Object.fromEntries([...files].map(([path, entry]) => [path, { sha256: entry.sha256 }])),
+      files: nextFiles,
       dirs: [...dirs].sort()
     }
     // The manifest is committed last. If another device changed it, conditional
     // write fails before local state advances, so the next run re-plans safely.
-    await this.provider.put(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2) + '\n'), {
-      revision: remote.revision,
-      createOnly: !remote.exists,
-      contentType: 'application/json'
-    })
+    try {
+      await this.provider.put(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2) + '\n'), {
+        revision: remote.revision,
+        createOnly: !remote.exists,
+        contentType: 'application/json'
+      })
+    } catch (error) {
+      if (isSyncStopped(error)) throw error
+      // Another device committed first (both synced at once). Tagged so the
+      // caller re-plans and runs again right away instead of showing an
+      // error (R6); the objects uploaded here are adopted on the next run.
+      let latest = null
+      try { latest = await readRemoteManifest(this.provider, this.workspaceId) } catch { /* report the original error */ }
+      if (latest && latest.revision !== remote.revision) {
+        const changed = new Error('云端同步清单已被另一台设备更新，请重新同步。')
+        changed.manifestChanged = true
+        throw changed
+      }
+      throw error
+    }
     await writeSyncState(this.userDataPath, nextState)
-    return { summary: summaryWithBytes(plan), conflicts: plan.summary.conflict }
+    return { summary: summaryWithBytes(plan), conflicts: plan.summary.conflict, ...extra }
   }
 }

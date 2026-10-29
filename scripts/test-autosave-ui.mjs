@@ -1,9 +1,11 @@
 // Real Electron regression for auto-save (#136): default off, enabled from
 // Settings › Files, inactivity debounce in rich and source mode, and the
 // external-change conflict guard (never overwrite a file changed on disk;
-// an explicit save still may). Input is dispatched one character at a time.
+// an explicit save merges, or — when both changed the same lines — keeps the
+// disk version and saves the editor text as a conflict copy, see
+// test:save-external-merge-ui). Input is dispatched one character at a time.
 import assert from 'node:assert/strict'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
@@ -136,14 +138,23 @@ try {
   await sleep(4000)
   assert.equal(await disk(), external, 'auto-save retried and overwrote the external version')
 
-  // 6. An explicit save is still allowed to overwrite, and auto-save resumes.
+  // 6. An explicit save never overwrites the other version either: both
+  // sides changed the same lines, so the file keeps it and the editor's text
+  // goes to a conflict copy the tab moves to; auto-save resumes there.
   assert.ok(await app.evaluate(`(() => { const fab = document.querySelector('.hm-save-fab'); fab?.click(); return Boolean(fab) })()`), 'save button not shown for conflicted tab')
-  await waitFor(async () => (await disk()) === '# Auto save\n\nFirst line one two\nSource tail three!', 'explicit save did not write after conflict')
+  const copyName = await waitFor(async () => (await readdir(root)).find((name) => /^autosave \(冲突副本 .+\)\.md$/.test(name)), 'explicit save did not write a conflict copy')
+  const copyDisk = () => readFile(join(root, copyName), 'utf8')
+  assert.equal(await disk(), external, 'explicit save overwrote the other version')
+  // Where End lands in the soft-wrapped paragraph differs by platform, so
+  // the typed words are checked, not their order.
+  const copied = await copyDisk()
+  for (const piece of ['# Auto save', 'First line one two', 'Source tail', 'three!']) assert.ok(copied.includes(piece), `conflict copy misses ${piece}: ${JSON.stringify(copied)}`)
   await placeCaretAtParagraphEnd('First line')
   await typeTextLikeUser(app.send, ' four')
-  await waitFor(async () => (await disk()) === '# Auto save\n\nFirst line one two\nSource tail three! four', 'auto-save did not resume after explicit save', 80)
+  await waitFor(async () => (await copyDisk()).includes('four'), 'auto-save did not resume on the conflict copy', 80)
+  assert.equal(await disk(), external)
 
-  console.log('PASS auto-save: default off, settings enable, rich/source debounce, external-change guard, explicit-save resume')
+  console.log('PASS auto-save: default off, settings enable, rich/source debounce, external-change guard, explicit save keeps both (conflict copy), auto-save resumes on the copy')
 } finally {
   if (app) await stopBuiltElectron(app, { removeProfile: false })
   await rm(root, { recursive: true, force: true })

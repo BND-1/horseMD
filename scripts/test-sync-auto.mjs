@@ -1,9 +1,12 @@
 // Automatic sync runs the engine in `safeOnly` mode (hooks/useAutoSync.js →
 // sync:run options.safeOnly): the plan is computed right before running;
-// uploads and downloads run, a plan with deletions or conflicts (or a cloud
-// workspace that was emptied) is refused with { needsConfirmation } and the
-// cloud stays untouched, and nothing to do → { idle } with no request that
-// writes (no manifest PUT every few minutes).
+// uploads and downloads run; deletions and conflicts are held (left exactly
+// as they were — the next run sees them again) and reported as `held`, or as
+// { needsConfirmation } when nothing else is to do; a cloud workspace that
+// was emptied runs nothing; nothing to do → { idle } with no request that
+// writes (no manifest PUT every few minutes). A held deletion used to hold
+// the whole round: other files' new text stayed on one device
+// (docs/cloud-sync-review.md R4).
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -75,17 +78,29 @@ try {
   assert.equal(deletion.summary.delete, 1)
   assert.deepEqual(cloudFiles(), ['one.md', 'two.md'], 'cloud untouched')
   assert.equal(provider.writes, writes)
-  // …and an upload next to it waits too (one plan, confirmed as a whole).
+  // …but an upload next to it runs; only the deletion waits.
   await fs.writeFile(join(root, 'a', 'three.md'), '# three\n')
-  assert.equal((await safe(a)).needsConfirmation, true)
-  assert.ok(!provider.objects.has('three.md'))
+  const mixed = await safe(a)
+  assert.equal(mixed.needsConfirmation, undefined)
+  assert.deepEqual(mixed.held, { delete: 1, conflict: 0 })
+  assert.deepEqual(cloudFiles(), ['one.md', 'three.md', 'two.md'], 'three.md uploaded, two.md kept')
+  // The held deletion is still a deletion next time (never a "new cloud file"
+  // downloaded back).
+  const again = await safe(a)
+  assert.equal(again.needsConfirmation, true)
+  assert.equal(again.summary.delete, 1)
+  assert.equal(again.summary.download, 0)
   // The user confirms it (a normal run).
   await a.execute(null, 'merge')
   assert.deepEqual(cloudFiles(), ['one.md', 'three.md'])
 
   // 5. A conflict is not run unattended.
-  // b catches up: two.md deleted in the cloud is a deletion here → confirm.
-  assert.equal((await safe(b)).needsConfirmation, true)
+  // b catches up: three.md downloads; two.md deleted in the cloud is a
+  // deletion here → held.
+  const catchUp = await safe(b)
+  assert.deepEqual(catchUp.held, { delete: 1, conflict: 0 })
+  assert.equal(await fs.readFile(join(root, 'b', 'three.md'), 'utf8'), '# three\n')
+  assert.equal(await fs.readFile(join(root, 'b', 'two.md'), 'utf8'), '# two\n', 'held deletion leaves the file')
   await b.execute(null, 'merge')
   await fs.writeFile(join(root, 'a', 'one.md'), '# one from a\n')
   await fs.writeFile(join(root, 'b', 'one.md'), '# one from b\n')
@@ -100,7 +115,7 @@ try {
   const reset = await safe(a)
   assert.equal(reset.needsConfirmation, true)
   assert.equal(reset.reason, 'remote-reset')
-  console.log('PASS sync auto: uploads/downloads run, idle writes nothing, deletions / conflicts / emptied cloud wait for confirmation')
+  console.log('PASS sync auto: uploads/downloads run, idle writes nothing, deletions / conflicts are held (the rest still syncs; held ones stay pending), emptied cloud waits')
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }

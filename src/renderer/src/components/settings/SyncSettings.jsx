@@ -289,15 +289,18 @@ function AutoSyncLine({ status, t }) {
   const time = new Date(status.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const summary = status.summary || {}
   let text = ''
-  if (status.kind === 'done') text = t('sync.auto.done', { time, upload: summary.upload || 0, download: summary.download || 0 })
+  if (status.kind === 'done') text = status.held
+    ? t('sync.auto.doneHeld', { time, upload: summary.upload || 0, download: summary.download || 0, changes: pendingChanges(status.held, t) })
+    : t('sync.auto.done', { time, upload: summary.upload || 0, download: summary.download || 0 })
   else if (status.kind === 'idle') text = t('sync.auto.idle', { time })
   else if (status.kind === 'confirm') text = status.reason === 'changes'
     ? t('sync.auto.needsConfirm', { time, changes: pendingChanges(summary, t) })
     : t('sync.auto.remoteReset', { time })
   else if (status.kind === 'stopped') text = t('sync.auto.stopped', { time })
   else if (status.kind === 'error') text = t('sync.auto.failed', { time, msg: status.message })
+  if (text && status.deferred) text += ' ' + t('sync.deferredNotice', { n: status.deferred })
   if (!text) return null
-  const warn = status.kind === 'confirm' || status.kind === 'error'
+  const warn = status.kind === 'confirm' || status.kind === 'error' || Boolean(status.held)
   return <div className={`sync-auto-line${warn ? ' warn' : ''}`}>{text}</div>
 }
 
@@ -465,7 +468,7 @@ export default function SyncSettings({
     if (done?.stopped) setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
     else if (done) {
       markSyncComplete(entry.rootPath)
-      setNotice(t('sync.syncCompleted', done.summary))
+      setNotice(t('sync.syncCompleted', done.summary) + (done.deferred?.length ? ' ' + t('sync.deferredNotice', { n: done.deferred.length }) : ''))
     }
   }
 
@@ -510,7 +513,7 @@ export default function SyncSettings({
     } else if (done) {
       setPreview(null)
       markSyncComplete(preview.entry.rootPath)
-      setNotice(t('sync.syncCompleted', done.summary))
+      setNotice(t('sync.syncCompleted', done.summary) + (done.deferred?.length ? ' ' + t('sync.deferredNotice', { n: done.deferred.length }) : ''))
     }
   }
 

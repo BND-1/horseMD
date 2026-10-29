@@ -1,7 +1,11 @@
 import { rm } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import electronPath from 'electron'
+// HM_TEST_APP_EXE=<installed HorseMD executable>: run the test against an
+// installed app (e.g. on the Windows test PC, with only scripts/ copied over):
+// no entry file, and the `electron` package is not needed.
+const INSTALLED_APP = process.env.HM_TEST_APP_EXE || ''
+const electronPath = INSTALLED_APP || (await import('electron')).default
 import { connectCdp, sleep } from './cdp.mjs'
 
 const assertTcpPortAvailable = (port, host = '127.0.0.1') => new Promise((resolve, reject) => {
@@ -29,7 +33,7 @@ export async function launchBuiltElectron({
   cwd = process.cwd(),
   appArgs = [],
   executable = electronPath,
-  entrypoint = 'out/main/index.cjs',
+  entrypoint = INSTALLED_APP ? null : 'out/main/index.cjs',
   background = true,
   // Every test launch records the input trace (user rule): a failure must be
   // diagnosable from horsemd-input-trace-<pid>.jsonl in the user temp dir.

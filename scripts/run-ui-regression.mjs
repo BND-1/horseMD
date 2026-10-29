@@ -153,6 +153,14 @@ const standalone = [
     script: 'scripts/test-heading-fold-ui.mjs'
   },
   {
+    name: 'Save over an external change (sync): merge different places, conflict copy for the same place',
+    script: 'scripts/test-save-external-merge-ui.mjs'
+  },
+  {
+    name: 'Folded section: copy / cut / block-handle drag carry the folded content, bytes kept',
+    script: 'scripts/test-heading-fold-section-ui.mjs'
+  },
+  {
     name: 'Closed tabs release their editors (heap snapshot Crepe count)',
     script: 'scripts/test-closed-tab-memory-ui.mjs'
   },

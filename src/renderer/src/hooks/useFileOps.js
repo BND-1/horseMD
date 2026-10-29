@@ -28,6 +28,7 @@ import { fireToast } from '../ui.js'
 import { syncReportAction } from '../lib/sync-diagnostics.js'
 import { getSavedDocPosition } from '../lib/doc-positions.js'
 import { mapOffsetThroughChange } from '../lib/offset-through-change.js'
+import { mergeText } from '../lib/three-way-merge.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 import { useWorkspace } from './useWorkspace.js'
 
@@ -386,6 +387,75 @@ export function useFileOps({
     })
   }, [commitAllLive, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef, tRef])
 
+  // Put `content` (what is on disk now, at `mtimeMs`) into tab `id`, whose
+  // state was `current`: a mounted rich editor takes it in place (the
+  // replaceMarkdown path a source-mode edit uses — unchanged blocks keep their
+  // DOM, the caret is mapped through the change, the viewport stays); a
+  // textarea or an unmounted tab is remounted with the caret mapped. `force`
+  // also replaces a dirty tab: the save-time merge has already folded its
+  // edits into `content`.
+  const adoptDiskContent = useCallback((id, current, content, mtimeMs, { force = false } = {}) => {
+    const adopt = (patch) => {
+      const apply = (list) => list.map((t) => {
+        if (t.id !== id || (!force && isTabDirty(t))) return t
+        if (t.content === content) return { ...t, mtimeMs }
+        liveContentRef.current.delete(id)
+        return { ...t, content, savedContent: content, mtimeMs, ...patch(t) }
+      })
+      tabsRef.current = apply(tabsRef.current)
+      setTabs(apply)
+    }
+    if (current.content === content) {
+      adopt(() => ({}))
+      return
+    }
+
+    const api = editorApis?.current?.[id]
+    const textarea = sourceTextareas?.current?.[id]
+    const scroller = editorHosts?.current?.[id]
+    if (api?.replaceMarkdown && !textarea && scroller) {
+      const scrollTop = scroller.scrollTop
+      let caret = null
+      try { caret = api.markdownOffsetFromSelection?.() ?? null } catch { caret = null }
+      if (api.replaceMarkdown(content)) {
+        const mapped = mapOffsetThroughChange(current.content, content, caret)
+        if (mapped != null) {
+          try { api.restoreMarkdownOffset?.(mapped, false) } catch { /* caret stays where PM mapped it */ }
+        }
+        // A hidden tab (display:none) reads 0; leave its kept offset alone.
+        if (scroller.offsetParent && scroller.scrollTop !== scrollTop) scroller.scrollTop = scrollTop
+        // `heavy` is left alone: flipping it would swap the rich editor for a
+        // textarea under the reader. It is re-evaluated on the next open.
+        adopt(() => ({}))
+        return
+      }
+    }
+
+    // Remount. EditorArea applies restoreOffset/restoreScrollTop once for
+    // the mount whose reloadNonce equals restoreNonce.
+    let offset = null
+    let restoreScrollTop = null
+    if (textarea) {
+      offset = textarea.selectionStart ?? null
+      restoreScrollTop = textarea.scrollTop || null
+    } else if (api) {
+      try { offset = api.markdownOffsetFromSelection?.() ?? null } catch { offset = null }
+      restoreScrollTop = scroller?.scrollTop || null
+    } else if ((current.restoreNonce ?? 0) === current.reloadNonce) {
+      // Never mounted yet: carry the pending open-time restore forward.
+      offset = current.restoreOffset ?? null
+      restoreScrollTop = current.restoreScrollTop ?? null
+    }
+    const restoreOffset = mapOffsetThroughChange(current.content, content, offset)
+    adopt((t) => ({
+      reloadNonce: t.reloadNonce + 1,
+      heavy: isHeavyDoc(content),
+      restoreOffset,
+      restoreScrollTop,
+      restoreNonce: t.reloadNonce + 1
+    }))
+  }, [setTabs, tabsRef, liveContentRef, editorApis, sourceTextareas, editorHosts])
+
   // `auto` (auto-save) writes the document bytes only: it never relocates
   // pasted images (that rewrite remounts the editor under the caret), never
   // overwrites a file changed/removed on disk since `expectedMtimeMs`, and
@@ -459,6 +529,54 @@ export function useFileOps({
       return { error: e?.message || String(e) }
     }
   }, [isMobile, setTabs, bumpRefresh, tRef, tabsRef])
+
+  // An explicit save of a file that changed on disk since the tab read it —
+  // usually the sync writing another device's version, or another app. It
+  // used to overwrite that version after one alert (docs/cloud-sync-review.md
+  // R1: the other device's edit was then lost everywhere). Now the editor's
+  // text, the disk text and the text the tab loaded (`savedContent`, the
+  // common base) are merged: edits in different places → the merged text is
+  // saved and shown in place; edits in the same place → the disk version
+  // stays in the file and the editor's text goes to a conflict copy
+  // ("笔记 (冲突副本 <设备> <时间>).md"), which the tab moves to. Returns the
+  // save result when it handled the save, null when there is no change on disk.
+  const saveOverExternalChange = useCallback(async (tab) => {
+    if (!tab.path || typeof tab.mtimeMs !== 'number') return null
+    let disk
+    try {
+      disk = await window.api.readFile(tab.path)
+    } catch {
+      return null // removed meanwhile: the save just writes it back
+    }
+    if (!(disk?.mtimeMs > tab.mtimeMs) || disk.content === tab.savedContent) return null
+    const name = baseName(tab.path)
+    const merged = mergeText(tab.savedContent ?? '', tab.content, disk.content)
+    if (merged.ok) {
+      const result = await window.api.writeFile(tab.path, merged.text, { expectedMtimeMs: disk.mtimeMs })
+      if (!result?.conflict) {
+        const current = tabsRef.current.find((t) => t.id === tab.id) || tab
+        adoptDiskContent(tab.id, current, merged.text, result.mtimeMs, { force: true })
+        externalWarningRef.current.delete(tab.path.replace(/\\/g, '/'))
+        bumpRefresh()
+        fireToast(tRef.current('save.mergedExternal', { name }), { duration: 6000 })
+        return { ok: true, merged: true }
+      }
+      // Changed yet again while merging: keep both, as below.
+    }
+    let copyPath
+    try {
+      copyPath = await window.api.conflictCopyPath(tab.path)
+    } catch (error) {
+      fireToast(tRef.current('save.failed', { msg: error?.message || String(error) }), { sticky: true })
+      return { error: error?.message || String(error) }
+    }
+    const written = await writeTab(tab, copyPath)
+    if (written?.ok) {
+      externalWarningRef.current.delete(tab.path.replace(/\\/g, '/'))
+      fireToast(tRef.current('save.conflictCopy', { name, copy: baseName(copyPath) }), { sticky: true })
+    }
+    return { ...written, conflictCopy: copyPath }
+  }, [tabsRef, adoptDiskContent, writeTab, bumpRefresh, tRef])
 
   // `options.auto` is the auto-save path: it only ever writes an existing,
   // saved-to-disk document in place, silently, and returns a result object
@@ -540,6 +658,9 @@ export function useFileOps({
         }
         target = await window.api.saveAs(tab.title.endsWith('.md') ? tab.title : tab.title + '.md')
         if (!target) return
+      } else if (!isMobile) {
+        const handled = await saveOverExternalChange(tab)
+        if (handled) return handled
       }
       return writeTab(tab, target)
     },
@@ -550,6 +671,7 @@ export function useFileOps({
       getSyncReportForTab,
       getSettledMarkdownForTab,
       writeTab,
+      saveOverExternalChange,
       isMobile,
       setTabs,
       tabsRef,
@@ -664,66 +786,8 @@ export function useFileOps({
     const current = tabsRef.current.find((t) => t.id === id)
     // Never clobber unsaved work (the user may have typed since it fired).
     if (!current || isTabDirty(current)) return
-    const adopt = (patch) => {
-      const apply = (list) => list.map((t) => {
-        if (t.id !== id || isTabDirty(t)) return t
-        if (t.content === content) return { ...t, mtimeMs }
-        liveContentRef.current.delete(id)
-        return { ...t, content, savedContent: content, mtimeMs, ...patch(t) }
-      })
-      tabsRef.current = apply(tabsRef.current)
-      setTabs(apply)
-    }
-    if (current.content === content) {
-      adopt(() => ({}))
-      return
-    }
-
-    const api = editorApis?.current?.[id]
-    const textarea = sourceTextareas?.current?.[id]
-    const scroller = editorHosts?.current?.[id]
-    if (api?.replaceMarkdown && !textarea && scroller) {
-      const scrollTop = scroller.scrollTop
-      let caret = null
-      try { caret = api.markdownOffsetFromSelection?.() ?? null } catch { caret = null }
-      if (api.replaceMarkdown(content)) {
-        const mapped = mapOffsetThroughChange(current.content, content, caret)
-        if (mapped != null) {
-          try { api.restoreMarkdownOffset?.(mapped, false) } catch { /* caret stays where PM mapped it */ }
-        }
-        // A hidden tab (display:none) reads 0; leave its kept offset alone.
-        if (scroller.offsetParent && scroller.scrollTop !== scrollTop) scroller.scrollTop = scrollTop
-        // `heavy` is left alone: flipping it would swap the rich editor for a
-        // textarea under the reader. It is re-evaluated on the next open.
-        adopt(() => ({}))
-        return
-      }
-    }
-
-    // Remount. EditorArea applies restoreOffset/restoreScrollTop once for
-    // the mount whose reloadNonce equals restoreNonce.
-    let offset = null
-    let restoreScrollTop = null
-    if (textarea) {
-      offset = textarea.selectionStart ?? null
-      restoreScrollTop = textarea.scrollTop || null
-    } else if (api) {
-      try { offset = api.markdownOffsetFromSelection?.() ?? null } catch { offset = null }
-      restoreScrollTop = scroller?.scrollTop || null
-    } else if ((current.restoreNonce ?? 0) === current.reloadNonce) {
-      // Never mounted yet: carry the pending open-time restore forward.
-      offset = current.restoreOffset ?? null
-      restoreScrollTop = current.restoreScrollTop ?? null
-    }
-    const restoreOffset = mapOffsetThroughChange(current.content, content, offset)
-    adopt((t) => ({
-      reloadNonce: t.reloadNonce + 1,
-      heavy: isHeavyDoc(content),
-      restoreOffset,
-      restoreScrollTop,
-      restoreNonce: t.reloadNonce + 1
-    }))
-  }, [commitAllLive, setTabs, tabsRef, liveContentRef, editorApis, sourceTextareas, editorHosts])
+    adoptDiskContent(id, current, content, mtimeMs)
+  }, [commitAllLive, tabsRef, adoptDiskContent])
 
   useEffect(() => {
     const off = window.api.onFileChanged(({ path, mtimeMs }) => {

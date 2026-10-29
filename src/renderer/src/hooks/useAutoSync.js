@@ -13,9 +13,10 @@ const nameOf = (entry) => entry.name || String(entry.rootPath || '').split(/[\\/
 // Automatic sync (settings.syncAutoMinutes, Settings › Sync; 0 = off): every
 // N minutes each folder bound to a cloud connection runs a two-way sync in
 // main's `safeOnly` mode — the same rule as「双向同步」without a click:
-// uploads and downloads run; a plan with deletions or conflicts (or a cloud
-// workspace that was emptied / replaced) is NOT run and waits for the user to
-// confirm it in Settings › Sync. Main computes that plan right before
+// uploads and downloads run; deletions and conflicts are held (main leaves
+// them untouched, `held`) and wait for the user to confirm them in Settings ›
+// Sync — the rest of the folder still syncs (it used to skip the whole round).
+// A cloud workspace that was emptied / replaced runs nothing. Main computes that plan right before
 // running, so a file deleted a moment ago is never removed unattended.
 // Folders run one after another; a tick is skipped while any sync runs
 // (a manual one, or a long throttling wait). Toasts only for something the
@@ -67,8 +68,12 @@ export function useAutoSync({ sync, minutes, tRef }) {
             } else if (result?.idle) {
               record(key, { kind: 'idle' })
               noticeRef.current.delete(key)
+            } else if (result?.held) {
+              record(key, { kind: 'done', summary: result.summary, held: result.held, deferred: result.deferred?.length || 0 })
+              const held = result.held
+              noticeOnce(key, `confirm:changes:${held.delete}:${held.conflict}`, tRef.current('sync.auto.needsConfirmToast', { name: nameOf(entry), changes: pendingChanges(held, tRef.current) }))
             } else if (result) {
-              record(key, { kind: 'done', summary: result.summary })
+              record(key, { kind: 'done', summary: result.summary, deferred: result.deferred?.length || 0 })
               noticeRef.current.delete(key)
             }
           } catch (error) {

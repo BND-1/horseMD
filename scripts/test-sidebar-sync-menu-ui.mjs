@@ -105,7 +105,8 @@ try {
     await waitFor(app.evaluate, `!!document.querySelector('.context-submenu')`, 'file export submenu')
     const exportFormats = await app.evaluate(`(() => [...document.querySelectorAll('.context-submenu button')]
       .map((node) => node.textContent.trim()))()`)
-    assert.equal(exportFormats.length, 8, 'export submenu should include PDF, HTML, and six Pandoc formats')
+    // PDF + HTML + every Pandoc format (pandoc-core.js PANDOC_FORMATS; plain text was added later).
+    assert.equal(exportFormats.length, 9, 'export submenu should include PDF, HTML, and seven Pandoc formats')
     assert.equal(exportFormats.some((label) => /PDF/i.test(label)), true)
     assert.equal(exportFormats.some((label) => /HTML/i.test(label)), true)
     assert.equal(exportFormats.some((label) => /Word/i.test(label)), true)

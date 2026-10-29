@@ -1,3 +1,5 @@
+import { isAbsolute, relative } from 'node:path'
+import { deviceLabel } from './sync/conflict-name.js'
 import { CredentialStore } from './sync/credential-store.js'
 import { ConnectionRegistry } from './sync/connections.js'
 import { WebDavProvider } from './sync/webdav-provider.js'
@@ -17,6 +19,21 @@ const newPacer = () => {
   const options = testPacerOptions()
   return options ? new RequestPacer(options) : new RequestPacer()
 }
+
+// Absolute paths of files open with unsaved edits → paths relative to the
+// sync root (others dropped).
+export function busyRelativePaths(rootPath, absolutePaths) {
+  const out = []
+  for (const path of Array.isArray(absolutePaths) ? absolutePaths.slice(0, 1000) : []) {
+    if (typeof path !== 'string' || !isAbsolute(path)) continue
+    const rel = relative(rootPath, path)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue
+    out.push(rel.replace(/\\/g, '/'))
+  }
+  return out
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const compactRemotePrefix = (workspaceId) => `HorseMD/${workspaceId}`
 const legacyRemotePrefix = (workspaceId) => `HorseMD/v1/workspaces/${workspaceId}`
@@ -105,7 +122,7 @@ export class SyncService {
     return bindSyncWorkspace(this.getUserDataPath(), entry.rootPath, connectionId)
   }
 
-  async engineFor(rootPath, onProgress = null, control = null) {
+  async engineFor(rootPath, onProgress = null, control = null, { busyPaths = [] } = {}) {
     const entry = (await readWorkspaceRegistry(this.getUserDataPath()))
       .find((workspace) => workspace.rootPath.toLowerCase() === rootPath.replace(/[\\/]+$/, '').toLowerCase())
     if (!entry?.connectionId) throw new Error('请先为这个文件夹选择云端连接。')
@@ -129,9 +146,10 @@ export class SyncService {
       rootPath: entry.rootPath,
       workspaceId: entry.workspaceId,
       provider,
-      deviceName: 'HorseMD',
+      deviceName: deviceLabel(),
       onProgress,
-      control
+      control,
+      busyPaths: busyRelativePaths(entry.rootPath, busyPaths)
     })
   }
 
@@ -139,7 +157,10 @@ export class SyncService {
     return (await this.engineFor(rootPath)).preview(strategy)
   }
 
-  async run(rootPath, strategy = 'merge', onProgress = null, { safeOnly = false } = {}) {
+  // `busyPaths`: absolute paths of files open with unsaved edits (never
+  // overwritten by this run). A run whose manifest commit loses to another
+  // device re-plans and runs again (up to 3 times) instead of failing.
+  async run(rootPath, strategy = 'merge', onProgress = null, { safeOnly = false, busyPaths = [] } = {}) {
     const key = rootPath.toLowerCase()
     if (this.running.has(key)) throw new Error('这个文件夹正在同步。')
     this.running.add(key)
@@ -147,7 +168,14 @@ export class SyncService {
     const control = new SyncControl({ onChange: (state) => onProgress?.({ control: state }) })
     this.controls.set(key, control)
     try {
-      return await (await this.engineFor(rootPath, onProgress, control)).execute(null, strategy, { safeOnly })
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await (await this.engineFor(rootPath, onProgress, control, { busyPaths })).execute(null, strategy, { safeOnly })
+        } catch (error) {
+          if (!error?.manifestChanged || attempt >= 3) throw error
+          await sleep(400 * attempt)
+        }
+      }
     } finally {
       this.running.delete(key)
       this.runningPaths.delete(key)
@@ -221,7 +249,8 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     try {
       // safeOnly: automatic sync (hooks/useAutoSync.js) — merge only.
       const safeOnly = options?.safeOnly === true
-      return await syncService.run(rootPath, safeOnly ? 'merge' : strategy, report, { safeOnly })
+      const busyPaths = Array.isArray(options?.dirtyPaths) ? options.dirtyPaths.filter((path) => typeof path === 'string') : []
+      return await syncService.run(rootPath, safeOnly ? 'merge' : strategy, report, { safeOnly, busyPaths })
     } finally {
       report({ done: true })
     }

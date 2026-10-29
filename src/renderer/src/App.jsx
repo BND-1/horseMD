@@ -640,7 +640,8 @@ export default function App() {
 
   useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
 
-  const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder })
+  const getDirtyPaths = useCallback(() => tabsRef.current.filter((t) => t.path && isTabDirty(t)).map((t) => t.path), [])
+  const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths })
   const autoSync = useAutoSync({ sync: syncWorkspaces, minutes: settings.syncAutoMinutes, tRef })
   const addDroppedFolder = useCallback((path) => {
     addFolder(path)
