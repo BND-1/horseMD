@@ -24,6 +24,7 @@ const ESC_OWNERS = [
   '.palette-overlay',
   '.menu-backdrop',
   '.hm-rename-modal',
+  '.hm-history',
   '.hm-image-lightbox',
   '.milkdown-slash-menu[data-show="true"]',
   '.block-ctxmenu'

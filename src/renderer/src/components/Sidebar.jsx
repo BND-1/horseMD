@@ -23,6 +23,8 @@ export default function Sidebar({
   onExportPdf,
   onExportHtml,
   onExportPandoc,
+  // 历史版本… on a file row (undefined where there is no history store).
+  onShowHistory,
   refreshNonce,
   syncSupported = false,
   syncFolderPaths = [],
@@ -510,6 +512,7 @@ export default function Sidebar({
         onExportPdf={onExportPdf}
         onExportHtml={onExportHtml}
         onExportPandoc={onExportPandoc}
+        onShowHistory={onShowHistory}
         onDelete={doDelete}
       />
     </div>

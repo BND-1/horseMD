@@ -232,7 +232,7 @@ async function archiveRemoteToTrash(provider, item, stamp) {
 }
 
 export class SyncEngine {
-  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null, control = null, busyPaths = [] }) {
+  constructor({ userDataPath, provider, rootPath, workspaceId, deviceName = 'this device', onProgress = null, control = null, busyPaths = [], history = null }) {
     this.userDataPath = userDataPath
     this.provider = provider
     this.rootPath = rootPath
@@ -241,11 +241,45 @@ export class SyncEngine {
     this.onProgress = onProgress
     // Optional SyncControl: pause / resume / stop between files.
     this.control = control
+    // Optional local version history (main/history/history-service.js
+    // syncHistory): files this run replaces or deletes are kept there.
+    this.history = history
     // Relative paths of files open with unsaved edits in the editor: this run
     // never downloads over, deletes or conflict-replaces them (the save that
     // follows would overwrite the other device's version). Lower-cased:
     // macOS / Windows disks are case-insensitive.
     this.busyPaths = new Set([...busyPaths].map((path) => String(path).replace(/\\/g, '/').toLowerCase()))
+  }
+
+  // Keep the local file's current bytes in the local version history before
+  // this run replaces (`sync-overwrite`) or deletes (`sync-delete`) it.
+  // true = kept, or nothing to keep; false = no history / too large / failed
+  // (callers that delete then fall back to the old in-folder trash).
+  async keepLocalVersion(relativePath, reason) {
+    const target = assertSafeRelative(this.rootPath, relativePath)
+    let bytes
+    try {
+      bytes = await fs.readFile(target)
+    } catch (error) {
+      if (error?.code === 'ENOENT') return true
+      throw error
+    }
+    if (!this.history) return false
+    try {
+      return await this.history.keep(target, bytes, reason)
+    } catch {
+      return false
+    }
+  }
+
+  // Removes a local file the plan deletes: into the history (「最近删除」),
+  // else — no history, too large, failure — into .horsemd/trash as before.
+  async removeLocal(relativePath, stamp) {
+    if (await this.keepLocalVersion(relativePath, 'sync-delete')) {
+      await fs.rm(assertSafeRelative(this.rootPath, relativePath), { force: true })
+    } else {
+      await moveLocalToTrash(this.rootPath, relativePath, stamp)
+    }
   }
 
   isBusy(path) {
@@ -530,7 +564,9 @@ export class SyncEngine {
         delete manifest.tombstones[item.path]
         files.set(item.path, { ...(files.get(item.path) || item.local), sha256: uploadedSha, size: bytes.byteLength })
       } else if (item.type === 'download') {
-        if (item.preserveLocal) await moveLocalToTrash(this.rootPath, item.path, stamp)
+        // The local version it replaces goes to the history first (a
+        // directional download used to move it to .horsemd/trash instead).
+        if (!(await this.keepLocalVersion(item.path, 'sync-overwrite')) && item.preserveLocal) await moveLocalToTrash(this.rootPath, item.path, stamp)
         const remoteFile = await this.provider.get(item.path)
         if (!remoteFile) throw new Error(`远端文件“${item.path}”在同步中消失，请重新同步。`)
         verifyRemoteBytes(item.path, item.remote, remoteFile.bytes)
@@ -558,7 +594,7 @@ export class SyncEngine {
         files.delete(item.path)
         deletedRemote.push(item.path)
       } else if (item.type === 'deleteLocal') {
-        await moveLocalToTrash(this.rootPath, item.path, stamp)
+        await this.removeLocal(item.path, stamp)
         await removeEmptiedParents(this.rootPath, item.path)
         files.delete(item.path)
       } else if (item.type === 'conflict') {
@@ -576,6 +612,7 @@ export class SyncEngine {
           if (sha256(await readLocalBytes(this.rootPath, item.path)) !== sha256(localBytes)) {
             throw new Error(`“${item.path}”在同步中又被修改，请重新同步。`)
           }
+          await this.keepLocalVersion(item.path, 'sync-overwrite')
           await writeLocalBytes(this.rootPath, item.path, remoteBytes.bytes)
           files.set(item.path, { ...item.remote, sha256: sha256(remoteBytes.bytes) })
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
@@ -594,7 +631,7 @@ export class SyncEngine {
           const copy = await this.writeConflictCopy(item.path, localBytes, takenNames)
           const localConflict = copy.path
           const uploadedConflict = copy
-          await moveLocalToTrash(this.rootPath, item.path, stamp)
+          await this.removeLocal(item.path, stamp)
           files.delete(item.path)
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
           settled.add(localConflict)

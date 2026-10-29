@@ -592,6 +592,25 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `test:sync-safety`, `test:atomic-save`, `test:save-external-merge-ui`,
   `test:sync-auto`, `test:autosave-ui`; `npm run audit:sync-safety` reports
   the remaining risks.
+- **Local version history + 最近删除 (P1, 2026-10-29)**: `main/history/`
+  (`history-store.js` pure: `userData/history/objects/<sha>.gz` stored once
+  per content, `index/<hash>.json` per file, `deleted.json`;
+  `history-service.js`: hooks + IPC `history:*`). It always keeps the version
+  ABOUT TO BE REPLACED: `fs:writeFile` → `recordBeforeSave` (≤ 5 MB, one per
+  2 min per file, forced when a save removes > 30 % of the text), `fs:delete`
+  → `recordBeforeTrash`, the sync engine → `keepLocalVersion`
+  (`sync-overwrite` / `sync-delete`, ≤ 100 MB; local deletions no longer go
+  to `<folder>/.horsemd/trash` — that is only the fallback when the history
+  cannot keep the bytes), `history:restore` keeps the current file first.
+  `fs:rename` moves a file's / folder's history. Retention: all < 1 h,
+  hourly < 1 day, daily < 30 days, weekly up to `historyRetentionDays`
+  (30/90/365, Settings › Files); pinned never pruned; 1 GB cap, oldest
+  first; unreferenced content collected after a minute (re-used content is
+  touched). The root is resolved lazily (after --user-data-dir). Renderer:
+  `HistoryDialog` / `DeletedFilesDialog` (opened via `lib/history-ui.js`
+  events; file-tree / tab context menu, commands `file.history` /
+  `file.deleted`, hidden when `window.api.historyList` is missing — mobile).
+  Locked by `test:history-store`, `test:history-ui`; the audit is 0 risks.
 - **Sync throttling** (`main/sync/request-pacer.js`): S3/WebDAV requests go
   through a per-provider pacer — 429/503 retried (Retry-After or jittered
   backoff, 8 attempts, re-signed each time), the request gap doubles per

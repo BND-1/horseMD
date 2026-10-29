@@ -29,6 +29,8 @@ export const LEGACY_COMMAND_ALIASES = {
   save: 'file.save',
   saveAs: 'file.saveAs',
   renameFile: 'file.rename',
+  fileHistory: 'file.history',
+  deletedFiles: 'file.deleted',
   attachFile: 'file.attach',
   exportPdf: 'file.exportPdf',
   exportHtml: 'file.exportHtml',
@@ -126,6 +128,29 @@ export const COMMAND_DEFINITIONS = [
     category: COMMAND_CATEGORIES.FILE,
     context: COMMAND_CONTEXTS.APP,
     defaultKeybindings: ['F2'],
+    palette: true
+  },
+  {
+    // Local version history of the current document / recently deleted
+    // files (lib/history-ui.js). Renderer-only; hidden where the preload has
+    // no history store (mobile).
+    id: 'file.history',
+    handler: 'fileHistory',
+    titleKey: 'cmd.fileHistory',
+    category: COMMAND_CATEGORIES.FILE,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: [],
+    requiresApi: 'historyList',
+    palette: true
+  },
+  {
+    id: 'file.deleted',
+    handler: 'deletedFiles',
+    titleKey: 'cmd.recentlyDeleted',
+    category: COMMAND_CATEGORIES.FILE,
+    context: COMMAND_CONTEXTS.APP,
+    defaultKeybindings: [],
+    requiresApi: 'historyList',
     palette: true
   },
   {
@@ -534,5 +559,8 @@ export function getCommandTitle(command, t) {
 }
 
 export function isCommandAvailable(command, capabilities = {}) {
-  return !command.capability || capabilities[command.capability] !== false
+  if (command.capability && capabilities[command.capability] === false) return false
+  // A command backed by an optional preload API (e.g. history on mobile).
+  if (command.requiresApi && typeof window !== 'undefined' && typeof window.api?.[command.requiresApi] !== 'function') return false
+  return true
 }

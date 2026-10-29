@@ -23,6 +23,7 @@ export default function Tabs({
   onExportPdf,
   onExportHtml,
   onExportPandoc,
+  onShowHistory,
   onReorder,
   effectiveKeybindings
 }) {
@@ -200,6 +201,11 @@ export default function Tabs({
                   <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => onDuplicate?.(tab.id))}>
                     {t('side.duplicate')}
                   </button>
+                  {onShowHistory && tab.kind !== 'settings' && (
+                    <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => onShowHistory(tab.path))}>
+                      {t('cmd.fileHistory')}
+                    </button>
+                  )}
                   {hasPath && isMarkdownName(tab.title) && (
                     <ExportContextSubmenu
                       t={t}

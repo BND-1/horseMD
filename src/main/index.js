@@ -10,6 +10,7 @@ import { registerDocumentIpc } from './documents.js'
 import { registerFileSystemIpc } from './filesystem.js'
 import { registerSyncWorkspaceIpc } from './sync-workspaces.js'
 import { registerSyncServiceIpc, SyncService } from './sync-service.js'
+import { initHistory, registerHistoryIpc, syncHistory } from './history/history-service.js'
 import { createElectronRequest } from './sync/electron-request.js'
 import { registerUpdater } from './updater.js'
 import { registerWatcherIpc } from './watchers.js'
@@ -535,6 +536,10 @@ registerDocumentIpc(ipcMain, {
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
 
+// Local version history (docs/cloud-sync-review.md P1): userData/history.
+initHistory(() => join(app.getPath('userData'), 'history'))
+registerHistoryIpc(ipcMain)
+
 // Workspace-wide content search (issue #120) — same markdownPattern so the
 // search scope is exactly what the sidebar tree shows.
 registerGlobalSearchIpc(ipcMain, { markdownPattern: MD_RE })
@@ -550,6 +555,8 @@ registerSyncServiceIpc(ipcMain, {
     // net.request, not net.fetch: 七牛 sends non-ASCII header bytes that make
     // net.fetch hang (sync/electron-request.js).
     request: createElectronRequest(net),
+    // Files the sync replaces or deletes are kept in the local history.
+    history: syncHistory,
     // Sync requests in the input trace (#161): method, URL, status, timing.
     traceLog: inputTraceEnabled
       ? (entry) => {

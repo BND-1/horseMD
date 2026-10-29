@@ -25,6 +25,10 @@ export const AUTO_SAVE_DELAYS = [0, 3, 10, 60]
 // Automatic cloud sync intervals offered in Settings › Sync (minutes; 0 = off).
 export const SYNC_AUTO_MINUTES = [0, 5, 15, 30, 60]
 
+// How long local version history is kept (days), Settings › Files.
+export const HISTORY_RETENTION_DAYS = [30, 90, 365]
+export const DEFAULT_HISTORY_RETENTION_DAYS = 30
+
 // Outline tiers expanded when a document is first shown (#122; 0 = all).
 export const OUTLINE_DEFAULT_LEVELS = [1, 2, 3, 4, 0]
 export const DEFAULT_OUTLINE_LEVEL = 2
@@ -219,6 +223,9 @@ export const DEFAULT_SETTINGS = {
   // cloud connection. 0 = off. Deletions / conflicts still wait for the user
   // — see hooks/useAutoSync.js.
   syncAutoMinutes: 0,
+  // Local version history (main/history): days a version is kept. Pinned
+  // versions never expire.
+  historyRetentionDays: DEFAULT_HISTORY_RETENTION_DAYS,
   // Outline default expansion (#122): how many heading tiers the outline shows
   // for a document seen for the first time this session. 0 = everything.
   outlineDefaultLevel: DEFAULT_OUTLINE_LEVEL,
@@ -310,6 +317,9 @@ export function loadSettings() {
       restoreSession: raw.restoreSession !== false,
       autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,
       syncAutoMinutes: SYNC_AUTO_MINUTES.includes(raw.syncAutoMinutes) ? raw.syncAutoMinutes : 0,
+      historyRetentionDays: HISTORY_RETENTION_DAYS.includes(raw.historyRetentionDays)
+        ? raw.historyRetentionDays
+        : DEFAULT_HISTORY_RETENTION_DAYS,
       outlineDefaultLevel: OUTLINE_DEFAULT_LEVELS.includes(raw.outlineDefaultLevel)
         ? raw.outlineDefaultLevel
         : DEFAULT_OUTLINE_LEVEL,

@@ -19,6 +19,7 @@ export default function SidebarContextMenu({
   onExportPdf,
   onExportHtml,
   onExportPandoc,
+  onShowHistory,
   onDelete
 }) {
   const menuRef = useRef(null)
@@ -101,6 +102,9 @@ export default function SidebarContextMenu({
       {node && !isRoot && <div className="menu-sep" />}
       {node && !isRoot && <button onClick={run(() => onRename(node))}>{t('side.rename')}</button>}
       {node?.type === 'file' && <button onClick={run(() => onDuplicate(node))}>{t('side.duplicate')}</button>}
+      {node?.type === 'file' && onShowHistory && (
+        <button onClick={run(() => onShowHistory(node.path))}>{t('cmd.fileHistory')}</button>
+      )}
       {node?.type === 'file' && isMarkdownName(node.name) && (
         <ExportContextSubmenu
           t={t}

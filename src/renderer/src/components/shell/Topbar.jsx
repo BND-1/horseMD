@@ -29,6 +29,7 @@ export default function Topbar({
   onExportPdf,
   onExportHtml,
   onExportPandoc,
+  onShowHistory,
   onReorder,
   onToggleSidebar,
   onToggleReadOnly,
@@ -64,6 +65,7 @@ export default function Topbar({
         onExportPdf={onExportPdf}
         onExportHtml={onExportHtml}
         onExportPandoc={onExportPandoc}
+        onShowHistory={onShowHistory}
         onReorder={onReorder}
         effectiveKeybindings={effectiveKeybindings}
       />

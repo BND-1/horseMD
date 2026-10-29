@@ -446,6 +446,8 @@
     "test:sync-auto": "node scripts/test-sync-auto.mjs",
     "test:sync-safety": "node scripts/test-sync-safety.mjs",
     "test:atomic-save": "node scripts/test-atomic-save.mjs",
+    "test:history-store": "node scripts/test-history-store.mjs",
+    "test:history-ui": "node scripts/test-history-ui.mjs",
     "test:save-external-merge-ui": "node scripts/test-save-external-merge-ui.mjs",
     "audit:sync-safety": "node scripts/audit-sync-safety.mjs",
     "test:auto-sync-ui": "node scripts/test-auto-sync-ui.mjs",

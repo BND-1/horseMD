@@ -40,8 +40,10 @@ const legacyRemotePrefix = (workspaceId) => `HorseMD/v1/workspaces/${workspaceId
 const manifestPath = '.horsemd/manifest.json'
 
 export class SyncService {
-  constructor({ getUserDataPath, safeStorage, request: rawRequest, traceLog = null }) {
+  constructor({ getUserDataPath, safeStorage, request: rawRequest, traceLog = null, history = null }) {
     this.getUserDataPath = getUserDataPath
+    // Local version history: files the sync replaces or deletes go there.
+    this.history = history
     // Timeout + optional trace for every provider request (#161). Tests may
     // shorten the timeout (HORSEMD_TEST_SYNC_REQUEST_TIMEOUT_MS).
     const testTimeout = Number(process.env.HORSEMD_TEST_SYNC_REQUEST_TIMEOUT_MS)
@@ -149,7 +151,8 @@ export class SyncService {
       deviceName: deviceLabel(),
       onProgress,
       control,
-      busyPaths: busyRelativePaths(entry.rootPath, busyPaths)
+      busyPaths: busyRelativePaths(entry.rootPath, busyPaths),
+      history: this.history
     })
   }
 

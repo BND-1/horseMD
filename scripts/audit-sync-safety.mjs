@@ -11,7 +11,9 @@ import fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { gunzipSync } from 'node:zlib'
 import { SyncEngine } from '../src/main/sync/sync-engine.js'
+import { initHistory, historyStore, syncHistory } from '../src/main/history/history-service.js'
 
 class MemoryStore {
   constructor() { this.objects = new Map(); this.revision = 0; this.puts = 0 }
@@ -44,9 +46,11 @@ async function setup() {
   await fs.mkdir(A); await fs.mkdir(B)
   const ws = randomUUID()
   const store = new MemoryStore()
+  // The local version history, as the app has it since P1 (one per run).
+  initHistory(join(root, 'history'))
   // Since 2026-10-29 SyncService names devices by host name; the audit keeps
   // both devices on one name ("HorseMD") — the worst case for R3.
-  const engine = (dir, label, busyPaths = []) => new SyncEngine({ rootPath: dir, userDataPath: join(root, 'state-' + label), workspaceId: ws, provider: store, deviceName: 'HorseMD', busyPaths })
+  const engine = (dir, label, busyPaths = []) => new SyncEngine({ rootPath: dir, userDataPath: join(root, 'state-' + label), workspaceId: ws, provider: store, deviceName: 'HorseMD', busyPaths, history: syncHistory })
   // As SyncService.run: a lost manifest race re-plans (up to 3 attempts);
   // `busy` = files open with unsaved edits, as the app passes them.
   const sync = async (dir, label, { busy = [], ...options } = {}) => {
@@ -57,7 +61,7 @@ async function setup() {
       }
     }
   }
-  return { root, A, B, store, engine, sync, a: (o) => sync(A, 'A', o), b: (o) => sync(B, 'B', o) }
+  return { root, A, B, store, engine, sync, history: join(root, 'history'), a: (o) => sync(A, 'A', o), b: (o) => sync(B, 'B', o) }
 }
 const write = (dir, path, text) => fs.mkdir(join(dir, path, '..'), { recursive: true }).then(() => fs.writeFile(join(dir, path), text))
 const read = (dir, path) => fs.readFile(join(dir, path), 'utf8').catch(() => null)
@@ -75,6 +79,13 @@ async function everywhere(env, needle) {
   }
   await walk(env.A, 'A'); await walk(env.B, 'B')
   for (const [key, value] of env.store.objects) if (value.bytes.toString('utf8').includes(needle)) hits.push(`cloud:${key}`)
+  // The local version history (content is gzip, one file per content).
+  const objects = join(env.history, 'objects')
+  for (const sub of await fs.readdir(objects).catch(() => [])) {
+    for (const name of await fs.readdir(join(objects, sub))) {
+      if (gunzipSync(await fs.readFile(join(objects, sub, name))).toString('utf8').includes(needle)) hits.push(`历史版本:${name.slice(0, 8)}`)
+    }
+  }
   return hits
 }
 
@@ -213,12 +224,13 @@ async function everywhere(env, needle) {
   }
   const trash = join(env.A, '.horsemd', 'trash')
   const stamps = await fs.readdir(trash).catch(() => [])
-  let bytes = 0
-  const walk = async (dir) => { for (const e of await fs.readdir(dir, { withFileTypes: true })) { const p = join(dir, e.name); if (e.isDirectory()) await walk(p); else bytes += (await fs.stat(p)).size } }
-  await walk(trash).catch(() => {})
   const cloudTrash = [...env.store.objects.keys()].filter((k) => k.startsWith('.horsemd/trash/')).length
-  report('R8', '回收站的位置和清理', 'RISK',
-    `本地回收站在用户文件夹里（${join('<文件夹>', '.horsemd', 'trash')}），3 轮删除后有 ${stamps.length} 个时间目录、${bytes} 字节；云端回收站 ${cloudTrash} 个对象；代码里没有任何清理，也没有界面`)
+  const deleted = await historyStore().listDeleted()
+  const ok = stamps.length === 0 && deleted.length > 0
+  report('R8', '回收站的位置和清理', ok ? 'OK' : 'RISK',
+    ok
+      ? `用户文件夹里不再写回收站；被同步删除的 ${deleted.length} 个文件在「最近删除」里（本机历史，按保留期自动清理）；云端回收站 ${cloudTrash} 个对象（云端，未改变）`
+      : `本地回收站在用户文件夹里（${join('<文件夹>', '.horsemd', 'trash')}），3 轮删除后有 ${stamps.length} 个时间目录；云端回收站 ${cloudTrash} 个对象；没有清理，也没有界面`)
 }
 
 // OK checks: an emptied cloud never deletes local files; delete-vs-modify keeps

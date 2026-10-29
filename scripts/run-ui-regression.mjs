@@ -153,6 +153,10 @@ const standalone = [
     script: 'scripts/test-heading-fold-ui.mjs'
   },
   {
+    name: 'Local version history + recently deleted: save keeps the replaced version, restore (undoable), restore a deleted file',
+    script: 'scripts/test-history-ui.mjs'
+  },
+  {
     name: 'Save over an external change (sync): merge different places, conflict copy for the same place',
     script: 'scripts/test-save-external-merge-ui.mjs'
   },

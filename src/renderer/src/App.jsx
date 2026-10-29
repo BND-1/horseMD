@@ -20,6 +20,9 @@ import UpdateToast from './components/UpdateToast.jsx'
 import { useUpdateDownload } from './hooks/useUpdateDownload.js'
 import RenameModal from './components/RenameModal.jsx'
 import SyncReportDialog from './components/SyncReportDialog.jsx'
+import HistoryDialog from './components/HistoryDialog.jsx'
+import DeletedFilesDialog from './components/DeletedFilesDialog.jsx'
+import { historySupported, openDeletedFiles, openFileHistory } from './lib/history-ui.js'
 import {
   loadSettings,
   saveSettings,
@@ -442,6 +445,10 @@ export default function App() {
   useEffect(() => {
     saveSettings(settings)
   }, [settings])
+  // Local version history: main prunes by the retention the user picked.
+  useEffect(() => {
+    window.api.historyConfigure?.({ retentionDays: settings.historyRetentionDays })?.catch?.(() => {})
+  }, [settings.historyRetentionDays])
   // Merge a partial settings change (from the Settings modal).
   const updateSettings = useCallback((partial) => {
     setSettings((prev) => ({ ...prev, ...partial }))
@@ -933,6 +940,21 @@ export default function App() {
     renameTabFile(id)
   }
 
+  // 历史版本… of the current document (untitled tabs have none yet).
+  const fileHistoryCommand = () => {
+    if (!historySupported()) return
+    const tab = home ? null : tabsRef.current.find((x) => x.id === pickEditableId())
+    if (!tab || tab.kind === 'settings') return
+    if (!tab.path) {
+      fireToast(t('history.needsSave'))
+      return
+    }
+    openFileHistory(tab.path)
+  }
+  const deletedFilesCommand = () => {
+    if (historySupported()) openDeletedFiles()
+  }
+
   const { attachFiles } = useAttachments({
     pickEditableId,
     tabsRef,
@@ -1033,6 +1055,8 @@ export default function App() {
       dom?.dispatchEvent(new CustomEvent('hm-heading-fold', { detail: { action } }))
     },
     renameFile: renameFileCommand,
+    fileHistory: fileHistoryCommand,
+    deletedFiles: deletedFilesCommand,
     newTab,
     openPaths,
     openFolder,
@@ -1238,6 +1262,7 @@ export default function App() {
         onExportPdf={exportPathToPdf}
         onExportHtml={exportPathToHtml}
         onExportPandoc={exportPathWithPandoc}
+        onShowHistory={historySupported() ? openFileHistory : undefined}
         onReorder={reorderTabs}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onToggleReadOnly={() => updateSettings({ mobileReadOnly: !settings.mobileReadOnly })}
@@ -1268,6 +1293,7 @@ export default function App() {
                 onExportPdf={exportPathToPdf}
                 onExportHtml={exportPathToHtml}
                 onExportPandoc={exportPathWithPandoc}
+                onShowHistory={historySupported() ? openFileHistory : undefined}
                 refreshNonce={refreshNonce}
                 syncSupported={syncWorkspaces.supported}
                 syncFolderPaths={syncWorkspaces.registered.map((entry) => entry.rootPath)}
@@ -1574,6 +1600,20 @@ export default function App() {
       )}
 
       <SyncReportDialog t={t} />
+
+      {historySupported() && (
+        <>
+          <HistoryDialog
+            getOpenTab={(path) => {
+              const tab = tabsRef.current.find((x) => x.path === path && x.kind !== 'settings')
+              if (!tab) return null
+              // read(): the live text (unsaved edits included), only when the diff needs it.
+              return { dirty: isTabDirty(tab), read: () => getMarkdownForTab(tab.id) ?? tab.content }
+            }}
+          />
+          <DeletedFilesDialog folderRoots={folderRoots} retentionDays={settings.historyRetentionDays} />
+        </>
+      )}
 
       {renameState && (
         <RenameModal
