@@ -11,7 +11,9 @@ import { conflictCopyName, conflictStamp } from '../sync/conflict-name.js'
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024 // saves / in-app deletions
 export const MAX_SYNC_BYTES = 100 * 1024 * 1024 // files the sync replaces / deletes
-const SAVE_THROTTLE_MS = 2 * 60 * 1000
+// One version per 5 minutes while saving (Obsidian's File recovery default;
+// SiYuan / Joplin use 10) — auto-save writes every few seconds.
+const SAVE_THROTTLE_MS = 5 * 60 * 1000
 
 let store = null
 let getRoot = null
@@ -41,7 +43,7 @@ export const historyStore = () => {
 const looksBinary = (bytes) => bytes.subarray(0, 8000).includes(0)
 
 // Before a save replaces `path`: keep what is on disk now. At most one
-// version per 2 minutes per file — unless this save removes a large part of
+// version per 5 minutes per file — unless this save removes a large part of
 // the text (an accidental select-all + delete is exactly what history is for).
 export async function recordBeforeSave(path, nextContent) {
   const store = historyStore()

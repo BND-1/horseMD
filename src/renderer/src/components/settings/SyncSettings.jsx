@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { baseName } from '../../paths.js'
 import { Icon } from '../icons.jsx'
 import { SYNC_AUTO_MINUTES } from '../../settings.js'
-import { pendingChanges } from '../../hooks/useAutoSync.js'
+import Toggle from '../ui/Toggle.jsx'
+import { autoSyncText, isMassDelete, keyOf as syncKey } from '../../hooks/useAutoSync.js'
 
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
 
@@ -251,7 +252,9 @@ function SyncPlanPreview({ preview, onConfirm, onClose, busy = false, t }) {
         </div>
         <IconAction icon="close" label={t('sync.cancel')} onClick={onClose} />
       </div>
-      <p className="sync-plan-preview-note">{preview.requiresConfirmation ? t('sync.riskNotice') : t('sync.previewNotice')}</p>
+      <p className="sync-plan-preview-note">{preview.massDelete
+        ? t('sync.massDeleteNotice', { n: preview.data.summary.delete })
+        : preview.requiresConfirmation ? t('sync.riskNotice') : t('sync.previewNotice')}</p>
       {changes.length > 0 && <div className="sync-preview-changes">
         <div className="sync-preview-changes-title">{t('sync.previewChanges')}</div>
         <ul>
@@ -284,39 +287,32 @@ function RemoteResetDialog({ recovery, onPush, onPull, onCancel, t }) {
   </div>
 }
 
-// Last automatic sync of one folder (hooks/useAutoSync.js).
+// Last sync result of one folder (hooks/useAutoSync.js).
 function AutoSyncLine({ status, t }) {
-  const time = new Date(status.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const summary = status.summary || {}
-  let text = ''
-  if (status.kind === 'done') text = status.held
-    ? t('sync.auto.doneHeld', { time, upload: summary.upload || 0, download: summary.download || 0, changes: pendingChanges(status.held, t) })
-    : t('sync.auto.done', { time, upload: summary.upload || 0, download: summary.download || 0 })
-  else if (status.kind === 'idle') text = t('sync.auto.idle', { time })
-  else if (status.kind === 'confirm') text = status.reason === 'changes'
-    ? t('sync.auto.needsConfirm', { time, changes: pendingChanges(summary, t) })
-    : t('sync.auto.remoteReset', { time })
-  else if (status.kind === 'stopped') text = t('sync.auto.stopped', { time })
-  else if (status.kind === 'error') text = t('sync.auto.failed', { time, msg: status.message })
-  if (text && status.deferred) text += ' ' + t('sync.deferredNotice', { n: status.deferred })
+  const text = autoSyncText(status, t)
   if (!text) return null
-  const warn = status.kind === 'confirm' || status.kind === 'error' || Boolean(status.held)
+  const warn = status.kind === 'confirm' || status.kind === 'error'
   return <div className={`sync-auto-line${warn ? ' warn' : ''}`}>{text}</div>
 }
 
-// Automatic sync: its own section under the folders it applies to.
-function AutoSyncSettings({ minutes, folderCount, nextAt, onChange, t }) {
+// Automatic sync (无感同步): the switch, then the fallback check interval.
+function AutoSyncSettings({ on, minutes, folderCount, nextAt, onToggle, onChange, t }) {
   const next = nextAt ? new Date(nextAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
-  let state = ''
-  if (minutes > 0) state = folderCount ? t('sync.auto.stateOn', { n: minutes, count: folderCount, time: next }) : t('sync.auto.stateNoFolder', { n: minutes })
+  let state = t('sync.auto.stateOff')
+  if (on) state = folderCount ? t('sync.auto.stateOn', { n: minutes, count: folderCount, time: next }) : t('sync.auto.stateNoFolder', { n: minutes })
   return <section className="settings-block sync-auto">
-    <h2 className="settings-block-title">{t('sync.auto.label')}</h2>
-    <p className="settings-block-desc">{t('sync.auto.desc')}</p>
-    <div className="sync-auto-card">
+    <div className="settings-heading-row">
+      <div>
+        <h2 className="settings-block-title">{t('sync.auto.label')}</h2>
+        <p className="settings-block-desc">{t('sync.auto.desc')}</p>
+      </div>
+      <Toggle checked={on} onChange={onToggle} label={t('sync.auto.label')} />
+    </div>
+    <div className={`sync-auto-card${on ? '' : ' off'}`}>
       <div className="settings-row sync-auto-row">
         <div className="settings-row-text">
           <div className="settings-row-label">{t('sync.auto.interval')}</div>
-          <div className={`settings-row-desc sync-auto-state${minutes > 0 ? ' on' : ''}`}>{state || t('sync.auto.stateOff')}</div>
+          <div className={`settings-row-desc sync-auto-state${on ? ' on' : ''}`}>{state}</div>
         </div>
         <div className="settings-segmented" role="radiogroup" aria-label={t('sync.auto.interval')}>
           {SYNC_AUTO_MINUTES.map((value) => (
@@ -325,18 +321,15 @@ function AutoSyncSettings({ minutes, folderCount, nextAt, onChange, t }) {
               type="button"
               role="radio"
               aria-checked={minutes === value}
+              disabled={!on}
               className={`settings-segmented-option${minutes === value ? ' active' : ''}`}
               onClick={() => onChange(value)}
             >
-              {value === 0 ? t('sync.auto.off') : t('sync.auto.minutes', { n: value })}
+              {t('sync.auto.minutes', { n: value })}
             </button>
           ))}
         </div>
       </div>
-      <ul className="sync-auto-rules">
-        <li><Icon name="check" size={13} />{t('sync.auto.ruleSafe')}</li>
-        <li><Icon name="info" size={13} />{t('sync.auto.ruleSaved')}</li>
-      </ul>
     </div>
   </section>
 }
@@ -459,17 +452,38 @@ export default function SyncSettings({
       setRecovery({ entry, data })
       return
     }
-    const requiresConfirmation = strategy !== 'merge' || data.summary.conflict > 0 || data.summary.delete > 0
+    // 双向同步 runs at once (conflicts are merged or kept as copies, deletions
+    // are recoverable); only a mass deletion — or a directional sync — asks.
+    const massDelete = strategy === 'merge' && isMassDelete(data.summary)
+    const requiresConfirmation = strategy !== 'merge' || massDelete
     if (previewOnly || requiresConfirmation) {
-      setPreview({ entry, data, strategy, requiresConfirmation })
+      setPreview({ entry, data, strategy, requiresConfirmation, massDelete })
       return
     }
     const done = await safely(() => onRun(entry.rootPath, strategy))
-    if (done?.stopped) setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
-    else if (done) {
-      markSyncComplete(entry.rootPath)
-      setNotice(t('sync.syncCompleted', done.summary) + (done.deferred?.length ? ' ' + t('sync.deferredNotice', { n: done.deferred.length }) : ''))
+    finishRun(entry, done)
+  }
+
+  const finishRun = (entry, done) => {
+    if (!done) return false
+    if (done.stopped) {
+      setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
+      return true
     }
+    if (done.needsConfirmation) {
+      // Changed since the preview: show the fresh plan instead.
+      prepareSync(entry, 'merge', { previewOnly: true })
+      return true
+    }
+    markSyncComplete(entry.rootPath)
+    autoSync?.recordResult?.(entry.rootPath, done)
+    setNotice([
+      t('sync.syncCompleted', done.summary || {}),
+      done.merged ? t('sync.auto.mergedToast', { n: done.merged }) + t('sync.sentenceEnd') : '',
+      done.conflicts ? t('sync.auto.conflictToast', { n: done.conflicts }) + t('sync.sentenceEnd') : '',
+      done.deferred?.length ? t('sync.deferredNotice', { n: done.deferred.length }) : ''
+    ].filter(Boolean).join(' '))
+    return true
   }
 
   const showPreview = (entry) => prepareSync(entry, 'merge', { previewOnly: true })
@@ -506,15 +520,10 @@ export default function SyncSettings({
   }
 
   const confirmRun = async () => {
-    const done = await safely(() => onRun(preview.entry.rootPath, preview.strategy))
-    if (done?.stopped) {
-      setPreview(null)
-      setNotice(t('sync.stoppedNotice', { done: done.completed, total: done.total }))
-    } else if (done) {
-      setPreview(null)
-      markSyncComplete(preview.entry.rootPath)
-      setNotice(t('sync.syncCompleted', done.summary) + (done.deferred?.length ? ' ' + t('sync.deferredNotice', { n: done.deferred.length }) : ''))
-    }
+    const { entry, strategy } = preview
+    const done = await safely(() => onRun(entry.rootPath, strategy))
+    if (done) setPreview(null)
+    finishRun(entry, done)
   }
 
   return <>
@@ -648,7 +657,7 @@ export default function SyncSettings({
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
-            {!busy && entry.connectionId && autoSync?.byFolder?.[pathKey(entry.rootPath)] && <AutoSyncLine status={autoSync.byFolder[pathKey(entry.rootPath)]} t={t} />}
+            {!busy && entry.connectionId && autoSync?.byFolder?.[syncKey(entry.rootPath)] && <AutoSyncLine status={autoSync.byFolder[syncKey(entry.rootPath)]} t={t} />}
             {busy && <SyncProgressLine
               progress={progress?.rootPath === entry.rootPath ? progress : { rootPath: entry.rootPath, completed: 0, total: 0 }}
               onControl={onControlSync ? (action) => onControlSync(entry.rootPath, action) : null}
@@ -670,9 +679,11 @@ export default function SyncSettings({
     </section>
 
     {onUpdateSettings && <AutoSyncSettings
-      minutes={settings.syncAutoMinutes || 0}
+      on={settings.syncAuto !== false}
+      minutes={settings.syncAutoMinutes || SYNC_AUTO_MINUTES[0]}
       folderCount={registered.filter((entry) => entry.connectionId).length}
       nextAt={autoSync?.nextAt}
+      onToggle={(syncAuto) => onUpdateSettings({ syncAuto })}
       onChange={(syncAutoMinutes) => onUpdateSettings({ syncAutoMinutes })}
       t={t}
     />}

@@ -86,7 +86,7 @@ function HistorySettings({ settings, onUpdateSettings, t }) {
   )
 }
 
-export default function FilesSettings({ settings, onUpdateSettings, t }) {
+export default function FilesSettings({ settings, onUpdateSettings, syncAutoSave = false, t }) {
   return (
     <>
       <section className="settings-block">
@@ -107,6 +107,9 @@ export default function FilesSettings({ settings, onUpdateSettings, t }) {
             <div className="settings-row-text">
               <div className="settings-row-label">{t('settings.autoSave')}</div>
               <div className="settings-row-desc">{t('settings.autoSaveDesc')}</div>
+              {syncAutoSave && !settings.autoSaveDelay && (
+                <div className="settings-row-desc settings-row-note">{t('settings.autoSave.syncNote')}</div>
+              )}
             </div>
             <div className="settings-segmented">
               {AUTO_SAVE_DELAYS.map((delay) => (

@@ -13,6 +13,16 @@ function isInternalRelativePath(path) {
   return path.split(/[\\/]/).some((segment) => INTERNAL_DIRS.has(segment))
 }
 
+// Hashes of files whose size, modification time, change time and file id
+// (inode / Windows file index) have not changed since the last scan are
+// reused — what Git compares too. Size + mtime alone is not enough: two files
+// swapping names can carry each other's size and mtime (seen on Windows),
+// while a rename changes the file id at that path and the ctime:
+// automatic sync runs every few minutes and used to read every file of the
+// folder, images included, each time. Per process, per absolute path.
+const hashCache = new Map()
+export const clearScanCache = () => hashCache.clear()
+
 // Scan all ordinary files, including attachments, but never follow symlinks or
 // include app-control directories. The result uses portable POSIX paths.
 export async function scanLocalWorkspace(rootPath, { maxFiles = 20000 } = {}) {
@@ -33,10 +43,22 @@ export async function scanLocalWorkspace(rootPath, { maxFiles = 20000 } = {}) {
       if (files.size >= maxFiles) throw new Error(`同步文件数量超过上限（${maxFiles}）。`)
       const relativePath = relative(rootPath, fullPath)
       if (!relativePath || relativePath.startsWith(`..${sep}`) || isInternalRelativePath(relativePath)) continue
-      const [bytes, stat] = await Promise.all([fs.readFile(fullPath), fs.stat(fullPath)])
+      const stat = await fs.stat(fullPath)
+      const cached = hashCache.get(fullPath)
+      const same = cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs &&
+        cached.ctimeMs === stat.ctimeMs && cached.ino === stat.ino
+      let hash = same ? cached.sha256 : null
+      let size = stat.size
+      if (!hash) {
+        const bytes = await fs.readFile(fullPath)
+        hash = sha256(bytes)
+        size = bytes.byteLength
+        // A file still being written (mtime moving) is hashed again next time.
+        if (size === stat.size) hashCache.set(fullPath, { size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, ino: stat.ino, sha256: hash })
+      }
       files.set(relativePath.replace(/\\/g, '/'), {
-        sha256: sha256(bytes),
-        size: bytes.byteLength,
+        sha256: hash,
+        size,
         mtimeMs: stat.mtimeMs
       })
     }

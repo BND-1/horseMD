@@ -36,7 +36,8 @@ import {
   applySoftBreakDisplay,
   fontStack,
   writeFontStack,
-  DEFAULT_FONT_MONO
+  DEFAULT_FONT_MONO,
+  SYNC_AUTO_SAVE_DELAY
 } from './settings.js'
 import {
   getTextareaSourceValue,
@@ -645,11 +646,17 @@ export default function App() {
     editorHosts
   })
 
-  useAutoSave({ tabs, delaySec: settings.autoSaveDelay, saveTab, isMobile, tRef })
-
   const getDirtyPaths = useCallback(() => tabsRef.current.filter((t) => t.path && isTabDirty(t)).map((t) => t.path), [])
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths })
-  const autoSync = useAutoSync({ sync: syncWorkspaces, minutes: settings.syncAutoMinutes, tRef })
+  const autoSync = useAutoSync({ sync: syncWorkspaces, enabled: settings.syncAuto, minutes: settings.syncAutoMinutes, tRef })
+  // Automatic sync of a cloud-bound folder pairs with auto-save (Obsidian-like):
+  // edits are saved after SYNC_AUTO_SAVE_DELAY s when the user's own is off.
+  const syncAutoSave = syncWorkspaces.supported && settings.syncAuto && syncWorkspaces.registered.some((entry) => entry.connectionId)
+  useAutoSave({ tabs, delaySec: settings.autoSaveDelay || (syncAutoSave ? SYNC_AUTO_SAVE_DELAY : 0), saveTab, isMobile, tRef })
+  const openSyncSettings = useCallback(() => {
+    setSettingsViewState((current) => ({ ...current, activeSection: 'sync' }))
+    openSettingsTab()
+  }, [openSettingsTab])
   const addDroppedFolder = useCallback((path) => {
     addFolder(path)
     // A dropped directory is a workspace action. Reveal the file tree even on
@@ -1457,6 +1464,7 @@ export default function App() {
               onResetAllKeybindings={resetAllKeybindings}
               globalShortcutStatus={globalShortcutStatus}
               cloudSync={syncWorkspaces.supported}
+              syncAutoSave={syncAutoSave}
               syncWorkspaces={syncWorkspaces}
               autoSync={autoSync}
               folderRoots={folderRoots}
@@ -1497,6 +1505,10 @@ export default function App() {
           window.api.shareFile?.(activeTab.path)
         }}
         onSettings={openSettingsTab}
+        sync={syncWorkspaces}
+        autoSync={autoSync}
+        syncAuto={settings.syncAuto}
+        onOpenSync={openSyncSettings}
         theme={effectiveTheme}
         setTheme={pickBuiltinTheme}
         cycleTheme={cycleTheme}

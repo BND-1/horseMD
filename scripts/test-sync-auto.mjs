@@ -1,12 +1,11 @@
-// Automatic sync runs the engine in `safeOnly` mode (hooks/useAutoSync.js →
-// sync:run options.safeOnly): the plan is computed right before running;
-// uploads and downloads run; deletions and conflicts are held (left exactly
-// as they were — the next run sees them again) and reported as `held`, or as
-// { needsConfirmation } when nothing else is to do; a cloud workspace that
-// was emptied runs nothing; nothing to do → { idle } with no request that
-// writes (no manifest PUT every few minutes). A held deletion used to hold
-// the whole round: other files' new text stayed on one device
-// (docs/cloud-sync-review.md R4).
+// Automatic sync (hooks/useAutoSync.js → sync:run options.automatic,
+// docs/cloud-sync-review.md P2): the plan is computed right before running
+// and everything runs — deletions and conflicts too (what they replace is
+// kept in the local version history) — except the brakes: an emptied cloud
+// and a mass deletion (> 50 % of the tracked files and ≥ 10, or ≥ 100; moves
+// do not count) return { needsConfirmation } and touch nothing. Both devices
+// editing a Markdown file merge (the last-synced content is the ancestor);
+// the same lines → conflict copy. Nothing to do → { idle } with no write.
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -45,8 +44,9 @@ const provider = new MemoryProvider()
 const engine = (name) => new SyncEngine({ rootPath: join(root, name), userDataPath: join(root, `${name}-profile`), workspaceId, provider, deviceName: name })
 const a = engine('a')
 const b = engine('b')
-const safe = (e) => e.execute(null, 'merge', { safeOnly: true })
-const cloudFiles = () => [...provider.objects.keys()].filter((k) => !k.startsWith('.horsemd/')).sort()
+const auto = (e) => e.execute(null, 'merge', { automatic: true })
+const cloudFiles = () => [...provider.objects.keys()].filter((k) => !k.startsWith('.horsemd/') && !k.endsWith('/')).sort()
+const read = (side, path) => fs.readFile(join(root, side, path), 'utf8')
 
 try {
   await fs.mkdir(join(root, 'a'), { recursive: true })
@@ -54,68 +54,82 @@ try {
   await fs.writeFile(join(root, 'a', 'one.md'), '# one\n')
   await fs.writeFile(join(root, 'a', 'two.md'), '# two\n')
 
-  // 1. Uploads run.
-  const first = await safe(a)
-  assert.equal(first.needsConfirmation, undefined)
-  assert.equal(first.summary.upload, 2)
-  assert.deepEqual(cloudFiles(), ['one.md', 'two.md'])
-
-  // 2. Downloads run (another device).
-  const pulled = await safe(b)
-  assert.equal(pulled.summary.download, 2)
-  assert.equal(await fs.readFile(join(root, 'b', 'one.md'), 'utf8'), '# one\n')
+  // 1. Uploads, 2. downloads.
+  assert.equal((await auto(a)).summary.upload, 2)
+  assert.equal((await auto(b)).summary.download, 2)
 
   // 3. Nothing to do: idle, nothing written to the cloud.
   const writes = provider.writes
-  assert.deepEqual(await safe(a), { idle: true, summary: (await a.preview('merge')).summary })
+  const idle = await auto(a)
+  assert.equal(idle.idle, true)
   assert.equal(provider.writes, writes, 'an idle automatic sync writes nothing')
 
-  // 4. A local deletion is not run unattended.
+  // 4. A deletion runs unattended (it is recoverable from the history).
   await fs.rm(join(root, 'a', 'two.md'))
-  const deletion = await safe(a)
-  assert.equal(deletion.needsConfirmation, true)
-  assert.equal(deletion.reason, 'changes')
+  const deletion = await auto(a)
+  assert.equal(deletion.needsConfirmation, undefined)
   assert.equal(deletion.summary.delete, 1)
-  assert.deepEqual(cloudFiles(), ['one.md', 'two.md'], 'cloud untouched')
-  assert.equal(provider.writes, writes)
-  // …but an upload next to it runs; only the deletion waits.
-  await fs.writeFile(join(root, 'a', 'three.md'), '# three\n')
-  const mixed = await safe(a)
-  assert.equal(mixed.needsConfirmation, undefined)
-  assert.deepEqual(mixed.held, { delete: 1, conflict: 0 })
-  assert.deepEqual(cloudFiles(), ['one.md', 'three.md', 'two.md'], 'three.md uploaded, two.md kept')
-  // The held deletion is still a deletion next time (never a "new cloud file"
-  // downloaded back).
-  const again = await safe(a)
-  assert.equal(again.needsConfirmation, true)
-  assert.equal(again.summary.delete, 1)
-  assert.equal(again.summary.download, 0)
-  // The user confirms it (a normal run).
-  await a.execute(null, 'merge')
-  assert.deepEqual(cloudFiles(), ['one.md', 'three.md'])
+  assert.deepEqual(cloudFiles(), ['one.md'])
+  await auto(b)
+  await assert.rejects(fs.access(join(root, 'b', 'two.md')), 'deletion reached the other device')
 
-  // 5. A conflict is not run unattended.
-  // b catches up: three.md downloads; two.md deleted in the cloud is a
-  // deletion here → held.
-  const catchUp = await safe(b)
-  assert.deepEqual(catchUp.held, { delete: 1, conflict: 0 })
-  assert.equal(await fs.readFile(join(root, 'b', 'three.md'), 'utf8'), '# three\n')
-  assert.equal(await fs.readFile(join(root, 'b', 'two.md'), 'utf8'), '# two\n', 'held deletion leaves the file')
-  await b.execute(null, 'merge')
-  await fs.writeFile(join(root, 'a', 'one.md'), '# one from a\n')
-  await fs.writeFile(join(root, 'b', 'one.md'), '# one from b\n')
-  await a.execute(null, 'merge')
-  const conflict = await safe(b)
-  assert.equal(conflict.needsConfirmation, true)
-  assert.equal(conflict.summary.conflict, 1)
-  assert.equal(await fs.readFile(join(root, 'b', 'one.md'), 'utf8'), '# one from b\n', 'local file untouched')
+  // 5. Both devices edit one Markdown file in different places: merged,
+  //    both edits on both devices, no conflict copy.
+  const text = ['# 笔记', '', '第一段', '', '第二段', '', '第三段', ''].join('\n')
+  await fs.writeFile(join(root, 'a', 'note.md'), text)
+  await auto(a); await auto(b)
+  await fs.writeFile(join(root, 'a', 'note.md'), text.replace('第一段', '第一段 A 改'))
+  await fs.writeFile(join(root, 'b', 'note.md'), text.replace('第三段', '第三段 B 改'))
+  await auto(a)
+  const mergedRun = await auto(b)
+  assert.equal(mergedRun.merged, 1)
+  assert.equal(mergedRun.conflicts, 0)
+  await auto(a)
+  const both = text.replace('第一段', '第一段 A 改').replace('第三段', '第三段 B 改')
+  assert.equal(await read('a', 'note.md'), both)
+  assert.equal(await read('b', 'note.md'), both)
+  assert.ok(!cloudFiles().some((name) => name.includes('冲突副本')))
 
-  // 6. Cloud workspace emptied: refused (a normal run throws here).
+  //    The same line: a conflict copy, both texts kept.
+  await fs.writeFile(join(root, 'a', 'note.md'), both.replace('第二段', '第二段 A'))
+  await fs.writeFile(join(root, 'b', 'note.md'), both.replace('第二段', '第二段 B'))
+  await auto(a)
+  const conflictRun = await auto(b)
+  assert.equal(conflictRun.merged, 0)
+  assert.equal(conflictRun.conflicts, 1)
+  await auto(a)
+  const all = (await fs.readdir(join(root, 'a'))).filter((n) => n.endsWith('.md'))
+  const texts = await Promise.all(all.map((n) => read('a', n)))
+  assert.ok(texts.some((t) => t.includes('第二段 A')) && texts.some((t) => t.includes('第二段 B')), 'both versions kept')
+
+  // 6. Mass deletion: 15 of 20 tracked files at once → the brake; nothing
+  //    touched; a normal (confirmed) run applies it.
+  await fs.mkdir(join(root, 'a', 'batch'), { recursive: true })
+  for (let i = 0; i < 17; i += 1) await fs.writeFile(join(root, 'a', 'batch', `n${i}.md`), `# ${i}\n`)
+  await auto(a); await auto(b)
+  for (let i = 0; i < 15; i += 1) await fs.rm(join(root, 'a', 'batch', `n${i}.md`))
+  const before = cloudFiles().length
+  const brake = await auto(a)
+  assert.equal(brake.needsConfirmation, true)
+  assert.equal(brake.reason, 'mass-delete')
+  assert.equal(brake.deletions, 15)
+  assert.equal(cloudFiles().length, before, 'cloud untouched')
+  await a.execute(null, 'merge')
+  assert.equal(cloudFiles().length, before - 15)
+  await auto(b)
+
+  //    Renaming a folder of many files is a move, not a mass deletion.
+  await fs.rename(join(root, 'a', 'batch'), join(root, 'a', 'renamed'))
+  const moved = await auto(a)
+  assert.equal(moved.needsConfirmation, undefined, 'a folder rename never trips the brake')
+  assert.ok(cloudFiles().some((name) => name.startsWith('renamed/')))
+
+  // 7. Cloud workspace emptied: refused (a normal run throws here).
   await provider.delete('.horsemd/manifest.json')
-  const reset = await safe(a)
+  const reset = await auto(a)
   assert.equal(reset.needsConfirmation, true)
   assert.equal(reset.reason, 'remote-reset')
-  console.log('PASS sync auto: uploads/downloads run, idle writes nothing, deletions / conflicts are held (the rest still syncs; held ones stay pending), emptied cloud waits')
+  console.log('PASS sync auto: uploads / downloads / deletions run, idle writes nothing, edits in different places merge, the same lines → conflict copy, mass deletion brakes (moves do not), emptied cloud waits')
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }

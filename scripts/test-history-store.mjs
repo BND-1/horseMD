@@ -143,7 +143,7 @@ try {
     await fs.writeFile(note, long)
     await recordBeforeSave(note, long + '加一句')
     await fs.writeFile(note, long + '加一句')
-    await recordBeforeSave(note, long + '加两句') // within 2 minutes: throttled
+    await recordBeforeSave(note, long + '加两句') // within 5 minutes: throttled
     await fs.writeFile(note, long + '加两句')
     assert.equal((await historyStore().list(note)).length, 1)
     await recordBeforeSave(note, '') // select-all + delete: always kept

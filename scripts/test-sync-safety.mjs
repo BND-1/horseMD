@@ -71,7 +71,7 @@ try {
     const env = await setup()
     await write(env.A, '笔记.md', '原文\n'); await env.a(); await env.b()
     await write(env.B, '笔记.md', '原文\nB 的修改\n'); await env.b()
-    const auto = await env.a({ safeOnly: true, busy: ['笔记.md'] })
+    const auto = await env.a({ automatic: true, busy: ['笔记.md'] })
     assert.deepEqual(auto.deferred, ['笔记.md'])
     assert.equal(await read(env.A, '笔记.md'), '原文\n', 'open file with unsaved edits overwritten')
     await write(env.A, '笔记.md', '原文\nA 的修改\n') // the save

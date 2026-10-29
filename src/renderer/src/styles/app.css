@@ -3970,6 +3970,15 @@ body.hm-full-width .source-editor {
 /* Reading mode on (#163): the status-bar switch stays visibly lit so a
    read-only document never looks like a frozen editor. */
 .status-btn.hm-reading-btn.active { color: var(--accent); }
+/* Cloud sync status (StatusBar SyncStatusItem). */
+.status-btn.hm-sync-status.busy { color: var(--accent-strong); }
+.status-btn.hm-sync-status.busy svg { animation: sync-state-spin .9s linear infinite; }
+.status-btn.hm-sync-status.confirm { color: var(--warning, #b7791f); }
+.status-btn.hm-sync-status.error { color: var(--danger); }
+.status-btn.hm-sync-status.off { color: var(--faint); }
+@media (prefers-reduced-motion: reduce) {
+  .status-btn.hm-sync-status.busy svg { animation: none; }
+}
 /* Floating Save action button — bottom-right of the editor area, only while the
    active tab is dirty. An icon disc by default; on hover it gracefully expands
    into a pill revealing the "Save" label (so it stays light over the content and
@@ -7843,8 +7852,8 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   display: inline-flex;
   gap: 10px;
 }
-/* Automatic sync (hooks/useAutoSync.js): its own section — one card with the
-   interval row and the two rules; the last result shows under each folder. */
+/* Automatic sync (hooks/useAutoSync.js): the switch in the heading row, then
+   one card with the fallback interval; the last result shows under each folder. */
 .sync-auto-card {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
@@ -7857,25 +7866,10 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .sync-auto-state.on {
   color: var(--accent-strong);
 }
-.sync-auto-rules {
-  list-style: none;
-  margin: 0;
-  padding: 10px 0 8px;
-  border-top: 1px solid var(--border-soft);
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
+.sync-auto-card.off {
+  opacity: .6;
 }
-.sync-auto-rules li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.sync-auto-rules svg {
-  flex: 0 0 auto;
-  margin-top: 3px;
+.settings-row-note {
   color: var(--accent-strong);
 }
 /* Narrow settings pane: the interval buttons go under the label. */

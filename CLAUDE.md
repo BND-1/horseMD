@@ -573,9 +573,8 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   since the scan (`localStillAsPlanned` re-hashes right before the write;
   a throttled run can sit between plan and write for 20 min). Those paths
   are `deferred`: state / manifest left exactly as before, so the next run
-  sees a conflict. Automatic (`safeOnly`) runs HOLD deletions and conflicts
-  (`held`, same untouched-state rule — a held deletion must never come back
-  as a "new cloud file") and run everything else. Conflict copies are
+  sees a conflict. (P0 held deletions / conflicts in automatic runs; since
+  P2 they run — see Automatic sync below.) Conflict copies are
   `name (冲突副本 <host> <YYYY-MM-DD HHmm>).md` (`sync/conflict-name.js`,
   host name via `deviceLabel`), never an existing name, never overwritten.
   Uploads record the hash of the bytes actually sent. A lost manifest race
@@ -597,7 +596,7 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   per content, `index/<hash>.json` per file, `deleted.json`;
   `history-service.js`: hooks + IPC `history:*`). It always keeps the version
   ABOUT TO BE REPLACED: `fs:writeFile` → `recordBeforeSave` (≤ 5 MB, one per
-  2 min per file, forced when a save removes > 30 % of the text), `fs:delete`
+  5 min per file (Obsidian), forced when a save removes > 30 % of the text), `fs:delete`
   → `recordBeforeTrash`, the sync engine → `keepLocalVersion`
   (`sync-overwrite` / `sync-delete`, ≤ 100 MB; local deletions no longer go
   to `<folder>/.horsemd/trash` — that is only the fallback when the history
@@ -700,16 +699,30 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   七牛 also writes ETags as `&#34;…&#34;` in XML, so both XML parsers use
   `htmlEntities: true` (numeric references; `&amp;` still decoded once).
   Locked by `test:sync-electron-request` (bare Electron + raw server).
-  Automatic sync (`hooks/useAutoSync.js`, `settings.syncAutoMinutes` ∈
-  0/5/15/30/60, default off, its own block under 同步文件夹 in Settings ›
-  云同步, showing the next round time): every N
-  minutes each bound folder runs `sync:run` with `{ safeOnly: true }` —
-  main re-plans right before running (never a stale renderer preview) and
-  returns `{ needsConfirmation }` for deletions / conflicts / an emptied
-  cloud (nothing touched; one toast per situation, a warning line under the
-  folder) and `{ idle }` with no request that writes when nothing changed.
-  A tick is skipped while any sync runs. Locked by `test:sync-auto` +
-  `test:auto-sync-ui` (`globalThis.__hmAutoSyncTick` runs a tick).
+  Automatic sync — 无感同步 (P2, 2026-10-29; `hooks/useAutoSync.js`):
+  `settings.syncAuto` default ON (SiYuan), `syncAutoMinutes` ∈ 5/15/30/60
+  (default 5) is only the fallback check. Triggers per bound folder: a save
+  inside it (`hm:file-saved` from `useFileOps`) → 30 s after the last save,
+  at most 2 min after the first unsynced one (数据胶囊 PUT budget); start
+  (+10 s); focus / visibility when the last run is > 60 s old; the fallback
+  interval. One pass at a time. `sync:run` `{ automatic: true }` (`safeOnly`
+  is the old name): deletions and conflicts RUN (recoverable from P1
+  history); brakes return `{ needsConfirmation, reason }` and touch nothing:
+  `remote-reset`, `mass-delete` (`massDeletion`: > 50 % of tracked files
+  and ≥ 10, or ≥ 100; deletions whose content reappears = moves, not
+  counted). Manual 双向同步 runs without a preview unless it is a mass
+  deletion (the brake is automatic-only, so a confirmed run goes through).
+  Both-sides edits of a text file (`sync-base.js`: last-synced content per
+  file in `userData/sync/base/<ws>`, backfilled after a commit) merge with
+  `shared/three-way-merge.js`; otherwise a conflict copy. Results carry
+  `merged` / `conflicts` (copies made) / `deferred`. Toasts: first error of
+  a streak only (SiYuan), one per brake situation, merged / conflict counts.
+  Auto-save is 3 s when auto sync is on and a folder is bound
+  (`autoSaveDelay || 3`). Status bar `SyncStatusItem` (同步中 / 需要确认 /
+  同步出错 / 已关闭 / 已同步 HH:MM; click → Settings › 云同步). The scan
+  reuses hashes of files whose size + mtime did not change
+  (`local-files.js` cache). Locked by `test:sync-auto` +
+  `test:auto-sync-ui` (`__hmAutoSyncTick`, `__hmAutoSyncSaved(path)`).
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)

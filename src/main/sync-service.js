@@ -163,7 +163,8 @@ export class SyncService {
   // `busyPaths`: absolute paths of files open with unsaved edits (never
   // overwritten by this run). A run whose manifest commit loses to another
   // device re-plans and runs again (up to 3 times) instead of failing.
-  async run(rootPath, strategy = 'merge', onProgress = null, { safeOnly = false, busyPaths = [] } = {}) {
+  async run(rootPath, strategy = 'merge', onProgress = null, { automatic = false, safeOnly = false, busyPaths = [] } = {}) {
+    automatic = automatic || safeOnly
     const key = rootPath.toLowerCase()
     if (this.running.has(key)) throw new Error('这个文件夹正在同步。')
     this.running.add(key)
@@ -173,7 +174,7 @@ export class SyncService {
     try {
       for (let attempt = 1; ; attempt += 1) {
         try {
-          return await (await this.engineFor(rootPath, onProgress, control, { busyPaths })).execute(null, strategy, { safeOnly })
+          return await (await this.engineFor(rootPath, onProgress, control, { busyPaths })).execute(null, strategy, { automatic })
         } catch (error) {
           if (!error?.manifestChanged || attempt >= 3) throw error
           await sleep(400 * attempt)
@@ -250,10 +251,11 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
       } catch { /* window gone */ }
     }
     try {
-      // safeOnly: automatic sync (hooks/useAutoSync.js) — merge only.
-      const safeOnly = options?.safeOnly === true
+      // automatic sync (hooks/useAutoSync.js) — merge only; `safeOnly` is
+      // the old name of the option.
+      const automatic = options?.automatic === true || options?.safeOnly === true
       const busyPaths = Array.isArray(options?.dirtyPaths) ? options.dirtyPaths.filter((path) => typeof path === 'string') : []
-      return await syncService.run(rootPath, safeOnly ? 'merge' : strategy, report, { safeOnly, busyPaths })
+      return await syncService.run(rootPath, automatic ? 'merge' : strategy, report, { automatic, busyPaths })
     } finally {
       report({ done: true })
     }

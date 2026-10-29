@@ -23,6 +23,7 @@ export default function SettingsView({
   onResetAllKeybindings,
   globalShortcutStatus,
   cloudSync,
+  syncAutoSave = false,
   syncWorkspaces,
   autoSync,
   folderRoots,
@@ -73,7 +74,7 @@ export default function SettingsView({
           />
         )}
         {active === 'files' && (
-          <FilesSettings settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
+          <FilesSettings settings={settings} onUpdateSettings={onUpdateSettings} syncAutoSave={syncAutoSave} t={t} />
         )}
         {active === 'sync' && cloudSync && (
           <SyncSettings

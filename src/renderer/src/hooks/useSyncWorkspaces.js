@@ -11,7 +11,15 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
   const [registered, setRegistered] = useState([])
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(supported)
-  const [busyRoot, setBusyRoot] = useState(null)
+  const [busyRoot, setBusyRootState] = useState(null)
+  // Mirrors busyRoot synchronously (isBusy): automatic sync checks it right
+  // after awaiting a run, before React has re-rendered.
+  const busyRootRef = useRef(null)
+  const setBusyRoot = useCallback((value) => {
+    busyRootRef.current = typeof value === 'function' ? value(busyRootRef.current) : value
+    setBusyRootState(busyRootRef.current)
+  }, [])
+  const isBusy = useCallback(() => Boolean(busyRootRef.current) || runningRef.current.size > 0, [])
   // Live progress of the running sync: { rootPath, completed, total, waiting }.
   // `waiting` is set while the cloud service throttles uploads.
   const [progress, setProgress] = useState(null)
@@ -164,8 +172,9 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
       setBusyRoot(null)
     }
   }, [refresh])
-  // options.safeOnly: automatic sync — main re-plans and refuses deletions /
-  // conflicts ({ needsConfirmation }); nothing to do → { idle }.
+  // options.automatic: automatic sync (hooks/useAutoSync.js) — main re-plans
+  // right before running; nothing to do → { idle }; an emptied cloud or a
+  // mass deletion → { needsConfirmation, reason } with nothing run.
   const run = useCallback(async (rootPath, strategy = 'merge', options = undefined) => {
     const key = keyOf(rootPath)
     if (runningRef.current.has(key)) throw new Error('这个文件夹正在同步，请等它完成，或先点「停止」。')
@@ -195,6 +204,7 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     registered,
     connections,
     busyRoot,
+    isBusy,
     progress,
     controlSync,
     registeredByPath,

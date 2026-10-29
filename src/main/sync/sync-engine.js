@@ -7,6 +7,8 @@ import { readSyncState, writeSyncState } from './sync-state.js'
 import { isSyncStopped } from './sync-control.js'
 import { isSystemJunkPath } from './sync-ignore.js'
 import { conflictSuffixFor } from './conflict-name.js'
+import { SyncBaseStore, isMergeable } from './sync-base.js'
+import { mergeText } from '../../shared/three-way-merge.js'
 
 const MANIFEST_VERSION = 1
 const now = () => new Date().toISOString()
@@ -133,15 +135,30 @@ async function localStillAsPlanned(rootPath, relativePath, plannedSha) {
   return Boolean(plannedSha) && sha256(bytes) === plannedSha
 }
 
-// Operations an automatic (safeOnly) run leaves for the user: deletions of
-// the user's files and conflicts. Everything else runs.
-const isHeldInSafeMode = (item) => (
-  (item.type === 'deleteRemote' && !item.systemFile) ||
-  item.type === 'deleteLocal' ||
-  item.type === 'conflict' ||
-  item.type === 'deleteRemoteDir' ||
-  item.type === 'deleteLocalDir'
-)
+// The brake of automatic runs (docs/cloud-sync-review.md P2): a round that
+// would delete more than half of the tracked files (at least 10) or 100 or
+// more is not run unattended — a disconnected drive, a wrong bucket or a
+// mistaken folder deletion looks exactly like that (rclone --max-delete 50 %,
+// Remotely Save 50 %, Nextcloud 100 files). A deletion whose content
+// reappears elsewhere in the same plan is a move / rename, not counted
+// (rclone --max-delete-renames-aware).
+export function massDeletion(plan, trackedCount) {
+  const moved = new Set()
+  for (const item of plan.operations) {
+    if (item.type === 'upload' && item.local?.sha256) moved.add(item.local.sha256)
+    if (item.type === 'download' && item.remote?.sha256) moved.add(item.remote.sha256)
+  }
+  let deletions = 0
+  for (const item of plan.operations) {
+    if ((item.type !== 'deleteLocal' && item.type !== 'deleteRemote') || item.systemFile) continue
+    const sha = item.previous?.sha256 || item.remote?.sha256 || item.local?.sha256
+    if (sha && moved.has(sha)) continue
+    deletions += 1
+  }
+  const tracked = Math.max(trackedCount, 1)
+  return { deletions, brake: deletions >= 100 || (deletions >= 10 && deletions > tracked * 0.5) }
+}
+
 // Operations that write or remove the local file at item.path.
 const touchesLocalFile = (item) => ['download', 'deleteLocal', 'conflict'].includes(item.type)
 
@@ -280,6 +297,39 @@ export class SyncEngine {
     } else {
       await moveLocalToTrash(this.rootPath, relativePath, stamp)
     }
+  }
+
+  // Three-way merge of a file both devices changed. The result is written
+  // locally and uploaded in place of the cloud version (conditional on the
+  // revision just verified); both inputs are kept in the local history.
+  // Returns true when merged.
+  async mergeBoth(item, localBytes, remoteBytes, state, base, manifest, files) {
+    if (!isMergeable(item.path, Math.max(localBytes.byteLength, remoteBytes.bytes.byteLength))) return false
+    const ancestor = await base.get(state.files[item.path]?.sha256)
+    if (!ancestor) return false
+    const result = mergeText(ancestor.toString('utf8'), localBytes.toString('utf8'), remoteBytes.bytes.toString('utf8'))
+    if (!result.ok) return false
+    const merged = Buffer.from(result.text, 'utf8')
+    // The local file must still be what was merged.
+    if (sha256(await readLocalBytes(this.rootPath, item.path)) !== sha256(localBytes)) return false
+    let uploaded
+    try {
+      uploaded = await this.provider.put(item.path, merged, { revision: remoteBytes.revision || item.remote?.revision || null })
+    } catch (error) {
+      if (isSyncStopped(error)) throw error
+      return false
+    }
+    await this.keepLocalVersion(item.path, 'sync-overwrite')
+    if (this.history) {
+      try { await this.history.keep(assertSafeRelative(this.rootPath, item.path), remoteBytes.bytes, 'merge') } catch { /* best effort */ }
+    }
+    await writeLocalBytes(this.rootPath, item.path, merged)
+    const mergedSha = sha256(merged)
+    manifest.files[item.path] = { ...item.remote, sha256: mergedSha, size: merged.byteLength, revision: uploaded.revision, updatedAt: now() }
+    delete manifest.tombstones[item.path]
+    files.set(item.path, { sha256: mergedSha, size: merged.byteLength, mtimeMs: Date.now() })
+    await base.put(merged).catch(() => {})
+    return true
   }
 
   isBusy(path) {
@@ -423,24 +473,29 @@ export class SyncEngine {
     }
   }
 
-  // `safeOnly` (automatic sync): the plan is the one computed here, right
-  // before running — never one the window previewed minutes ago. A plan
-  // that deletes or has a conflict is not run ({ needsConfirmation }), and
-  // one with nothing to do returns { idle } without touching the cloud (no
-  // manifest PUT every few minutes; 数据胶囊 limits PUTs).
-  async execute(preview = null, strategy = 'merge', { safeOnly = false } = {}) {
+  // `automatic` (automatic sync — `safeOnly` is the old name): the plan is
+  // the one computed here, right before running, never one the window
+  // previewed minutes ago. Deletions and conflicts run like the rest — what
+  // they replace is kept in the local version history (P1) — except the
+  // brakes: an emptied / replaced cloud and a mass deletion return
+  // { needsConfirmation } and touch nothing. Nothing to do → { idle }
+  // without a cloud write (数据胶囊 limits PUTs).
+  async execute(preview = null, strategy = 'merge', { automatic = false, safeOnly = false } = {}) {
+    automatic = automatic || safeOnly
     const prepared = preview || await this.preview(strategy)
-    if (safeOnly && prepared.status !== 'ready') return { needsConfirmation: true, reason: prepared.status, summary: prepared.summary }
+    if (automatic && prepared.status !== 'ready') return { needsConfirmation: true, reason: prepared.status, summary: prepared.summary }
     if (prepared.status !== 'ready') {
       throw new Error('云端工作区已被清空或替换。请明确选择上传本地或下载云端，HorseMD 不会自动删除本地文件。')
     }
     const { localFiles, state, remote, plan } = prepared
+    if (automatic) {
+      const mass = massDeletion(plan, Object.keys(state.files).length)
+      if (mass.brake) return { needsConfirmation: true, reason: 'mass-delete', deletions: mass.deletions, summary: prepared.summary }
+    }
     // Paths this run leaves exactly as they were (state entry, manifest
-    // entry, local file): automatic runs hold deletions and conflicts for the
-    // user; files open with unsaved edits, or saved after the scan, are
-    // deferred. The next run sees them again (a deferred download becomes a
-    // conflict once the local file has changed).
-    const held = { delete: 0, conflict: 0 }
+    // entry, local file): files open with unsaved edits, or saved after the
+    // scan, are deferred; the next run sees them again (a deferred download
+    // becomes a conflict once the local file has changed).
     const untouched = new Set()
     const untouchedDirs = new Set()
     const deferred = []
@@ -448,27 +503,20 @@ export class SyncEngine {
       if (DIR_OPERATION_TYPES.has(item.type)) untouchedDirs.add(item.path)
       else untouched.add(item.path)
     }
-    if (safeOnly) {
-      for (const item of plan.operations) {
-        if (!isHeldInSafeMode(item)) continue
-        item.held = true
-        skip(item)
-        if (item.type === 'conflict') held.conflict += 1
-        else held.delete += 1
-      }
-    }
     for (const item of plan.operations) {
-      if (item.held || !touchesLocalFile(item) || !this.isBusy(item.path)) continue
+      if (!touchesLocalFile(item) || !this.isBusy(item.path)) continue
       item.deferred = true
       skip(item)
       deferred.push(item.path)
     }
-    const runnable = (item) => !item.held && !item.deferred && !['keep', 'keepDir', 'forgetDir'].includes(item.type)
-    const extra = { ...(held.delete || held.conflict ? { held } : {}), ...(deferred.length ? { deferred } : {}) }
-    if (safeOnly && !plan.operations.some(runnable)) {
-      return held.delete || held.conflict
-        ? { needsConfirmation: true, reason: 'changes', summary: prepared.summary, ...extra }
-        : { idle: true, summary: prepared.summary, ...extra }
+    const runnable = (item) => !item.deferred && !['keep', 'keepDir', 'forgetDir'].includes(item.type)
+    const extra = { merged: 0, ...(deferred.length ? { deferred } : {}) }
+    let copies = 0
+    if (automatic && !plan.operations.some(runnable)) return { idle: true, summary: prepared.summary, ...extra }
+    // Last-synced contents of text files (three-way merge ancestors).
+    const base = new SyncBaseStore(this.userDataPath, this.workspaceId)
+    const keepBase = async (path, bytes) => {
+      if (isMergeable(path, bytes.byteLength)) await base.put(bytes).catch(() => {})
     }
     // Empty folders present on both sides after this run.
     const dirs = new Set(plan.operations.filter((item) => item.type === 'keepDir').map((item) => item.path))
@@ -504,7 +552,7 @@ export class SyncEngine {
     }
     try {
     for (const item of plan.operations) {
-      if (item.type === 'keep' || item.type === 'keepDir' || item.held || item.deferred) continue
+      if (item.type === 'keep' || item.type === 'keepDir' || item.deferred) continue
       await this.control?.checkpoint()
       // Saved after the scan? Then this run leaves the file alone (R9 in
       // docs/cloud-sync-review.md: the download used to overwrite it).
@@ -562,6 +610,7 @@ export class SyncEngine {
         }
         manifest.files[item.path] = { ...item.local, sha256: uploadedSha, size: bytes.byteLength, revision: uploaded.revision, updatedAt: now() }
         delete manifest.tombstones[item.path]
+        await keepBase(item.path, bytes)
         files.set(item.path, { ...(files.get(item.path) || item.local), sha256: uploadedSha, size: bytes.byteLength })
       } else if (item.type === 'download') {
         // The local version it replaces goes to the history first (a
@@ -572,6 +621,7 @@ export class SyncEngine {
         verifyRemoteBytes(item.path, item.remote, remoteFile.bytes)
         await writeLocalBytes(this.rootPath, item.path, remoteFile.bytes)
         files.set(item.path, { ...item.remote, sha256: sha256(remoteFile.bytes) })
+        await keepBase(item.path, remoteFile.bytes)
       } else if (item.type === 'deleteRemote' && item.systemFile) {
         // A .DS_Store (…) in the cloud: removed without a trash copy. Never
         // fails the sync — if it cannot be removed now, it stays listed and
@@ -605,7 +655,15 @@ export class SyncEngine {
           const remoteBytes = await this.provider.get(item.path)
           if (!remoteBytes) throw new Error(`远端冲突文件“${item.path}”在同步中消失。`)
           verifyRemoteBytes(item.path, item.remote, remoteBytes.bytes)
+          // Both devices edited it: a text file whose last-synced content is
+          // known merges line by line (Joplin, Logseq); edits to the same or
+          // adjacent lines, or anything else, become a conflict copy below.
+          const merged = await this.mergeBoth(item, localBytes, remoteBytes, state, base, manifest, files)
+          if (merged) {
+            extra.merged += 1
+          } else {
           const copy = await this.writeConflictCopy(item.path, localBytes, takenNames)
+          copies += 1
           const localConflict = copy.path
           const uploadedConflict = copy
           // The local file must still be the bytes copied just now.
@@ -615,10 +673,13 @@ export class SyncEngine {
           await this.keepLocalVersion(item.path, 'sync-overwrite')
           await writeLocalBytes(this.rootPath, item.path, remoteBytes.bytes)
           files.set(item.path, { ...item.remote, sha256: sha256(remoteBytes.bytes) })
+          await keepBase(item.path, remoteBytes.bytes)
           files.set(localConflict, { sha256: sha256(localBytes), size: localBytes.byteLength, mtimeMs: Date.now() })
           settled.add(localConflict)
           manifest.files[localConflict] = {
             sha256: sha256(localBytes), size: localBytes.byteLength, revision: uploadedConflict.revision, updatedAt: now()
+          }
+          await keepBase(localConflict, localBytes)
           }
         } else if (item.remote) {
           const remoteBytes = await this.provider.get(item.path)
@@ -629,6 +690,7 @@ export class SyncEngine {
         } else if (item.local) {
           const localBytes = await readLocalBytes(this.rootPath, item.path)
           const copy = await this.writeConflictCopy(item.path, localBytes, takenNames)
+          copies += 1
           const localConflict = copy.path
           const uploadedConflict = copy
           await this.removeLocal(item.path, stamp)
@@ -675,7 +737,7 @@ export class SyncEngine {
           }
         } catch { /* the next sync resumes from the objects themselves */ }
       }
-      return { stopped: true, recorded, completed, total, summary: summaryWithBytes(plan), conflicts: plan.summary.conflict }
+      return { stopped: true, recorded, completed, total, summary: summaryWithBytes(plan), conflicts: copies, merged: extra.merged }
     }
 
     const nextFiles = Object.fromEntries([...files].map(([path, entry]) => [path, { sha256: entry.sha256 }]))
@@ -716,6 +778,20 @@ export class SyncEngine {
       throw error
     }
     await writeSyncState(this.userDataPath, nextState)
-    return { summary: summaryWithBytes(plan), conflicts: plan.summary.conflict, ...extra }
+    // Merge ancestors: text files settled in earlier runs (before this
+    // feature) get theirs now; contents nothing refers to any more go.
+    try {
+      const keep = new Set()
+      for (const [path, entry] of Object.entries(nextFiles)) {
+        const local = files.get(path)
+        if (!entry?.sha256 || !isMergeable(path, local?.size ?? 0)) continue
+        keep.add(entry.sha256)
+        if (await base.has(entry.sha256)) continue
+        const bytes = await fs.readFile(assertSafeRelative(this.rootPath, path)).catch(() => null)
+        if (bytes && sha256(bytes) === entry.sha256) await base.put(bytes)
+      }
+      await base.prune(keep)
+    } catch { /* merge ancestors are best effort */ }
+    return { summary: summaryWithBytes(plan), conflicts: copies, ...extra }
   }
 }

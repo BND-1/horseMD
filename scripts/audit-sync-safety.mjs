@@ -99,7 +99,7 @@ async function everywhere(env, needle) {
   await write(env.B, '笔记.md', '原文\nB 的修改\n'); await env.b()
   // A has typed "A 的修改" in the editor but not saved; automatic sync runs
   // (the app passes the open, unsaved file as busy).
-  const down = await env.a({ safeOnly: true, busy: ['笔记.md'] })
+  const down = await env.a({ automatic: true, busy: ['笔记.md'] })
   const afterDownload = await read(env.A, '笔记.md')
   // A presses Save: the editor content (without B's line) is written.
   await write(env.A, '笔记.md', '原文\nA 的修改\n')
@@ -146,7 +146,7 @@ async function everywhere(env, needle) {
   const env = await setup()
   await write(env.A, '删掉的.md', 'x\n'); await write(env.A, '在写的.md', '旧\n'); await env.a(); await env.b()
   await fs.rm(join(env.A, '删掉的.md')); await write(env.A, '在写的.md', '今天写的重要内容\n')
-  const auto = await env.a({ safeOnly: true })
+  const auto = await env.a({ automatic: true })
   const inCloud = (await everywhere(env, '今天写的重要内容')).filter((h) => h.startsWith('cloud:'))
   report('R4', '有一个删除时，自动同步的整轮被跳过', auto.needsConfirmation && !inCloud.length ? 'RISK' : 'OK',
     `自动同步返回 ${JSON.stringify({ needsConfirmation: auto.needsConfirmation, reason: auto.reason })}；另一个文件里今天写的内容${inCloud.length ? '已上传' : '没有上传，只存在这台电脑上，直到用户去设置里确认'}`)

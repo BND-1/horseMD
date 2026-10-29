@@ -8,6 +8,7 @@ import LayoutControl from './LayoutControl.jsx'
 import { usePopover } from '../hooks/usePopover.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 import { isTabDirty } from '../lib/tab-state.js'
+import { autoSyncText, keyOf as syncKey } from '../hooks/useAutoSync.js'
 
 function stats(md) {
   const text = (md || '')
@@ -53,6 +54,48 @@ function StatsControl({ stats }) {
         </div>
       )}
     </div>
+  )
+}
+
+// Cloud sync at a glance (Obsidian / Dropbox style): shown while at least one
+// folder is bound to the cloud. 同步中… / 已同步 14:32 / 需要确认 / 同步出错 /
+// 自动同步已关闭; the tooltip has each folder's last result; a click opens
+// Settings › 云同步.
+function SyncStatusItem({ sync, autoSync, syncAuto, onOpen }) {
+  const { t } = useI18n()
+  const bound = (sync?.registered || []).filter((entry) => entry.connectionId)
+  if (!sync?.supported || !bound.length) return null
+  const byFolder = autoSync?.byFolder || {}
+  const results = bound.map((entry) => byFolder[syncKey(entry.rootPath)]).filter(Boolean)
+  const lastAt = Math.max(0, ...results.filter((r) => r.kind === 'done' || r.kind === 'idle').map((r) => r.at))
+  let state = 'ok'
+  let text = lastAt
+    ? t('status.sync.done', { time: new Date(lastAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+    : t('status.sync.ready')
+  if (sync.busyRoot) {
+    state = 'busy'
+    text = sync.progress?.waiting ? t('status.sync.waiting') : t('status.sync.busy')
+  } else if (results.some((r) => r.kind === 'confirm')) {
+    state = 'confirm'
+    text = t('status.sync.confirm')
+  } else if (results.some((r) => r.kind === 'error')) {
+    state = 'error'
+    text = t('status.sync.error')
+  } else if (syncAuto === false) {
+    state = 'off'
+    text = t('status.sync.off')
+  }
+  const title = [
+    ...bound.map((entry) => {
+      const name = entry.name || String(entry.rootPath).split(/[\\/]/).filter(Boolean).pop()
+      return `${name}: ${autoSyncText(byFolder[syncKey(entry.rootPath)], t) || t('status.sync.never')}`
+    }),
+    t('status.sync.open')
+  ].join('\n')
+  return (
+    <button className={`status-btn hm-sync-status ${state}`} onClick={onOpen} title={title}>
+      <Icon name={state === 'busy' ? 'refresh' : 'cloud'} size={14} /> {text}
+    </button>
   )
 }
 
@@ -329,6 +372,10 @@ export default function StatusBar({
   onSave,
   onShare,
   onSettings,
+  sync,
+  autoSync,
+  syncAuto,
+  onOpenSync,
   theme,
   setTheme,
   lang,
@@ -461,6 +508,7 @@ export default function StatusBar({
           )
         ) : (
           <>
+            <SyncStatusItem sync={sync} autoSync={autoSync} syncAuto={syncAuto} onOpen={onOpenSync} />
             {tab && <StatsControl stats={s} />}
             {onToggleReadingMode && (
               <button

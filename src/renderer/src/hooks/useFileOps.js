@@ -32,6 +32,9 @@ import { mergeText } from '../lib/three-way-merge.js'
 import { saveSourceSyncRecovery } from '../lib/source-sync-recovery.js'
 import { useWorkspace } from './useWorkspace.js'
 
+// Every successful save → automatic sync of its folder (hooks/useAutoSync.js).
+const notifySaved = (path) => window.dispatchEvent(new CustomEvent('hm:file-saved', { detail: { path } }))
+
 export function useFileOps({
   tabs,
   setTabs,
@@ -505,6 +508,7 @@ export function useFileOps({
         )
       )
       bumpRefresh()
+      notifySaved(targetPath)
       if (auto) return { ok: true }
       // On mobile, where files land in a system folder, confirm what + where —
       // sticky so the user can read the location before dismissing it.
@@ -558,6 +562,7 @@ export function useFileOps({
         adoptDiskContent(tab.id, current, merged.text, result.mtimeMs, { force: true })
         externalWarningRef.current.delete(tab.path.replace(/\\/g, '/'))
         bumpRefresh()
+        notifySaved(tab.path)
         fireToast(tRef.current('save.mergedExternal', { name }), { duration: 6000 })
         return { ok: true, merged: true }
       }

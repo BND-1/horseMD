@@ -22,8 +22,12 @@ export const PAGE_WIDTH_PRESETS = [
 // Auto-save inactivity delays offered in Settings › Files (seconds; 0 = off).
 export const AUTO_SAVE_DELAYS = [0, 3, 10, 60]
 
-// Automatic cloud sync intervals offered in Settings › Sync (minutes; 0 = off).
-export const SYNC_AUTO_MINUTES = [0, 5, 15, 30, 60]
+// Automatic cloud sync: the fallback check interval offered in Settings ›
+// Sync (minutes). Saves, start-up and window focus trigger syncs on their own.
+export const SYNC_AUTO_MINUTES = [5, 15, 30, 60]
+export const DEFAULT_SYNC_AUTO_MINUTES = 5
+// Auto-save delay used while automatic sync is on and the user's own is off.
+export const SYNC_AUTO_SAVE_DELAY = 3
 
 // How long local version history is kept (days), Settings › Files.
 export const HISTORY_RETENTION_DAYS = [30, 90, 365]
@@ -219,10 +223,12 @@ export const DEFAULT_SETTINGS = {
   // loses focus). 0 = off. Untitled tabs, external-change conflicts and
   // unmappable rich edits are never auto-saved — see hooks/useAutoSave.js.
   autoSaveDelay: 0,
-  // Automatic sync: minutes between two-way syncs of every folder bound to a
-  // cloud connection. 0 = off. Deletions / conflicts still wait for the user
-  // — see hooks/useAutoSync.js.
-  syncAutoMinutes: 0,
+  // Automatic sync (无感同步) of every folder bound to a cloud connection:
+  // after saves, at start-up, on window focus, and every `syncAutoMinutes`
+  // as a fallback — see hooks/useAutoSync.js. While on, auto-save is at
+  // least SYNC_AUTO_SAVE_DELAY seconds (App.jsx).
+  syncAuto: true,
+  syncAutoMinutes: DEFAULT_SYNC_AUTO_MINUTES,
   // Local version history (main/history): days a version is kept. Pinned
   // versions never expire.
   historyRetentionDays: DEFAULT_HISTORY_RETENTION_DAYS,
@@ -316,7 +322,9 @@ export function loadSettings() {
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
       autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,
-      syncAutoMinutes: SYNC_AUTO_MINUTES.includes(raw.syncAutoMinutes) ? raw.syncAutoMinutes : 0,
+      syncAuto: raw.syncAuto !== false,
+      // 0 was "off" before syncAuto existed → the default interval.
+      syncAutoMinutes: SYNC_AUTO_MINUTES.includes(raw.syncAutoMinutes) ? raw.syncAutoMinutes : DEFAULT_SYNC_AUTO_MINUTES,
       historyRetentionDays: HISTORY_RETENTION_DAYS.includes(raw.historyRetentionDays)
         ? raw.historyRetentionDays
         : DEFAULT_HISTORY_RETENTION_DAYS,
