@@ -4854,6 +4854,20 @@ export default function Editor({
               <span className="block-menu-name">{t('editor.copy')}</span>
               <span className="block-menu-sc">{window.api?.platform === 'darwin' ? '⌘C' : 'Ctrl+C'}</span>
             </button>
+            <button
+              className="block-menu-item"
+              data-context-copy-plain
+              disabled={!ctxMenu.copySelection}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const copied = ctxMenu.copySelection?.copy({ plainOnly: true }) === true
+                setCtxMenu(null)
+                if (!copied) fireToast(t('editor.copyFailed'))
+              }}
+            >
+              <span className="block-menu-short" aria-hidden="true">T</span>
+              <span className="block-menu-name">{t('editor.copyPlain')}</span>
+            </button>
             {ctxMenu.headingFold && (ctxMenu.headingFold.foldable || ctxMenu.headingFold.anyFolded) && (
               <>
                 <div className="block-menu-divider" />

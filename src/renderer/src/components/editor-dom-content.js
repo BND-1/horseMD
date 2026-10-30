@@ -98,6 +98,14 @@ export function mountEditorContentBindings({
         } catch {}
       }
       if (!wrapper.innerHTML.trim() && !plain) return false
+      // 复制纯文本 (editor-context-copy.js): the plain flavor only, so every
+      // paste target gets text without formatting or Markdown.
+      if (view.dom.__hmPlainCopy) {
+        if (!plain) return false
+        event.clipboardData.setData('text/plain', plain)
+        event.preventDefault()
+        return true
+      }
       event.clipboardData.setData(
         'text/html',
         `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:#24292f;">${wrapper.innerHTML}</div>`

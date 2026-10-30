@@ -106,6 +106,34 @@ const inlineLiteralRanges = (line) => {
       if (index === openEnd - length) index = openEnd
       continue
     }
+    // Inline math `$…$` / `$$…$$` is LaTeX: `\\`, `\{`, `\_` there are
+    // the formula, not serializer escapes (a plain `$` is always written
+    // `\$`, so an unescaped one opens math).
+    if (line[index] === '\\' && line[index + 1] === '$') {
+      index += 2
+      continue
+    }
+    if (line[index] === '$') {
+      const size = line[index + 1] === '$' ? 2 : 1
+      let cursor = index + size
+      let end = -1
+      while (cursor < line.length) {
+        if (line[cursor] === '\\') { cursor += 2; continue }
+        if (line[cursor] === '$') {
+          let run = cursor
+          while (line[run] === '$') run += 1
+          if (run - cursor === size) { end = run; break }
+          cursor = run
+          continue
+        }
+        cursor += 1
+      }
+      if (end > index + size) {
+        ranges.push({ start: index, end })
+        index = end
+      } else index += size
+      continue
+    }
     if (line.startsWith('<!--', index)) {
       const close = line.indexOf('-->', index + 4)
       const end = close < 0 ? line.length : close + 3
@@ -232,6 +260,7 @@ export const canonicalTextToSource = (text, { restoreFreshPunctuation = false, p
   const input = String(text || '')
   const chunks = input.match(/[^\n]*(?:\n|$)/g)?.filter(Boolean) || []
   let fence = null
+  let math = false
   let htmlTag = null
   let htmlComment = false
   let htmlUntilBlank = false
@@ -240,6 +269,21 @@ export const canonicalTextToSource = (text, { restoreFreshPunctuation = false, p
     const line = hasNewline ? chunk.slice(0, -1) : chunk
     const newline = hasNewline ? '\n' : ''
     const trimmed = line.trim()
+
+    // `$$` math blocks are LaTeX, kept byte for byte like fenced code: a
+    // formula's `\\` line break is not an escaped backslash (a new
+    // document turned `a \\` into `a \` and the sync check paused).
+    const mathBody = line.replace(/^(?:[ \t]*>)*[ \t]*/, '')
+    if (math) {
+      if (/\$\$\s*$/.test(mathBody)) math = false
+      return line + newline
+    }
+    if (!fence && mathBody.startsWith('$$')) {
+      const rest = mathBody.slice(2).trim()
+      // `$$ x $$` on one line opens and closes.
+      if (!(rest.length > 2 && rest.endsWith('$$'))) math = true
+      return line + newline
+    }
 
     if (fence) {
       const close = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/)

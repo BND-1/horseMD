@@ -412,6 +412,8 @@
     "test:drop-open-ui": "node scripts/test-drop-open-ui.mjs",
     "test:inline-code-span-append-ui": "node scripts/test-inline-code-span-append-ui.mjs",
     "test:hardbreak-paste-continuation-ui": "node scripts/test-hardbreak-paste-continuation-ui.mjs",
+    "test:math-literal-source": "node scripts/test-math-literal-source.mjs",
+    "fuzz:math-block-ui": "node scripts/fuzz-math-block-ui.mjs",
     "test:serializer-style": "node scripts/test-serializer-style.mjs",
     "test:serializer-style-follow-doc-ui": "node scripts/test-serializer-style-follow-doc-ui.mjs",
     "test:custom-theme-style-order-ui": "node scripts/test-custom-theme-style-order-ui.mjs",

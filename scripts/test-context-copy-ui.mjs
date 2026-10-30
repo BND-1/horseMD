@@ -42,10 +42,11 @@ const select = (selector, value, reverse = false) => app.evaluate(`(() => {
   const r = range.getBoundingClientRect()
   return {x:r.left + Math.min(8, r.width / 2), y:r.top + r.height / 2}
 })()`)
-const copyFromMenu = async point => {
+// `item`: 'data-context-copy' (复制) or 'data-context-copy-plain' (复制纯文本).
+const copyFromMenu = async (point, item = 'data-context-copy') => {
   await click(point, 'right')
   const button = await waitFor(() => app.evaluate(`(() => {
-    const b = [...document.querySelectorAll('[data-context-copy]')].find(n => n.offsetParent)
+    const b = [...document.querySelectorAll('[${item}]')].find(n => n.offsetParent)
     if (!b || b.disabled) return null
     const r = b.getBoundingClientRect(); return {x:r.left + r.width / 2, y:r.top + r.height / 2}
   })()`), 'enabled Copy menu item missing')
@@ -67,6 +68,33 @@ try {
     assert.match(payload.html, /<strong|font-weight/)
     assert.match(payload.markdown, /\*\*bold\*\*/)
   }
+  // 复制纯文本: text/plain only — no HTML (formatting) and no Markdown, so
+  // every paste target gets the text as shown.
+  const plainOnly = (payload, text, label) => {
+    assert.deepEqual(payload.types, ['text/plain'], `${label}: only text/plain`)
+    assert.equal(payload.plain, text, `${label}: plain text`)
+  }
+  for (const reverse of [false, true]) {
+    plainOnly(await copyFromMenu(await select('p', 'First bold text.', reverse), 'data-context-copy-plain'), 'First bold text.', 'paragraph')
+  }
+  plainOnly(await copyFromMenu(await select('li p', 'Only selected item'), 'data-context-copy-plain'), 'Only selected item', 'list item')
+  // Several blocks: the text as shown — no '#' / '**', the list number kept.
+  const blocksPoint = await app.evaluate(`(() => {
+    const e = ${editor}
+    const h = e.querySelector('h1'), item = [...e.querySelectorAll('li p')].find(n => n.textContent === 'Only selected item')
+    h.scrollIntoView({block:'center'}); e.focus()
+    getSelection().setBaseAndExtent(h.firstChild, 0, item.firstChild, item.firstChild.length)
+    const r = e.querySelector('p').getBoundingClientRect(); return {x:r.left + 8, y:r.top + r.height / 2}
+  })()`)
+  await sleep(150)
+  const blocks = await copyFromMenu(blocksPoint, 'data-context-copy-plain')
+  assert.deepEqual(blocks.types, ['text/plain'])
+  assert.doesNotMatch(blocks.plain, /[#*]/, `markdown syntax leaked: ${JSON.stringify(blocks.plain)}`)
+  for (const text of ['Context copy', 'First bold text.', '1. Only selected item']) assert.ok(blocks.plain.includes(text), `${text} in ${JSON.stringify(blocks.plain)}`)
+  // The ordinary copy of the same paragraph still carries all three.
+  const rich = await copyFromMenu(await select('p', 'First bold text.'))
+  assert.deepEqual([...rich.types].sort(), ['text/html', 'text/markdown', 'text/plain'])
+
   const list = await copyFromMenu(await select('li p', 'Only selected item'))
   assert.equal(list.plain, 'Only selected item', 'text/plain gained an unselected list marker')
   const cell = await copyFromMenu(await select('td p', 'selected cell'))
@@ -113,6 +141,8 @@ try {
   const draggedMenu = await copyFromMenu(await cellPoint('example'))
   assert.equal(draggedMenu.plain, tablePlain, 'context-menu copy of a cell selection lost cells')
   assertTableHtml(draggedMenu.html, 'cell-selection menu copy')
+  await waitFor(() => app.evaluate(`(${editor}).querySelectorAll('.selectedCell').length === 6`), 'cell selection kept after the menu copy')
+  plainOnly(await copyFromMenu(await cellPoint('example'), 'data-context-copy-plain'), tablePlain, 'cell selection')
 
   // No selection: disabled Copy must not overwrite the clipboard.
   const emptyPoint = await select('p', 'First bold text.')
@@ -120,6 +150,7 @@ try {
   await sleep(100)
   await click(emptyPoint, 'right')
   assert.equal(await app.evaluate('document.querySelector("[data-context-copy]")?.disabled'), true)
+  assert.equal(await app.evaluate('document.querySelector("[data-context-copy-plain]")?.disabled'), true)
   await app.evaluate('document.querySelector(".menu-backdrop")?.dispatchEvent(new MouseEvent("mousedown", {bubbles:true}))')
 
   // Real CodeMirror select-all: 122 lines exceed the rendered viewport.
@@ -148,6 +179,9 @@ try {
   })()`)
   const codeCopy = await copyFromMenu(await getVisibleCodePoint())
   assert.equal(codeCopy.plain, code, 'CodeMirror copy was truncated or copied neighbouring text')
+  const codePlain = await copyFromMenu(await getVisibleCodePoint(), 'data-context-copy-plain')
+  assert.equal(codePlain.plain, code, '复制纯文本 of a code selection')
+  assert.ok(!codePlain.types.includes('text/html') && !codePlain.types.includes('text/markdown'), `code plain copy types: ${codePlain.types}`)
   assert.equal(await app.evaluate(`(${editor}).querySelectorAll('.cm-line').length < 122`), true)
   await key('ArrowLeft', 37)
   await key('Home', 36)
@@ -172,15 +206,16 @@ try {
   })()`), true, 'source/preview toggle missing')
   await waitFor(() => app.evaluate(`(${editor})?.getAttribute('contenteditable') === 'false'`), 'preview did not become read-only')
   await click(await select('p', 'First bold text.'), 'right')
-  assert.equal(await app.evaluate("document.querySelector('.block-ctxmenu')?.querySelectorAll('button').length"), 1, 'preview exposes editing commands')
+  assert.deepEqual(await app.evaluate("[...document.querySelector('.block-ctxmenu')?.querySelectorAll('button') || []].map((b) => b.textContent.trim())"), ['⧉复制⌘C'.replace('⌘C', process.platform === 'darwin' ? '⌘C' : 'Ctrl+C'), 'T复制纯文本'], 'preview exposes editing commands')
   await app.evaluate('document.querySelector(".menu-backdrop")?.dispatchEvent(new MouseEvent("mousedown", {bubbles:true}))')
   const previewCopy = await copyFromMenu(await select('p', 'First bold text.'))
   assert.equal(previewCopy.plain, 'First bold text.')
+  plainOnly(await copyFromMenu(await select('p', 'First bold text.'), 'data-context-copy-plain'), 'First bold text.', 'read-only preview')
   assert.deepEqual(await app.evaluate('(globalThis.__hmSourceIntegrityTrace || []).filter(e => e.ok === false)'), [])
   const raw = await waitFor(() => app.evaluate('[...document.querySelectorAll("textarea.source-editor")].find(n => n.offsetParent)?.value'), 'source mode missing')
   assert.equal(raw, source, 'copy changed source bytes')
   assert.equal(await readFile(file, 'utf8'), source, 'copy changed disk')
-  console.log('PASS context Copy UI: actual right-click/button, forward/reverse rich MIME, list/table (range, cell drag, menu: tab-separated rows, clean HTML), disabled empty selection, virtualized 122-line full/65-line partial code, read-only copy-only preview, source/disk unchanged')
+  console.log('PASS context Copy UI: actual right-click/button, 复制纯文本 (text/plain only: paragraph, list item, several blocks, cell selection, code, read-only), forward/reverse rich MIME, list/table (range, cell drag, menu: tab-separated rows, clean HTML), disabled empty selection, virtualized 122-line full/65-line partial code, read-only copy-only preview, source/disk unchanged')
 } catch (error) {
   console.error('COPY_DIAGNOSTIC', await app.evaluate(`(() => {
     const e = ${editor}; const root = e?.querySelector('.cm-editor')

@@ -3,6 +3,7 @@ import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import {
   applySerializerStyleToRemark,
   createSerializerStyleHolder,
@@ -89,6 +90,39 @@ console.log('ok detection')
 console.log('ok application')
 
 // ---------------------------------------------------------------------------
+// Fenced code and $$ math are content: the two-space hard-break spelling and
+// the authored bullet are never applied inside them. LaTeX `\\` line breaks
+// (aligned, matrix) and a trailing `\` used to become `\  ` / `  `, and a
+// `* x` line became `- x` — the formula changed on every full serialization
+// (user report 2026-10-30: 富文本与源码不一致 typing `\` in a $$ block).
+// ---------------------------------------------------------------------------
+{
+  const authored = [
+    'para  ', 'second line.', '',
+    '- a', '- b', '',
+    '$$', '\\begin{aligned}', 'a &= b \\\\', '* c &= d', '\\end{aligned}', '$$', '',
+    '$$', 'x\\', '', '$$', '',
+    '  $$', '  y \\\\', '  $$', '',
+    '````', '```', 'not a fence end\\', '```', 'still code\\', '````', '',
+    '~~~', 'tilde code\\', '~~~', '',
+    'after  ', 'fences.', ''
+  ].join('\n')
+  const holder = createSerializerStyleHolder(authored)
+  assert.equal(holder.style.hardBreak, '  ')
+  assert.equal(holder.style.bullet, '-')
+  const remark = unified().use(remarkParse).use(remarkStringify).use(remarkGfm).use(remarkMath)
+  applySerializerStyleToRemark(remark, holder)
+  const out = remark.stringify(remark.parse(authored))
+  for (const line of ['a &= b \\\\', '* c &= d', 'x\\', 'y \\\\', 'not a fence end\\', 'still code\\', 'tilde code\\']) {
+    assert.ok(out.split('\n').some((l) => l.trim() === line.trim()), `kept inside its block: ${line}\n${out}`)
+  }
+  assert.ok(out.includes('para  \nsecond line.') && out.includes('after  \nfences.'), `two-space breaks still applied outside: ${out}`)
+  assert.ok(out.includes('- a\n- b'), `bullets still applied outside: ${out}`)
+  assert.deepEqual(remark.parse(out).children.map((n) => n.type), remark.parse(authored).children.map((n) => n.type))
+}
+console.log('ok literal blocks')
+
+// ---------------------------------------------------------------------------
 // setFrom: source-mode replacement re-detects the style
 // ---------------------------------------------------------------------------
 {
@@ -100,4 +134,4 @@ console.log('ok application')
 }
 console.log('ok re-detection')
 
-console.log('PASS serializer style: authored list/hard-break/strong spelling is detected and mirrored by the live remark serializer; multi-paragraph items stay loose; fenced rows are ignored; restore returns stock behavior')
+console.log('PASS serializer style: authored list/hard-break/strong spelling is detected and mirrored by the live remark serializer; multi-paragraph items stay loose; fenced rows are ignored; code and $$ math lines are never restyled; restore returns stock behavior')

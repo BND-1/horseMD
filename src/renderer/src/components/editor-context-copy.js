@@ -54,12 +54,16 @@ export function captureEditorContextCopy(view, target, {
   if (selection.empty) return null
   return Object.freeze({
     kind: 'rich',
-    copy() {
+    // `plainOnly` (复制纯文本): the copy handler writes only text/plain —
+    // the text as shown, no formatting, no Markdown (Typora: Copy as Plain
+    // Text). Code blocks copy plain text anyway.
+    copy({ plainOnly = false } = {}) {
       if (!owned()) return false
       try {
         view.dispatch(view.state.tr.setSelection(selection))
         view.focus()
-        return perform()
+        if (plainOnly) view.dom.__hmPlainCopy = true
+        try { return perform() } finally { delete view.dom.__hmPlainCopy }
       } catch { return false }
     }
   })

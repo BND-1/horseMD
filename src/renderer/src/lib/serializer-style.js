@@ -70,10 +70,11 @@ export const detectMarkdownListStyle = (markdown) => {
     orderedCounts[token] > orderedCounts[best] ? token : best, '.')
   // Hard-break / strong / emphasis spellings: count authored occurrences of
   // both forms and mirror the dominant one (`  \n` vs `\\\n`, `**` vs `__`).
-  const text = String(markdown || '')
-  const fenceStripped = text.split(/(?:\r\n|\r|\n)/)
-    .filter((line) => !/^\s*(?:`{3,}|~{3,})/.test(line))
-    .join('\n')
+  // Lines of fenced code and $$ math are content: a LaTeX `\\` there is not
+  // a hard break.
+  const syntaxLines = []
+  mapSyntaxLines(String(markdown || ''), (line) => { syntaxLines.push(line); return line })
+  const fenceStripped = syntaxLines.join('\n') + '\n'
   const twoSpaceBreaks = (fenceStripped.match(/[ \t][ \t]\r?\n/g) || []).length
   const backslashBreaks = (fenceStripped.match(/\\\r?\n/g) || []).length
   return {
@@ -155,17 +156,43 @@ export const createSerializerStyleHolder = (initialMarkdown) => {
 // where a literal trailing backslash is content, not syntax.
 const rewriteHardBreaks = (markdown, spelling) => {
   if (spelling === '\\' || !markdown) return markdown
+  return mapSyntaxLines(markdown, (line) => (line.endsWith('\\') ? `${line.slice(0, -1)}  ` : line))
+}
+
+// Calls `map(line)` for every line that is Markdown syntax and keeps the
+// lines of fenced code (``` / ~~~) and $$ math blocks — content, never
+// syntax — as they are. A trailing backslash in LaTeX (`\\` line breaks in
+// aligned / matrix) is not a hard break, and `* x` there is not a bullet:
+// both used to be rewritten, so a formula changed on every full
+// serialization (the sync check then refused it: 富文本与源码不一致).
+// A `$$` line that is not closed keeps the rest literal (no rewrite: still
+// valid Markdown, only the authored break spelling is not applied).
+const FENCE_LINE = /^\s{0,3}(`{3,}|~{3,})/
+function mapSyntaxLines(markdown, map) {
   const parts = String(markdown).split(/(\r?\n)/)
-  let inFence = false
+  let open = null // { kind: 'fence', char, size } | { kind: 'math' }
   for (let index = 0; index < parts.length; index += 2) {
     const line = parts[index]
-    if (/^\s*(?:`{3,}|~{3,})/.test(line)) {
-      inFence = !inFence
+    const fence = line.match(FENCE_LINE)
+    if (open?.kind === 'fence') {
+      if (fence && fence[1][0] === open.char && fence[1].length >= open.size && !line.slice(fence[0].length).trim()) open = null
       continue
     }
-    if (!inFence && line.endsWith('\\')) {
-      parts[index] = `${line.slice(0, -1)}  `
+    if (open?.kind === 'math') {
+      if (/\$\$\s*$/.test(line)) open = null
+      continue
     }
+    if (fence) {
+      open = { kind: 'fence', char: fence[1][0], size: fence[1].length }
+      continue
+    }
+    const trimmed = line.trim()
+    if (trimmed.startsWith('$$')) {
+      // `$$ x $$` on one line opens and closes.
+      if (!(trimmed.length > 4 && trimmed.endsWith('$$'))) open = { kind: 'math' }
+      continue
+    }
+    parts[index] = map(line)
   }
   return parts.join('')
 }
@@ -180,15 +207,7 @@ const rewriteHardBreaks = (markdown, spelling) => {
 const rewriteListMarkers = (markdown, style) => {
   if (!markdown) return markdown
   if (style.bullet === '*' && style.ordered === '.') return markdown
-  const parts = String(markdown).split(/(\r?\n)/)
-  let inFence = false
-  for (let index = 0; index < parts.length; index += 2) {
-    const line = parts[index]
-    if (/^\s*(?:`{3,}|~{3,})/.test(line)) {
-      inFence = !inFence
-      continue
-    }
-    if (inFence) continue
+  return mapSyntaxLines(markdown, (line) => {
     let next = line
     if (style.bullet !== '*') {
       next = next.replace(/^([ \t>]*)\*([ \t]|$)/, `$1${style.bullet}$2`)
@@ -196,9 +215,8 @@ const rewriteListMarkers = (markdown, style) => {
     if (style.ordered === ')') {
       next = next.replace(/^([ \t>]*\d{1,9})\.([ \t]|$)/, '$1)$2')
     }
-    parts[index] = next
-  }
-  return parts.join('')
+    return next
+  })
 }
 
 export const applySerializerStyleToRemark = (remark, styleHolder) => {

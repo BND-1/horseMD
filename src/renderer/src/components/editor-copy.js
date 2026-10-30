@@ -170,7 +170,22 @@ export function cloneSelectedCells(view) {
 
 // Read layout only for the selected clipboard clone. In particular, innerText
 // preserves BR, paragraph, table and PRE boundaries that textContent erases.
+// innerText leaves a blank line only around <p>: a list, table, heading or
+// code block next to another block was glued to it ("- 子项\n名称\t值").
+// An empty <p> between top-level blocks gives every block boundary the same
+// blank line (innerText drops the ones at the very start / end); inside a
+// list or table, lines stay single.
+const SPACED_BLOCKS = new Set(['UL', 'OL', 'TABLE', 'PRE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'HR', 'FIGURE'])
+const spaceTopLevelBlocks = (probe) => {
+  for (const child of [...probe.children]) {
+    if (!SPACED_BLOCKS.has(child.tagName)) continue
+    child.before(document.createElement('p'))
+    child.after(document.createElement('p'))
+  }
+}
+
 const readClipboardProbe = (probe) => {
+  spaceTopLevelBlocks(probe)
   probe.setAttribute(
     'style',
     'position:fixed;left:-100000px;top:0;width:1000px;white-space:normal;'

@@ -447,6 +447,16 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   lists, headings, `<pre>`, nested tables) is flattened to inline + `<br>`,
   body `<th>` become `<td>`, `<caption>` moves above. Locked by
   `test:table-paste-ui`.
+- **复制纯文本 (Copy as Plain Text, Typora)**: the editor context menu's
+  second item (`data-context-copy-plain`, read-only menus too).
+  `captureEditorContextCopy(...).copy({ plainOnly: true })` flags
+  `view.dom.__hmPlainCopy` around the copy; `fillClipboard`
+  (`editor-dom-content.js`) then writes ONLY text/plain — the same plain
+  flavor as a normal copy (list markers, tab-separated table rows). Plain
+  text puts a blank line between top-level blocks (`spaceTopLevelBlocks`:
+  innerText only spaced <p>, so a list glued to a following table). Locked by
+  `test:context-copy-ui` (its cell-drag step fails on Windows before this
+  change too: synthetic drags make no CellSelection there).
 - **Partial copy inside one paragraph** (`editor-copy.js`
   `copiedMarkdownContent`): `selection.content()` keeps every ancestor, so
   text inside one list item / quote / table cell serialized as `- x` / `> x` /
@@ -873,7 +883,26 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   plugins, like `remarkImageBlockWithPosition`); `patchCodeBlock` treats `$$`
   as a fence for LaTeX nodes (only the content lines change); `reprintSource`
   refuses any edit without integer offsets (`reprint-unpositioned`). Locked
-  by `test:math-block-edit-ui`. Long display math scrolls (`.katex-display { overflow-x:auto }`).
+  by `test:math-block-edit-ui`. The serializer's authored-style pass
+  (`serializer-style.js` `mapSyntaxLines`: two-space hard breaks, bullet /
+  `1)` markers, and the hard-break count it detects from) skips fenced code
+  AND `$$` math lines — it turned LaTeX `\\` / a trailing `\` into `  `, so
+  every full serialization changed the formula (user report 2026-10-30;
+  `test:serializer-style` + the math UI test's case 4). The user only saw it
+  in a NEW (untitled) document: its source is generated from the
+  serialization on every sync (`generatedScratchMarkdown` + the
+  `new-document` branch), so the formula also went through escape
+  restoration (`canonicalTextToSource`: `\\` → `\`, `\{` → `{`) and the
+  `<br />` / empty-list-item clean-up. Both now run through
+  `withLiteralBlocksProtected` (closed fenced code and `$$` blocks become one
+  token line for the passes and come back byte for byte);
+  `canonicalTextToSource` / `inlineLiteralRanges` skip `$$` blocks and
+  `$…$`; `withoutStandaloneEmptyBlockLines` skips code and math. A saved
+  file never showed it (the reprint keeps authored bytes). Locked by
+  `test:math-literal-source`, the math UI test's case 5 (fails on 0.13.259
+  exactly as reported) and `fuzz:math-block-ui` (seeded random formula
+  editing; even seeds use a new document; `EDIT_ONLY=1` hunts warnings
+  only). Long display math scrolls (`.katex-display { overflow-x:auto }`).
   Inline math `$x^2$` converts only on the closing `$` (Milkdown input rule
   `/\$([^$]+)\$/`), so there's no preview while typing the content. `editor-math-preview.js`
   (#45) adds a live KaTeX tooltip near the caret while typing an unclosed `$<mathy>`
