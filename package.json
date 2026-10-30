@@ -450,6 +450,7 @@
     "test:history-ui": "node scripts/test-history-ui.mjs",
     "test:save-external-merge-ui": "node scripts/test-save-external-merge-ui.mjs",
     "audit:sync-safety": "node scripts/audit-sync-safety.mjs",
+    "test:cloud-space-ui": "node scripts/test-cloud-space-ui.mjs",
     "test:auto-sync-ui": "node scripts/test-auto-sync-ui.mjs",
     "test:update-core": "node scripts/test-update-core.mjs",
     "test:update-ui": "node scripts/test-update-ui.mjs",

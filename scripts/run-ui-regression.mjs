@@ -157,6 +157,10 @@ const standalone = [
     script: 'scripts/test-history-ui.mjs'
   },
   {
+    name: '云空间: workspace + cloud trees, ☁ marks, independent folds, watcher after leaving the workspace, stop sync asks',
+    script: 'scripts/test-cloud-space-ui.mjs'
+  },
+  {
     name: 'Save over an external change (sync): merge different places, conflict copy for the same place',
     script: 'scripts/test-save-external-merge-ui.mjs'
   },

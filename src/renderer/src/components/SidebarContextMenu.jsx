@@ -20,7 +20,12 @@ export default function SidebarContextMenu({
   onExportHtml,
   onExportPandoc,
   onShowHistory,
-  onDelete
+  onDelete,
+  // 云空间 roots: add the folder to the workspace, open its sync settings,
+  // stop syncing it (= remove it from 云空间; asks first, deletes nothing).
+  onAddToWorkspace,
+  onOpenSyncSettings,
+  onStopSync
 }) {
   const menuRef = useRef(null)
   const [position, setPosition] = useState(() => ({ left: menu?.x || 0, top: menu?.y || 0 }))
@@ -47,7 +52,8 @@ export default function SidebarContextMenu({
   }, [menu])
 
   if (!menu) return null
-  const { node, isRoot, syncRootPath, syncRootRegistered } = menu
+  const { node, isRoot, syncRootPath, syncRootRegistered, variant, inWorkspace } = menu
+  const cloudRoot = variant === 'cloud' && isRoot
   const run = (action) => () => {
     action?.()
     onClose()
@@ -63,7 +69,7 @@ export default function SidebarContextMenu({
     >
       <button onClick={run(() => onNewFile(node?.type === 'dir' ? node : null))}>{t('side.ctxNewFile')}</button>
       <button onClick={run(() => onNewFolder(node?.type === 'dir' ? node : null))}>{t('side.ctxNewFolder')}</button>
-      {!node && (
+      {!node && variant !== 'cloud' && (
         <>
           <div className="menu-sep" />
           <button onClick={run(onAddFolder)}>{t('workspace.addFolder')}</button>
@@ -75,7 +81,15 @@ export default function SidebarContextMenu({
           <button onClick={run(() => onOpenRight(node.path))}>{t('tab.openRight')}</button>
         </>
       )}
-      {isRoot && (
+      {cloudRoot && (
+        <>
+          <div className="menu-sep" />
+          {!inWorkspace && onAddToWorkspace && <button onClick={run(() => onAddToWorkspace(node.path))}>{t('cloud.addToWorkspace')}</button>}
+          {onOpenSyncSettings && <button onClick={run(() => onOpenSyncSettings(node.path))}>{t('cloud.syncSettings')}</button>}
+          {onStopSync && <button className="danger" onClick={run(() => onStopSync(node.path))}>{t('cloud.stopSync')}</button>}
+        </>
+      )}
+      {isRoot && !cloudRoot && (
         <>
           <div className="menu-sep" />
           <button className="danger" onClick={run(() => onRemoveFolder?.(node.path))}>

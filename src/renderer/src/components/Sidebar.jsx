@@ -32,8 +32,27 @@ export default function Sidebar({
   // Open tabs follow a file/folder renamed or moved in the tree.
   onPathMoved,
   // Filled with { startRename(path) } for the rename command (F2, #156).
-  apiRef
+  apiRef,
+  // One section of the sidebar (SidebarPanes): 'workspace' (the folder
+  // roots) or 'cloud' (云空间: every folder in cloud sync). `collapsible`:
+  // the title folds the section (only when there are two).
+  variant = 'workspace',
+  collapsible = false,
+  collapsed = false,
+  onToggleCollapsed,
+  // Folders in 云空间 — their rows carry a ☁ in either tree.
+  cloudRootPaths = [],
+  // 云空间 only: roots not connected to a cloud yet (muted note), the
+  // title's sync status, + (add a sync folder), and the root menu actions.
+  unconnectedPaths = [],
+  headStatus = null,
+  onAddCloudFolder,
+  onAddToWorkspace,
+  onOpenSyncSettings,
+  onStopSync,
+  workspaceRootPaths = []
 }) {
+  const cloud = variant === 'cloud'
   const { t } = useI18n()
   const copyText = (text) => copyToClipboard(text, t('code.copied'))
   const [menu, setMenu] = useState(null) // { x, y, node }
@@ -53,8 +72,13 @@ export default function Sidebar({
   const defaultRoot = folderRoots[0] || null
   const rootSet = new Set(folderRoots.map(normalizePathKey))
   const syncRootSet = new Set(syncFolderPaths.map(normalizePathKey))
+  const cloudRootSet = new Set(cloudRootPaths.map(normalizePathKey))
+  const unconnectedSet = new Set(unconnectedPaths.map(normalizePathKey))
+  const workspaceRootSet = new Set(workspaceRootPaths.map(normalizePathKey))
   const isRootPath = (p) => rootSet.has(normalizePathKey(p))
   const syncRootForPath = (path) => {
+    // 云空间's folders are in cloud sync already: no 加入云同步 item there.
+    if (cloud) return null
     const key = normalizePathKey(path)
     return folderRoots
       .map(normalizePathKey)
@@ -274,8 +298,77 @@ export default function Sidebar({
     return () => { apiRef.current = null }
   }, [apiRef])
 
+  // The section title: folds the section when there are two (VS Code's
+  // explorer sections), else a plain label.
+  const title = cloud ? t('cloud.title') : t('workspace.title')
+  const titleNode = collapsible ? (
+    <button
+      type="button"
+      className="sidebar-title sidebar-section-toggle"
+      aria-expanded={!collapsed}
+      title={collapsed ? t('side.expandSection') : t('side.collapseSection')}
+      onClick={() => onToggleCollapsed?.()}
+    >
+      <Icon name="chevron-right" size={13} className={`sidebar-section-chevron${collapsed ? '' : ' chevron-expanded'}`} />
+      <span>{title}</span>
+    </button>
+  ) : (
+    <span className="sidebar-title">{title}</span>
+  )
+
+  // 云空间: its own head (title, sync status, +) and empty state.
+  if (cloud && (collapsed || !folderRoots.length)) {
+    return (
+      <div className={`sidebar sidebar-cloud${collapsed ? ' collapsed' : ''}`} data-variant="cloud">
+        <div className="sidebar-head">
+          {titleNode}
+          <div className="sidebar-head-actions">
+            {headStatus}
+            <button title={t('cloud.addTitle')} onClick={() => onAddCloudFolder?.()}>
+              <Icon name="plus" size={15} />
+            </button>
+          </div>
+        </div>
+        {!collapsed && (
+          <div className="tree-empty sidebar-cloud-empty">
+            {t('cloud.empty')}
+            {' · '}
+            <button type="button" className="sidebar-cloud-add" onClick={() => onAddCloudFolder?.()}>{t('cloud.add')}</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Workspace folded (a second section is shown below it).
+  if (!cloud && collapsible && collapsed) {
+    return (
+      <div className="sidebar collapsed" data-variant="workspace">
+        <div className="sidebar-head">{titleNode}</div>
+      </div>
+    )
+  }
+
   // Empty state: no folder roots yet.
   if (!folderRoots.length) {
+    if (collapsible) {
+      return (
+        <div className="sidebar" data-variant="workspace">
+          <div className="sidebar-head">{titleNode}</div>
+          <div className="sidebar-empty">
+            <div className="sidebar-empty-panel">
+              <div className="sidebar-empty-icon">
+                <Icon name="folder" size={24} />
+              </div>
+              <button className="btn-primary sidebar-empty-action" onClick={() => onAddFolder()}>
+                <Icon name="folder" size={15} />
+                {t('workspace.addFolder')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="sidebar-empty">
         <div className="sidebar-empty-panel">
@@ -391,6 +484,8 @@ export default function Sidebar({
               y: e.clientY,
               node,
               isRoot,
+              variant,
+              inWorkspace: workspaceRootSet.has(normalizePathKey(node.path)),
               syncRootPath,
               syncRootRegistered: syncRootPath ? syncRootSet.has(normalizePathKey(syncRootPath)) : false
             })
@@ -428,6 +523,14 @@ export default function Sidebar({
           ) : (
             <span className="tree-label">{node.name}</span>
           )}
+          {!renaming && cloud && isRoot && unconnectedSet.has(normalizePathKey(node.path)) && (
+            <span className="tree-note">{t('cloud.notConnected')}</span>
+          )}
+          {!renaming && cloudRootSet.has(normalizePathKey(node.path)) && (
+            <span className="tree-cloud-badge" title={t('cloud.badge')} aria-label={t('cloud.badge')}>
+              <Icon name="cloud" size={13} />
+            </span>
+          )}
         </div>
         {/* Inline creation input inside this directory */}
         {isDir && isOpen && creating && creating.dir === node.path && renderCreatingInput(depth + 1)}
@@ -445,10 +548,19 @@ export default function Sidebar({
   }
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar${cloud ? ' sidebar-cloud' : ''}`} data-variant={variant}>
       <div className="sidebar-head">
-        <span className="sidebar-title">{t('workspace.title')}</span>
+        {titleNode}
         <div className="sidebar-head-actions">
+          {cloud && headStatus}
+          {cloud && (
+            <button title={t('cloud.addTitle')} onClick={() => onAddCloudFolder?.()}>
+              <Icon name="plus" size={15} />
+            </button>
+          )}
+          {/* 云空间 keeps its title short (status + add); new file / folder
+              are in the context menu there. */}
+          {!cloud && <>
           <button className="workspace-add-root" title={t('workspace.addFolder')} onClick={() => onAddFolder()}>
             <Icon name="folder-open" size={15} />
           </button>
@@ -473,6 +585,7 @@ export default function Sidebar({
               </button>
             )
           })()}
+          </>}
         </div>
       </div>
       <div
@@ -514,6 +627,9 @@ export default function Sidebar({
         onExportPandoc={onExportPandoc}
         onShowHistory={onShowHistory}
         onDelete={doDelete}
+        onAddToWorkspace={onAddToWorkspace}
+        onOpenSyncSettings={onOpenSyncSettings}
+        onStopSync={onStopSync}
       />
     </div>
   )

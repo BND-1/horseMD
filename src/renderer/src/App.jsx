@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Sidebar from './components/Sidebar.jsx'
+import SidebarPanes from './components/SidebarPanes.jsx'
+import { syncSummary } from './lib/sync-status.js'
 import Outline from './components/Outline.jsx'
 import GlobalSearchPanel from './components/GlobalSearchPanel.jsx'
 import FloatingOutline from './components/FloatingOutline.jsx'
@@ -697,6 +698,32 @@ export default function App() {
       fireToast(tRef.current('sync.stopFailed', { msg: error?.message || String(error) }), { sticky: true })
     }
   }, [syncWorkspaces.removeFolder, tRef])
+  // 云空间 (SidebarPanes): + adds a sync folder, then Settings › 云同步 to
+  // connect it; stopping asks first (nothing is deleted).
+  const addCloudFolder = useCallback(async () => {
+    try {
+      const entry = await syncWorkspaces.addSyncFolder()
+      if (!entry) return
+      fireToast(tRef.current('sync.enabled', { name: entry.name }))
+      if (!entry.connectionId) openSyncSettings()
+    } catch (error) {
+      fireToast(tRef.current('sync.enableFailed', { msg: error?.message || String(error) }), { sticky: true })
+    }
+  }, [syncWorkspaces.addSyncFolder, tRef, openSyncSettings])
+  const stopCloudFolder = useCallback((rootPath) => {
+    const name = rootPath.split(/[\\/]/).filter(Boolean).pop() || rootPath
+    if (!window.confirm(tRef.current('cloud.stopConfirm', { name }))) return
+    removeSyncFolder(rootPath)
+  }, [removeSyncFolder, tRef])
+  // 云空间's folders are watched for 'cloud' too (main keeps one watcher per
+  // folder until both owners stop): edits / downloads show up there even
+  // when the folder is not in the workspace.
+  const cloudWatchKey = (syncWorkspaces.supported ? syncWorkspaces.registered : []).map((entry) => entry.rootPath).join('\n')
+  useEffect(() => {
+    const roots = cloudWatchKey ? cloudWatchKey.split('\n') : []
+    for (const root of roots) window.api.watchStart?.(root, 'cloud')
+    return () => { for (const root of roots) window.api.watchStop?.(root, 'cloud') }
+  }, [cloudWatchKey])
 
   // Sync the show-hidden-files setting to main (readTree filter) + refresh the
   // file tree when it changes (#29).
@@ -1295,7 +1322,14 @@ export default function App() {
         >
           {sidebarOpen && (
             sidebarMode === 'files' ? (
-              <Sidebar
+              <SidebarPanes
+                cloudEnabled={syncWorkspaces.supported}
+                cloudEntries={syncWorkspaces.registered}
+                syncStatus={syncSummary({ sync: syncWorkspaces, autoSync, syncAuto: settings.syncAuto, t })}
+                onAddCloudFolder={addCloudFolder}
+                onAddToWorkspace={addFolder}
+                onOpenSyncSettings={openSyncSettings}
+                onStopSync={stopCloudFolder}
                 folderRoots={folderRoots}
                 onAddFolder={openFolder}
                 onRemoveFolder={removeFolder}

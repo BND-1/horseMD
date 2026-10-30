@@ -87,8 +87,10 @@ const api = {
   syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
 
   // watch
-  watchStart: (dir) => ipcRenderer.invoke('watch:start', dir),
-  watchStop: (dir) => ipcRenderer.invoke('watch:stop', dir),
+  // owner: 'workspace' (default) | 'cloud' — a folder watched for both
+  // closes when both stopped.
+  watchStart: (dir, owner) => ipcRenderer.invoke('watch:start', dir, owner),
+  watchStop: (dir, owner) => ipcRenderer.invoke('watch:stop', dir, owner),
   watchFile: (path) => ipcRenderer.invoke('watch:file', path),
   unwatchFile: (path) => ipcRenderer.invoke('watch:unfile', path),
 

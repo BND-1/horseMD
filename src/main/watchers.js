@@ -14,14 +14,23 @@ export function registerWatcherIpc(ipcMain, {
   const fileWatchers = new Map()
   const fileWatcherFactory = watcherFactory || chokidar
 
-  ipcMain.handle('watch:start', async (_event, dir) => {
-    if (folderWatchers.has(dir)) return true
+  // A folder can be watched for several owners — the workspace and 云空间
+  // (same folder in both trees). It closes when the last owner stops, so
+  // taking a folder out of the workspace never leaves a gap in which a new
+  // file goes unnoticed. Owners are names, not counts: a reloaded renderer
+  // starting again for the same owner is a no-op, as before.
+  ipcMain.handle('watch:start', async (_event, dir, owner = 'workspace') => {
+    const existing = folderWatchers.get(dir)
+    if (existing) {
+      existing.owners.add(String(owner))
+      return true
+    }
     if (isRestrictedWatchRoot(dir)) return false
 
     const watcher = watcherFactory
       ? watcherFactory.watch(dir, workspaceWatchOptions(markdownExtensions))
       : createWorkspaceWatcher(dir, markdownExtensions)
-    const entry = { watcher, timer: null }
+    const entry = { watcher, timer: null, owners: new Set([String(owner)]) }
     watcher.on('error', (error) => console.error('watch:start error (ignored):', error?.message || error))
     const ping = () => {
       clearTimeout(entry.timer)
@@ -32,9 +41,11 @@ export function registerWatcherIpc(ipcMain, {
     return true
   })
 
-  ipcMain.handle('watch:stop', async (_event, dir) => {
+  ipcMain.handle('watch:stop', async (_event, dir, owner = 'workspace') => {
     const entry = folderWatchers.get(dir)
     if (entry) {
+      entry.owners.delete(String(owner))
+      if (entry.owners.size) return true
       folderWatchers.delete(dir)
       clearTimeout(entry.timer)
       await entry.watcher.close()

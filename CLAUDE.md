@@ -730,6 +730,21 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   reuses hashes of files whose size + mtime did not change
   (`local-files.js` cache). Locked by `test:sync-auto` +
   `test:auto-sync-ui` (`__hmAutoSyncTick`, `__hmAutoSyncSaved(path)`).
+- **云空间 (Cloud space, 2026-10-29)**: the file pane is `SidebarPanes.jsx`
+  — 工作区 above 云空间, each the same `Sidebar.jsx` tree (`variant:
+  'workspace' | 'cloud'`) with its own expanded folders / rename / drag
+  state. 云空间 lists every registered sync folder (also ones not in the
+  workspace); the workspace marks them ☁; a cloud root's menu has 加入工作区
+  / 云同步设置… / 停止同步 (window.confirm, deletes nothing). Titles fold the
+  section, the line between drags (double-click resets); both remembered in
+  `localStorage horsemd.sidebarPanes.v1`. The title status is
+  `lib/sync-status.js` `syncSummary` (shared with the status bar). Folder
+  watchers have owners: main keeps one watcher per folder until every
+  owner ('workspace' default, 'cloud') stopped — a stop + restart when a
+  folder left the workspace missed the first new file. Without cloud sync
+  (mobile) only the workspace tree shows, as before. Tests find a row with
+  `.sidebar[data-variant=…] .tree-row` when a folder is in both. Locked by
+  `test:cloud-space-ui`.
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
   parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
