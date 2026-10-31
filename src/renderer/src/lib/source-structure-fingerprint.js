@@ -10,12 +10,26 @@
 // the parser is allowed to normalize but the source synchronizer must retain:
 // list kind, nesting depth, task state, and whether each item is empty.
 
+import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfm } from 'micromark-extension-gfm'
+import { gfmFromMarkdown } from 'mdast-util-gfm'
+import { math } from 'micromark-extension-math'
+import { mathFromMarkdown } from 'mdast-util-math'
+import { frontmatter } from 'micromark-extension-frontmatter'
+import { frontmatterFromMarkdown } from 'mdast-util-frontmatter'
+
 const markerPattern = /^([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/
 const nestedMarkerPattern = /^([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/
 const fenceLinePattern = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/
 const closingFencePattern = /^ {0,3}(`{3,}|~{3,})[ \t]*$/
 
+// `$$` display math is a fence too (remark-math): `- x` inside is LaTeX.
+const mathOpenPattern = /^ {0,3}(\${2,})[ \t]*([^$\r\n]*)$/
+const mathClosePattern = /^ {0,3}(\${2,})[ \t]*$/
+
 const openingFence = (line) => {
+  const mathMatch = String(line || '').match(mathOpenPattern)
+  if (mathMatch) return { char: '$', length: mathMatch[1].length }
   const match = String(line || '').match(fenceLinePattern)
   if (!match) return null
   const run = match[1]
@@ -29,7 +43,7 @@ const openingFence = (line) => {
 }
 
 const closesFence = (line, fence) => {
-  const match = String(line || '').match(closingFencePattern)
+  const match = String(line || '').match(fence?.char === '$' ? mathClosePattern : closingFencePattern)
   return Boolean(
     match && fence &&
     match[1][0] === fence.char &&
@@ -150,9 +164,30 @@ const listContentColumns = (line) => {
   }
 }
 
+// Strip `columns` columns of leading blanks (tabs to the next multiple of 4).
+const dropColumns = (line, columns) => {
+  let column = 0
+  let index = 0
+  while (index < line.length && column < columns) {
+    if (line[index] === ' ') column += 1
+    else if (line[index] === '\t') column += 4 - (column % 4)
+    else break
+    index += 1
+  }
+  return line.slice(index)
+}
+
+// `* * *`, `- - -`, `___`: a thematic break wins over a list item (CommonMark).
+const thematicBreakPattern = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/
+// `[x]: https://…` — Milkdown drops definitions (remark-inline-links), so the
+// canonical text never has the line; it separates nothing.
+const definitionPattern = /^ {0,3}\[[^\]\n]+\]:[ \t]*\S/
+
 const fingerprint = (markdown) => {
   const groups = []
   let group = null
+  // An open fenced code block: { char, length, container } where `container`
+  // is the content column of the list item that holds it (0 at top level).
   let fence = null
   let crossedNonListLine = false
   // Content columns of the list items that are still open.
@@ -161,23 +196,51 @@ const fingerprint = (markdown) => {
   let interruptible = false
   // The previous line was paragraph text inside an open list item.
   let lazyItemText = false
-  for (const rawLine of String(markdown || '').split(/\r?\n/)) {
+  // The previous line was blank (a definition can start a block there).
+  let afterBlank = true
+  // CommonMark line endings: CRLF, LF and a lone CR (#171: a paste left
+  // `常用\r```` in a CRLF file; split on LF only, the fence opener was glued
+  // to the line before and its closing fence opened a block that hid every
+  // later list).
+  const lines = String(markdown || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)
+  // YAML front matter (`---` … `---` on the first lines) holds no lists.
+  if (/^---[ \t]*$/.test(lines[0] || '')) {
+    const close = lines.findIndex((line, index) => index > 0 && /^(---|\.\.\.)[ \t]*$/.test(line))
+    if (close > 0) lines.splice(0, close + 1, '')
+  }
+  for (const rawLine of lines) {
     if (fence) {
-      if (closesFence(rawLine, fence)) {
-        fence = null
-        interruptible = false
-        lazyItemText = false
-        group = null
-        crossedNonListLine = true
+      // Code inside a list item ends with the item: a line left of its
+      // content column (micromark closes the container, then the fence).
+      const outside = rawLine.trim() && fence.container > 0 && leadingColumns(rawLine) < fence.container
+      if (!outside) {
+        if (closesFence(dropColumns(rawLine, fence.container), fence)) {
+          fence = null
+          interruptible = false
+          lazyItemText = false
+          group = null
+          crossedNonListLine = true
+          afterBlank = false
+        }
+        continue
       }
-      continue
+      fence = null
     }
-    const openedFence = openingFence(rawLine)
+    // Block starts are read relative to the list item the line belongs to:
+    // a fence or a break indented under `- a` / `  - b` is that item's block
+    // (the old absolute 0–3 space rule took `    ```` for text and every
+    // `- x` in the code for list items; #171).
+    const lineColumn = rawLine.trim() ? leadingColumns(rawLine) : 0
+    const container = openItems.filter((column) => column <= lineColumn).at(-1) ?? 0
+    const relative = container ? dropColumns(rawLine, container) : rawLine
+    const openedFence = openingFence(relative)
     if (openedFence) {
-      fence = openedFence
+      fence = { ...openedFence, container }
+      while (openItems.length && openItems[openItems.length - 1] > container) openItems.pop()
       lazyItemText = false
       group = null
       crossedNonListLine = true
+      afterBlank = false
       continue
     }
     if (standaloneEmptyBlockLinePattern.test(rawLine)) {
@@ -186,6 +249,22 @@ const fingerprint = (markdown) => {
       continue
     }
     if (!rawLine.trim()) {
+      interruptible = false
+      lazyItemText = false
+      afterBlank = true
+      continue
+    }
+    if (afterBlank && !lazyItemText && definitionPattern.test(relative)) {
+      // Transparent like a blank line; the definition's own lines end here
+      // (a title on the next line is rare and still fails closed).
+      afterBlank = true
+      continue
+    }
+    afterBlank = false
+    if (thematicBreakPattern.test(relative)) {
+      while (openItems.length && openItems[openItems.length - 1] > container) openItems.pop()
+      crossedNonListLine = true
+      group = null
       interruptible = false
       lazyItemText = false
       continue
@@ -256,11 +335,11 @@ const fingerprint = (markdown) => {
 
 const groupSignature = (group) => JSON.stringify(group.map(({ kind, number, task, empty, depth }) => ({ kind, number, task, empty, depth })))
 
-const changedGroupIndexes = (previousMarkdown, nextGroups) => {
+const changedGroupIndexes = (previousMarkdown, nextGroups, fp = fingerprint) => {
   if (typeof previousMarkdown !== 'string') {
     return new Set(nextGroups.map((_, index) => index))
   }
-  const previousGroups = fingerprint(previousMarkdown)
+  const previousGroups = fp(previousMarkdown)
   let prefix = 0
   while (
     prefix < previousGroups.length &&
@@ -297,9 +376,9 @@ const comparableGroup = (group, { strictOrderedNumbers = false, strictNesting = 
     ...(strictOrderedNumbers && slot.kind === 'ordered' ? { number: slot.number } : {})
   }))
 
-const listSlotTransition = (beforeMarkdown, afterMarkdown, options = {}) => {
-  const before = fingerprint(beforeMarkdown)
-  const after = fingerprint(afterMarkdown)
+const listSlotTransition = (beforeMarkdown, afterMarkdown, options = {}, fp = fingerprint) => {
+  const before = fp(beforeMarkdown)
+  const after = fp(afterMarkdown)
   let prefix = 0
   while (
     prefix < before.length &&
@@ -334,31 +413,44 @@ const listSlotTransition = (beforeMarkdown, afterMarkdown, options = {}) => {
 // This remains strict about the fields requested by the caller and is only a
 // transition primitive; the UI integrity gate decides whether the old pair is
 // trusted enough to use it.
+const transitionsEquivalent = (fp, beforeLeft, afterLeft, beforeRight, afterRight, options) =>
+  JSON.stringify(listSlotTransition(beforeLeft, afterLeft, options, fp)) ===
+  JSON.stringify(listSlotTransition(beforeRight, afterRight, options, fp))
+
 export const areMarkdownListSlotTransitionsEquivalent = (
   beforeLeft,
   afterLeft,
   beforeRight,
   afterRight,
   options = {}
-) => JSON.stringify(listSlotTransition(beforeLeft, afterLeft, options)) ===
-  JSON.stringify(listSlotTransition(beforeRight, afterRight, options))
+) => transitionsEquivalent(fingerprint, beforeLeft, afterLeft, beforeRight, afterRight, options) ||
+  confirmedByParser([beforeLeft, afterLeft, beforeRight, afterRight], () =>
+    transitionsEquivalent(exactFingerprint, beforeLeft, afterLeft, beforeRight, afterRight, options))
 
 export const markdownListSlotFingerprint = (markdown) => fingerprint(markdown)
 
-export const areMarkdownListSlotsEquivalent = (
+export const areMarkdownListSlotsEquivalent = (left, right, options = {}) =>
+  slotsEquivalent(fingerprint, left, right, options) ||
+  confirmedByParser([left, right, options?.previousMarkdown], () =>
+    slotsEquivalent(exactFingerprint, left, right, options, { trace: false }))
+
+const slotsEquivalent = (
+  fp,
   left,
   right,
   {
     strictOrderedNumbers = false,
     strictNesting = false,
     previousMarkdown = null
-  } = {}
+  } = {},
+  { trace = true } = {}
 ) => {
-  const a = fingerprint(left)
-  const b = fingerprint(right)
-  const groupsToCheck = changedGroupIndexes(previousMarkdown, b)
+  const traceDiff = trace && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)
+  const a = fp(left)
+  const b = fp(right)
+  const groupsToCheck = changedGroupIndexes(previousMarkdown, b, fp)
   if (previousMarkdown == null && a.length !== b.length) {
-    if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+    if (traceDiff) {
       globalThis.__hmSourceIntegrityDiffTrace.push({
         kind: 'list-slot-group-count',
         left: a,
@@ -371,7 +463,7 @@ export const areMarkdownListSlotsEquivalent = (
     const leftGroup = a[groupIndex]
     const rightGroup = b[groupIndex]
     if (!leftGroup || !rightGroup) {
-      if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+      if (traceDiff) {
         globalThis.__hmSourceIntegrityDiffTrace.push({
           kind: 'list-slot-group-missing',
           groupIndex,
@@ -384,7 +476,7 @@ export const areMarkdownListSlotsEquivalent = (
       return false
     }
     if (leftGroup.length !== rightGroup.length) {
-      if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+      if (traceDiff) {
         globalThis.__hmSourceIntegrityDiffTrace.push({
           kind: 'list-slot-count',
           groupIndex,
@@ -398,7 +490,7 @@ export const areMarkdownListSlotsEquivalent = (
     }
     for (let index = 0; index < leftGroup.length; index += 1) {
       if (!sameSlot(leftGroup[index], rightGroup[index], strictOrderedNumbers, strictNesting)) {
-        if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+        if (traceDiff) {
           globalThis.__hmSourceIntegrityDiffTrace.push({
             kind: 'list-slot',
             groupIndex,
@@ -415,3 +507,100 @@ export const areMarkdownListSlotsEquivalent = (
   }
   return true
 }
+
+// ---------------------------------------------------------------------------
+// The same list slots read by the real Markdown parser (micromark + GFM, math
+// and front matter, as the editor parses). The line scanner above is fast
+// (≈1 ms for 10 000 characters against ≈27 ms here) and runs on every sync;
+// it imitates the parser and once read a fence nested in a list as text, so
+// every list after it was compared with the wrong list (#171). A difference
+// the scanner reports is therefore confirmed here before it can stop a sync:
+// the parser's verdict wins. Equal results are not re-checked.
+
+const EXACT_LIMIT = 400000
+let parseOptions = null
+const exactCache = new Map()
+
+const placeholderHtml = (node) => node?.type === 'html' && /^\s*<br\s*\/?>\s*$/i.test(node.value || '')
+const blankInline = (node) =>
+  (node.type === 'text' && /^[ \t\u200B]*$/.test(node.value || '')) ||
+  placeholderHtml(node) || node.type === 'break'
+const blankParagraph = (node) => node?.type === 'paragraph' && (node.children || []).every(blankInline)
+// Editor-only placeholders and definitions (dropped from the canonical text)
+// separate nothing.
+const transparent = (node) => node?.type === 'definition' || placeholderHtml(node) || blankParagraph(node)
+
+function exactFingerprint(markdown) {
+  const text = String(markdown || '')
+  const cached = exactCache.get(text)
+  if (cached) return cached
+  if (!parseOptions) {
+    parseOptions = {
+      extensions: [gfm(), math(), frontmatter()],
+      mdastExtensions: [gfmFromMarkdown(), mathFromMarkdown(), frontmatterFromMarkdown()]
+    }
+  }
+  // Offsets exclude a BOM.
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+  const tree = fromMarkdown(body, parseOptions)
+  const groups = []
+  let group = null
+  const block = (node, depth) => {
+    if (transparent(node)) return
+    if (node.type === 'list') {
+      node.children.forEach((item, index) => listItem(item, node, index, depth))
+      return
+    }
+    group = null
+    // A quote is a fence around its own lists.
+    if (node.type === 'blockquote') {
+      for (const child of node.children || []) block(child, 0)
+      group = null
+    }
+  }
+  const listItem = (item, list, index, depth) => {
+    if (!group) {
+      group = []
+      groups.push(group)
+    }
+    const children = item.children || []
+    const lead = children[0]?.type === 'paragraph' && !blankParagraph(children[0]) ? children[0] : null
+    const empty = !children.some((child) => child.type !== 'list' && !transparent(child))
+    const marker = list.ordered ? body.slice(item.position?.start?.offset ?? 0).match(/^\d{1,9}/)?.[0] : null
+    group.push({
+      kind: list.ordered ? 'ordered' : 'bullet',
+      indent: depth,
+      number: list.ordered ? (marker ?? String((list.start ?? 1) + index)) : null,
+      task: item.checked == null ? 'plain' : item.checked ? 'checked' : 'unchecked',
+      empty,
+      depth
+    })
+    for (const child of children) {
+      if (child === lead) continue
+      if (child.type === 'list') child.children.forEach((nested, at) => listItem(nested, child, at, depth + 1))
+      else block(child, depth + 1)
+    }
+  }
+  for (const child of tree.children || []) block(child, 0)
+  if (exactCache.size >= 8) exactCache.delete(exactCache.keys().next().value)
+  exactCache.set(text, groups)
+  return groups
+}
+
+// Run the parser check unless the texts are too large to parse in time (the
+// scanner's verdict then stands, as before).
+function confirmedByParser(texts, check) {
+  const size = texts.reduce((sum, text) => sum + (typeof text === 'string' ? text.length : 0), 0)
+  if (size > EXACT_LIMIT) return false
+  try {
+    const ok = check() === true
+    if (ok && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace)) {
+      globalThis.__hmSourceIntegrityDiffTrace.push({ kind: 'list-slot-scanner-overruled-by-parser' })
+    }
+    return ok
+  } catch {
+    return false
+  }
+}
+
+export const markdownListSlotFingerprintExact = (markdown) => exactFingerprint(markdown)

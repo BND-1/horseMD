@@ -11,7 +11,9 @@ export { buildInlineMap, pmInlineUnits } from './inline-map.js'
  */
 export function reprintVerified({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, equivalent }) {
   let last = null
-  for (const escape of ['minimal', 'full', 'segment']) {
+  // Exact patches first; 'block' (changed text blocks printed whole, marked
+  // degraded) is the last step before giving up.
+  for (const escape of ['minimal', 'full', 'segment', 'block']) {
     let result
     try {
       result = reprintSource({ source, editorDoc, previousDoc, parse, parseTree, remark, serialize, escape })

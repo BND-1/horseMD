@@ -249,6 +249,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // reprints whole top-level inline segments, which re-escapes literal
   // delimiters around the edit (`**` + typed text → `\*你好\*`; seed 50).
   const segmentOnly = escape === 'segment'
+  // `escape: 'block'` (the verifier's last step): every changed text block
+  // is printed whole in the editor's spelling, inside its unchanged frame.
+  // The character and segment patches are exact but intricate; when one of
+  // them prints a wrong line (fuzz 2026-10-31: inline code edited and a
+  // blank after a soft break in one paragraph lost the line break), the
+  // verifier used to have nothing left and the sync paused.
+  const blockOnly = escape === 'block'
   const bom = source.startsWith('﻿') ? '﻿' : ''
   const body = bom ? source.slice(1) : source
   const eol = /\r\n/.test(body) ? '\r\n' : '\n'
@@ -690,6 +697,10 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
 
   // Patch one text block. `mdBlock` is the mdast paragraph/heading/tableCell.
   const patchTextblock = (srcBlock, mdBlock, newBlock, frame, { cell = false } = {}) => {
+    if (blockOnly) {
+      degraded = true
+      return false
+    }
     const map = buildInlineMap({ source: body, block: mdBlock, quoteDepth: frame.quoteDepth })
     const oldUnits = pmInlineUnits(srcBlock)
     if (!map || map.units.length !== oldUnits.length) {
@@ -949,11 +960,17 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     if (newNode.textContent.split('\n').some((line) => line.trimStart().startsWith(fence))) return false
     // Content lines sit between the opening and closing fence lines; each
     // carries the container prefix. Fences and info string stay authored.
+    // A fence indented by N spaces (` ```js`, `   ``` ` under `- `) has up
+    // to N spaces removed from every content line (CommonMark): print them
+    // back, or a line typed as `  a list` reads as ` a list` (fuzz
+    // 2026-10-31, seed 48).
     const firstLineEnd = body.indexOf('\n', start) + 1
     const lastLineStart = lineStartOf(body, end)
+    const fenceLead = (body.slice(lineStartOf(body, start), start) + open[1]).replace(/\t/g, '    ')
+    const fenceIndent = ' '.repeat(Math.max(0, Math.min(3, fenceLead.length - frame.prefix.replace(/\t/g, '    ').length)))
     const content = newNode.textContent
     const text = content
-      ? content.split('\n').map((line) => (line ? frame.prefix + line : frame.prefix.replace(/[ \t]+$/, ''))).join('\n') + '\n'
+      ? content.split('\n').map((line) => (line ? frame.prefix + fenceIndent + line : frame.prefix.replace(/[ \t]+$/, ''))).join('\n') + '\n'
       : ''
     replace(firstLineEnd, lastLineStart, text)
     notes.push({ level: 'code', at: start })

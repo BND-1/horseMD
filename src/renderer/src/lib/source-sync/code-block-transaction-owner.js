@@ -1,5 +1,6 @@
 import { lineEndingNear } from '../markdown-preservation/core.js'
 import {
+  fenceIndentOf,
   fencedCodeBlockContent,
   isPlainCodeBlock,
   normalizeCodeBlockText,
@@ -55,10 +56,13 @@ const plainSliceText = (slice) => {
   return plain ? text : null
 }
 
-const rawContentForDocument = (text, eol) => {
+// Content lines carry the opening fence's indentation (` ```js` → one
+// space each), or the parser removes their own leading spaces (seed 48).
+const rawContentForDocument = (text, eol, indent = 0) => {
   const normalized = normalizeCodeBlockText(text)
   if (!normalized) return ''
-  return normalized.replace(/\n/g, eol) + eol
+  const pad = ' '.repeat(indent)
+  return normalized.split('\n').map((line) => (line ? pad + line : line)).join(eol) + eol
 }
 
 const sourceFenceCollides = (block, nextText) => {
@@ -288,7 +292,7 @@ export function createCodeBlockTransactionSourceSyncOwner({
     }
 
     const eol = lineEndingNear(journal.source, sourceRange.contentStart)
-    const replacement = rawContentForDocument(nextText, eol)
+    const replacement = rawContentForDocument(nextText, eol, fenceIndentOf(sourceRange))
     const markdown = journal.source.slice(0, sourceRange.contentStart) +
       replacement +
       journal.source.slice(sourceRange.closeStart)

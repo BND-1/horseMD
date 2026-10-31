@@ -480,6 +480,13 @@ export function createPmPosToMarkdownOffsetMapper(markdown, doc, remark) {
   if (!mdBlocks) return null
   const pmBlocks = pmBlocksFor(doc)
   const mdByPmIndex = new Map()
+  // An empty line maps to "the end of the block before it + 1" — inside the
+  // CRLF of a Windows file. Never answer between CR and LF: an owner that
+  // splices there leaves a lone CR (#171: `常用\r```…`, which the parser
+  // reads as a line break and the list check did not).
+  const outsideCrlf = (offset) => (
+    Number.isInteger(offset) && markdown[offset - 1] === '\r' && markdown[offset] === '\n' ? offset + 1 : offset
+  )
 
   return (pmPos) => {
     const pmIndex = pmBlockIndexAtPos(pmBlocks, pmPos)
@@ -491,10 +498,10 @@ export function createPmPosToMarkdownOffsetMapper(markdown, doc, remark) {
       mdByPmIndex.set(pmIndex, md)
     }
     if (!md) return null
-    if (md.gap) return md.gapOffset
-    if (pm.atom) return md.start
+    if (md.gap) return outsideCrlf(md.gapOffset)
+    if (pm.atom) return outsideCrlf(md.start)
     const local = pmItemIndexAtPos(pm, pmPos)
-    return rawOffsetFromBlockLocal(md, local)
+    return outsideCrlf(rawOffsetFromBlockLocal(md, local))
   }
 }
 

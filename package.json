@@ -413,6 +413,8 @@
     "test:inline-code-span-append-ui": "node scripts/test-inline-code-span-append-ui.mjs",
     "test:hardbreak-paste-continuation-ui": "node scripts/test-hardbreak-paste-continuation-ui.mjs",
     "test:math-literal-source": "node scripts/test-math-literal-source.mjs",
+    "test:list-slot-parser-parity": "node scripts/test-list-slot-parser-parity.mjs",
+    "test:paste-into-list-item-ui": "node scripts/test-paste-into-list-item-ui.mjs",
     "fuzz:math-block-ui": "node scripts/fuzz-math-block-ui.mjs",
     "test:serializer-style": "node scripts/test-serializer-style.mjs",
     "test:serializer-style-follow-doc-ui": "node scripts/test-serializer-style-follow-doc-ui.mjs",

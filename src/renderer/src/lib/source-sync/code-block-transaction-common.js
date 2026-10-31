@@ -12,12 +12,18 @@ export const isPlainCodeBlock = (node) => {
 export const normalizeCodeBlockText = (value) =>
   String(value || '').replace(/\r\n|\r/g, '\n')
 
+// Spaces before the opening fence (0–3). CommonMark removes up to that many
+// from every content line, so they are not part of the code.
+export const fenceIndentOf = (block) => Math.min(3, /^ */.exec(String(block?.openLine || ''))[0].length)
+
 export const fencedCodeBlockContent = (markdown, block) => {
   if (!block) return null
   let text = normalizeCodeBlockText(
     String(markdown || '').slice(block.contentStart, block.closeStart)
   )
   if (text.endsWith('\n')) text = text.slice(0, -1)
+  const indent = fenceIndentOf(block)
+  if (indent) text = text.split('\n').map((line) => line.replace(new RegExp(`^ {0,${indent}}`), '')).join('\n')
   return text
 }
 

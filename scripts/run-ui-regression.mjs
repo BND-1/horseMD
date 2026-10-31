@@ -197,6 +197,10 @@ const standalone = [
     script: 'scripts/test-math-block-edit-ui.mjs'
   },
   {
+    name: 'Paste into a list item (#171): fenced code into a new item, CRLF kept, lists below a nested fence / lone CR compared correctly',
+    script: 'scripts/test-paste-into-list-item-ui.mjs'
+  },
+  {
     name: 'Pandoc export dialog: open file / show in folder / close, failures explained',
     script: 'scripts/test-pandoc-export-ui.mjs'
   },

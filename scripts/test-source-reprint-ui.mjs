@@ -27,6 +27,15 @@ const cases = [
   { name: 'typed `*` stays literal', source: 'a b\n', target: 'a \\* b\n', expected: 'a * b\n' },
   { name: 'leading spaces use the sentinel', source: 'x\n\nsecond `code` here\n', target: 'x\n\n&#x20;   second `code` here\n', expected: 'x\n\n​    second `code` here\n' },
   { name: 'soft-break paragraph: edit 2nd line', source: 'line one\nline two\n\nnext\n', target: 'line one\nline twoX\n\nnext\n', expected: 'line one\nline twoX\n\nnext\n' },
+  // Fuzz 2026-10-31 (seed 0): inline code edited and a blank typed after the
+  // soft break, in one paragraph — the segment patch lost the line break;
+  // the verifier's last step prints the paragraph whole.
+  // Fuzz 2026-10-31 (seed 48): content lines of an indented fence carry its
+  // indentation (CommonMark removes up to that many spaces from each).
+  { name: 'code: fence indented 1, line with leading blanks', source: '# h\n ```js\nconst a = 1\n- not a list\n```\n\nafter\n', target: '# h\n\n```js\nconst a = 1\n- not\n  a list\n```\n\nafter\n', expected: '# h\n ```js\n const a = 1\n - not\n   a list\n```\n\nafter\n' },
+  { name: 'code: fence indented 2', source: '  ```\n  x\n  ```\n', target: '```\nx\n  y\n```\n', expected: '  ```\n  x\n    y\n  ```\n' },
+  { name: 'code: fence one past the list item column', source: '- i\n\n   ```\n   x\n   ```\n', target: '- i\n\n  ```\n  x\n    y\n  ```\n', expected: '- i\n\n   ```\n   x\n     y\n   ```\n' },
+  { name: 'inline code edit + blank after a soft break', source: 'p `inline cod`x。\nn    Second line.\n', target: 'p `inlin`x。\n&#x20;n    Second line.\n', expected: 'p `inlin`x。\nn    Second line.\n' },
   { name: 'delete first paragraph', source: 'a\n\nb\n\nc\n', target: 'b\n\nc\n', expected: 'b\n\nc\n' },
   { name: 'delete last list item', source: '- a\n- b\n- c\n', target: '- a\n- b\n', expected: '- a\n- b\n' },
   { name: 'join two paragraphs (Backspace)', source: 'first *em*\n\nsecond `c`\n', target: 'first *em*second `c`\n', expected: 'first *em*second `c`\n' },

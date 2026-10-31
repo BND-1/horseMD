@@ -948,10 +948,58 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   serializes them, the events. The dialog's text is editable; 复制 /「在 GitHub
   提交」(bug form prefilled via URL params; > 7000 chars → copied + paste
   prompt) use the box. 「复制，微信发给作者」copies it and shows the author's
-  WeChat ID (`AUTHOR_WECHAT`, public in guide/community.md; copyable). Save (`useFileOps`) and source-switch recovery toasts
+  WeChat ID (`AUTHOR_WECHAT`, public in guide/community.md; copyable). The
+  dialog is top-anchored (a status line or the expanded text grow it
+  downward; centred, it jumped up and a click on the ID missed it). Save (`useFileOps`) and source-switch recovery toasts
   carry the same button (`getSyncReport`). The trace harness has
   `forceSyncFailure(reason, staleSource)`. Locked by `test:sync-diagnostics` +
   `test:sync-report-ui`.
+- **List-slot check + pastes (#171, 2026-10-31)**: Windows user, Enter
+  after a list item + Ctrl+V of a fenced block →「检测到富文本与源码不一致」
+  (`source-list-structure-mismatch`). Chain: an earlier paste on a new line
+  under a list in a CRLF file was spliced between CR and LF
+  (`createPmPosToMarkdownOffsetMapper` answered "block end + 1" for the empty
+  line) and left `常用\r```…` (a lone CR + the clipboard's LF lines); the
+  list-slot scanner (`source-structure-fingerprint.js`) split lines on LF
+  only, glued the fence to the line before, took its closing fence for an
+  opening one and compared every later list with the wrong one. Fixes: the
+  mapper never answers inside a CRLF pair; raw pastes take the line ending of
+  the line they land on (`localLineEnding`); the scanner splits on every
+  CommonMark line ending and reads fences, `$$` math, thematic breaks
+  (`* * *`) relative to the enclosing item's content column (a fence under
+  `  - b` hid nothing before, its `- x` lines counted as items), skips front
+  matter, and treats link definitions as blank; a difference the scanner
+  reports is confirmed with the real parser (micromark + GFM / math / front
+  matter, `markdownListSlotFingerprintExact`, ≤ 400 000 chars) before it can
+  stop a sync — the parser's verdict wins (traced as
+  `list-slot-scanner-overruled-by-parser`); a raw paste whose bytes cannot be
+  kept goes to the source reprint (`source-reprint-after-paste`) before the
+  legacy owners (it skipped the reprint). The sync event log listens on the
+  editor's parent in the capture phase (the Markdown paste handler's
+  stopImmediatePropagation hid every Markdown paste from the report) and
+  records the first 24 pasted characters. The fuzzer pastes with
+  `FUZZ_PASTE=1` (opt-in: it changes every seed's ops). Locked by
+  `test:list-slot-parser-parity` (scanner = parser on a corpus; listed
+  scopes: lists in quotes, raw HTML blocks), `test:paste-into-list-item-ui`,
+  `test:sync-report-ui`. The paste fuzz then found (all present in 0.13.259):
+  the Markdown paste handler read the clipboard as-is, and its checks use
+  `.` (stops at CR) — a CRLF (Windows) Markdown table was not taken for
+  Markdown, went in as text and Milkdown's conversion pulled the rest of the
+  paragraph into its last cell; the clipboard is now read with LF. One-line
+  blocks (`editor-one-line-blocks.js`, appendTransaction over the touched
+  top-level blocks): a soft break (hardbreak isInline) in a table cell
+  becomes a `<br>` break, one in a heading ends the heading there (the rest
+  becomes a paragraph) — a two-line quote pasted into a cell, two lines
+  pasted into a heading. The reprint verifier's last step is
+  `escape: 'block'` (changed text blocks printed whole, degraded, so only
+  the rescue publishes it): a character/segment patch that prints a wrong
+  line (inline code edited + a blank after a soft break lost the break) no
+  longer leaves the verifier with nothing.
+  A fence indented 1–3 spaces (` ```js`, `   ``` ` one past a list item's
+  column) has that many spaces removed from every content line: the reprint
+  code patch and the code-block owner (`fenceIndentOf`,
+  `fencedCodeBlockContent`) now read and write content with it (a line typed
+  as `  a` read back as ` a`; seed 48).
 - **Rich/source pause families (0.13.235)** — found by
   `scripts/fuzz-rich-source-ui.mjs` (seeded real-Electron random editing; oracle =
   live PM doc vs Save → cold reopen, plus mismatch toasts). Fixes, each locked by

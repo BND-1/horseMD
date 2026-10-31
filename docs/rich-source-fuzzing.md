@@ -25,7 +25,7 @@ FUZZ_SEEDS=31,32,33 FUZZ_OPS=200 FUZZ_CHECKPOINT=40 \
 
 - 每个 seed 确定性复现同一操作序列（PRNG 只决定操作，不依赖时序）；改代码后用**同一 seed** 复跑即可验证。
 - 产物：`$FUZZ_OUT/seed-N/report.json`（op 日志、checkpoint 结论、首次 PAUSE 的 trace 尾部：integrity/diff/coordinator/journal(40)/preserve/flush/各 owner trace）、`checkpoint-K.md`（保存字节）、CORRUPT 时另存 live/reopened/source-view。
-- 操作权重见 `OPS`；夹具为中英文混合文档（标题、软换行段落、嵌套列表、有序、任务、引用、代码块、表格、分隔线）。`FUZZ_FIXTURE=path` 可换夹具。
+- 操作权重见 `OPS`；夹具为中英文混合文档（标题、软换行段落、嵌套列表、有序、任务、引用、代码块、表格、分隔线）。`FUZZ_FIXTURE=path` 可换夹具。`FUZZ_PASTE=1` 额外加入粘贴操作（代码块、列表、表格、引用、公式、多行纯文本，40% 用 CRLF；#171 之前粘贴从未被模糊测试覆盖）；默认关闭，因为加入新操作会改变每个种子的操作序列，文档里引用的种子号会失效。
 - 跑 UI 回归或 fuzz 时**不要重建 out/**（会让中途启动的实例失败）。
 
 ## 3. 分诊流程

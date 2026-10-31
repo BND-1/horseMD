@@ -65,6 +65,12 @@ try {
   await pressKey(send, { key: 'Enter', text: '\r' })
   await typeTextLikeUser(send, '新段')
   await sleep(400)
+  // A Markdown paste: the paste handler stops the event, and the log must
+  // still record it (#171).
+  await pressKey(send, { key: 'Enter', text: '\r' })
+  const pasted = await evaluate(`(() => { const data = new DataTransfer(); data.setData('text/plain', '- 粘贴一\\n- 粘贴二\\n'); const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }); (${editor}).dispatchEvent(event); return event.defaultPrevented })()`)
+  assert.equal(pasted, true, 'the Markdown paste handler took the paste')
+  await sleep(600)
   // Fail with the source left as it was before the edit (a real failure
   // keeps the last synced source): "before" is the file's text, "after" the
   // editor's.
@@ -76,7 +82,8 @@ try {
   assert.match(await evaluate(`document.querySelector('.hm-toast-hint')?.textContent || ''`), /查看详情」把信息发给我们/)
   const look = await evaluate(`(() => { const b = document.querySelector('.hm-toast-action'); const card = b.closest('.hm-toast'); const r = b.getBoundingClientRect()
     return { height: r.height, bg: getComputedStyle(b).backgroundColor, title: card.querySelector('.hm-alert-title')?.textContent, close: card.querySelector('.hm-alert-secondary')?.textContent } })()`)
-  assert.ok(look.height >= 32 && look.bg !== 'rgba(0, 0, 0, 0)', `查看详情 is a filled button: ${JSON.stringify(look)}`)
+  // (31.28 px on Windows at fractional scaling.)
+  assert.ok(look.height >= 30 && look.bg !== 'rgba(0, 0, 0, 0)', `查看详情 is a filled button: ${JSON.stringify(look)}`)
   assert.equal(look.title, '出了点问题')
   assert.equal(look.close, '关闭')
   if (process.env.HM_SYNC_REPORT_SHOT) {
@@ -105,6 +112,7 @@ try {
   assert.match(report.split('#### 改动后')[1] || '', /第一段改动[\s\S]*新段/, 'after has the edit')
   assert.match(report, /input insertText "改"|input insertText "动"|insertText/, 'typed input recorded')
   assert.match(report, /key Enter @ paragraph/, 'Enter recorded with its block')
+  assert.match(report, /paste "- 粘贴一\\n- 粘贴二\\n" len=\d+ text\/plain/, 'a Markdown paste is recorded although its handler stops the event')
   assert.equal(await evaluate(`document.activeElement === document.querySelector('.hm-sync-report textarea')`), true, 'the expanded box has focus')
 
   // HM_SYNC_REPORT_SHOT=<dir>: save the dialog and the toast as PNGs and the
@@ -122,9 +130,15 @@ try {
   assert.match(dialogText, /GitHub/)
   assert.match(dialogText, /alwaysraiseuplikesun/)
   await mainEval('globalThis.__clip = null')
+  const idTop = () => evaluate(`document.querySelector('[data-sync-report="copy-id"]').getBoundingClientRect().top`)
+  const topBefore = await idTop()
   await click(`document.querySelector('[data-sync-report="wechat"]')`)
   await waitFor(`/alwaysraiseuplikesun/.test(document.querySelector('.hm-sync-report-status')?.textContent || '')`, 'wechat status')
   assert.equal(await mainEval('globalThis.__clip'), report, 'WeChat copies the details')
+  await sleep(300)
+  assert.ok(Math.abs((await idTop()) - topBefore) < 1, 'the status line does not move the dialog')
+  // The status line must not move the dialog (it was centred and jumped up
+  // by half the new height; the click then hit the row, Windows).
   await click(`document.querySelector('[data-sync-report="copy-id"]')`)
   await waitFor(`/微信号已复制/.test(document.querySelector('.hm-sync-report-status')?.textContent || '')`, 'id copied status')
   assert.equal(await mainEval('globalThis.__clip'), 'alwaysraiseuplikesun')

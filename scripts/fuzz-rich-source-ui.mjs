@@ -15,6 +15,10 @@
 // Usage:
 //   FUZZ_SEEDS=1,2,3 FUZZ_OPS=150 node scripts/fuzz-rich-source-ui.mjs
 //   FUZZ_FIXTURE=path/to/doc.md  (default: built-in mixed CJK/English document)
+//   FUZZ_PASTE=1  also paste Markdown / plain text (code blocks, lists, tables,
+//                 quotes, math, multi-line text; LF or CRLF) like a user's
+//                 Ctrl+V (#171). Opt-in: adding ops changes what every seed
+//                 does, and the docs name seeds of the default op set.
 // Results: $FUZZ_OUT (default /tmp/horsemd-fuzz/<run>) — one JSON per seed with
 // the op log, toasts, checkpoint verdicts, and trace tails for the first failure.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -122,6 +126,24 @@ const OPS = [
   ['save', 3]
 ]
 
+// #171: pastes were never fuzzed. Each snippet is something a user copies
+// from another Markdown file, an IDE or a chat; text/plain only (what other
+// apps put on the clipboard), sometimes with Windows line endings.
+const PASTE_OPS = [['paste', 6]]
+const PASTE_SNIPPETS = [
+  '```\nclass Wrapper implements Target {\n    private final Something inner;   // 持有对象\n\n    public void doIt() {\n        inner.doIt();\n    }\n}\n\n```\n',
+  '```js\nconst a = 1\n- not a list\n```',
+  '- 粘贴项 one\n- 粘贴项 two\n',
+  '- 单独一项 single item',
+  '1. 第一 first\n2. 第二 second\n',
+  '## 粘贴的标题 pasted heading\n\n正文 body text.\n',
+  '| a | b |\n| --- | --- |\n| 1 | 2 |\n',
+  '> 引用 quote line\n> 第二行\n',
+  '$$\nE = mc^2 \\\\\nx\n$$\n',
+  '段落一 first paragraph\n\n```\ncode line\n```\n\n段落二 second\n',
+  '纯文本第一行 plain line one\n纯文本第二行 plain line two\n\n第三行 three',
+  'just one plain line'
+]
 const visiblePm = `[...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`
 
 // Live document + committed source at the first pause (engine triage).
@@ -511,6 +533,23 @@ async function typeIme(app, rand) {
 
 const KEY_CODES = { z: 'KeyZ', y: 'KeyY', b: 'KeyB' }
 
+// A paste as the editor receives it (other UI tests do the same): a
+// ClipboardEvent with text/plain on the focused editor. Nothing handled it →
+// insert the text like the browser's default paste would.
+async function pastePlain(app, text) {
+  return app.evaluate(`((text) => {
+    const pm = ${visiblePm}
+    if (!pm) return null
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data })
+    const target = document.activeElement && pm.contains(document.activeElement) ? document.activeElement : pm
+    target.dispatchEvent(event)
+    if (!event.defaultPrevented) document.execCommand('insertText', false, text)
+    return event.defaultPrevented
+  })(${JSON.stringify(text)})`)
+}
+
 async function performOp(app, op, rand) {
   switch (op) {
     case 'click': return { target: await clickRandomText(app, rand) }
@@ -585,6 +624,14 @@ async function performOp(app, op, rand) {
         return { text, closed: await setSourceMode(app, false) }
       }
       return { opened: false, closed: await setSourceMode(app, false) }
+    }
+    case 'paste': {
+      let text = pick(rand, PASTE_SNIPPETS)
+      const crlf = rand() < 0.4
+      if (crlf) text = text.replace(/\n/g, '\r\n')
+      const handled = await pastePlain(app, text)
+      await sleep(250)
+      return { text: text.slice(0, 60), crlf, handled }
     }
     case 'save': {
       const saved = await app.evaluate(`(() => { const fab = document.querySelector('.hm-save-fab'); fab?.click(); return Boolean(fab) })()`)
@@ -678,7 +725,7 @@ async function runSeed(seed) {
     // Start like a user: click into the document first.
     report.ops.push({ index: -1, op: 'click', target: await clickRandomText(app, rand) })
     for (let index = 0; index < opsPerSeed; index += 1) {
-      const op = weighted(rand, OPS)
+      const op = weighted(rand, process.env.FUZZ_PASTE === '1' ? [...OPS, ...PASTE_OPS] : OPS)
       let detail = {}
       try {
         detail = await performOp(app, op, rand)

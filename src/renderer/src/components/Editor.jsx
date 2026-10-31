@@ -159,6 +159,18 @@ import {
 // on the wrong (hidden) tab when more than one tab was open.
 const liveEditors = new Set()
 
+// Line ending of the source line that holds `offset` (else of the nearest
+// line before it; LF in a one-line file).
+const localLineEnding = (source, offset) => {
+  const text = String(source || '')
+  const at = Math.max(0, Math.min(text.length, offset || 0))
+  const next = text.indexOf('\n', at)
+  if (next >= 0) return text[next - 1] === '\r' ? '\r\n' : '\n'
+  const previous = text.lastIndexOf('\n', at - 1)
+  if (previous >= 0) return text[previous - 1] === '\r' ? '\r\n' : '\n'
+  return '\n'
+}
+
 /**
  * WYSIWYG editor (Milkdown Crepe) with Typora-style block-level controls.
  *
@@ -3230,6 +3242,11 @@ export default function Editor({
             }
             return
           }
+          // A paste whose clipboard bytes could not be kept (below) goes to
+          // the source reprint first, like every other edit: it used to fall
+          // straight to the legacy owners, which cannot place pasted blocks
+          // inside a list item (#171).
+          let pasteTokenReleased = false
           if (pendingPaste || pendingWholeDocumentReplacement) {
             const currentDoc = viewRef.current?.state.doc
             const ownership = pendingPaste
@@ -3264,6 +3281,7 @@ export default function Editor({
               // resolve correctly.
               pendingRawMarkdownPasteRef.current = null
               wholeDocumentReplacementPending = null
+              pasteTokenReleased = true
               traceEditorEvent(generatedScratchRef.current
                 ? 'scratch-paste-token-released'
                 : 'paste-token-released-committed-baseline', {
@@ -3279,6 +3297,7 @@ export default function Editor({
               // validated publication (or the fail-closed warning).
               pendingRawMarkdownPasteRef.current = null
               wholeDocumentReplacementPending = null
+              pasteTokenReleased = true
               traceEditorEvent(generatedScratchRef.current
                 ? 'scratch-paste-token-released'
                 : 'paste-token-released-committed-baseline', {
@@ -3299,6 +3318,14 @@ export default function Editor({
             return
           }
           }
+          }
+          if (pasteTokenReleased && !pendingList && !hasPendingListIntent) {
+            const reprinted = publishReprint({ canonical, boundary: 'source-reprint-after-paste', notifyChange: true })
+            if (reprinted != null) {
+              clearRichFlushPending()
+              userEditUntil = Date.now() + 1000
+              return
+            }
           }
           let preserved
           if (generatedScratchRef.current) {
@@ -4211,23 +4238,29 @@ export default function Editor({
                 const rawFrom = pmPosToMarkdownOffset(source, from, view.state.doc, remark)
                 const rawTo = pmPosToMarkdownOffset(source, to, view.state.doc, remark)
                 if (!Number.isFinite(rawFrom) || !Number.isFinite(rawTo)) return null
-                const start = Math.min(rawFrom, rawTo)
-                const end = Math.max(rawFrom, rawTo)
+                // Never between the CR and LF of a line ending (a mapped
+                // offset can land there in a CRLF file: `正文。\r` + paste).
+                const outsideCrlf = (offset) => (source[offset - 1] === '\r' && source[offset] === '\n' ? offset - 1 : offset)
+                const start = outsideCrlf(Math.min(rawFrom, rawTo))
+                const end = outsideCrlf(Math.max(rawFrom, rawTo))
                 let before = source.slice(0, start)
                 let after = source.slice(end)
+                // The pasted lines take the line ending of the line they land
+                // on (the clipboard's own made a CRLF file mixed, #171).
+                const eol = localLineEnding(source, start)
+                const pasted = markdown.replace(/\r?\n/g, eol)
                 // Pasted into an empty top-level paragraph (a new line after
                 // Enter): that line has no bytes in the source, so the paste
                 // landed right against the block before it (`尾段\n## 标题`).
                 // The pasted blocks get a blank line on each side (Typora).
                 const $from = oldDoc.resolve(from)
                 if (from === to && $from.depth === 1 && $from.parent.type.name === 'paragraph' && !$from.parent.content.size) {
-                  const eol = source.includes('\r\n') ? '\r\n' : '\n'
                   if (before.trim()) before = before.replace(/[ \t]*(?:\r?\n[ \t]*)*$/, '') + eol + eol
                   const tail = after.replace(/^(?:[ \t]*\r?\n)+/, '')
                   after = tail.trim() ? eol + eol + tail : (/\n$/.test(source) ? eol : '')
-                  next = before + markdown.replace(/(?:\r?\n)+$/, '') + after
+                  next = before + pasted.replace(/(?:\r?\n)+$/, '') + after
                 } else {
-                  next = before + markdown + after
+                  next = before + pasted + after
                 }
               } catch {
                 return null

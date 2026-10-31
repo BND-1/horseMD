@@ -8152,15 +8152,18 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   background: rgba(0, 0, 0, 0.16);
   animation: menuFadeIn 0.15s var(--ease-out);
 }
+/* Top-anchored: a status line or the expanded details grow the dialog
+   downward. Centred, it jumped up by half of each change, and a click on the
+   WeChat ID right after 复制 hit the row it moved away from. */
 .hm-sync-report {
   position: fixed;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: max(24px, 14vh);
+  transform: translateX(-50%);
   z-index: 260;
   width: 520px;
   max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - max(24px, 14vh) - 24px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -8170,7 +8173,11 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   border-radius: 14px;
   box-shadow: var(--shadow-float);
   outline: none;
-  animation: hm-toast-center-in 0.18s var(--ease-out);
+  animation: hm-sync-report-in 0.18s var(--ease-out);
+}
+@keyframes hm-sync-report-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 .hm-sync-report-x {
   position: absolute;

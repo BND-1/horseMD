@@ -30,6 +30,7 @@ import {
   brToBreakRemarkPlugin
 } from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
+import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
@@ -255,6 +256,8 @@ export function createConfiguredCrepe({
       // View-only heading folds (decorations; never written to Markdown).
       createHeadingFoldPlugin(getT),
       tableBreakKeymap(),
+      // Cells and headings are one line: no soft breaks in them (#171).
+      oneLineBlocksPlugin(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).

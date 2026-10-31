@@ -16,6 +16,8 @@ import { normalizeDisplayMath } from './editor-math.js'
 import { hasStructuredWebHtml, normalizeWebPasteHtml } from './editor-web-paste.js'
 import { pasteIntoTableCell } from './editor-table-paste.js'
 
+const lf = (text) => String(text).replace(/\r\n?/g, '\n')
+
 function looksLikeMarkdown(text) {
   if (/^#{1,6}\s/m.test(text)) return true
   if (/^```/m.test(text)) return true
@@ -126,8 +128,14 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
     // Browsers provide text/plain alongside text/html. Numbered headings and
     // divider-like prose in that fallback can resemble Markdown; keep the
     // structured HTML instead of flattening headings, marks and images.
-    const plainText = event.clipboardData?.getData('text/plain') || ''
-    const markdownText = event.clipboardData?.getData('text/markdown') || ''
+    // Windows puts CRLF on the clipboard. Every check below reads lines with
+    // `.` / `\n`, and `.` stops at CR: a pasted Markdown table was not taken
+    // for Markdown, went in as text and Milkdown's table conversion pulled
+    // the rest of the paragraph into its last cell (#171 fuzz). Read the
+    // clipboard with LF only; the source owner writes the file's own line
+    // ending.
+    const plainText = lf(event.clipboardData?.getData('text/plain') || '')
+    const markdownText = lf(event.clipboardData?.getData('text/markdown') || '')
     const text = markdownText || plainText
     const html = event.clipboardData?.getData('text/html') || ''
     const pastedMermaid = mermaidPaste(text)

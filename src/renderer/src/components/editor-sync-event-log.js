@@ -2,6 +2,11 @@
 // diagnostic report (lib/sync-diagnostics.js). Nothing is written anywhere;
 // the user sees it only in the report they choose to open. Passive capture
 // listeners: they never change what the editor does.
+//
+// They sit on the editor's PARENT, in the capture phase, so they run before
+// every listener on the editor itself: the Markdown paste handler stops the
+// paste event (stopImmediatePropagation), and a log on the editor never saw
+// a Markdown paste (#171: the report's last two Ctrl+V had no paste entry).
 
 const blockPath = (view) => {
   try {
@@ -20,6 +25,7 @@ const NAMED = new Set(['Enter', 'Tab', 'Backspace', 'Delete', 'Escape', 'ArrowUp
 export function mountSyncEventLog({ view, log, cleanups }) {
   const dom = view?.dom
   if (!dom || !log) return
+  const host = dom.parentElement || dom
   const push = (entry) => {
     try { log.push({ ...entry, block: blockPath(view) }) } catch { /* never affect editing */ }
   }
@@ -34,7 +40,8 @@ export function mountSyncEventLog({ view, log, cleanups }) {
   const onClipboard = (event) => {
     const types = [...(event.clipboardData?.types || [])].join(',')
     const text = event.clipboardData?.getData?.('text/plain') || ''
-    push({ type: event.type, mime: types, length: event.type === 'paste' ? text.length : undefined })
+    // The start of a paste says what kind it was (a fence, a list, prose).
+    push({ type: event.type, mime: types, length: event.type === 'paste' ? text.length : undefined, data: event.type === 'paste' ? text.slice(0, 24) : '' })
   }
   const onDrop = (event) => push({ type: 'drop', mime: [...(event.dataTransfer?.types || [])].join(',') })
   const onPointer = () => push({ type: 'click' })
@@ -43,6 +50,9 @@ export function mountSyncEventLog({ view, log, cleanups }) {
     ['compositionend', onComposition], ['paste', onClipboard], ['cut', onClipboard], ['drop', onDrop],
     ['mouseup', onPointer]
   ]
-  for (const [type, fn] of listeners) dom.addEventListener(type, fn, true)
-  cleanups.push(() => { for (const [type, fn] of listeners) dom.removeEventListener(type, fn, true) })
+  // Only events inside this editor (the parent also holds widgets around it).
+  const inEditor = (fn) => (event) => { if (event.target instanceof Node && dom.contains(event.target)) fn(event) }
+  const bound = listeners.map(([type, fn]) => [type, inEditor(fn)])
+  for (const [type, fn] of bound) host.addEventListener(type, fn, true)
+  cleanups.push(() => { for (const [type, fn] of bound) host.removeEventListener(type, fn, true) })
 }
