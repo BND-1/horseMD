@@ -4,210 +4,9 @@ import { Icon } from '../icons.jsx'
 import { SYNC_AUTO_MINUTES } from '../../settings.js'
 import Toggle from '../ui/Toggle.jsx'
 import { autoSyncText, isMassDelete, keyOf as syncKey } from '../../hooks/useAutoSync.js'
+import SyncConnections from './SyncConnections.jsx'
 
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
-
-const emptyConnection = {
-  name: '', endpoint: '', username: '', password: '', bucket: '', region: '', accessKeyId: '', secretAccessKey: '', userAgent: ''
-}
-
-function ConnectionField({ id, label, invalid, help, ...inputProps }) {
-  return <label className={`sync-field${invalid ? ' sync-field-invalid' : ''}`} htmlFor={id}>
-    <span className="sync-field-label">{label}</span>
-    <input id={id} aria-invalid={invalid || undefined} {...inputProps} />
-    {invalid && help && <span className="sync-field-error">{help}</span>}
-  </label>
-}
-
-// The main-process validation throws plain localized messages. Map each
-// message to the form field it describes so a failed submit highlights the
-// offending input(s) instead of resetting everything the user typed.
-const fieldErrorHints = (type, message) => {
-  const text = String(message || '')
-  const fields = new Set()
-  if (text.includes('连接名称')) fields.add('name')
-  if (text.includes('User-Agent')) fields.add('userAgent')
-  if (type === 'webdav') {
-    if (text.includes('WebDAV 地址')) fields.add('endpoint')
-    if (text.includes('密码')) fields.add('password')
-  } else {
-    if (text.includes('Endpoint')) fields.add('endpoint')
-    if (text.includes('Bucket')) fields.add('bucket')
-    if (text.includes('Region')) fields.add('region')
-    if (text.includes('Access Key') || text.includes('Secret Key')) {
-      fields.add('accessKeyId')
-      fields.add('secretAccessKey')
-    }
-  }
-  // A provider connection failure (bad endpoint/auth) names no field; the
-  // endpoint is where those are most likely wrong, mark it softly.
-  if (!fields.size && /连接|地址|认证|鉴权|401|403|超时|timeout|ENOTFOUND|ECONNREFUSED/i.test(text)) {
-    fields.add('endpoint')
-  }
-  return fields
-}
-
-function ConnectionForm({ connection = null, type: requestedType = 'webdav', onSubmit, onCancel, t }) {
-  const type = connection?.type || requestedType
-  const editing = Boolean(connection?.id)
-  const [form, setForm] = useState({
-    ...emptyConnection,
-    ...(connection || {}),
-    // Credentials are intentionally never returned from the main process.
-    // An empty value during editing means "keep the secure value already saved".
-    password: '',
-    secretAccessKey: ''
-  })
-  const [invalidFields, setInvalidFields] = useState(null)
-  const [submitError, setSubmitError] = useState('')
-  // The test can take several seconds (retries on a throttled service):
-  // show it and ignore repeated clicks.
-  const [busy, setBusy] = useState(false)
-
-  const update = (key) => (event) => {
-    setForm((current) => ({ ...current, [key]: event.target.value }))
-    // Editing a field clears its error marker (and the message once every
-    // marked field has been touched).
-    if (invalidFields?.has(key)) {
-      const next = new Set(invalidFields)
-      next.delete(key)
-      setInvalidFields(next.size ? next : null)
-      if (!next.size) setSubmitError('')
-    }
-  }
-  const submit = async (event) => {
-    event.preventDefault()
-    if (busy) return
-    setBusy(true)
-    // Only clear the form when the connection was actually accepted — a
-    // failed submit (bad endpoint, auth rejected) must keep everything the
-    // user typed so they can correct one field instead of retyping all.
-    let accepted = false
-    let failure = null
-    try {
-      accepted = Boolean(await onSubmit(type, form, connection?.id))
-    } catch (cause) {
-      failure = cause
-    } finally {
-      setBusy(false)
-    }
-    if (accepted) {
-      setInvalidFields(null)
-      setSubmitError('')
-      if (!editing) setForm({ ...emptyConnection })
-      return
-    }
-    const message = failure?.message || ''
-    const fields = fieldErrorHints(type, message)
-    setInvalidFields(fields.size ? fields : null)
-    setSubmitError(message)
-  }
-  const fieldId = (name) => `sync-${editing ? connection.id : type}-${name}`
-  const credentialExample = (key) => editing ? t('sync.keepExistingSecret') : t(key)
-
-  return <form className="sync-form" onSubmit={submit}>
-    <ConnectionField
-      id={fieldId('name')}
-      required
-      label={t('sync.name')}
-      placeholder={t(type === 'webdav' ? 'sync.webdavNameExample' : 'sync.s3NameExample')}
-      value={form.name}
-        invalid={invalidFields?.has('name') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'name' ? submitError : undefined}
-        onChange={update('name')}
-    />
-    <ConnectionField
-      id={fieldId('endpoint')}
-      required
-      label={t(type === 'webdav' ? 'sync.endpoint' : 'sync.s3Endpoint')}
-      placeholder={t(type === 'webdav' ? 'sync.webdavEndpointExample' : 'sync.s3EndpointExample')}
-      value={form.endpoint}
-        invalid={invalidFields?.has('endpoint') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'endpoint' ? submitError : undefined}
-        onChange={update('endpoint')}
-    />
-    <ConnectionField
-      id={fieldId('user-agent')}
-      label={t('sync.userAgent')}
-      placeholder={t('sync.userAgentExample')}
-      value={form.userAgent}
-        invalid={invalidFields?.has('userAgent') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'userAgent' ? submitError : undefined}
-        onChange={update('userAgent')}
-    />
-    <p className="sync-field-help">{t('sync.userAgentHelp')}</p>
-    {type === 'webdav' ? <>
-      <ConnectionField
-        id={fieldId('username')}
-        label={t('sync.username')}
-        placeholder={t('sync.webdavUsernameExample')}
-        value={form.username}
-        invalid={invalidFields?.has('username') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'username' ? submitError : undefined}
-            onChange={update('username')}
-      />
-      <ConnectionField
-        id={fieldId('password')}
-        required={!editing}
-        type="password"
-        label={t('sync.password')}
-        placeholder={credentialExample('sync.webdavPasswordExample')}
-        autoComplete="new-password"
-        value={form.password}
-        invalid={invalidFields?.has('password') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'password' ? submitError : undefined}
-            onChange={update('password')}
-      />
-    </> : <>
-      <ConnectionField
-        id={fieldId('bucket')}
-        required
-        label={t('sync.s3Bucket')}
-        placeholder={t('sync.s3BucketExample')}
-        value={form.bucket}
-        invalid={invalidFields?.has('bucket') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'bucket' ? submitError : undefined}
-            onChange={update('bucket')}
-      />
-      <ConnectionField
-        id={fieldId('region')}
-        required
-        label={t('sync.s3Region')}
-        placeholder={t('sync.s3RegionExample')}
-        value={form.region}
-        invalid={invalidFields?.has('region') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'region' ? submitError : undefined}
-            onChange={update('region')}
-      />
-      <ConnectionField
-        id={fieldId('access-key')}
-        required
-        label={t('sync.s3AccessKey')}
-        placeholder={t('sync.s3AccessKeyExample')}
-        value={form.accessKeyId}
-        invalid={invalidFields?.has('accessKeyId') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'accessKeyId' ? submitError : undefined}
-            onChange={update('accessKeyId')}
-      />
-      <ConnectionField
-        id={fieldId('secret-key')}
-        required={!editing}
-        type="password"
-        label={t('sync.s3SecretKey')}
-        placeholder={credentialExample('sync.s3SecretKeyExample')}
-        autoComplete="new-password"
-        value={form.secretAccessKey}
-        invalid={invalidFields?.has('secretAccessKey') || undefined}
-        help={invalidFields && [...invalidFields][0] === 'secretAccessKey' ? submitError : undefined}
-            onChange={update('secretAccessKey')}
-      />
-    </>}
-      <div className="sync-form-actions">
-        <button className="settings-action-btn" type="submit" disabled={busy}>{busy ? t('sync.testing') : editing ? t('sync.testAndUpdate') : t('sync.testAndSave')}</button>
-        {editing && <button className="settings-link-btn" type="button" onClick={onCancel}>{t('sync.cancel')}</button>}
-      </div>
-  </form>
-}
 
 function ConnectionPicker({ connections, value, onChange, t }) {
   return (
@@ -439,12 +238,10 @@ export default function SyncSettings({
   onUpdateSettings,
   t
 }) {
-  const [openForms, setOpenForms] = useState({ webdav: false, s3: false })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState(null)
   const [recovery, setRecovery] = useState(null)
-  const [editingConnection, setEditingConnection] = useState(null)
   const [selectedConnections, setSelectedConnections] = useState({})
   const [remoteChoices, setRemoteChoices] = useState({})
   const [syncStates, setSyncStates] = useState({})
@@ -470,19 +267,17 @@ export default function SyncSettings({
     }
   }
 
+  // Errors go back to the form (shown in place, next to the fields).
   const submitConnection = async (type, form, connectionId = null) => {
-    const connection = await safely(() => connectionId
+    setError('')
+    setNotice('')
+    const connection = await (connectionId
       ? onUpdateConnection(connectionId, form)
       : type === 'webdav'
         ? onAddWebDavConnection(form)
         : onAddS3Connection(form))
     if (!connection) return false
-    if (connectionId) {
-      setEditingConnection(null)
-      setNotice(t('sync.connectionUpdated'))
-    } else {
-      setOpenForms((current) => ({ ...current, [type]: false }))
-    }
+    setNotice(t(connectionId ? 'sync.connectionUpdated' : 'sync.connectionAdded', { name: connection.name }))
     if (connection.uploadThrottled) setNotice(t('sync.connectionSavedThrottled'))
     return true
   }
@@ -574,62 +369,15 @@ export default function SyncSettings({
   }
 
   return <>
-    <section className="settings-block">
-      <div className="settings-heading-row">
-        <div>
-          <h2 className="settings-block-title">{t('sync.connections')}</h2>
-          <p className="settings-block-desc">{t('sync.connectionsDesc')}</p>
-        </div>
-      </div>
-      <div className="sync-add-options">
-        <button
-          type="button"
-          className="sync-connection-option"
-          aria-expanded={openForms.webdav}
-          onClick={() => setOpenForms((current) => ({ ...current, webdav: !current.webdav }))}
-        >
-          <Icon name="cloud" size={17} />
-          <span><strong>WebDAV</strong><small>{t('sync.webdavOptionDesc')}</small></span>
-          <Icon name={openForms.webdav ? 'chevron-down' : 'plus'} size={15} />
-        </button>
-        <button
-          type="button"
-          className="sync-connection-option"
-          aria-expanded={openForms.s3}
-          onClick={() => setOpenForms((current) => ({ ...current, s3: !current.s3 }))}
-        >
-          <Icon name="cloud" size={17} />
-          <span><strong>S3 {t('sync.s3Compatible')}</strong><small>{t('sync.s3OptionDesc')}</small></span>
-          <Icon name={openForms.s3 ? 'chevron-down' : 'plus'} size={15} />
-        </button>
-      </div>
-      {notice && <div className="sync-notice">{notice}</div>}
-      {error && <div className="sync-error">{error}</div>}
-      {openForms.webdav && <ConnectionForm type="webdav" onSubmit={submitConnection} t={t} />}
-      {openForms.s3 && <ConnectionForm type="s3" onSubmit={submitConnection} t={t} />}
-      {connections.length === 0 && <div className="sync-empty">{t('sync.noConnections')}</div>}
-      {connections.map((connection) => <div key={connection.id}>
-        <div className="sync-folder-row">
-          <Icon name="cloud" size={17} className="sync-folder-icon" />
-          <div className="sync-folder-copy">
-            <div className="sync-folder-name">{connection.name}</div>
-            <div className="sync-folder-path">{connection.endpoint}</div>
-          </div>
-          <span className="sync-folder-status">{connection.type === 's3' ? 'S3' : 'WebDAV'}</span>
-          <div className="sync-icon-actions">
-            <IconAction icon="pencil" label={t('sync.editConnection')} onClick={() => setEditingConnection(connection)} />
-            <IconAction icon="refresh" label={t('sync.testConnection')} onClick={() => testConnection(connection.id)} />
-            <IconAction icon="trash" label={t('sync.removeConnection')} onClick={() => safely(() => onRemoveConnection(connection.id))} />
-          </div>
-        </div>
-        {editingConnection?.id === connection.id && <ConnectionForm
-          connection={connection}
-          onSubmit={submitConnection}
-          onCancel={() => setEditingConnection(null)}
-          t={t}
-        />}
-      </div>)}
-    </section>
+    <SyncConnections
+      connections={connections}
+      onSubmit={submitConnection}
+      onTest={testConnection}
+      onRemove={(id) => safely(() => onRemoveConnection(id))}
+      notice={notice}
+      error={error}
+      t={t}
+    />
 
     <section className="settings-block">
       <div className="settings-heading-row">

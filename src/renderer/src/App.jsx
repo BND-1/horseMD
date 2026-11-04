@@ -1124,7 +1124,7 @@ export default function App() {
   // flushSession is also used by the window-close guard; update/toast/
   // dismissUpdate/setToast feed the JSX. These are read only inside effect/event
   // closures, so defining them here is safe (resolved at commit/call time).
-  const { update, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession } = useAppLifecycle({
+  const { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession } = useAppLifecycle({
     session,
     tabs,
     activePath,
@@ -1137,6 +1137,7 @@ export default function App() {
     sidebarMode,
     paneWidth,
     restoreSession: settings.restoreSession,
+    updateMode: settings.updateMode,
     openPaths,
     isMobile,
     tabsRef,
@@ -1151,6 +1152,11 @@ export default function App() {
   // only hides it (the version is not dismissed); it comes back when the
   // download is done. Settings › About starts it with 'hm:update-download'.
   const updateDl = useUpdateDownload()
+  // Main installs a quietly downloaded update on quit only in 'auto' (#170).
+  useEffect(() => {
+    window.api.updateSetMode?.(settings.updateMode)
+  }, [settings.updateMode])
+  const quietUpdateReady = settings.updateMode === 'auto' && quietUpdate && updateDl.state.status === 'ready' && updateDl.state.version === quietUpdate.latest ? quietUpdate : null
   const lastUpdateRef = useRef(null)
   if (update) lastUpdateRef.current = update
   const closeUpdate = useCallback(() => {
@@ -1548,6 +1554,8 @@ export default function App() {
         autoSync={autoSync}
         syncAuto={settings.syncAuto}
         onOpenSync={openSyncSettings}
+        updateReady={quietUpdateReady}
+        onOpenUpdate={() => quietUpdateReady && showUpdate(quietUpdateReady)}
         theme={effectiveTheme}
         setTheme={pickBuiltinTheme}
         cycleTheme={cycleTheme}

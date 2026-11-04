@@ -20,16 +20,30 @@ function publicConnection(entry) {
   return publicEntry
 }
 
-export async function readConnections(userDataPath) {
+const SUPPORTED_TYPES = ['webdav', 's3']
+
+// Every stored entry, also of types this version does not know (a newer
+// HorseMD may add e.g. GitHub): they are written back untouched, so using
+// an older version never deletes them.
+async function readAllConnections(userDataPath) {
   try {
     const raw = JSON.parse(await fs.readFile(filePath(userDataPath), 'utf8'))
-    return Array.isArray(raw?.connections)
-      ? raw.connections.filter((item) => item?.id && ['webdav', 's3'].includes(item.type))
-      : []
+    return Array.isArray(raw?.connections) ? raw.connections.filter((item) => item?.id) : []
   } catch (error) {
     if (error?.code === 'ENOENT') return []
     throw new Error(`无法读取云端连接：${error?.message || error}`)
   }
+}
+
+export async function readConnections(userDataPath) {
+  return (await readAllConnections(userDataPath)).filter((item) => SUPPORTED_TYPES.includes(item.type))
+}
+
+// The service the connection was set up with in Settings (坚果云, 七牛…;
+// sync-providers.js) — display only, the sync never reads it.
+function normalizeProviderId(value) {
+  const id = String(value || '').trim()
+  return /^[a-z0-9-]{1,32}$/.test(id) ? id : ''
 }
 
 async function writeConnections(userDataPath, connections) {
@@ -54,7 +68,7 @@ export class ConnectionRegistry {
     return (await readConnections(this.userDataPath)).map(publicConnection)
   }
 
-  async addWebDav({ name, endpoint, username, password, allowInsecure = false, userAgent = '' }) {
+  async addWebDav({ name, endpoint, username, password, allowInsecure = false, userAgent = '', provider: providerId = '' }) {
     const trimmedName = String(name || '').trim()
     if (!trimmedName) throw new Error('请填写连接名称。')
     if (!String(endpoint || '').trim()) throw new Error('请填写 WebDAV 地址。')
@@ -65,10 +79,11 @@ export class ConnectionRegistry {
     const id = randomUUID()
     const credentialId = `webdav:${id}`
     await this.credentialStore.set(credentialId, { password: String(password) })
-    const connections = await readConnections(this.userDataPath)
+    const connections = await readAllConnections(this.userDataPath)
     const connection = {
       id,
       type: 'webdav',
+      provider: normalizeProviderId(providerId),
       name: trimmedName,
       endpoint: String(endpoint).trim(),
       username: String(username || ''),
@@ -82,7 +97,7 @@ export class ConnectionRegistry {
     return withCheck(publicConnection(connection), check)
   }
 
-  async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false, userAgent = '' }) {
+  async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false, userAgent = '', provider: providerId = '' }) {
     const trimmedName = String(name || '').trim()
     if (!trimmedName) throw new Error('请填写连接名称。')
     if (!String(endpoint || '').trim()) throw new Error('请填写 S3 Endpoint。')
@@ -97,10 +112,11 @@ export class ConnectionRegistry {
     const id = randomUUID()
     const credentialId = `s3:${id}`
     await this.credentialStore.set(credentialId, { secretAccessKey: String(secretAccessKey) })
-    const connections = await readConnections(this.userDataPath)
+    const connections = await readAllConnections(this.userDataPath)
     const connection = {
       id,
       type: 's3',
+      provider: normalizeProviderId(providerId),
       name: trimmedName,
       endpoint: String(endpoint).trim(),
       bucket: String(bucket).trim(),
@@ -117,10 +133,12 @@ export class ConnectionRegistry {
   }
 
   async update(id, config) {
-    const connections = await readConnections(this.userDataPath)
-    const index = connections.findIndex((connection) => connection.id === id)
+    const connections = await readAllConnections(this.userDataPath)
+    const index = connections.findIndex((connection) => connection.id === id && SUPPORTED_TYPES.includes(connection.type))
     if (index < 0) throw new Error('找不到云端连接。')
     const current = connections[index]
+    // Absent = keep the saved service; '' = the full form (no service).
+    const provider = config.provider === undefined ? (current.provider || '') : normalizeProviderId(config.provider)
     const credential = await this.credentialStore.get(current.credentialId)
 
     if (current.type === 'webdav') {
@@ -134,7 +152,7 @@ export class ConnectionRegistry {
       const allowInsecure = Boolean(config.allowInsecure)
       const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
       const check = await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
-      const next = { ...current, name, endpoint, username, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
+      const next = { ...current, provider, name, endpoint, username, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (password !== credential?.password) await this.credentialStore.set(current.credentialId, { password })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)
@@ -156,7 +174,7 @@ export class ConnectionRegistry {
       const allowInsecure = Boolean(config.allowInsecure)
       const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
       const check = await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent }).testConnection()
-      const next = { ...current, name, endpoint, bucket, region, accessKeyId, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
+      const next = { ...current, provider, name, endpoint, bucket, region, accessKeyId, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
       if (secretAccessKey !== credential?.secretAccessKey) await this.credentialStore.set(current.credentialId, { secretAccessKey })
       connections[index] = next
       await writeConnections(this.userDataPath, connections)
@@ -167,7 +185,7 @@ export class ConnectionRegistry {
   }
 
   async remove(id) {
-    const connections = await readConnections(this.userDataPath)
+    const connections = await readAllConnections(this.userDataPath)
     const current = connections.find((connection) => connection.id === id)
     if (!current) return false
     await writeConnections(this.userDataPath, connections.filter((connection) => connection.id !== id))

@@ -109,7 +109,8 @@ function uiScript({ mode, primaryMod }) {
     if (binding !== 'Mod+Alt+S') {
       throw new Error('Expected persisted Mod+Alt+S, got ' + binding)
     }
-    if (!/Ctrl\\+Alt|Alt\\+S|鈱/.test(textOf(saveRow))) {
+    // Windows / Linux spell it Ctrl+Alt+S, macOS ⌘⌥S.
+    if (!/Ctrl\\+Alt|Alt\\+S|⌥S|鈱/.test(textOf(saveRow))) {
       throw new Error('Save row does not display the customized shortcut: ' + textOf(saveRow))
     }
     const menu = await waitForMenu('CmdOrCtrl+Alt+S')

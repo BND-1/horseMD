@@ -7,6 +7,8 @@
 // cannot be mapped byte-for-byte, the caller keeps the authored source intact
 // and lets the existing fail-closed preservation path handle the batch.
 
+import { hasBlank, isAllBlank, splitBlanks } from './markdown-blanks.js'
+
 const unsafeInlineSyntax = /[`*_{}\[\]<>#|\\]/
 const unsafeAtBlockStart = /^(?:[-+>]|\d+[.)])/u
 const leadingSpaceSentinel = '\u200B'
@@ -289,6 +291,16 @@ const semanticJson = (node, {
   const visit = (value, path = [], inCell = false) => {
     if (!value || typeof value !== 'object') return value
     const next = { ...value }
+    // `*` vs `_` (strong / emphasis `marker`) is spelling, not meaning: the
+    // serializer writes `_` where a `*` run would touch another one
+    // (lib/inline-serializer.js), and both read back the same.
+    if (next.type === 'text' && Array.isArray(next.marks) && next.marks.some((mark) => mark?.attrs?.marker != null)) {
+      next.marks = next.marks.map((mark) => {
+        if (mark?.attrs?.marker == null) return mark
+        const { marker: _marker, ...attrs } = mark.attrs
+        return Object.keys(attrs).length ? { ...mark, attrs } : { type: mark.type }
+      })
+    }
     if (literalEmphasis && next.type === 'text') {
       next.text = String(next.text || '').replace(/[*_]/g, '')
       if (Array.isArray(next.marks)) {
@@ -398,22 +410,26 @@ const semanticJson = (node, {
       // Editable <font>/<span> (html_span) too: Milkdown moves edge spaces out
       // of it the same way (`<font>a</font> <font>b</font>` for `a b` across
       // a reopened span), and a space looks the same inside or outside.
-      const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link', 'html_span'])
+      // Strike and highlight since 2026-11-04 (lib/inline-serializer.js,
+      // prosemirror-markdown / Milkdown practice): `~~a ~~` / `==a ==` do not
+      // parse, so a blank at the edge of their run is written outside —
+      // Windows double-click selects the word AND its trailing space.
+      const invisibleOnWhitespace = new Set(['strong', 'emphasis', 'link', 'html_span', 'strike_through', 'highlight', 'subscript', 'superscript'])
       // Every run of blanks compares without those marks — at the edge of a
       // run (Milkdown moves edge blanks out) and inside it (`<font>a</font>
       // <font>b</font>` after a reprinted span is `a b` in one span). The
-      // source reprint engine compares blanks the same way. Other marks
-      // (code, strike, highlight) stay strict.
+      // source reprint engine compares blanks the same way. Inline code
+      // stays strict (its blanks are content).
       next.content = next.content.flatMap((child) => {
         if (child?.type !== 'text' || !Array.isArray(child.marks) || !child.marks.length) return [child]
         if (child.marks.some((mark) => mark?.type === 'inlineCode')) return [child]
         if (!child.marks.some((mark) => invisibleOnWhitespace.has(mark?.type))) return [child]
         const text = String(child.text || '')
-        if (!/[ \t]/.test(text)) return [child]
+        if (!hasBlank(text)) return [child]
         const { marks, ...rest } = child
         const blankMarks = marks.filter((mark) => !invisibleOnWhitespace.has(mark?.type))
-        return text.split(/([ \t]+)/).filter(Boolean).map((piece) => {
-          if (!/^[ \t]+$/.test(piece)) return { ...child, text: piece }
+        return splitBlanks(text).filter(Boolean).map((piece) => {
+          if (!isAllBlank(piece)) return { ...child, text: piece }
           return blankMarks.length ? { ...rest, text: piece, marks: blankMarks } : { ...rest, text: piece }
         })
       })

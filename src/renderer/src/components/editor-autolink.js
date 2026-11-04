@@ -45,14 +45,32 @@ function replacementForBadLink(node) {
   return [{ type: 'text', value: singleText }]
 }
 
-function trimNonAsciiLinks(node) {
+// Only GFM autolink LITERALS (bare `www.x` / `https://x` in prose) can have
+// swallowed text. An authored `[文字](https://zh.wikipedia.org/wiki/马)` or
+// `<https://…>` is the user's own link and must stay one — it used to be
+// unwrapped to plain text in the editor. A literal starts with its URL in the
+// source; without the source, its text is its URL (www. gets http:// added).
+function isAutolinkLiteral(link, source) {
+  const offset = link.position?.start?.offset
+  if (typeof source === 'string' && Number.isInteger(offset)) {
+    // mdast offsets skip a BOM that file.value still holds.
+    const first = source[offset + (source.charCodeAt(0) === 0xfeff ? 1 : 0)]
+    if (first !== undefined) return first !== '[' && first !== '<'
+  }
+  const kids = link.children || []
+  const text = kids.length === 1 && kids[0].type === 'text' ? kids[0].value : null
+  const url = link.url || ''
+  return text != null && (url === text || url === `http://${text}` || url === `https://${text}`)
+}
+
+function trimNonAsciiLinks(node, source) {
   if (!node || !Array.isArray(node.children)) return
   const next = []
   for (const child of node.children) {
-    if (child.type === 'link' && AUTOLINKISH.test(child.url || '') && NONASCII.test(child.url || '')) {
-      for (const repl of replacementForBadLink(child)) { trimNonAsciiLinks(repl); next.push(repl) }
+    if (child.type === 'link' && AUTOLINKISH.test(child.url || '') && NONASCII.test(child.url || '') && isAutolinkLiteral(child, source)) {
+      for (const repl of replacementForBadLink(child)) { trimNonAsciiLinks(repl, source); next.push(repl) }
     } else {
-      trimNonAsciiLinks(child)
+      trimNonAsciiLinks(child, source)
       next.push(child)
     }
   }
@@ -60,7 +78,7 @@ function trimNonAsciiLinks(node) {
 }
 
 export function remarkUnwrapNonAsciiAutolinks() {
-  return (tree) => trimNonAsciiLinks(tree)
+  return (tree, file) => trimNonAsciiLinks(tree, typeof file?.value === 'string' ? file.value : String(file?.value ?? ''))
 }
 
 // Typing `<https://example.com>` (Typora behavior): the closing `>` turns the

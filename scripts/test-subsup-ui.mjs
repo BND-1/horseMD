@@ -33,7 +33,7 @@ const waitFor = async (fn, label, attempts = 150) => {
   for (let i = 0; i < attempts; i++) { const v = await fn(); if (v) return v; await sleep(100) }
   throw new Error(label)
 }
-const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
+const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].filter((n) => !n.closest('.update-toast')).map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
 const view = (app) => app.evaluate(`(() => {
   const ed = ${editor}
   return {
@@ -152,7 +152,8 @@ try {
   await waitFor(() => app.evaluate(`(${editor})?.textContent.includes('end line')`), 'fixture did not reopen')
   await sleep(1000)
   state = await view(app)
-  assert.deepEqual(state.subs, ['2', 'long text', '2天，费用100'], `subscripts: ${JSON.stringify(state)}`)
+  const storedOn = await app.evaluate(`JSON.stringify((({ markdownSubscript, markdownSuperscript }) => ({ markdownSubscript, markdownSuperscript }))(JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}')))`)
+  assert.deepEqual(state.subs, ['2', 'long text', '2天，费用100'], `subscripts (stored settings ${storedOn}): ${JSON.stringify(state)}`)
   assert.deepEqual(state.sups, ['2'], `superscripts: ${JSON.stringify(state)}`)
   assert.deepEqual(state.strike, ['del'], '~~del~~ stays strikethrough')
   assert.ok(state.code.includes('x~1~'), 'inline code untouched')

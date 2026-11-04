@@ -119,6 +119,12 @@ console.log('ok application')
   assert.ok(out.includes('para  \nsecond line.') && out.includes('after  \nfences.'), `two-space breaks still applied outside: ${out}`)
   assert.ok(out.includes('- a\n- b'), `bullets still applied outside: ${out}`)
   assert.deepEqual(remark.parse(out).children.map((n) => n.type), remark.parse(authored).children.map((n) => n.type))
+  // Two literal backslashes before a soft break (`\\\\` + newline) are not a
+  // hard break: the two-space rewrite must leave them (fuzz seed 18).
+  const literal = remark.stringify(remark.parse('para  \nsecond.\n\nE = mc^2 \\\\\\\\\nx\n'))
+  assert.ok(literal.includes('E = mc^2 \\\\\\\\\nx'), `even backslashes kept: ${JSON.stringify(literal)}`)
+  const again = remark.parse(literal).children[1].children
+  assert.deepEqual(again.map((n) => n.type), ['text'], `still a soft break: ${JSON.stringify(again)}`)
 }
 console.log('ok literal blocks')
 

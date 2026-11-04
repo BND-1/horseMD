@@ -33,6 +33,11 @@ export const SYNC_AUTO_SAVE_DELAY = 3
 export const HISTORY_RETENTION_DAYS = [30, 90, 365]
 export const DEFAULT_HISTORY_RETENTION_DAYS = 30
 
+// How new versions reach the user (#170), Settings › 关于 › 更新方式:
+// 'notify' = prompt at start-up (default), 'auto' = download quietly and
+// install when HorseMD quits, 'manual' = only 「检查更新」.
+export const UPDATE_MODES = ['notify', 'auto', 'manual']
+
 // Outline tiers expanded when a document is first shown (#122; 0 = all).
 export const OUTLINE_DEFAULT_LEVELS = [1, 2, 3, 4, 0]
 export const DEFAULT_OUTLINE_LEVEL = 2
@@ -240,6 +245,7 @@ export const DEFAULT_SETTINGS = {
   // Default off — "close quits" stays the long-standing behavior; the tray is
   // opt-in from Settings › General.
   closeToTray: false,
+  updateMode: 'notify',
   // Show dotfiles/dotdirs (.claude, .cursor, .github, etc.) in the file tree.
   // Default off. .git/node_modules/out/dist are always hidden (IGNORED_DIRS).
   showHiddenFiles: false,
@@ -332,6 +338,7 @@ export function loadSettings() {
         ? raw.outlineDefaultLevel
         : DEFAULT_OUTLINE_LEVEL,
       closeToTray: raw.closeToTray === true,
+      updateMode: UPDATE_MODES.includes(raw.updateMode) ? raw.updateMode : 'notify',
       showHiddenFiles: raw.showHiddenFiles === true,
       fontWrite: typeof raw.fontWrite === 'string' ? raw.fontWrite : '',
       fontWriteLatin: typeof raw.fontWriteLatin === 'string'
@@ -352,12 +359,19 @@ export function loadSettings() {
   }
 }
 
+// Written to disk soon after a change (main flushes the storage): Chromium
+// alone may keep it in memory for minutes, and a crash or forced quit lost it.
+let flushTimer = null
 export function saveSettings(s) {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
   } catch {
     /* quota / serialization failure — skip */
+    return
   }
+  if (typeof window === 'undefined' || !window.api?.flushStorage) return
+  clearTimeout(flushTimer)
+  flushTimer = setTimeout(() => { try { window.api.flushStorage() } catch { /* ignore */ } }, 400)
 }
 
 // Apply the page width to the document. The width is a CSS variable read by the

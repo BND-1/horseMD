@@ -76,7 +76,7 @@ export const detectMarkdownListStyle = (markdown) => {
   mapSyntaxLines(String(markdown || ''), (line) => { syntaxLines.push(line); return line })
   const fenceStripped = syntaxLines.join('\n') + '\n'
   const twoSpaceBreaks = (fenceStripped.match(/[ \t][ \t]\r?\n/g) || []).length
-  const backslashBreaks = (fenceStripped.match(/\\\r?\n/g) || []).length
+  const backslashBreaks = (fenceStripped.match(/(?<!\\)(?:\\\\)*\\\r?\n/g) || []).length
   return {
     bullet: bulletCounts[bullet] > 0 ? bullet : '-',
     ordered: orderedCounts[orderedDelimiter] > 0 ? orderedDelimiter : '.',
@@ -154,9 +154,14 @@ export const createSerializerStyleHolder = (initialMarkdown) => {
 // remark-stringify always emits backslash hard breaks; authors who wrote
 // `text␠␠\n` get their two-space spelling back. Only outside fenced code,
 // where a literal trailing backslash is content, not syntax.
+// Only an ODD run of trailing backslashes is a hard break: `\\\\` + newline
+// is two escaped (literal) backslashes and a soft break — rewriting its last
+// backslash made it `\\\  ` (a hard break: LaTeX `\\` joined into a
+// paragraph, fuzz seed 18).
+const endsWithHardBreakBackslash = (line) => (/\\+$/.exec(line)?.[0].length || 0) % 2 === 1
 const rewriteHardBreaks = (markdown, spelling) => {
   if (spelling === '\\' || !markdown) return markdown
-  return mapSyntaxLines(markdown, (line) => (line.endsWith('\\') ? `${line.slice(0, -1)}  ` : line))
+  return mapSyntaxLines(markdown, (line) => (endsWithHardBreakBackslash(line) ? `${line.slice(0, -1)}  ` : line))
 }
 
 // Calls `map(line)` for every line that is Markdown syntax and keeps the

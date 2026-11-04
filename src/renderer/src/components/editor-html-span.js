@@ -1,20 +1,28 @@
-// Editable inline HTML wrappers (Typora parity): `<font style=…>text</font>`
-// and `<span style=…>text</span>` render as styled text you can click into,
-// select and type in — not as one locked atom. Yuque exports wrap almost every
-// line in `<font>`, so the atom made those documents nearly uneditable.
+// Editable inline HTML wrappers (Typora parity): `<font style=…>text</font>`,
+// `<span style=…>text</span>`, `<kbd>Esc</kbd>`, `<u>…</u>` … render as
+// formatted text you can click into, select and type in — not as one locked
+// atom you could only change in source mode. Yuque exports wrap almost every
+// line in `<font>`; notes write keys as `<kbd>Ctrl</kbd>`.
 //
-//   parse:     a balanced `<font …>` … `</font>` (or span) pair of inline html
-//              nodes inside one parent → an `hmHtmlSpan` mdast node keeping the
-//              exact open/close tag bytes → the `html_span` mark.
+//   parse:     a balanced open/close pair of one of HTML_SPAN_TAGS (inline
+//              html nodes inside one parent) → an `hmHtmlSpan` mdast node
+//              keeping the exact open/close tag bytes → the `html_span` mark.
 //   stringify: the mark → open tag + phrasing content + close tag.
 //
 // Left as raw html (the existing atom path): empty pairs (`<span id=x></span>`
-// anchors), pairs holding another font/span pair, and unbalanced tags. A line break inside a converted span is printed as usual
-// (`  ` + newline), so the close tag lands at the start of the next line
-// exactly as Yuque writes it.
+// anchors), pairs inside another such pair (two html_span marks cannot share
+// text: the outer pair is the span), unbalanced tags, and every other tag — `<a>` (a link), `<mark>`
+// (the highlight colours own it), `<img>`, ruby. A line break inside a
+// converted span is printed as usual (`  ` + newline), so the close tag lands
+// at the start of the next line exactly as Yuque writes it.
 import { $markSchema } from '@milkdown/utils'
+import { Plugin } from '@milkdown/prose/state'
+import { HTML_SPAN_TAGS } from '../lib/html-span-tags.js'
 
-const TAGS = 'font|span'
+const TAG_SET = new Set(HTML_SPAN_TAGS)
+const SEPARATE_TAGS = new Set(['kbd', 'q'])
+const TAGS = HTML_SPAN_TAGS.join('|')
+const tagName = (tag) => (TAG_SET.has(String(tag || '').toLowerCase()) ? String(tag).toLowerCase() : 'span')
 const OPEN_RE = new RegExp(`^<(${TAGS})(?=[\\s>])[^>]*>$`, 'i')
 const CLOSE_RE = new RegExp(`^</(${TAGS})\\s*>$`, 'i')
 
@@ -47,6 +55,13 @@ const hasVisibleContent = (nodes) => nodes.some((node) => {
  * content) with `hmHtmlSpan` nodes. Returns the new array and the spans made,
  * so the caller can run its other inline-html passes inside them too.
  */
+// `<sub>` / `<sup>` with no attributes are the subscript / superscript
+// marks while that syntax is on (editor-subsup.js sets this): such a pair
+// becomes that mdast node, and pairs inside it stay editable spans
+// (`<sub>中<kbd>内</kbd></sub>`) — it is not the "outer span".
+let markTags = {}
+export function setHtmlMarkTags(tags) { markTags = tags || {} }
+
 export function convertHtmlSpans(children) {
   if (!Array.isArray(children) || !children.some((child) => child?.type === 'html')) {
     return { children, spans: [] }
@@ -65,22 +80,60 @@ export function convertHtmlSpans(children) {
     const closing = closeTag(child)
     if (closing) {
       const top = stack[stack.length - 1]
-      if (top && top.tag === closing) {
+      if (top && top.tag === closing && markTags[closing] && top.node.value === `<${closing}>` && child.value === `</${closing}>`) {
         stack.pop()
         const inner = out.splice(top.at + 1)
         out.pop()
+        const node = { type: markTags[closing], data: { hName: closing }, children: inner }
+        const start = top.node.position?.start
+        const end = child.position?.end
+        if (start && end) node.position = { start: { ...start }, end: { ...end } }
+        out.push(node)
+        continue
+      }
+      if (top && top.tag === closing) {
+        stack.pop()
+        let inner = out.splice(top.at + 1)
+        out.pop()
         if (stack.length) stack[stack.length - 1].nested = true
-        if (hasVisibleContent(inner) && !top.nested) {
+        // A pair holding another pair: the OUTER one is the editable span
+        // (two html_span marks cannot share text) and the inner pairs go back
+        // to raw html inside it — a Yuque `<font>` keeps a `<b>` typed in it
+        // as HTML, as before <b>/<kbd> became editable.
+        if (top.nested) {
+          const unwrapped = new Set()
+          inner = inner.flatMap((node) => {
+            if (node.type !== 'hmHtmlSpan' || !node.raw) return [node]
+            unwrapped.add(node)
+            return node.raw
+          })
+          for (let index = spans.length - 1; index >= 0; index -= 1) if (unwrapped.has(spans[index])) spans.splice(index, 1)
+        }
+        if (hasVisibleContent(inner)) {
+          // `<kbd>Ctrl</kbd><kbd>V</kbd>`: two pairs right next to each
+          // other are two keys. Identical marks on adjacent text merge in
+          // ProseMirror (one `CtrlV` key), so the second gets the other
+          // `part` — derived from the source alone, so every parse agrees.
+          // Only for tags drawn as one box each (a key, a quotation): two
+          // adjacent <font>/<b> runs look the same merged, and Yuque's
+          // break-only `<font>  \n</font><font>b</font>` relies on merging.
+          const previous = out[out.length - 1]
+          const part = SEPARATE_TAGS.has(closing) && previous?.type === 'hmHtmlSpan' && previous.open === top.node.value && previous.close === child.value
+            ? 1 - (previous.part || 0)
+            : 0
           const span = {
             type: 'hmHtmlSpan',
             tag: closing,
             open: top.node.value,
             close: child.value,
+            part,
             children: inner
           }
           const start = top.node.position?.start
           const end = child.position?.end
           if (start && end) span.position = { start: { ...start }, end: { ...end } }
+          // Its source nodes, in case an enclosing pair takes over.
+          Object.defineProperty(span, 'raw', { value: [top.node, ...inner, child], enumerable: false })
           out.push(span)
           spans.push(span)
         } else {
@@ -129,30 +182,32 @@ export const htmlSpanSchema = $markSchema('html_span', () => ({
   attrs: {
     tag: { default: 'span' },
     open: { default: '<span>' },
-    close: { default: '</span>' }
+    close: { default: '</span>' },
+    // 0 / 1, alternating between pairs written right next to each other.
+    part: { default: 0 }
   },
   // Typing at the end of the wrapped text continues it (Typora).
   inclusive: true,
   // Only the editor's own copies round-trip (the authored tag rides along);
-  // a stray <font>/<span> from a web page stays plain text, as before.
+  // a stray <font>/<kbd> from a web page stays plain text, as before.
   parseDOM: [
     {
-      tag: 'font[data-hm-html-open], span[data-hm-html-open]',
+      tag: HTML_SPAN_TAGS.map((tag) => `${tag}[data-hm-html-open]`).join(', '),
       getAttrs: (dom) => {
         const tag = dom.tagName.toLowerCase()
         const open = dom.getAttribute('data-hm-html-open')
-        return open && OPEN_RE.test(open) ? { tag, open, close: `</${tag}>` } : false
+        return open && OPEN_RE.test(open) ? { tag, open, close: `</${tag}>`, part: dom.getAttribute('data-hm-html-part') === '1' ? 1 : 0 } : false
       }
     }
   ],
   toDOM: (mark) => {
-    const tag = mark.attrs.tag === 'font' ? 'font' : 'span'
-    return [tag, { ...tagAttributes(mark.attrs.open), class: 'hm-html-span', 'data-hm-html-open': mark.attrs.open }]
+    const tag = tagName(mark.attrs.tag)
+    return [tag, { ...tagAttributes(mark.attrs.open), class: 'hm-html-span', 'data-hm-html-open': mark.attrs.open, ...(mark.attrs.part ? { 'data-hm-html-part': '1' } : {}) }]
   },
   parseMarkdown: {
     match: (node) => node.type === 'hmHtmlSpan',
     runner: (state, node, markType) => {
-      state.openMark(markType, { tag: node.tag, open: node.open, close: node.close })
+      state.openMark(markType, { tag: node.tag, open: node.open, close: node.close, part: node.part ? 1 : 0 })
       state.next(node.children)
       state.closeMark(markType)
     }
@@ -171,7 +226,7 @@ export const htmlSpanSchema = $markSchema('html_span', () => ({
 
 // remark-stringify handler: the authored tags around the phrasing content.
 export function htmlSpanStringifyHandler(node, _parent, state, info) {
-  const tag = node.tag === 'font' ? 'font' : 'span'
+  const tag = tagName(node.tag)
   const open = typeof node.open === 'string' && OPEN_RE.test(node.open) ? node.open : `<${tag}>`
   const close = typeof node.close === 'string' && CLOSE_RE.test(node.close) ? node.close : `</${tag}>`
   const tracker = state.createTracker(info)
@@ -183,3 +238,116 @@ export function htmlSpanStringifyHandler(node, _parent, state, info) {
 htmlSpanStringifyHandler.peek = () => '<'
 
 export const htmlSpanFeatures = [htmlSpanSchema]
+
+
+// `part` is derived from the source (see convertHtmlSpans): a key right
+// after an identical key takes the other part, anything else 0. An edit can
+// change who is adjacent — typing `+` between `<kbd>Ctrl</kbd><kbd>V</kbd>`
+// left V with part 1, which no parse of the new source gives, and the sync
+// stopped with「富文本与源码不一致」. Re-derive the parts of the text blocks a
+// transaction touched.
+function fixPartsInBlock(tr, block, start) {
+  const runs = [] // { from, to, mark } — adjacent nodes with one key mark
+  let before = null // the run of the inline node right before, if a key
+  block.forEach((node, offset) => {
+    const from = start + offset
+    const mark = node.marks.find((m) => m.type.name === 'html_span' && SEPARATE_TAGS.has(tagName(m.attrs.tag))) || null
+    if (!mark) {
+      before = null
+      return
+    }
+    if (before && before.to === from && before.mark.eq(mark)) {
+      before.to = from + node.nodeSize
+      return
+    }
+    const follows = before && before.to === from && before.mark.attrs.open === mark.attrs.open && before.mark.attrs.close === mark.attrs.close
+    before = { from, to: from + node.nodeSize, mark, part: follows ? 1 - before.part : 0 }
+    runs.push(before)
+  })
+  let fixed = 0
+  for (const run of runs) {
+    if (run.mark.attrs.part === run.part) continue
+    tr.removeMark(run.from, run.to, run.mark)
+    tr.addMark(run.from, run.to, run.mark.type.create({ ...run.mark.attrs, part: run.part }))
+    fixed += 1
+  }
+  return fixed
+}
+
+const keyMarkOf = (node) => node?.marks.find((m) => m.type.name === 'html_span' && SEPARATE_TAGS.has(tagName(m.attrs.tag))) || null
+
+// A deletion that brings two identical keys together (`<kbd>Ctrl</kbd>+<kbd>C</kbd>`,
+// Backspace on `+`) would merge them into one `CtrlC` key: ProseMirror joins
+// text with equal marks. In Typora / Obsidian they stay two keys. Returns the
+// right-hand key's old range per deletion, to be given the other part.
+function keysJoinedBy(t) {
+  const out = []
+  t.steps.forEach((step, index) => {
+    const doc = t.docs[index]
+    t.mapping.maps[index].forEach((oldFrom, oldTo, newFrom, newTo) => {
+      if (newFrom !== newTo || oldFrom === oldTo) return
+      const left = keyMarkOf(doc.resolve(oldFrom).nodeBefore)
+      const $right = doc.resolve(oldTo)
+      const right = keyMarkOf($right.nodeAfter)
+      if (!left || !right || !left.eq(right)) return
+      // The right key's extent in the old document.
+      const start = $right.start()
+      let end = oldTo
+      let open = true
+      $right.parent.forEach((node, offset) => {
+        const nodeEnd = start + offset + node.nodeSize
+        if (!open || nodeEnd <= oldTo) return
+        if (keyMarkOf(node)?.eq(right)) end = nodeEnd
+        else open = false
+      })
+      out.push({ index, from: oldTo, to: end, mark: right })
+    })
+  })
+  return out
+}
+
+export function createHtmlSpanPartPlugin() {
+  return new Plugin({
+    appendTransaction(transactions, _old, state) {
+      if (!state.schema.marks.html_span || !transactions.some((t) => t.docChanged)) return null
+      const tr = state.tr
+      // Keep keys a deletion brought together apart (other part on the right).
+      transactions.forEach((t, ti) => {
+        for (const join of keysJoinedBy(t)) {
+          const rest = t.mapping.slice(join.index)
+          let from = rest.map(join.from, 1)
+          let to = rest.map(join.to, -1)
+          for (const later of transactions.slice(ti + 1)) { from = later.mapping.map(from, 1); to = later.mapping.map(to, -1) }
+          if (from >= to) continue
+          tr.removeMark(from, to, join.mark)
+          tr.addMark(from, to, join.mark.type.create({ ...join.mark.attrs, part: 1 - join.mark.attrs.part }))
+        }
+      })
+      // The changed ranges, in the new document.
+      let ranges = []
+      for (const t of transactions) {
+        ranges = ranges.map((r) => ({ from: t.mapping.map(r.from, -1), to: t.mapping.map(r.to, 1) }))
+        t.mapping.maps.forEach((map, index) => {
+          const rest = t.mapping.slice(index + 1)
+          map.forEach((_oldFrom, _oldTo, newFrom, newTo) => ranges.push({ from: rest.map(newFrom, -1), to: rest.map(newTo, 1) }))
+        })
+      }
+      const size = tr.doc.content.size
+      let fixed = 0
+      const seen = new Set()
+      for (const range of ranges) {
+        const from = Math.max(0, Math.min(range.from, size) - 1)
+        const to = Math.min(size, Math.max(range.to, from) + 1)
+        tr.doc.nodesBetween(from, to, (node, pos) => {
+          if (!node.isTextblock) return true
+          if (!seen.has(pos)) {
+            seen.add(pos)
+            fixed += fixPartsInBlock(tr, node, pos + 1)
+          }
+          return false
+        })
+      }
+      return fixed || tr.docChanged ? tr : null
+    }
+  })
+}

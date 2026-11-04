@@ -128,6 +128,8 @@ import {
 import { reprintVerified } from '../lib/source-reprint/index.js'
 import { forgetParses, incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
 import { createIncrementalSerializer } from '../lib/incremental-serialize.js'
+import { createMilkdownSerializer } from '../lib/inline-serializer.js'
+import { stripCodeFromAtoms } from './editor-inline-code-atoms.js'
 import { Transform } from '@milkdown/kit/prose/transform'
 // Self-check build (VITE_HM_SYNC_SELF_CHECK=1, used by the regression and
 // fuzz runs): the incremental parse and the per-block comparison memo are
@@ -769,7 +771,7 @@ export default function Editor({
         // Option A (Typora parity): the reprint may spell bold/italic that
         // Markdown cannot delimit there as literal `*`/`_`; nothing else may
         // differ (no list structure is involved in that difference).
-        return semanticOptions.relaxOrderedNumbers === true &&
+        return semanticOptions.relaxOrderedNumbers === true && semanticOptions.allowLiteralEmphasis !== false &&
           areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, mergedSemanticOptions)
       }
       if (areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
@@ -2102,14 +2104,17 @@ export default function Editor({
       },
       remark: crepe.editor.ctx.get(remarkCtx),
       serialize: (node) => crepe.editor.ctx.get(serializerCtx)(node),
-      equivalent: (markdown, expectedDoc) => validateTransactionMarkdown({
+      // `literalEmphasis: false`: no Option A (reprintVerified asks for an
+      // exact spelling first).
+      equivalent: (markdown, expectedDoc, { literalEmphasis = true } = {}) => validateTransactionMarkdown({
         markdown,
         expectedDoc,
         semanticOptions: {
           ignoreTrailingEmptyBlockquoteParagraphPaths: trailingEmptyQuotePaths(expectedDoc),
           ignoreAllTableColumnWidths: true,
           ignoreEmptyContainerParagraphs: true,
-          relaxOrderedNumbers: true
+          relaxOrderedNumbers: true,
+          allowLiteralEmphasis: literalEmphasis
         }
       }) === true
     })
@@ -4639,12 +4644,18 @@ export default function Editor({
               },
               parseTree: (markdown) => { const r = crepe.editor.ctx.get(remarkCtx); return reprintDeps().parseTree(r.runSync(r.parse(markdown), markdown)) },
               serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc),
+              // Milkdown's serializer without lib/inline-serializer.js.
+              serializeMilkdown: (doc) => createMilkdownSerializer(view.state.schema, crepe.editor.ctx.get(remarkCtx))(doc),
               remark: () => crepe.editor.ctx.get(remarkCtx),
               schema: () => view.state.schema,
               liveDoc: () => viewRef.current?.state.doc,
               docFromJSON: (json) => view.state.schema.nodeFromJSON(json),
               liveSource: () => lastMarkdownRef.current,
               equivalent: (markdown, doc) => validateTransactionMarkdown({ markdown, expectedDoc: doc }) === true,
+              // The comparison the source reprint verifies with (empty
+              // container paragraphs, ordered numbers, table widths
+              // relaxed), without Option A's literal `*`.
+              equivalentForReprint: (markdown, doc) => reprintDeps().equivalent(markdown, doc, { literalEmphasis: false }),
               reprint: (source, doc, previousDoc = null) => reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
               ,
               // Incremental serialization (lib/incremental-serialize.js):
@@ -4653,6 +4664,8 @@ export default function Editor({
               incrementalSerializeStats: () => ({ ...incrementalSerializerRef.current?.stats, enabled: incrementalSerializerRef.current?.enabled }),
               serializeFull: (doc) => fullSerializerRef.current?.(doc),
               newTransform: (doc) => new Transform(doc),
+              // editor-inline-code-atoms.js on a test transform.
+              stripCodeFromAtoms: (tr) => stripCodeFromAtoms(tr),
               // Start over from the live document (as after opening it).
               incrementalSerializeRebase: () => {
                 const live = viewRef.current?.state.doc

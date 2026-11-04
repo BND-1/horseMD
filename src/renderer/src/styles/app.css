@@ -6477,6 +6477,16 @@ body.hm-preserve-soft-breaks
 .milkdown .ProseMirror .hm-inline-code-delimiter.close {
   margin-left: 1px;
 }
+.milkdown .ProseMirror .hm-html-token-tag {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  cursor: text;
+  user-select: none;
+}
+.milkdown .ProseMirror .hm-html-token-tag.open { margin-right: 2px; }
+.milkdown .ProseMirror .hm-html-token-tag.close { margin-left: 2px; }
+.milkdown .ProseMirror[contenteditable="false"] .hm-html-token-tag { display: none; }
 /* Reading mode (#163): a read-only view never shows the editing backticks,
    even when inline code was being edited as reading mode started. */
 .milkdown .ProseMirror[contenteditable="false"] .hm-inline-code-delimiter {
@@ -8722,3 +8732,464 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   color: var(--danger);
 }
 .hm-history-settings-error { color: var(--danger); }
+
+/* Link card (editor-link-card.js): hover → target + copy / edit / remove;
+   edit → text + link fields. Outside the editor, in document.body. */
+.hm-link-card {
+  position: fixed;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: min(480px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover-bg);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  font: 12px/1.5 var(--font-ui);
+}
+.hm-link-card[hidden] { display: none; }
+.hm-link-card button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.hm-link-card-url {
+  min-width: 0;
+  max-width: 340px;
+  padding: 3px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent) !important;
+  text-align: left;
+}
+.hm-link-card-url:hover { text-decoration: underline; }
+.hm-link-card-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--muted) !important;
+}
+.hm-link-card button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.hm-link-card-btn:hover { color: var(--text) !important; }
+.hm-link-card-edit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 320px;
+  padding: 12px;
+}
+.hm-link-card-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hm-link-card-field span {
+  flex: none;
+  width: 30px;
+  color: var(--muted);
+}
+.hm-link-card-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font-ui);
+  outline: none;
+}
+.hm-link-card-field input:focus { border-color: var(--accent); }
+.hm-link-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.hm-link-card-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+}
+.hm-link-card-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.hm-link-card-actions button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+
+/* ---- 云同步 › 云端连接: service list, service form, connection list
+   (SyncConnections.jsx, lib/sync-providers.js). One card per view, rows
+   split by hairlines (like the history card); marks are tinted monograms. */
+.sync-provider-mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  overflow: hidden;
+}
+/* A brand logo keeps its own colours: a white tile in both themes. */
+.sync-provider-mark.logo {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1);
+}
+body.dark .sync-provider-mark.logo { box-shadow: none; }
+.sync-provider-mark.logo img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+/* Square artwork with its own margin: fill the tile. */
+.sync-provider-mark.logo[data-logo="jianguoyun"] img { width: 34px; height: 34px; }
+.sync-provider-mark.logo[data-logo="cstcloud"] img { width: 26px; height: 26px; }
+/* Wide symbols: use the tile's width. */
+.sync-provider-mark.logo[data-logo="qiniu"] img,
+.sync-provider-mark.logo[data-logo="r2"] img { width: 26px; }
+.sync-provider-mark.sm { width: 28px; height: 28px; border-radius: 8px; }
+.sync-provider-mark.sm.logo img { width: 20px; height: 20px; }
+.sync-provider-mark.sm.logo[data-logo="jianguoyun"] img { width: 28px; height: 28px; }
+.sync-provider-mark.sm.logo[data-logo="cstcloud"] img { width: 22px; height: 22px; }
+.sync-provider-mark.sm.logo[data-logo="qiniu"] img,
+.sync-provider-mark.sm.logo[data-logo="r2"] img { width: 22px; }
+.sync-provider-mark.generic,
+body.dark .sync-provider-mark.generic {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+  color: var(--muted);
+}
+.sync-protocol-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font: 500 11px/1.5 var(--font-ui);
+}
+.sync-provider-gallery,
+.sync-provider-panel,
+.sync-connection-list {
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.sync-provider-gallery-head,
+.sync-provider-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.sync-provider-gallery-head { padding-bottom: 10px; }
+.sync-provider-panel-head {
+  padding: 12px 16px 12px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sync-provider-gallery-head > div,
+.sync-provider-panel-title {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 3px;
+}
+.sync-provider-gallery-head strong,
+.sync-provider-panel-title strong {
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sync-provider-gallery-head small,
+.sync-provider-panel-title small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-provider-list { display: grid; }
+.sync-provider-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .12s ease;
+}
+.sync-provider-row:hover { background: var(--hover-elevated); }
+.sync-provider-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.sync-provider-row-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.sync-provider-row-copy strong {
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sync-provider-row-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-provider-row-arrow {
+  flex: 0 0 auto;
+  color: var(--faint);
+  transition: transform .15s ease, color .15s ease;
+}
+.sync-provider-row:hover .sync-provider-row-arrow { color: var(--muted); transform: translateX(2px); }
+.sync-provider-group-label {
+  padding: 14px 16px 6px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.sync-provider-group-label + .sync-provider-list > .sync-provider-row:first-child { border-top: 0; }
+.sync-provider-panel-body { padding: 16px; }
+
+/* Service form: what to prepare (a numbered stepper), the fields as
+   label | input rows, the buttons at the bottom right. */
+.sync-provider-form { display: grid; gap: 16px; }
+.sync-provider-section-label {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.sync-provider-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.sync-provider-steps li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+.sync-provider-step-no {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: 600 11px/1 var(--font-ui);
+}
+.sync-provider-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0 0 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sync-provider-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sync-provider-prepare + .sync-provider-fields {
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+.sync-provider-fields,
+.sync-connections .sync-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+.sync-provider-fields .sync-field,
+.sync-connections .sync-form .sync-field {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 420px);
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+}
+.sync-provider-fields .sync-field-label,
+.sync-connections .sync-form .sync-field-label {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.sync-connections .sync-field-error { grid-column: 2; }
+.sync-connections .sync-form .sync-field-help {
+  margin: -4px 0 2px 140px;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.sync-provider-fields input,
+.sync-provider-fields .sync-select,
+.sync-connections .sync-form input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 10px;
+  background: var(--bg-editor);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.sync-provider-fields input::placeholder,
+.sync-connections .sync-form input::placeholder { color: var(--faint); }
+.sync-provider-fields input:focus,
+.sync-provider-fields .sync-select:focus,
+.sync-connections .sync-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.sync-field-invalid .sync-select,
+.sync-provider-fields .sync-field-invalid input,
+.sync-connections .sync-form .sync-field-invalid input { border-color: var(--danger); }
+.sync-provider-error {
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-elevated));
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.sync-provider-error span {
+  color: var(--muted);
+  font-size: 11.5px;
+  word-break: break-word;
+}
+.sync-form-wide { grid-column: 1 / -1; }
+.sync-provider-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-provider-note svg { flex: 0 0 auto; margin-top: 3px; }
+.sync-provider-actions,
+.sync-connections .sync-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+.sync-provider-actions-spacer { flex: 1; }
+.sync-provider-full {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sync-provider-full:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.sync-connections .settings-action-btn { height: 32px; padding: 0 14px; }
+.sync-connections .settings-action-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.sync-connections .settings-action-btn.primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.06);
+}
+.sync-connections .settings-action-btn:disabled { opacity: .6; cursor: default; }
+
+/* Saved connections: one card, a row each. */
+.sync-connection-card + .sync-connection-card { border-top: 1px solid var(--border-soft); }
+.sync-connection-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 10px 11px 16px;
+}
+.sync-connection-card-copy {
+  min-width: 0;
+  flex: 1;
+}
+.sync-connection-card-name {
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sync-connection-card-detail {
+  display: flex;
+  min-width: 0;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sync-connection-card-service { flex: 0 0 auto; }
+.sync-connection-card-sep { flex: 0 0 auto; opacity: .6; }
+.sync-connection-card-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-connection-card .sync-icon-actions { opacity: .7; transition: opacity .12s ease; }
+.sync-connection-card:hover .sync-icon-actions,
+.sync-connection-card .sync-icon-actions:focus-within,
+.sync-connection-card.editing .sync-icon-actions { opacity: 1; }
+.sync-connection-card.editing > .sync-connection-card-row { background: var(--hover-elevated); }
+.sync-connection-card-edit {
+  padding: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+@media (max-width: 640px) {
+  .sync-provider-fields .sync-field,
+  .sync-connections .sync-form .sync-field { grid-template-columns: minmax(0, 1fr); }
+  .sync-connections .sync-form .sync-field-help { margin-left: 0; }
+  .sync-connections .sync-field-error { grid-column: 1; }
+  .sync-protocol-badge { display: none; }
+}

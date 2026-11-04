@@ -16,7 +16,9 @@ const stripEditorOnlyForExport = (clone) => {
         '.preview-panel, .cell-handle, .line-handle, .handle, .add-button, ' +
         '.operation, .operation-item, .drag-preview, .milkdown-block-handle, ' +
         '.milkdown-toolbar, .image-resize-handle, .label-wrapper, .hm-frontmatter-wrap, ' +
-        '.hm-review-widget, .hm-review-card, .ProseMirror-separator, .ProseMirror-trailingBreak'
+        '.hm-review-widget, .hm-review-card, .ProseMirror-separator, .ProseMirror-trailingBreak, ' +
+        // editing-only marks around inline code / a key the caret is in
+        '.hm-inline-code-delimiter, .hm-html-token-tag'
     )
     .forEach((el) => el.remove())
   clone.querySelectorAll('script, iframe, object, embed, form').forEach((el) => el.remove())

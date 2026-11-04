@@ -32,7 +32,7 @@ const waitFor = async (fn, label, attempts = 150) => {
   for (let i = 0; i < attempts; i++) { const v = await fn(); if (v) return v; await sleep(100) }
   throw new Error(label)
 }
-const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
+const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].filter((n) => !n.closest('.update-toast')).map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
 const pointIn = (app, needle, offset) => app.evaluate(`(() => {
   const walk = document.createTreeWalker(${editor}, NodeFilter.SHOW_TEXT)
   let node
@@ -72,12 +72,15 @@ try {
   assert.deepEqual(p.spans, [{ text: '红', color: 'red' }], `typed span renders: ${JSON.stringify(p)}`)
   assert.ok(!p.text.includes('<span'), `no literal tag text left: ${p.text}`)
 
-  // 2. Void tags, inline tags and an unknown tag become HTML.
+  // 2. Void tags and an unknown tag become HTML; a typed <kbd> pair is an
+  //    editable key (an html_span, like <span>).
   await click(app, await pointIn(app, 'second line', 'second line'.length))
   await typeTextLikeUser(app.send, ' a<br>b <kbd>Ctrl</kbd> <xxx>', { delayMs: 60 })
   await sleep(700)
   p = await paragraph(app, 'second line')
-  assert.deepEqual(p.html, ['<kbd>Ctrl</kbd>', '<xxx>'], `inline/unknown tags are HTML: ${JSON.stringify(p)}`)
+  assert.deepEqual(p.html, ['<xxx>'], `unknown tags are HTML: ${JSON.stringify(p)}`)
+  assert.deepEqual(p.spans, [{ text: 'Ctrl', color: '' }], `typed <kbd> is an editable key: ${JSON.stringify(p)}`)
+  assert.equal(await app.evaluate(`[...(${editor}).querySelectorAll('kbd.hm-html-span')].map((n) => n.textContent).join()`), 'Ctrl')
   // `<br>` is the line break it opens as (brToBreakRemarkPlugin).
   assert.equal(p.breaks, 1, `<br> became a line break: ${JSON.stringify(p)}`)
   assert.ok(!p.text.includes('<br'), 'no literal <br> text')
@@ -117,9 +120,11 @@ try {
   await waitFor(() => app.evaluate(`(${editor})?.textContent.includes('end line')`), 'saved file did not reopen')
   await sleep(800)
   assert.deepEqual((await paragraph(app, 'first line')).spans, [{ text: '红', color: 'red' }], 'span after reopen')
-  assert.deepEqual((await paragraph(app, 'second line')).html, ['<kbd>Ctrl</kbd>', '<xxx>'], 'tags after reopen')
+  const second = await paragraph(app, 'second line')
+  assert.deepEqual(second.html, ['<xxx>'], 'tags after reopen')
+  assert.deepEqual(second.spans, [{ text: 'Ctrl', color: '' }], 'the key after reopen')
   assert.deepEqual(await warnings(app), [], 'no warning after reopen')
-  console.log('PASS html tag input: typed tags become HTML (span pair, void, inline, unknown, inside <font>), code/autolink untouched, saved raw, same after reopen')
+  console.log('PASS html tag input: typed tags become HTML (span / kbd pair editable, void, unknown, a pair inside <font> raw), code/autolink untouched, saved raw, same after reopen')
 } finally {
   await stopBuiltElectron(app)
 }

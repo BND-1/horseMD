@@ -5014,4 +5014,28 @@ assert.equal(
   'empty paragraph removal before an authored fence must remain source-equivalent'
 )
 
+// Link card (2026-11-03): one transaction changes a link's text AND
+// destination. The canonical change `旧文字](https://old.example` spans link
+// syntax the visible mapping cannot see; it used to replace only `旧文字`
+// and print `[新文字](https://new.example](https://old.example)`.
+const linkEditSource = '前文\n\n编辑 [旧文字](https://old.example) 结束\n\n后文\n'
+const linkEditNext = '前文\n\n编辑 [新文字](https://new.example) 结束\n\n后文\n'
+const linkEdit = preserveLocallyAlignedTextChange({
+  source: linkEditSource,
+  previous: linkEditSource,
+  next: linkEditNext,
+  ...commonChange(linkEditSource, linkEditNext)
+})
+assert.ok(!linkEdit || linkEdit.markdown === linkEditNext, `link text + destination edit printed ${JSON.stringify(linkEdit?.markdown)}`)
+// Same edit when the source spells the link differently (a title): the
+// region's bytes differ, so this owner declines.
+const titledSource = '前文\n\n编辑 [旧文字](https://old.example "t") 结束\n\n后文\n'
+const titled = preserveLocallyAlignedTextChange({
+  source: titledSource,
+  previous: linkEditSource,
+  next: linkEditNext,
+  ...commonChange(linkEditSource, linkEditNext)
+})
+assert.ok(!titled || titled.markdown === titledSource.replace('[旧文字](https://old.example', '[新文字](https://new.example'), `titled link edit printed ${JSON.stringify(titled?.markdown)}`)
+
 console.log('PASS markdown source preservation: text and structural edits retain untouched source; table/list/code changes stay block-bounded')

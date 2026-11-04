@@ -28,7 +28,7 @@ const waitFor = async (fn, label, attempts = 150) => {
   throw new Error(label)
 }
 const launch = (port) => launchBuiltElectron({ profileDir: join(root, `profile-${port}`), port, appArgs: [file, '--horsemd-input-trace'] })
-const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
+const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].filter((n) => !n.closest('.update-toast')).map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
 const clickEndOf = async (app, text) => {
   const point = await app.evaluate(`(() => {
     const p = [...(${editor}).querySelectorAll('p')].find((n) => n.textContent.includes(${JSON.stringify(text)}))

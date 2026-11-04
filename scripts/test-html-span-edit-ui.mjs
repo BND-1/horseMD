@@ -42,7 +42,7 @@ const waitFor = async (fn, label, attempts = 150) => {
   throw new Error(label)
 }
 const launch = (port) => launchBuiltElectron({ profileDir: join(root, `profile-${port}`), port, appArgs: [file, '--horsemd-input-trace'] })
-const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
+const warnings = (app) => app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].filter((n) => !n.closest('.update-toast')).map(n => n.innerText).filter((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t))`)
 // Screen point just before character `index` of the first occurrence of `needle`.
 const pointBefore = (app, needle, index = 0) => app.evaluate(`(() => {
   const walk = document.createTreeWalker(${editor}, NodeFilter.SHOW_TEXT)

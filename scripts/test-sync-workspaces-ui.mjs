@@ -67,21 +67,22 @@ try {
     assert.match(initial[0].text, /local only|仅本地/i)
     assert.match(initial[0].action, /enable sync|开启同步/i)
 
+    // 其他 WebDAV / 其他 S3 in the service gallery open the full forms.
     const connectionForms = await app.evaluate(`(async () => {
-      const options = [...document.querySelectorAll('.sync-connection-option')]
-      if (options.length !== 2) throw new Error('Expected separate WebDAV and S3 connection options')
-      const webdav = options.find((item) => /WebDAV/i.test(item.textContent || ''))
-      const s3 = options.find((item) => /S3/i.test(item.textContent || ''))
-      if (!webdav || !s3) throw new Error('Missing WebDAV or S3 connection option')
+      const frame = () => new Promise(requestAnimationFrame)
+      const webdav = document.querySelector('.sync-provider-row.generic[data-provider="webdav"]')
+      const s3 = document.querySelector('.sync-provider-row.generic[data-provider="s3"]')
+      if (!webdav || !s3) throw new Error('Missing 其他 WebDAV / S3 in the service gallery')
       webdav.click()
-      await new Promise(requestAnimationFrame)
+      await frame()
       const webdavForm = document.querySelector('.sync-form')
       if (!webdavForm) throw new Error('Missing WebDAV connection form')
       const webdavPlaceholders = [...webdavForm.querySelectorAll('input')].map((input) => input.placeholder)
-      s3.click()
-      await new Promise(requestAnimationFrame)
-      const forms = [...document.querySelectorAll('.sync-form')]
-      const s3Form = forms.find((form) => form.querySelector('#sync-s3-bucket'))
+      document.querySelector('.sync-provider-panel-head .sync-icon-btn').click()
+      await frame()
+      document.querySelector('.sync-provider-row.generic[data-provider="s3"]').click()
+      await frame()
+      const s3Form = [...document.querySelectorAll('.sync-form')].find((form) => form.querySelector('#sync-s3-bucket'))
       const s3Placeholders = [...(s3Form?.querySelectorAll('input') || [])].map((input) => input.placeholder)
       return { webdavPlaceholders, s3Placeholders }
     })()`)

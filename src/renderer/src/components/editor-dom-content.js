@@ -1,7 +1,8 @@
 import { parserCtx, serializerCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/prose/state'
 import { Slice } from '@milkdown/prose/model'
-import { copyToClipboard } from '../ui.js'
+import { copyToClipboard, fireToast } from '../ui.js'
+import { HM_OPEN_DOCUMENT_EVENT, findHeadingByAnchor, scrollHeadingIntoView, splitLinkHash } from '../lib/link-anchor.js'
 import { dirOf, isRelativePath, resolveToFileUrl } from './editor-images.js'
 import { resolveLocalLinkToFileUrl } from './editor-local-links.js'
 import {
@@ -15,6 +16,11 @@ import { attachMdPasteHandler } from './editor-md-paste.js'
 import { attachPlainTextDropHandler } from './editor-drop-text.js'
 import { hasStructuredWebHtml } from './editor-web-paste.js'
 import { foldedSelectionRange } from './editor-heading-fold.js'
+import { mountLinkCard } from './editor-link-card.js'
+
+const decodeLinkText = (value) => {
+  try { return decodeURI(value) } catch { return value }
+}
 
 export function mountEditorContentBindings({
   view,
@@ -29,32 +35,54 @@ export function mountEditorContentBindings({
   isReadOnly,
   isDestroyed
 }) {
+  // Typora: a heading anchor jumps inside the document; a Markdown file
+  // opens in HorseMD (and jumps to its anchor); other files open in their
+  // own app; web links in the browser. True when the link was handled.
+  const openHref = (href) => {
+    if (/^(https?:|mailto:)/i.test(href)) {
+      window.api.openExternal(href)
+      return true
+    }
+    const { path: target, anchor: hash } = splitLinkHash(href)
+    if (!target) {
+      if (!hash) return true
+      const heading = findHeadingByAnchor(view.dom, hash)
+      if (heading) scrollHeadingIntoView(heading)
+      else fireToast(String(getT('link.noHeading')).replace('{name}', hash))
+      return true
+    }
+    const fileUrl = resolveLocalLinkToFileUrl(target, docPath)
+    if (!fileUrl || !window.api.openFileUrl) return false
+    window.api.openFileUrl(fileUrl, { markdownInApp: true }).then((result) => {
+      if (result?.inApp && result.path) {
+        window.dispatchEvent(new CustomEvent(HM_OPEN_DOCUMENT_EVENT, { detail: { path: result.path, anchor: hash } }))
+      } else if (result && !result.ok && result.error !== 'unsupported') {
+        fireToast(String(getT('link.openFailed')).replace('{name}', decodeLinkText(target)))
+      }
+    }).catch(() => {})
+    return true
+  }
+  // A plain click opens a link (Feishu / Notion / Obsidian); the link card
+  // (editor-link-card.js) edits it. Not opened: a click that ended a text
+  // drag (select to copy), Shift/Alt clicks, double clicks. Touch-only
+  // devices keep the caret on a tap while editing (no hover card there).
+  const touchOnly = ['ios', 'android'].includes(window.api?.platform)
+  // A drag (select to copy) moves between press and release; a click on an
+  // HTML <a> selects its atom node, so the selection itself cannot tell.
+  let pressAt = null
+  const onLinkPress = (event) => { pressAt = { x: event.clientX, y: event.clientY } }
   const onLinkClick = (event) => {
-    // Editing needs Ctrl/Cmd (a plain click places the caret in the link
-    // text). A read-only document has no caret, so a plain click opens the
-    // link — unless the click ended a text selection (#163: select to copy).
     const anchor = event.target.closest?.('a')
     const href = anchor?.getAttribute('href')
     if (!href) return
+    // A non-editable region follows <a href> itself; never let it navigate.
+    event.preventDefault()
     if (!(event.ctrlKey || event.metaKey)) {
-      if (!isReadOnly?.()) return
-      // A non-editable page follows <a href> itself; never let it navigate.
-      event.preventDefault()
-      const selection = window.getSelection()
-      if (selection && !selection.isCollapsed) return
+      if (event.button !== 0 || event.shiftKey || event.altKey || event.detail > 1) return
+      if (touchOnly && !isReadOnly?.()) return
+      if (pressAt && Math.hypot(event.clientX - pressAt.x, event.clientY - pressAt.y) > 4) return
     }
-    if (/^(https?:|mailto:)/i.test(href)) {
-      event.preventDefault()
-      event.stopPropagation()
-      window.api.openExternal(href)
-      return
-    }
-    const fileUrl = resolveLocalLinkToFileUrl(href, docPath)
-    if (fileUrl && window.api.openFileUrl) {
-      event.preventDefault()
-      event.stopPropagation()
-      window.api.openFileUrl(fileUrl)
-    }
+    if (openHref(href)) event.stopPropagation()
   }
 
   // A selection covering a folded heading copies its folded section too
@@ -299,7 +327,9 @@ export function mountEditorContentBindings({
     setZoom({ type: 'svg', html: clone.outerHTML, width, height })
   }
 
+  view.dom.addEventListener('mousedown', onLinkPress, true)
   view.dom.addEventListener('click', onLinkClick, true)
+  mountLinkCard({ view, cleanups, getT, isReadOnly, markUserEdit, openHref })
   view.dom.addEventListener('click', onImageClick, true)
   view.dom.addEventListener('click', onMermaidClick, true)
   view.dom.addEventListener('click', onCaptionButton)
@@ -322,6 +352,7 @@ export function mountEditorContentBindings({
   // (trace-61614: a `<br />` drop split a list item into [empty, text] and
   // spawned unround-trippable empty blocks → source-sync warning).
   cleanups.push(attachPlainTextDropHandler(view, markUserEdit))
+  cleanups.push(() => view.dom.removeEventListener('mousedown', onLinkPress, true))
   cleanups.push(() => view.dom.removeEventListener('click', onLinkClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onImageClick, true))
   cleanups.push(() => view.dom.removeEventListener('click', onMermaidClick, true))

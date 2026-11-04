@@ -96,7 +96,7 @@ const api = {
 
   // shell
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
-  openFileUrl: (url) => ipcRenderer.invoke('shell:openFileUrl', url),
+  openFileUrl: (url, options) => ipcRenderer.invoke('shell:openFileUrl', url, options),
   showInFolder: (path) => ipcRenderer.invoke('shell:showInFolder', path),
   copyText: (text) => ipcRenderer.invoke('clipboard:writeText', String(text ?? '')),
 
@@ -150,6 +150,11 @@ const api = {
   updateShowFile: () => ipcRenderer.invoke('update:showFile'),
   updateGetState: () => ipcRenderer.invoke('update:getState'),
   onUpdateState: on('update:state'),
+  updateSetMode: (mode) => ipcRenderer.invoke('update:setMode', mode),
+  // default Markdown editor (#170)
+  defaultAppGet: () => ipcRenderer.invoke('defaultApp:get'),
+  defaultAppSet: () => ipcRenderer.invoke('defaultApp:set'),
+  onDefaultAppChanged: on('default-app:changed'),
   setMenuKeybindings: (accelerators) => ipcRenderer.invoke('menu:setKeybindings', accelerators),
   getMenuKeybindings: () => ipcRenderer.invoke('menu:getKeybindings'),
   getMenuSnapshot: () => ipcRenderer.invoke('menu:getSnapshot'),
@@ -163,6 +168,8 @@ const api = {
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.
   confirmAppClose: () => ipcRenderer.send('app:confirm-close'),
+  // Write localStorage to disk now (after the settings change).
+  flushStorage: () => ipcRenderer.send('storage:flush'),
   cancelAppClose: () => ipcRenderer.send('app:cancel-close'),
   // Renderer signals it has registered its main→renderer listeners (e.g.
   // open-paths); main then delivers any files/folders queued at launch (#36).

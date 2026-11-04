@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut, powerMonitor } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
@@ -13,6 +13,7 @@ import { registerSyncServiceIpc, SyncService } from './sync-service.js'
 import { initHistory, registerHistoryIpc, syncHistory } from './history/history-service.js'
 import { createElectronRequest } from './sync/electron-request.js'
 import { registerUpdater } from './updater.js'
+import { registerDefaultApp } from './default-app.js'
 import { registerWatcherIpc } from './watchers.js'
 import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
@@ -49,6 +50,8 @@ let allowClose = false
 let isQuitting = false
 let localFontGrant = null
 let rendererReady = false
+// Default-app IPC (#170); assigned once the IPC modules register.
+let defaultApp = null
 // Tray icon that keeps the app reachable while the window is hidden. Held in a
 // module variable so it isn't garbage-collected (which would remove the icon).
 let tray = null
@@ -166,6 +169,8 @@ function extractArgs(argv) {
     // workspace that later resolves against the process CWD.
     const abs = resolve(a)
     if (appDir && abs === appDir) continue
+    // Windows "set as default": the probe file the Open-with dialog opened.
+    if (defaultApp?.isProbeFile(abs)) continue
     if (!existsSync(abs)) continue
     let st
     try {
@@ -418,6 +423,8 @@ function createWindow() {
   // renderer, so defer the close and ask it; it calls back via 'app:confirm-close'
   // (proceed) or 'app:cancel-close' (abort).
   allowClose = false
+  // Windows log off / shut down (see powerMonitor 'shutdown' in whenReady).
+  mainWindow.on('session-end', () => updater.markSessionEnding())
   mainWindow.on('close', (e) => {
     if (allowClose) return
     e.preventDefault()
@@ -451,6 +458,9 @@ app.on('open-file', (event, path) => {
 })
 
 app.whenReady().then(() => {
+  // Shut down / log off: an automatic update must not start installing
+  // then (it could be killed half way). Windows: the window's session-end.
+  powerMonitor.on('shutdown', () => updater.markSessionEnding())
   // Resolve the login-shell PATH in the background, so the first pasted image
   // does not wait for it (issue #160).
   userCommandPath().catch(() => {})
@@ -577,7 +587,9 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
   }
   return openExternalUrl(url)
 })
-ipcMain.handle('shell:openFileUrl', async (event, url) => {
+// options.markdownInApp (a link in a document, Typora parity): an existing
+// Markdown file is not opened by the system — the renderer opens it as a tab.
+ipcMain.handle('shell:openFileUrl', async (event, url, options = {}) => {
   if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
     return { ok: false, error: 'Untrusted renderer.' }
   }
@@ -585,6 +597,11 @@ ipcMain.handle('shell:openFileUrl', async (event, url) => {
     const parsed = new URL(url)
     if (parsed.protocol !== 'file:') return { ok: false, error: 'Only file:// URLs are supported.' }
     const targetPath = fileURLToPath(parsed)
+    if (options?.markdownInApp && /\.(md|markdown|mdx)$/i.test(targetPath)) {
+      const stat = await fs.stat(targetPath).catch(() => null)
+      if (stat?.isFile()) return { ok: true, inApp: true, path: targetPath }
+      if (!stat) return { ok: false, error: 'missing' }
+    }
     const error = await shell.openPath(targetPath)
     return error ? { ok: false, error } : { ok: true }
   } catch (e) {
@@ -1019,6 +1036,15 @@ ipcMain.handle('window:toggleDevTools', (event) => {
 // chose to discard). A real quit quits the whole app; with close-to-tray on a
 // plain close only hides the window (and `allowClose` stays false so the next
 // close goes through the same confirm path again).
+// Settings live in localStorage, which Chromium writes to disk lazily (and
+// rate-limits for a renderer that writes often — the session state does): a
+// crash, a forced kill or Windows ending the process at log-off lost a
+// setting changed minutes before. The renderer asks for a flush after it
+// saves the settings (rare).
+ipcMain.on('storage:flush', () => {
+  try { session.defaultSession.flushStorageData() } catch { /* best effort */ }
+})
+
 ipcMain.on('app:confirm-close', () => {
   if (isQuitting) {
     allowClose = true
@@ -1043,6 +1069,12 @@ ipcMain.on('app:cancel-close', () => {
 // In-app update (#164): check, download (verified) and install on restart —
 // see updater.js. "Restart and install" quits through the tray-quit path, so
 // the renderer's unsaved-changes confirm still decides.
+const traceLog = inputTraceEnabled
+  ? (entry) => {
+    const line = JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n'
+    inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
+  }
+  : null
 const updater = registerUpdater({
   app,
   ipcMain,
@@ -1050,12 +1082,15 @@ const updater = registerUpdater({
   shell,
   sendToRenderer: (channel, payload) => sendToRenderer(channel, payload),
   requestQuit: () => quitApp(),
-  log: inputTraceEnabled
-    ? (entry) => {
-      const line = JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n'
-      inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
-    }
-    : null
+  log: traceLog
+})
+
+// Default Markdown editor (#170): Settings › 通用 › 默认打开方式.
+defaultApp = registerDefaultApp({
+  app,
+  ipcMain,
+  sendToRenderer: (channel, payload) => sendToRenderer(channel, payload),
+  log: traceLog
 })
 
 ipcMain.handle('menu:setKeybindings', async (_event, accelerators) => {

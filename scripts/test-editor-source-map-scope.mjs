@@ -66,7 +66,10 @@ const positions = [1, 2, 3, 4, 5, 6, 7, 8]
 let start = performance.now()
 const original = positions.map((pos) => pmPosToMarkdownOffset(markdown, pos, doc, remark))
 const beforeMs = performance.now() - start
-assert.equal(parses, 8)
+// Unscoped calls now reuse a per-source block cache too (editor-source-map.js,
+// WeakRef): the baseline is recorded, not asserted.
+const parsesBefore = parses
+assert.ok(parsesBefore >= 1 && parsesBefore <= 8)
 parses = 0
 const actualScope = createScopedMarkdownOffsetResolver()
 start = performance.now()
@@ -74,6 +77,6 @@ const cached = actualScope.run(() => positions.map((pmPos) => actualScope.resolv
 const afterMs = performance.now() - start
 assert.deepEqual(cached, original, 'prepared maps must preserve every scalar offset')
 assert.ok(cached.every(Number.isFinite), 'heading offsets must be proven')
-assert.equal(parses, 1, 'eight offset requests must parse full source once')
+assert.ok(parses <= 1, 'eight offset requests must parse full source at most once (the block cache may already hold it)')
 console.log('PASS source-map scope: identity isolation, nested scope, exception cleanup, bounded cache, null result, exact offsets')
-console.log(JSON.stringify({ benchmark: 'full-source map construction, two-block target model (not UI latency)', characters: markdown.length, offsetRequests: 8, parsesBefore: 8, parsesAfter: 1, beforeMs: Math.round(beforeMs), afterMs: Math.round(afterMs) }))
+console.log(JSON.stringify({ benchmark: 'full-source map construction, two-block target model (not UI latency)', characters: markdown.length, offsetRequests: 8, parsesBefore, parsesAfter: parses, beforeMs: Math.round(beforeMs), afterMs: Math.round(afterMs) }))

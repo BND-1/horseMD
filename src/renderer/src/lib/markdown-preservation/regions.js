@@ -399,6 +399,16 @@ export const preserveLocallyAlignedTextChange = ({
   let rawStart = rawOffsetAtVisible(source, startVisible)
   let rawEnd = rawOffsetAtVisible(source, endVisible)
   if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart > rawEnd) return null
+  // The visible mapping covers visible characters only. A canonical change
+  // that also spans syntax — a link edited in text AND destination:
+  // `[旧](a)` → `[新](b)` changes `旧](a` — would replace just `旧` in the
+  // source and leave `[新](b](a)`. Own it only when the source holds exactly
+  // those bytes there.
+  const previousRegion = previous.slice(start, previousEnd)
+  if (
+    previousRegion.length !== previousChangedVisible.length &&
+    source.slice(rawStart, rawEnd) !== previousRegion
+  ) return null
 
   // An insertion whose editor position sits AFTER an invisible syntax delimiter
   // (a closing inline-code backtick, `**`, `~~`) that ends at the line end

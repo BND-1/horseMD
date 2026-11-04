@@ -349,6 +349,8 @@ export default function StatusBar({
   autoSync,
   syncAuto,
   onOpenSync,
+  updateReady = null,
+  onOpenUpdate,
   theme,
   setTheme,
   lang,
@@ -481,6 +483,12 @@ export default function StatusBar({
           )
         ) : (
           <>
+            {updateReady && (
+              // Update mode 'auto' (#170): downloaded, installed on quit.
+              <button className="status-btn hm-update-ready" onClick={onOpenUpdate} title={t('update.quietReadyTip', { v: updateReady.latest })}>
+                <Icon name="sparkle" size={14} /> {t('update.quietReady', { v: updateReady.latest })}
+              </button>
+            )}
             <SyncStatusItem sync={sync} autoSync={autoSync} syncAuto={syncAuto} onOpen={onOpenSync} />
             {tab && <StatsControl stats={s} />}
             {onToggleReadingMode && (

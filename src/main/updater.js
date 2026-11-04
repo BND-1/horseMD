@@ -12,6 +12,12 @@
 //            the .app from the release zip in, clears quarantine and opens
 //            it. (Squirrel.Mac requires a signed app; HorseMD is unsigned.)
 // See update-core.js for which asset / mode a platform gets.
+//
+// Update mode (#170, Settings › 关于 › 更新方式, sent by the renderer with
+// update:setMode): 'notify' (prompt, default), 'auto' (the renderer starts
+// the download quietly; a ready install-mode update is installed when the
+// user quits HorseMD — without reopening it — VS Code / Obsidian style),
+// 'manual' (no check at start-up). An explicit 「重启并安装」 always reopens.
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
@@ -54,6 +60,14 @@ const MIRRORS = TEST_MIRRORS ? TEST_MIRRORS.split(',').filter(Boolean) : DEFAULT
 const currentVersion = (app) => (app.isPackaged || typeof __APP_VERSION__ === 'undefined' ? app.getVersion() : __APP_VERSION__)
 const PROGRESS_EVERY_MS = 200
 
+async function hashFile(file) {
+  const hash = createHash('sha256')
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(file).on('data', (chunk) => hash.update(chunk)).on('error', reject).on('end', resolve)
+  })
+  return hash.digest('hex')
+}
+
 function linuxPackage() {
   try {
     if (fs.existsSync('/var/lib/dpkg/info/horse.list')) return 'deb'
@@ -80,6 +94,9 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
   let controller = null
   let cancelling = false
   let pendingInstall = null
+  let updateMode = 'notify'
+  // Windows logging off / shutting down: never start an installer then.
+  let sessionEnding = false
 
   const publish = (next) => {
     state = next
@@ -141,6 +158,10 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
   })
 
   ipcMain.handle('update:getState', () => state)
+  ipcMain.handle('update:setMode', (_event, next) => {
+    if (next === 'notify' || next === 'auto' || next === 'manual') updateMode = next
+    return updateMode
+  })
 
   async function readText(url, signal) {
     const res = await request(url, { method: 'GET', signal, headers: { 'User-Agent': 'HorseMD-Updater' } })
@@ -269,6 +290,14 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
     const file = join(dir, asset.name)
     const part = `${file}.part`
 
+    // Downloaded before (an earlier run that was not installed): reuse it
+    // when its SHA-256 still matches.
+    const kept = await hashFile(file).catch(() => '')
+    if (kept && kept === expected) {
+      trace({ step: 'reuse', version, asset: asset.name })
+      return finish({ file, dir, version, mode, asset, received: asset.size, total: asset.size, via: 'direct' })
+    }
+
     // GitHub or a mirror, fastest first; the next one on failure, stall or
     // a checksum mismatch.
     const sources = await probeSources(downloadSources(asset.url, MIRRORS, { anyUrl: Boolean(TEST_MIRRORS) }), signal)
@@ -302,7 +331,10 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
     const { received, total, via } = fetched
     await fsp.rm(file, { force: true })
     await fsp.rename(part, file)
+    return finish({ file, dir, version, mode, asset, received, total, via })
+  }
 
+  async function finish({ file, dir, version, mode, asset, received, total, via }) {
     let installFrom = file
     if (process.platform === 'darwin' && mode === 'install') {
       const unpacked = join(dir, 'app')
@@ -370,21 +402,40 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
   return {
     // The user kept the app open (unsaved-changes confirm cancelled).
     cancelPendingInstall() { pendingInstall = null },
-    // 'will-quit': start the installer / swap script, detached.
+    // Windows session end (log off / shut down): an installer started now
+    // could be killed half way.
+    markSessionEnding() { sessionEnding = true },
+    // 'will-quit': start the installer / swap script, detached. An explicit
+    // 「重启并安装」 reopens HorseMD; an automatic install on quit does not.
     runPendingInstall() {
-      const job = pendingInstall
+      let job = pendingInstall
       pendingInstall = null
+      let relaunch = true
+      if (!job && updateMode === 'auto' && state.status === 'ready' && state.mode === 'install'
+        && compareVersions(state.version, currentVersion(app)) > 0) {
+        // Never in a dev / test run (the "app" is node_modules' Electron).
+        if (!app.isPackaged) {
+          trace({ step: 'install-refused-unpackaged', auto: true, version: state.version })
+          return
+        }
+        job = { ...state }
+        relaunch = false
+      }
       if (!job) return
+      if (sessionEnding) {
+        trace({ step: 'install-skipped-session-end', version: job.version })
+        return
+      }
       try {
         if (process.platform === 'win32') {
-          spawn(job.installFrom, ['--updated', '/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref()
+          spawn(job.installFrom, ['--updated', '/S', ...(relaunch ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' }).unref()
         } else if (process.platform === 'darwin') {
           const bundle = macBundlePath(process.execPath)
           const script = join(dirname(job.file), 'install.sh')
           fs.writeFileSync(script, MAC_SWAP_SCRIPT, { mode: 0o755 })
-          spawn('/bin/sh', [script, String(process.pid), job.installFrom, bundle], { detached: true, stdio: 'ignore' }).unref()
+          spawn('/bin/sh', [script, String(process.pid), job.installFrom, bundle, relaunch ? 'open' : 'quiet'], { detached: true, stdio: 'ignore' }).unref()
         }
-        trace({ step: 'install-started', version: job.version })
+        trace({ step: 'install-started', version: job.version, relaunch })
       } catch (error) {
         trace({ step: 'install-failed', message: String(error?.message || error) })
       }
@@ -396,7 +447,7 @@ export function registerUpdater({ app, ipcMain, net, shell, sendToRenderer, requ
 // new one is in place, and put back if the move fails), clears quarantine and
 // opens the result.
 const MAC_SWAP_SCRIPT = `#!/bin/sh
-PID="$1"; NEW="$2"; DEST="$3"
+PID="$1"; NEW="$2"; DEST="$3"; AFTER="$4"
 i=0
 while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 240 ]; do sleep 0.25; i=$((i + 1)); done
 OLD="$DEST.horsemd-old-$$"
@@ -408,7 +459,7 @@ if mv "$DEST" "$OLD"; then
     mv "$OLD" "$DEST"
   fi
 fi
-open "$DEST"
+[ "$AFTER" = "quiet" ] || open "$DEST"
 `
 
 export { RELEASES_PAGE }

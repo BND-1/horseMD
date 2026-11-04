@@ -300,11 +300,16 @@ try {
     shell.openPath = async (p) => { globalThis.__hmOpened.push('path:' + p); return '' }
     shell.openExternal = async (u) => { globalThis.__hmOpened.push('url:' + u) }
     return true })()`)
-  await click(await rectOf(`(${editor}).querySelector('a[href="other.md"]')`))
   await click(await rectOf(`(${editor}).querySelector('a[href^="https:"]')`))
-  const opened = await waitFor(async () => { const v = await mainEval('globalThis.__hmOpened'); return v?.length >= 2 && v }, 'link clicks did not open')
-  assert.ok(opened[0].startsWith('path:') && opened[0].endsWith('other.md'), JSON.stringify(opened))
-  assert.equal(opened[1], 'url:https://example.com/hm')
+  const opened = await waitFor(async () => { const v = await mainEval('globalThis.__hmOpened'); return v?.length >= 1 && v }, 'link click did not open')
+  assert.deepEqual(opened, ['url:https://example.com/hm'])
+  // A Markdown file opens in HorseMD (test:link-click-ui), not the system.
+  await click(await rectOf(`(${editor}).querySelector('a[href="other.md"]')`))
+  await waitFor(() => app.evaluate(`[...document.querySelectorAll('.tab.active')].some(t => t.textContent.includes('other.md'))`), 'other.md did not open as a tab')
+  assert.deepEqual(await mainEval('globalThis.__hmOpened'), ['url:https://example.com/hm'], 'other.md went to the system')
+  await app.evaluate(`[...document.querySelectorAll('.tab')].find(t => t.textContent.includes('doc.md')).click()`)
+  await waitFor(async () => (await text()).includes('外部改动的尾段'), 'doc.md is not back')
+  await sleep(500)
 
   // 12. Back to editing: typing works and the save writes exactly one change.
   await toggleShortcut()

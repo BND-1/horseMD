@@ -25,6 +25,7 @@ import {
   isHeavyDoc
 } from '../paths.js'
 import { fireToast } from '../ui.js'
+import { HM_OPEN_DOCUMENT_EVENT, findHeadingByAnchor, scrollHeadingIntoView } from '../lib/link-anchor.js'
 import { syncReportAction } from '../lib/sync-diagnostics.js'
 import { getSavedDocPosition } from '../lib/doc-positions.js'
 import { mapOffsetThroughChange } from '../lib/offset-through-change.js'
@@ -161,6 +162,36 @@ export function useFileOps({
       setHome(false)
     }
   }, [tabsRef, setTabs, setActiveId, setHome, setRecents, tRef])
+
+  // A link to a Markdown file (editor-dom-content.js): open it as a tab and
+  // jump to the link's heading anchor once that tab's editor shows it.
+  useEffect(() => {
+    let cancelled = false
+    const onOpenDocument = async (event) => {
+      const { path, anchor } = event.detail || {}
+      if (!path) return
+      await openPaths([path])
+      if (!anchor) return
+      const norm = path.replace(/\\/g, '/')
+      for (let i = 0; i < 80 && !cancelled; i++) {
+        const tab = tabsRef.current.find((tb) => (tb.path || '').replace(/\\/g, '/') === norm)
+        const host = tab && editorHosts?.current?.[tab.id]
+        const heading = host && findHeadingByAnchor(host.querySelector('.ProseMirror') || host, anchor)
+        if (heading?.getClientRects().length) {
+          // Let the open-time position restore run first.
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          if (!cancelled) scrollHeadingIntoView(heading)
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    }
+    window.addEventListener(HM_OPEN_DOCUMENT_EVENT, onOpenDocument)
+    return () => {
+      cancelled = true
+      window.removeEventListener(HM_OPEN_DOCUMENT_EVENT, onOpenDocument)
+    }
+  }, [openPaths, tabsRef, editorHosts])
 
   const newTab = useCallback(() => {
     const id = genId()

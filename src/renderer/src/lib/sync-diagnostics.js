@@ -62,27 +62,46 @@ export function describeSource(source) {
 // document lacks them: compare blocks without ids.
 const blockKey = (node) => JSON.stringify(node.toJSON(), (key, value) => (key === 'id' ? undefined : value))
 
+// An empty top-level paragraph has no Markdown (the source check skips it
+// too): one the editor keeps between two blocks is not a difference. Counting
+// it started the region there, and the 4000-character clip then hid the real
+// difference further down (#173).
+const isEmptyParagraph = (node) => node.type.name === 'paragraph' && node.content.size === 0
+
 /**
  * Top-level block range that differs between the parsed source and the live
- * document, widened by `context` blocks each side. Returns null when no block
- * differs (the two documents are equivalent).
+ * document, widened by `context` blocks each side (empty paragraphs are
+ * skipped). Returns null when no block differs (the two documents are
+ * equivalent).
  */
 export function diffTopLevel(sourceDoc, editorDoc, context = 1) {
-  const a = []
-  const b = []
-  sourceDoc.forEach((node) => a.push(blockKey(node)))
-  editorDoc.forEach((node) => b.push(blockKey(node)))
-  let start = 0
-  while (start < a.length && start < b.length && a[start] === b[start]) start += 1
-  if (start === a.length && start === b.length) return null
-  let endA = a.length - 1
-  let endB = b.length - 1
-  while (endA >= start && endB >= start && a[endA] === b[endB]) { endA -= 1; endB -= 1 }
-  const from = Math.max(0, start - context)
-  return {
-    source: { from, to: Math.min(a.length - 1, Math.max(endA, start - 1) + context) },
-    editor: { from, to: Math.min(b.length - 1, Math.max(endB, start - 1) + context) }
+  const blocks = (doc) => {
+    const keys = []
+    const at = []
+    doc.forEach((node, _offset, index) => {
+      if (isEmptyParagraph(node)) return
+      keys.push(blockKey(node))
+      at.push(index)
+    })
+    return { keys, at, count: doc.childCount }
   }
+  const a = blocks(sourceDoc)
+  const b = blocks(editorDoc)
+  let start = 0
+  while (start < a.keys.length && start < b.keys.length && a.keys[start] === b.keys[start]) start += 1
+  if (start === a.keys.length && start === b.keys.length) return null
+  let endA = a.keys.length - 1
+  let endB = b.keys.length - 1
+  while (endA >= start && endB >= start && a.keys[endA] === b.keys[endB]) { endA -= 1; endB -= 1 }
+  // Back to block indices.
+  const range = (list, end) => {
+    if (!list.at.length) return { from: 0, to: Math.max(0, list.count - 1) }
+    const last = list.at.length - 1
+    const from = list.at[Math.min(last, Math.max(0, start - context))]
+    const to = list.at[Math.max(0, Math.min(last, Math.max(end, start - 1) + context))]
+    return { from, to: Math.max(from, to) }
+  }
+  return { source: range(a, endA), editor: range(b, endB) }
 }
 
 const childStart = (doc, index) => {

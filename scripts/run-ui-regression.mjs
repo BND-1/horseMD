@@ -149,6 +149,30 @@ const standalone = [
     script: 'scripts/test-reading-mode-ui.mjs'
   },
   {
+    name: 'Links: plain click opens web / #heading / other.md as a tab; link card copy / edit / remove, Mod+K',
+    script: 'scripts/test-link-click-ui.mjs'
+  },
+  {
+    name: 'Highlight over bold (#173): swatches / Mod+Alt+H across bold runs save exact Markdown, no warning',
+    script: 'scripts/test-highlight-bold-ui.mjs'
+  },
+  {
+    name: 'Mark combinations: every pair of inline marks in every shape / context / text kind round-trips, reprints, serializes stably',
+    script: 'scripts/test-mark-combinations-ui.mjs'
+  },
+  {
+    name: 'Spec corpus: 676 CommonMark / GFM examples reprint unchanged, edits stay in their block',
+    script: 'scripts/test-spec-corpus-ui.mjs'
+  },
+  {
+    name: 'Image marks: Mod+B / Mod+I on a selected image save the marks, no warning',
+    script: 'scripts/test-image-mark-ui.mjs'
+  },
+  {
+    name: '云同步 services: gallery, service forms, older connections shown as their services',
+    script: 'scripts/test-sync-providers-ui.mjs'
+  },
+  {
     name: 'Heading folds: view-only, caret never hidden, outline/find open folds, export complete',
     script: 'scripts/test-heading-fold-ui.mjs'
   },
@@ -199,6 +223,22 @@ const standalone = [
   {
     name: 'Paste into a list item (#171): fenced code into a new item, CRLF kept, lists below a nested fence / lone CR compared correctly',
     script: 'scripts/test-paste-into-list-item-ui.mjs'
+  },
+  {
+    name: '<kbd> / <u> / <b> keys and tags are editable in rich mode, bytes kept, adjacent keys stay two',
+    script: 'scripts/test-kbd-edit-ui.mjs'
+  },
+  {
+    name: 'In-app update (#164): prompt, checksum, progress / cancel, background, mirrors',
+    script: 'scripts/test-update-ui.mjs'
+  },
+  {
+    name: 'Update mode (#170): manual never checks, auto downloads quietly and installs on quit, reused download, 已更新到',
+    script: 'scripts/test-update-mode-ui.mjs'
+  },
+  {
+    name: 'Default Markdown editor (#170): Settings › 通用 names the current app, 设为默认',
+    script: 'scripts/test-default-app-ui.mjs'
   },
   {
     name: 'Pandoc export dialog: open file / show in folder / close, failures explained',

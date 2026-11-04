@@ -106,7 +106,7 @@ src/renderer/src/
   components/editor-review.js          review plugin state machine + command entry points
   components/editor-review-decorations.js  CriticMarkup scan + Decoration construction
   components/editor-review-card.js     review card DOM + edit/navigation actions
-  components/editor-{html,images,copy,highlight,mermaid,tablebreak,math,math-preview,autolink,frontmatter,md-paste,toolbar,toolbar-autohide,block-controls,chunked-parse,codeblock-eager,codeblock-tab,source-caret,link-labels}.js  other Editor helpers
+  components/editor-{html,images,copy,highlight,mermaid,tablebreak,math,math-preview,autolink,frontmatter,md-paste,toolbar,toolbar-autohide,block-controls,chunked-parse,codeblock-eager,codeblock-tab,source-caret}.js  other Editor helpers
   components/GlobalSearchPanel.jsx  workspace search sidebar pane (third sidebarMode 'search', issue #120)
   hooks/useGlobalSearch.js   search state (debounce + stale-drop) + result-jump: source tabs land the
                           FindBar on the exact occurrence (occIdx), rich tabs restoreMarkdownOffset
@@ -226,6 +226,45 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   server (http://127.0.0.1 assets allowed then). Locked by `test:update-core`,
   `test:update-ui`; end-to-end checked on a packaged app (mini 2026-10-26:
   0.13.256 → 0.13.999 swapped and reopened).
+- **Update mode + default app** (#170). `settings.updateMode`
+  (Settings › 关于 › 更新方式; `useAppLifecycle` reads it once at start):
+  - `notify` (default): the prompt.
+  - `auto`: an installable release (`download.mode === 'install'`) downloads
+    without a prompt and the status bar shows `.hm-update-ready`. Main
+    (`update:setMode`) installs it in `will-quit` WITHOUT reopening (NSIS
+    without `--force-run`; the macOS swap script gets `quiet`). It skips
+    that on shutdown or log-off (powerMonitor `shutdown`, the window's
+    `session-end`). Other modes and a failed download fall back to the
+    prompt.
+  - `manual`: no start-up check.
+
+  A verified earlier download is reused (`reuse` trace). A newer version
+  than last run toasts「已更新到」(`horsemd.lastVersion`). Packaged e2e
+  (2026-11-03): mini — auto → quiet download → SIGTERM → bundle swapped to
+  99.0.2, not reopened; Windows — the 0.14.0 installer served as 99.0.3,
+  window closed → NSIS ran silently (14 s), not reopened.
+
+  Default app (`main/default-app.js`, pure `default-app-core.js`, Settings ›
+  通用 › 默认打开方式):
+  - macOS: JXA via osascript. NSWorkspace
+    `setDefaultApplicationAtURL:toOpenContentType:` shows the SYSTEM's
+    confirm dialog. `LSSetDefaultRoleHandlerForContentType` returns 0 but
+    does nothing on macOS 26.
+  - Windows: reads the user's choice (UserChoice / 24H2 UserChoiceLatest),
+    else the class default. The open command must run our exe — the
+    electron-builder ProgId "Markdown Document" is generic. Setting it opens
+    `rundll32 shell32.dll,OpenAs_RunDLL` for a probe file in temp\HorseMD;
+    when the user picks HorseMD, that open is swallowed (`isProbeFile`) and
+    sends `default-app:changed`. Windows 11 shows its picker with HorseMD
+    under 默认应用; the picker ignores injected clicks / keys (UIA cannot
+    see it either), so choosing in it is checked by hand.
+  - Linux: `xdg-mime default` with our .desktop file, found by its Exec.
+
+  Unpackaged runs hide it. `HORSEMD_TEST_DEFAULT_APP` (a JSON state file)
+  stands in for the OS. Locked by `test:update-mode-ui`, `test:update-ui`
+  (its fixture version is 99.0.0: the old 0.13.999 fell below 0.14.0 and
+  the test had silently stopped finding a prompt), `test:default-app`,
+  `test:default-app-ui`.
 - **Releases** (GitHub): tag = `vX.X.X`, title = **`HorseMD vX.X.X`** (all 14
   historical releases unified to this format 2026-07-04 — keep it consistent).
   Release notes: Chinese, start directly with content (no HorseMD intro),
@@ -395,6 +434,52 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `toggleHighlightCommand` MUST be in that array or Crepe init throws
   ("Context … not found"). The inline-code `inclusive:false` fix uses the same
   `extendSchema` pattern; a belt-and-suspenders post-create override is applied too.
+  Parsing is `lib/remark-highlight-parse.js` (#173, Typora parity): a
+  highlight may hold other formatting — `==a **b** c==`,
+  `<mark class="hm-hl-blue">**b**</mark>` — which is what the editor writes
+  when a highlight covers bold text. The old text-node-only regex left those
+  literal, so every such highlight ended in「富文本与源码不一致」(0.14.0).
+  One left-to-right pass pairs each `==` with the nearest later one across
+  siblings (same result as the old regex inside one text node); the
+  stringify handler passes `=` / `>` `<` as the content's neighbours. Locked
+  by `test:highlight-parse`, `test:highlight-bold-ui`.
+  The selection toolbar fades 1.5 s after the selection is made
+  (`editor-toolbar-autohide.js`); the countdown starts at mouseup, not
+  while the button is held (Feishu / Notion) — a slow drag used to fade it
+  mid-drag and it never came back. The same UI test holds a drag 2 s.
+- **Inline serialization** (`lib/inline-serializer.js`, 2026-11-04): a text
+  block's marks are written by our own pass, installed by replacing
+  `SerializerState.create` (Milkdown's `state.next` per node + private
+  `#moveSpaces` moved blanks across text inside crossing marks, wrote
+  `****` for a mark on a blank, split a link around inline code). Blanks
+  (`lib/markdown-blanks.js`: CommonMark Unicode whitespace) and line breaks
+  leave the edges of every mark run and element (prosemirror-markdown
+  practice); marks opening together nest longer-outside, HTML spans
+  innermost, ties in Milkdown's order; the tree is rebuilt until the
+  marks of every piece stop changing (= what reopening gives, so saving
+  twice writes the same bytes); adjacent `*` runs take `_`
+  (`marker` is spelling: the validator ignores it). Inline code never
+  covers an atom (`editor-inline-code-atoms.js` appendTransaction).
+  Strikethrough is CJK-friendly (`lib/remark-cjk-strikethrough.js`, the
+  micromark extension only — it replaces GFM's `~~` tokenizer by name;
+  `deleteStringifyHandler` reuses the CJK strong handler with `~`). A
+  task item's paragraph position starts after its checkbox
+  (`lib/remark-task-paragraph-position.js`). Sub/superscript pair across
+  siblings (formatting inside), and `<sub>`/`<sup>` without attributes
+  ARE those marks while the syntax is on (`setHtmlMarkTags`; written where
+  `~` would touch `~~`). Source reprint: verified strictly first, Option A
+  (literal `*`) only when no escape level spells the mark; image / formula
+  marks count. Byte-compatible with Milkdown wherever its output parsed
+  back (261 repo files, 55 000 blocks). Locked by
+  `test:mark-combinations-ui` (FULL=1: all contexts; ~325 000 cases).
+  Also (fuzz FORMAT, 2026-11-04): the hardbreak is ProseMirror's
+  `linebreakReplacement` and `editor-textblock-newlines.js` turns any raw
+  `\n` in a non-code text block into a soft break (code block → paragraph /
+  heading, a joined `$$` block); a highlighted `=` beside others is written
+  `<mark class="hm-hl-yellow">`; serializer-style rewrites only an ODD run
+  of trailing backslashes into a two-space break. Settings changes ask main
+  to `flushStorageData()` (`storage:flush`): Chromium may hold localStorage
+  for minutes, and a crash / forced quit lost them.
 - **CJK-friendly emphasis** (`remark-cjk-friendly`, first in `remarkPluginsCtx`):
   `这是**「重点」**内容` parses as bold, matching Typora. Plain CommonMark
   flanking rules treat CJK punctuation like ASCII punctuation and leave the
@@ -740,6 +825,29 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   reuses hashes of files whose size + mtime did not change
   (`local-files.js` cache). Locked by `test:sync-auto` +
   `test:auto-sync-ui` (`__hmAutoSyncTick`, `__hmAutoSyncSaved(path)`).
+- **Sync services (2026-11-03)**: 云同步 › 云端连接 starts from a service
+  gallery (`SyncConnections.jsx`, catalog `lib/sync-providers.js`): 坚果云,
+  数据胶囊, 七牛云, Cloudflare R2, Nextcloud + 其他 WebDAV / 其他 S3 (the full
+  forms, `SyncConnectionForm.jsx`). Layout (redesign 2026-11-04, macOS
+  互联网账户 / Raycast): one card per view, rows split by hairlines — the
+  services as a list (each service's own logo on a white tile in both
+  themes — `assets/providers`, sources in its README — name, one line,
+  WebDAV / S3 badge),
+  the service form as label | input rows with the buttons bottom right
+  (取消 · 测试并保存; 使用完整设置 bottom left), saved connections one row
+  each. Each entry is protocol + `build(values)`
+  (fixed endpoint / region / client id) + `parse(connection)` (null = the
+  service form cannot show it exactly → full form, never rewritten) +
+  `matches` (recognize an older connection by address). Connections store
+  `provider` (display only; update without it keeps it). `connections.js`
+  keeps entries of unknown types on every write (a newer HorseMD's GitHub
+  connection survives an older version). Measured 2026-11-03: 数据胶囊
+  needs User-Agent `rclone` (empty → 401), region us-east-1; 七牛 endpoint
+  `s3.<region>.qiniucs.com`, a wrong region → 400 IncorrectRegion. The S3
+  provider is path-style only (no 阿里云 OSS yet). Service-form errors name
+  the field (region / keys / client / network) and show only the server's
+  `HTTP …` code. Locked by `test:sync-providers`, `test:sync-providers-ui`
+  (real accounts with `HM_QINIU_*` / `HM_CSTCLOUD_*` env only).
 - **云空间 (Cloud space, 2026-10-29)**: the file pane is `SidebarPanes.jsx`
   — 工作区 above 云空间, each the same `Sidebar.jsx` tree (`variant:
   'workspace' | 'cloud'`) with its own expanded folders / rename / drag
@@ -756,7 +864,32 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `.sidebar[data-variant=…] .tree-row` when a folder is in both. Locked by
   `test:cloud-space-ui`.
 - **Editable inline HTML spans** (`editor-html-span.js`, 2026-10-23, Typora
-  parity): a balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
+  parity; 2026-10-31 extended from font/span to `lib/html-span-tags.js`:
+  kbd u ins del s strike b i strong em sub sup small big samp var cite dfn
+  abbr q tt time bdi bdo — `<kbd>Esc</kbd>` was a locked atom, editable only
+  in source mode; `<a>`, `<mark>` (highlight colours), `<img>`, ruby stay
+  raw). Nested pairs: the OUTER pair is the span, inner pairs go back to raw
+  html (a typed tag inside a span stays raw too, `editor-html-input.js`);
+  adjacent `<kbd>`/`<q>` pairs alternate the mark's `part` attr (derived from
+  the source) so `<kbd>Ctrl</kbd><kbd>V</kbd>` stays two keys; font/span/b…
+  still merge (Yuque's break-only `<font>` relies on it). `part` follows
+  edits (`createHtmlSpanPartPlugin`: re-derived in touched text blocks —
+  typing `+` between two keys left part 1 that no parse gives → mismatch;
+  a deletion that brings two equal keys together gives the right one the
+  other part, so they stay two keys). Keys edit like inline code
+  (`editor-html-token-editing.js`, kbd/samp/var/tt only; Obsidian/Typora
+  parity, Air trace 2026-11-01: after `<kbd>Esc</kbd>` + Enter + Backspace
+  every typed letter went into the key): the mark stays inclusive (font/u
+  continue at their end like bold), but at a key edge the caret is OUTSIDE
+  unless the user went in — the side is the stored marks
+  (appendTransaction; an edit inside or a same-spot selection reset keeps
+  it), ←/→ first cross the edge, a click on the key's box enters; grey
+  `<kbd>` `</kbd>` widgets show while inside (`marks: []`, clickable: they
+  push the key aside, so a second click lands on one and must keep the
+  caret in the key — clicks toggled them before); the DOM caret is put on
+  the state's side (IME composes there). A typed opening tag of an editable
+  pair stays text until its closing tag (`editor-html-input.js`). Export
+  strips the widgets. Locked by `test:kbd-edit-ui`. A balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
   becomes an `hmHtmlSpan` mdast node → the `html_span` mark (attrs: exact
   open/close tag bytes), so Yuque text takes a caret and partial selections
@@ -790,10 +923,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   documents (flush unforced → reset parse caches → replaceMarkdown, not
   dirty). With subscript OFF a lone `~` is not escaped on save
   (`setLoneTildeEscaping`); only `~~` is.
-  A remark transform splits ONE text node, aligned to the source (escaped
-  `\~` never delimits; unalignable nodes are left alone), content without
-  unescaped whitespace (`\ ` = space), positioned so reprint keeps bytes
-  (inline-map treats the nodes like `delete`). Marks always exist; parseDOM
+  A remark transform pairs `~` / `^` left to right across one phrasing
+  parent's children (other formatting inside: `~a **b** c~`, Pandoc /
+  markdown-it-sub parity; 2026-11-04), text aligned to the source
+  (escaped `\~` never delimits; entities followed; unalignable nodes are
+  left alone), content without whitespace written literally (`\ `, and a
+  tab is `&#x9;`), positioned so reprint keeps bytes (inline-map treats
+  the nodes like `delete`). It runs before the highlight parse
+  (`==~x~==`). Where `~` would touch a `~~` strikethrough the serializer
+  writes `<sub>…</sub>`, which reads back as the subscript mark. Marks always exist; parseDOM
   (own `.hm-sub/.hm-sup` copies) and input rules only when on; `^`/`~` added
   to stringify `unsafe` when on. Locked by `test:subsup-ui`.
 - **Input-rule anchoring** (`lib/input-rule-guards.js`): Milkdown's underscore
@@ -951,7 +1089,10 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   WeChat ID (`AUTHOR_WECHAT`, public in guide/community.md; copyable). The
   dialog is top-anchored (a status line or the expanded text grow it
   downward; centred, it jumped up and a click on the ID missed it). Save (`useFileOps`) and source-switch recovery toasts
-  carry the same button (`getSyncReport`). The trace harness has
+  carry the same button (`getSyncReport`). The report's region skips empty
+  top-level paragraphs (no Markdown; the source check skips them too): one
+  left between two blocks started the region early and the 4000-character
+  clip hid the real difference (#173). The trace harness has
   `forceSyncFailure(reason, staleSource)`. Locked by `test:sync-diagnostics` +
   `test:sync-report-ui`.
 - **List-slot check + pastes (#171, 2026-10-31)**: Windows user, Enter
@@ -1106,6 +1247,37 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   Entering with the caret in the editor is safe: Chromium moves focus off the
   now non-editable view, so ProseMirror keymaps (Mod-B…) never run. Locked
   by `test:reading-mode-ui`.
+- **Links** (`editor-dom-content.js` `openHref` / `onLinkClick`,
+  `editor-link-card.js`, `lib/link-anchor.js`; user decision 2026-11-03,
+  Feishu / Notion): a plain click opens a link (not after a drag — pointer
+  moved > 4 px between press and click, not Shift/Alt/double clicks; touch
+  devices keep the caret while editing); Mod+click too. Web links →
+  `openExternal`; `#标题` → the heading with that id or slug (lower case,
+  punctuation dropped, spaces → `-`, repeats `-1`…) scrolls to the top
+  (re-scrolled while the page settles; the user's wheel / click / key stops
+  that); `.md/.markdown/.mdx` → `openFileUrl(url, { markdownInApp: true })`,
+  main answers `{ inApp, path }` for an existing file and the renderer opens
+  it as a tab (`hm:open-document` → `useFileOps`), then jumps to
+  `file.md#标题` (before, `shell.openPath` sent it to the system's default
+  Markdown app); other files → their app; a missing heading / file toasts.
+  Editing goes through ONE link card (Crepe's hover preview is switched off
+  by name, `LINK_PREVIEW_TOOLTIP_SPEC`; its edit tooltip for the toolbar's
+  link button stays): hover 0.3 s (mousemove, so it comes back after a
+  click) → target (opens) · 复制 · 编辑 · 取消链接 (raw HTML `<a>` and
+  read-only: target · 复制); 编辑 / Mod+K in a link → 文本 + 链接 fields;
+  Mod+K on a selection → a new link; after applying, typing goes on as
+  plain text (stored marks). The card is in document.body, never inside the
+  contenteditable. Source bytes: an href/title-only change is the reprint
+  level `link-destination` (`patchLinkDestination`: only `](…)` rewritten,
+  title / `<…>` form kept; a reference link falls to the segment printer
+  and becomes inline, its definition kept). Found on the way:
+  `remarkUnwrapNonAsciiAutolinks` unwrapped EVERY link with a non-ASCII URL
+  (`[维基](https://zh.wikipedia.org/wiki/马)` showed as plain text) — now
+  only autolink literals (source char at the link start is not `[` / `<`);
+  `preserveLocallyAlignedTextChange` replaced only the visible part of a
+  change that spans syntax (`[新](b](a)`) — declines now. Locked by
+  `test:link-click-ui`, `test:nonascii-autolink`,
+  `test:markdown-source-preservation`, `test:reading-mode-ui`.
 - **Heading folds** (`editor-heading-fold.js`, a raw plugin in
   `prosePluginsCtx`): a folded top-level heading hides every top-level block
   after it up to the next heading of the same or a higher level. View-only:
@@ -1413,7 +1585,22 @@ the suite currently covers seven sessions plus standalone regressions. Input
 rules and source-fidelity tests type one character at a time through
 `scripts/lib/human-input.mjs`. See [`docs/development.md`](./docs/development.md).
 
-Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`),
+Systematic (not random) coverage of the rich/source contract:
+`test:mark-combinations-ui` (every pair of inline marks × shape × context ×
+text kind, ~325 000 cases with FULL=1) and `test:spec-corpus-ui` (all 676
+CommonMark / GFM spec examples: unchanged reprint is exact, single-character
+edits reprint and stay inside their block). Run both after touching the
+serializer, the parsers' remark plugins, the validator or the reprint engine.
+
+Nightly (mini, launchd `com.horsemd.nightly-rich-source`, 03:30;
+`scripts/nightly-install.sh` / `--remove`): `scripts/nightly-rich-source.mjs`
+builds the LAST COMMIT in its own worktree and runs the full combination test
+and the fuzzer (FORMAT + PASTE) with seeds from the date, plus the spec
+corpus; summary in `~/Library/Logs/HorseMD-nightly/<date>.md`. Read it at the
+start of a session and triage new families.
+
+Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`,
+`FUZZ_FORMAT=1` adds shortcut formatting over ranges and block conversions),
 reproduce with `scripts/lib/probe-session.mjs`, and follow
 [`docs/rich-source-fuzzing.md`](./docs/rich-source-fuzzing.md) (triage flow,
 fixed families with root causes, prioritized open list). UI tests must wait

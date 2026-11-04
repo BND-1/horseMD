@@ -1,6 +1,7 @@
 import { LANGS } from '../../i18n.jsx'
 import Toggle from '../ui/Toggle.jsx'
 import SaveRecoverySettings from './SaveRecoverySettings.jsx'
+import DefaultAppSettings from './DefaultAppSettings.jsx'
 
 export default function GeneralSettings({ lang, setLang, settings, onUpdateSettings, syncAutoSave = false, t }) {
   const closeToTray = settings.closeToTray === true
@@ -32,6 +33,7 @@ export default function GeneralSettings({ lang, setLang, settings, onUpdateSetti
           />
         </div>
       </section>
+      <DefaultAppSettings t={t} />
       <SaveRecoverySettings settings={settings} onUpdateSettings={onUpdateSettings} syncAutoSave={syncAutoSave} t={t} />
       {supportsTray && (
         <section className="settings-block">

@@ -9,6 +9,9 @@
 | workspace.openFolder | cmd.openFolder | file | app | Mod+Shift+O | ⌘⇧O | Ctrl+Shift+O | CmdOrCtrl+Shift+O | CmdOrCtrl+Shift+O | Electron menu | 是 |
 | file.save | cmd.save | file | document | Mod+S | ⌘S | Ctrl+S | CmdOrCtrl+S | CmdOrCtrl+S | Electron menu | 是 |
 | file.saveAs | cmd.saveAs | file | document | Mod+Shift+S | ⌘⇧S | Ctrl+Shift+S | CmdOrCtrl+Shift+S | CmdOrCtrl+Shift+S | Electron menu | 是 |
+| file.rename | cmd.renameFile | file | app | F2 | F2 | F2 |  |  | Renderer | 是 |
+| file.history | cmd.fileHistory | file | app |  |  |  |  |  | Renderer | 是 |
+| file.deleted | cmd.recentlyDeleted | file | app |  |  |  |  |  | Renderer | 是 |
 | file.attach | cmd.attachFile | file | document |  |  |  |  |  | Electron menu | 是 |
 | file.exportPdf | cmd.exportPdf | file | document | Mod+Shift+E | ⌘⇧E | Ctrl+Shift+E | CmdOrCtrl+Shift+E | CmdOrCtrl+Shift+E | Electron menu | 是 |
 | file.exportHtml | cmd.exportHtml | file | document |  |  |  |  |  | Electron menu | 是 |
@@ -25,8 +28,14 @@
 | view.commandPalette | cmd.palette | view | app | Mod+P | ⌘P | Ctrl+P | CmdOrCtrl+P | CmdOrCtrl+P | Electron menu | 是 |
 | view.toggleSidebar | cmd.sidebar | view | app | Mod+Shift+B | ⌘⇧B | Ctrl+Shift+B |  |  | Renderer | 是 |
 | view.immersive | cmd.immersive | view | app | Mod+Shift+Enter | ⌘⇧Enter | Ctrl+Shift+Enter |  |  | Renderer | 是 |
+| view.readingMode | cmd.readingMode | view | app | Mod+Shift+R | ⌘⇧R | Ctrl+Shift+R |  |  | Renderer | 是 |
 | view.showFiles | cmd.files | view | app |  |  |  |  |  | Renderer | 是 |
 | view.showOutline | cmd.outline | view | app | Mod+Shift+L | ⌘⇧L | Ctrl+Shift+L | CmdOrCtrl+Shift+L | CmdOrCtrl+Shift+L | Electron menu | 是 |
+| outline.expandAll | cmd.outlineExpandAll | view | app | Mod+Alt+BracketRight | ⌘⌥] | Ctrl+Alt+] |  |  | Renderer | 是 |
+| outline.collapseAll | cmd.outlineCollapseAll | view | app | Mod+Alt+BracketLeft | ⌘⌥[ | Ctrl+Alt+[ |  |  | Renderer | 是 |
+| editor.fold.toggle | cmd.foldHeading | view | app | Mod+Alt+Period | ⌘⌥. | Ctrl+Alt+. |  |  | Renderer | 是 |
+| editor.fold.all | cmd.foldAllHeadings | view | app |  |  |  |  |  | Renderer | 是 |
+| editor.fold.none | cmd.unfoldAllHeadings | view | app |  |  |  |  |  | Renderer | 是 |
 | view.globalSearch | cmd.globalSearch | view | app | Mod+Shift+F | ⌘⇧F | Ctrl+Shift+F | CmdOrCtrl+Shift+F | CmdOrCtrl+Shift+F | Electron menu | 是 |
 | view.toggleSource | cmd.source | view | document | Mod+Slash | ⌘/ | Ctrl+/ | CmdOrCtrl+/ | CmdOrCtrl+/ | Electron menu | 是 |
 | view.cycleTheme | cmd.theme | view | app | Mod+Shift+T | ⌘⇧T | Ctrl+Shift+T | CmdOrCtrl+Shift+T | CmdOrCtrl+Shift+T | Electron menu | 是 |

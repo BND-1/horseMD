@@ -102,6 +102,11 @@ const sameIgnoringHeadingIds = (left, right) => {
   if (left.eq(right)) return true
   if (left.type !== right.type) return false
   if (left.childCount !== right.childCount) return false
+  // Marks count on every node: an image / formula differs by its marks
+  // alone (`**![i](a.png)**`). Without this, bolding just an image read as
+  // "the same document" — the serializer memo returned the old Markdown and
+  // the heading-id adoption could swallow the change.
+  if (left.marks.length !== right.marks.length || left.marks.some((mark, index) => !mark.eq(right.marks[index]))) return false
   if (left.type.name === 'heading') {
     return attrsWithoutId(left.attrs) === attrsWithoutId(right.attrs) && left.content.eq(right.content)
   }

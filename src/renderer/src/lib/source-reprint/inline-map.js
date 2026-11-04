@@ -14,6 +14,8 @@
 // cursor, unpositioned ones are scanned sequentially. Any disagreement returns
 // null: the caller then reprints the whole block instead of guessing.
 
+import { HTML_SPAN_CLOSE_TAG_RE as CLOSE_TAG_RE, HTML_SPAN_OPEN_TAG_RE as OPEN_TAG_RE } from '../html-span-tags.js'
+
 const SENTINEL = '​'
 const ENTITY = /^&(?:#[xX]([0-9a-fA-F]{1,6})|#(\d{1,7})|([A-Za-z][A-Za-z0-9]{1,31}));/
 const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
@@ -238,10 +240,10 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
         break
       }
       case 'hmHtmlSpan': {
-        // Editable <font>/<span>: skip the authored open tag, map the
-        // content, skip the close tag.
+        // Editable <font>/<span>/<kbd>…: skip the authored open tag, map
+        // the content, skip the close tag.
         const first = node.children?.[0]
-        const open = /^<(?:font|span)(?=[\s>])[^>]*>/i.exec(source.slice(cursor, bound))
+        const open = OPEN_TAG_RE.exec(source.slice(cursor, bound))
         if (Number.isInteger(startOf(first))) cursor = startOf(first)
         else if (open) cursor += open[0].length
         else { failed = true; return }
@@ -249,7 +251,7 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
         if (failed) return
         if (Number.isInteger(nodeEnd)) cursor = nodeEnd
         else {
-          const close = /^<\/(?:font|span)\s*>/i.exec(source.slice(cursor, bound))
+          const close = CLOSE_TAG_RE.exec(source.slice(cursor, bound))
           if (!close) { failed = true; return }
           cursor += close[0].length
         }

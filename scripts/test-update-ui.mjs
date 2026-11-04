@@ -21,7 +21,8 @@ if (process.platform !== 'darwin') {
   process.exit(0)
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-const VERSION = '0.13.999'
+// Far above any real version, so it always counts as newer.
+const VERSION = '99.0.0'
 const root = await mkdtemp(join(tmpdir(), 'horsemd-update-ui-'))
 
 // A tiny HorseMD.app with the release version, plus incompressible bytes so

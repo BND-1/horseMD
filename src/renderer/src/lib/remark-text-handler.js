@@ -95,3 +95,21 @@ const withMarker = (handle, option) => {
 const cjkAttention = cjkFriendlyToMarkdown().handlers
 export const strongStringifyHandler = withMarker(cjkAttention.strong, 'strong')
 export const emphasisStringifyHandler = withMarker(cjkAttention.emphasis, 'emphasis')
+
+// GFM strikethrough: the default `delete` handler pairs `~~` by plain
+// CommonMark flanking, so `le~~\`ad\`~~pha` (and, before the CJK-friendly
+// parse side, `说「~~重点」内容~~`) read back as literal tildes. `~~` follows
+// the same flanking rules as `**` (GFM spec; remark-cjk-friendly-gfm-
+// strikethrough relaxes them for CJK the same way), so the CJK-friendly strong
+// handler serializes it with `~` as the marker: it encodes a neighbour
+// (`&#x61;`) only where the run would not pair.
+export const deleteStringifyHandler = (node, parent, state, info) => {
+  const saved = state.options.strong
+  state.options.strong = '~'
+  try {
+    return cjkAttention.strong(node, parent, state, info)
+  } finally {
+    state.options.strong = saved
+  }
+}
+deleteStringifyHandler.peek = () => '~'

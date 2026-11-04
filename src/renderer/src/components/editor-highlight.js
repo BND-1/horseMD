@@ -12,8 +12,8 @@
 import { commandsCtx } from '@milkdown/core'
 import { markRule } from '@milkdown/prose'
 import { toggleMark } from '@milkdown/prose/commands'
+import { highlightParseTransform } from '../lib/remark-highlight-parse.js'
 import { $command, $inputRule, $markAttr, $markSchema, $remark, $useKeymap } from '@milkdown/utils'
-import { findAndReplace } from 'mdast-util-find-and-replace'
 
 export const HIGHLIGHT_COLORS = ['yellow', 'red', 'blue']
 
@@ -71,82 +71,34 @@ function colorFromClass(cls) {
   return 'yellow'
 }
 
-// Parse a complete `<mark class="hm-hl-COLOR">…</mark>` fragment into {color,text}.
-const MARK_HTML_RE = /^<mark\s+class="hm-hl-(yellow|red|blue)"\s*>([\s\S]*?)<\/mark>$/
-
-// Parse direction (remark): `==text==` in a text node → highlight node, and a
-// balanced inline-HTML `<mark class="hm-hl-…">text</mark>` → highlight node.
-// findAndReplace only touches `text` nodes, so inline code / code blocks / math
-// (separate node types) are naturally left alone.
+// Parse direction (remark): `==text==` → highlight node, and inline-HTML
+// `<mark class="hm-hl-…">…</mark>` → highlight node of that color, also
+// around other formatting (lib/remark-highlight-parse.js). Only `text` and
+// `html` nodes are read, so inline code / code blocks / math are left alone.
 export const highlightRemark = $remark('highlightParse', () => () => (tree) => {
-  findAndReplace(tree, [
-    [
-      HIGHLIGHT_RE,
-      (_whole, _eq, content) => ({
-        type: 'highlight',
-        color: 'yellow',
-        data: { hName: 'mark' },
-        children: [{ type: 'text', value: content }]
-      })
-    ]
-  ])
-  coalesceMarkHtml(tree)
+  highlightParseTransform(tree)
   return tree
 })
-
-// Convert inline-HTML <mark class="hm-hl-…">…</mark> into highlight mdast nodes.
-// Commonmark splits `<mark>x</mark>` into open/text/close html nodes; we coalesce
-// a balanced run of consecutive html+text siblings (self-contained — doesn't
-// depend on the general inline-HTML merge plugin running first) and, when the
-// whole run is one `<mark class=…>…</mark>`, swap it for a highlight node.
-function coalesceMarkHtml(node) {
-  if (!Array.isArray(node.children)) return
-  for (const c of node.children) coalesceMarkHtml(c)
-  const kids = node.children
-  const next = []
-  let i = 0
-  while (i < kids.length) {
-    const c = kids[i]
-    if (c.type === 'html' && /^<mark\b/i.test(c.value) && !/^<\//.test(c.value)) {
-      let raw = ''
-      let j = i
-      let matched = null
-      while (j < kids.length) {
-        const k = kids[j]
-        if (k.type !== 'html' && k.type !== 'text') break
-        raw += k.value
-        j += 1
-        const m = raw.match(MARK_HTML_RE)
-        if (m) {
-          matched = m
-          break
-        }
-      }
-      if (matched) {
-        next.push({
-          type: 'highlight',
-          color: matched[1],
-          data: { hName: 'mark' },
-          children: [{ type: 'text', value: matched[2] }]
-        })
-        i = j
-        continue
-      }
-    }
-    next.push(c)
-    i += 1
-  }
-  node.children = next
-}
 
 // Stringify direction (remark handler, registered on remarkStringifyOptionsCtx).
 // yellow → ==text== ; red/blue → <mark class="hm-hl-…">text</mark> (round-trips
 // back into a colored mark via coalesceMarkHtml on reload).
 export function highlightStringifyHandler(node, _parent, state, info) {
-  const inner = state.containerPhrasing(node, info)
-  if (!inner) return ''
   const color = node.color || 'yellow'
-  if (color === 'yellow') return `==${inner}==`
+  const yellow = color === 'yellow'
+  // The content sits between `==` / the tags: bold right inside decides its
+  // delimiters by those characters, not by the text around the highlight.
+  const inner = state.containerPhrasing(node, { ...info, before: yellow ? '=' : '>', after: yellow ? '=' : '<' })
+  if (!inner) return ''
+  // `==` cannot hold a `=` (the parse rule) nor touch one outside (the runs
+  // merge): a highlighted `=` beside others is the HTML spelling, which
+  // reads back the same (fuzz FORMAT seed 6).
+  const touches = String(info?.before || '').endsWith('=') || String(info?.after || '').startsWith('=')
+  if (yellow && !inner.includes('=') && !touches) return `==${inner}==`
+  if (yellow) {
+    const html = state.containerPhrasing(node, { ...info, before: '>', after: '<' })
+    return `<mark class="hm-hl-yellow">${html}</mark>`
+  }
   return `<mark class="hm-hl-${color}">${inner}</mark>`
 }
 

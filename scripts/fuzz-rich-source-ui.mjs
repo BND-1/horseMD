@@ -15,6 +15,14 @@
 // Usage:
 //   FUZZ_SEEDS=1,2,3 FUZZ_OPS=150 node scripts/fuzz-rich-source-ui.mjs
 //   FUZZ_FIXTURE=path/to/doc.md  (default: built-in mixed CJK/English document)
+//   FUZZ_FORMAT=1 also format ranges and blocks by shortcut: Shift+arrow
+//                 selections, italic / strike / inline code / highlight,
+//                 heading levels, paragraph, quote, bullet / ordered list
+//                 (opt-in: it changes every seed's ops; the nightly run sets it)
+//   FUZZ_UI=1     also use the editor's own UI (2026-11-04): the slash menu
+//                 on a new line (`/h2`, `/table`, `/java`…), dragging a block
+//                 by its handle onto another block, the table row / column
+//                 handle menus (opt-in, like FORMAT)
 //   FUZZ_PASTE=1  also paste Markdown / plain text (code blocks, lists, tables,
 //                 quotes, math, multi-line text; LF or CRLF) like a user's
 //                 Ctrl+V (#171). Opt-in: adding ops changes what every seed
@@ -130,6 +138,38 @@ const OPS = [
 // from another Markdown file, an IDE or a chat; text/plain only (what other
 // apps put on the clipboard), sometimes with Windows line endings.
 const PASTE_OPS = [['paste', 6]]
+// Formatting by shortcut over ranges (mark combinations, block conversions):
+// the editor's own keymaps, as a user presses them.
+const FORMAT_OPS = [
+  ['shiftSelect', 6],
+  ['italic', 2],
+  ['strike', 2],
+  ['inlineCode', 2],
+  ['highlight', 2],
+  ['heading', 1],
+  ['paragraphBlock', 1],
+  ['quote', 1],
+  ['bulletList', 1],
+  ['orderedList', 1]
+]
+// The editor's own UI: slash menu, block drag, table handles.
+const UI_OPS = [
+  ['slash', 3],
+  ['dragBlock', 2],
+  ['tableHandle', 2]
+]
+const SLASH_QUERIES = ['h1', 'h2', 'h3', 'quote', 'code', 'table', 'hr', 'todo', 'ul', 'ol', 'math', 'mermaid', 'java', '标题', '引用', '列表']
+const ALT = 1
+const FORMAT_KEYS = {
+  italic: { key: 'i', code: 'KeyI', modifiers: MOD },
+  strike: { key: 'x', code: 'KeyX', modifiers: MOD | ALT },
+  inlineCode: { key: 'e', code: 'KeyE', modifiers: MOD },
+  highlight: { key: 'h', code: 'KeyH', modifiers: MOD | ALT },
+  paragraphBlock: { key: '0', code: 'Digit0', modifiers: MOD },
+  quote: { key: 'b', code: 'KeyB', modifiers: MOD | SHIFT },
+  bulletList: { key: '8', code: 'Digit8', modifiers: MOD | ALT },
+  orderedList: { key: '7', code: 'Digit7', modifiers: MOD | ALT }
+}
 const PASTE_SNIPPETS = [
   '```\nclass Wrapper implements Target {\n    private final Something inner;   // 持有对象\n\n    public void doIt() {\n        inner.doIt();\n    }\n}\n\n```\n',
   '```js\nconst a = 1\n- not a list\n```',
@@ -173,6 +213,14 @@ function normalizeDoc(json) {
     if (!node || typeof node !== 'object') return node
     // Marks on a line break have no visible meaning (validator ignores them).
     if ((node.type === 'hardbreak' || node.type === 'hard_break') && node.marks) delete node.marks
+    // `*` vs `_` (strong / emphasis `marker`) is spelling (validator too).
+    if (Array.isArray(node.marks)) {
+      node.marks = node.marks.map((mark) => {
+        if (mark?.attrs?.marker == null) return mark
+        const { marker: _marker, ...attrs } = mark.attrs
+        return Object.keys(attrs).length ? { ...mark, attrs } : { type: mark.type }
+      })
+    }
     if (node.attrs) {
       const attrs = { ...node.attrs }
       delete attrs.id
@@ -191,84 +239,43 @@ function normalizeDoc(json) {
       // textblocks without it. Interior whitespace stays strict.
       // Likewise a space at the start of a textblock or right after a line
       // break (start of a wrapped line).
-      node.content.forEach((child, index) => {
-        // Spaces right before a line break cannot be stored either.
-        const following = node.content[index + 1]
-        if (child.type === 'text' && (following?.type === 'hardbreak' || following?.type === 'hard_break')) {
-          child.text = child.text.replace(/[ \t]+$/, '')
-        }
-      })
-      node.content.forEach((child, index) => {
-        const previous = node.content[index - 1]
-        if (child.type === 'text' && (index === 0 || previous.type === 'hardbreak' || previous.type === 'hard_break')) {
-          child.text = child.text.replace(/^[ \t]+/, '')
-        }
-      })
-      // Whitespace at the edge of a bold/italic run cannot stay inside the
-      // delimiters (`** x**` is not emphasis); the validator's semanticJson
-      // treats it as non-semantic, so the oracle compares without it too.
-      const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
-      const emphasized = (child) => child?.type === 'text' &&
-        (child.marks || []).some((mark) => INVISIBLE_ON_BLANK.has(mark.type))
-      // Edge blanks of a run that touches another such run are a real space
-      // between the two runs, wherever they sit: `<font>a </font><font>b</font>`
-      // (live, blanks inside the first run) saves as
-      // `<font>a</font> <font>b</font>` (blank run between). Split them out as
-      // a plain blank run first, so the rule below sees one spelling
-      // (yuque fuzz seeds 42 / 48, 2026-10-24: 4 spaces, visible text equal).
-      node.content = node.content.flatMap((child, index) => {
-        if (!emphasized(child) || child.text.trim() === '') return [child]
-        const lead = child.text.match(/^[ \t]*/)[0]
-        const trail = child.text.match(/[ \t]*$/)[0]
-        const out = []
-        if (lead && emphasized(node.content[index - 1])) out.push({ type: 'text', text: lead })
-        out.push(child)
-        if (trail && emphasized(node.content[index + 1])) out.push({ type: 'text', text: trail })
-        return out
-      })
-      node.content.forEach((child, index) => {
-        if (child.type !== 'text') return
-        // A bold/italic run of only spaces is just spaces (no delimiters can
-        // hold it); keep them, unmarked (seed 92).
-        if (emphasized(child) && child.text.trim() === '' && !(child.marks || []).some((mark) => mark.type === 'link')) {
-          delete child.marks
-          return
-        }
-        if (emphasized(child)) child.text = child.text.trim()
-        // A blank-only run BETWEEN two such runs is a real space
-        // (`<font>a</font> <font>b</font>` vs one `<font>a b</font>`): keep it;
-        // the run-wide blank split below compares the two spellings equal.
-        else if (/^[ \t]+$/.test(child.text) && emphasized(node.content[index - 1]) && emphasized(node.content[index + 1])) return
-        else {
-          if (emphasized(node.content[index + 1])) child.text = child.text.replace(/[ \t]+$/, '')
-          if (emphasized(node.content[index - 1])) child.text = child.text.replace(/^[ \t]+/, '')
-        }
-      })
-      node.content = node.content.filter((child) => !(child.type === 'text' && child.text === ''))
-      // Adjacent text runs with the same marks are one run.
-      node.content = node.content.reduce((runs, child) => {
+      // Blanks compare without the marks that show nothing on them, wherever
+      // they sit (edges of a run, between two runs, inside one) — the
+      // validator's semanticJson and the source reprint do the same, and the
+      // serializer writes edge blanks outside the delimiters (`** x**` is not
+      // emphasis). Inline code keeps its blanks (content).
+      // Strike / highlight / sub / sup since 2026-11-04 (lib/inline-serializer.js).
+      const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span', 'strike_through', 'highlight', 'subscript', 'superscript'])
+      const merge = (list) => list.reduce((runs, child) => {
         const previous = runs[runs.length - 1]
         if (previous?.type === 'text' && child.type === 'text' && JSON.stringify(previous.marks || null) === JSON.stringify(child.marks || null)) {
           previous.text += child.text
         } else runs.push(child)
         return runs
       }, [])
-      // Blanks compare without those marks anywhere in a run, like the
-      // validator and the reprint engine (`**a b**` vs `**a** **b**`).
-      node.content = node.content.flatMap((child) => {
-        if (child?.type !== 'text' || !emphasized(child) || (child.marks || []).some((mark) => mark.type === 'inlineCode') || !/[^ \t][ \t]+[^ \t]/.test(child.text)) return [child]
-        const blankMarks = child.marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type))
-        return child.text.split(/([ \t]+)/).filter(Boolean).map((piece) => /^[ \t]+$/.test(piece)
-          ? (blankMarks.length ? { type: 'text', text: piece, marks: blankMarks } : { type: 'text', text: piece })
-          : { ...child, text: piece })
+      node.content = merge(node.content.flatMap((child) => {
+        if (child?.type !== 'text' || !(child.marks || []).length || child.marks.some((mark) => mark.type === 'inlineCode')) return [child]
+        return child.text.split(/([ \t]+)/).filter(Boolean).map((piece) => {
+          if (!/^[ \t]+$/.test(piece)) return { ...child, text: piece }
+          const marks = child.marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type))
+          return marks.length ? { type: 'text', text: piece, marks } : { type: 'text', text: piece }
+        })
+      }))
+      // Whitespace at the start / end of a textblock or around a line break
+      // has no Markdown encoding (stripped; two spaces would be a hard break).
+      // Interior whitespace stays strict.
+      const isBreak = (child) => child?.type === 'hardbreak' || child?.type === 'hard_break'
+      node.content.forEach((child, index) => {
+        if (child.type !== 'text' || (child.marks || []).some((mark) => mark.type === 'inlineCode')) return
+        if (index === 0 || isBreak(node.content[index - 1])) child.text = child.text.replace(/^[ \t]+/, '')
+        if (isBreak(node.content[index + 1])) child.text = child.text.replace(/[ \t]+$/, '')
       })
-      node.content = node.content.reduce((runs, child) => {
-        const previous = runs[runs.length - 1]
-        if (previous?.type === 'text' && child.type === 'text' && JSON.stringify(previous.marks || null) === JSON.stringify(child.marks || null)) {
-          previous.text += child.text
-        } else runs.push(child)
-        return runs
-      }, [])
+      node.content = merge(node.content.filter((child) => !(child.type === 'text' && child.text === '')))
+      // (Again: a leading blank run that was removed exposes the next one.)
+      if (node.content[0]?.type === 'text' && !(node.content[0].marks || []).some((mark) => mark.type === 'inlineCode')) {
+        node.content[0].text = node.content[0].text.replace(/^[ \t]+/, '')
+        if (!node.content[0].text) node.content.shift()
+      }
       // A soft break at the very start or end of a text block has no encoding.
       // (A hard break there has none either — table cells excepted: a cell's
       // paragraph is normalized by its own rule below.)
@@ -550,6 +557,98 @@ async function pastePlain(app, text) {
   })(${JSON.stringify(text)})`)
 }
 
+const mouseAt = async (app, type, point, extra = {}) => app.send('Input.dispatchMouseEvent', {
+  type, x: point.x, y: point.y, button: type === 'mouseMoved' ? 'none' : 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1, ...extra
+})
+
+// Drag a random top-level block by its handle onto (before) another one:
+// the pointer shows the handle in the gutter, then HTML5 drag events as the
+// block-handle tests send them (Milkdown's handle is a native drag source).
+async function dragRandomBlock(app, rand) {
+  const plan = await app.evaluate(`((r1, r2) => {
+    const pm = ${visiblePm}
+    if (!pm) return null
+    const blocks = [...pm.children].filter((node) => node.offsetParent && node.getBoundingClientRect().height > 4)
+    if (blocks.length < 2) return null
+    const from = Math.floor(r1 * blocks.length)
+    let to = Math.floor(r2 * blocks.length)
+    if (to === from) to = (to + 1) % blocks.length
+    blocks[from].scrollIntoView({ block: 'center' })
+    const host = pm.closest('.editor-host')
+    const r = blocks[from].getBoundingClientRect()
+    globalThis.__fuzzDragTarget = blocks[to]
+    return { from, to, gutter: { x: Math.round(Math.max((host?.getBoundingClientRect().left ?? r.left - 60) + 2, pm.getBoundingClientRect().left - 8)), y: Math.round(r.top + Math.min(12, r.height / 2)) } }
+  })(${rand()}, ${rand()})`)
+  if (!plan) return null
+  await mouseAt(app, 'mouseMoved', plan.gutter)
+  await sleep(300)
+  const grip = await app.evaluate(`(() => {
+    const handle = [...document.querySelectorAll('.milkdown-block-handle')].find((n) => n.dataset.show === 'true')
+    const item = handle && [...handle.querySelectorAll('.operation-item')].pop()
+    if (!item) return null
+    const r = item.getBoundingClientRect()
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+  })()`)
+  if (!grip) return { ...plan, dropped: false }
+  await mouseAt(app, 'mouseMoved', grip)
+  await mouseAt(app, 'mousePressed', grip)
+  const dropped = await app.evaluate(`(() => {
+    const handle = [...document.querySelectorAll('.milkdown-block-handle')].find((n) => n.dataset.show === 'true')
+    const target = globalThis.__fuzzDragTarget
+    if (!handle || !target || !target.isConnected) return false
+    const r = target.getBoundingClientRect()
+    const dataTransfer = new DataTransfer()
+    handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }))
+    const at = { clientX: r.left + 2, clientY: r.top + 2 }
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer, ...at }))
+    const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, ...at })
+    target.dispatchEvent(drop)
+    handle.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer }))
+    return drop.defaultPrevented
+  })()`)
+  await mouseAt(app, 'mouseReleased', grip)
+  await sleep(200)
+  return { ...plan, dropped }
+}
+
+// Hover a random table cell, click its row or column handle, click one of
+// the buttons the handle opens (delete, alignment…).
+async function useTableHandle(app, rand) {
+  const cell = await app.evaluate(`((r1) => {
+    const pm = ${visiblePm}
+    const cells = pm ? [...pm.querySelectorAll('td, th')].filter((n) => n.offsetParent) : []
+    if (!cells.length) return null
+    const td = cells[Math.floor(r1 * cells.length)]
+    td.scrollIntoView({ block: 'center' })
+    const r = td.getBoundingClientRect()
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+  })(${rand()})`)
+  if (!cell) return null
+  await mouseAt(app, 'mouseMoved', cell)
+  await sleep(350)
+  const role = rand() < 0.5 ? 'row-drag-handle' : 'col-drag-handle'
+  const handle = await app.evaluate(`(() => {
+    const h = [...document.querySelectorAll('.milkdown-table-block .cell-handle[data-role="${role}"]')].find((n) => n.dataset.show === 'true' && n.getBoundingClientRect().width)
+    if (!h) return null
+    const r = h.getBoundingClientRect()
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+  })()`)
+  if (!handle) return { role, clicked: false }
+  await mouseAt(app, 'mouseMoved', handle)
+  await mouseAt(app, 'mousePressed', handle)
+  await mouseAt(app, 'mouseReleased', handle)
+  await sleep(250)
+  const buttons = await app.evaluate(`(() => [...document.querySelectorAll('.milkdown-table-block .cell-handle .button-group[data-show="true"] button')]
+    .filter((b) => b.getBoundingClientRect().width).map((b) => { const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } }))()`)
+  if (!buttons.length) return { role, clicked: false }
+  const index = Math.floor(rand() * buttons.length)
+  await mouseAt(app, 'mouseMoved', buttons[index])
+  await mouseAt(app, 'mousePressed', buttons[index])
+  await mouseAt(app, 'mouseReleased', buttons[index])
+  await sleep(250)
+  return { role, button: index, of: buttons.length }
+}
+
 async function performOp(app, op, rand) {
   switch (op) {
     case 'click': return { target: await clickRandomText(app, rand) }
@@ -590,6 +689,38 @@ async function performOp(app, op, rand) {
       const word = pick(rand, [...WORDS, ...CJK])
       await typeChars(app, word)
       return { count, text: word }
+    }
+    case 'slash': {
+      // A new line, then the menu (`/` + query, Enter), as a user inserts a block.
+      await pressKey(app.send, { key: 'Enter', text: '\r' })
+      const query = pick(rand, SLASH_QUERIES)
+      await typeChars(app, '/' + query, 60)
+      await sleep(250)
+      await pressKey(app.send, { key: 'Enter', text: '\r' })
+      return { query }
+    }
+    case 'dragBlock': return (await dragRandomBlock(app, rand)) || {}
+    case 'tableHandle': return (await useTableHandle(app, rand)) || {}
+    case 'shiftSelect': {
+      const key = pick(rand, ['ArrowLeft', 'ArrowRight'])
+      const count = 1 + Math.floor(rand() * 8)
+      for (let index = 0; index < count; index += 1) await pressKey(app.send, { key, modifiers: SHIFT })
+      return { key, count }
+    }
+    case 'italic':
+    case 'strike':
+    case 'inlineCode':
+    case 'highlight':
+    case 'paragraphBlock':
+    case 'quote':
+    case 'bulletList':
+    case 'orderedList':
+      await pressKey(app.send, FORMAT_KEYS[op])
+      return {}
+    case 'heading': {
+      const level = 1 + Math.floor(rand() * 3)
+      await pressKey(app.send, { key: String(level), code: `Digit${level}`, modifiers: MOD })
+      return { level }
     }
     case 'undo':
     case 'redo':
@@ -725,7 +856,7 @@ async function runSeed(seed) {
     // Start like a user: click into the document first.
     report.ops.push({ index: -1, op: 'click', target: await clickRandomText(app, rand) })
     for (let index = 0; index < opsPerSeed; index += 1) {
-      const op = weighted(rand, process.env.FUZZ_PASTE === '1' ? [...OPS, ...PASTE_OPS] : OPS)
+      const op = weighted(rand, [...OPS, ...(process.env.FUZZ_FORMAT === '1' ? FORMAT_OPS : []), ...(process.env.FUZZ_UI === '1' ? UI_OPS : []), ...(process.env.FUZZ_PASTE === '1' ? PASTE_OPS : [])])
       let detail = {}
       try {
         detail = await performOp(app, op, rand)

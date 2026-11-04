@@ -29,6 +29,10 @@ const a = doc(h('标题'), p('一'), p('二'), p('三'), p('四'))
 assert.equal(diffTopLevel(a, doc(h('标题', 'x-id'), p('一'), p('二'), p('三'), p('四'))), null, 'heading ids are not a difference')
 assert.deepEqual(diffTopLevel(a, doc(h('标题'), p('一'), p('二改'), p('三'), p('四'))), { source: { from: 1, to: 3 }, editor: { from: 1, to: 3 } })
 assert.deepEqual(diffTopLevel(a, doc(h('标题'), p('一'), p('新'), p('二'), p('三'), p('四'))), { source: { from: 1, to: 2 }, editor: { from: 1, to: 3 } })
+// Empty paragraphs have no Markdown: not a difference, and one before the
+// change does not start the region (#173: it did, and the clip hid the change).
+assert.equal(diffTopLevel(a, doc(h('标题'), p('一'), p(''), p('二'), p('三'), p('四'), p(''))), null, 'empty paragraphs are not a difference')
+assert.deepEqual(diffTopLevel(a, doc(h('标题'), p(''), p('一'), p('二'), p('三'), p('四改'))), { source: { from: 3, to: 4 }, editor: { from: 4, to: 5 } })
 
 // 2. Region: the raw source slice comes from the mapper (CRLF kept), the
 // editor side from the serializer.

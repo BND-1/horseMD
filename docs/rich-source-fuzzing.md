@@ -26,7 +26,20 @@ FUZZ_SEEDS=31,32,33 FUZZ_OPS=200 FUZZ_CHECKPOINT=40 \
 - 每个 seed 确定性复现同一操作序列（PRNG 只决定操作，不依赖时序）；改代码后用**同一 seed** 复跑即可验证。
 - 产物：`$FUZZ_OUT/seed-N/report.json`（op 日志、checkpoint 结论、首次 PAUSE 的 trace 尾部：integrity/diff/coordinator/journal(40)/preserve/flush/各 owner trace）、`checkpoint-K.md`（保存字节）、CORRUPT 时另存 live/reopened/source-view。
 - 操作权重见 `OPS`；夹具为中英文混合文档（标题、软换行段落、嵌套列表、有序、任务、引用、代码块、表格、分隔线）。`FUZZ_FIXTURE=path` 可换夹具。`FUZZ_PASTE=1` 额外加入粘贴操作（代码块、列表、表格、引用、公式、多行纯文本，40% 用 CRLF；#171 之前粘贴从未被模糊测试覆盖）；默认关闭，因为加入新操作会改变每个种子的操作序列，文档里引用的种子号会失效。
+- `FUZZ_FORMAT=1` 额外加入按快捷键的格式操作（2026-11-04）：Shift+方向键扩选、斜体 / 删除线 / 行内代码 / 高亮、标题级别、正文、引用、无序 / 有序列表。同样默认关闭（会改变种子序列）；夜间长跑打开它。
 - 跑 UI 回归或 fuzz 时**不要重建 out/**（会让中途启动的实例失败）。
+
+### 2.0 夜间长跑（2026-11-04）
+
+mini 上的 launchd 任务 `com.horsemd.nightly-rich-source` 每天 03:30 运行 `scripts/nightly-rich-source.mjs`：在独立 worktree 里构建**最新提交**（不碰工作区、`out/` 和 /Applications 里的 HorseMD），跑全量格式组合测试、规范语料测试和随机 fuzz（`FUZZ_FORMAT=1 FUZZ_PASTE=1`），种子由日期决定，每晚不同。结果摘要在 `~/Library/Logs/HorseMD-nightly/<日期>.md`，失败的输出和 fuzz 报告在同名文件夹里。安装 / 移除：`scripts/nightly-install.sh` / `scripts/nightly-install.sh --remove`。
+
+### 2.1 不靠随机的系统测试（2026-11-04）
+
+随机 fuzz 只能碰到它的操作表里有的东西（#173「高亮覆盖粗体」就从没被碰到）。另有两个确定性的全覆盖测试，都直接用真实 Crepe 的解析 / 序列化 / 校验 / 源码重排（`__hmSourceReprintHarness`），一分钟左右：
+
+- `npm run test:mark-combinations-ui`：12 种行内格式两两叠加 × 各种重叠形状 × 段落 / 标题 / 列表 / 任务 / 引用 / 表格 × 中文 / 英文 / 中文标点 / 其他空白 / emoji，加图片 / 公式 / 换行、部分取消、随机三重、保存后再改；上下标单独开设置跑。检查：保存后读回一致、源码重排成功且一致、再存一次字节不变。`FULL=1` 跑全部 10 种位置（约 33 万例），`PHASE=pairs|atoms|subsup`、`SEED=`、`CAP=`（记录多少失败）。
+- `npm run test:spec-corpus-ui`：CommonMark 0.31.2 全部 652 个规范例子 + GFM 扩展 24 个（`scripts/fixtures/`，CC BY-SA 4.0）：不改时逐字重排；每个文本块头 / 中 / 尾插入或删除一个字后重排成功、一致、改动不出所在顶层块。整篇序列化读不回的只报告不判失败（剩 5 个：自动链接里的反斜杠、跨行行内代码 / HTML 属性里的 `\` 换行、表格行比表头多格）。
+
 
 ## 3. 分诊流程
 
@@ -44,6 +57,14 @@ FUZZ_SEEDS=31,32,33 FUZZ_OPS=200 FUZZ_CHECKPOINT=40 \
 
 | 家族 | 根因 | 修法 | 位置 |
 |---|---|---|---|
+| 格式叠加（#173 家族，2026-11-04，组合测试 22 680 例中 3 003 例失败） | Milkdown 序列化逐节点开关 mark，`#moveSpaces` 把交叉 mark 里的空格挪到文字另一侧、只剩空格的 mark 写成 `****`、链接被行内代码切成两个；`~~` 贴中文标点不配对；行内代码在链接里被一个 remark 转换去掉；删除线 / 高亮边缘空格校验不容忍 | 自己的行内序列化（整块建树、只在真边缘移出空白 / 换行、反复建树到稳定、相邻 `*` 换 `_`）；中文友好删除线（micromark 扩展，按名替换 GFM）；去掉代码标签转换；容忍集合加删除线 / 高亮 / 上下标、Unicode 空白 | `lib/inline-serializer.js`、`lib/markdown-blanks.js`、`lib/remark-cjk-strikethrough.js`；`test:mark-combinations-ui` |
+| 只给图片加格式后保存丢格式 | 序列化缓存的「仅标题 id 不同」判断不比较叶子节点的 mark → 返回上一个文档的字节 | `sameIgnoringHeadingIds` 比较每个节点的 mark；重排的 `sameNode` 同样 | `lib/source-sync/editor-only-document.js`、`source-reprint/reprint.js`；`test:image-mark-ui` |
+| 源码重排接受了字面 `**`（Option A 越界） | `minimal` 级别用字面星号通过了「Markdown 写不出」的宽容，没轮到能写出的 `full` / `block` | 先全部级别严格校验，都不行才用 Option A | `source-reprint/index.js` |
+| 任务项以格式开头时整段重排丢复选框 | 任务项段落的起点位置只在后面是纯文字时才越过 `[ ] ` | remark 转换修正起点 | `lib/remark-task-paragraph-position.js` |
+| 代码块转正文 / 标题、Delete 合并代码块后暂停（FORMAT 种子 2、13–15、18） | 段落文字里留着原始 `\n`，Markdown 写不出 | 换行节点设为 ProseMirror 的 `linebreakReplacement`；appendTransaction 把文本块里的 `\n` 换成软换行、标题里的硬换行变软（再由 one-line-blocks 拆分） | `editor-crepe-setup.js`、`editor-textblock-newlines.js` |
+| 单个 `=` 被高亮且旁边还有 `=`（FORMAT 种子 6） | `==` 内容不能含 `=`、也不能贴着 `=` | 这种高亮写成 `<mark class="hm-hl-yellow">` | `editor-highlight.js` |
+| 两个反斜杠 + 软换行变硬换行（种子 18） | 作者风格的「反斜杠硬换行 → 两空格」不看反斜杠奇偶 | 只改奇数个结尾反斜杠；文字和它后面的软换行一起交给 text handler 转义 | `lib/serializer-style.js`、`lib/inline-serializer.js` |
+| 规范语料：制表符 / 深缩进的缩进代码、HTML 块里的软换行、列表接列表、只有表头的表格、`[](url)` / 只有定义的文档 | 缩进代码重排把内容前导空格当缩进；mdast 把 HTML 前的换行改成空格；边界规则过保守；无单元格的行被印成空行；未改文档也按编辑器副本重印 | 行内对齐补丁；换行放进 HTML 值（类型 1–6 加四空格）；列表接列表保留原间隔；跳过无单元格行；未改直接返回原文 | `source-reprint/reprint.js`、`lib/inline-serializer.js`；`test:spec-corpus-ui` |
 | 引用段落含 marks / 多行 / 惰性续行 每键暂停 | blockquote owner 只支持单行纯文本，其余 recognized 拒绝且 legacy 已退役；共享 `pmPosToMarkdownOffset` 在引用续行忽略 `> ` 前缀、会坍缩到块首 | `planInlineLocalizedPatch`：自己按去前缀原始行对齐，验证删除区间字节=删除文本，候选拼写 原样/转义/按 mark 包裹（`*e*`），在去 BOM/LF 规范化副本上校验 | `lib/source-sync/blockquote-paragraph-transaction-owner.js`；链证明 `allowInlineMarks` 在 `pending-text-transaction-chain.js` |
 | 表格单元格边缘空格 | GFM 裁剪单元格首尾空白，PM 保留 → 语义失败 → legacy 猜测拼坏整行 | 校验器忽略单元格边缘空白 | `lib/source-transaction-sync.js` `semanticJson` |
 | 表格单元格定位失败（CJK、重复值） | 位置映射落错字节 → `raw-block-text-mismatch` → legacy（会把 `| --- |` 改成 `| - |` 或合并单元格） | `mapTableCellBySlot`：按内容匹配表头+分隔行+全部行定位表格，只改目标槽位字节，`|` 必转义 | `lib/source-sync/table-cell-empty-transition.js`，owner 回退调用 |

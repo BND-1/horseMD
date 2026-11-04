@@ -117,7 +117,7 @@ export default function SettingsView({
           />
         )}
         {active === 'about' && (
-          <AboutSettings t={t} />
+          <AboutSettings settings={settings} onUpdateSettings={onUpdateSettings} t={t} />
         )}
       </div>
     </div>

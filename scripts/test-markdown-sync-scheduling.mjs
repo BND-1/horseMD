@@ -32,7 +32,13 @@ const createHarness = () => {
     cancelDeferredMarkdownSync: () => {},
     hasRecentUserEdit: () => true,
     handleMarkdownUpdatedImpl: (_ctx, md) => { calls.push(md[0]); clock += 200 },
-    api: { markdownUpdated: (fn) => { callback = fn } },
+    // The scheduler listens to Milkdown's `updated` (the document) and
+    // serializes only when the pipeline runs (2026-10-23).
+    api: { updated: (fn) => { callback = fn } },
+    deliveredDoc: null,
+    isMarkdownSyncPending: null,
+    isLargeSyncDocument: (doc) => (doc?.text?.length || 0) > 100000,
+    reportSourceSyncFailure: () => {},
     cleanups
   }
   runInNewContext(block, context)
@@ -47,7 +53,7 @@ const createHarness = () => {
   return {
     calls, timers, flags, cleanups, mutate, context,
     cancel: () => context.cancelDeferredMarkdownSync(),
-    send: (letter) => { mutate(letter); callback(null, letter.repeat(100001)) },
+    send: (letter) => { mutate(letter); callback(null, context.viewRef.current.state.doc) },
     advance: (ms) => { clock += ms }, fireTimers
   }
 }

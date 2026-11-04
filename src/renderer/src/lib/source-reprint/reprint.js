@@ -11,6 +11,7 @@
 // by the (author-styled) serializer. The caller verifies parse(result) against
 // editorDoc — this module never decides correctness on its own.
 
+import { isAllBlank, isBlankChar, splitBlanks } from '../markdown-blanks.js'
 import { Fragment } from '@milkdown/prose/model'
 import { buildInlineMap, pmInlineUnits } from './inline-map.js'
 import { cachedParse, parseMarkdownCached, rememberParse } from './incremental-parse.js'
@@ -63,6 +64,75 @@ const markEq = (left, right) => {
 }
 const sameMarkSet = (left, right) => left.length === right.length && left.every((mark, index) => markEq(mark, right[index]))
 
+// Units p..end of a text block differ only in their link mark's href / title
+// (same characters, leaves and other marks), and that link is one inline
+// `[…](…)` in the source covering exactly those units: the new `](…)` bytes.
+// Anything else (reference links, a link wider than the window, a URL that
+// needs escaping) returns null and the other patch levels run; the result is
+// verified against the editor document like every reprint.
+const linkMarkOf = (unit) => (unit.marks || []).find((mark) => mark.type.name === 'link') || null
+function patchLinkDestination(body, map, mdBlock, oldUnits, newUnits, p, end) {
+  let oldLink = null
+  let newLink = null
+  for (let i = p; i < end; i += 1) {
+    const a = oldUnits[i]
+    const b = newUnits[i]
+    if (!a || !b || a.kind !== b.kind) return null
+    if (a.kind === 'char' ? a.char !== b.char : (a.node.type !== b.node.type || !attrsEqual(a.node, b.node))) return null
+    const la = linkMarkOf(a)
+    const lb = linkMarkOf(b)
+    if (!la || !lb) return null
+    if (!oldLink) { oldLink = la; newLink = lb }
+    if (!markEq(oldLink, la) || !markEq(newLink, lb)) return null
+    if (!sameMarkSet(a.marks.filter((mark) => mark !== la), b.marks.filter((mark) => mark !== lb))) return null
+  }
+  if (!oldLink || markEq(oldLink, newLink)) return null
+  // The link must not continue past the window (blank edge units compare
+  // equal without their link mark).
+  if ((p > 0 && linkMarkOf(oldUnits[p - 1]) && markEq(linkMarkOf(oldUnits[p - 1]), oldLink)) ||
+    (end < oldUnits.length && linkMarkOf(oldUnits[end]) && markEq(linkMarkOf(oldUnits[end]), oldLink))) return null
+  const first = map.units[p]
+  const last = map.units[end - 1]
+  if (!first || !last) return null
+  let link = null
+  const walk = (node) => {
+    if (node.type === 'link' && Number.isInteger(node.position?.start?.offset) && Number.isInteger(node.position?.end?.offset)) {
+      const from = node.position.start.offset
+      const to = node.position.end.offset
+      if (from <= first.from && to >= last.to && (!link || to - from < link.position.end.offset - link.position.start.offset)) link = node
+    }
+    for (const child of node.children || []) walk(child)
+  }
+  walk(mdBlock)
+  if (!link) return null
+  const linkFrom = link.position.start.offset
+  const linkTo = link.position.end.offset
+  if ((p > 0 && map.units[p - 1].to > linkFrom) || (end < map.units.length && map.units[end].from < linkTo)) return null
+  if ((link.url || '') !== (oldLink.attrs.href || '') || (link.title ?? null) !== (oldLink.attrs.title ?? null)) return null
+  const childEnd = link.children?.length ? link.children[link.children.length - 1].position?.end?.offset : null
+  if (!Number.isInteger(childEnd)) return null
+  const tail = /^\]\(([\s\S]*)\)$/.exec(body.slice(childEnd, linkTo))
+  if (!tail) return null
+  const inner = tail[1]
+  const dest = /^([ \t]*)(<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))*)/.exec(inner)
+  if (!dest) return null
+  const rest = inner.slice(dest[0].length)
+  const href = String(newLink.attrs.href || '')
+  if (/[\\\n\r]/.test(href)) return null
+  const balanced = (() => { let depth = 0; for (const ch of href) { if (ch === '(') depth += 1; else if (ch === ')' && --depth < 0) return false } return depth === 0 })()
+  const angle = dest[2].startsWith('<') || !href || /[\s<>]/.test(href) || !balanced
+  if (angle && /[<>]/.test(href)) return null
+  const spelledHref = angle ? `<${href}>` : href
+  const oldTitle = oldLink.attrs.title ?? null
+  const newTitle = newLink.attrs.title ?? null
+  let spelledRest = rest
+  if (newTitle !== oldTitle) {
+    if (newTitle == null || newTitle === '') spelledRest = rest.replace(/^[\s\S]*?([ \t]*)$/, '$1')
+    else spelledRest = ` "${String(newTitle).replace(/(["\\])/g, '\\$1')}"`
+  }
+  return { from: childEnd, to: linkTo, text: `](${dest[1]}${spelledHref}${spelledRest})` }
+}
+
 // A GFM autolink literal (`https://a.com`, `www.a.com`, `a@b.com`) has no
 // plain-text spelling: the same bytes are a link after parsing and plain text
 // while typed (design doc §5). Inline content compares with such links
@@ -76,8 +146,9 @@ const isAutolinkLiteral = (node, mark) => {
     (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text) && href === `mailto:${text}`)
 }
 // Marks a blank looks the same with or without (the validator compares them
-// off whitespace; Milkdown moves edge blanks out of every mark run).
-const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
+// off whitespace; the serializer moves edge blanks out of every mark run but
+// inline code — lib/inline-serializer.js).
+const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span', 'strike_through', 'highlight', 'subscript', 'superscript'])
 const inlineRunsModuloAutolinks = (block) => {
   const runs = []
   const push = (text, marks) => {
@@ -100,8 +171,8 @@ const inlineRunsModuloAutolinks = (block) => {
     afterHardBreak = afterHardBreak && !text
     const blankMarks = marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type.name))
     const isCode = marks.some((mark) => mark.type.name === 'inlineCode')
-    for (const piece of isCode ? [text] : text.split(/([ \t]+)/)) {
-      push(piece, !isCode && /^[ \t]+$/.test(piece) ? blankMarks : marks)
+    for (const piece of isCode ? [text] : splitBlanks(text)) {
+      push(piece, !isCode && isAllBlank(piece) ? blankMarks : marks)
     }
   })
   return runs
@@ -111,7 +182,13 @@ const sameInlineModuloAutolinks = (left, right) => {
   const b = inlineRunsModuloAutolinks(right)
   return a.length === b.length && a.every((run, index) => {
     const other = b[index]
-    if (run.node || other.node) return Boolean(run.node && other.node) && sameNode(run.node, other.node)
+    if (run.node || other.node) {
+      if (!run.node || !other.node || !sameNode(run.node, other.node)) return false
+      // Marks on an image / formula are part of it (`**![i](a.png)**`,
+      // `[![i](a.png)](u)`); sameNode ignores leaf marks. A line break's
+      // marks show nothing and have no spelling of their own.
+      return /^hard_?break$/.test(run.node.type.name) || sameMarkSet(run.node.marks, other.node.marks)
+    }
     return run.text === other.text && sameMarkSet(run.marks, other.marks)
   })
 }
@@ -125,7 +202,9 @@ export function sameNode(left, right) {
       attrsEqual(left, right) && sameInlineModuloAutolinks(left, right)) return true
   if (!attrsEqual(left, right) || left.childCount !== right.childCount) return false
   if (left.isText) return left.text === right.text && sameMarkSet(left.marks, right.marks)
-  if (left.isLeaf) return true
+  // An image / formula's marks are part of it (`[==![i](a.png)==](u)`); a
+  // line break's show nothing.
+  if (left.isLeaf) return /^hard_?break$/.test(left.type.name) || sameMarkSet(left.marks, right.marks)
   for (let index = 0; index < left.childCount; index += 1) {
     if (!sameNode(left.child(index), right.child(index))) return false
   }
@@ -272,6 +351,15 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   } catch (error) {
     return { ok: false, reason: 'parse-failed', notes: [String(error?.message || error)] }
   }
+  // Nothing changed: the source is the spelling. (A source whose content the
+  // editor cannot hold — `[](u)`, a document of only `[foo]: /url` — must
+  // not be reprinted from the editor's copy: that drops it.) Not when the
+  // editor changed an editor-only state since the last publication: removing
+  // the kept empty paragraph equals the source's parse but collapses its
+  // blank lines (Typora).
+  if (srcDoc.eq(editorDoc) && (!previousDoc || previousDoc.eq(editorDoc))) {
+    return { ok: true, markdown: source, edits: [], notes: [{ level: 'unchanged' }] }
+  }
   const schema = editorDoc.type.schema
   const docWith = (nodes) => schema.topNodeType.create(null, nodes)
   const toEol = (text) => (eol === '\n' ? text : text.replace(/\r?\n/g, eol))
@@ -285,7 +373,10 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   const LINE_START_BLANK = '\uE000'
   const normalizeForPrint = (node, { trimBreaks = true, inCell: inCellAbove = false } = {}) => {
     if (node.isText) {
-      if (node.text.trim() === '' && node.marks.some((mark) => SPAN_MARKS.has(mark.type.name))) {
+      // Blanks only: bold / italic / strike / highlight show nothing on them —
+      // but in inline code the blank is content and keeps every mark.
+      if (node.text.trim() === '' && node.marks.some((mark) => SPAN_MARKS.has(mark.type.name)) &&
+          !node.marks.some((mark) => mark.type.spec.code)) {
         return node.mark(node.marks.filter((mark) => !SPAN_MARKS.has(mark.type.name)))
       }
       return node
@@ -507,7 +598,10 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // column count is unchanged.
   const printTable = (table, mdTable) => {
     const rows = []
-    table.forEach((row) => rows.push(row))
+    // A body row without cells is what a header-only table parses to
+    // (`| a |` + delimiter): it has no spelling of its own — leaving it out
+    // is that spelling (`|  |` would read back as a row of empty cells).
+    table.forEach((row, _offset, index) => { if (index === 0 || row.childCount) rows.push(row) })
     if (!rows.length) return null
     const width = Math.max(...rows.map((row) => row.childCount))
     const cellsOf = (row) => {
@@ -680,13 +774,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // blanks out of every mark run): a blank whose only difference is such a
   // mark is unchanged, or the next edit reprints spans the previous publish
   // already proved equivalent. Likewise marks on a line break.
-  const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span'])
+  const INVISIBLE_ON_BLANK = new Set(['strong', 'emphasis', 'link', 'html_span', 'strike_through', 'highlight', 'subscript', 'superscript'])
   const visibleMarks = (marks) => (marks || []).filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type.name))
   const sameUnit = (left, right) => {
     if (!left || !right || left.kind !== right.kind) return false
     if (left.kind === 'char') {
       if (left.char !== right.char) return false
-      if (left.char === ' ' || left.char === '\t') return sameMarkSet(visibleMarks(left.marks), visibleMarks(right.marks))
+      if (isBlankChar(left.char)) return sameMarkSet(visibleMarks(left.marks), visibleMarks(right.marks))
       return sameMarkSet(left.marks, right.marks)
     }
     if (/^hard_?break$/.test(left.node?.type?.name || '') && left.node.type === right.node?.type) {
@@ -735,6 +829,19 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     if (p === oldEnd && p === newEnd) return true
     const oldWindow = oldUnits.slice(p, oldEnd)
     const newWindow = newUnits.slice(p, newEnd)
+
+    // 0. Link destination: same text and formatting, only a link's href /
+    // title changed (the link card's 编辑). Rewrite `(url "title")` and keep
+    // every other byte — the segment printer would respell the link
+    // (`[**粗**体](u)` → `**[粗](u)**[体](u)`).
+    if (!segmentOnly && oldWindow.length && oldWindow.length === newWindow.length) {
+      const patched = patchLinkDestination(body, map, mdBlock, oldUnits, newUnits, p, oldEnd)
+      if (patched) {
+        replace(patched.from, patched.to, patched.text, null)
+        notes.push({ level: 'link-destination', at: patched.from })
+        return true
+      }
+    }
 
     // 1. Character patch: plain characters with one mark set, one text run.
     const marks = (newWindow[0] || oldWindow[0]).marks
@@ -945,9 +1052,56 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       const content = newNode.textContent
       const contentLines = content.split('\n')
       if (!content || !contentLines[0].trim() || !contentLines[contentLines.length - 1].trim()) return false
-      const lead = frame.prefix + before.slice(frame.prefix.length) + indent
+      // Same number of lines: patch inside the changed lines only, aligned
+      // at each line's first non-blank character — every authored byte of
+      // the indentation stays (tabs half used as indentation, content
+      // that starts with blanks: `        foo` is `    foo`; CommonMark
+      // spec 5–7, 116, 257, 274).
+      const oldLines = srcNode.textContent.split('\n')
+      const sourceLines = []
+      // The first line from the block's own start (it may share its line
+      // with a list marker: `-\t\tfoo`).
+      for (let at = start; ;) {
+        const stop = body.indexOf('\n', at)
+        const lineEnd = stop < 0 || stop >= end ? end : stop
+        sourceLines.push({ from: at, to: lineEnd > at && body[lineEnd - 1] === '\r' ? lineEnd - 1 : lineEnd })
+        if (stop < 0 || stop >= end) break
+        at = stop + 1
+      }
+      if (oldLines.length === contentLines.length && sourceLines.length === oldLines.length) {
+        const patches = []
+        let exact = true
+        oldLines.forEach((oldLine, index) => {
+          const newLine = contentLines[index]
+          if (!exact || oldLine === newLine) return
+          const sourceLine = body.slice(sourceLines[index].from, sourceLines[index].to)
+          const oldLead = /^[ \t]*/.exec(oldLine)[0].length
+          const sourceLead = /^[ \t>]*/.exec(sourceLine)[0].length
+          if (!oldLine.slice(oldLead) || sourceLine.slice(sourceLead) !== oldLine.slice(oldLead)) { exact = false; return }
+          let prefix = 0
+          while (prefix < oldLine.length && prefix < newLine.length && oldLine[prefix] === newLine[prefix]) prefix += 1
+          let suffix = 0
+          while (suffix < oldLine.length - prefix && suffix < newLine.length - prefix && oldLine[oldLine.length - 1 - suffix] === newLine[newLine.length - 1 - suffix]) suffix += 1
+          if (prefix < oldLead) { exact = false; return }
+          const from = sourceLines[index].from + sourceLead + (prefix - oldLead)
+          const to = sourceLines[index].from + sourceLead + (oldLine.length - suffix - oldLead)
+          patches.push([from, to, newLine.slice(prefix, newLine.length - suffix)])
+        })
+        if (exact && patches.length) {
+          for (const [from, to, text] of patches) replace(from, to, text)
+          notes.push({ level: 'code', at: start })
+          return true
+        }
+      }
+      // Otherwise the block is written again: only the code indentation
+      // (4 columns) is indentation — the first line's own leading blanks are
+      // content. A tab that holds both cannot be split: print it whole.
+      const contentLead = /^[ \t]*/.exec(oldLines[0])[0]
+      if (contentLead && (!/^ *$/.test(contentLead) || !indent.endsWith(contentLead) || /\t/.test(indent))) return false
+      const codeIndent = indent.slice(0, indent.length - contentLead.length)
+      const lead = frame.prefix + before.slice(frame.prefix.length) + codeIndent
       const text = contentLines
-        .map((line, index) => (index === 0 ? indent + line : line ? lead + line : frame.prefix.replace(/[ \t]+$/, '')))
+        .map((line, index) => (index === 0 ? codeIndent + line : line ? lead + line : frame.prefix.replace(/[ \t]+$/, '')))
         .join('\n')
       replace(start, end, text)
       notes.push({ level: 'code', at: start })
@@ -1084,6 +1238,26 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       const newCount = gap.newTo - gap.newFrom
       // Same-shaped region: patch pairwise inside each node's frame first.
       if (oldCount === newCount) {
+        // Neighbouring children that both take the region path are ONE
+        // region: two regions each claimed the separator between them and
+        // the edits overlapped (`reprint-overlapping-edits`; a list and the
+        // paragraph after it in a quote, fuzz FORMAT seed 33).
+        let regionRun = null
+        const flushRegion = () => {
+          const run = regionRun
+          regionRun = null
+          return !run || replaceRegion(srcNode, mdNode, kids, newNode, run, innerFrame, separator, encodedNew, oldNodes)
+        }
+        const queueRegion = (oldIndex, newIndex) => {
+          if (regionRun && regionRun.oldTo === oldIndex && regionRun.newTo === newIndex) {
+            regionRun.oldTo += 1
+            regionRun.newTo += 1
+            return true
+          }
+          if (!flushRegion()) return false
+          regionRun = { oldFrom: oldIndex, oldTo: oldIndex + 1, newFrom: newIndex, newTo: newIndex + 1 }
+          return true
+        }
         for (let offset = 0; offset < oldCount; offset += 1) {
           const before = oldNodes[gap.oldFrom + offset]
           const after = encodedNew[gap.newFrom + offset]
@@ -1095,13 +1269,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
           // Emptied paragraph: no encoding — remove it with its separator.
           if (isBlankParagraph(after) && !isBlankParagraph(before)) {
             if (emptiedSlots.has(after)) {
+              if (!flushRegion()) return false
               // Keep the line and its blank-line separators; drop the text.
               replace(startOf(md), endOf(md), '')
               notes.push({ level: 'emptied', at: startOf(md) })
               continue
             }
-            const single = { oldFrom: gap.oldFrom + offset, oldTo: gap.oldFrom + offset + 1, newFrom: gap.newFrom + offset, newTo: gap.newFrom + offset + 1 }
-            if (!replaceRegion(srcNode, mdNode, kids, newNode, single, innerFrame, separator, encodedNew, oldNodes)) return false
+            if (!queueRegion(gap.oldFrom + offset, gap.newFrom + offset)) return false
             continue
           }
           // The gap before this child was valid for the OLD pair; a changed
@@ -1118,16 +1292,30 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
           // paragraph that followed it on the next line (seed 111).
           const successor = newIndex + 1 < encodedNew.length ? encodedNew[newIndex + 1] : null
           const gapAfter = oldIndex + 1 < kids.length ? body.slice(endOf(md), startOf(kids[oldIndex + 1])) : null
+          // A list next to another list keeps the authored gap while the
+          // edge did not change: still a list of that kind, and the item at
+          // that edge still starts with text (`1) foo` + `- bar` on the next
+          // line are two lists and stay two — CommonMark spec 297). Other
+          // pairs depend on how the edge LINE is spelled (an unclosed fence
+          // in a quote read as text: editing it made the next line a lazy
+          // continuation — spec 237), so they keep the region path.
+          const edgeKept = (side) => {
+            const neighbour = side === 'start' ? predecessor : successor
+            if (before.type !== after.type || !isList(after) || !isList(neighbour)) return false
+            const item = (list) => (side === 'start' ? list.firstChild : list.lastChild)
+            const starts = (list) => Boolean(item(list)?.firstChild?.isTextblock && item(list).firstChild.content.size)
+            return starts(before) && starts(after)
+          }
           if (
             blockContainer && (
-              (predecessor && gapBefore != null && !/\n[ \t>]*\r?\n/.test(gapBefore) && !tightAllowed(predecessor, after)) ||
-              (successor && gapAfter != null && !/\n[ \t>]*\r?\n/.test(gapAfter) && !tightAllowed(after, successor))
+              (predecessor && gapBefore != null && !/\n[ \t>]*\r?\n/.test(gapBefore) && !tightAllowed(predecessor, after) && !edgeKept('start')) ||
+              (successor && gapAfter != null && !/\n[ \t>]*\r?\n/.test(gapAfter) && !tightAllowed(after, successor) && !edgeKept('end'))
             )
           ) {
-            const single = { oldFrom: oldIndex, oldTo: oldIndex + 1, newFrom: newIndex, newTo: newIndex + 1 }
-            if (!replaceRegion(srcNode, mdNode, kids, newNode, single, innerFrame, separator, encodedNew, oldNodes)) return false
+            if (!queueRegion(oldIndex, newIndex)) return false
             continue
           }
+          if (!flushRegion()) return false
           if (patchNode(before, md, after, innerFrame)) {
             survivors.push([oldIndex, newIndex])
           } else {
@@ -1137,6 +1325,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
             notes.push({ level: 'block', type: after.type.name })
           }
         }
+        if (!flushRegion()) return false
         continue
       }
       if (!replaceRegion(srcNode, mdNode, kids, newNode, gap, innerFrame, separator, encodedNew, oldNodes)) return false
@@ -1385,7 +1574,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   let markdown = body
   let floor = Infinity
   for (const edit of edits) {
-    if (edit.to > floor) return { ok: false, reason: 'reprint-overlapping-edits', notes }
+    if (edit.to > floor) return { ok: false, reason: 'reprint-overlapping-edits', notes, edits: edits.map(({ from, to, text }) => ({ from, to, text: text.slice(0, 120), was: body.slice(from, to).slice(0, 120) })) }
     markdown = markdown.slice(0, edit.from) + edit.text + markdown.slice(edit.to)
     floor = edit.from
   }

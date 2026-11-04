@@ -27,6 +27,10 @@ import { DEFAULT_LANG } from '../i18n.jsx'
 
 const ONBOARDED_KEY = 'horsemd.onboarded.v1'
 const UPDATE_DISMISS_KEY = 'horsemd.update.dismissed'
+// The version that ran last time: a newer one now = an update was installed.
+const LAST_VERSION_KEY = 'horsemd.lastVersion'
+/* global __APP_VERSION__ */
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
 
 export function useAppLifecycle({
   session,
@@ -41,6 +45,7 @@ export function useAppLifecycle({
   sidebarMode,
   paneWidth,
   restoreSession,
+  updateMode = 'notify',
   openPaths,
   isMobile,
   tabsRef,
@@ -52,6 +57,9 @@ export function useAppLifecycle({
   tRef
 }) {
   const [update, setUpdate] = useState(null)
+  // Update mode 'auto' (#170): the release downloaded quietly, waiting to be
+  // installed when HorseMD quits (status-bar item; no prompt).
+  const [quietUpdate, setQuietUpdate] = useState(null)
   // Transient bottom-center toast (e.g. "Copied"), fired via a `hm:toast` event.
   const [toast, setToast] = useState(null)
   // Latest session snapshot, kept in a ref so the close/flush path can persist it
@@ -173,20 +181,45 @@ export function useAppLifecycle({
     }
   }, [flushSession])
 
-  // ------------------------- update check (notify-only) ------------
+  // ------------------------- update check ---------------------------
+  // At start-up, by Settings › 关于 › 更新方式 (#170): 'notify' prompts
+  // (a version closed with ✕ stays quiet), 'auto' downloads an installable
+  // release without a prompt — main installs it when HorseMD quits; a
+  // release that cannot be installed that way (Linux, a read-only macOS
+  // bundle) or a failed download falls back to the prompt — and 'manual'
+  // checks nothing. Read once: a changed mode applies from the next start.
   useEffect(() => {
     let alive = true
-    window.api.checkUpdate?.().then((r) => {
-      if (!alive || !r?.ok || !r.latest) return
-      const dismissed = localStorage.getItem(UPDATE_DISMISS_KEY)
-      if (isNewerVersion(r.latest, r.current) && r.latest !== dismissed) {
-        setUpdate({ latest: r.latest, current: r.current, url: r.url, notes: r.notes, name: r.name, download: r.download || null })
+    let timer = null
+    // Installed since the last run (an update): say so briefly.
+    try {
+      const last = localStorage.getItem(LAST_VERSION_KEY)
+      if (APP_VERSION) localStorage.setItem(LAST_VERSION_KEY, APP_VERSION)
+      if (last && APP_VERSION && isNewerVersion(APP_VERSION, last)) {
+        timer = setTimeout(() => {
+          window.dispatchEvent(new CustomEvent(HM_TOAST_EVENT, { detail: { msg: tRef.current('update.updatedTo', { v: APP_VERSION }), duration: 5000 } }))
+        }, 1200)
       }
+    } catch { /* storage unavailable */ }
+    if (updateMode === 'manual') return () => { alive = false; clearTimeout(timer) }
+    window.api.checkUpdate?.().then(async (r) => {
+      if (!alive || !r?.ok || !r.latest || !isNewerVersion(r.latest, r.current)) return
+      const info = { latest: r.latest, current: r.current, url: r.url, notes: r.notes, name: r.name, download: r.download || null }
+      if (updateMode === 'auto' && r.download?.mode === 'install' && window.api.updateDownload) {
+        const state = await window.api.updateDownload().catch(() => null)
+        if (!alive) return
+        if (state?.status === 'ready' && state.version === r.latest) {
+          setQuietUpdate(info)
+          return
+        }
+      }
+      if (r.latest !== localStorage.getItem(UPDATE_DISMISS_KEY)) setUpdate(info)
     }).catch(() => {})
     return () => {
       alive = false
+      clearTimeout(timer)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lightweight transient toast (copy feedback, etc.). Any component can fire one
   // via `fireToast(msg)` from ui.js.
@@ -250,5 +283,5 @@ export function useAppLifecycle({
   const hideUpdate = useCallback(() => setUpdate(null), [])
   const showUpdate = useCallback((info) => { if (info?.latest) setUpdate(info) }, [])
 
-  return { update, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession }
+  return { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession }
 }

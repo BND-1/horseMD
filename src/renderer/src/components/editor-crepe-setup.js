@@ -12,14 +12,13 @@ import { createHtmlTagInputPlugin } from './editor-html-input.js'
 import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
-import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
+import { hardbreakSchema, inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
 import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
 import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
 import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
-import { remarkNormalizeCodeOnlyLinkLabels } from './editor-link-labels.js'
 import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
 import { remarkMathBlockWithPosition } from '../lib/remark-math-block-position.js'
@@ -33,6 +32,7 @@ import { mathPreviewPlugin } from './editor-math-preview.js'
 import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
+import { disableCrepeLinkPreview } from './editor-link-card.js'
 import { toolbarAutohidePlugin } from './editor-toolbar-autohide.js'
 import { createMathBlockPromotionPlugin } from './editor-math.js'
 import {
@@ -42,19 +42,25 @@ import {
 import { createHeadingFoldPlugin } from './editor-heading-fold.js'
 import { createKatexDomPrunePlugin } from './editor-katex-dom-prune.js'
 import { createInlineCodeEditingPlugin } from './editor-inline-code.js'
+import { createHtmlTokenEditingPlugin } from './editor-html-token-editing.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
 import { createSourceTransactionDispatch } from './editor-source-transactions.js'
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
 import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
-import { htmlSpanFeatures, htmlSpanStringifyHandler } from './editor-html-span.js'
+import { createHtmlSpanPartPlugin, htmlSpanFeatures, htmlSpanStringifyHandler } from './editor-html-span.js'
 import { createSubSupFeatures, subscriptStringifyHandler, superscriptStringifyHandler } from './editor-subsup.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
 import { normalizeWebPasteHtml } from './editor-web-paste.js'
 import { imageBlockMarkdownSchema, remarkImageBlockWithPosition } from './editor-image-markdown.js'
 import { remarkStripLeadingSpaceSentinel } from '../lib/markdown-leading-space.js'
 import remarkCjkFriendly from 'remark-cjk-friendly'
+import remarkCjkFriendlyGfmStrikethrough from '../lib/remark-cjk-strikethrough.js'
+import { installInlineSerializer } from '../lib/inline-serializer.js'
+import { remarkTaskParagraphPosition } from '../lib/remark-task-paragraph-position.js'
+import { inlineCodeAtomsPlugin } from './editor-inline-code-atoms.js'
+import { textblockNewlinesPlugin } from './editor-textblock-newlines.js'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
-import { emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../lib/remark-text-handler.js'
+import { deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
 import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
@@ -126,6 +132,9 @@ export function createConfiguredCrepe({
   // read live.
   getMarkdownSyntax = () => ({})
 }) {
+  // Text blocks' marks are written by lib/inline-serializer.js (before the
+  // editor creates its serializer).
+  installInlineSerializer()
   const subSup = createSubSupFeatures(getMarkdownSyntax)
   const t = getT
   const platform = window.api?.platform
@@ -179,6 +188,8 @@ export function createConfiguredCrepe({
     // in editor-slash-menu.js replaces it. Feature.BlockEdit stays enabled so
     // the block drag/add handle (.milkdown-block-handle) is preserved.
     disableCrepeSlash(ctx)
+    // One link card (editor-link-card.js) instead of Crepe's hover preview.
+    disableCrepeLinkPreview(ctx)
     // Typora parity: only `~~x~~` is strikethrough. remark-gfm's default also
     // accepts a single tilde pair, so prose ranges such as `约 5~30 行……4~7 千行`
     // rendered the text between the two tildes struck through.
@@ -266,6 +277,10 @@ export function createConfiguredCrepe({
         onEdit: markUserEdit,
         onValueChange: onInlineCodeValueChange
       }),
+      // <kbd>/<samp>/<var>/<tt> edit like inline code (tags shown inside).
+      createHtmlTokenEditingPlugin(),
+      // Adjacent-key `part`s follow the edit (as a parse of the source would).
+      createHtmlSpanPartPlugin(),
       createTaskListInputPlugin(),
       createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
       createKatexDomPrunePlugin(),
@@ -284,7 +299,9 @@ export function createConfiguredCrepe({
       createMermaidSplitPlugin(),
       createSubstitutionLiveReconstructPlugin(),
       createMathBlockPromotionPlugin(),
-      createListTypeSyncPlugin()
+      createListTypeSyncPlugin(),
+      inlineCodeAtomsPlugin(),
+      textblockNewlinesPlugin()
     ])
 
     ctx.update(remarkStringifyOptionsCtx, (opts) => ({
@@ -294,6 +311,7 @@ export function createConfiguredCrepe({
         text: safeTrailingWhitespaceTextHandler,
         strong: strongStringifyHandler,
         emphasis: emphasisStringifyHandler,
+        delete: deleteStringifyHandler,
         break: tableCellBreakHandler,
         highlight: highlightStringifyHandler,
         hmHtmlSpan: htmlSpanStringifyHandler,
@@ -321,9 +339,14 @@ export function createConfiguredCrepe({
       // Plain CommonMark flanking rules treat CJK punctuation like ASCII
       // punctuation and leave the asterisks literal.
       { plugin: remarkCjkFriendly, options: undefined },
+      // Same for strikethrough: `说「~~重点」内容~~` / `前文~~==x==~~后` (a
+      // highlight or code inside) parse as struck text. Parse side only: the
+      // `delete` stringify handler is ours (remark-text-handler.js).
+      { plugin: remarkCjkFriendlyGfmStrikethrough, options: undefined },
+      // `- [ ] **x**`: the paragraph's position starts after the checkbox.
+      { plugin: remarkTaskParagraphPosition, options: undefined },
       { plugin: remarkFixMarkerOffsetForBom, options: undefined },
       { plugin: remarkStripLeadingSpaceSentinel, options: undefined },
-      { plugin: remarkNormalizeCodeOnlyLinkLabels, options: undefined },
       { plugin: remarkPreserveLiteralTripleBacktickTextBlocks, options: undefined },
       { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
       { plugin: remarkFrontmatter, options: undefined },
@@ -336,7 +359,16 @@ export function createConfiguredCrepe({
   crepe.editor.use(
     inlineCodeSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), inclusive: false }))
   )
+  // The line break is ProseMirror's linebreak replacement: turning a code
+  // block into a paragraph / heading (Mod+0, Mod+1…) makes its newlines line
+  // breaks, and back. Without it the paragraph kept raw `\n` in its text,
+  // which has no Markdown spelling (reads back as breaks) — the sync paused
+  // on every such conversion (fuzz FORMAT seed 2).
+  crepe.editor.use(
+    hardbreakSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), linebreakReplacement: true }))
+  )
   crepe.editor.use(imageBlockMarkdownSchema)
+  crepe.editor.use(subSup.parse)
   crepe.editor.use(highlightFeatures)
   crepe.editor.use(htmlSpanFeatures)
   crepe.editor.use(subSup.features)

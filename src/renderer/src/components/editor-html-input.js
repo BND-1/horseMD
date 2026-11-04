@@ -7,9 +7,13 @@
 //
 //   - a closing tag `</name>` takes everything back to the matching
 //     `<name …>` earlier in the same text block (typed text or an HTML atom);
-//   - any other tag (`<br>`, `<img …>`, `<xxx>`, a lone `<span …>`) or a
-//     `<!-- comment -->` is taken alone (`<br>` becomes the line break it
-//     opens as — saved as a Markdown hard break);
+//   - any other tag (`<br>`, `<img …>`, `<xxx>`) or a `<!-- comment -->` is
+//     taken alone (`<br>` becomes the line break it opens as — saved as a
+//     Markdown hard break);
+//   - the opening tag of an editable pair (`<kbd>`, `<font …>`, `<u>`…, see
+//     lib/html-span-tags.js) stays text until its closing tag is typed, as
+//     in Typora and Obsidian — it used to become a locked `<kbd>` atom in
+//     the middle of the line;
 //
 // and that raw text is parsed by the editor's own Markdown pipeline and put
 // in its place — so the editor holds exactly what reopening the saved file
@@ -19,7 +23,11 @@
 // marks, and a block-level tag at the very start of a text block (Markdown
 // would turn the whole paragraph into an HTML block).
 import { Plugin } from '@milkdown/prose/state'
+import { Fragment } from '@milkdown/prose/model'
 import { ParserState } from '@milkdown/kit/transformer'
+import { HTML_SPAN_TAGS } from '../lib/html-span-tags.js'
+
+const SPAN_TAGS = new Set(HTML_SPAN_TAGS)
 
 const TAG_BEFORE = /<(\/?)([A-Za-z][A-Za-z0-9-]*)(?:[ \t\n][^<>￼]*)?\/?$/
 const COMMENT_BEFORE = /<!--(?:(?!-->)[^￼])*--$/
@@ -148,7 +156,10 @@ export function createHtmlTagInputPlugin({ getRemark, getSchema }) {
           if (tag[1] === '/') {
             const opener = openerFor(segmentsBefore(parent, start, from), rangeFrom, name)
             if (opener != null) rangeFrom = opener
-          } else blockName = name
+          } else {
+            if (SPAN_TAGS.has(name) && !/\/$/.test(tag[0])) return false
+            blockName = name
+          }
         } else return false
         if (blockName && BLOCK_TAGS.has(blockName) && rangeFrom === start) return false
         // A text block of only `<br>` reopens as an empty paragraph.
@@ -167,6 +178,14 @@ export function createHtmlTagInputPlugin({ getRemark, getSchema }) {
           return false
         }
         if (!parsed) return false
+        // Typed inside an editable <font>/<kbd>…: a second html_span mark
+        // cannot share that text (it would replace the outer one), so the
+        // typed pair stays raw HTML inside it — as a reopen parses it.
+        let spanInside = false
+        parsed.forEach((node) => { if (node.marks.some((mark) => mark.type.name === 'html_span')) spanInside = true })
+        if (spanInside && range.marks.some((mark) => mark.type.name === 'html_span')) {
+          parsed = Fragment.from(state.schema.nodes.html.create({ value: range.raw + '>' }))
+        }
         const nodes = []
         parsed.forEach((node) => {
           let marks = node.marks
