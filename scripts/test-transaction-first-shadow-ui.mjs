@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-transaction-first-shadow-${process.pid}`
 const file = join(root, 'shadow.md')
@@ -62,6 +63,22 @@ const toggleSource = (evaluate) => evaluate(`(() => {
 
 const shadowTrace = (evaluate) => evaluate(`window.__hmTransactionFirstTrace || []`)
 
+const ownedByteEqual = (entry) =>
+  entry.phase === 'reconcile' && entry.ownership === 'owned' && entry.comparison === 'byte-equal'
+const transactionRejected = (entry) =>
+  entry.phase === 'reconcile' && entry.comparison === 'transaction-rejected'
+
+// Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+// With the reprint publishing first the legacy candidate (and so the shadow
+// comparison) is never computed: wait until the step published through either
+// path, then run the shadow checks only when the reprint did not publish it.
+async function checkStep(evaluate, since, label, match, check) {
+  await waitFor(async () =>
+    (await reprintPublished(evaluate, { since })) || (await shadowTrace(evaluate)).some(match),
+  `${label} did not publish (no source reprint, no shadow evidence)`)
+  await assertPublishedBy(evaluate, check, label, { since })
+}
+
 const pauseToasts = (evaluate) => evaluate(`
   [...document.querySelectorAll('[class*="toast"]')]
     .map((node) => node.textContent || '')
@@ -95,59 +112,69 @@ async function main() {
       window.__hmTransactionSourcePrimary = false
       window.__hmTransactionSourceShadow = true
       window.__hmTransactionFirstTrace = []
+      if (!Array.isArray(window.__hmSourceSyncCoordinatorTrace)) window.__hmSourceSyncCoordinatorTrace = []
     })()`)
 
     await clickTextEnd(evaluate, send, 'alpha')
+    let mark = await publishMark(evaluate)
     await typeTextLikeUser(send, 'X', { delayMs: 40 })
 
-    const ownedTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.ownership === 'owned' &&
-        entry.comparison === 'byte-equal'
-      ) || null
-    }, 'plain paragraph edit did not produce byte-equal shadow evidence')
+    await checkStep(evaluate, mark, 'plain paragraph edit', ownedByteEqual, async () => {
+      const ownedTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.ownership === 'owned' &&
+          entry.comparison === 'byte-equal'
+        ) || null
+      }, 'plain paragraph edit did not produce byte-equal shadow evidence')
 
-    assert.equal(ownedTrace.publicationOwner, 'legacy', 'Phase 0 shadow must publish legacy bytes')
-    assert.equal(ownedTrace.promotionEligible, true, 'byte-equal plain text should be promotion evidence')
-    assert.equal(ownedTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.deepEqual(ownedTrace.stepNames, ['ReplaceStep'])
-    assert.ok(ownedTrace.sourceMapEntries >= 2, 'plain paragraphs should be covered by the SourceRangeMap')
+      assert.equal(ownedTrace.publicationOwner, 'legacy', 'Phase 0 shadow must publish legacy bytes')
+      assert.equal(ownedTrace.promotionEligible, true, 'byte-equal plain text should be promotion evidence')
+      assert.equal(ownedTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.deepEqual(ownedTrace.stepNames, ['ReplaceStep'])
+      assert.ok(ownedTrace.sourceMapEntries >= 2, 'plain paragraphs should be covered by the SourceRangeMap')
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'shadow evidence must not show a sync warning')
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'beta')
+    mark = await publishMark(evaluate)
     await typeTextLikeUser(send, '*', { delayMs: 40 })
 
-    const rejectedTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.comparison === 'transaction-rejected'
-      ) || null
-    }, 'Markdown-sensitive edit did not remain transaction-rejected')
+    await checkStep(evaluate, mark, 'Markdown-sensitive edit', transactionRejected, async () => {
+      const rejectedTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.comparison === 'transaction-rejected'
+        ) || null
+      }, 'Markdown-sensitive edit did not remain transaction-rejected')
 
-    assert.equal(rejectedTrace.transactionReason, 'syntax-sensitive-insert')
-    assert.equal(rejectedTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.equal(rejectedTrace.publicationOwner, 'legacy', 'rejected shadow edit must stay on legacy publication')
-    assert.equal(rejectedTrace.promotionEligible, false)
+      assert.equal(rejectedTrace.transactionReason, 'syntax-sensitive-insert')
+      assert.equal(rejectedTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.equal(rejectedTrace.publicationOwner, 'legacy', 'rejected shadow edit must stay on legacy publication')
+      assert.equal(rejectedTrace.promotionEligible, false)
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'unsupported shadow edit must not show a sync warning')
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'gamma')
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 40 })
-    const deleteTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.ownership === 'owned' &&
-        entry.comparison === 'byte-equal'
-      ) || null
-    }, 'plain paragraph deletion did not produce byte-equal Phase 1 evidence')
-    assert.equal(deleteTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.equal(deleteTrace.publicationOwner, 'legacy')
-    assert.equal(deleteTrace.promotionEligible, true)
+    await checkStep(evaluate, mark, 'plain paragraph deletion', ownedByteEqual, async () => {
+      const deleteTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.ownership === 'owned' &&
+          entry.comparison === 'byte-equal'
+        ) || null
+      }, 'plain paragraph deletion did not produce byte-equal Phase 1 evidence')
+      assert.equal(deleteTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.equal(deleteTrace.publicationOwner, 'legacy')
+      assert.equal(deleteTrace.promotionEligible, true)
+    })
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'delta')
@@ -155,19 +182,22 @@ async function main() {
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', modifiers: 8, delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', modifiers: 8, delayMs: 25 })
+    mark = await publishMark(evaluate)
     await typeTextLikeUser(send, 'ZZ', { delayMs: 40 })
-    const replaceTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.ownership === 'owned' &&
-        entry.comparison === 'byte-equal'
-      ) || null
-    }, 'same-paragraph replacement did not produce byte-equal Phase 1 evidence')
-    assert.equal(replaceTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.ok(replaceTrace.chainLength >= 2, `rapid replacement did not accumulate a transaction chain: ${JSON.stringify(replaceTrace)}`)
-    assert.equal(replaceTrace.publicationOwner, 'legacy')
-    assert.equal(replaceTrace.promotionEligible, true)
+    await checkStep(evaluate, mark, 'same-paragraph replacement', ownedByteEqual, async () => {
+      const replaceTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.ownership === 'owned' &&
+          entry.comparison === 'byte-equal'
+        ) || null
+      }, 'same-paragraph replacement did not produce byte-equal Phase 1 evidence')
+      assert.equal(replaceTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.ok(replaceTrace.chainLength >= 2, `rapid replacement did not accumulate a transaction chain: ${JSON.stringify(replaceTrace)}`)
+      assert.equal(replaceTrace.publicationOwner, 'legacy')
+      assert.equal(replaceTrace.promotionEligible, true)
+    })
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'splitme')
@@ -175,42 +205,48 @@ async function main() {
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: 40 })
-    const splitTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.ownership === 'rejected' &&
-        entry.comparison === 'transaction-rejected'
-      ) || null
-    }, 'paragraph Enter/split was not rejected by the Phase 1 inline owner')
-    assert.equal(splitTrace.transactionReason, 'phase1-structural-slice')
-    assert.equal(splitTrace.transactionFamily, null)
-    assert.equal(splitTrace.publicationOwner, 'legacy')
-    assert.equal(splitTrace.promotionEligible, false)
+    await checkStep(evaluate, mark, 'paragraph split', transactionRejected, async () => {
+      const splitTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.ownership === 'rejected' &&
+          entry.comparison === 'transaction-rejected'
+        ) || null
+      }, 'paragraph Enter/split was not rejected by the Phase 1 inline owner')
+      assert.equal(splitTrace.transactionReason, 'phase1-structural-slice')
+      assert.equal(splitTrace.transactionFamily, null)
+      assert.equal(splitTrace.publicationOwner, 'legacy')
+      assert.equal(splitTrace.promotionEligible, false)
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'paragraph split fallback must not show a sync warning')
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'item')
     await pressKey(send, { key: 'Home', code: 'Home', delayMs: 25 })
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 40 })
 
-    const structuralTrace = await waitFor(async () => {
-      const trace = await shadowTrace(evaluate)
-      return trace.find((entry) =>
-        entry.phase === 'reconcile' &&
-        entry.ownership === 'rejected' &&
-        entry.comparison === 'transaction-rejected'
-      ) || null
-    }, 'list Backspace was not rejected by the plain-paragraph transaction owner')
+    await checkStep(evaluate, mark, 'list Backspace', transactionRejected, async () => {
+      const structuralTrace = await waitFor(async () => {
+        const trace = await shadowTrace(evaluate)
+        return trace.find((entry) =>
+          entry.phase === 'reconcile' &&
+          entry.ownership === 'rejected' &&
+          entry.comparison === 'transaction-rejected'
+        ) || null
+      }, 'list Backspace was not rejected by the plain-paragraph transaction owner')
 
-    assert.notEqual(
-      structuralTrace.transactionReason,
-      'plain-text-transactions',
-      'structural list Backspace must never be claimed as a plain-text transaction'
-    )
-    assert.equal(structuralTrace.publicationOwner, 'legacy', 'structural edit must remain on legacy publication')
-    assert.equal(structuralTrace.promotionEligible, false)
+      assert.notEqual(
+        structuralTrace.transactionReason,
+        'plain-text-transactions',
+        'structural list Backspace must never be claimed as a plain-text transaction'
+      )
+      assert.equal(structuralTrace.publicationOwner, 'legacy', 'structural edit must remain on legacy publication')
+      assert.equal(structuralTrace.promotionEligible, false)
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0, 'structural shadow rejection must not show a sync warning')
 
     assert.equal(await toggleSource(evaluate), true, 'could not switch to source mode')

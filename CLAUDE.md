@@ -408,6 +408,19 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `input` listener (debounced) live-refreshes the list. Rich-mode paths are unchanged
   (all source branches are `if (sourceMode)`-gated; the `richLoading` guard became
   `!sourceMode && richLoading`, identical in rich mode).
+- **Build-time Milkdown fixes** (`vite.milkdown-fixes.mjs`, both Vite configs,
+  build + dev pre-bundle): library code we cannot reach at runtime (closures
+  inside compiled node views) is patched by exact source text; the build fails
+  when the text or the file is gone, so a Milkdown upgrade has to review it.
+  Current fix: Crepe's list item node view put back the mount-time selection
+  one animation frame later, checking only the document — a click inside that
+  frame (seconds in a background / just-opened window, Windows 2026-11-06)
+  landed at the document start. Now a microtask after the mounting update, and
+  only while the selection is unchanged. Vue calls that mount callback on
+  every re-render (ticking a task): it no longer re-appends a contentDOM that
+  is already in place — the move lost the DOM caret, ProseMirror's mutation
+  observer read the lost caret and the next Enter went to the heading above.
+  Locked by `test:list-item-mount-selection-ui`.
 - **Code-block Tab at cursor** (`editor-codeblock-tab.js`, #39): Crepe's code-mirror
   feature bundles `indentWithTab`, so Tab re-indented the whole line. Override =
   `Prec.highest(keymap.of([{key:'Tab',run:insertTabAtCursor}]))` injected via the
@@ -441,8 +454,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   literal, so every such highlight ended in「富文本与源码不一致」(0.14.0).
   One left-to-right pass pairs each `==` with the nearest later one across
   siblings (same result as the old regex inside one text node); the
-  stringify handler passes `=` / `>` `<` as the content's neighbours. Locked
-  by `test:highlight-parse`, `test:highlight-bold-ui`.
+  stringify handler passes `=` / `>` `<` as the content's neighbours. The
+  parse follows the source to tell `\=` from `=`: a break split off from
+  `&#10;` and a leading U+200B sentinel (stripped with its position kept,
+  `alignText`) are followed too — losing track there made `\==g==` reopen
+  as a highlight (fuzz seed 2829). Locked by `test:highlight-parse`, `test:highlight-bold-ui`.
   The selection toolbar fades 1.5 s after the selection is made
   (`editor-toolbar-autohide.js`); the countdown starts at mouseup, not
   while the button is held (Feishu / Notion) — a slow drag used to fade it
@@ -458,7 +474,9 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   innermost, ties in Milkdown's order; the tree is rebuilt until the
   marks of every piece stop changing (= what reopening gives, so saving
   twice writes the same bytes); adjacent `*` runs take `_`
-  (`marker` is spelling: the validator ignores it). Inline code never
+  (`marker` is spelling: the validator ignores it). A soft break right
+  after another break (soft or hard) is `&#10;` — two line endings would
+  be a blank line (seed 3788). Inline code never
   covers an atom (`editor-inline-code-atoms.js` appendTransaction).
   Strikethrough is CJK-friendly (`lib/remark-cjk-strikethrough.js`, the
   micromark extension only — it replaces GFM's `~~` tokenizer by name;
@@ -475,9 +493,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   Also (fuzz FORMAT, 2026-11-04): the hardbreak is ProseMirror's
   `linebreakReplacement` and `editor-textblock-newlines.js` turns any raw
   `\n` in a non-code text block into a soft break (code block → paragraph /
-  heading, a joined `$$` block); a highlighted `=` beside others is written
+  heading, a joined `$$` block) and drops a just-converted block's
+  blank-only first / last lines (no Markdown: the editor showed lines the
+  file never held; `test:textblock-newlines-ui`); a highlighted `=` beside others is written
   `<mark class="hm-hl-yellow">`; serializer-style rewrites only an ODD run
-  of trailing backslashes into a two-space break. Settings changes ask main
+  of trailing backslashes into a two-space break, and a line of only `-` /
+  `=` there gets `\-` (remark escaped nothing in `-\`; `-␠␠` is a setext
+  underline — seed 3908). Settings changes ask main
   to `flushStorageData()` (`storage:flush`): Chromium may hold localStorage
   for minutes, and a crash / forced quit lost them.
 - **CJK-friendly emphasis** (`remark-cjk-friendly`, first in `remarkPluginsCtx`):
@@ -1067,6 +1089,18 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   and replacing the complete serializer list rewrites nested compact spacing and
   indentation. `npm run test:list-conversion-ui` must cover immediate human-like
   typing, source bytes, save, process exit and full reopen.
+- **List item lead** (`editor-list-item-lead.js`, appendTransaction over the
+  touched top-level blocks): a list item never starts with an empty paragraph
+  followed by a paragraph — that has no Markdown (`-` + `  x` reads back as
+  `- x`). Milkdown puts an empty paragraph before an item that starts with a
+  list (`- 2. x`); Backspace before `x` used to leave it as an empty line no
+  reopen gave back. An empty paragraph before a nested list stays (schema).
+  The reprint writes an item led by a list on the marker line (`- 1. a`).
+  The editor context menu closes on Esc (capture phase: ProseMirror's Escape
+  would select the parent node). Locked by `test:diverged-list-structure-ui`
+  (regression) and `test:source-reprint-ui`. UI tests outside the regression
+  list rot: `node scripts/sweep-unlisted-ui.mjs` (docs/rich-source-fuzzing.md
+  §2.2).
 - **Forced rich flushes** must serialize `view.state.doc` with `serializerCtx`.
   `crepe.getMarkdown()` is a listener-backed snapshot and may lag behind a
   keyboard transaction that is already visible in ProseMirror; using it for an
@@ -1192,7 +1226,29 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `reportSourceSyncFailure`) → pause. Editor-only/no-encoding states are listed
   once in the design doc §5 — extend that table, do not add per-gesture owners.
   `globalThis.__hmSourceReprintPrimary = false` switches it off (owner tests do
-  this to pin the fallback path). Tests: `test:source-reprint-ui` (real Crepe,
+  this to pin the fallback path). It also runs first while a list input
+  intent (`- ` / `1. ` just typed) is pending: a list with no authored
+  marker is printed with the typed one (`newListMarkers`), and the intent is
+  dropped once the caret is in the list or a published reprint printed a list
+  with no authored marker (`new-list-marker`; a late callback on a slow
+  machine came after the caret had left it) — left pending, the legacy writers
+  applied it to a later edit (glued lists, `1)`, RS-51). When an edit makes an
+  authored ordered list directly adjacent to another (Backspace merge),
+  its delimiter switches `.`↔`)` so it does not read back as one
+  (`list-boundaries.js`; the list's node must be in the document paired
+  with the source and not adjacent there). A list the user just typed
+  keeps `1.` (user report), bullets keep theirs; a language change, a refilled empty cell and a single column
+  insert / delete patch only those bytes (authored fences / column padding
+  kept); a typed `---` stays `---`. Printed text takes
+  the line ending of the bytes it replaces (mixed-EOL files); containers
+  equal but for empty paragraphs (no Markdown) keep their bytes (RS-63),
+  a paragraph of only line breaks (hard or soft) counts as such an empty paragraph — printed as new each time, it grew a quote by two blank lines per sync (seed 3815: 1 KB saved as 5 MB; the fuzzer now reports `BLOAT`), text blocks equal but for blanks Markdown cannot hold (cell edges, around
+  soft breaks) too (seed 3716; a lone literal U+200B followed by blanks in
+  the source reads back as an empty paragraph); a fence left open (it ends
+  with its container) is printed again, closed, once a block follows it
+  (seed 3737); the print passes rewrite only the serializer's own
+  `&#x20;`, not an escaped `\&#x20;` (literal text, seed 3735); two
+  lists that read back as one are never separated by blank lines (RS-86). Tests: `test:source-reprint-ui` (real Crepe,
   `__hmSourceReprintHarness` under `--horsemd-input-trace`); fuzz reports carry
   shadow stats; `scripts/lib/shadow-triage.mjs` summarizes them.
 - **Full-screen mode** (`hooks/useImmersiveMode.js`, command `view.immersive`,
@@ -1600,11 +1656,25 @@ corpus; summary in `~/Library/Logs/HorseMD-nightly/<date>.md`. Read it at the
 start of a session and triage new families.
 
 Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`,
-`FUZZ_FORMAT=1` adds shortcut formatting over ranges and block conversions),
+`FUZZ_FORMAT=1` adds shortcut formatting over ranges and block conversions,
+`FUZZ_UI=1` the slash menu, block-handle drags and table row / column handles),
 reproduce with `scripts/lib/probe-session.mjs`, and follow
 [`docs/rich-source-fuzzing.md`](./docs/rich-source-fuzzing.md) (triage flow,
 fixed families with root causes, prioritized open list). UI tests must wait
 for the asynchronous source-mode switch before touching the textarea.
+
+Test runs never open anything outside the app: under `--horsemd-test-background`
+or `HORSEMD_TEST_RUN=1` (set by `scripts/lib/electron-test-app.mjs` on every
+launch) main replaces `shell.openExternal` / `openPath` / `showItemInFolder`
+with recorders (`globalThis.__hmTestShellCalls`) — the fuzzer's random clicks
+on the fixture's link opened the user's browser (2026-11-05). A script that
+spawns Electron itself must set `HORSEMD_TEST_RUN=1`.
+
+The input trace is `<temp>/horsemd-input-trace-<pid>.jsonl`. Windows reuses
+process ids: main moves a file left by an earlier process aside at start
+(`…-<pid>-<mtime>.jsonl`), so a test reading `getInputTraceInfo().path` sees
+only its own run. Update events are written synchronously (the install on
+quit is traced in `will-quit`, just before the process exits).
 
 On macOS, scripting `osascript "tell application \"Electron\""` can launch the
 generic `node_modules` Electron bundle. Automated regression must use

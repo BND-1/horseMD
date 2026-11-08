@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 // E0 P3 acceptance — the 0.13.170 16:39:14 trace: Chinese IME composition in
 // the LAST quote paragraph, commit, then an IMMEDIATE Enter at the paragraph
 // end. The blockquote-split family must own the whole journal: the author's
@@ -32,9 +38,11 @@ const committed = 'beta请问'
 // Enter at the end of the last quote paragraph appends the authored separator
 // (`>` + EOL) plus the emptied trailing line (`> ` + EOL) before the blank
 // line that precedes the following bullet.
+// The product path writes nothing for the new empty quote paragraph (no
+// Markdown; the caret is in it and typing there writes its line).
 const expected = fixture.replace(
   '> beta\r\n',
-  `> ${committed}\r\n>\r\n> \r\n`
+  productPath ? `> ${committed}\r\n` : `> ${committed}\r\n>\r\n> \r\n`
 )
 
 const waitFor = async (check, message, attempts = 180) => {
@@ -198,7 +206,7 @@ const assertSourceView = (source, label) => {
   assert.equal(source, expectedView, `${label} source differs from split owner output`)
   assert.equal(source.charCodeAt(0), 0xFEFF, `${label} source lost BOM`)
   assert.equal(source.includes('\r'), false, `${label} textarea exposed raw CR bytes`)
-  assert.equal(source.includes(`> ${committed}\n>\n> \n`), true,
+  assert.equal(source.includes(productPath ? `> ${committed}\n\n` : `> ${committed}\n>\n> \n`), true,
     `${label} lost the authored trailing quote line`)
   assert.equal(source.includes('<br />'), false, `${label} wrote a serializer break placeholder`)
   assert.equal(source.includes('- authored bullet'), true, `${label} changed preceding list`)
@@ -215,6 +223,7 @@ const assertSplitPublication = (state, expectedBoundary, label) => {
     `${label} produced source-integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
+  if (productPath) return
 
   const split = state.preserve.find((entry) =>
     entry.reason === 'blockquote-paragraph-split' &&

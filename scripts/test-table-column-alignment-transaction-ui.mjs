@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-table-column-alignment-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13910 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -258,38 +264,40 @@ const assertPublication = (state, scenario, boundary) => {
     `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.semanticDiff.length, 0, `${scenario.name} semantic diff: ${JSON.stringify(state.semanticDiff)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false)
-  const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(captures.length, 1, `${scenario.name} journal captures: ${JSON.stringify(captures)}`)
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-column-alignment-changed' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-column-alignment-proof'
-  )
-  assert.ok(preservation, `${scenario.name} missing transaction owner: ${JSON.stringify(state.preserve)}`)
-  const proof = preservation.integrityProof
-  assert.equal(proof.family, 'table-column-alignment')
-  assert.deepEqual(proof.tablePath, [1])
-  assert.equal(proof.columnIndex, scenario.columnIndex)
-  assert.equal(proof.previousAlignment, scenario.previousAlignment)
-  assert.equal(proof.nextAlignment, scenario.nextAlignment)
-  assert.equal(proof.rowCount, rows.length)
-  assert.equal(proof.stepRanges.length, rows.length)
-  assert.equal(proof.stepRanges.every((entry) => entry.stepName === 'ReplaceAroundStep'), true)
-  assert.equal(proof.sourceLayout.delimiter.resultLine, scenario.delimiter)
-  assert.equal(proof.transactionJournal?.journalId, captures[0].journalId)
-  assert.equal(proof.transactionJournal?.stepCount, rows.length)
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-column-alignment-changed' &&
-    entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true
-  ), true)
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' && entry.owner === 'transaction' &&
-    entry.family === 'table-column-alignment' && entry.boundary === boundary
-  ), true, `${scenario.name} bypassed Coordinator`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' && entry.ok === true &&
-    entry.family === 'table-column-alignment' && entry.boundary === boundary
-  ), true, `${scenario.name} missing owner trace`)
+  if (!productPath) {
+    const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(captures.length, 1, `${scenario.name} journal captures: ${JSON.stringify(captures)}`)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-column-alignment-changed' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-column-alignment-proof'
+    )
+    assert.ok(preservation, `${scenario.name} missing transaction owner: ${JSON.stringify(state.preserve)}`)
+    const proof = preservation.integrityProof
+    assert.equal(proof.family, 'table-column-alignment')
+    assert.deepEqual(proof.tablePath, [1])
+    assert.equal(proof.columnIndex, scenario.columnIndex)
+    assert.equal(proof.previousAlignment, scenario.previousAlignment)
+    assert.equal(proof.nextAlignment, scenario.nextAlignment)
+    assert.equal(proof.rowCount, rows.length)
+    assert.equal(proof.stepRanges.length, rows.length)
+    assert.equal(proof.stepRanges.every((entry) => entry.stepName === 'ReplaceAroundStep'), true)
+    assert.equal(proof.sourceLayout.delimiter.resultLine, scenario.delimiter)
+    assert.equal(proof.transactionJournal?.journalId, captures[0].journalId)
+    assert.equal(proof.transactionJournal?.stepCount, rows.length)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-column-alignment-changed' &&
+      entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true
+    ), true)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' && entry.owner === 'transaction' &&
+      entry.family === 'table-column-alignment' && entry.boundary === boundary
+    ), true, `${scenario.name} bypassed Coordinator`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' && entry.ok === true &&
+      entry.family === 'table-column-alignment' && entry.boundary === boundary
+    ), true, `${scenario.name} missing owner trace`)
+  }
   assert.equal(state.tableActions.some((entry) => /button/.test(entry.tagName?.toLowerCase?.() || '')), true)
 }
 

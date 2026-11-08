@@ -12,9 +12,12 @@ const hasFollowingParagraph = process.env.RICH_LIST_MIDDLE === '1'
 const initial = hasFollowingParagraph
   ? '已有正文\n\n保留尾段\n'
   : '已有正文\n'
+// A document ending in a list gets Milkdown's trailing empty paragraph: an
+// editor-only change with no Markdown (Typora writes `- item\n`), so the
+// source ends after the item.
 const expected = hasFollowingParagraph
   ? '已有正文追加正文\n\n- 新列表项\n\n保留尾段\n'
-  : '已有正文追加正文\n\n- 新列表项\n\n'
+  : '已有正文追加正文\n\n- 新列表项\n'
 
 async function waitFor(check, message, attempts = 80) {
   for (let index = 0; index < attempts; index += 1) {

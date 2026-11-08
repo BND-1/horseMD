@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-ordered-tail-space-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -66,6 +67,15 @@ const key = async (app, keyValue, code, keyCode, text = keyValue, after = 18) =>
   await sleep(after)
 }
 
+// The fixture spells the item `1. \-`. The source reprint (primary since R3)
+// keeps the authored `\-` escape of the unchanged text; the legacy path
+// re-spelled the line as `1. -…`. Either is the same Markdown.
+const itemLines = (body) => [`\n1. -${body}\n`, `\n1. \\-${body}\n`]
+const candidateHasItem = (app, body) => app.evaluate(`(window.__hmSourceIntegrityTrace || []).some((e) =>
+  e.ok === true && ${JSON.stringify(itemLines(body))}.some((line) => String(e.candidate || '').includes(line)))`)
+const expectedItemLine = async (app, body, since) =>
+  itemLines(body)[(await reprintPublished(app.evaluate, { since })) ? 1 : 0]
+
 const diagnostics = (app) => app.evaluate(`(() => ({
   preserve: (window.__hmPreserveLog || []).slice(-20).map(({ source, previous, next, ...e }) => e),
   integrity: (window.__hmSourceIntegrityTrace || []).slice(-20).map(({ parsed, expected, ...e }) => ({
@@ -103,30 +113,37 @@ try {
     editor.focus(); document.dispatchEvent(new Event('selectionchange'))
   })()`)
 
+  const mark = await publishMark(app.evaluate)
   await key(app, 's', 'KeyS', 83)
   await key(app, 'f', 'KeyF', 70)
   await sleep(500)
   await key(app, ' ', 'Space', 32)
-  await waitFor(() => app.evaluate(`(window.__hmSourceIntegrityTrace || []).some((e) =>
-    e.ok === true && String(e.candidate || '').includes('\\n1. -sf \\n'))`), 'trailing-space frame did not sync')
-
+  // A trailing blank has no Markdown: the serializer's output does not change,
+  // so Milkdown sends no update and the source may stay `…sf` until the next
+  // character. When it does sync, the frame must be the authored line + space.
+  const spaceSynced = await waitFor(() => candidateHasItem(app, 'sf '), 'trailing-space frame did not sync', 15).catch(() => false)
   const spaceState = await diagnostics(app)
   console.log('ORDERED_TAIL_SPACE_STATE:', JSON.stringify(spaceState))
   assert.equal(spaceState.integrity.some((e) => e.ok === false), false, 'space frame failed source integrity')
   assert.equal(spaceState.toasts.some((t) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(t)), false, 'space frame showed warning')
+  if (spaceSynced) {
+    const spaceLine = await expectedItemLine(app, 'sf ', mark)
+    assert.equal(spaceState.integrity.some((e) => e.ok === true && e.candidate.includes(spaceLine)), true,
+      `space frame source is not ${JSON.stringify(spaceLine)}`)
+  }
 
   await key(app, 'a', 'KeyA', 65)
   await key(app, 'e', 'KeyE', 69)
   await key(app, 'f', 'KeyF', 70)
-  await waitFor(() => app.evaluate(`(window.__hmSourceIntegrityTrace || []).some((e) =>
-    e.ok === true && String(e.candidate || '').includes('\\n1. -sf aef\\n'))`), 'continued body frame did not sync')
+  await waitFor(() => candidateHasItem(app, 'sf aef'), 'continued body frame did not sync')
   await sleep(500)
 
   const bodyState = await diagnostics(app)
   console.log('ORDERED_TAIL_BODY_STATE:', JSON.stringify(bodyState))
   assert.equal(bodyState.integrity.some((e) => e.ok === false), false, 'body append after trailing space failed source integrity')
   assert.equal(bodyState.toasts.some((t) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(t)), false, 'body append showed warning')
-  assert.equal(bodyState.integrity.some((e) => e.candidate.includes('\n1. -sf aef\n')), true, 'body text was not appended after the authored space')
+  const bodyLine = await expectedItemLine(app, 'sf aef', mark)
+  assert.equal(bodyState.integrity.some((e) => e.candidate.includes(bodyLine)), true, 'body text was not appended after the authored space')
   assert.equal(bodyState.integrity.some((e) => e.candidate.includes('```\n尼玛，吗了解\n了几百块\n```')), true, 'authored fence changed')
   console.log('PASS ordered item trailing space -> body append stays source-equivalent')
 } finally {

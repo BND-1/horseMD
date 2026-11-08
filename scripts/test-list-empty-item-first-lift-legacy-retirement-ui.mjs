@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-empty-item-first-retirement-${process.pid}`
 const file = join(root, 'loose-first.md')
 const port = Number(process.env.CDP_PORT || 17280 + (process.pid % 30))
@@ -20,6 +26,11 @@ const waitFor = async (check, message, attempts = 180) => {
   }
   throw new Error(message)
 }
+
+const sourceReadsBackAsEditor = () => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  return Boolean(harness && harness.equivalent(harness.liveSource(), harness.liveDoc()))
+})()`)
 
 let app = null
 let completed = false
@@ -64,7 +75,8 @@ try {
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 20 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  if (productPath) await sleep(1000)
+  else await waitFor(() => app.evaluate(`(() =>
     (window.__hmListEmptyItemFirstTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' &&
       entry.family === 'list-empty-item-first-lift' &&
@@ -92,25 +104,33 @@ try {
       items: [...(list?.querySelectorAll('li') || [])].map((item) => item.querySelector('p')?.textContent || '')
     }
   })()`)
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' && entry.reason === 'list-empty-item-first-authored-row-unproven'
-  )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), false,
-    `legacy unexpectedly rescued loose first list: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'list-empty-item-first-lifted'), false,
-    `failed first owner unexpectedly preserved: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
-    `failed first owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  if (!productPath) {
+    const blocked = state.owner.filter((entry) =>
+      entry.phase === 'plan' && entry.reason === 'list-empty-item-first-authored-row-unproven'
+    )
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), false,
+      `legacy unexpectedly rescued loose first list: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'list-empty-item-first-lifted'), false,
+      `failed first owner unexpectedly preserved: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
+      `failed first owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
+      `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  } else {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `rich/source warning on the product path: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await sourceReadsBackAsEditor(), true, 'product path: source does not read back as the editor document')
+  }
   assert.equal(state.visibleSource, false)
   assert.equal(await readFile(file, 'utf8'), fixture, 'fail-closed loose first overwrote disk')
   assert.equal(state.topLevelEmptyParagraphs, 1, 'rich PM first-item lift should remain visible')
   assert.deepEqual(state.items, ['right'])
-  assert.equal(state.tail.some((entry) => entry.phase === 'published'), false)
-  assert.equal(state.interior.some((entry) => entry.phase === 'published'), false)
+  if (!productPath) {
+    assert.equal(state.tail.some((entry) => entry.phase === 'published'), false)
+    assert.equal(state.interior.some((entry) => entry.phase === 'published'), false)
+  }
 
   completed = true
   console.log('PASS list first-empty legacy retirement UI: loose authored first rows are recognized by the focused ReplaceAround family, block legacy fallback, retain the rich lift, warn, and leave source/disk untouched')

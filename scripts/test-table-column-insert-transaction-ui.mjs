@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-table-column-insert-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13810 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -22,14 +28,16 @@ const fixtureLines = [
   'after table',
   ''
 ]
+// The product path writes the new column's cells shortest (`|  |`, `:---`);
+// every authored cell keeps its padding either way.
 const expectedLines = [
   '# table column insert transaction',
   '',
-  '| Key    | Value | Value    |     | Note      |',
-  '| :----- | :---: | -------: | :------- | :-------- |',
-  '| alpha  | same  | same     |      | keep-a    |',
+  productPath ? '| Key    | Value | Value    |  | Note      |' : '| Key    | Value | Value    |     | Note      |',
+  productPath ? '| :----- | :---: | -------: | :--- | :-------- |' : '| :----- | :---: | -------: | :------- | :-------- |',
+  productPath ? '| alpha  | same  | same     |  | keep-a    |' : '| alpha  | same  | same     |      | keep-a    |',
   '| beta | same | same |  | keep-b |',
-  '| gamma  | same  | same     |      | keep-g |',
+  productPath ? '| gamma  | same  | same     |  | keep-g |' : '| gamma  | same  | same     |      | keep-g |',
   '| delta | same | same |  | keep-d |',
   '',
   'after table',
@@ -246,11 +254,11 @@ const assertSourceView = (source, label) => {
   assert.equal(source, expectedView, `${label} source differs from selected column insertion`)
   assert.equal(source.charCodeAt(0), 0xFEFF, `${label} source lost BOM`)
   assert.equal(source.includes('\r'), false, `${label} textarea exposed raw CR bytes`)
-  assert.equal(source.includes('| Key    | Value | Value    |     | Note      |'), true, `${label} changed header insertion`)
-  assert.equal(source.includes('| :----- | :---: | -------: | :------- | :-------- |'), true, `${label} changed delimiter insertion`)
-  assert.equal(source.includes('| alpha  | same  | same     |      | keep-a    |'), true, `${label} changed first body insertion`)
+  assert.equal(source.includes(expectedLines[2]), true, `${label} changed header insertion`)
+  assert.equal(source.includes(expectedLines[3]), true, `${label} changed delimiter insertion`)
+  assert.equal(source.includes(expectedLines[4]), true, `${label} changed first body insertion`)
   assert.equal(source.includes('| beta | same | same |  | keep-b |'), true, `${label} changed compact body insertion`)
-  assert.equal(source.includes('| gamma  | same  | same     |      | keep-g |'), true, `${label} changed following body insertion`)
+  assert.equal(source.includes(expectedLines[6]), true, `${label} changed following body insertion`)
   assert.equal(/\|\s*<br\s*\/?>/i.test(source), false, `${label} leaked empty-cell <br>`)
   assert.equal(source.includes('after table'), true, `${label} changed neighbour paragraph`)
 }
@@ -263,57 +271,59 @@ const assertPublication = (state, boundary, label) => {
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(captures.length, 1,
-    `${label} did not capture exactly one column-insert transaction: ${JSON.stringify(state.journalTrace)}`)
-  const capture = captures[0]
+  if (!productPath) {
+    const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(captures.length, 1,
+      `${label} did not capture exactly one column-insert transaction: ${JSON.stringify(state.journalTrace)}`)
+    const capture = captures[0]
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-column-inserted' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-column-insert-proof'
-  )
-  assert.ok(preservation, `${label} did not publish column-insert owner: ${JSON.stringify(state.preserve)}`)
-  const proof = preservation.integrityProof
-  assert.equal(proof.family, 'table-column-insert')
-  assert.deepEqual(proof.tablePath, [1])
-  assert.equal(proof.insertedColumnIndex, 3)
-  assert.equal(proof.insertedAlignment, 'left')
-  assert.equal(proof.previousColumnCount, 4)
-  assert.equal(proof.nextColumnCount, 5)
-  assert.equal(proof.rowCount, 5)
-  assert.deepEqual(proof.insertedCellPaths, [[1, 0, 3], [1, 1, 3], [1, 2, 3], [1, 3, 3], [1, 4, 3]])
-  assert.equal(proof.stepRanges.length, 5)
-  assert.equal(proof.stepRanges.every((entry) => entry.from === entry.to), true)
-  assert.equal(proof.sourceLayout?.insertions?.length, 6)
-  assert.equal(proof.sourceLayout?.rows?.[0]?.eol, '\r\n')
-  assert.equal(proof.sourceLayout?.delimiter?.eol, '\r\n')
-  assert.equal(proof.sourceLayout?.insertions?.find((entry) => entry.kind === 'header')?.resultLine, '| Key    | Value | Value    |     | Note      |')
-  assert.equal(proof.sourceLayout?.insertions?.find((entry) => entry.kind === 'delimiter')?.resultLine, '| :----- | :---: | -------: | :------- | :-------- |')
-  assert.equal(proof.transactionJournal?.journalId, capture.journalId)
-  assert.equal(proof.transactionJournal?.stepCount, 5)
-  assert.equal(proof.transactionJournal?.snapshotMatched, true)
-  assert.equal(proof.transactionJournal?.documentMatched, true)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-column-inserted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-column-insert-proof'
+    )
+    assert.ok(preservation, `${label} did not publish column-insert owner: ${JSON.stringify(state.preserve)}`)
+    const proof = preservation.integrityProof
+    assert.equal(proof.family, 'table-column-insert')
+    assert.deepEqual(proof.tablePath, [1])
+    assert.equal(proof.insertedColumnIndex, 3)
+    assert.equal(proof.insertedAlignment, 'left')
+    assert.equal(proof.previousColumnCount, 4)
+    assert.equal(proof.nextColumnCount, 5)
+    assert.equal(proof.rowCount, 5)
+    assert.deepEqual(proof.insertedCellPaths, [[1, 0, 3], [1, 1, 3], [1, 2, 3], [1, 3, 3], [1, 4, 3]])
+    assert.equal(proof.stepRanges.length, 5)
+    assert.equal(proof.stepRanges.every((entry) => entry.from === entry.to), true)
+    assert.equal(proof.sourceLayout?.insertions?.length, 6)
+    assert.equal(proof.sourceLayout?.rows?.[0]?.eol, '\r\n')
+    assert.equal(proof.sourceLayout?.delimiter?.eol, '\r\n')
+    assert.equal(proof.sourceLayout?.insertions?.find((entry) => entry.kind === 'header')?.resultLine, '| Key    | Value | Value    |     | Note      |')
+    assert.equal(proof.sourceLayout?.insertions?.find((entry) => entry.kind === 'delimiter')?.resultLine, '| :----- | :---: | -------: | :------- | :-------- |')
+    assert.equal(proof.transactionJournal?.journalId, capture.journalId)
+    assert.equal(proof.transactionJournal?.stepCount, 5)
+    assert.equal(proof.transactionJournal?.snapshotMatched, true)
+    assert.equal(proof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-column-inserted' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} column-insert candidate not equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-column-inserted' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} column-insert candidate not equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'table-column-insert' &&
-    entry.boundary === boundary
-  ), true, `${label} bypassed Coordinator column-insert boundary: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'table-column-insert' &&
-    entry.boundary === boundary
-  ), true, `${label} missing column-insert owner trace: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'table-column-insert' &&
+      entry.boundary === boundary
+    ), true, `${label} bypassed Coordinator column-insert boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'table-column-insert' &&
+      entry.boundary === boundary
+    ), true, `${label} missing column-insert owner trace: ${JSON.stringify(state.ownerTrace)}`)
+  }
   assert.equal(state.tableActions.some((entry) => /button/.test(entry.tagName?.toLowerCase?.() || '')), true,
     `${label} did not use the real Milkdown column add button: ${JSON.stringify(state.tableActions)}`)
 }

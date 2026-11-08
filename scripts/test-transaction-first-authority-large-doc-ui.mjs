@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-transaction-first-authority-large-${process.pid}`
 const file = join(root, 'authority-large.md')
 const port = Number(process.env.CDP_PORT || 10192)
@@ -143,6 +149,20 @@ async function waitForOwned(evaluate, label) {
   }, `${label} did not publish transaction-owned bytes in long document`)
 }
 
+// Product path: no transaction-first trace — wait for the edited DOM text,
+// then for the sync debounce.
+async function waitForEdited(evaluate, text, label) {
+  await waitFor(
+    () => evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      return [...(editor?.querySelectorAll('p') || [])]
+        .some((node) => node.textContent === ${JSON.stringify(text)})
+    })()`),
+    `${label} did not reach its final DOM text`
+  )
+  await sleep(1000)
+}
+
 async function main() {
   await rm(root, { recursive: true, force: true })
   await mkdir(root, { recursive: true })
@@ -179,17 +199,27 @@ async function main() {
     await selectTextTail(evaluate, firstOriginal)
     let started = Date.now()
     await typeTextLikeUser(send, 'X', { delayMs: 30 })
-    const firstTrace = await waitForOwned(evaluate, 'first-chunk insertion')
-    timings.push({ op: 'insert-first', ms: Date.now() - started })
-    assert.ok(firstTrace.sourceMapEntries >= 900, `large source map unexpectedly sparse: ${firstTrace.sourceMapEntries}`)
+    if (productPath) {
+      await waitForEdited(evaluate, firstEdited, 'first-chunk insertion')
+      timings.push({ op: 'insert-first', ms: Date.now() - started })
+    } else {
+      const firstTrace = await waitForOwned(evaluate, 'first-chunk insertion')
+      timings.push({ op: 'insert-first', ms: Date.now() - started })
+      assert.ok(firstTrace.sourceMapEntries >= 900, `large source map unexpectedly sparse: ${firstTrace.sourceMapEntries}`)
+    }
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await selectTextTail(evaluate, middleOriginal)
     started = Date.now()
     await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 30 })
-    const middleTrace = await waitForOwned(evaluate, 'middle deletion')
-    timings.push({ op: 'delete-middle', ms: Date.now() - started })
-    assert.ok(middleTrace.sourceMapEntries >= 900)
+    if (productPath) {
+      await waitForEdited(evaluate, middleEdited, 'middle deletion')
+      timings.push({ op: 'delete-middle', ms: Date.now() - started })
+    } else {
+      const middleTrace = await waitForOwned(evaluate, 'middle deletion')
+      timings.push({ op: 'delete-middle', ms: Date.now() - started })
+      assert.ok(middleTrace.sourceMapEntries >= 900)
+    }
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await selectTextTail(evaluate, lastOriginal, 2)
@@ -203,7 +233,8 @@ async function main() {
       })()`),
       'tail rapid replacement did not reach its final DOM text'
     )
-    await waitForOwned(evaluate, 'tail rapid replacement')
+    if (productPath) await sleep(1000)
+    else await waitForOwned(evaluate, 'tail rapid replacement')
     // On a small document both InsertText dispatches often land before the
     // deferred markdownUpdated callback and appear as chainLength=2. On a large
     // document the first mapping can settle before the second character arrives,
@@ -212,15 +243,17 @@ async function main() {
     // be authoritative transaction publication, and final bytes are asserted
     // below after the callback queue settles.
     await sleep(350)
-    const lastReconciles = (await trace(evaluate)).filter((entry) => entry.phase === 'reconcile')
-    assert.ok(lastReconciles.length >= 1, 'tail replacement produced no reconcile trace')
-    assert.ok(
-      lastReconciles.every((entry) =>
-        entry.publicationOwner === 'transaction' &&
-        entry.authorityDecision === 'authority-owned' &&
-        entry.transactionFamily === 'plain-paragraph-inline-replace'),
-      `tail replacement fell back during long-document authority: ${JSON.stringify(lastReconciles)}`
-    )
+    if (!productPath) {
+      const lastReconciles = (await trace(evaluate)).filter((entry) => entry.phase === 'reconcile')
+      assert.ok(lastReconciles.length >= 1, 'tail replacement produced no reconcile trace')
+      assert.ok(
+        lastReconciles.every((entry) =>
+          entry.publicationOwner === 'transaction' &&
+          entry.authorityDecision === 'authority-owned' &&
+          entry.transactionFamily === 'plain-paragraph-inline-replace'),
+        `tail replacement fell back during long-document authority: ${JSON.stringify(lastReconciles)}`
+      )
+    }
     timings.push({ op: 'replace-tail', ms: Date.now() - started })
 
     const failures = await integrityFailures(evaluate)

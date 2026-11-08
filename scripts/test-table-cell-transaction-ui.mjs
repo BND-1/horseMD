@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-table-cell-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13410 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -197,51 +203,53 @@ const assertPublication = (state, boundary, label) => {
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(captures.length >= 2, true,
-    `${label} did not capture X/Y transactions: ${JSON.stringify(state.journalTrace)}`)
-  assert.equal(new Set(captures.map((entry) => entry.journalId)).size, 1,
-    `${label} restarted table journal: ${JSON.stringify(captures)}`)
-  const finalCapture = captures.at(-1)
+  if (!productPath) {
+    const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(captures.length >= 2, true,
+      `${label} did not capture X/Y transactions: ${JSON.stringify(state.journalTrace)}`)
+    assert.equal(new Set(captures.map((entry) => entry.journalId)).size, 1,
+      `${label} restarted table journal: ${JSON.stringify(captures)}`)
+    const finalCapture = captures.at(-1)
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-cell-plain-text-change' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-cell-proof'
-  )
-  assert.ok(preservation, `${label} did not publish table cell owner: ${JSON.stringify(state.preserve)}`)
-  assert.equal(preservation.integrityProof.family, 'table-cell-plain-text-replace')
-  assert.deepEqual(preservation.integrityProof.nodePath, [1, 2, 2])
-  assert.deepEqual(preservation.integrityProof.tablePath, [1])
-  assert.deepEqual(preservation.integrityProof.rowPath, [1, 2])
-  assert.equal(preservation.integrityProof.rowIndex, 2)
-  assert.equal(preservation.integrityProof.cellIndex, 2)
-  assert.equal(preservation.integrityProof.previousText, 'repeated')
-  assert.equal(preservation.integrityProof.nextText, 'repeatedXY')
-  assert.equal(preservation.integrityProof.chainLength >= 2, true)
-  assert.equal(preservation.integrityProof.transactionJournal?.journalId, finalCapture.journalId)
-  assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
-  assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-cell-plain-text-change' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-cell-proof'
+    )
+    assert.ok(preservation, `${label} did not publish table cell owner: ${JSON.stringify(state.preserve)}`)
+    assert.equal(preservation.integrityProof.family, 'table-cell-plain-text-replace')
+    assert.deepEqual(preservation.integrityProof.nodePath, [1, 2, 2])
+    assert.deepEqual(preservation.integrityProof.tablePath, [1])
+    assert.deepEqual(preservation.integrityProof.rowPath, [1, 2])
+    assert.equal(preservation.integrityProof.rowIndex, 2)
+    assert.equal(preservation.integrityProof.cellIndex, 2)
+    assert.equal(preservation.integrityProof.previousText, 'repeated')
+    assert.equal(preservation.integrityProof.nextText, 'repeatedXY')
+    assert.equal(preservation.integrityProof.chainLength >= 2, true)
+    assert.equal(preservation.integrityProof.transactionJournal?.journalId, finalCapture.journalId)
+    assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
+    assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-cell-plain-text-change' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} table cell candidate not equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-cell-plain-text-change' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} table cell candidate not equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'table-cell-plain-text-replace' &&
-    entry.boundary === boundary
-  ), true, `${label} bypassed Coordinator table boundary: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'table-cell-plain-text-replace' &&
-    entry.boundary === boundary
-  ), true, `${label} missing table owner trace: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'table-cell-plain-text-replace' &&
+      entry.boundary === boundary
+    ), true, `${label} bypassed Coordinator table boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'table-cell-plain-text-replace' &&
+      entry.boundary === boundary
+    ), true, `${label} missing table owner trace: ${JSON.stringify(state.ownerTrace)}`)
+  }
 }
 
 const reopenAndVerify = async ({ file, profile, port, label }) => {

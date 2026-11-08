@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs58-task-continuation-${process.pid}`
 const file = join(root, 'doc.md')
@@ -263,6 +264,7 @@ async function main() {
     await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...continuationPoint, button: 'left', clickCount: 1 })
     await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...continuationPoint, button: 'left', clickCount: 1 })
     await sleep(100)
+    const emptyMark = await publishMark(app.evaluate)
     for (let index = 0; index < 4; index += 1) await key(app, 'Backspace', 'Backspace', 8)
     await sleep(850)
 
@@ -272,13 +274,16 @@ async function main() {
     assert.equal(emptied.paragraphs.length, 2, `task must retain exactly one empty continuation transient: ${JSON.stringify(emptied)}`)
     assert.equal(emptied.paragraphs.at(-1), '', `continuation was not emptied: ${JSON.stringify(emptied)}`)
     assert.equal(emptied.integrity.some((entry) => entry.ok === false), false, `RS-58 integrity failure: ${JSON.stringify(emptied)}`)
-    assert.ok(
-      emptied.integrity.some((entry) =>
-        entry.preservationReason === 'trailing-list-item-paragraph-emptied' &&
-        entry.ok === true && entry.semanticOk === true
-      ),
-      `missing RS-58 dedicated integrity proof: ${JSON.stringify(emptied.integrity)}`
-    )
+    // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+    await assertPublishedBy(app.evaluate, async () => {
+      assert.ok(
+        emptied.integrity.some((entry) =>
+          entry.preservationReason === 'trailing-list-item-paragraph-emptied' &&
+          entry.ok === true && entry.semanticOk === true
+        ),
+        `missing RS-58 dedicated integrity proof: ${JSON.stringify(emptied.integrity)}`
+      )
+    }, 'RS-58 continuation emptied', { since: emptyMark })
     assert.equal(emptied.toasts.some((text) => warningPattern.test(text)), false, `RS-58 showed source warning: ${JSON.stringify(emptied.toasts)}`)
 
     // Force flush while the unrepresentable empty continuation still exists.
@@ -286,7 +291,8 @@ async function main() {
     const source = await waitFor(() => visibleSource(app), 'source textarea missing')
     assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'RS-58 leaked <br /> into authored source')
     assert.doesNotMatch(source, /^\s+\[\s*\]?\s*$/m, 'RS-58 kept deleted literal continuation bytes')
-    assert.match(source, /\* \[x\].*前端/i, `checked task source missing after transient flush: ${JSON.stringify(source)}`)
+    // A new document keeps the typed `-` marker (CLAUDE.md: generated scratch).
+    assert.match(source, /- \[x\].*前端/i, `checked task source missing after transient flush: ${JSON.stringify(source)}`)
 
     assert.equal(await toggleSource(app), true, 'could not return to rich mode')
     await save(app)

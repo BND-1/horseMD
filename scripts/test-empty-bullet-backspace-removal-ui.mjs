@@ -3,6 +3,13 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
 const root = `/tmp/horsemd-empty-bullet-backspace-removal-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -79,6 +86,20 @@ const visibleSource = (app) => app.evaluate(`(
     .find((node) => node.offsetParent)?.value ?? null
 )`)
 
+const liveSourceState = (app) => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  const source = harness?.liveSource?.() ?? null
+  return {
+    source,
+    equivalent: harness ? harness.equivalent(source, harness.liveDoc()) : null,
+    // Backspace leaves an empty paragraph in the item above (editor-only, no
+    // Markdown); the reprint comparison skips it.
+    reprintEquivalent: harness ? harness.equivalentForReprint(source, harness.liveDoc()) : null,
+    warned: [...document.querySelectorAll('[class*="toast"]')]
+      .some((node) => /不一致|保存已暂停|Save paused|无法安全/.test(node.textContent || ''))
+  }
+})()`)
+
 let app
 try {
   await rm(root, { recursive: true, force: true })
@@ -109,7 +130,15 @@ try {
   const entered = await diagnostics(app)
   console.log('EMPTY_BULLET_AFTER_ENTER:', JSON.stringify(entered))
   assert.equal(entered.integrity.some((entry) => entry.ok === false), false, 'Enter creating empty bullet failed integrity')
-  assert.equal(entered.integrity.some((entry) => entry.candidate.includes('- 啊v擦\n- \n- u高科技')), true, 'Enter did not persist the empty bullet between siblings')
+  if (!productPath) {
+    assert.equal(entered.integrity.some((entry) => entry.candidate.includes('- 啊v擦\n- \n- u高科技')), true, 'Enter did not persist the empty bullet between siblings')
+  } else {
+    const enteredSource = await liveSourceState(app)
+    console.log('EMPTY_BULLET_AFTER_ENTER_SOURCE:', JSON.stringify(enteredSource))
+    assert.equal(enteredSource.warned, false, 'Enter creating empty bullet showed a rich/source warning')
+    assert.equal(enteredSource.equivalent, true, 'source after Enter does not read back as the editor document')
+    assert.equal(tightMarkers(String(enteredSource.source)).includes(tightMarkers('- 啊v擦\n- \n- u高科技')), true, 'Enter did not persist the empty bullet between siblings')
+  }
 
   await rawKey(app, 'Backspace', 'Backspace', 8, '', forceBackspaceFlush ? 10 : 150)
   if (forceBackspaceFlush) {
@@ -126,6 +155,7 @@ try {
   console.log('EMPTY_BULLET_AFTER_BACKSPACE:', JSON.stringify(removed))
   assert.equal(removed.integrity.some((entry) => entry.ok === false), false, 'Backspace deleting empty bullet failed source integrity')
   assert.equal(removed.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false, 'Backspace deleting empty bullet showed warning')
+  if (!productPath) {
   const focusedPreservation = removed.preserve.find((entry) =>
     entry.reason === 'list-empty-item-removed' &&
     entry.preserved === true &&
@@ -157,6 +187,14 @@ try {
   ), false, `broad list-subtree still failed before the focused owner: ${JSON.stringify(removed.listSubtree)}`)
   assert.equal(removed.integrity.some((entry) => entry.candidate.includes('- 啊v擦\n- u高科技')), true, 'deleted empty bullet remained in authored source')
   assert.equal(removed.integrity.some((entry) => /<br\s*\/?\s*>/i.test(entry.candidate)), false, 'editor-only br placeholder leaked into source')
+  } else {
+    const removedSource = await liveSourceState(app)
+    console.log('EMPTY_BULLET_AFTER_BACKSPACE_SOURCE:', JSON.stringify(removedSource))
+    assert.equal(removedSource.warned, false, 'Backspace deleting empty bullet showed a rich/source warning')
+    assert.equal(removedSource.reprintEquivalent, true, 'source after Backspace does not read back as the editor document')
+    assert.equal(String(removedSource.source).includes('- 啊v擦\n- u高科技'), true, 'deleted empty bullet remained in authored source')
+    assert.doesNotMatch(String(removedSource.source), /<br\s*\/?\s*>/i, 'editor-only br placeholder leaked into source')
+  }
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')

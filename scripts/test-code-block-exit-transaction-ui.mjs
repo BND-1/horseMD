@@ -19,6 +19,12 @@ import {
   waitForExitParagraph
 } from './lib/code-block-exit-test.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-block-exit-${process.pid}`
 const file = join(root, 'exit.md')
 const port = Number(process.env.CDP_PORT || 14920 + (process.pid % 40))
@@ -53,23 +59,25 @@ try {
   assert.deepEqual(structure.texts, ['before', 'console.log(1)', 'XY', 'after'])
   const state = await readCodeBlockExitDiagnostics(app)
   assertHealthyCodeBlockExit(state, 'rapid code-block exit')
-  const proofs = state.preserve
-    .filter((entry) => entry.reason === 'code-block-exit')
-    .map((entry) => entry.integrityProof)
-  assert.deepEqual(proofs.map((proof) => proof?.mode),
-    ['pending-empty-paragraph', 'staged-text'])
-  assert.equal(proofs[0].sourceUnchanged, true)
-  assert.equal(proofs[1].finalText, 'XY')
-  assert.equal(proofs[1].textStepCount, 2)
-  assert.equal(proofs[1].transactionJournal?.baseOwner, 'transaction')
-  assert.equal(proofs[1].transactionJournal?.baseFamily, 'code-block-exit')
-  const publications = state.coordinator.filter((entry) =>
-    entry.phase === 'published' && entry.family === 'code-block-exit'
-  )
-  assert.deepEqual(publications.map((entry) => entry.boundary), [
-    'transaction-code-block-exit-forced-flush',
-    'transaction-code-block-exit-markdown-updated'
-  ])
+  if (!productPath) {
+    const proofs = state.preserve
+      .filter((entry) => entry.reason === 'code-block-exit')
+      .map((entry) => entry.integrityProof)
+    assert.deepEqual(proofs.map((proof) => proof?.mode),
+      ['pending-empty-paragraph', 'staged-text'])
+    assert.equal(proofs[0].sourceUnchanged, true)
+    assert.equal(proofs[1].finalText, 'XY')
+    assert.equal(proofs[1].textStepCount, 2)
+    assert.equal(proofs[1].transactionJournal?.baseOwner, 'transaction')
+    assert.equal(proofs[1].transactionJournal?.baseFamily, 'code-block-exit')
+    const publications = state.coordinator.filter((entry) =>
+      entry.phase === 'published' && entry.family === 'code-block-exit'
+    )
+    assert.deepEqual(publications.map((entry) => entry.boundary), [
+      'transaction-code-block-exit-forced-flush',
+      'transaction-code-block-exit-markdown-updated'
+    ])
+  }
 
   assert.equal(await toggleSource(app), true)
   let source = await waitFor(() => visibleSource(app), 'rapid source missing')

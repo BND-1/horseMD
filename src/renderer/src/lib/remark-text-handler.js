@@ -1,4 +1,5 @@
 import { cjkFriendlyToMarkdown } from 'mdast-util-to-markdown-cjk-friendly'
+import { gfmTaskListItemToMarkdown } from 'mdast-util-gfm-task-list-item'
 
 // Milkdown's default remark `text` stringify handler has a fast path,
 // `if (/^[^*_\\]*\s+$/.test(value)) return value`, meant to keep the space
@@ -57,6 +58,14 @@ function textHandler(node, parent, state, info) {
       return `&#x${first.codePointAt(0).toString(16).toUpperCase()};${rest}`
     }
   }
+  // U+200B + a space at the start of a text node is the leading-space
+  // sentinel's spelling (markdown-leading-space.js strips it on read). Text
+  // that really starts so is written with the entity, which reads back as
+  // content (fuzz seed 1286).
+  if (/^\u200B[ \t]/.test(node.value)) {
+    const rest = textHandler({ ...node, value: node.value.slice(1) }, parent, state, { ...info, before: ';' })
+    return `&#x200B;${rest}`
+  }
   const value = node.value
   const match = TRAILING_WHITESPACE_FAST_PATH.exec(value)
   if (!match) return state.safe(value, { ...info, encode: [] })
@@ -113,3 +122,20 @@ export const deleteStringifyHandler = (node, parent, state, info) => {
   }
 }
 deleteStringifyHandler.peek = () => '~'
+
+// GFM task items in an ordered list written with `)`: the upstream handler
+// (mdast-util-gfm-task-list-item 2.0.0) inserts the checkbox only after
+// `-`/`*`/`+`/`1.` — its regex has no `1)`. Milkdown writes `1)` for an
+// ordered list right after another one (so they stay two lists), and the
+// task's `[x]` was dropped: `1) 已完成任务` (fuzz UI seed 236). Same
+// insertion as upstream, for `)`.
+const gfmTaskListItem = gfmTaskListItemToMarkdown().handlers.listItem
+export const taskListItemStringifyHandler = (node, parent, state, info) => {
+  let value = gfmTaskListItem(node, parent, state, info)
+  const head = node.children?.[0]
+  if (typeof node.checked === 'boolean' && head?.type === 'paragraph' && /^\d+\)/.test(value) &&
+      !/^\d+\)(?:[\r\n]| {1,3})\[[ xX]\] /.test(value)) {
+    value = value.replace(/^(\d+\)(?:[\r\n]| {1,3}))/, `$1[${node.checked ? 'x' : ' '}] `)
+  }
+  return value
+}

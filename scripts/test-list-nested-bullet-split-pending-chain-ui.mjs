@@ -10,6 +10,13 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
 // Real IME composition via CDP: pinyin keystrokes update the composition text
 // (each dispatch is one PM pending-text transaction), then insertText commits
@@ -57,7 +64,7 @@ const fixture = [
   '- 当用户指定分析具体周期内的成交时，优先使用此工具',
   ''
 ].join('\n')
-const expected = [
+const expectedAuthored = [
   '- 查询某类商品淘客的热门成交品牌/价格带等',
   '',
   '  * 期看；妙可蔷薇',
@@ -67,6 +74,8 @@ const expected = [
   '- 当用户指定分析具体周期内的成交时，优先使用此工具',
   ''
 ].join('\n')
+// The product path spells an empty item without the blank (`  *`).
+const expected = productPath ? tightMarkers(expectedAuthored) : expectedAuthored
 
 const waitFor = async (check, message, attempts = 180) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -194,20 +203,22 @@ const runScenario = async (scenario, port) => {
       false,
       `${scenario.name} warning: ${JSON.stringify(state.toasts)}`
     )
-    const publications = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
-    )
-    assert.equal(publications.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-    assert.ok(
-      publications[0].proof?.pendingTextChain?.textStepCount >= 1 ||
-        publications[0].chainLength >= 1,
-      `${scenario.name} chain proof missing`
-    )
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-nested-bullet-item-split' &&
-      entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof'
-    )
-    assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
+    if (!productPath) {
+      const publications = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
+      )
+      assert.equal(publications.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
+      assert.ok(
+        publications[0].proof?.pendingTextChain?.textStepCount >= 1 ||
+          publications[0].chainLength >= 1,
+        `${scenario.name} chain proof missing`
+      )
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-nested-bullet-item-split' &&
+        entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof'
+      )
+      assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)
@@ -220,7 +231,7 @@ const runScenario = async (scenario, port) => {
     await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
     await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), `${scenario.name} save did not finish`)
     assert.equal(await readFile(file, 'utf8'), expected, `${scenario.name} disk bytes mismatch`)
-    assert.equal((await readFile(file, 'utf8')).includes('  * '), true, `${scenario.name} nested marker lost`)
+    assert.equal((await readFile(file, 'utf8')).includes(productPath ? '  *' : '  * '), true, `${scenario.name} nested marker lost`)
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
   }

@@ -14,6 +14,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const fixtureDir = new URL('./fixtures/redis-line1-replay/', import.meta.url)
 const root = `/tmp/horsemd-redis-replay-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 24720 + (process.pid % 30))
@@ -174,22 +180,24 @@ try {
     false,
     `warning: ${JSON.stringify(state.toasts)}`
   )
-  const publications = state.owner.filter((entry) =>
-    entry.phase === 'published' && entry.ok === true &&
-    entry.family === 'list-empty-item-text-filled'
-  )
-  if (publications.length !== 1) {
-    console.log('DEBUG owner:', JSON.stringify(state.owner, null, 1))
-    console.log('DEBUG preserve:', JSON.stringify(state.preserve, null, 1))
-    console.log('DEBUG journal:', JSON.stringify(state.journal, null, 1))
-    console.log('DEBUG coordinator:', JSON.stringify(state.coordinator, null, 1))
+  if (!productPath) {
+    const publications = state.owner.filter((entry) =>
+      entry.phase === 'published' && entry.ok === true &&
+      entry.family === 'list-empty-item-text-filled'
+    )
+    if (publications.length !== 1) {
+      console.log('DEBUG owner:', JSON.stringify(state.owner, null, 1))
+      console.log('DEBUG preserve:', JSON.stringify(state.preserve, null, 1))
+      console.log('DEBUG journal:', JSON.stringify(state.journal, null, 1))
+      console.log('DEBUG coordinator:', JSON.stringify(state.coordinator, null, 1))
+    }
+    assert.equal(publications.length, 1, `owner: ${JSON.stringify(state.owner)}`)
+    // The gate-removal contract itself (callbackDocumentEquivalent=false must
+    // still publish) is locked deterministically by the Node suite (case 9b);
+    // the published-phase trace entry carries no proof, so just confirm the
+    // publication happened on the fill journal.
+    assert.ok(publications[0].journalId, 'publication entry missing journal id')
   }
-  assert.equal(publications.length, 1, `owner: ${JSON.stringify(state.owner)}`)
-  // The gate-removal contract itself (callbackDocumentEquivalent=false must
-  // still publish) is locked deterministically by the Node suite (case 9b);
-  // the published-phase trace entry carries no proof, so just confirm the
-  // publication happened on the fill journal.
-  assert.ok(publications[0].journalId, 'publication entry missing journal id')
 
   // Source bytes: the fill lands in the authored empty marker row after the
   // continuation, never inside 一个整数。.

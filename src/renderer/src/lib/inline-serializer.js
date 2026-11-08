@@ -309,7 +309,7 @@ function serializeInline(state, fragment, runPlain) {
     const indent = HTML_BLOCK_START.test(value) ? '    ' : ''
     return htmlNode.type.create({ ...htmlNode.attrs, value: lead + indent + value }, null, htmlNode.marks)
   }
-  const writeAll = (children) => {
+  const writeAll = (children, top = false) => {
     for (let index = 0; index < children.length; index += 1) {
       const child = children[index]
       const next = children[index + 1]
@@ -320,10 +320,36 @@ function serializeInline(state, fragment, runPlain) {
       if (soft(child) && soft(next)) {
         let run = 1
         while (soft(children[index + run])) run += 1
+        // At the start or end of the block a line break has no spelling
+        // (the validator drops edge breaks): `\n&#10; x` would read back as
+        // text starting with a newline. Write one break, as for a single
+        // edge break (fuzz UI seed 368: text deleted before two breaks).
+        if (top && (index === 0 || index + run === children.length)) {
+          write(child)
+          index += run - 1
+          continue
+        }
         // One HTML value holding the first line ending too (a line ending
         // right before an HTML node would become a space).
         state.addNode('html', undefined, '\n' + '&#10;'.repeat(run - 1))
         index += run - 1
+        continue
+      }
+      // Same after a HARD break: its line ending and a soft break's would be
+      // a blank line (`a  \n\nb`, two paragraphs; fuzz seed 3788: Shift+Enter
+      // then Enter in a paragraph). The soft breaks are `&#10;`, in one HTML
+      // value with the break (a line ending right before HTML would become
+      // a space).
+      if (isBreak(child) && !soft(child) && soft(next)) {
+        let run = 0
+        while (soft(children[index + 1 + run])) run += 1
+        if (top && index + 1 + run === children.length) {
+          write(child)
+          index += run
+          continue
+        }
+        state.addNode('html', undefined, '\\\n' + '&#10;'.repeat(run))
+        index += run
         continue
       }
       // Text right before a soft break is written together with its line
@@ -364,7 +390,7 @@ function serializeInline(state, fragment, runPlain) {
     writeAll(child.children)
     state.closeNode()
   }
-  writeAll(root.children)
+  writeAll(root.children, true)
   return true
 }
 

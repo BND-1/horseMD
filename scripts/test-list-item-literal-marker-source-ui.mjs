@@ -26,18 +26,22 @@ const initial = [
   ''
 ].join('\n')
 
+// The markers typed into an item stay text in the editor (no nested list),
+// so the source escapes each one: unescaped, `1. 2. 测试` reopens as a nested
+// ordered list. The outer lists keep their authored `1.` / `-` markers (a
+// leftover `1)` intent once rewrote the first row to `1)`).
 const expected = [
-  '1. 2. 测试',
-  '2. - 测试',
-  '3. + 测试',
-  '4. * 测试',
-  '5. 2) 测试',
+  '1. 2\\. 测试',
+  '2. \\- 测试',
+  '3. \\+ 测试',
+  '4. \\* 测试',
+  '5. 2\\) 测试',
   '',
-  '- 1. 测试',
-  '- - 测试',
-  '- + 测试',
-  '- * 测试',
-  '- 1) 测试',
+  '- 1\\. 测试',
+  '- \\- 测试',
+  '- \\+ 测试',
+  '- \\* 测试',
+  '- 1\\) 测试',
   ''
 ].join('\n')
 
@@ -167,11 +171,6 @@ async function assertSource(evaluate, stage) {
     console.error(`--- ${stage} actual ---\n${source}--- expected ---\n${expected}`)
   }
   assert.equal(source, expected, `${stage}: literal marker text or outer list formatting drifted`)
-  assert.doesNotMatch(
-    source,
-    /(?:\\[-+*]|\d+\\[.)])[ \t]/,
-    `${stage}: serializer list-marker backslash leaked into source`
-  )
 }
 
 async function main() {
@@ -215,8 +214,14 @@ async function main() {
     app = await openApp('reopen', port + 1, true)
     assert.equal(await toggleSource(app.evaluate), true, 'could not inspect reopened source')
     await assertSource(app.evaluate, 'full reopen')
+    assert.equal(await toggleSource(app.evaluate), true, 'could not return to rich after reopen')
+    // The typed markers reopen as text, not as nested lists.
+    assert.equal(await waitFor(() => app.evaluate(`(() => {
+      const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+      return editor ? String(editor.querySelectorAll('li li').length) : null
+    })()`), 'reopened editor did not mount'), '0', 'a typed marker reopened as a nested list')
 
-    console.log('PASS list-item literal markers: ordered and bullet item bodies keep visible `-`, `+`, `*`, `1.`, and `1)` text without serializer backslashes')
+    console.log('PASS list-item literal markers: `-`, `+`, `*`, `1.`, `1)` typed into item bodies stay text (escaped in source), outer markers kept, save and reopen identical')
   } finally {
     if (app) await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

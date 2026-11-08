@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-nested-last-child-outdent-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 22820 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -173,32 +179,34 @@ const runScenario = async (scenario, port) => {
     const state = await snapshot(app)
     assert.equal(state.integrity.some((entry) => entry.ok === false), false, `${scenario.name} integrity: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => warningPattern.test(text)), false, `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
-    const publication = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-last-child-bullet-outdent'
-    )
-    assert.equal(publication.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-    assert.equal(publication[0].boundary,
-      scenario.forced
-        ? 'transaction-list-nested-last-child-bullet-outdent-forced-flush'
-        : 'transaction-list-nested-last-child-bullet-outdent-markdown-updated')
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-nested-last-child-bullet-outdented' &&
-      entry.integrityProof?.kind === 'transaction-list-nested-last-child-bullet-outdent-proof'
-    )
-    assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
-    assert.equal(preservation.integrityProof.nestedCount, scenario.nestedCount)
-    assert.equal(preservation.integrityProof.targetIndex, scenario.targetIndex)
-    assert.equal(preservation.integrityProof.movedSourceRow?.token, scenario.marker)
-    assert.equal(preservation.integrityProof.rawRemoval?.removed, '  ')
-    assert.equal(preservation.integrityProof.step?.name, 'ReplaceAroundStep')
-    assert.equal(preservation.integrityProof.step?.sliceSize, 2)
-    assert.equal(preservation.integrityProof.step?.openStart, 2)
-    assert.equal(preservation.integrityProof.step?.insert, 2)
-    assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' && entry.family === 'list-nested-last-child-bullet-outdent'
-    ), true)
+    if (!productPath) {
+      const publication = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-last-child-bullet-outdent'
+      )
+      assert.equal(publication.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
+      assert.equal(publication[0].boundary,
+        scenario.forced
+          ? 'transaction-list-nested-last-child-bullet-outdent-forced-flush'
+          : 'transaction-list-nested-last-child-bullet-outdent-markdown-updated')
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-nested-last-child-bullet-outdented' &&
+        entry.integrityProof?.kind === 'transaction-list-nested-last-child-bullet-outdent-proof'
+      )
+      assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
+      assert.equal(preservation.integrityProof.nestedCount, scenario.nestedCount)
+      assert.equal(preservation.integrityProof.targetIndex, scenario.targetIndex)
+      assert.equal(preservation.integrityProof.movedSourceRow?.token, scenario.marker)
+      assert.equal(preservation.integrityProof.rawRemoval?.removed, '  ')
+      assert.equal(preservation.integrityProof.step?.name, 'ReplaceAroundStep')
+      assert.equal(preservation.integrityProof.step?.sliceSize, 2)
+      assert.equal(preservation.integrityProof.step?.openStart, 2)
+      assert.equal(preservation.integrityProof.step?.insert, 2)
+      assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' && entry.family === 'list-nested-last-child-bullet-outdent'
+      ), true)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

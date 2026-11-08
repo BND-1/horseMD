@@ -94,7 +94,7 @@ async function main() {
     assert.ok(editorIndex >= 0, 'test document editor not found')
     await sleepMs(300)
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch to source mode')
-    await waitFor(() => sourceCaret(app.evaluate) !== null, 'source textarea did not appear')
+    await waitFor(async () => (await sourceCaret(app.evaluate)) !== null, 'source textarea did not appear')
     await sleepMs(400)
 
     // Move the source caret WITHOUT any synthetic/user event: this is the
@@ -138,7 +138,7 @@ async function main() {
 
     // And back to source: the position survives the round trip.
     assert.equal(await toggleSource(app.evaluate), true, 'could not return to source mode')
-    await waitFor(() => sourceCaret(app.evaluate) !== null, 'source textarea did not reappear')
+    await waitFor(async () => (await sourceCaret(app.evaluate)) !== null, 'source textarea did not reappear')
     await sleepMs(400)
     assert.deepEqual(
       await sourceCaret(app.evaluate),

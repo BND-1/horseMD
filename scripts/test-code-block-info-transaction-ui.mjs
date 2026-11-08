@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-info-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13020 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -184,6 +190,8 @@ const assertPublication = (state, expectedBoundary, label) => {
     `${label} produced source-integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
+
+  if (productPath) return
 
   const capture = state.journalTrace.find((entry) => entry.phase === 'capture' && entry.ok === true)
   assert.ok(capture, `${label} did not capture the AttrStep journal: ${JSON.stringify(state.journalTrace)}`)

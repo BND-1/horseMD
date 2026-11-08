@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Checks behaviour (source bytes, save, reopen), not which writer ran: it
+// runs on the product path, with the source reprint first.
+
 const root = `/tmp/horsemd-bullet-exit-keeps-sibling-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 10870 + (process.pid % 50))
@@ -137,7 +140,9 @@ try {
     false,
     'exiting the empty bullet item showed a sync warning'
   )
-  assert.match(source, /- 是v的；发布\n\n- 露娜了/, 'the sibling bullet list must survive with its authored marker and blank separator')
+  // The empty paragraph left by the exit is spelled as a blank line of its
+  // own (Typora: each empty paragraph between blocks adds one).
+  assert.match(source, /- 是v的；发布\n\n(?:\n\n)?- 露娜了/, 'the sibling bullet list must survive with its authored marker and blank separator')
   assert.match(source, /啊额绿化/, 'the following paragraph must survive')
   assert.doesNotMatch(source, /(?:^|\n)- \n/, 'the emptied middle bullet row must be removed, not left dangling')
   assert.doesNotMatch(source, /<br/, 'the standalone empty-paragraph placeholder must not leak into source')

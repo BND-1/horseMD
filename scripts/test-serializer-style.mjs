@@ -125,6 +125,25 @@ console.log('ok application')
   assert.ok(literal.includes('E = mc^2 \\\\\\\\\nx'), `even backslashes kept: ${JSON.stringify(literal)}`)
   const again = remark.parse(literal).children[1].children
   assert.deepEqual(again.map((n) => n.type), ['text'], `still a soft break: ${JSON.stringify(again)}`)
+  // Two hard breaks in a row: the line holding only the second keeps its
+  // backslash — two spaces would be a blank line (fuzz UI seed 151).
+  const double = remark.stringify(remark.parse('para  \nsecond.\n\na\\\n\\\nb\n\n> c\\\n> \\\n> d\n'))
+  assert.ok(double.includes('a  \n\\\nb') && double.includes('> c  \n> \\\n> d'), `break-only lines keep the backslash: ${JSON.stringify(double)}`)
+  const breaks = (node) => node.children.filter((n) => n.type === 'break').length
+  assert.equal(breaks(remark.parse(double).children[1]), 2, 'still two breaks in one paragraph')
+  // A line of only `-` / `=` before a break: remark saw `-\` (nothing to
+  // escape), but `-␠␠` under a text line is a setext underline — the line
+  // above became a heading (fuzz seed 3908). Its first character is escaped.
+  for (const mark of ['-', '=', '--', '==', '---']) {
+    const input = `para  \nsecond.\n\nc\\\n\\${mark}\\\nd\n\n> e\\\n> \\${mark}\\\n> f\n`
+    const out = remark.stringify(remark.parse(input))
+    const tree = remark.parse(out)
+    assert.deepEqual(tree.children.map((n) => n.type), ['paragraph', 'paragraph', 'blockquote'], `no heading from ${mark}: ${JSON.stringify(out)}`)
+    assert.equal(breaks(tree.children[1]), 2, `two breaks around ${mark}: ${JSON.stringify(out)}`)
+    assert.equal(tree.children[1].children[2].value, mark, `the line still reads ${mark}: ${JSON.stringify(out)}`)
+    assert.equal(breaks(tree.children[2].children[0]), 2, `two breaks around ${mark} in a quote: ${JSON.stringify(out)}`)
+    assert.ok(!/(^|\n)[ >]*\\?[-=]+\\\n/.test(out.replace(/^para.*\n.*\n\n/, '')), `two-space spelling used: ${JSON.stringify(out)}`)
+  }
 }
 console.log('ok literal blocks')
 

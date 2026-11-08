@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs51-empty-bullet-backspace-${process.pid}`
 const file = join(root, 'rs-51.md')
@@ -139,6 +140,7 @@ try {
   const beforeBackspace = await diagnostics(app)
   assert.equal(beforeBackspace.shape?.bullets, 2, `Enter did not create empty second bullet: ${JSON.stringify(beforeBackspace)}`)
 
+  const backspaceMark = await publishMark(app.evaluate)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 70 })
   await sleep(900)
 
@@ -158,7 +160,10 @@ try {
   )
   const finalIntegrity = afterBackspace.integrity.at(-1)
   assert.equal(finalIntegrity?.ok, true, `RS-51 did not finish on a proven candidate: ${JSON.stringify(afterBackspace.integrity)}`)
-  assert.equal(finalIntegrity?.preservationReason, 'empty-list-item-removed', `RS-51 did not reuse the proven empty-list-item-removed contract: ${JSON.stringify(finalIntegrity)}`)
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(finalIntegrity?.preservationReason, 'empty-list-item-removed', `RS-51 did not reuse the proven empty-list-item-removed contract: ${JSON.stringify(finalIntegrity)}`)
+  }, 'RS-51 empty bullet Backspace', { since: backspaceMark })
   assert.equal(finalIntegrity?.candidate, afterBackspaceExpected, 'RS-51 candidate lost the post-list empty block slot')
 
   assert.equal(await toggleSource(app), true, 'could not switch RS-51 document to source mode')

@@ -5,7 +5,7 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
-const sourceFixture = '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
+const sourceFixture = process.env.FILE || '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
 const root = `/tmp/horsemd-repeated-ordered-list-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = 10700 + (process.pid % 100)
@@ -73,7 +73,7 @@ const placeCaretAfter = async (app, text) => {
 const toggleSource = async (app) => {
   const point = await app.evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
-      .find((node) => node.offsetParent && /源码|Source|⌘/.test(node.title || node.textContent || ''))
+      .find((node) => node.offsetParent && /源码|Source/.test(node.title || node.textContent || ''))
     if (!button) return null
     const rect = button.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }

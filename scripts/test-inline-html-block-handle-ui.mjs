@@ -20,11 +20,21 @@ const markdown = [
   '* 测试一下测试一下测试一下啊，<span style="background:#affad1">测试一下</span>（存在bug）'
 ].join('\n')
 
-async function move(app, point) {
+const handleVisible = `(() => [...document.querySelectorAll('.milkdown-block-handle')]
+  .some((handle) => handle.dataset.show === 'true' && getComputedStyle(handle).opacity !== '0'))()`
+
+// The handle fades in with a CSS transition. A background test window gets
+// few frames (Windows: the fade took over 800 ms), so a shown handle is waited
+// for; a hidden one is checked after the same short pause as before.
+async function move(app, point, { expectShown = false } = {}) {
   await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
   await sleep(260)
-  return app.evaluate(`(() => [...document.querySelectorAll('.milkdown-block-handle')]
-    .some((handle) => handle.dataset.show === 'true' && getComputedStyle(handle).opacity !== '0'))()`)
+  if (!expectShown) return app.evaluate(handleVisible)
+  for (let waited = 260; waited < 3000; waited += 100) {
+    if (await app.evaluate(handleVisible)) return true
+    await sleep(100)
+  }
+  return false
 }
 
 async function main() {
@@ -42,7 +52,8 @@ async function main() {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       points = await app.evaluate(`(() => {
         const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-        const html = editor?.querySelector('.hm-html-inline')
+        // <font>/<span> are editable html_span marks, not html atoms.
+        const html = editor?.querySelector('.hm-html-span')
         const text = html?.closest('p')?.firstChild
         if (!editor || !html || !text) return null
         const atom = html.getBoundingClientRect()
@@ -66,7 +77,7 @@ async function main() {
       'block handle appeared over inline <font>/<span> content')
     assert.equal(await move(app, points.plainText), false,
       'block handle appeared over ordinary body text')
-    assert.equal(await move(app, points.gutter), true,
+    assert.equal(await move(app, points.gutter, { expectShown: true }), true,
       'block handle no longer opens from the left block-operation gutter')
 
     console.log('PASS inline HTML block handle UI: inline HTML stays control-free; left gutter retains block actions')

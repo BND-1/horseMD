@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-nonempty-bullet-merge-ordered-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 11730 + (process.pid % 40))
@@ -37,7 +43,9 @@ const fixture = [
 const expected = fixture
   .replace(
     '2. 斛律v哦\n\n- u高科技\n- 1\\. 色粉色分',
-    '2. 斛律v哦\n\n3. u高科技\n4. 1\\. 色粉色分'
+    // The product path writes the merged items tight, as their list was: a
+    // blank line between two items of one list makes the whole list loose.
+    productPath ? '2. 斛律v哦\n3. u高科技\n4. 1\\. 色粉色分' : '2. 斛律v哦\n\n3. u高科技\n4. 1\\. 色粉色分'
   )
   .replace('1. 啊额法色饭\n   1. 微风', '1) 啊额法色饭\n   1. 微风')
 
@@ -145,7 +153,8 @@ try {
 
   assert.equal(await focusStartOfBullet(app), true, 'could not focus the start of u高科技')
   await key(app, 'Backspace', 'Backspace', 8, 260)
-  await waitFor(
+  if (productPath) await sleep(300)
+  else await waitFor(
     () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
       entry.reason === 'diverged-nonempty-bullet-list-backspace-merge-ordered')`),
     'Backspace did not hit the non-empty bullet-list merge owner'
@@ -156,27 +165,31 @@ try {
     preserve: (window.__hmPreserveLog || []).slice(-20).map(({ source, previous, next, ...entry }) => entry),
     integrity: (window.__hmSourceIntegrityTrace || []).slice(-20).map(({ parsed, expected, ...entry }) => entry)
   }))()`)
-  assert.ok(
-    state.preserve.some((entry) =>
-      entry.reason === 'diverged-nonempty-bullet-list-backspace-merge-ordered' &&
-      entry.preserved === true
-    ),
-    `merge owner did not preserve the callback: ${JSON.stringify(state.preserve)}`
-  )
+  if (!productPath) {
+    assert.ok(
+      state.preserve.some((entry) =>
+        entry.reason === 'diverged-nonempty-bullet-list-backspace-merge-ordered' &&
+        entry.preserved === true
+      ),
+      `merge owner did not preserve the callback: ${JSON.stringify(state.preserve)}`
+    )
+  }
   assert.equal(
     state.integrity.some((entry) => entry.ok === false),
     false,
     `merge produced first-divergence integrity failure: ${JSON.stringify(state.integrity)}`
   )
-  assert.ok(
-    state.integrity.some((entry) =>
-      entry.preservationReason === 'diverged-nonempty-bullet-list-backspace-merge-ordered' &&
-      entry.semanticOk === true &&
-      entry.listSlotsMatch === true &&
-      entry.ok === true
-    ),
-    `merge candidate was not fully source-equivalent: ${JSON.stringify(state.integrity)}`
-  )
+  if (!productPath) {
+    assert.ok(
+      state.integrity.some((entry) =>
+        entry.preservationReason === 'diverged-nonempty-bullet-list-backspace-merge-ordered' &&
+        entry.semanticOk === true &&
+        entry.listSlotsMatch === true &&
+        entry.ok === true
+      ),
+      `merge candidate was not fully source-equivalent: ${JSON.stringify(state.integrity)}`
+    )
+  }
   assert.deepEqual(await pauseToasts(app), [], 'merge showed a source-sync warning')
   assert.deepEqual(await documentShape(app), {
     merged: true,

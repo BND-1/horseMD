@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs62-tail-bracket-inner-backspace-${process.pid}`
 const file = join(root, 'doc.md')
@@ -105,11 +106,13 @@ async function placeCaretAtTail(app, offset = null) {
     const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const paragraph = [...(editor?.children || [])]
       .filter((node) => node.tagName === 'P')
-      .find((node) => node.textContent === '-[ ]')
+      // After stage 1 the paragraph is \`-[ ] \` (typed trailing space).
+      .find((node) => (node.textContent || '').replace(/\\s+$/, '') === '-[ ]')
     const text = paragraph?.firstChild
     if (!paragraph || !text || text.nodeType !== Node.TEXT_NODE) return false
     const range = document.createRange()
-    const targetOffset = offset === null ? text.nodeValue.length : Math.min(offset, text.nodeValue.length)
+    const wanted = ${JSON.stringify(offset)}
+    const targetOffset = wanted === null ? text.nodeValue.length : Math.min(wanted, text.nodeValue.length)
     range.setStart(text, targetOffset)
     range.collapse(true)
     const selection = getSelection()
@@ -160,6 +163,8 @@ async function main() {
       window.__hmSourceIntegrityDiffTrace = []
       window.__hmFlushTrace = []
     })()`)
+    const evaluate = (expression) => app.evaluate(expression)
+    const mark = await publishMark(evaluate)
     await key(app, 'Backspace', 'Backspace', 8)
     await sleep(900)
 
@@ -167,20 +172,24 @@ async function main() {
     console.log('RS62_AFTER_INNER_BACKSPACE:', JSON.stringify(afterBackspace))
     assert.ok(afterBackspace.topLevelParagraphs.some((text) => text.startsWith('-[]')), `RS-62 edited tail paragraph disappeared: ${JSON.stringify(afterBackspace)}`)
     assert.equal(afterBackspace.integrity.some((entry) => entry.ok === false), false, `RS-62 integrity failure: ${JSON.stringify(afterBackspace)}`)
-    assert.equal(
-      afterBackspace.preserve.some((entry) => entry.reason === 'diverged-tail-block-append'),
-      false,
-      `RS-62 was still misclassified as a fresh tail append: ${JSON.stringify(afterBackspace.preserve)}`
-    )
-    assert.ok(
-      afterBackspace.preserve.some((entry) => entry.markdownTail.endsWith('-[] \n')),
-      `RS-62 did not replace the raw tail row in place: ${JSON.stringify(afterBackspace.preserve)}`
-    )
-    assert.equal(
-      afterBackspace.preserve.some((entry) => entry.markdownTail.includes('-[ ] \n-[] ')),
-      false,
-      `RS-62 duplicated old and edited tail rows: ${JSON.stringify(afterBackspace.preserve)}`
-    )
+    // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+    // The exact source / saved-bytes checks below cover the in-place, no-duplicate outcome either way.
+    await assertPublishedBy(evaluate, async () => {
+      assert.equal(
+        afterBackspace.preserve.some((entry) => entry.reason === 'diverged-tail-block-append'),
+        false,
+        `RS-62 was still misclassified as a fresh tail append: ${JSON.stringify(afterBackspace.preserve)}`
+      )
+      assert.ok(
+        afterBackspace.preserve.some((entry) => entry.markdownTail.endsWith('-[] \n')),
+        `RS-62 did not replace the raw tail row in place: ${JSON.stringify(afterBackspace.preserve)}`
+      )
+      assert.equal(
+        afterBackspace.preserve.some((entry) => entry.markdownTail.includes('-[ ] \n-[] ')),
+        false,
+        `RS-62 duplicated old and edited tail rows: ${JSON.stringify(afterBackspace.preserve)}`
+      )
+    }, 'RS-62 inner Backspace', { since: mark })
     assert.equal(afterBackspace.toasts.some((text) => warningPattern.test(text)), false, `RS-62 showed source warning: ${JSON.stringify(afterBackspace.toasts)}`)
 
     assert.equal(await toggleSource(app), true, 'could not switch to source mode')

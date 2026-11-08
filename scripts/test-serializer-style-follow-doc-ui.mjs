@@ -8,6 +8,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-serializer-style-${process.pid}`
 const port = Number(process.env.CDP_PORT || 15975 + (process.pid % 20))
 
@@ -110,7 +116,7 @@ const main = async () => {
       throw new Error(`case1 warnings: ${JSON.stringify(dump.toasts)}`)
     }
     if ((dump.bad || []).length) throw new Error(`case1 integrity: ${JSON.stringify(dump.bad)}`)
-    if (!(dump.preserve || []).length) throw new Error('case1: nothing published')
+    if (!productPath && !(dump.preserve || []).length) throw new Error('case1: nothing published')
 
     // Case 2 — trace-48689 shape: backspace at the start of 用途与证据 merges
     // it into the 关键制备 item (two paragraphs in one item).

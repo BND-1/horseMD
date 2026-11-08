@@ -2279,6 +2279,20 @@ assert.equal(
   '# 你好\n\n1. 测试\n   1. 子项\n',
   'a generated non-empty nested ordered item should remain compact'
 )
+// Crepe writes a TIGHT nested empty item (`- 测试\n  - <br />`). Without the
+// `<br />` it would read as a setext heading (an empty item cannot interrupt
+// a paragraph), the generated source failed validation and the raw
+// canonical leaked `<br />` (test:list-marker-empty-source-ui).
+assert.equal(
+  generatedScratchMarkdown('# 测试\n\n- 测试\n  - <br />\n'),
+  '# 测试\n\n- 测试\n\n  - \n',
+  'a tight generated empty nested item gets the blank line that keeps it a list item'
+)
+assert.equal(
+  generatedScratchMarkdown('- a\n- <br />\n- b\n'),
+  '- a\n- \n- b\n',
+  'an empty sibling item stays tight'
+)
 
 // RS-49 (0.13.94 real trace): after a transient `* 1. ` input-rule frame,
 // Crepe escapes the number once IME/body text makes it literal again. A fresh

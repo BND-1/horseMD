@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs84-cross-list-selection-delete-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -54,7 +55,9 @@ const fixture = [
 ].join('\n')
 
 const selectedSource = '- 看了呢分\n\n2. 斛律v哦\n\n- u高科技\n'
+// The empty item is its marker (`-`, source reprint); the legacy path wrote `- `.
 const firstExpected = fixture.replace(selectedSource, '- \n')
+const firstExpectedReprint = fixture.replace(selectedSource, '-\n')
 const secondExpected = fixture.replace(selectedSource, '')
 
 const waitFor = async (check, message, attempts = 180) => {
@@ -224,6 +227,8 @@ try {
   assert.equal(selected.text.includes('斛律v哦'), true, `selection missed ordered item: ${JSON.stringify(selected)}`)
   assert.equal(selected.text.includes('u高科技'), true, `selection missed final bullet: ${JSON.stringify(selected)}`)
 
+  const evaluate = (expression) => app.evaluate(expression)
+  const firstMark = await publishMark(evaluate)
   await physicalBackspace(app, 260)
   await sleep(800)
   const first = await snapshot(app)
@@ -232,26 +237,30 @@ try {
   assert.equal(first.emptyBulletBeforeLiteral, true, `first Backspace did not leave one empty bullet before the surviving literal item: ${JSON.stringify(first)}`)
   assert.equal(first.integrity.some((entry) => entry.ok === false), false, `first Backspace produced integrity failure: ${JSON.stringify(first.integrity)}`)
   assert.equal(first.toasts.some((text) => warningPattern.test(text)), false, `first Backspace showed warning: ${JSON.stringify(first.toasts)}`)
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(
+      first.preserve.some((entry) =>
+        entry.reason === 'diverged-cross-list-selection-delete-to-empty-bullet' && entry.preserved === true),
+      true,
+      `first Backspace was not owned by the dedicated cross-list selection proof: ${JSON.stringify(first.preserve)}`
+    )
+    assert.equal(
+      first.integrity.some((entry) =>
+        entry.preservationReason === 'diverged-cross-list-selection-delete-to-empty-bullet' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
+      true,
+      `first Backspace candidate was not strictly source-equivalent: ${JSON.stringify(first.integrity)}`
+    )
+  }, 'RS-84 first Backspace', { since: firstMark })
   assert.equal(
-    first.preserve.some((entry) =>
-      entry.reason === 'diverged-cross-list-selection-delete-to-empty-bullet' && entry.preserved === true),
-    true,
-    `first Backspace was not owned by the dedicated cross-list selection proof: ${JSON.stringify(first.preserve)}`
-  )
-  assert.equal(
-    first.integrity.some((entry) =>
-      entry.preservationReason === 'diverged-cross-list-selection-delete-to-empty-bullet' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
-    true,
-    `first Backspace candidate was not strictly source-equivalent: ${JSON.stringify(first.integrity)}`
-  )
-  assert.equal(
-    first.integrity.some((entry) => String(entry.candidate || '').startsWith(firstExpected)),
+    first.integrity.some((entry) => String(entry.candidate || '').startsWith(firstExpected) || String(entry.candidate || '').startsWith(firstExpectedReprint)),
     true,
     `first Backspace source candidate was not the exact empty-bullet replacement: ${JSON.stringify(first.integrity)}`
   )
 
   await clearDiagnostics(app)
+  const secondMark = await publishMark(evaluate)
   await physicalBackspace(app, 220)
   await sleep(800)
   const second = await snapshot(app)
@@ -261,27 +270,29 @@ try {
   assert.equal(second.topLevelEmptyParagraphs >= 1, true, `second Backspace did not lift to a top-level empty paragraph: ${JSON.stringify(second)}`)
   assert.equal(second.integrity.some((entry) => entry.ok === false), false, `second Backspace produced integrity failure: ${JSON.stringify(second.integrity)}`)
   assert.equal(second.toasts.some((text) => warningPattern.test(text)), false, `second Backspace showed warning: ${JSON.stringify(second.toasts)}`)
-  assert.equal(
-    second.preserve.some((entry) =>
-      entry.reason === 'list-empty-item-first-lifted' &&
-      entry.preserved === true &&
-      entry.integrityProof?.kind === 'transaction-list-empty-item-first-lift-proof' &&
-      entry.integrityProof?.family === 'list-empty-item-first-lift'),
-    true,
-    `second Backspace was not transaction-owned by first-empty lift: ${JSON.stringify(second.preserve)}`
-  )
-  assert.equal(
-    second.preserve.some((entry) => entry.reason === 'empty-list-item-removed'),
-    false,
-    `second Backspace unexpectedly fell back to legacy empty-list-item-removed: ${JSON.stringify(second.preserve)}`
-  )
-  assert.equal(
-    second.integrity.some((entry) =>
-      entry.preservationReason === 'list-empty-item-first-lifted' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
-    true,
-    `second Backspace transaction candidate was not strictly source-equivalent: ${JSON.stringify(second.integrity)}`
-  )
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(
+      second.preserve.some((entry) =>
+        entry.reason === 'list-empty-item-first-lifted' &&
+        entry.preserved === true &&
+        entry.integrityProof?.kind === 'transaction-list-empty-item-first-lift-proof' &&
+        entry.integrityProof?.family === 'list-empty-item-first-lift'),
+      true,
+      `second Backspace was not transaction-owned by first-empty lift: ${JSON.stringify(second.preserve)}`
+    )
+    assert.equal(
+      second.preserve.some((entry) => entry.reason === 'empty-list-item-removed'),
+      false,
+      `second Backspace unexpectedly fell back to legacy empty-list-item-removed: ${JSON.stringify(second.preserve)}`
+    )
+    assert.equal(
+      second.integrity.some((entry) =>
+        entry.preservationReason === 'list-empty-item-first-lifted' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
+      true,
+      `second Backspace transaction candidate was not strictly source-equivalent: ${JSON.stringify(second.integrity)}`
+    )
+  }, 'RS-84 second Backspace', { since: secondMark })
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-84 source')
   const source = await waitFor(() => visibleSource(app), 'RS-84 source textarea missing')

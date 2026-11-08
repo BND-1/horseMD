@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs59-escaped-standalone-${process.pid}`
 const file = join(root, 'doc.md')
@@ -133,16 +134,22 @@ async function main() {
       window.__hmFlushTrace = []
     })()`)
 
+    const evaluate = (expression) => app.evaluate(expression)
+    const dashMark = await publishMark(evaluate)
     await key(app, '-', 'Minus', 189, '-')
     await sleep(750)
     const afterDash = await snapshot(app)
     assert.equal(afterDash.integrity.some((entry) => entry.ok === false), false, `RS-59 integrity failed at lone dash stage: ${JSON.stringify(afterDash)}`)
-    assert.ok(
-      afterDash.preserve.some((entry) => entry.markdownTail.includes('\\-')),
-      `lone dash did not stay as a protected standalone paragraph: ${JSON.stringify(afterDash.preserve)}`
-    )
+    // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+    await assertPublishedBy(evaluate, async () => {
+      assert.ok(
+        afterDash.preserve.some((entry) => entry.markdownTail.includes('\\-')),
+        `lone dash did not stay as a protected standalone paragraph: ${JSON.stringify(afterDash.preserve)}`
+      )
+    }, 'RS-59 lone dash', { since: dashMark })
     assert.equal(afterDash.toasts.some((text) => warningPattern.test(text)), false, `RS-59 warned at lone dash stage: ${JSON.stringify(afterDash.toasts)}`)
 
+    const expandMark = await publishMark(evaluate)
     await app.send('Input.insertText', { text: '【】' })
     await sleep(900)
     const expanded = await snapshot(app)
@@ -151,10 +158,12 @@ async function main() {
     assert.ok(expanded.topLevelParagraphs.includes('-【】'), `expanded standalone paragraph missing: ${JSON.stringify(expanded)}`)
     assert.equal(expanded.topLevelParagraphs.includes('哈哈；-【】'), false, `RS-59 glued the standalone paragraph to its previous sibling: ${JSON.stringify(expanded)}`)
     assert.equal(expanded.integrity.some((entry) => entry.ok === false), false, `RS-59 integrity failure after expansion: ${JSON.stringify(expanded)}`)
-    assert.ok(
-      expanded.preserve.some((entry) => entry.reason === 'mapped-line-change' && entry.markdownTail.includes('哈哈；\n\n-【】')),
-      `missing RS-59 mapped-line fallback proof: ${JSON.stringify(expanded.preserve)}`
-    )
+    await assertPublishedBy(evaluate, async () => {
+      assert.ok(
+        expanded.preserve.some((entry) => entry.reason === 'mapped-line-change' && entry.markdownTail.includes('哈哈；\n\n-【】')),
+        `missing RS-59 mapped-line fallback proof: ${JSON.stringify(expanded.preserve)}`
+      )
+    }, 'RS-59 expansion', { since: expandMark })
     assert.equal(expanded.toasts.some((text) => warningPattern.test(text)), false, `RS-59 showed warning after expansion: ${JSON.stringify(expanded.toasts)}`)
 
     assert.equal(await toggleSource(app), true, 'could not switch to source mode')

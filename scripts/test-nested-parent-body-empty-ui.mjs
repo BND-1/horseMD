@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs67-parent-empty-${process.pid}`
 const file = join(root, 'rs-67.md')
@@ -114,6 +115,7 @@ try {
   })()`)
 
   assert.equal(await placeCaretAfterParent(app), true, 'could not place caret after RS-67 parent body')
+  const mark = await publishMark(app.evaluate)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
   await sleep(950)
 
@@ -125,10 +127,13 @@ try {
   assert.equal(after.childNested, true, `RS-67 promoted nested child: ${JSON.stringify(after)}`)
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-67 integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-67 warning toast: ${JSON.stringify(after.toasts)}`)
-  assert.equal(after.integrity.some((entry) =>
-    entry.preservationReason === 'nested-list-parent-body-emptied' &&
-    entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
-  ), true, `RS-67 dedicated proof missing: ${JSON.stringify(after.integrity)}`)
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(after.integrity.some((entry) =>
+      entry.preservationReason === 'nested-list-parent-body-emptied' &&
+      entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
+    ), true, `RS-67 dedicated proof missing: ${JSON.stringify(after.integrity)}`)
+  }, 'RS-67 parent body emptied', { since: mark })
 
   assert.equal(await toggleSource(app), true, 'could not open RS-67 source mode')
   const source = await waitFor(() => visibleSource(app), 'RS-67 source textarea missing')

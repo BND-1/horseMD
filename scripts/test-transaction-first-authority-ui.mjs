@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-transaction-first-authority-${process.pid}`
 const file = join(root, 'authority.md')
@@ -68,26 +69,36 @@ const pauseToasts = (evaluate) => evaluate(`
     .filter((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text))
 `)
 
+const ownedEntry = (trace) => trace.find((entry) =>
+  entry.phase === 'reconcile' &&
+  entry.publicationOwner === 'transaction' &&
+  entry.authorityDecision === 'authority-owned'
+) || null
+
+const legacyFallbackEntry = (trace) => trace.find((entry) =>
+  entry.phase === 'reconcile' &&
+  entry.publicationOwner === 'legacy' &&
+  entry.authorityDecision !== 'authority-owned'
+) || null
+
 async function waitForOwned(evaluate, label) {
-  return waitFor(async () => {
-    const trace = await authorityTrace(evaluate)
-    return trace.find((entry) =>
-      entry.phase === 'reconcile' &&
-      entry.publicationOwner === 'transaction' &&
-      entry.authorityDecision === 'authority-owned'
-    ) || null
-  }, `${label} did not publish through transaction-first authority`)
+  return waitFor(async () => ownedEntry(await authorityTrace(evaluate)),
+    `${label} did not publish through transaction-first authority`)
 }
 
 async function waitForLegacyFallback(evaluate, label) {
-  return waitFor(async () => {
-    const trace = await authorityTrace(evaluate)
-    return trace.find((entry) =>
-      entry.phase === 'reconcile' &&
-      entry.publicationOwner === 'legacy' &&
-      entry.authorityDecision !== 'authority-owned'
-    ) || null
-  }, `${label} did not remain on legacy fallback`)
+  return waitFor(async () => legacyFallbackEntry(await authorityTrace(evaluate)),
+    `${label} did not remain on legacy fallback`)
+}
+
+// Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+// Wait until the step published through either path, then run the
+// transaction-first checks only when the source reprint did not publish it.
+async function checkStep(evaluate, since, label, findEntry, check) {
+  await waitFor(async () =>
+    (await reprintPublished(evaluate, { since })) || Boolean(findEntry(await authorityTrace(evaluate))),
+  `${label} did not publish (no source reprint, no transaction-first trace)`)
+  await assertPublishedBy(evaluate, check, label, { since })
 }
 
 async function main() {
@@ -122,41 +133,50 @@ async function main() {
     })()`)
 
     await clickTextEnd(evaluate, send, 'alpha')
+    let mark = await publishMark(evaluate)
     await typeTextLikeUser(send, 'X', { delayMs: 40 })
-    const insertTrace = await waitForOwned(evaluate, 'plain insertion')
-    assert.equal(insertTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.equal(insertTrace.mode, 'authoritative')
-    assert.equal(insertTrace.comparison, 'legacy-unavailable')
-    assert.equal(insertTrace.promotionEligible, false, 'authority must not wait for legacy byte-equal evidence')
-    assert.deepEqual(insertTrace.stepNames, ['ReplaceStep'])
-    const coordinatorInsert = await waitFor(async () => {
-      const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
-      return trace.find((entry) =>
-        entry.phase === 'published' &&
-        entry.boundary === 'transaction-first-early-authority' &&
-        entry.owner === 'transaction' &&
-        entry.family === 'plain-paragraph-inline-replace' &&
-        entry.reason === 'plain-text-transactions'
-      ) || null
-    }, 'plain insertion bypassed SourceSyncCoordinator transaction publication')
-    assert.ok(coordinatorInsert.revision >= 1)
+    await checkStep(evaluate, mark, 'plain insertion', ownedEntry, async () => {
+      const insertTrace = await waitForOwned(evaluate, 'plain insertion')
+      assert.equal(insertTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.equal(insertTrace.mode, 'authoritative')
+      assert.equal(insertTrace.comparison, 'legacy-unavailable')
+      assert.equal(insertTrace.promotionEligible, false, 'authority must not wait for legacy byte-equal evidence')
+      assert.deepEqual(insertTrace.stepNames, ['ReplaceStep'])
+      const coordinatorInsert = await waitFor(async () => {
+        const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
+        return trace.find((entry) =>
+          entry.phase === 'published' &&
+          entry.boundary === 'transaction-first-early-authority' &&
+          entry.owner === 'transaction' &&
+          entry.family === 'plain-paragraph-inline-replace' &&
+          entry.reason === 'plain-text-transactions'
+        ) || null
+      }, 'plain insertion bypassed SourceSyncCoordinator transaction publication')
+      assert.ok(coordinatorInsert.revision >= 1)
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0)
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'beta')
+    mark = await publishMark(evaluate)
     await typeTextLikeUser(send, '*', { delayMs: 40 })
-    const syntaxTrace = await waitForLegacyFallback(evaluate, 'Markdown-sensitive insertion')
-    assert.equal(syntaxTrace.transactionReason, 'syntax-sensitive-insert')
-    assert.equal(syntaxTrace.publicationOwner, 'legacy')
-    assert.equal(syntaxTrace.authorityEligible, false)
+    await checkStep(evaluate, mark, 'Markdown-sensitive insertion', legacyFallbackEntry, async () => {
+      const syntaxTrace = await waitForLegacyFallback(evaluate, 'Markdown-sensitive insertion')
+      assert.equal(syntaxTrace.transactionReason, 'syntax-sensitive-insert')
+      assert.equal(syntaxTrace.publicationOwner, 'legacy')
+      assert.equal(syntaxTrace.authorityEligible, false)
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0)
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'gamma')
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 40 })
-    const deleteTrace = await waitForOwned(evaluate, 'plain deletion')
-    assert.equal(deleteTrace.transactionFamily, 'plain-paragraph-inline-replace')
-    assert.equal(deleteTrace.publicationOwner, 'transaction')
+    await checkStep(evaluate, mark, 'plain deletion', ownedEntry, async () => {
+      const deleteTrace = await waitForOwned(evaluate, 'plain deletion')
+      assert.equal(deleteTrace.transactionFamily, 'plain-paragraph-inline-replace')
+      assert.equal(deleteTrace.publicationOwner, 'transaction')
+    })
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'delta')
@@ -164,10 +184,13 @@ async function main() {
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', modifiers: 8, delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', modifiers: 8, delayMs: 25 })
+    mark = await publishMark(evaluate)
     await typeTextLikeUser(send, 'ZZ', { delayMs: 40 })
-    const replaceTrace = await waitForOwned(evaluate, 'rapid same-paragraph replacement')
-    assert.ok(replaceTrace.chainLength >= 2, `rapid replacement chain missing: ${JSON.stringify(replaceTrace)}`)
-    assert.equal(replaceTrace.publicationOwner, 'transaction')
+    await checkStep(evaluate, mark, 'rapid same-paragraph replacement', ownedEntry, async () => {
+      const replaceTrace = await waitForOwned(evaluate, 'rapid same-paragraph replacement')
+      assert.ok(replaceTrace.chainLength >= 2, `rapid replacement chain missing: ${JSON.stringify(replaceTrace)}`)
+      assert.equal(replaceTrace.publicationOwner, 'transaction')
+    })
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'splitme')
@@ -175,20 +198,26 @@ async function main() {
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
     await pressKey(send, { key: 'ArrowRight', code: 'ArrowRight', delayMs: 25 })
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: 40 })
-    const splitTrace = await waitForLegacyFallback(evaluate, 'paragraph split')
-    assert.equal(splitTrace.transactionReason, 'phase1-structural-slice')
-    assert.equal(splitTrace.transactionFamily, null)
-    assert.equal(splitTrace.publicationOwner, 'legacy')
+    await checkStep(evaluate, mark, 'paragraph split', legacyFallbackEntry, async () => {
+      const splitTrace = await waitForLegacyFallback(evaluate, 'paragraph split')
+      assert.equal(splitTrace.transactionReason, 'phase1-structural-slice')
+      assert.equal(splitTrace.transactionFamily, null)
+      assert.equal(splitTrace.publicationOwner, 'legacy')
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0)
 
     await evaluate(`window.__hmTransactionFirstTrace = []`)
     await clickTextEnd(evaluate, send, 'item')
     await pressKey(send, { key: 'Home', code: 'Home', delayMs: 25 })
+    mark = await publishMark(evaluate)
     await pressKey(send, { key: 'Backspace', code: 'Backspace', delayMs: 40 })
-    const listTrace = await waitForLegacyFallback(evaluate, 'list Backspace')
-    assert.notEqual(listTrace.transactionReason, 'plain-text-transactions')
-    assert.equal(listTrace.publicationOwner, 'legacy')
+    await checkStep(evaluate, mark, 'list Backspace', legacyFallbackEntry, async () => {
+      const listTrace = await waitForLegacyFallback(evaluate, 'list Backspace')
+      assert.notEqual(listTrace.transactionReason, 'plain-text-transactions')
+      assert.equal(listTrace.publicationOwner, 'legacy')
+    })
     assert.equal(await pauseToasts(evaluate).then((items) => items.length), 0)
 
     assert.equal(await toggleSource(evaluate), true, 'could not switch to source mode')

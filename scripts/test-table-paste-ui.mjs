@@ -72,6 +72,19 @@ const cases = [
     rows: [['A', 'B'], ['S1', 'S2']]
   },
   {
+    // A row selected by its handle (CellSelection), then a block pasted: the
+    // default replace split the table around the block and could leave a
+    // header row without cells (fuzz UI seed 272).
+    label: 'Formula pasted over a body row selected by its handle stays in the table',
+    at: 'cell', selectRow: 1, text: '$$\nE = mc^2\n$$\n', tables: 1,
+    rows: [['A', 'B'], ['E = mc^2', '']]
+  },
+  {
+    label: 'Formula pasted over the header row selected by its handle stays in the table',
+    at: 'cell', selectRow: 0, text: '$$\nE = mc^2\n$$\n', tables: 1,
+    rows: [['E = mc^2', ''], ['1', '2']]
+  },
+  {
     label: 'Heading + list pasted inside a table cell joins into the cell',
     at: 'cell', text: '# 小标题\n\n- 一\n- 二\n', tables: 1,
     rows: [['A', 'B'], ['1小标题一二', '2']], cellSource: '| 1小标题<br>一<br>二 |'
@@ -119,6 +132,16 @@ for (const [index, testCase] of cases.entries()) {
     for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point })
     await sleep(250)
     if (testCase.at === 'line') { await pressKey(send, { key: 'Enter', code: 'Enter', text: '\r' }); await sleep(400) }
+    if (testCase.selectRow != null) {
+      // Hover the row, click its drag handle: the row becomes a CellSelection.
+      const cell = await app.evaluate(`(() => { const c = ${realTables}[0].querySelectorAll('tr')[${testCase.selectRow}].querySelector('th,td'); const b = c.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } })()`)
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...cell })
+      await sleep(400)
+      const handle = await waitFor(() => app.evaluate(`(() => { const h = [...document.querySelectorAll('.milkdown-table-block .cell-handle[data-role="row-drag-handle"]')].find(n => n.dataset.show === 'true'); if (!h) return null; const b = h.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } })()`), 'row handle did not show')
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, button: type === 'mouseMoved' ? 'none' : 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1, ...handle })
+      await sleep(300)
+      assert.equal(await app.evaluate(`(() => { const v = ${editor}.pmViewDesc?.view || null; return document.querySelectorAll('.selectedCell').length })()`) > 0, true, 'row not selected')
+    }
     await app.evaluate(`(() => {
       const data = new DataTransfer()
       data.setData('text/plain', ${JSON.stringify(testCase.text)})
@@ -140,7 +163,11 @@ for (const [index, testCase] of cases.entries()) {
         const handle = (${block}).querySelector('[data-role="row-drag-handle"]')
         const dt = new DataTransfer()
         handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ${src.x}, clientY: ${src.y} }))
-        await new Promise(r => setTimeout(r, 60))
+        // Crepe shows its preview in the next animation frame and ignores
+        // dragover / drop until then; a background window (Windows) can wait
+        // well past 60 ms for that frame.
+        const preview = (${block}).querySelector('.drag-preview')
+        for (let i = 0; i < 100 && preview?.dataset.show !== 'true'; i++) await new Promise(r => setTimeout(r, 20))
         for (let k = 1; k <= 6; k++) { window.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ${src.x}, clientY: ${src.y} + (${dst.y} - ${src.y}) * k / 6 })); await new Promise(r => setTimeout(r, 50)) }
         window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ${dst.x}, clientY: ${dst.y} }))
         window.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }))

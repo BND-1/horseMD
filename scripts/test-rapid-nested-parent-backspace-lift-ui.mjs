@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs68-rapid-parent-lift-${process.pid}`
 const file = join(root, 'rs-68.md')
@@ -163,6 +164,7 @@ try {
   })()`)
 
   assert.equal(await placeCaretAfterParent(app), true, 'could not place caret after RS-68 parent body')
+  const mark = await publishMark(app.evaluate)
 
   // Deliberately faster than the deferred markdownUpdated cadence. Three
   // Backspaces remove 啊/额/法; the fourth lifts the now-empty ordered parent.
@@ -182,23 +184,26 @@ try {
   assert.equal(after.childText, '微风', `RS-68 changed nested child text: ${JSON.stringify(after)}`)
   assert.equal(after.childListTag, 'OL', `RS-68 child is no longer ordered: ${JSON.stringify(after)}`)
   assert.equal(after.childNested, true, `RS-68 child escaped the parent item: ${JSON.stringify(after)}`)
-  assert.equal(after.preserve.some((entry) => entry.reason === 'rapid-nested-ordered-parent-backspace-lift' && entry.preserved === true), true,
-    `RS-68 combined proof did not own the rapid batch: ${JSON.stringify(after.preserve)}`)
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-68 integrity failure: ${JSON.stringify(after.integrity)}`)
-  assert.equal(after.integrity.some((entry) =>
-    entry.preservationReason === 'rapid-nested-ordered-parent-backspace-lift' &&
-    entry.ok === true && entry.semanticOk === true &&
-    (entry.listSlotsMatch === true || entry.localizedListProofOk === true)
-  ), true, `RS-68 candidate was not fully equivalent: ${JSON.stringify(after.integrity)}`)
-  if (keyDelay >= 70) {
-    assert.equal(after.coordinator.some((entry) =>
-      entry.phase === 'published' &&
-      entry.boundary === 'forced-flush' &&
-      entry.owner === 'legacy' &&
-      entry.family === 'legacy-preservation' &&
-      entry.reason === 'rapid-nested-ordered-parent-backspace-lift'
-    ), true, `RS-68 70ms forced flush bypassed SourceSyncCoordinator publication: ${JSON.stringify(after.coordinator)}`)
-  }
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(after.preserve.some((entry) => entry.reason === 'rapid-nested-ordered-parent-backspace-lift' && entry.preserved === true), true,
+      `RS-68 combined proof did not own the rapid batch: ${JSON.stringify(after.preserve)}`)
+    assert.equal(after.integrity.some((entry) =>
+      entry.preservationReason === 'rapid-nested-ordered-parent-backspace-lift' &&
+      entry.ok === true && entry.semanticOk === true &&
+      (entry.listSlotsMatch === true || entry.localizedListProofOk === true)
+    ), true, `RS-68 candidate was not fully equivalent: ${JSON.stringify(after.integrity)}`)
+    if (keyDelay >= 70) {
+      assert.equal(after.coordinator.some((entry) =>
+        entry.phase === 'published' &&
+        entry.boundary === 'forced-flush' &&
+        entry.owner === 'legacy' &&
+        entry.family === 'legacy-preservation' &&
+        entry.reason === 'rapid-nested-ordered-parent-backspace-lift'
+      ), true, `RS-68 70ms forced flush bypassed SourceSyncCoordinator publication: ${JSON.stringify(after.coordinator)}`)
+    }
+  }, 'RS-68 rapid nested parent Backspace lift', { since: mark })
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-68 warning toast: ${JSON.stringify(after.toasts)}`)
 
   assert.equal(await toggleSource(app), true, 'could not open RS-68 source mode')

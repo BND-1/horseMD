@@ -187,11 +187,33 @@ const PASTE_SNIPPETS = [
 const visiblePm = `[...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)`
 
 // Live document + committed source at the first pause (engine triage).
+// Debug (FUZZ_WATCH_NEWLINE=1): record the first transaction after which a
+// non-code text block holds a raw newline (editor-textblock-newlines.js
+// should never let one through). Read back as atFailure.newlineWatch.
+async function installNewlineWatch(app) {
+  await app.evaluate(`(() => {
+    const H = globalThis.__hmSourceReprintHarness
+    const view = H?.view?.()
+    if (!view) return
+    const raw = (doc) => { let hit = null; doc.descendants((node, pos, parent) => { if (hit) return false; if (node.isText && parent?.isTextblock && !parent.type.spec.code && node.text.includes('\\n')) hit = { pos, parent: parent.type.name, text: node.text.slice(0, 80) }; return !hit }); return hit }
+    const { Plugin } = Object.getPrototypeOf(view.state.plugins[0]).constructor ? { Plugin: view.state.plugins[0].constructor } : {}
+    const watch = new Plugin({ appendTransaction(trs, oldState, state) {
+      if (globalThis.__hmNewlineWatch || raw(oldState.doc)) return null
+      const hit = raw(state.doc)
+      if (hit) globalThis.__hmNewlineWatch = { hit, trs: trs.map((tr) => ({ meta: Object.keys(tr.meta || {}), steps: tr.steps.map((step) => step.toJSON()) })) }
+      return null
+    } })
+    view.updateState(view.state.reconfigure({ plugins: [...view.state.plugins, watch] }))
+  })()`)
+}
+
 async function pauseSnapshot(app) {
   try {
     return JSON.parse(await app.evaluate(`JSON.stringify({
       liveDoc: (${visiblePm})?.pmViewDesc?.node?.toJSON() ?? null,
-      liveSource: globalThis.__hmSourceReprintHarness?.liveSource?.() ?? null
+      liveSource: globalThis.__hmSourceReprintHarness?.liveSource?.() ?? null,
+      atFailure: globalThis.__hmLastSyncFailure ?? null,
+      newlineWatch: globalThis.__hmNewlineWatch ?? null
     })`))
   } catch {
     return {}
@@ -280,12 +302,18 @@ function normalizeDoc(json) {
       // (A hard break there has none either — table cells excepted: a cell's
       // paragraph is normalized by its own rule below.)
       const softBreak = (child) => child?.type === 'hardbreak' && (child?.attrs?.isInline === true || !inTableCell)
-      while (node.content.length > 1 && softBreak(node.content.at(-1))) node.content.pop()
-      while (node.content.length > 1 && softBreak(node.content[0])) node.content.shift()
-      const last = node.content.at(-1)
-      if (last?.type === 'text' && /[ \t]+$/.test(last.text) && node.content.every((child) => child.type !== 'table_cell')) {
-        last.text = last.text.replace(/[ \t]+$/, '')
-        if (!last.text) node.content.pop()
+      // A text block holding nothing but such breaks is an empty block (Typora
+      // too: `>` + Shift+Enter saves an empty quote; fuzz seed 612).
+      while (node.content.length && softBreak(node.content.at(-1))) node.content.pop()
+      while (node.content.length && softBreak(node.content[0])) node.content.shift()
+      // Trailing blanks of plain text only: once a blank-only run is gone,
+      // inline code may end the block, and its blanks are content (fuzz seed
+      // 880 on Windows: `1. ` + four spaces compared as `1.`).
+      const plain = (child) => child?.type === 'text' && !(child.marks || []).some((mark) => mark.type === 'inlineCode')
+      while (plain(node.content.at(-1)) && /[ \t]+$/.test(node.content.at(-1).text)) {
+        node.content.at(-1).text = node.content.at(-1).text.replace(/[ \t]+$/, '')
+        if (node.content.at(-1).text) break
+        node.content.pop()
       }
       // An authored row with fewer cells than the widest row stays irregular
       // in source (author bytes win); the live editor pads it (prosemirror-
@@ -306,13 +334,17 @@ function normalizeDoc(json) {
       // it as an editor-only transient. Empty list items stay significant.
       // Inside a quote or list item, an empty paragraph next to real content
       // has no Markdown spelling either (source reprint design §5).
-      if (node.type === 'list_item' && node.content.some((child) => !(child.type === 'paragraph' && !child.content?.length))) {
-        node.content = node.content.filter((child) => !(child.type === 'paragraph' && !child.content?.length))
+      if (node.type === 'list_item') {
+        // Only empty paragraphs left (one of them blanks only, which have no
+        // spelling): the item is empty, one empty paragraph (seed 269).
+        const kept = node.content.filter((child) => !(child.type === 'paragraph' && !child.content?.length))
+        node.content = kept.length ? kept : [{ type: 'paragraph' }]
       }
       if (node.type === 'doc' || node.type === 'blockquote' || node.type === 'list_item') {
         if (node.type !== 'list_item') node.content = node.content.filter((child) => !(child.type === 'paragraph' && !child.content?.length))
-        // CommonMark merges blank-separated adjacent lists of the same kind;
-        // two such PM lists have no distinct Markdown encoding.
+        // Adjacent lists of the same kind read back as one (CommonMark), and
+        // the source keeps the markers the user wrote (Typora): `1.` typed
+        // after a list stays `1.`, an untouched `- b` stays `-`.
         const mergedLists = []
         for (const child of node.content) {
           const previous = mergedLists.at(-1)
@@ -580,16 +612,21 @@ async function dragRandomBlock(app, rand) {
     return { from, to, gutter: { x: Math.round(Math.max((host?.getBoundingClientRect().left ?? r.left - 60) + 2, pm.getBoundingClientRect().left - 8)), y: Math.round(r.top + Math.min(12, r.height / 2)) } }
   })(${rand()}, ${rand()})`)
   if (!plan) return null
-  await mouseAt(app, 'mouseMoved', plan.gutter)
-  await sleep(300)
-  const grip = await app.evaluate(`(() => {
-    const handle = [...document.querySelectorAll('.milkdown-block-handle')].find((n) => n.dataset.show === 'true')
-    const item = handle && [...handle.querySelectorAll('.operation-item')].pop()
-    if (!item) return null
-    const r = item.getBoundingClientRect()
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-  })()`)
-  if (!grip) return { ...plan, dropped: false }
+  // The handle shows after the pointer rests in the gutter: wait for it
+  // (the block-handle tests do), nudging the pointer like a hand would.
+  let grip = null
+  for (let attempt = 0; attempt < 8 && !grip; attempt += 1) {
+    await mouseAt(app, 'mouseMoved', { x: plan.gutter.x + (attempt % 2), y: plan.gutter.y })
+    await sleep(180)
+    grip = await app.evaluate(`(() => {
+      const handle = [...document.querySelectorAll('.milkdown-block-handle')].find((n) => n.dataset.show === 'true')
+      const item = handle && [...handle.querySelectorAll('.operation-item')].pop()
+      if (!item) return null
+      const r = item.getBoundingClientRect()
+      return r.width ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null
+    })()`)
+  }
+  if (!grip) return { ...plan, dropped: false, why: 'no-handle' }
   await mouseAt(app, 'mouseMoved', grip)
   await mouseAt(app, 'mousePressed', grip)
   const dropped = await app.evaluate(`(() => {
@@ -608,7 +645,7 @@ async function dragRandomBlock(app, rand) {
   })()`)
   await mouseAt(app, 'mouseReleased', grip)
   await sleep(200)
-  return { ...plan, dropped }
+  return { ...plan, dropped, ...(dropped ? {} : { why: 'drop-not-handled' }) }
 }
 
 // Hover a random table cell, click its row or column handle, click one of
@@ -853,6 +890,7 @@ async function runSeed(seed) {
     await app.send('Runtime.enable')
     for (let attempt = 0; attempt < 60 && !(await docJson(app)); attempt += 1) await sleep(150)
     await installToastRecorder(app)
+    if (process.env.FUZZ_WATCH_NEWLINE === '1') await installNewlineWatch(app)
     // Start like a user: click into the document first.
     report.ops.push({ index: -1, op: 'click', target: await clickRandomText(app, rand) })
     for (let index = 0; index < opsPerSeed; index += 1) {
@@ -863,8 +901,22 @@ async function runSeed(seed) {
       } catch (error) {
         detail = { error: String(error?.message || error) }
       }
-      report.ops.push({ index, op, ...detail })
+      // Source length next to a fresh serialization of the live document.
+      // Blank lines inside a quote read back as nothing, so a source that
+      // grows with them passes every equivalence check (seed 3815: 5 MB of
+      // `>` lines saved for a 1 KB document).
+      const sizes = JSON.parse(await app.evaluate(`(() => { const h = globalThis.__hmSourceReprintHarness; try { return JSON.stringify({ source: h?.liveSource?.()?.length ?? null, serialized: h ? h.serialize(h.liveDoc()).length : null }) } catch { return 'null' } })()`) || 'null')
+      report.ops.push({ index, op, ...detail, ...(sizes ? { sourceLength: sizes.source } : {}) })
+      if (process.env.FUZZ_DUMP_SOURCE === '1') {
+        await writeFile(join(seedDir, `op-${index}.md`), (await app.evaluate(`globalThis.__hmSourceReprintHarness?.liveSource?.() ?? ''`)) || '')
+        await writeFile(join(seedDir, `op-${index}.doc.json`), (await docJson(app)) || 'null')
+      }
       await drainShadow(index)
+      if (sizes?.source != null && sizes.serialized != null && sizes.source > sizes.serialized * 3 + 4000 && !report.firstCorrupt) {
+        report.firstCorrupt = { opIndex: index, bloat: sizes, recentOps: report.ops.slice(-8), trace: await traceTails(app) }
+        console.log(`[seed ${seed}] BLOAT at op ${index} (${op}): source ${sizes.source} chars, document serializes to ${sizes.serialized}`)
+        break
+      }
       // Fail-closed warnings can fire on any op; capture them with their op.
       const toasts = await app.evaluate(`(window.__fuzzToasts || []).slice()`)
       const mismatch = toasts.find(isMismatchToast)
@@ -883,7 +935,8 @@ async function runSeed(seed) {
           break
         }
         if (result.corrupt) {
-          report.firstCorrupt = { opIndex: index, diff: result.corrupt, recentOps: report.ops.slice(-checkpointEvery), shadowTail: report.shadow.slice(-6) }
+          // The owner / reprint trace shows which path wrote the bytes.
+          report.firstCorrupt = { opIndex: index, diff: result.corrupt, recentOps: report.ops.slice(-checkpointEvery), shadowTail: report.shadow.slice(-6), trace: await traceTails(app) }
           console.log(`[seed ${seed}] CORRUPT at checkpoint ${index}: ${JSON.stringify(result.corrupt).slice(0, 400)}`)
           break
         }
@@ -921,7 +974,7 @@ for (const seed of seeds) {
       seed,
       ops: report.ops.length,
       pause: report.firstPause ? `op ${report.firstPause.opIndex} ${report.firstPause.op}` : null,
-      corrupt: report.firstCorrupt ? report.firstCorrupt.diff.path : null,
+      corrupt: report.firstCorrupt ? (report.firstCorrupt.bloat ? `bloat op ${report.firstCorrupt.opIndex}` : report.firstCorrupt.diff.path) : null,
       shadow: shadowSummary(report.shadow)
     })
   } catch (error) {

@@ -60,7 +60,7 @@ async function main() {
         enabled: settings.themeMode === 'system',
         light: settings.systemLightTheme,
         dark: settings.systemDarkTheme,
-        body: document.body.className
+        body: document.body.className.split(' ').filter((name) => name && !name.startsWith('hm-')).join(' ')
       }
     })()`)
     assert.deepEqual(ready, {
@@ -72,14 +72,15 @@ async function main() {
 
     await setScheme(app, 'dark')
     const dark = await app.evaluate(`(() => ({
-      body: document.body.className,
+      body: document.body.className.split(' ').filter((name) => name && !name.startsWith('hm-')).join(' '),
       mode: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').themeMode
     }))()`)
     assert.equal(dark.body, 'dark theme-morandi-dark', `dark OS preference did not apply selected dark theme: ${JSON.stringify(dark)}`)
     assert.equal(dark.mode, 'system', 'system theme mode did not persist')
 
     await setScheme(app, 'light')
-    const light = await app.evaluate(`(() => document.body.className)()`)
+    // hm-* body classes are app flags that applyTheme keeps; only theme classes count.
+    const light = await app.evaluate(`(() => document.body.className.split(' ').filter((name) => name && !name.startsWith('hm-')).join(' '))()`)
     assert.equal(light, 'light theme-morandi', `light OS preference did not restore selected light theme: ${light}`)
 
     const manual = await app.evaluate(`(async () => {
@@ -90,7 +91,7 @@ async function main() {
       button.click()
       await sleep(250)
       return {
-        body: document.body.className,
+        body: document.body.className.split(' ').filter((name) => name && !name.startsWith('hm-')).join(' '),
         mode: JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').themeMode
       }
     })()`)

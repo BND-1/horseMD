@@ -9,8 +9,9 @@ const file = join(root, 'doc.md')
 const port = Number(process.env.CDP_PORT || 10370)
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
 const sentinel = '\u200B'
-const emptyExpected = `# RS50\n\n* [ ] ${sentinel}\n`
-const filledExpected = '# RS50\n\n* [ ] 任务\n'
+// A new document keeps the typed `-` marker (CLAUDE.md: generated scratch).
+const emptyExpected = `# RS50\n\n- [ ] ${sentinel}\n`
+const filledExpected = '# RS50\n\n- [ ] 任务\n'
 
 async function waitFor(check, message, attempts = 120) {
   for (let index = 0; index < attempts; index += 1) {

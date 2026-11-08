@@ -12,6 +12,7 @@
 // editorDoc — this module never decides correctness on its own.
 
 import { isAllBlank, isBlankChar, splitBlanks } from '../markdown-blanks.js'
+import { withLiteralBlocksProtected } from '../literal-blocks.js'
 import { Fragment } from '@milkdown/prose/model'
 import { buildInlineMap, pmInlineUnits } from './inline-map.js'
 import { cachedParse, parseMarkdownCached, rememberParse } from './incremental-parse.js'
@@ -40,9 +41,9 @@ const attrValue = (attrs, key) => {
 }
 
 // Attribute-level equality minus editor-only attrs.
-const attrsEqual = (left, right) => {
+const attrsEqual = (left, right, except = []) => {
   if (left.type !== right.type) return false
-  const ignored = new Set(ignoredAttrs[left.type.name] || [])
+  const ignored = new Set([...(ignoredAttrs[left.type.name] || []), ...except])
   const keys = new Set([...Object.keys(left.attrs || {}), ...Object.keys(right.attrs || {})])
   for (const key of keys) {
     if (ignored.has(key)) continue
@@ -158,19 +159,23 @@ const inlineRunsModuloAutolinks = (block) => {
     else runs.push({ text, marks })
   }
   let afterHardBreak = false
-  block.forEach((child) => {
+  block.forEach((child, _offset, index) => {
     if (!child.isText) {
+      // A break opening a paragraph has no spelling: the text after it
+      // starts the block and its blanks are spelled (the validator agrees;
+      // fuzz UI seed 185).
       runs.push({ node: child })
-      afterHardBreak = /^hard_?break$/.test(child.type.name)
+      afterHardBreak = /^hard_?break$/.test(child.type.name) && !(index === 0 && /^(paragraph|heading)$/.test(block.type.name))
       return
     }
     const marks = child.marks.filter((mark) => !isAutolinkLiteral(child, mark))
+    const isCode = marks.some((mark) => mark.type.name === 'inlineCode')
     // Blanks at the start of the line after a line break have no Markdown
     // spelling outside an HTML tag: compare that line start without them.
-    let text = afterHardBreak ? child.text.replace(/^[ \t]+/, '') : child.text
-    afterHardBreak = afterHardBreak && !text
+    // Inline code keeps them (they are its content; spec 334).
+    let text = afterHardBreak && !isCode ? child.text.replace(/^[ \t]+/, '') : child.text
+    afterHardBreak = afterHardBreak && !isCode && !text
     const blankMarks = marks.filter((mark) => !INVISIBLE_ON_BLANK.has(mark.type.name))
-    const isCode = marks.some((mark) => mark.type.name === 'inlineCode')
     for (const piece of isCode ? [text] : splitBlanks(text)) {
       push(piece, !isCode && isAllBlank(piece) ? blankMarks : marks)
     }
@@ -211,18 +216,141 @@ export function sameNode(left, right) {
   return true
 }
 
+// GFM column alignment: each delimiter-row segment `:?-+:?`; the editor keeps
+// it on every cell of the column (header row first).
+const tableAlignments = (table) => {
+  const aligns = []
+  table.firstChild?.forEach((cell) => aligns.push(cell.attrs.alignment ?? null))
+  return aligns
+}
+const alignmentOf = (segment) => {
+  const left = segment.startsWith(':')
+  const right = segment.endsWith(':')
+  return left && right ? 'center' : left ? 'left' : right ? 'right' : null
+}
+const spellAlignment = (segment, align) => {
+  const dashes = segment.replace(/:/g, '') || '---'
+  return align === 'left' ? `:${dashes}` : align === 'center' ? `:${dashes}:` : align === 'right' ? `${dashes}:` : dashes
+}
+// The authored delimiter row with every segment whose alignment differs from
+// `aligns` respelled, the rest byte for byte; null when it is not a plain
+// delimiter row of that many columns.
+const realignDelimiterRow = (row, aligns) => {
+  if (!/^[ \t|:-]+$/.test(row)) return null
+  const segments = row.match(/:?-+:?/g) || []
+  if (segments.length !== aligns.length) return null
+  let index = 0
+  return row.replace(/:?-+:?/g, (segment) => {
+    const align = aligns[index++]
+    return alignmentOf(segment) === align ? segment : spellAlignment(segment, align)
+  })
+}
+// The same table with each column's alignment taken from `aligns`.
+const withAlignments = (table, aligns) => {
+  const rows = []
+  table.forEach((row) => {
+    const cells = []
+    row.forEach((cell, _offset, index) => {
+      cells.push(index < aligns.length && (cell.attrs.alignment ?? null) !== aligns[index]
+        ? cell.type.create({ ...cell.attrs, alignment: aligns[index] }, cell.content, cell.marks)
+        : cell)
+    })
+    rows.push(row.type.create(row.attrs, cells, row.marks))
+  })
+  return table.type.create(table.attrs, rows, table.marks)
+}
+
+// A paragraph of only the U+200B sentinel (and blanks): HorseMD's spelling of
+// an empty task body (`- [ ] ​`).
+const isSentinelParagraph = (node) => {
+  if (node?.type?.name !== 'paragraph' || !node.childCount) return false
+  let only = true
+  node.forEach((child) => { if (!child.isText || child.marks.length || !/^[​ \t]*$/.test(child.text)) only = false })
+  return only && node.textContent.includes('​')
+}
+
 const isEmptyTextblock = (node) => node?.isTextblock && node.content.size === 0
 // A paragraph holding only spaces/tabs has no encoding either: trailing
 // whitespace is stripped, so it parses as nothing (fuzz seed 49).
 const isBlankParagraph = (node) => {
   if (node?.type?.name !== 'paragraph') return false
   let blank = true
-  node.forEach((child) => { if (!child.isText || /[^ \t]/.test(child.text)) blank = false })
-  return blank
+  // Spaces in inline code are content (`` ` ` `` is a code span of one space).
+  // Soft breaks between blanks show nothing either: a paragraph of a soft
+  // break + spaces was written as U+200B + spaces and reopened as a paragraph
+  // holding U+200B (fuzz seed 1057).
+  // Hard breaks alone too: a break at the end of a paragraph is no break,
+  // so a paragraph of only line breaks reads back as nothing. Treated as
+  // content, it was inserted again on every print — blank lines grew without
+  // end (fuzz seed 3815: a 1 KB document saved as 5 MB of `>` lines).
+  // Blanks next to a hard break are spelled (`&#x20;  ` + `&#x20;`): content.
+  const softBreak = (child) => /^hard_?break$/.test(child.type.name) && child.attrs?.isInline === true
+  let hardBreak = false
+  let other = false
+  node.forEach((child) => {
+    if (softBreak(child)) return
+    if (/^hard_?break$/.test(child.type.name)) { hardBreak = true; return }
+    other = true
+    if (!child.isText || /[^ \t]/.test(child.text) || child.marks.some((mark) => mark.type.name === 'inlineCode')) blank = false
+  })
+  return blank && !(hardBreak && other)
 }
 
-// LCS over two node arrays with sameNode; returns aligned pairs.
+// A text block without the blanks Markdown cannot hold: at the end, around
+// a soft break (CommonMark strips them), and in a table cell at the start
+// too (GFM trims cells). Plain text only: in inline code a blank is content.
+// A leading blank of a paragraph is content (the U+200B sentinel spells it).
+const withoutUnencodedBlanks = (block, { cell = false } = {}) => {
+  if (!block?.isTextblock || block.type.spec.code || !block.childCount) return block
+  const children = []
+  block.forEach((child) => children.push(child))
+  const isCode = (child) => child.marks.some((mark) => mark.type.spec.code)
+  const isSoftBreak = (child) => /^hard_?break$/.test(child?.type?.name || '') && child.attrs?.isInline === true
+  const trimmed = children.map((child, index) => {
+    if (!child.isText || isCode(child)) return child
+    let text = child.text
+    if (index === children.length - 1 || isSoftBreak(children[index + 1])) text = text.replace(/[ \t]+$/, '')
+    if ((cell && index === 0) || isSoftBreak(children[index - 1])) text = text.replace(/^[ \t]+/, '')
+    return text === child.text ? child : text ? child.withText(text) : null
+  }).filter(Boolean)
+  if (trimmed.length === children.length && trimmed.every((child, index) => child === children[index])) return block
+  return block.copy(Fragment.fromArray(trimmed))
+}
+
+// Equal once the empty paragraphs that have no Markdown are left out — not
+// a container's first child (an item's marker line). Backspace in an empty
+// last item joins it to the item above as such a paragraph (RS-63): the item
+// reads back the same, so it keeps its authored bytes (it was reprinted, and
+// its nested `* x ` became `- x`).
+const sameModuloEditorOnly = (left, right) => {
+  if (sameNode(left, right)) return true
+  // Blanks with no Markdown (a cell's edges, around soft breaks; the
+  // validator ignores them too) are no change: the block keeps its bytes.
+  // Before, its patch failed on them, it was printed whole (degraded) and
+  // the fallback writers took the edit (fuzz seed 3716).
+  if (left?.isTextblock && right?.isTextblock && left.type === right.type && attrsEqual(left, right)) {
+    return sameNode(withoutUnencodedBlanks(left), withoutUnencodedBlanks(right))
+  }
+  if (!left || !right || left.type !== right.type || left.isTextblock || left.isLeaf || !left.childCount || !right.childCount) return false
+  if (!attrsEqual(left, right)) return false
+  if (/^table_(cell|header)$/.test(left.type.name)) {
+    if (left.childCount !== 1 || right.childCount !== 1) return false
+    return sameNode(withoutUnencodedBlanks(left.child(0), { cell: true }), withoutUnencodedBlanks(right.child(0), { cell: true }))
+  }
+  const kept = (node) => {
+    const children = []
+    node.forEach((child, _offset, index) => { if (index === 0 || !isBlankParagraph(child)) children.push(child) })
+    return children
+  }
+  const before = kept(left)
+  const after = kept(right)
+  return before.length === after.length && before.every((child, index) => sameModuloEditorOnly(child, after[index]))
+}
+
+// LCS over two node arrays with sameNode (modulo editor-only paragraphs);
+// returns aligned pairs.
 const diffSequences = (oldNodes, newNodes) => {
+  const sameNode = sameModuloEditorOnly
   let prefix = 0
   while (prefix < oldNodes.length && prefix < newNodes.length && sameNode(oldNodes[prefix], newNodes[prefix])) prefix += 1
   let suffix = 0
@@ -285,7 +413,9 @@ const lineStartOf = (source, offset) => {
   return at
 }
 
-const LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+|$)/
+// The marker may end its line (`4.` + newline: the item starts with a blank
+// line); `$` alone only matches at the end of the sliced text.
+const LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+|(?=\r?\n)|$)/
 
 // The source being reprinted is the committed baseline: the same string for
 // every keystroke until the next publish, and for each escape level of one
@@ -323,7 +453,10 @@ export function rememberParsedSource(remark, body, srcDoc, mdRoot) {
   legacyParsed.set(key, { body, srcDoc, mdRoot })
 }
 
-export function reprintSource({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, escape = 'minimal' }) {
+// `newListMarkers` ({ bullet, delimiter }): how a list with no authored
+// marker is spelled — the marker the user just typed (`+ `, `1) `), from the
+// editor's list input intent; else the serializer's default.
+export function reprintSource({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, escape = 'minimal', newListMarkers = null }) {
   // `escape: 'segment'` skips character patches: every changed text block
   // reprints whole top-level inline segments, which re-escapes literal
   // delimiters around the edit (`**` + typed text → `\*你好\*`; seed 50).
@@ -338,6 +471,17 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   const bom = source.startsWith('﻿') ? '﻿' : ''
   const body = bom ? source.slice(1) : source
   const eol = /\r\n/.test(body) ? '\r\n' : '\n'
+  // An UNCLOSED fence / `$$` block ends at the start of the next line (its
+  // last line ending included); every other block ends on its own last
+  // line. Replacing it ate that line ending — the next list item landed on
+  // the printed closing fence (`$$$- 第三项`, fuzz seed 181).
+  const endOf = (node) => {
+    const end = node?.position?.end?.offset
+    if ((node?.type === 'code' || node?.type === 'math') && Number.isInteger(end) && end > 0 && body[end - 1] === '\n') {
+      return end - (body[end - 2] === '\r' ? 2 : 1)
+    }
+    return end
+  }
   const notes = []
   const edits = []
   // Set when a changed text block could not be character-mapped and is
@@ -362,7 +506,6 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   }
   const schema = editorDoc.type.schema
   const docWith = (nodes) => schema.topNodeType.create(null, nodes)
-  const toEol = (text) => (eol === '\n' ? text : text.replace(/\r?\n/g, eol))
   // Shapes with no Markdown spelling are normalized before printing
   // (design §5): emphasis/strong/strike around only whitespace or a break
   // loses the mark; a text block's leading/trailing line breaks are dropped.
@@ -406,9 +549,30 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         // Outside table cells a hard break at the very start or end has no
         // encoding either (`  \n` there is a blank line / is dropped).
         const isEdgeBreak = (child) => /^hard_?break$/.test(child?.type?.name || '')
-        if (children.some((child) => !isEdgeBreak(child))) {
-          while (children.length && isEdgeBreak(children[0])) children.shift()
-          while (children.length && isEdgeBreak(children[children.length - 1])) children.pop()
+        // A blank-only text between edge breaks is a blank line there: it
+        // goes too, and the break behind it (`4. ` + `  ` line + text — the
+        // blank line ended the item; fuzz seed 1001).
+        const isBlankText = (child) => child?.isText && !/[^ \t]/.test(child.text)
+        if (children.some((child) => !isEdgeBreak(child) && !isBlankText(child))) {
+          let droppedBlankLine = false
+          for (;;) {
+            if (isEdgeBreak(children[0])) children.shift()
+            else if (isBlankText(children[0]) && isEdgeBreak(children[1])) { children.shift(); droppedBlankLine = true } else break
+          }
+          // After a dropped blank line the blanks that start the next line have
+          // no encoding either (no U+200B sentinel; seed 1001). After plain
+          // leading breaks they stay (`    }` from a code block turned
+          // paragraph; seed 1053) — what the validator compares.
+          if (droppedBlankLine && children[0]?.isText && /^[ \t]/.test(children[0].text)) {
+            const text = children[0].text.replace(/^[ \t]+/, '')
+            if (text) children[0] = children[0].withText(text)
+            else children.shift()
+          }
+          for (;;) {
+            if (isEdgeBreak(children.at(-1))) children.pop()
+            else if (isBlankText(children.at(-1)) && isEdgeBreak(children.at(-2))) children.pop()
+            else break
+          }
         } else {
           while (children.length && isSoftBreak(children[0])) children.shift()
           while (children.length && isSoftBreak(children[children.length - 1])) children.pop()
@@ -472,8 +636,22 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
           const text = child.text.replace(/^[ \t]+/, '')
           children[index] = text ? node.type.schema.text(text, child.marks) : null
         } else if (isHardLineBreak(children[index - 1])) {
-          const text = child.text.replace(/^[ \t]+/, (blanks) => LINE_START_BLANK.repeat(blanks.length))
-          children[index] = node.type.schema.text(text, child.marks)
+          // Only a span keeps the blank inside (`<font> text`). Under bold /
+          // italic it leaves the mark first: `*    b*` would print a space
+          // after the delimiter — not emphasis, and `* ` at a line start is
+          // a list marker (fuzz UI seed 410: an indented code block turned
+          // into a paragraph, then made italic).
+          const [blanks] = /^[ \t]+/.exec(child.text)
+          const rest = child.text.slice(blanks.length)
+          const standIn = LINE_START_BLANK.repeat(blanks.length)
+          if (rest && !child.marks.some((mark) => mark.type.name === 'html_span' || mark.type.spec.code) && child.marks.some(isSpan)) {
+            children.splice(index, 1,
+              node.type.schema.text(standIn, child.marks.filter((mark) => !isSpan(mark))),
+              node.type.schema.text(rest, child.marks))
+            index += 1
+          } else {
+            children[index] = node.type.schema.text(standIn + rest, child.marks)
+          }
         }
       }
       // Blanks right before a soft break have no encoding either (2+ would
@@ -499,18 +677,30 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   )
   // A trailing space has no encoding; the serializer's `&#x20;` at a line
   // end only adds noise.
-  const serializeNodes = (nodes, options) => withoutPlaceholders(
-    serialize(docWith(nodes.map((node) => normalizeForPrint(node, options)))).replace(/\n+$/, '')
-  ).replace(/(?:&#x20;)+(?=\n|$)/g, '')
+  // The passes below read Markdown syntax: fenced code / `$$` content is
+  // kept as printed (fuzz seed 562: `## &#x20;` inside a code block).
+  const serializeNodes = (nodes, options) => withLiteralBlocksProtected(
+    serialize(docWith(nodes.map((node) => normalizeForPrint(node, options)))).replace(/\n+$/, ''),
+    (printed) => withoutPlaceholders(printed)
+    // The stand-in right before a delimiter is not punctuation or a blank,
+    // so the serializer encodes it to keep `*}*` flanking (`&#xE000;*}*`);
+    // as the blank it stands for, nothing needs encoding (fuzz UI seed 410).
+    .replace(/&#(?:x[eE]000|57344);/g, LINE_START_BLANK)
+    // Only the serializer's own entities: `\&#x20;` is the text `&#x20;`
+    // (an even run of backslashes before it escapes only themselves) —
+    // rewriting it printed `\ ` (fuzz seed 3735: code text with `&#x20;`
+    // dropped into a heading).
+    .replace(/(?<=(?:^|[^\\])(?:\\\\)*)(?:&#x20;)+(?=\n|$)/g, '')
     // A leading space right after a block prefix (`## `, `- `, `> `) keeps
     // the sentinel spelling (fuzz seed 66: Enter before the space of a
     // heading); every other mid-line `&#x20;` is a plain space.
     .replace(/(^|\n)((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?)+)&#x20;/g, `$1$2${SENTINEL} `)
-    .replace(/(?<=[^\n])&#x20;/g, ' ')
+    .replace(/(?<=[^\n\\](?:\\\\)*)&#x20;/g, ' ')
     // Line-start blanks after a hard break: `&#x20;` at the line start,
     // a plain space after an opening tag or delimiter.
     .replace(/(^|\n)([ \t]*(?:>[ \t]?)*)(\uE000+)/g, (_match, start, prefix, blanks) => start + prefix + '&#x20;'.repeat(blanks.length))
     .replace(/\uE000/g, ' ')
+  )
 
   // Prefix every line after the first; blank lines get the trimmed prefix.
   const indentContinuation = (text, prefix) => text
@@ -518,8 +708,38 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     .map((line, index) => (index === 0 ? line : line ? prefix + line : prefix.replace(/[ \t]+$/, '')))
     .join('\n')
 
+  // A block printed whole over several lines indents its continuation lines
+  // for a block starting at the frame's column. Authored blanks between the
+  // frame prefix and the old block (` src1`: up to 3 columns, ignored by
+  // CommonMark) would shift the new first line: ` 1. s` + `   ```js` puts
+  // the fence outside the item (fuzz seed 722). Those blanks go with it.
+  const wholeBlockFrom = (at, printed, prefix) => {
+    if (!printed.includes('\n')) return at
+    const lineStart = body.lastIndexOf('\n', at - 1) + 1
+    const lead = body.slice(lineStart, at)
+    if (!lead.startsWith(prefix)) return at
+    return /^[ \t]+$/.test(lead.slice(prefix.length)) ? lineStart + prefix.length : at
+  }
+
+  // A file with mixed line endings (a CRLF file appended to on a Mac) keeps
+  // each region's own: printed text takes the line ending of the bytes it
+  // replaces (the majority), else of the line it lands on — not the file's
+  // first CRLF, which rewrote every LF line of a reprinted list.
+  const eolAt = (from, to) => {
+    if (eol === '\n') return '\n'
+    const replaced = body.slice(from, to)
+    const crlf = (replaced.match(/\r\n/g) || []).length
+    const lf = (replaced.match(/\n/g) || []).length - crlf
+    if (crlf !== lf) return crlf > lf ? '\r\n' : '\n'
+    const next = body.indexOf('\n', to)
+    if (next >= 0) return body[next - 1] === '\r' ? '\r\n' : '\n'
+    const previous = body.lastIndexOf('\n', from - 1)
+    if (previous >= 0) return body[previous - 1] === '\r' ? '\r\n' : '\n'
+    return eol
+  }
   const replace = (from, to, text, note) => {
-    edits.push({ from, to, text: toEol(text) })
+    const local = eolAt(from, to)
+    edits.push({ from, to, text: local === '\n' ? text.replace(/\r\n/g, '\n') : text.replace(/\r?\n/g, local) })
     if (note) notes.push(note)
   }
 
@@ -528,6 +748,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     let kids = mdNode.children || []
     if (pmNode.type.name === 'doc') kids = kids.filter((child) => !MD_SKIP_IN_DOC.has(child.type))
     if (kids.length === pmNode.childCount) return kids
+    // A blank source parses to a document of one empty paragraph (the schema
+    // needs a block) with no mdast children: placeholders, no source bytes.
+    if (pmNode.type.name === 'doc' && !kids.length) {
+      const blanks = []
+      pmNode.forEach((child) => blanks.push(isEmptyTextblock(child) ? null : child))
+      if (blanks.every((child) => child === null)) return blanks
+    }
     // `- - nested` (an item whose content starts with a list): the schema
     // makes Milkdown insert a synthetic empty first paragraph that has no
     // source bytes. Align it with a null placeholder.
@@ -552,7 +779,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       const match = LIST_MARKER.exec(body.slice(start, start + 16))
       const spaces = match?.[3]?.length ?? 1
       const width = (match?.[2]?.length ?? 1) + (spaces > 4 ? 1 : Math.max(1, spaces))
-      return { prefix: frame.prefix + ' '.repeat(width), quoteDepth: frame.quoteDepth }
+      // The item's content column also counts the blanks before its marker
+      // (`>   - x`: a list indented inside its frame). Without them a block
+      // added to the item printed at the marker's column and became the
+      // list's sibling (fuzz seed 1299).
+      const lineStart = body.lastIndexOf('\n', start - 1) + 1
+      const lead = body.slice(lineStart, start)
+      const indent = lead.startsWith(frame.prefix) && /^ *$/.test(lead.slice(frame.prefix.length))
+        ? lead.length - frame.prefix.length
+        : 0
+      return { prefix: frame.prefix + ' '.repeat(indent + width), quoteDepth: frame.quoteDepth }
     }
     return frame
   }
@@ -566,17 +802,18 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     if (!ordered) return raw[2]
     const delimiter = raw[2].slice(-1)
     const numbers = items.map((item) => Number(LIST_MARKER.exec(body.slice(startOf(item), startOf(item) + 16))?.[2]?.slice(0, -1)))
-    const allSame = numbers.every((value) => value === numbers[0])
+    // `1. 1. 1.` numbering is kept; one authored item says nothing about it.
+    const allSame = numbers.length > 1 && numbers.every((value) => value === numbers[0])
     const number = allSame ? numbers[0] : (numbers[0] || 1) + itemIndexInNew
     return `${number}${delimiter}`
   }
 
   // Leading spaces are spelled with the U+200B sentinel (Typora), not the
   // serializer's `&#x20;`, at the start of any printed line or item body.
-  const withSentinels = (text) => text.replace(
+  const withSentinels = (text) => withLiteralBlocksProtected(text, (printed) => printed.replace(
     /(^|\n)((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?)*)&#x20;/g,
     `$1$2${SENTINEL} `
-  )
+  ))
   // A cell is one line: runs between line breaks joined with `<br>` (leading
   // and trailing breaks included), pipes escaped.
   const printCellFragment = (fragment) => {
@@ -611,18 +848,17 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       return cells
     }
     const line = (cells) => `| ${cells.join(' | ')} |`
+    const aligns = tableAlignments(table)
+    while (aligns.length < width) aligns.push(null)
     let delimiter = null
     if (mdTable?.position) {
       const lines = body.slice(startOf(mdTable), endOf(mdTable)).split(/\r?\n/)
-      const authored = lines[1]?.trim()
-      const segments = authored ? authored.replace(/^\||\|$/g, '').split('|') : []
-      if (segments.length === width && segments.every((segment) => /^\s*:?-+:?\s*$/.test(segment))) delimiter = authored
+      // The authored row, with only the columns whose alignment changed
+      // respelled (a table handle's align button).
+      delimiter = realignDelimiterRow(lines[1]?.trim() || '', aligns)
     }
     if (!delimiter) {
-      const aligns = []
-      rows[0].forEach((cell) => aligns.push(cell.attrs.alignment))
-      while (aligns.length < width) aligns.push(null)
-      delimiter = `| ${aligns.map((align) => align === 'left' ? ':---' : align === 'center' ? ':---:' : align === 'right' ? '---:' : '---').join(' | ')} |`
+      delimiter = `| ${aligns.map((align) => spellAlignment('---', align)).join(' | ')} |`
     }
     return [line(cellsOf(rows[0])), delimiter, ...rows.slice(1).map((row) => line(cellsOf(row)))].join('\n')
   }
@@ -644,6 +880,8 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     } catch {
       // keep the defaults
     }
+    if (/^[-*+]$/.test(newListMarkers?.bullet || '')) defaultMarkers.bullet = newListMarkers.bullet
+    if (/^[.)]$/.test(newListMarkers?.delimiter || '')) defaultMarkers.delimiter = newListMarkers.delimiter
     return defaultMarkers
   }
   // Spaces-only counts too (seed 77: an item holding only spaces is `1.`).
@@ -673,10 +911,17 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     }
     return leafText(node)
   }
+  let newListNoted = false
   const listMarker = (list, listMd, index) => {
     const ordered = list.type.name === 'ordered_list'
     const authored = listMd ? markerFor(listMd, index, ordered) : null
     if (authored) return authored
+    // The caller's list input intent (the typed marker) is spent once a list
+    // without authored markers is printed: the marker is source now.
+    if (!newListNoted) {
+      newListNoted = true
+      notes.push({ level: 'new-list-marker' })
+    }
     const defaults = learnDefaultMarkers()
     return ordered ? `${(list.attrs.order ?? 1) + index}${defaults.delimiter}` : defaults.bullet
   }
@@ -707,8 +952,22 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     // (`- [ ] - [ ] x` is not a nested task; seed 87).
     const taskLedByBlock = task && first && !first.isTextblock
     const firstEmpty = !first || isEditorOnlyParagraph(first) || taskLedByBlock
+    // An item whose content starts with a list (Milkdown's synthetic empty
+    // paragraph in front of it) writes that list on the marker line, the way
+    // it reads back and is authored: `- 1. a`, not `-` + `  1. a`. Not when
+    // the line would read as a thematic break (`- - -`).
+    let leadList = null
+    if (!task && first && isEditorOnlyParagraph(first)) {
+      const next = children.slice(1).find((child) => !isEditorOnlyParagraph(child))
+      if (next && isList(next)) {
+        const line = `${head} ${indentLines(printNode(next), indent)}`
+        if (!/^(?:[ \t]*[-*_]){3,}[ \t]*$/.test(line.split('\n')[0])) leadList = { node: next, line }
+      }
+    }
     let text
-    if (firstEmpty) {
+    if (leadList) {
+      text = leadList.line
+    } else if (firstEmpty) {
       // GFM needs body content after `[ ]` (RS-50: U+200B); a plain empty
       // item is just its marker.
       text = task ? `${head} ${SENTINEL}` : head
@@ -718,9 +977,12 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       if (first.isTextblock && /^[ \t]/.test(firstText)) firstText = SENTINEL + firstText
       text = `${head} ${indentLines(firstText, indent)}`
     }
-    let previous = firstEmpty ? null : first
+    // A task's marker line always carries text (`[ ]` + U+200B): what follows
+    // is spaced as after a paragraph — a paragraph right below would be its
+    // lazy continuation (`2. [ ] ​` + `​ x g`; fuzz UI seed 311).
+    let previous = leadList ? leadList.node : firstEmpty ? (task ? schema.nodes.paragraph.create() : null) : first
     for (const child of taskLedByBlock ? children : children.slice(1)) {
-      if (isEditorOnlyParagraph(child)) continue
+      if (isEditorOnlyParagraph(child) || child === leadList?.node) continue
       // An item that starts empty cannot have a blank line before its content.
       const separator = !previous || tightAllowed(previous, child) ? '\n' : '\n\n'
       text += separator + indent + indentLines(printNode(child), indent)
@@ -728,10 +990,33 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     }
     return text
   }
+  // A thematic break typed over a paragraph (`---`: Milkdown's input rule
+  // fires on the third `-`) keeps the typed character (Typora; the
+  // serializer writes `***`). Minimal level only: a `---` that would read as
+  // a setext underline fails the check and the next level writes `***`.
+  // `mds`: the removed source blocks.
+  const typedThematicBreak = (node, mds) => {
+    if (node?.type.name !== 'hr' || escape !== 'minimal') return null
+    for (const md of mds) {
+      if (md?.type !== 'paragraph') continue
+      const match = /^([-*_])\1{0,2}$/.exec(body.slice(startOf(md), endOf(md)).replace(/\\/g, '').trim())
+      if (match) return match[1].repeat(3)
+    }
+    return null
+  }
   const printBlock = (node, parentNode, parentMd, indexInNew, oldMd = null) => {
     if (node.type.name === 'list_item') {
       const sameKind = parentMd?.type === 'list' && Boolean(parentMd.ordered) === (parentNode.type.name === 'ordered_list')
       return printItem(node, listMarker(parentNode, sameKind ? parentMd : null, indexInNew))
+    }
+    // A body row inserted by the row handle: printed on its own line so the
+    // authored rows around it keep their bytes (column padding). Before, the
+    // whole table was printed again.
+    if (node.type.name === 'table_row' && parentNode?.type.name === 'table' && parentNode.firstChild !== node) {
+      const cells = []
+      node.forEach((cell) => cells.push(cell.childCount === 1 ? printCellFragment(cell.child(0).content).trim() : ''))
+      if (!cells.length) return null
+      return `| ${cells.join(' | ')} |`
     }
     if (/^table_(header_)?row$/.test(node.type.name)) return null
     return printNode(node, oldMd)
@@ -795,6 +1080,31 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       degraded = true
       return false
     }
+    // Text typed into an EMPTY cell (`|   |`: no inline node to patch). It
+    // goes between the pipes, before the last blank — `|  否 |` emptied and
+    // refilled reads `|  是 |` again — and the other cells keep their bytes.
+    // Before, the whole table was printed again and every authored column
+    // padding was lost (a refilled cell in an aligned table).
+    if (cell && srcBlock.childCount === 0 && newBlock.childCount > 0 && mdBlock?.type === 'tableCell' && !(mdBlock.children || []).length) {
+      const from = startOf(mdBlock)
+      const to = endOf(mdBlock)
+      if (!Number.isInteger(from) || !Number.isInteger(to) || body[from] !== '|') {
+        degraded = true
+        return false
+      }
+      const innerEnd = body[to - 1] === '|' && to - 1 > from ? to - 1 : to
+      const inner = body.slice(from + 1, innerEnd)
+      if (/[^ \t]/.test(inner)) {
+        degraded = true
+        return false
+      }
+      const text = printCellFragment(newBlock.content).trim()
+      if (!text) return true
+      if (inner.length >= 2) replace(innerEnd - 1, innerEnd - 1, text)
+      else replace(from + 1, innerEnd, ` ${text} `)
+      notes.push({ level: 'cell', at: from })
+      return true
+    }
     const map = buildInlineMap({ source: body, block: mdBlock, quoteDepth: frame.quoteDepth })
     const oldUnits = pmInlineUnits(srcBlock)
     if (!map || map.units.length !== oldUnits.length) {
@@ -804,9 +1114,12 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     // Whitespace at the end of a text block (and at both edges of a cell) has
     // no encoding — the parsed source never has it, the editor may. Leave it
     // out of the diff, or every reprint would append it again (design §5).
-    const isBlank = (unit) => unit?.kind === 'char' && (unit.char === ' ' || unit.char === '\t')
+    // Inline code keeps its spaces (`` ` a` `` is " a"; fuzz UI seed 118).
+    const isBlank = (unit) => unit?.kind === 'char' && (unit.char === ' ' || unit.char === '\t') &&
+      !unit.marks?.some((mark) => mark.type.name === 'inlineCode')
     const newUnits = pmInlineUnits(newBlock)
-    while (newUnits.length && isBlank(newUnits[newUnits.length - 1]) && !isBlank(oldUnits[oldUnits.length - 1])) newUnits.pop()
+    let tailBlanks = 0
+    while (newUnits.length && isBlank(newUnits[newUnits.length - 1]) && !isBlank(oldUnits[oldUnits.length - 1])) { newUnits.pop(); tailBlanks += 1 }
     let leadTrim = 0
     if (cell) while (newUnits.length && isBlank(newUnits[0]) && !isBlank(oldUnits[0])) { newUnits.shift(); leadTrim += 1 }
     // A line break at the very start or end of a paragraph/heading has no
@@ -843,6 +1156,35 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       }
     }
 
+    // 0b. Deletion across formatting: a selection over plain text and whole
+    // bold/italic/link runs deleted (`前段。* **输入设备：** 内容` → `前段。* `).
+    // The raw bytes of the deleted runs, delimiters included, are removed and
+    // everything around them stays as authored; the segment printer respelled
+    // the block (`前段。\*`). Partly deleted runs at either end must be plain
+    // text. The verifier still checks the result.
+    if (!segmentOnly && oldWindow.length && !newWindow.length &&
+        !oldWindow.every((unit) => unit.kind === 'char' && sameMarkSet(unit.marks, oldWindow[0].marks))) {
+      // Blanks the editor still has at the block end (left out of the diff
+      // above) are authored bytes here: kept (`前段。* ` stays `* `).
+      let start = p
+      if (oldEnd === oldUnits.length) {
+        while (start < oldEnd && start - p < tailBlanks && isBlank(oldUnits[start]) && !(oldUnits[start].marks || []).length) start += 1
+      }
+      const firstTop = start < oldEnd ? map.units[start].top : -1
+      const lastTop = map.units[oldEnd - 1].top
+      const unitsOf = (top) => map.units.reduce((list, unit, index) => (unit.top === top ? [...list, index] : list), [])
+      const plain = (indexes) => indexes.every((index) => oldUnits[index].kind === 'char' && !(oldUnits[index].marks || []).length)
+      const headUnits = unitsOf(firstTop)
+      const tailUnits = unitsOf(lastTop)
+      const from = headUnits[0] === start ? map.tops[firstTop].from : plain(headUnits) ? map.units[start].from : null
+      const to = tailUnits[tailUnits.length - 1] === oldEnd - 1 ? map.tops[lastTop].to : plain(tailUnits) ? map.units[oldEnd - 1].to : null
+      if (start < oldEnd && from != null && to != null && from < to && firstTop !== lastTop) {
+        replace(from, to, '', null)
+        notes.push({ level: 'run-deletion', at: from })
+        return true
+      }
+    }
+
     // 1. Character patch: plain characters with one mark set, one text run.
     const marks = (newWindow[0] || oldWindow[0]).marks
     const allChars = (units) => units.every((unit) => unit.kind === 'char' && sameMarkSet(unit.marks, marks))
@@ -865,6 +1207,18 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       }
       let text = newWindow.map((unit) => unit.char).join('')
       const code = marks.some((mark) => mark.type.name === 'inlineCode')
+      // Typed at the block end after blanks the source line already ends
+      // with (`- 1\. ` + ` 测`: CommonMark trims them, so they are not text):
+      // those blanks spell the typed ones; inserting before them left a
+      // trailing space (`1\. 测 `).
+      if (!code && !oldWindow.length && from != null && p === oldUnits.length) {
+        const trailing = /^[ \t]+(?=\r?\n|$)/.exec(body.slice(to))?.[0] || ''
+        if (trailing && text.startsWith(trailing) && text.length > trailing.length) {
+          from += trailing.length
+          to = from
+          text = text.slice(trailing.length)
+        }
+      }
       const isBreakUnit = (unit) => unit?.kind === 'leaf' && /^hard_?break$/.test(unit.node.type.name)
       const isSoftUnit = (unit) => isBreakUnit(unit) && unit.node.attrs?.isInline === true
       // Blanks typed right after a soft break have no encoding (CommonMark
@@ -1021,6 +1375,40 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       return patchContainer(resolved, mdNode, newNode, frame)
     }
     if (name === 'code_block') return patchCodeBlock(srcNode, mdNode, newNode, frame)
+    // A column's alignment changed (table handle): only that delimiter-row
+    // segment is respelled; the cells keep their bytes.
+    if (name === 'table') {
+      const before = tableAlignments(srcNode)
+      const after = tableAlignments(newNode)
+      if (after.length === before.length && after.some((align, index) => align !== before[index])) {
+        const rows = mdNode?.children || []
+        const headerEnd = endOf(rows[0])
+        if (!Number.isInteger(headerEnd)) return false
+        const lineStart = body.indexOf('\n', headerEnd) + 1
+        if (lineStart <= 0) return false
+        let lineEnd = body.indexOf('\n', lineStart)
+        if (lineEnd < 0) lineEnd = body.length
+        if (body[lineEnd - 1] === '\r') lineEnd -= 1
+        const authored = body.slice(lineStart, lineEnd)
+        // A table inside a quote / list item: its prefix comes first.
+        const prefix = /^[ \t>]*?(?=[ \t]*\|?[ \t]*:?-)/.exec(authored)?.[0] ?? ''
+        const realigned = realignDelimiterRow(authored.slice(prefix.length), after)
+        if (realigned == null) return false
+        replace(lineStart + prefix.length, lineEnd, realigned)
+        return patchContainer(withAlignments(srcNode, after), mdNode, newNode, frame)
+      }
+      // One column inserted / deleted (table handle): only that cell of every
+      // row and that delimiter segment change; the other cells keep their
+      // bytes (authored column padding). Before, the whole table was printed
+      // again.
+      if (Math.abs(after.length - before.length) === 1) {
+        const edits = planColumnChange(srcNode, mdNode, newNode, before, after)
+        if (!edits) return false
+        for (const [from, to, text] of edits) replace(from, to, text)
+        notes.push({ level: 'table-column' })
+        return true
+      }
+    }
     if (CONTAINERS.has(name)) {
       if (!attrsEqual(srcNode, newNode)) return false
       return patchContainer(srcNode, mdNode, newNode, frame)
@@ -1028,8 +1416,78 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     return false
   }
 
+  // [from, to, text] edits for one inserted / deleted column, or null when
+  // the table cannot be patched that way (cells changed elsewhere, rows
+  // without outer pipes, a delimiter row of another shape).
+  const planColumnChange = (srcNode, mdNode, newNode, before, after) => {
+    const inserted = after.length > before.length
+    const rowsOf = (table) => { const rows = []; table.forEach((row) => rows.push(row)); return rows }
+    const oldRows = rowsOf(srcNode)
+    const newRows = rowsOf(newNode)
+    const mdRows = mdNode?.children || []
+    if (oldRows.length !== newRows.length || mdRows.length !== oldRows.length) return null
+    const contents = (row) => { const cells = []; row.forEach((cell) => cells.push(JSON.stringify(cell.content.toJSON()))); return cells }
+    const without = (cells, k) => cells.filter((_cell, index) => index !== k)
+    const width = Math.max(before.length, after.length)
+    let column = -1
+    for (let k = 0; k < width && column < 0; k += 1) {
+      const fits = oldRows.every((row, index) => {
+        const oldCells = contents(row)
+        const newCells = contents(newRows[index])
+        return inserted ? JSON.stringify(without(newCells, k)) === JSON.stringify(oldCells) : JSON.stringify(without(oldCells, k)) === JSON.stringify(newCells)
+      })
+      if (fits) column = k
+    }
+    if (column < 0) return null
+    const edits = []
+    for (let index = 0; index < mdRows.length; index += 1) {
+      const row = mdRows[index]
+      const cells = row?.children || []
+      const rowEnd = endOf(row)
+      if (!Number.isInteger(rowEnd) || body[rowEnd - 1] !== '|' || !cells.length) return null
+      const starts = cells.map((cell) => startOf(cell))
+      if (starts.some((at) => !Number.isInteger(at) || body[at] !== '|')) return null
+      if (inserted) {
+        const cell = newRows[index].child(column)
+        const text = cell.childCount === 1 ? printCellFragment(cell.child(0).content).trim() : ''
+        if (column < cells.length) edits.push([starts[column], starts[column], `| ${text} `])
+        else if (column === cells.length) edits.push([rowEnd - 1, rowEnd - 1, `| ${text} `])
+        else if (text) return null
+      } else if (column < cells.length) {
+        edits.push(column < cells.length - 1 ? [starts[column], starts[column + 1], ''] : [starts[column], rowEnd - 1, ''])
+      }
+    }
+    // The delimiter row: the line after the header row.
+    const lineStart = body.indexOf('\n', endOf(mdRows[0])) + 1
+    if (lineStart <= 0) return null
+    let lineEnd = body.indexOf('\n', lineStart)
+    if (lineEnd < 0) lineEnd = body.length
+    if (body[lineEnd - 1] === '\r') lineEnd -= 1
+    const line = body.slice(lineStart, lineEnd)
+    const prefix = /^[ \t>]*?(?=[ \t]*\|?[ \t]*:?-)/.exec(line)?.[0] ?? ''
+    const row = line.slice(prefix.length)
+    if (!/^[ \t]*\|[ \t|:-]+\|[ \t]*$/.test(row)) return null
+    const pipes = []
+    for (let at = 0; at < row.length; at += 1) if (row[at] === '|') pipes.push(lineStart + prefix.length + at)
+    if (pipes.length !== before.length + 1) return null
+    if (inserted) edits.push([pipes[column], pipes[column], `| ${spellAlignment('---', after[column])} `])
+    else edits.push([pipes[column], pipes[column + 1], ''])
+    return edits
+  }
+  // A fenced code / `$$` block whose closing fence is missing (it ends with
+  // its container).
+  const fenceLeftOpen = (mdNode, node) => {
+    if (node?.type.name !== 'code_block' || !mdNode) return false
+    const lines = body.slice(startOf(mdNode), endOf(mdNode)).split(/\r?\n/)
+    const open = /^[ \t]*(`{3,}|~{3,}|\${2,})/.exec(lines[0])
+    if (!open) return false
+    if (lines.length < 2) return true
+    const close = /^[ \t>]*(`{3,}|~{3,}|\${2,})[ \t]*$/.exec(lines[lines.length - 1])
+    return !close || close[1][0] !== open[1][0] || close[1].length < open[1].length
+  }
   const patchCodeBlock = (srcNode, mdNode, newNode, frame) => {
-    if (!attrsEqual(srcNode, newNode)) return false
+    const languageChanged = !attrsEqual(srcNode, newNode) && attrsEqual(srcNode, newNode, ['language'])
+    if (!attrsEqual(srcNode, newNode) && !languageChanged) return false
     const start = startOf(mdNode)
     const end = endOf(mdNode)
     const raw = body.slice(start, end)
@@ -1039,6 +1497,31 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const open = mdNode?.lang === 'LaTeX'
       ? /^([ \t]*)(`{3,}|~{3,}|\${2,})/.exec(lines[0])
       : /^([ \t]*)(`{3,}|~{3,})/.exec(lines[0])
+    // Only the language changed (the code block's language picker): the
+    // info string's first word is rewritten in the authored opening fence —
+    // the fence characters, its indentation and the blanks around the word
+    // stay (`~~~   ts  ` → `~~~   go  `). Before, the whole block was
+    // written again as a ``` fence.
+    // Applied only once the patch is sure to succeed.
+    let infoPatch = null
+    if (languageChanged) {
+      const before = String(srcNode.attrs.language || '')
+      const after = String(newNode.attrs.language || '')
+      if (!open || open[2][0] === '$' || before === 'LaTeX' || after === 'LaTeX' || mdNode?.lang === 'LaTeX') return false
+      if (/\s/.test(after) || (open[2][0] === '`' && after.includes('`')) || /[\\&]/.test(after)) return false
+      const rest = lines[0].slice(open[0].length)
+      const word = /^([ \t]*)(\S*)/.exec(rest)
+      if (word[2] !== before) return false
+      // Removing the word would make the rest of the info string the language.
+      if (!after && rest.slice(word[0].length).trim()) return false
+      const at = start + open[0].length + word[1].length
+      infoPatch = [at, at + word[2].length, after]
+      if (srcNode.textContent === newNode.textContent) {
+        replace(...infoPatch)
+        notes.push({ level: 'code', at: start })
+        return true
+      }
+    }
     // Indented code (Yuque writes nested lists as blank line + 4 spaces):
     // patch it in place, keeping the indentation. Reprinting it as a fence
     // would change what follows (`2. x` right after indented code is
@@ -1126,6 +1609,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const text = content
       ? content.split('\n').map((line) => (line ? frame.prefix + fenceIndent + line : frame.prefix.replace(/[ \t]+$/, ''))).join('\n') + '\n'
       : ''
+    if (infoPatch) replace(...infoPatch)
     replace(firstLineEnd, lastLineStart, text)
     notes.push({ level: 'code', at: start })
     return true
@@ -1176,9 +1660,19 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         lastN = newIndex
       }
     }
+    // An item's empty first paragraph that is authored too (`- [x] ​` + a
+    // block below: the task's sentinel line, which parses as a paragraph of
+    // just U+200B) is that same paragraph: taken for editor-only, it looked
+    // deleted and the sentinel went with it, the block landing on the
+    // checkbox line (fuzz seed 154).
+    let keptFirst = null
+    if (name === 'list_item' && keep[0] && isEditorOnly(newNodes[0]) &&
+        (isEditorOnly(alignedOld[0]) || isSentinelParagraph(alignedOld[0]))) {
+      keptFirst = newNodes[0] = alignedOld[0]
+    }
     const encodedNew = name === 'table_row' || name === 'table_header_row'
       ? newNodes
-      : newNodes.filter((node) => !isEditorOnly(node) || emptiedSlots.has(node))
+      : newNodes.filter((node) => node === keptFirst || !isEditorOnly(node) || emptiedSlots.has(node))
     // Top level, empty paragraphs between two blocks (Enter on an empty line)
     // are spelled like an emptied one (Typora): each adds a blank line to the
     // gap of a block printed next to it. Counted per encoded block.
@@ -1218,7 +1712,54 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       }
       return true
     }
+    // A plain item's marker-line text deleted, everything after it unchanged
+    // (`1. 父` + `   1. 微风`, 父 deleted): only the text goes, the nested
+    // list keeps its own line (`1. ` + `   1. 微风`). Reprinted whole below,
+    // the list moved onto the marker line (`1. 1. 微风`; RS-67).
+    if (name === 'list_item' && newNode.attrs.checked == null && keep[0] && oldNodes.length >= 2 &&
+        oldNodes[0].type.name === 'paragraph' && !isEditorOnly(oldNodes[0]) &&
+        isEditorOnly(newNodes[0]) && newNodes[0] !== keptFirst &&
+        encodedNew.length === oldNodes.length - 1 &&
+        encodedNew.every((node, index) => sameNode(node, oldNodes[index + 1])) &&
+        // Only a nested list right below (no blank line): an item starting
+        // with an empty line ends at a blank one (`- ` + blank + `  c` puts
+        // c outside the item; spec example 316).
+        isList(oldNodes[1]) && !/\n[ \t>]*\r?\n/.test(body.slice(endOf(kids[0]), startOf(kids[1])))) {
+      replace(startOf(kids[0]), endOf(kids[0]), '')
+      notes.push({ level: 'emptied-lead', at: startOf(kids[0]) })
+      return true
+    }
+    // What sits on an item's marker line went from text to a block (its
+    // first paragraph emptied, a nested list now first) or back: the item's
+    // shape changed — reprint it whole, printItem spells the marker line
+    // (`- [x] ​` + the block below; fuzz seed 165 wrote `- [x] - [x] ​`).
+    if (name === 'list_item' && oldNodes.length && encodedNew.length &&
+        Boolean(oldNodes[0].isTextblock) !== Boolean(encodedNew[0].isTextblock)) return false
+    // Same when the marker line's text was emptied and a block follows (a
+    // heading pasted at the start of `5. [x] k` left an empty first
+    // paragraph: dropped as editor-only, the heading landed on the checkbox
+    // line as paragraph text; fuzz UI seed 398), and when a task's first
+    // block is not a paragraph (`[x] ## h` is text, not a heading).
+    // Also when nothing encodable is left: a task emptied of its only text
+    // kept `- [ ] ` without the U+200B body and reopened as a plain item
+    // (fuzz seed 619); the item printer writes the sentinel.
+    if (name === 'list_item' && oldNodes.length) {
+      const task = newNode.attrs.checked === true || newNode.attrs.checked === false
+      const onLine = (node) => (task ? node.type.name === 'paragraph' : node.isTextblock)
+      const emptied = isEditorOnly(newNodes[0]) && newNodes[0] !== keptFirst &&
+        oldNodes[0].type.name === 'paragraph' && !isEditorOnly(oldNodes[0])
+      // (A plain item emptied keeps its authored `- ` through the region.)
+      if (emptied && (encodedNew.length || task)) return false
+      if (encodedNew.length && onLine(oldNodes[0]) !== onLine(encodedNew[0])) return false
+    }
+    // A fence left open runs to the end of its container, so the block was
+    // its container's last child. Followed by a block now (a paste or a
+    // line typed below it; fuzz seed 3737: a file ending in an open
+    // ```` ``` ````), its authored bytes would swallow that block: it is
+    // printed again, closed.
+    const lastEncoded = encodedNew.length - 1
     const pairs = diffSequences(oldNodes, encodedNew)
+      .filter(([oldIndex, newIndex]) => newIndex >= lastEncoded || !fenceLeftOpen(kids[oldIndex], oldNodes[oldIndex]))
     // Items that keep their authored bytes (unchanged or patched in place):
     // their marker numbers may need renumbering below.
     const survivors = [...pairs]
@@ -1319,9 +1860,9 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
           if (patchNode(before, md, after, innerFrame)) {
             survivors.push([oldIndex, newIndex])
           } else {
-            const printed = printBlock(after, newNode, mdNode, gap.newFrom + offset, md)
+            const printed = typedThematicBreak(after, [md]) ?? printBlock(after, newNode, mdNode, gap.newFrom + offset, md)
             if (printed == null) return false
-            replace(startOf(md), endOf(md), indentContinuation(printed, innerFrame.prefix))
+            replace(wholeBlockFrom(startOf(md), printed, innerFrame.prefix), endOf(md), indentContinuation(printed, innerFrame.prefix))
             notes.push({ level: 'block', type: after.type.name })
           }
         }
@@ -1331,7 +1872,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       if (!replaceRegion(srcNode, mdNode, kids, newNode, gap, innerFrame, separator, encodedNew, oldNodes)) return false
     }
     if (name === 'ordered_list') {
-      renumberSurvivors(kids, survivors)
+      renumberSurvivors(kids, survivors, innerFrame)
       // The first item's number IS the list's start (`order`): when an
       // authored item becomes first, it carries the editor's start number
       // even in irregular numbering (`1. 2. 3.` + `1.`; seed 96).
@@ -1398,7 +1939,36 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // number no longer matches their new position get only their digits
   // rewritten. All-same (1. 1. 1.) or custom numbering is left alone.
   // (Air report 2026-10-07: deleting an item left `3. … 5. … 6.`.)
-  const renumberSurvivors = (kids, survivors) => {
+  // A new number of another width moves the item's content column: its
+  // later lines move by the same amount (Typora), or a fence 5 columns in
+  // under `9.` left the item once it was `12.` (fuzz seed 1505). Returns
+  // false when that cannot be done exactly: other edits inside the item, or
+  // a line that does not start with the frame's prefix.
+  const shiftItemLines = (item, delta, frame) => {
+    const from = startOf(item)
+    const to = endOf(item)
+    if (edits.some((edit) => edit.to > from && edit.from < to)) return false
+    const shifts = []
+    for (let at = body.indexOf('\n', from); at >= 0 && at + 1 < to; at = body.indexOf('\n', at + 1)) {
+      const lineStart = at + 1
+      const lineEnd = body.indexOf('\n', lineStart) < 0 ? body.length : body.indexOf('\n', lineStart)
+      const line = body.slice(lineStart, lineEnd).replace(/\r$/, '')
+      if (!line.startsWith(frame.prefix)) {
+        if (/^[ \t>]*$/.test(line)) continue
+        return false
+      }
+      const rest = line.slice(frame.prefix.length)
+      if (!rest.trim()) continue
+      const cut = lineStart + frame.prefix.length
+      if (delta > 0) shifts.push([cut, cut, ' '.repeat(delta)])
+      // A lazy line (less indented) stays lazy.
+      else if (rest.startsWith(' '.repeat(-delta))) shifts.push([cut, cut - delta, ''])
+    }
+    for (const [a, b, text] of shifts) replace(a, b, text)
+    return true
+  }
+
+  const renumberSurvivors = (kids, survivors, frame) => {
     const numberAt = (item) => {
       const match = LIST_MARKER.exec(body.slice(startOf(item), startOf(item) + 16))
       return match ? { indent: match[1].length, digits: match[2].slice(0, -1) } : null
@@ -1413,6 +1983,10 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       const expected = String(start + newIndex)
       const entry = numbers[oldIndex]
       if (!entry || entry.digits === expected) continue
+      const delta = expected.length - entry.digits.length
+      // Numbers do not change the content; an item whose lines cannot move
+      // keeps its authored number.
+      if (delta && !shiftItemLines(kids[oldIndex], delta, frame)) continue
       const from = startOf(kids[oldIndex]) + entry.indent
       replace(from, from + entry.digits.length, expected)
     }
@@ -1423,13 +1997,17 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // Markdown merging them (lazy continuation, setext underline, table rows,
   // HTML blocks running on)? Only then may a separator be a single newline.
   const isList = (node) => node?.type.name === 'bullet_list' || node?.type.name === 'ordered_list'
+  const isSetextMd = (md) => md?.type === 'heading' && Number.isInteger(startOf(md)) && !/^[ \t]*#/.test(body.slice(startOf(md), startOf(md) + 8))
   const listCanInterrupt = (list) => {
     const first = list.firstChild
     // An item whose first line is only its marker (empty, blank, or starting
     // with a nested list: `-` + `  - x`) cannot interrupt a paragraph, and a
     // bare `-` right under a paragraph line is a setext underline (seed 79).
+    // A task is never: its line always carries `[ ]` + body (U+200B when the
+    // body is empty, printItem; fuzz seed 154).
     const lead = first?.firstChild
-    const emptyLine = !lead || (lead.isTextblock ? isBlankParagraph(lead) || lead.content.size === 0 : isList(lead))
+    const task = first?.attrs?.checked === true || first?.attrs?.checked === false
+    const emptyLine = !task && (!lead || (lead.isTextblock ? isBlankParagraph(lead) || lead.content.size === 0 : isList(lead)))
     if (emptyLine) return false
     return list.type.name === 'bullet_list' || (list.attrs.order ?? 1) === 1
   }
@@ -1446,13 +2024,53 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // gap when it is still valid for this pair.
   const blankSeparator = (frame) => '\n' + frame.prefix.replace(/[ \t]+$/, '') + '\n' + frame.prefix
   const tightSeparator = (frame) => '\n' + frame.prefix
-  const pairSeparator = (container, prev, next, frame, rawGap, containerSeparator) => {
+  // Two neighbouring lists that Markdown reads back as ONE list (same kind,
+  // same bullet / delimiter): the separator that list already has between
+  // its items — none of the extra blank lines an empty paragraph between
+  // them would get, which only make it loose. null when they do not merge.
+  // Tightness is read from the text: Milkdown's items carry `spread: true`
+  // whatever the source says. A part printed from a source list also looks
+  // at that list's item gaps: split into two one-item lists, a loose
+  // `- a\n\n- b` has no gap of its own left and was written tight.
+  const sourceItemsLoose = (md) => (md?.children || []).some((item, index, items) =>
+    index > 0 && /\n[ \t>]*\r?\n/.test(body.slice(endOf(items[index - 1]), startOf(item))))
+  const mergedListSeparator = (left, right, frame) => {
+    if (!isList(left?.node) || left.node.type !== right?.node?.type) return null
+    const textOf = (entry) => (entry.md ? body.slice(startOf(entry.md), endOf(entry.md)) : entry.text) || ''
+    const a = LIST_MARKER.exec(textOf(left))?.[2]
+    const b = LIST_MARKER.exec(textOf(right))?.[2]
+    if (!a || !b) return null
+    if (left.node.type.name === 'ordered_list' ? a.slice(-1) !== b.slice(-1) : a !== b) return null
+    const loose = [left, right].some((entry) => /\n[ \t>]*\r?\n/.test(textOf(entry)) || sourceItemsLoose(entry.listMd))
+    return loose ? blankSeparator(frame) : tightSeparator(frame)
+  }
+  // The line break + delimiter row that follow a table's header row: the
+  // authored one when `rawGap` (header end → next row start) is exactly that,
+  // else one spelled from the alignments. Without the final line break.
+  const headerDelimiter = (table, rawGap, containerSeparator) => {
+    if (typeof rawGap === 'string') {
+      const match = /^(\r?\n[^\r\n]*)\r?\n[ \t>]*$/.exec(rawGap)
+      if (match && /^[ \t>]*\|?[ \t]*:?-/.test(match[1].replace(/^\r?\n/, ''))) return match[1].replace(/\r\n/g, '\n')
+    }
+    return containerSeparator + `| ${tableAlignments(table).map((align) => spellAlignment('---', align)).join(' | ')} |`
+  }
+  const pairSeparator = (container, prev, next, frame, rawGap, containerSeparator, nextMd = null) => {
     const name = container.type.name
+    // After the header row comes the delimiter row: a region next to it (the
+    // first body row deleted by a row handle, fuzz UI seed 128) keeps the
+    // authored one.
+    if (name === 'table' && prev?.type.name === 'table_header_row') return headerDelimiter(container, rawGap, containerSeparator) + containerSeparator
     if (name === 'bullet_list' || name === 'ordered_list' || name === 'table' || /^table_/.test(name)) {
       return containerSeparator
     }
     const rawHasBlank = typeof rawGap === 'string' && /\n[ \t>]*\r?\n/.test(rawGap)
     if (rawHasBlank) return rawGap.replace(/\r\n/g, '\n')
+    // An authored setext heading kept after a paragraph needs a blank line:
+    // the paragraph line would become part of its text (`para` + `text` +
+    // `-`; fuzz seed 226, a block moved in front of it).
+    if (prev?.type.name === 'paragraph' && isSetextMd(nextMd)) {
+      return blankSeparator(frame)
+    }
     if (typeof rawGap === 'string' && /^[ \t]*\r?\n[ \t>]*$/.test(rawGap) && tightAllowed(prev, next)) {
       return rawGap.replace(/\r\n/g, '\n')
     }
@@ -1469,26 +2087,65 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   const blankRunsBefore = new WeakMap()
   const replaceRegion = (srcNode, mdNode, kids, newNode, gap, frame, separator, newNodes, oldChildren) => {
     const printedNew = []
+    // A list printed in place of removed blocks keeps the markers of a
+    // removed list of its kind (an empty `1) ` lifted into the `+ literal`
+    // list above it reprinted that list with `-`).
+    const removedLists = kids.slice(gap.oldFrom, gap.oldTo).filter((md) => md?.type === 'list')
+    const usedLists = []
     for (let index = gap.newFrom; index < gap.newTo; index += 1) {
       const node = newNodes[index]
       if (isBlankParagraph(node)) continue // no encoding
-      const printed = printBlock(node, newNode, mdNode, index)
+      let listMd = null
+      if (isList(node)) {
+        const at = removedLists.findIndex((md) => Boolean(md.ordered) === (node.type.name === 'ordered_list'))
+        if (at >= 0) {
+          listMd = removedLists.splice(at, 1)[0]
+          usedLists.push(listMd)
+        } else if (node.type.name === 'bullet_list') {
+          // One list split in two (Enter twice in its middle): the second
+          // part keeps the bullet too.
+          listMd = usedLists.find((md) => !md.ordered) || null
+        }
+      }
+      const printed = typedThematicBreak(node, kids.slice(gap.oldFrom, gap.oldTo)) ?? printBlock(node, newNode, mdNode, index, listMd)
       if (printed == null) return false
-      printedNew.push({ node, text: indentContinuation(printed, frame.prefix), newIndex: index })
+      printedNew.push({ node, text: indentContinuation(printed, frame.prefix), newIndex: index, listMd })
     }
     const prevIndex = gap.oldFrom - 1
     const nextIndex = gap.oldTo
     const prev = prevIndex >= 0 ? { node: oldChildren[prevIndex], md: kids[prevIndex], index: prevIndex, newIndex: gap.newFrom - 1 } : null
     const next = nextIndex < kids.length ? { node: oldChildren[nextIndex], md: kids[nextIndex], index: nextIndex, newIndex: gap.newTo } : null
     const blankRuns = blankRunsBefore.get(newNodes)
-    const from = prev ? endOf(prev.md) : (gap.oldTo > gap.oldFrom ? startOf(kids[gap.oldFrom]) : next ? startOf(next.md) : null)
-    const to = next ? startOf(next.md) : (gap.oldTo > gap.oldFrom ? endOf(kids[gap.oldTo - 1]) : prev ? endOf(prev.md) : null)
+    let from = prev ? endOf(prev.md) : (gap.oldTo > gap.oldFrom ? startOf(kids[gap.oldFrom]) : next ? startOf(next.md) : null)
+    if (!prev && from != null && printedNew.length) from = wholeBlockFrom(from, printedNew[0].text, frame.prefix)
+    let to = next ? startOf(next.md) : (gap.oldTo > gap.oldFrom ? endOf(kids[gap.oldTo - 1]) : prev ? endOf(prev.md) : null)
+    // An empty document (its text all deleted: `\n`, or nothing) has no
+    // block to anchor on: the new blocks become the whole source. Without
+    // this every edit after emptying a document failed to sync until the
+    // warning (Air trace 2026-11-06: a heading emptied, then a whole page
+    // typed). Only when the source is blank — front matter or definitions
+    // also leave no block here.
+    let wholeDocument = false
+    if (from == null && to == null && !kids.length && srcNode.type.name === 'doc' && !body.trim() && printedNew.length) {
+      from = 0
+      to = body.length
+      wholeDocument = true
+    }
     if (from == null || to == null) return false
     // The authored gap that followed `left` (or preceded `right`) — never a
     // slice spanning deleted blocks.
     const rawGapBetween = (left, right) => {
       if (left?.md && Number.isInteger(left.index) && left.index + 1 < kids.length) {
-        return body.slice(endOf(left.md), startOf(kids[left.index + 1]))
+        const gap = body.slice(endOf(left.md), startOf(kids[left.index + 1]))
+        if (right?.md === kids[left.index + 1]) return gap
+        // Its last line ends with the indent of the block that used to follow
+        // (`  ```` after a paragraph): another block put there must not take
+        // it — a moved list read `  - l` (fuzz seed 940).
+        const newline = gap.lastIndexOf('\n')
+        const last = gap.slice(newline + 1)
+        return newline >= 0 && last.startsWith(frame.prefix) && /^[ \t]+$/.test(last.slice(frame.prefix.length))
+          ? gap.slice(0, newline + 1) + frame.prefix
+          : gap
       }
       if (right?.md && Number.isInteger(right.index) && right.index > 0) {
         return body.slice(endOf(kids[right.index - 1]), startOf(right.md))
@@ -1511,10 +2168,27 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         if (insertionOnly && srcNode.type.name === 'doc' && typeof raw === 'string' && /^(?:[ \t]*\r?\n){3,}[ \t]*$/.test(raw)) {
           raw = '\n\n'
         }
-        const blanks = blankRuns && (!left.md || !item.md) ? blankRuns[item.newIndex] || 0 : 0
-        text += blanks ? '\n'.repeat(2 * (blanks + 1)) : pairSeparator(srcNode, left.node, item.node, frame, raw, separator)
+        // Between two kept blocks too: a block removed from between them
+        // whose slot the editor still shows as empty paragraphs (a second
+        // paragraph emptied after the first one's line was saved: the raw gap
+        // before the removed block only holds the first one's line).
+        const blanks = blankRuns ? blankRuns[item.newIndex] || 0 : 0
+        // ...except between two lists that read back as ONE list (same kind
+        // and marker): blank lines there only make it loose. Enter twice in
+        // the middle of a list (RS-86) splits it around an empty paragraph
+        // that has no Markdown; the list is written as it was.
+        const merged = blanks ? mergedListSeparator(left, item, frame) : null
+        if (merged != null) {
+          text += merged
+        } else {
+          text += blanks ? '\n'.repeat(2 * (blanks + 1)) : pairSeparator(srcNode, left.node, item.node, frame, raw, separator, item.md)
+        }
       }
       if (!item.md) text += item.text
+    }
+    // Every body row removed: the delimiter row still follows the header.
+    if (srcNode.type.name === 'table' && prev?.node.type.name === 'table_header_row' && sequence.length === 1) {
+      text += headerDelimiter(srcNode, rawGapBetween(prev, null), separator)
     }
     // An indented code block kept right after what is now a list would read
     // as that list's continuation — indented code has no spelling there — so
@@ -1537,6 +2211,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       const marker = /^(\d{1,9})[.)]/.exec(body.slice(at, at + 11))
       if (marker) replace(at + marker[1].length, at + marker[1].length, '\\')
     }
+    // The kept next block's authored indent past the frame prefix (a fence
+    // at `  ````): its content lines are read against it.
+    const nextLead = (() => {
+      if (!next || !(to > from)) return ''
+      const lineStart = body.lastIndexOf('\n', to - 1) + 1
+      const lead = lineStart > from ? body.slice(lineStart, to) : ''
+      const extra = lead.startsWith(frame.prefix) ? lead.slice(frame.prefix.length) : ''
+      return /^[ \t]+$/.test(extra) ? extra : ''
+    })()
+    let nextReprinted = false
     if (next && srcNode.type.name === 'doc') {
       const before = sequence[sequence.length - 2]
       // An indented code block kept right after what is now a list would
@@ -1550,12 +2234,35 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         if (fenced == null || !/^(```|~~~)/.test(fenced)) return false
         replace(startOf(next.md), endOf(next.md), fenced)
         escapeOrderedLead(kids[nextIndex + 1])
+      } else if (nextLead && isList(before?.node) && !isList(next.node) && gap.newTo < newNodes.length) {
+        // Indented after what is now a list, it would be read as that list's
+        // continuation (`- x` + blank + `  ````); without the indent a
+        // fence's content gains it. Printed whole at the margin (seed 940).
+        const printed = printBlock(newNodes[gap.newTo], newNode, mdNode, gap.newTo, next.md)
+        if (printed == null) return false
+        replace(startOf(next.md), endOf(next.md), printed)
+        nextReprinted = true
+        // The authored gap before it ends with that indent (its position
+        // starts after it): kept, the block still read as the list's
+        // continuation (fuzz UI seed 1607, a list dragged in front of
+        // `   p`).
+        if (text.endsWith(frame.prefix + nextLead)) text = text.slice(0, text.length - nextLead.length)
       } else if (!(before?.md && isIndentedCode(before.md))) {
         escapeOrderedLead(next.md)
       }
     }
+    // The kept next block keeps its authored indent: its position starts
+    // after it, but a fence's content lines are read relative to it
+    // (`  ```` + `  code`). A separator ending at the frame prefix dropped it
+    // and every code line gained two spaces (fuzz seed 940, block drag).
+    if (nextLead && !nextReprinted && text.includes('\n')) {
+      const lastLine = text.slice(text.lastIndexOf('\n') + 1)
+      if (lastLine === frame.prefix || lastLine === frame.prefix.replace(/[ \t]+$/, '')) {
+        text = text.slice(0, text.length - lastLine.length) + frame.prefix + nextLead
+      }
+    }
     // `from`/`to` exclude the unchanged neighbours' own bytes.
-    replace(from, to, text)
+    replace(from, to, wholeDocument ? `${text}\n` : text)
     notes.push({ level: 'region', parent: srcNode.type.name, removed: gap.oldTo - gap.oldFrom, inserted: printedNew.length })
     return true
   }

@@ -4,6 +4,13 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
 const root = `/tmp/horsemd-rs64-empty-bullet-indent-${process.pid}`
 const file = join(root, 'rs-64.md')
@@ -133,6 +140,7 @@ try {
   assert.equal(afterTab.topItems.length, 2, `Tab did not move the empty item under its previous sibling: ${JSON.stringify(afterTab.topItems)}`)
   assert.equal(afterTab.integrity.some((entry) => entry.ok === false), false, `RS-64 Tab failed integrity: ${JSON.stringify(afterTab.integrity)}`)
   assert.equal(afterTab.toasts.some((text) => warningPattern.test(text)), false, `RS-64 Tab showed warning: ${JSON.stringify(afterTab.toasts)}`)
+  if (!productPath) {
   const focusedPublication = afterTab.preserve.find((entry) =>
     entry.reason === 'list-nested-empty-bullet-tail-indented' &&
     entry.preserved !== false &&
@@ -155,10 +163,11 @@ try {
     entry.phase === 'published' && entry.owner === 'transaction' &&
     entry.family === 'list-nested-empty-bullet-tail-indent'
   ), true, `RS-64 bypassed Coordinator focused publication: ${JSON.stringify(afterTab.coordinator)}`)
+  }
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-64 source after Tab')
   const sourceAfterTab = await waitFor(() => visibleSource(app), 'RS-64 source textarea missing after Tab')
-  assert.equal(sourceAfterTab, afterTabExpected, `RS-64 source after Tab is not parse-safe: ${JSON.stringify(sourceAfterTab)}`)
+  assert.equal(productPath ? tightMarkers(sourceAfterTab) : sourceAfterTab, productPath ? tightMarkers(afterTabExpected) : afterTabExpected, `RS-64 source after Tab is not parse-safe: ${JSON.stringify(sourceAfterTab)}`)
   assert.doesNotMatch(sourceAfterTab, /<br\s*\/?\s*>/i, 'RS-64 leaked Crepe placeholder after Tab')
   assert.equal(await toggleSource(app), true, 'could not return RS-64 to rich mode after Tab')
   await sleep(250)

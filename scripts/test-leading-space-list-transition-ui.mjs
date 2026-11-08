@@ -145,9 +145,11 @@ try {
     false,
     'source switch showed a leading-space sync warning'
   )
-  assert.match(source, /(?:^|\n)3\.  色粉色分看了你快乐 \n/m, 'the ordered item must contain two plain spaces and the trailing space')
-  assert.doesNotMatch(source, /\u200B/, 'the stale U+200B sentinel must not remain in source')
-  console.log('PASS leading-space ordered-list transition: stale sentinel removed after continued typing')
+  // A leading space at a line start is written as U+200B + space (two plain
+  // spaces after `3.` would be marker padding and drop the space on reopen).
+  assert.match(source, /(?:^|\n)3\. \u200B 色粉色分看了你快乐 \n/m, 'the ordered item must keep its leading space (U+200B + space) and the trailing space')
+  assert.equal((source.match(/\u200B/g) || []).length, 1, 'a stale extra U+200B sentinel remained in source')
+  console.log('PASS leading-space ordered-list transition: leading space kept as one U+200B sentinel after continued typing')
 } finally {
   await stopBuiltElectron(app, { removeProfile: true })
   await rm(root, { recursive: true, force: true })

@@ -247,9 +247,11 @@ async function main() {
         )
       }
 
+      // `<font>` is an editable html_span mark (editor-html-span.js), not an
+      // html atom.
       const inlineText = await revealTarget(
         app,
-        '.hm-html-inline',
+        '.hm-html-span',
         'highlighted inline HTML text',
         'text'
       )

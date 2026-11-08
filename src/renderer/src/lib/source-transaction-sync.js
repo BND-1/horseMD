@@ -12,6 +12,10 @@ import { hasBlank, isAllBlank, splitBlanks } from './markdown-blanks.js'
 const unsafeInlineSyntax = /[`*_{}\[\]<>#|\\]/
 const unsafeAtBlockStart = /^(?:[-+>]|\d+[.)])/u
 const leadingSpaceSentinel = '\u200B'
+// Inline code keeps every space it holds (`` ` a` `` is " a"): the edge
+// and line-break whitespace rules below never apply to it.
+const isCodeText = (child) => Array.isArray(child?.marks) &&
+  child.marks.some((mark) => (mark?.type ?? mark) === 'inlineCode')
 
 const plainSliceText = (slice) => {
   if (!slice || slice.size === 0 || slice.content?.size === 0) return ''
@@ -438,9 +442,16 @@ const semanticJson = (node, {
       // whitespace). Yuque writes `<font> text`, which keeps it, but a
       // reprinted span has its edge blank moved out of the tag by Milkdown;
       // compare that line start without the blank.
+      // Not inline code (its blanks are content), and not after a break that
+      // opens a paragraph / heading: that break has no spelling and is
+      // dropped below, so this text starts the block and its blanks are
+      // spelled (`&#x20;note`; fuzz UI seed 185). Also after a RUN of
+      // breaks opening the block: all are dropped (fuzz UI seed 368).
+      const leadingBreak = (index, all) => index >= 1 && !inCell && (next.type === 'paragraph' || next.type === 'heading') &&
+        all.slice(0, index).every((child) => /^hard_?break$/.test(child?.type || ''))
       next.content = next.content.flatMap((child, index, all) => {
         const previous = all[index - 1]
-        if (child?.type !== 'text' || !/^hard_?break$/.test(previous?.type || '')) return [child]
+        if (child?.type !== 'text' || isCodeText(child) || leadingBreak(index, all) || !/^hard_?break$/.test(previous?.type || '')) return [child]
         const text = String(child.text || '').replace(/^[ \t]+/, '')
         return text ? [{ ...child, text }] : []
       })
@@ -486,24 +497,29 @@ const semanticJson = (node, {
         (child?.type === 'hardbreak' || child?.type === 'hard_break') && child.attrs?.isInline === true
       const isEdgeBreak = (child) =>
         (child?.type === 'hardbreak' || child?.type === 'hard_break') && (child.attrs?.isInline === true || !inCell)
-      if (next.content.some((child) => !isEdgeBreak(child))) {
-        while (isEdgeBreak(next.content[0])) next.content = next.content.slice(1)
-        // ...nor end with one (the newline is just the paragraph's end).
-        while (isEdgeBreak(next.content.at(-1))) next.content = next.content.slice(0, -1)
-      }
       // Spaces right before a line break cannot be stored (CommonMark strips
       // them; two or more turn a soft break into a hard one): compare without
       // them (fuzz seed 55).
       const isAnyBreak = (child) => child?.type === 'hardbreak' || child?.type === 'hard_break'
       next.content = next.content.map((child, index) => (
-        child?.type === 'text' && isAnyBreak(next.content[index + 1]) && /[ \t]+$/.test(child.text || '')
+        child?.type === 'text' && !isCodeText(child) && isAnyBreak(next.content[index + 1]) && /[ \t]+$/.test(child.text || '')
           ? { ...child, text: child.text.replace(/[ \t]+$/, '') }
           : child
       )).filter((child) => !(child?.type === 'text' && child.text === ''))
+      // Edge breaks after the blanks BEFORE breaks are gone (`    ` + soft
+      // break at the start of a paragraph is an edge break too, fuzz UI seed
+      // 127), and before the blanks AFTER soft breaks: once a leading break
+      // is dropped, the text after it starts the paragraph and its spaces
+      // are spelled (`&#x20;note`, fuzz UI seed 185).
+      if (next.content.some((child) => !isEdgeBreak(child))) {
+        while (isEdgeBreak(next.content[0])) next.content = next.content.slice(1)
+        // ...nor end with one (the newline is just the paragraph's end).
+        while (isEdgeBreak(next.content.at(-1))) next.content = next.content.slice(0, -1)
+      }
       // ...nor right after a soft break: CommonMark strips the leading
       // whitespace of a paragraph continuation line (fuzz seed 67).
       next.content = next.content.map((child, index) => (
-        child?.type === 'text' && isSoftBreak(next.content[index - 1]) && /^[ \t]+/.test(child.text || '')
+        child?.type === 'text' && !isCodeText(child) && isSoftBreak(next.content[index - 1]) && /^[ \t]+/.test(child.text || '')
           ? { ...child, text: child.text.replace(/^[ \t]+/, '') }
           : child
       )).filter((child) => !(child?.type === 'text' && child.text === ''))
@@ -521,7 +537,7 @@ const semanticJson = (node, {
       // when more text follows). A space typed just before Enter / at the end
       // of a line is therefore not authored meaning. Code blocks keep theirs.
       const last = next.content.at(-1)
-      if (last?.type === 'text' && /[ \t]+$/.test(String(last.text || ''))) {
+      if (last?.type === 'text' && !isCodeText(last) && /[ \t]+$/.test(String(last.text || ''))) {
         const trimmed = String(last.text).replace(/[ \t]+$/, '')
         if (trimmed) next.content[next.content.length - 1] = { ...last, text: trimmed }
         else next.content = next.content.slice(0, -1)
@@ -538,10 +554,10 @@ const semanticJson = (node, {
       )
       const first = paragraphs[0]
       const last = paragraphs.at(-1)
-      if (first?.content[0]?.type === 'text') {
+      if (first?.content[0]?.type === 'text' && !isCodeText(first.content[0])) {
         first.content[0] = { ...first.content[0], text: String(first.content[0].text || '').replace(/^[ \t]+/, '') }
       }
-      if (last?.content.at(-1)?.type === 'text') {
+      if (last?.content.at(-1)?.type === 'text' && !isCodeText(last.content.at(-1))) {
         const index = last.content.length - 1
         last.content[index] = { ...last.content[index], text: String(last.content[index].text || '').replace(/[ \t]+$/, '') }
       }
@@ -607,6 +623,15 @@ const semanticJson = (node, {
         } else lists.push(child)
         return lists
       }, [])
+    }
+    // A quote cannot encode how many empty paragraphs it holds either (`>`
+    // is one): consecutive empties collapse to one, as in list items below
+    // (fuzz seed 1142: `/quote` + Tab + Enter left two, every edit paused).
+    if (next.type === 'blockquote' && Array.isArray(next.content)) {
+      next.content = next.content.filter((child, index, all) => !(
+        child?.type === 'paragraph' && !child.content?.length &&
+        all[index - 1]?.type === 'paragraph' && !all[index - 1].content?.length
+      ))
     }
     if (next.type === 'list_item' && Array.isArray(next.content)) {
       const ignoreTrailingEmptyAtOwnedPath =

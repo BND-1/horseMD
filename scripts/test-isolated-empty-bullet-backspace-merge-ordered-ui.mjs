@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-isolated-empty-bullet-merge-ordered-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -128,10 +129,13 @@ try {
 
   // Human path from PID 65786: Enter at the start of u高科技 inserts an empty
   // bullet before it, then ArrowUp returns to that empty item.
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  const enterMark = await publishMark(app.evaluate)
   await key(app, 'Enter', 'Enter', 13, '', 220)
   await waitFor(
-    () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
-      entry.preserved === true && String(entry.markdown || '').includes('2. 斛律v哦'))`),
+    async () => await reprintPublished(app.evaluate, { since: enterMark }) ||
+      app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
+        entry.preserved === true && String(entry.markdown || '').includes('2. 斛律v哦'))`),
     'Enter did not publish the intermediate empty bullet'
   )
   await key(app, 'ArrowUp', 'ArrowUp', 38, '', 180)
@@ -147,28 +151,34 @@ try {
     window.__hmSourceIntegrityDiffTrace = []
   })()`)
 
+  const backspaceMark = await publishMark(app.evaluate)
   await key(app, 'Backspace', 'Backspace', 8, '', 240)
   await waitFor(
-    () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
-      entry.reason === 'diverged-isolated-empty-bullet-backspace-merge-ordered')`),
+    async () => await reprintPublished(app.evaluate, { since: backspaceMark }) ||
+      app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
+        entry.reason === 'diverged-isolated-empty-bullet-backspace-merge-ordered')`),
     'Backspace did not hit isolated empty bullet -> ordered merge mapper'
   )
   await sleep(700)
 
   const after = await diagnostics(app)
   console.log('EMPTY_BULLET_MERGE_AFTER_BACKSPACE:', JSON.stringify(after))
-  assert.equal(
-    after.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-bullet-backspace-merge-ordered' && entry.preserved === true),
-    true,
-    'Backspace merge mapper did not preserve the transaction'
-  )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      after.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-bullet-backspace-merge-ordered' && entry.preserved === true),
+      true,
+      'Backspace merge mapper did not preserve the transaction'
+    )
+  }, 'Backspace merge mapper', { since: backspaceMark })
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, 'Backspace merge produced an integrity failure')
-  assert.equal(
-    after.integrity.some((entry) => entry.preservationReason === 'diverged-isolated-empty-bullet-backspace-merge-ordered' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true),
-    true,
-    'Backspace merge candidate was not fully source-equivalent'
-  )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      after.integrity.some((entry) => entry.preservationReason === 'diverged-isolated-empty-bullet-backspace-merge-ordered' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true),
+      true,
+      'Backspace merge candidate was not fully source-equivalent'
+    )
+  }, 'Backspace merge proof', { since: backspaceMark })
   assert.equal(
     after.toasts.some((text) => /检测到富文本与源码不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)),
     false,
@@ -178,7 +188,10 @@ try {
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   console.log('EMPTY_BULLET_MERGE_SOURCE:', JSON.stringify(source))
-  assert.match(source, /2\. 斛律v哦\n\n3\. \n4\. u高科技/, 'target rows were not converted to consecutive authored ordered markers')
+  // Merged into one ordered list: the source reprint writes it tight with an
+  // empty item as its marker (`3.`); the legacy path kept the old blank line
+  // between the two lists (`\n\n3. `), which made the list loose.
+  assert.match(source, /2\. 斛律v哦\n(?:\n3\. |3\.)\n4\. u高科技/, 'target rows were not converted to consecutive authored ordered markers')
   assert.doesNotMatch(source, /(?:^|\n)-\s*(?:\n|$)/, 'transient empty bullet remained in source')
   assert.ok(source.includes('```\n尼玛，吗了解\n了几百块\n```'), 'authored fenced code changed')
   assert.ok(

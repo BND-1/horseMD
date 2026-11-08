@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-blockquote-split-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13220 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -31,7 +37,9 @@ const expected = '\uFEFF' + [
   '',
   '  >   quoted',
   '  >',
-  '  >   XYalpha',
+  // The product path starts the new line with the plain prefix; the authored
+  // first line keeps its bytes (its inner blanks are paragraph indentation).
+  productPath ? '  > XYalpha' : '  >   XYalpha',
   '',
   '- following bullet',
   ''
@@ -179,7 +187,7 @@ const assertSourceView = (source, label) => {
   assert.equal(source, expectedView, `${label} source differs from split owner output`)
   assert.equal(source.charCodeAt(0), 0xFEFF, `${label} source lost BOM`)
   assert.equal(source.includes('\r'), false, `${label} textarea exposed raw CR bytes`)
-  assert.equal(source.includes('  >   quoted\n  >\n  >   XYalpha\n'), true,
+  assert.equal(source.includes(productPath ? '  >   quoted\n  >\n  > XYalpha\n' : '  >   quoted\n  >\n  >   XYalpha\n'), true,
     `${label} lost authored quote prefix or blank quote separator`)
   assert.equal(source.includes('- authored bullet'), true, `${label} changed preceding list`)
   assert.equal(source.includes('- following bullet'), true, `${label} changed following list`)
@@ -194,6 +202,7 @@ const assertPublication = (state, expectedBoundary, label) => {
     `${label} produced source-integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
+  if (productPath) return
 
   const captures = state.journalTrace.filter((entry) =>
     entry.phase === 'capture' && entry.ok === true

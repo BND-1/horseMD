@@ -38,8 +38,10 @@ async function main() {
       return { nestedLists, topLevelItems, bodyText }
     })()`)
     console.log('reopen structure:', JSON.stringify(structure))
-    assert.equal(structure.nestedLists, 0, `escaped-literal must reopen as one level (got nested ${structure.nestedLists})`)
-    console.log('PASS literal marker reopen structure: unescaped source stays a single-level list')
+    // CommonMark: `- - x` IS a list nested in a list item — which is why a
+    // literal `- ` typed into an item must be written `\\-` (the reprint does).
+    assert.equal(structure.nestedLists, 1, `unescaped \`- - 测试\` must reopen as a nested list (got nested ${structure.nestedLists})`)
+    console.log('PASS literal marker reopen structure: unescaped `- - x` reopens nested, so a literal marker must be escaped')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

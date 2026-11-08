@@ -20,6 +20,12 @@ import {
   waitForExitParagraph
 } from './lib/code-block-exit-test.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-block-exit-staged-${process.pid}`
 const file = join(root, 'staged.md')
 const port = Number(process.env.CDP_PORT || 15020 + (process.pid % 40))
@@ -49,17 +55,19 @@ try {
 
   const pending = await readCodeBlockExitDiagnostics(app)
   assertHealthyCodeBlockExit(pending, 'natural pending exit')
-  const pendingProofs = pending.preserve.filter((entry) =>
-    entry.reason === 'code-block-exit'
-  )
-  assert.equal(pendingProofs.length, 1)
-  assert.equal(pendingProofs[0].integrityProof?.mode, 'pending-empty-paragraph')
-  assert.equal(pendingProofs[0].integrityProof?.sourceUnchanged, true)
-  assert.deepEqual(pending.coordinator.filter((entry) =>
-    entry.phase === 'published' && entry.family === 'code-block-exit'
-  ).map((entry) => entry.boundary), [
-    'transaction-code-block-exit-markdown-updated'
-  ])
+  if (!productPath) {
+    const pendingProofs = pending.preserve.filter((entry) =>
+      entry.reason === 'code-block-exit'
+    )
+    assert.equal(pendingProofs.length, 1)
+    assert.equal(pendingProofs[0].integrityProof?.mode, 'pending-empty-paragraph')
+    assert.equal(pendingProofs[0].integrityProof?.sourceUnchanged, true)
+    assert.deepEqual(pending.coordinator.filter((entry) =>
+      entry.phase === 'published' && entry.family === 'code-block-exit'
+    ).map((entry) => entry.boundary), [
+      'transaction-code-block-exit-markdown-updated'
+    ])
+  }
 
   assert.equal(await toggleSource(app), true)
   let source = await waitFor(() => visibleSource(app), 'pending source missing')
@@ -74,20 +82,22 @@ try {
 
   const staged = await readCodeBlockExitDiagnostics(app)
   assertHealthyCodeBlockExit(staged, 'natural staged exit')
-  const stagedProof = staged.preserve.find((entry) =>
-    entry.reason === 'code-block-exit'
-  )?.integrityProof
-  assert.equal(stagedProof?.mode, 'staged-text')
-  assert.equal(stagedProof?.finalText, 'XY')
-  assert.equal(stagedProof?.textStepCount, 2)
-  assert.equal(stagedProof?.transactionJournal?.baseOwner, 'transaction')
-  assert.equal(stagedProof?.transactionJournal?.baseFamily, 'code-block-exit')
-  assert.equal(stagedProof?.transactionJournal?.baseReason, 'code-block-exit')
-  assert.deepEqual(staged.coordinator.filter((entry) =>
-    entry.phase === 'published' && entry.family === 'code-block-exit'
-  ).map((entry) => entry.boundary), [
-    'transaction-code-block-exit-markdown-updated'
-  ])
+  if (!productPath) {
+    const stagedProof = staged.preserve.find((entry) =>
+      entry.reason === 'code-block-exit'
+    )?.integrityProof
+    assert.equal(stagedProof?.mode, 'staged-text')
+    assert.equal(stagedProof?.finalText, 'XY')
+    assert.equal(stagedProof?.textStepCount, 2)
+    assert.equal(stagedProof?.transactionJournal?.baseOwner, 'transaction')
+    assert.equal(stagedProof?.transactionJournal?.baseFamily, 'code-block-exit')
+    assert.equal(stagedProof?.transactionJournal?.baseReason, 'code-block-exit')
+    assert.deepEqual(staged.coordinator.filter((entry) =>
+      entry.phase === 'published' && entry.family === 'code-block-exit'
+    ).map((entry) => entry.boundary), [
+      'transaction-code-block-exit-markdown-updated'
+    ])
+  }
 
   assert.equal(await toggleSource(app), true)
   source = await waitFor(() => visibleSource(app), 'staged source missing')

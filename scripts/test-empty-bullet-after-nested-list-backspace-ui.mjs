@@ -4,12 +4,17 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs63-empty-bullet-after-nested-${process.pid}`
 const file = join(root, 'rs-63.md')
 const port = Number(process.env.CDP_PORT || 10763)
 const fixture = '# RS63\n\n- sefsf \n- wefsfesf\n  * wfewff \n- \n'
-const expected = '# RS63\n\n- sefsf \n- wefsfesf\n  * wfewff \n\n'
+// Backspace joins the empty last item to the one above as an empty paragraph,
+// which has no Markdown: the source loses only the deleted item's line and
+// keeps every authored byte (`  * wfewff `). The legacy path also wrote a
+// blank line for that paragraph; nothing reads it back.
+const expected = '# RS63\n\n- sefsf \n- wefsfesf\n  * wfewff \n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 async function waitFor(check, message, attempts = 140) {
@@ -121,11 +126,15 @@ try {
     window.__hmFlushTrace = []
   })()`)
 
+  const evaluate = (expression) => app.evaluate(expression)
+  const mark = await publishMark(evaluate)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
   await waitFor(
-    () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
-      entry.reason === 'empty-list-item-merged-after-nested-list')`),
-    'RS-63 Backspace did not hit dedicated nested-list continuation reason'
+    async () => (await reprintPublished(evaluate, { since: mark })) ||
+      app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
+        entry.reason === 'empty-list-item-merged-after-nested-list')`),
+    'RS-63 Backspace was neither published by the source reprint nor hit dedicated nested-list continuation reason'
   )
   await sleep(750)
 
@@ -133,11 +142,13 @@ try {
   console.log('RS63_AFTER_BACKSPACE:', JSON.stringify(after))
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-63 integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-63 showed source warning: ${JSON.stringify(after.toasts)}`)
-  assert.equal(
-    after.preserve.some((entry) => entry.reason === 'empty-list-item-merged-after-nested-list' && entry.preserved === true),
-    true,
-    `RS-63 dedicated preservation proof missing: ${JSON.stringify(after.preserve)}`
-  )
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(
+      after.preserve.some((entry) => entry.reason === 'empty-list-item-merged-after-nested-list' && entry.preserved === true),
+      true,
+      `RS-63 dedicated preservation proof missing: ${JSON.stringify(after.preserve)}`
+    )
+  }, 'RS-63 Backspace', { since: mark })
   assert.equal(after.topItems.length, 2, `RS-63 did not remove the empty top bullet: ${JSON.stringify(after.topItems)}`)
   assert.ok(after.topItems[1].includes('wefsfesf') && after.topItems[1].includes('wfewff'), 'RS-63 changed the surviving parent/nested bullet text')
   assert.ok(after.nestedCount >= 1, 'RS-63 lost the nested bullet')

@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs66-middle-task-${process.pid}`
 const file = join(root, 'rs-66.md')
@@ -171,6 +172,8 @@ try {
     window.__hmSourceIntegrityTrace = []
     window.__hmSourceIntegrityDiffTrace = []
   })()`)
+  const evaluate = (expression) => app.evaluate(expression)
+  const createMark = await publishMark(evaluate)
   await chooseTaskByPointer(app)
   await waitFor(async () => (await state(app)).unchecked, 'RS-66 slash command did not create unchecked task')
   await sleep(850)
@@ -184,14 +187,17 @@ try {
   assert.match(created.editorText, /1/, 'RS-66 changed following paragraph')
   assert.equal(created.integrity.some((entry) => entry.ok === false), false, `RS-66 create failed integrity: ${JSON.stringify(created.integrity)}`)
   assert.equal(created.toasts.some((text) => warningPattern.test(text)), false, `RS-66 create showed warning: ${JSON.stringify(created.toasts)}`)
-  assert.equal(
-    created.integrity.some((entry) =>
-      entry.preservationReason === 'empty-task-slash-created' &&
-      entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
-    ),
-    true,
-    `RS-66 dedicated sentinel proof missing: ${JSON.stringify(created.integrity)}`
-  )
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(
+      created.integrity.some((entry) =>
+        entry.preservationReason === 'empty-task-slash-created' &&
+        entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
+      ),
+      true,
+      `RS-66 dedicated sentinel proof missing: ${JSON.stringify(created.integrity)}`
+    )
+  }, 'RS-66 slash task create', { since: createMark })
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-66 empty task source')
   const emptySource = await waitFor(() => visibleSource(app), 'RS-66 source textarea missing')

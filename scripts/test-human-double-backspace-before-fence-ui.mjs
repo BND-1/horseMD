@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-human-double-backspace-before-fence-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -108,6 +109,7 @@ try {
 
   // Human path from PID 44904: exit the list into the paragraph immediately
   // before the authored fence, then publish a literal dash before Space.
+  const dashMark = await publishMark(app.evaluate)
   await physicalKey(app, { key: 'Enter', code: 'Enter', keyCode: 13, hold: 80, after: 120 })
   await physicalKey(app, { key: 'Enter', code: 'Enter', keyCode: 13, hold: 80, after: 460 })
   await physicalKey(app, { key: '-', code: 'Minus', keyCode: 189, text: '-', hold: 95, after: 260 })
@@ -115,9 +117,12 @@ try {
 
   const literal = await diagnostics(app)
   assert.equal(literal.integrity.some((entry) => entry.ok === false), false, 'literal dash frame failed integrity')
-  assert.equal(literal.preserve.some((entry) =>
-    entry.markdown.includes('是v粉丝v') && entry.markdown.split('\n').includes('\\-')
-  ), true, 'literal dash did not publish immediately before the authored fence')
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(literal.preserve.some((entry) =>
+      entry.markdown.includes('是v粉丝v') && entry.markdown.split('\n').includes('\\-')
+    ), true, 'literal dash did not publish immediately before the authored fence')
+  }, 'literal dash before fence', { since: dashMark })
 
   await physicalKey(app, { key: ' ', code: 'Space', keyCode: 32, text: ' ', hold: 105, after: 180 })
   await sleep(700)
@@ -125,14 +130,18 @@ try {
   console.log('DOUBLE_BACKSPACE_BULLET_FRAME:', JSON.stringify(bullet))
   assert.equal(bullet.integrity.some((entry) => entry.ok === false), false, 'Space -> empty bullet failed integrity')
 
+  const firstBackspaceMark = await publishMark(app.evaluate)
   await physicalKey(app, { key: 'Backspace', code: 'Backspace', keyCode: 8, hold: 90, after: 180 })
   await sleep(700)
   const firstBackspace = await diagnostics(app)
   console.log('DOUBLE_BACKSPACE_FIRST_FRAME:', JSON.stringify(firstBackspace))
   assert.equal(firstBackspace.integrity.some((entry) => entry.ok === false), false, 'first Backspace failed integrity')
-  assert.equal(firstBackspace.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), true,
-    'first Backspace did not remove the empty list item')
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(firstBackspace.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), true,
+      'first Backspace did not remove the empty list item')
+  }, 'first Backspace', { since: firstBackspaceMark })
 
+  const secondBackspaceMark = await publishMark(app.evaluate)
   await physicalKey(app, { key: 'Backspace', code: 'Backspace', keyCode: 8, hold: 90, after: 180 })
   await sleep(900)
   const secondBackspace = await diagnostics(app)
@@ -141,9 +150,11 @@ try {
     'second Backspace before authored fence failed source integrity')
   assert.equal(secondBackspace.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false,
     'second Backspace showed a source-sync warning')
-  assert.equal(secondBackspace.preserve.some((entry) =>
-    entry.reason === 'empty-paragraph-before-fence-removed' && entry.preserved === true
-  ), true, 'dedicated empty-paragraph-before-fence handler did not own the second Backspace')
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(secondBackspace.preserve.some((entry) =>
+      entry.reason === 'empty-paragraph-before-fence-removed' && entry.preserved === true
+    ), true, 'dedicated empty-paragraph-before-fence handler did not own the second Backspace')
+  }, 'second Backspace before fence', { since: secondBackspaceMark })
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')

@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Cmd on macOS, Ctrl elsewhere (CDP modifier bits).
+const MOD = process.platform === 'darwin' ? 4 : 2
 
 const root = `/tmp/horsemd-rs-41-source-sync-${process.pid}`
 const listFile = join(root, 'tail-list.md')
@@ -118,7 +122,8 @@ async function testTailBullet() {
 
     assert.equal(await toggleSource(app), true, 'tail list: source toggle failed')
     const source = await waitFor(() => visibleSource(app), 'tail list: source textarea missing')
-    assert.match(source.replace(/\r\n?/g, '\n'), /1\. 已有\n\n- \n?$/)
+    // An empty item: `-` (source reprint) or `- ` (older writers).
+    assert.match(tightMarkers(source.replace(/\r\n?/g, '\n')), /1\. 已有\n\n-\n?$/)
     assert.equal(source.includes('1. 已有* '), false, 'tail marker was glued to the ordered list')
     assert.deepEqual(await pausedToasts(app), [], 'tail list triggered source-sync pause')
   } finally {
@@ -151,11 +156,11 @@ async function testWholeDocumentReplacement() {
     })()`)
     assert.equal(focused, true, 'whole replace: editor not focused')
     await app.evaluate(`window.api.copyText(${JSON.stringify(replacement)})`)
-    await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: 4, delayMs: 80 })
+    await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: MOD, delayMs: 80 })
     const pasteKey = {
       key: 'v',
       code: 'KeyV',
-      modifiers: 4,
+      modifiers: MOD,
       windowsVirtualKeyCode: 86,
       nativeVirtualKeyCode: 86
     }
@@ -222,7 +227,7 @@ async function testRawMarkdownPasteOwnership() {
       return !!editor
     })()`)
     assert.equal(focused, true, 'raw paste: editor not focused')
-    await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: 4, delayMs: 80 })
+    await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: MOD, delayMs: 80 })
     const consumed = await app.evaluate(`(() => {
       const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
       const data = new DataTransfer()

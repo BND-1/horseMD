@@ -4,6 +4,13 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
 const root = `/tmp/horsemd-list-nested-bullet-split-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 24020 + (process.pid % 30))
@@ -34,6 +41,8 @@ const scenarios = [
     expected: '\uFEFFbefore\r\n\r\n- alpha\r\n- beta\r\n  - gamma\r\n  - de\r\n  - lta\r\n  - epsilon\r\n- omega\r\n\r\nafter\r\n'
   }
 ]
+// The product path spells an empty item without the blank (`  +`).
+if (productPath) for (const scenario of scenarios) scenario.expected = tightMarkers(scenario.expected)
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 const waitFor = async (check, message, attempts = 180) => {
@@ -175,32 +184,34 @@ const runScenario = async (scenario, port) => {
     const state = await snapshot(app)
     assert.equal(state.integrity.some((entry) => entry.ok === false), false, `${scenario.name} integrity: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => warningPattern.test(text)), false, `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
-    const publication = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
-    )
-    assert.equal(publication.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-    assert.equal(publication[0].boundary,
-      scenario.forced
-        ? 'transaction-list-nested-bullet-item-split-forced-flush'
-        : 'transaction-list-nested-bullet-item-split-markdown-updated')
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-nested-bullet-item-split' &&
-      entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof'
-    )
-    assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
-    assert.equal(preservation.integrityProof.splitOffset, scenario.splitOffset)
-    assert.equal(preservation.integrityProof.sourceRow?.token, scenario.marker)
-    assert.equal(preservation.integrityProof.step?.name, 'ReplaceStep')
-    assert.equal(preservation.integrityProof.step?.sliceSize, 4)
-    assert.equal(preservation.integrityProof.rawInsertion?.text,
-      `\r\n  ${scenario.marker} `)
-    assert.equal(state.first.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.last.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' && entry.family === 'list-nested-bullet-item-split'
-    ), true)
+    if (!productPath) {
+      const publication = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
+      )
+      assert.equal(publication.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
+      assert.equal(publication[0].boundary,
+        scenario.forced
+          ? 'transaction-list-nested-bullet-item-split-forced-flush'
+          : 'transaction-list-nested-bullet-item-split-markdown-updated')
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-nested-bullet-item-split' &&
+        entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof'
+      )
+      assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
+      assert.equal(preservation.integrityProof.splitOffset, scenario.splitOffset)
+      assert.equal(preservation.integrityProof.sourceRow?.token, scenario.marker)
+      assert.equal(preservation.integrityProof.step?.name, 'ReplaceStep')
+      assert.equal(preservation.integrityProof.step?.sliceSize, 4)
+      assert.equal(preservation.integrityProof.rawInsertion?.text,
+        `\r\n  ${scenario.marker} `)
+      assert.equal(state.first.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.last.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' && entry.family === 'list-nested-bullet-item-split'
+      ), true)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-subtree-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 12840 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -169,50 +175,52 @@ const assertRichAndDiagnostics = (state, expectedBoundary, label) => {
     `${label} produced a source-integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed a source-sync warning: ${JSON.stringify(state.toasts)}`)
-  assert.equal(state.preserve.some((entry) =>
-    entry.reason === 'transaction-list-subtree' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-list-subtree-proof' &&
-    entry.integrityProof?.mapperReason === 'diverged-nested-list-change' &&
-    entry.integrityProof?.chainLength >= 2
-  ), true, `${label} did not publish the generic transaction-owned list subtree: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'transaction-list-subtree' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} transaction candidate was not fully equivalent: ${JSON.stringify(state.integrity)}`)
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'list-subtree-replace' &&
-    entry.boundary === expectedBoundary
-  ), true, `${label} bypassed the SourceSyncCoordinator transaction publication: ${JSON.stringify(state.coordinator)}`)
-  const journalCaptures = state.journalTrace.filter((entry) =>
-    entry.phase === 'capture' && entry.ok === true
-  )
-  assert.equal(journalCaptures.length >= 2, true,
-    `${label} did not accumulate multiple physical dispatches in the shared journal: ${JSON.stringify(state.journalTrace)}`)
-  assert.equal(new Set(journalCaptures.map((entry) => entry.journalId)).size, 1,
-    `${label} restarted the journal inside one deferred callback window: ${JSON.stringify(journalCaptures)}`)
-  const finalCapture = journalCaptures.at(-1)
-  assert.equal(finalCapture.transactionCount >= 2, true,
-    `${label} journal did not retain the structural transaction chain: ${JSON.stringify(finalCapture)}`)
-  const ownerPublication = state.ownerTrace.find((entry) =>
-    entry.phase === 'published' && entry.ok === true && entry.chainLength >= 2
-  )
-  assert.ok(ownerPublication,
-    `${label} did not complete the list owner publication: ${JSON.stringify(state.ownerTrace)}`)
-  assert.equal(ownerPublication.journalId, finalCapture.journalId,
-    `${label} owner publication was not derived from the captured journal`)
-  assert.equal(ownerPublication.baseRevision, finalCapture.baseRevision,
-    `${label} owner publication silently rebound to another Coordinator revision`)
-  assert.equal(state.preserve.some((entry) =>
-    entry.integrityProof?.transactionJournal?.journalId === finalCapture.journalId &&
-    entry.integrityProof?.transactionJournal?.baseRevision === finalCapture.baseRevision &&
-    entry.integrityProof?.transactionJournal?.snapshotMatched === true &&
-    entry.integrityProof?.transactionJournal?.documentMatched === true
-  ), true, `${label} preservation proof did not embed the verified transaction journal`)
+  if (!productPath) {
+    assert.equal(state.preserve.some((entry) =>
+      entry.reason === 'transaction-list-subtree' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-list-subtree-proof' &&
+      entry.integrityProof?.mapperReason === 'diverged-nested-list-change' &&
+      entry.integrityProof?.chainLength >= 2
+    ), true, `${label} did not publish the generic transaction-owned list subtree: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'transaction-list-subtree' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} transaction candidate was not fully equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'list-subtree-replace' &&
+      entry.boundary === expectedBoundary
+    ), true, `${label} bypassed the SourceSyncCoordinator transaction publication: ${JSON.stringify(state.coordinator)}`)
+    const journalCaptures = state.journalTrace.filter((entry) =>
+      entry.phase === 'capture' && entry.ok === true
+    )
+    assert.equal(journalCaptures.length >= 2, true,
+      `${label} did not accumulate multiple physical dispatches in the shared journal: ${JSON.stringify(state.journalTrace)}`)
+    assert.equal(new Set(journalCaptures.map((entry) => entry.journalId)).size, 1,
+      `${label} restarted the journal inside one deferred callback window: ${JSON.stringify(journalCaptures)}`)
+    const finalCapture = journalCaptures.at(-1)
+    assert.equal(finalCapture.transactionCount >= 2, true,
+      `${label} journal did not retain the structural transaction chain: ${JSON.stringify(finalCapture)}`)
+    const ownerPublication = state.ownerTrace.find((entry) =>
+      entry.phase === 'published' && entry.ok === true && entry.chainLength >= 2
+    )
+    assert.ok(ownerPublication,
+      `${label} did not complete the list owner publication: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(ownerPublication.journalId, finalCapture.journalId,
+      `${label} owner publication was not derived from the captured journal`)
+    assert.equal(ownerPublication.baseRevision, finalCapture.baseRevision,
+      `${label} owner publication silently rebound to another Coordinator revision`)
+    assert.equal(state.preserve.some((entry) =>
+      entry.integrityProof?.transactionJournal?.journalId === finalCapture.journalId &&
+      entry.integrityProof?.transactionJournal?.baseRevision === finalCapture.baseRevision &&
+      entry.integrityProof?.transactionJournal?.snapshotMatched === true &&
+      entry.integrityProof?.transactionJournal?.documentMatched === true
+    ), true, `${label} preservation proof did not embed the verified transaction journal`)
+  }
 }
 
 const assertExactSource = (source, label) => {

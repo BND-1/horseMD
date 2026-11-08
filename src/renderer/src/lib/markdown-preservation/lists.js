@@ -546,6 +546,30 @@ export const compactGeneratedListSpacing = (markdown) => String(markdown || '')
     }
   )
 
+// An empty item cannot start a list right after paragraph text (CommonMark:
+// an empty list item cannot interrupt a paragraph): `- a\n  -` reads as a
+// setext heading and `- a\n  1.` as text. Crepe writes a tight nested empty
+// item exactly that way (`- a\n  - <br />`), so once its `<br />` is gone
+// the generated source failed validation and the raw canonical, `<br />`
+// and all, became the source. A blank line before it keeps the item (the
+// source reprint spells it the same way). Siblings of a list item at the
+// same indent and items after an empty one are left alone.
+export const separateEmptyListStarts = (markdown) => {
+  const itemIndent = /^([ \t]*)(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/
+  const emptyItem = /^([ \t]*)(?:[-+*]|\d{1,9}[.)])[ \t]*$/
+  const out = []
+  for (const line of String(markdown || '').split('\n')) {
+    const empty = emptyItem.exec(line)
+    const prev = out.length ? out[out.length - 1] : null
+    if (empty && prev != null && prev.trim() !== '' && !emptyItem.test(prev)) {
+      const prevItem = itemIndent.exec(prev)
+      if (!prevItem || prevItem[1].length < empty[1].length) out.push('')
+    }
+    out.push(line)
+  }
+  return out.join('\n')
+}
+
 // Before the space is accepted, Markdown's list input rule is represented as a
 // literal marker line (`\\-`, `\\*`, `\\+`, `1.`, or `1)`). Once the space turns
 // it into a ProseMirror list, that line no longer has visible text to map from.

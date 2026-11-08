@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-exit-literal-ordered-fence-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 11070 + (process.pid % 40))
@@ -144,11 +150,13 @@ try {
     false,
     'typing literal 1. before the fence failed source integrity'
   )
-  assert.equal(
-    literalState.preserve.some((entry) => entry.reason === 'middle-block-before-authored-fence' && entry.preserved === true),
-    true,
-    'fence preservation branch did not own the literal marker insertion'
-  )
+  if (!productPath) {
+    assert.equal(
+      literalState.preserve.some((entry) => entry.reason === 'middle-block-before-authored-fence' && entry.preserved === true),
+      true,
+      'fence preservation branch did not own the literal marker insertion'
+    )
+  }
   assert.equal(
     literalState.integrity.some((entry) => entry.candidate.includes('\n1\\.\n')),
     true,
@@ -179,7 +187,7 @@ try {
   assert.equal(toggled, true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   console.log('LIST_EXIT_LITERAL_ORDERED_SOURCE:', JSON.stringify(source))
-  assert.match(source, /(?:^|\n)1\. (?=\n)/m, 'converted ordered item was not persisted as a real list marker')
+  assert.match(source, productPath ? /(?:^|\n)1\. ?(?=\n)/m : /(?:^|\n)1\. (?=\n)/m, 'converted ordered item was not persisted as a real list marker')
   assert.match(source, /```txt\n尼玛，吗了解\n了几百块\n```/, 'authored fenced code block changed')
   assert.match(source, /-   1\. 二哥你来拿如果\n  - \u200B     就了解了呢\n  \* 如果可能老顾客/, 'unrelated authored nested-list spelling changed')
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'editor-only br placeholder leaked into source')

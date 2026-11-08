@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-task-empty-sibling-split-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 25820 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -172,27 +178,29 @@ const runScenario = async (scenario, port) => {
     const state = await diagnostics(app)
     assert.equal(state.integrity.some((entry) => entry.ok === false), false, `${scenario.name} integrity: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => warningPattern.test(text)), false, `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
-    const published = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-empty-sibling-split')
-    assert.equal(published.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-    assert.equal(published[0].boundary,
-      scenario.forced ? 'transaction-list-task-empty-sibling-split-forced-flush' : 'transaction-list-task-empty-sibling-split-markdown-updated')
-    const proof = state.preserve.find((entry) =>
-      entry.reason === 'list-task-empty-sibling-split' &&
-      entry.integrityProof?.kind === 'transaction-list-task-empty-sibling-split-proof')?.integrityProof
-    assert.ok(proof, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
-    assert.equal(proof.scope, scenario.scope)
-    assert.equal(proof.checked, scenario.checked)
-    assert.equal(proof.step?.name, 'ReplaceStep')
-    assert.equal(proof.step?.sliceSize, 4)
-    assert.equal(proof.sourceRow?.token, scenario.token)
-    assert.equal(proof.rawInsertion?.text.includes(sentinel), true)
-    assert.equal(state.checkbox.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.preserve.some((entry) => entry.reason === 'list-line-change'), false)
-    assert.equal(state.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled'), false)
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-empty-sibling-split'), true)
+    if (!productPath) {
+      const published = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-empty-sibling-split')
+      assert.equal(published.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
+      assert.equal(published[0].boundary,
+        scenario.forced ? 'transaction-list-task-empty-sibling-split-forced-flush' : 'transaction-list-task-empty-sibling-split-markdown-updated')
+      const proof = state.preserve.find((entry) =>
+        entry.reason === 'list-task-empty-sibling-split' &&
+        entry.integrityProof?.kind === 'transaction-list-task-empty-sibling-split-proof')?.integrityProof
+      assert.ok(proof, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
+      assert.equal(proof.scope, scenario.scope)
+      assert.equal(proof.checked, scenario.checked)
+      assert.equal(proof.step?.name, 'ReplaceStep')
+      assert.equal(proof.step?.sliceSize, 4)
+      assert.equal(proof.sourceRow?.token, scenario.token)
+      assert.equal(proof.rawInsertion?.text.includes(sentinel), true)
+      assert.equal(state.checkbox.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.preserve.some((entry) => entry.reason === 'list-line-change'), false)
+      assert.equal(state.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled'), false)
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-empty-sibling-split'), true)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

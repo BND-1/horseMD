@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-middle-codeblock-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 12920 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -180,62 +186,64 @@ const assertTransactionPublication = (state, marker, expectedBoundary, label) =>
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed a source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const journalCaptures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(journalCaptures.length >= 2, true,
-    `${label} did not accumulate multiple physical text dispatches: ${JSON.stringify(state.journalTrace)}`)
-  assert.equal(new Set(journalCaptures.map((entry) => entry.journalId)).size, 1,
-    `${label} restarted the shared journal before code publication: ${JSON.stringify(journalCaptures)}`)
-  const finalCapture = journalCaptures.at(-1)
-  assert.equal(finalCapture.transactionCount >= 2, true,
-    `${label} journal did not retain the code transaction chain: ${JSON.stringify(finalCapture)}`)
+  if (!productPath) {
+    const journalCaptures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(journalCaptures.length >= 2, true,
+      `${label} did not accumulate multiple physical text dispatches: ${JSON.stringify(state.journalTrace)}`)
+    assert.equal(new Set(journalCaptures.map((entry) => entry.journalId)).size, 1,
+      `${label} restarted the shared journal before code publication: ${JSON.stringify(journalCaptures)}`)
+    const finalCapture = journalCaptures.at(-1)
+    assert.equal(finalCapture.transactionCount >= 2, true,
+      `${label} journal did not retain the code transaction chain: ${JSON.stringify(finalCapture)}`)
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'fenced-code-block-content-change' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-code-block-content-proof'
-  )
-  assert.ok(preservation,
-    `${label} did not publish the code-block transaction owner: ${JSON.stringify(state.preserve)}`)
-  assert.equal(preservation.integrityProof.family, 'code-block-content-replace')
-  assert.equal(preservation.integrityProof.chainLength >= 2, true)
-  assert.equal(preservation.integrityProof.transactionJournal?.journalId, finalCapture.journalId)
-  assert.equal(preservation.integrityProof.transactionJournal?.baseRevision, finalCapture.baseRevision)
-  assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
-  assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
-  assert.equal(state.preserve.some((entry) =>
-    entry.reason === 'fenced-code-block-content-change' &&
-    entry.integrityProof?.kind !== 'transaction-code-block-content-proof'
-  ), false, `${label} allowed the retired legacy content mapper to publish`)
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'legacy' &&
-    entry.reason === 'fenced-code-block-content-change'
-  ), false, `${label} published code-block content through the legacy owner`)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'fenced-code-block-content-change' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-code-block-content-proof'
+    )
+    assert.ok(preservation,
+      `${label} did not publish the code-block transaction owner: ${JSON.stringify(state.preserve)}`)
+    assert.equal(preservation.integrityProof.family, 'code-block-content-replace')
+    assert.equal(preservation.integrityProof.chainLength >= 2, true)
+    assert.equal(preservation.integrityProof.transactionJournal?.journalId, finalCapture.journalId)
+    assert.equal(preservation.integrityProof.transactionJournal?.baseRevision, finalCapture.baseRevision)
+    assert.equal(preservation.integrityProof.transactionJournal?.snapshotMatched, true)
+    assert.equal(preservation.integrityProof.transactionJournal?.documentMatched, true)
+    assert.equal(state.preserve.some((entry) =>
+      entry.reason === 'fenced-code-block-content-change' &&
+      entry.integrityProof?.kind !== 'transaction-code-block-content-proof'
+    ), false, `${label} allowed the retired legacy content mapper to publish`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'legacy' &&
+      entry.reason === 'fenced-code-block-content-change'
+    ), false, `${label} published code-block content through the legacy owner`)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'fenced-code-block-content-change' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} transaction candidate was not fully equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'fenced-code-block-content-change' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} transaction candidate was not fully equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'code-block-content-replace' &&
-    entry.boundary === expectedBoundary
-  ), true, `${label} bypassed the Coordinator transaction boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'code-block-content-replace' &&
+      entry.boundary === expectedBoundary
+    ), true, `${label} bypassed the Coordinator transaction boundary: ${JSON.stringify(state.coordinator)}`)
 
-  const ownerPublication = state.codeOwnerTrace.find((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'code-block-content-replace'
-  )
-  assert.ok(ownerPublication,
-    `${label} did not emit code owner publication trace: ${JSON.stringify(state.codeOwnerTrace)}`)
-  assert.equal(ownerPublication.boundary, expectedBoundary)
-  assert.equal(ownerPublication.journalId, finalCapture.journalId)
-  assert.equal(ownerPublication.baseRevision, finalCapture.baseRevision)
+    const ownerPublication = state.codeOwnerTrace.find((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'code-block-content-replace'
+    )
+    assert.ok(ownerPublication,
+      `${label} did not emit code owner publication trace: ${JSON.stringify(state.codeOwnerTrace)}`)
+    assert.equal(ownerPublication.boundary, expectedBoundary)
+    assert.equal(ownerPublication.journalId, finalCapture.journalId)
+    assert.equal(ownerPublication.baseRevision, finalCapture.baseRevision)
+  }
 }
 
 const reopenAndVerify = async ({ file, marker, profile, port, label }) => {

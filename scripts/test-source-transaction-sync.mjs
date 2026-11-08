@@ -1333,4 +1333,31 @@ assert.equal(
   '新正文\n下一行\n'
 )
 
+// Line-edge whitespace (fuzz UI 2026-11-04): blanks before a break go
+// first, then edge breaks, then blanks after the remaining soft breaks; the
+// spaces of inline code are content everywhere.
+{
+  const s2 = new Schema({
+    nodes: {
+      doc: { content: 'block+' },
+      paragraph: { content: 'inline*', group: 'block' },
+      text: { group: 'inline' },
+      hardbreak: { inline: true, group: 'inline', attrs: { isInline: { default: false } } }
+    },
+    marks: { inlineCode: {} }
+  })
+  const t = (value) => s2.text(value)
+  const code = (value) => s2.text(value, [s2.marks.inlineCode.create()])
+  const soft = () => s2.nodes.hardbreak.create({ isInline: true })
+  const para = (...children) => s2.nodes.doc.create(null, [s2.nodes.paragraph.create(null, children)])
+  assert.equal(areSourceDocumentsEquivalent(para(t('Second')), para(t('    '), soft(), t('Second'))), true, 'blanks + soft break at a paragraph start are nothing (seed 127)')
+  assert.equal(areSourceDocumentsEquivalent(para(t(' note')), para(soft(), t(' note'))), true, 'a dropped leading break leaves the spelled leading space (seed 185)')
+  assert.equal(areSourceDocumentsEquivalent(para(t('note')), para(soft(), t(' note'))), false, '...which is not dropped')
+  assert.equal(areSourceDocumentsEquivalent(para(t(' note')), para(soft(), soft(), t(' note'))), true, 'a run of leading breaks too (seed 368)')
+  assert.equal(areSourceDocumentsEquivalent(para(t('note')), para(soft(), soft(), t(' note'))), false, '...its space is not dropped either')
+  assert.equal(areSourceDocumentsEquivalent(para(t('a'), soft(), t('b')), para(t('a'), soft(), t('  b'))), true, 'continuation-line blanks still ignored')
+  assert.equal(areSourceDocumentsEquivalent(para(t('a '), code('c')), para(t('a '), code('c '))), false, 'trailing space inside inline code is content')
+  assert.equal(areSourceDocumentsEquivalent(para(code('c'), soft(), t('d')), para(code('c '), soft(), t('d'))), false, 'space in code before a break is content')
+}
+
 console.log('PASS source transaction sync: plain edits and select-all replacement map exactly; unsupported edits fail closed')

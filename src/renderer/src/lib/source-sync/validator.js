@@ -665,7 +665,11 @@ export const withoutEmptyContainerParagraphs = (node) => {
   const container = node.type.name === 'list_item' || node.type.name === 'blockquote'
   // An empty FIRST paragraph followed by a nested block (`-` + nested list)
   // is how Markdown spells an empty item: keep that one.
-  const removable = (child, index) => isEmpty(child) && !(index === 0 && children[1] && !children[1].isTextblock)
+  // A task item's checkbox lives on its first paragraph (`- [ ] ​` + a code
+  // block or heading below): without it the item is no task (fuzz seed 2322).
+  const task = node.type.name === 'list_item' && node.attrs?.checked != null
+  const removable = (child, index) => isEmpty(child) &&
+    !(index === 0 && children[1] && (task || !children[1].isTextblock))
   const kept = container && children.some((child) => !isEmpty(child))
     ? children.filter((child, index) => !removable(child, index))
     : children

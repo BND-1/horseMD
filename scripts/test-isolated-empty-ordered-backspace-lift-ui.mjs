@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-isolated-empty-ordered-backspace-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -141,10 +142,13 @@ try {
   console.log('ISOLATED_EMPTY_ORDERED_INITIAL_BULLET_FOCUS:', JSON.stringify(focused))
   assert.equal(focused.ok, true, `could not focus initial empty bullet: ${JSON.stringify(focused)}`)
 
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  const enterMark = await publishMark(app.evaluate)
   await key(app, 'Enter', 'Enter', 13)
   await waitFor(
-    () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
-      entry.reason === 'empty-list-item-removed' && entry.preserved === true)`),
+    async () => await reprintPublished(app.evaluate, { since: enterMark }) ||
+      app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
+        entry.reason === 'empty-list-item-removed' && entry.preserved === true)`),
     'Enter did not exit the initial empty bullet'
   )
   await key(app, '1', 'Digit1', 49, '1', 70)
@@ -178,30 +182,33 @@ try {
     window.__hmListSubtreeTransactionTrace = []
   })()`)
 
+  const firstMark = await publishMark(app.evaluate)
   await key(app, 'Backspace', 'Backspace', 8)
   await sleep(900)
 
   const first = await diagnostics(app)
   console.log('ISOLATED_EMPTY_ORDERED_FIRST_BACKSPACE_OBSERVED:', JSON.stringify(first))
-  assert.equal(
-    first.preserve.some((entry) =>
-      entry.reason === 'list-isolated-empty-ordered-lifted' &&
-      entry.preserved === true &&
-      entry.integrityProof?.kind === 'transaction-list-isolated-empty-ordered-lift-proof' &&
-      entry.integrityProof?.family === 'list-isolated-empty-ordered-lift'),
-    true,
-    `first Backspace was not transaction-owned by isolated ordered lift: ${JSON.stringify(first.preserve)}`
-  )
-  assert.equal(
-    first.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-ordered-backspace-lift'),
-    false,
-    `first Backspace unexpectedly fell back to legacy isolated ordered lift: ${JSON.stringify(first.preserve)}`
-  )
-  const firstPublications = first.isolatedOrdered.filter((entry) =>
-    entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
-  )
-  assert.equal(firstPublications.length, 1, JSON.stringify(first.isolatedOrdered))
-  assert.equal(firstPublications[0].boundary, 'transaction-list-isolated-empty-ordered-lift-markdown-updated')
+  const firstPath = await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      first.preserve.some((entry) =>
+        entry.reason === 'list-isolated-empty-ordered-lifted' &&
+        entry.preserved === true &&
+        entry.integrityProof?.kind === 'transaction-list-isolated-empty-ordered-lift-proof' &&
+        entry.integrityProof?.family === 'list-isolated-empty-ordered-lift'),
+      true,
+      `first Backspace was not transaction-owned by isolated ordered lift: ${JSON.stringify(first.preserve)}`
+    )
+    assert.equal(
+      first.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-ordered-backspace-lift'),
+      false,
+      `first Backspace unexpectedly fell back to legacy isolated ordered lift: ${JSON.stringify(first.preserve)}`
+    )
+    const firstPublications = first.isolatedOrdered.filter((entry) =>
+      entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
+    )
+    assert.equal(firstPublications.length, 1, JSON.stringify(first.isolatedOrdered))
+    assert.equal(firstPublications[0].boundary, 'transaction-list-isolated-empty-ordered-lift-markdown-updated')
+  }, 'first Backspace isolated ordered lift', { since: firstMark })
   console.log('ISOLATED_EMPTY_ORDERED_FIRST_BACKSPACE:', JSON.stringify(first))
   assert.equal(first.integrity.some((entry) => entry.ok === false), false, 'first Backspace produced an integrity failure')
   assert.equal(
@@ -209,22 +216,29 @@ try {
     false,
     'first Backspace showed a source-sync warning'
   )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      first.integrity.some((entry) => entry.preservationReason === 'list-isolated-empty-ordered-lifted' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true),
+      true,
+      'first Backspace candidate was not fully source-equivalent'
+    )
+  }, 'first Backspace proof', { since: firstMark })
   assert.equal(
-    first.integrity.some((entry) => entry.preservationReason === 'list-isolated-empty-ordered-lifted' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true),
-    true,
-    'first Backspace candidate was not fully source-equivalent'
-  )
-  assert.equal(
-    first.integrity.some((entry) => entry.candidate.includes('- 1\\. 是人干v是v\n\n- \n\n- u高科技')),
+    // The lifted row joins the bullet list above as its next item: `-`
+    // (source reprint, tight) or `\n\n- \n` (legacy). Same list.
+    first.integrity.some((entry) => entry.candidate.includes('- 1\\. 是人干v是v\n-\n\n- u高科技') ||
+      entry.candidate.includes('- 1\\. 是人干v是v\n\n- \n\n- u高科技')),
     true,
     'first Backspace did not convert only the isolated empty ordered marker to an authored bullet'
   )
 
+  const secondMark = await publishMark(app.evaluate)
   await key(app, 'Backspace', 'Backspace', 8)
   await waitFor(
-    () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
-      entry.reason === 'empty-list-item-removed' && entry.preserved === true)`),
+    async () => await reprintPublished(app.evaluate, { since: secondMark }) ||
+      app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
+        entry.reason === 'empty-list-item-removed' && entry.preserved === true)`),
     'second Backspace was not owned by empty-list-item-removed'
   )
   await sleep(600)
@@ -237,19 +251,24 @@ try {
     false,
     'second Backspace showed a source-sync warning'
   )
-  assert.equal(
-    second.integrity.some((entry) => entry.preservationReason === 'empty-list-item-removed' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true),
-    true,
-    'second Backspace candidate was not fully source-equivalent'
-  )
-  assert.equal(
-    second.isolatedOrdered.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
-    ).length,
-    1,
-    'second Backspace must not be reclassified as another isolated ordered lift'
-  )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      second.integrity.some((entry) => entry.preservationReason === 'empty-list-item-removed' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true),
+      true,
+      'second Backspace candidate was not fully source-equivalent'
+    )
+  }, 'second Backspace proof', { since: secondMark })
+  // The count includes the first Backspace's lift (only when the legacy path published it).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      second.isolatedOrdered.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
+      ).length,
+      firstPath === 'legacy' ? 1 : 0,
+      'second Backspace must not be reclassified as another isolated ordered lift'
+    )
+  }, 'second Backspace not reclassified', { since: secondMark })
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')

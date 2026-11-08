@@ -62,7 +62,7 @@ const typeMarker = async (app, number, punctuation) => {
 const toggleSource = async (app) => {
   const point = await app.evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
-      .find((node) => node.offsetParent && /源码|Source|⌘/.test(node.title || node.textContent || ''))
+      .find((node) => node.offsetParent && /源码|Source/.test(node.title || node.textContent || ''))
     if (!button) return null
     const rect = button.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }

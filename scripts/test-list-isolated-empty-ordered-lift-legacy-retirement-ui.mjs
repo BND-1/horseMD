@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-list-isolated-ordered-retirement-${process.pid}`
 const file = join(root, 'indented-ordered.md')
@@ -70,16 +71,20 @@ try {
   assert.ok(point, 'indented ordered empty item not hit-testable')
   await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  // Legacy retirement: a verified source-reprint publication is the correct
+  // outcome now; the fail-closed expectations apply only without it.
+  const backspaceMark = await publishMark(app.evaluate)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 18 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  await waitFor(async () => await reprintPublished(app.evaluate, { since: backspaceMark }) || app.evaluate(`(() =>
     (window.__hmListIsolatedEmptyOrderedLiftTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' &&
       entry.family === 'list-isolated-empty-ordered-lift' &&
       entry.reason === 'isolated-ordered-lift-row-count' &&
       entry.recognized === true && entry.legacyBlocked === true
     )
-  )()`), 'indented ordered authored row did not fail closed')
+  )()`), 'indented ordered authored row was neither published by the source reprint nor failed closed')
   await sleep(250)
 
   const state = await app.evaluate(`(() => {
@@ -103,18 +108,24 @@ try {
     }
   })()`)
 
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' && entry.reason === 'isolated-ordered-lift-row-count'
-  )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+  const publishedBy = await assertPublishedBy(app.evaluate, async () => {
+    const blocked = state.owner.filter((entry) =>
+      entry.phase === 'plan' && entry.reason === 'isolated-ordered-lift-row-count'
+    )
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
+      `rejected isolated lift unexpectedly published: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
+      `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  }, 'isolated empty ordered lift', { since: backspaceMark })
+  if (publishedBy === 'reprint') {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `source reprint published but a sync warning showed: ${JSON.stringify(state.toasts)}`)
+  }
   assert.equal(state.preserve.some((entry) => entry.reason === 'list-isolated-empty-ordered-lifted'), false)
   assert.equal(state.preserve.some((entry) => entry.reason === 'diverged-isolated-empty-ordered-backspace-lift'), false,
     `legacy unexpectedly rescued rejected isolated lift: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
-    `rejected isolated lift unexpectedly published: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
   assert.equal(state.topOrdered, 0, 'rich PM lift should remain applied after fail-closed source rejection')
   assert.equal(state.firstBulletItems.includes('literal'), true)
   assert.equal(state.firstBulletItems.includes(''), true)

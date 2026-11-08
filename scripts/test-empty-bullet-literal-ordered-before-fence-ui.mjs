@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-empty-bullet-literal-ordered-fence-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -91,6 +92,8 @@ try {
   assert.equal(literal.toasts.some((t) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(t)), false, 'literal 1. showed warning')
   assert.equal(literal.integrity.some((e) => e.candidate.includes('\n- 1\\.\n\n```txt')), true, 'candidate did not keep - 1\\. literal spelling')
 
+  const evaluate = (expression) => app.evaluate(expression)
+  const spaceMark = await publishMark(evaluate)
   await rawKey(app, ' ', 'Space', 32, ' ')
   // Do not type the next character immediately. The 0.13.82 real trace failed
   // in this exact space-only synchronization frame before IME composition
@@ -100,8 +103,15 @@ try {
   console.log('EMPTY_BULLET_SPACE_ONLY_STATE:', JSON.stringify(spaceOnly))
   assert.equal(spaceOnly.integrity.some((e) => e.ok === false), false, 'space-only ordered input-rule frame failed source integrity')
   assert.equal(spaceOnly.toasts.some((t) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(t)), false, 'space-only ordered input-rule frame showed warning')
-  assert.equal(spaceOnly.preserve.some((e) => e.reason === 'diverged-inline-ordered-input-rule' && e.preserved === true), true, 'space-only frame did not use the reversible inline ordered input-rule bridge')
-  assert.equal(spaceOnly.integrity.some((e) => e.candidate.includes('\n-   1. \n\n```txt')), true, 'space-only authored source did not encode the temporary nested ordered slot')
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(spaceOnly.preserve.some((e) => e.reason === 'diverged-inline-ordered-input-rule' && e.preserved === true), true, 'space-only frame did not use the reversible inline ordered input-rule bridge')
+  }, 'space-only ordered input-rule frame', { since: spaceMark })
+  // The ordered input rule cannot wrap an item's first paragraph: the item
+  // holds the text `1. `. The source reprint spells that text (`- 1\.`, the
+  // trailing blank has no Markdown); the legacy path wrote a temporary nested
+  // ordered slot (`-   1. `).
+  assert.equal(spaceOnly.integrity.some((e) => e.candidate.includes('\n-   1. \n\n```txt') || e.candidate.includes('\n- 1\\.\n\n```txt')), true, 'space-only authored source did not encode the temporary nested ordered slot')
 
   await rawKey(app, '测', 'KeyA', 65, '测')
   await sleep(1000)

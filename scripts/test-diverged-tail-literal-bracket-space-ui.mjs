@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs61-tail-bracket-space-${process.pid}`
 const file = join(root, 'doc.md')
@@ -144,6 +145,8 @@ async function main() {
     // This single Space is the exact RS-61 trigger from packaged PID 20800:
     // canonical changes `-\\[ ]` -> `-[ ] ` while the PM node remains a plain
     // paragraph. The tail mapper must not confuse visible-empty with raw delete.
+    const evaluate = (expression) => app.evaluate(expression)
+    const mark = await publishMark(evaluate)
     await key(app, ' ', 'Space', 32, ' ')
     await sleep(900)
 
@@ -151,15 +154,18 @@ async function main() {
     console.log('RS61_AFTER_SPACE:', JSON.stringify(afterSpace))
     assert.ok(afterSpace.topLevelParagraphs.includes('-[ ] '), `punctuation-only tail paragraph disappeared: ${JSON.stringify(afterSpace)}`)
     assert.equal(afterSpace.integrity.some((entry) => entry.ok === false), false, `RS-61 integrity failure: ${JSON.stringify(afterSpace)}`)
-    assert.equal(
-      afterSpace.preserve.some((entry) => entry.reason === 'diverged-tail-line-delete'),
-      false,
-      `RS-61 was still misclassified as tail deletion: ${JSON.stringify(afterSpace.preserve)}`
-    )
-    assert.ok(
-      afterSpace.preserve.some((entry) => entry.markdownTail.endsWith('-[ ] \n')),
-      `RS-61 mapper did not preserve the raw tail row: ${JSON.stringify(afterSpace.preserve)}`
-    )
+    // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+    await assertPublishedBy(evaluate, async () => {
+      assert.equal(
+        afterSpace.preserve.some((entry) => entry.reason === 'diverged-tail-line-delete'),
+        false,
+        `RS-61 was still misclassified as tail deletion: ${JSON.stringify(afterSpace.preserve)}`
+      )
+      assert.ok(
+        afterSpace.preserve.some((entry) => entry.markdownTail.endsWith('-[ ] \n')),
+        `RS-61 mapper did not preserve the raw tail row: ${JSON.stringify(afterSpace.preserve)}`
+      )
+    }, 'RS-61 tail Space', { since: mark })
     assert.equal(afterSpace.toasts.some((text) => warningPattern.test(text)), false, `RS-61 showed source warning: ${JSON.stringify(afterSpace.toasts)}`)
 
     assert.equal(await toggleSource(app), true, 'could not switch to source mode')

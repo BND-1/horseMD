@@ -4,6 +4,13 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { tightMarkers } from './lib/marker-spelling.mjs'
+
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
 const root = `/tmp/horsemd-nested-list-enter-empty-sibling-${process.pid}`
 const file = join(root, 'nested-list-enter.md')
@@ -17,7 +24,7 @@ const fixture = [
   '## after',
   '',
 ].join('\n')
-const expected = [
+const expectedAuthored = [
   '# fixture',
   '',
   '- 阿瑟费说',
@@ -27,6 +34,8 @@ const expected = [
   '## after',
   '',
 ].join('\n')
+// The product path spells an empty item without the blank (`  *`).
+const expected = productPath ? tightMarkers(expectedAuthored) : expectedAuthored
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 async function waitFor(check, message, attempts = 140) {
@@ -169,27 +178,29 @@ try {
   assert.equal(afterEnter.nestedText[1], '', `new nested sibling is not empty: ${JSON.stringify(afterEnter.nestedText)}`)
   assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `nested Enter failed integrity: ${JSON.stringify(afterEnter.integrity)}`)
   assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `nested Enter showed warning: ${JSON.stringify(afterEnter.toasts)}`)
-  const focusedPublication = afterEnter.owner.filter((entry) =>
-    entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
-  )
-  assert.equal(focusedPublication.length, 1, `nested Enter focused owner missing: ${JSON.stringify(afterEnter.owner)}`)
-  assert.equal(focusedPublication[0].boundary, 'transaction-list-nested-bullet-item-split-markdown-updated')
-  assert.equal(
-    afterEnter.preserve.some((entry) =>
-      entry.reason === 'list-nested-bullet-item-split' &&
-      entry.preserved !== false &&
-      entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof' &&
-      entry.integrityProof?.step?.name === 'ReplaceStep' &&
-      entry.integrityProof?.step?.sliceSize === 4
-    ),
-    true,
-    `nested Enter focused preservation proof missing: ${JSON.stringify(afterEnter.preserve)}`,
-  )
-  assert.equal(afterEnter.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
-    `nested Enter unexpectedly published broad list-subtree: ${JSON.stringify(afterEnter.broad)}`)
-  assert.equal(afterEnter.coordinator.some((entry) =>
-    entry.phase === 'published' && entry.family === 'list-nested-bullet-item-split'
-  ), true, `nested Enter did not publish through coordinator: ${JSON.stringify(afterEnter.coordinator)}`)
+  if (!productPath) {
+    const focusedPublication = afterEnter.owner.filter((entry) =>
+      entry.phase === 'published' && entry.ok === true && entry.family === 'list-nested-bullet-item-split'
+    )
+    assert.equal(focusedPublication.length, 1, `nested Enter focused owner missing: ${JSON.stringify(afterEnter.owner)}`)
+    assert.equal(focusedPublication[0].boundary, 'transaction-list-nested-bullet-item-split-markdown-updated')
+    assert.equal(
+      afterEnter.preserve.some((entry) =>
+        entry.reason === 'list-nested-bullet-item-split' &&
+        entry.preserved !== false &&
+        entry.integrityProof?.kind === 'transaction-list-nested-bullet-split-proof' &&
+        entry.integrityProof?.step?.name === 'ReplaceStep' &&
+        entry.integrityProof?.step?.sliceSize === 4
+      ),
+      true,
+      `nested Enter focused preservation proof missing: ${JSON.stringify(afterEnter.preserve)}`,
+    )
+    assert.equal(afterEnter.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+      `nested Enter unexpectedly published broad list-subtree: ${JSON.stringify(afterEnter.broad)}`)
+    assert.equal(afterEnter.coordinator.some((entry) =>
+      entry.phase === 'published' && entry.family === 'list-nested-bullet-item-split'
+    ), true, `nested Enter did not publish through coordinator: ${JSON.stringify(afterEnter.coordinator)}`)
+  }
 
   assert.equal(await toggleSource(app), true, 'could not inspect nested Enter source')
   const source = await waitFor(() => visibleSource(app), 'nested Enter source textarea missing')

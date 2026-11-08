@@ -151,7 +151,9 @@ export function attachSourceCaret(textarea) {
       if (!inLeadingHitArea) return
 
       textarea.setSelectionRange(lineStart, lineStart)
-      schedule()
+      // Redraw now: the bar was already painted after the glyph for the
+      // native placement, and waiting a frame shows it there once.
+      sync()
     } catch {
       // Native textarea placement remains the safe fallback if measurement is
       // temporarily unavailable during a layout transition.

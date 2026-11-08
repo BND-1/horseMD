@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-table-row-delete-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13510 + (process.pid % 30))
@@ -244,7 +245,7 @@ const assertSourceView = (source, label) => {
   assert.equal(source.includes('after table'), true, `${label} changed neighbour paragraph`)
 }
 
-const assertPublication = (state, boundary, label) => {
+const assertPublication = async (app, state, boundary, label, since) => {
   assert.deepEqual(state.rows, rowsAfter, `${label} table DOM differs`)
   assert.equal(state.documentText.includes('after table'), true, `${label} changed neighbour paragraph`)
   assert.equal(state.integrity.some((entry) => entry.ok === false), false,
@@ -257,47 +258,50 @@ const assertPublication = (state, boundary, label) => {
     `${label} did not capture exactly one row-delete transaction: ${JSON.stringify(state.journalTrace)}`)
   const capture = captures[0]
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-row-deleted' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-row-delete-proof'
-  )
-  assert.ok(preservation, `${label} did not publish row-delete owner: ${JSON.stringify(state.preserve)}`)
-  const proof = preservation.integrityProof
-  assert.equal(proof.family, 'table-row-delete')
-  assert.deepEqual(proof.tablePath, [1])
-  assert.deepEqual(proof.rowPath, [1, 3])
-  assert.equal(proof.deletedRowIndex, 3)
-  assert.equal(proof.columnCount, 3)
-  assert.deepEqual(proof.deletedCellTexts, ['same', 'beta', 'repeated'])
-  assert.equal(proof.stepDetail?.name, 'ReplaceStep')
-  assert.equal(proof.stepDetail?.sliceSize, 0)
-  assert.equal(proof.sourceRange?.rawLine, '| same  | beta  | repeated  |')
-  assert.equal(proof.sourceRange?.eol, '\r\n')
-  assert.equal(proof.previousCanonicalRange?.rawLine, '| same  |  beta | repeated |')
-  assert.equal(proof.transactionJournal?.journalId, capture.journalId)
-  assert.equal(proof.transactionJournal?.snapshotMatched, true)
-  assert.equal(proof.transactionJournal?.documentMatched, true)
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-row-deleted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-row-delete-proof'
+    )
+    assert.ok(preservation, `${label} did not publish row-delete owner: ${JSON.stringify(state.preserve)}`)
+    const proof = preservation.integrityProof
+    assert.equal(proof.family, 'table-row-delete')
+    assert.deepEqual(proof.tablePath, [1])
+    assert.deepEqual(proof.rowPath, [1, 3])
+    assert.equal(proof.deletedRowIndex, 3)
+    assert.equal(proof.columnCount, 3)
+    assert.deepEqual(proof.deletedCellTexts, ['same', 'beta', 'repeated'])
+    assert.equal(proof.stepDetail?.name, 'ReplaceStep')
+    assert.equal(proof.stepDetail?.sliceSize, 0)
+    assert.equal(proof.sourceRange?.rawLine, '| same  | beta  | repeated  |')
+    assert.equal(proof.sourceRange?.eol, '\r\n')
+    assert.equal(proof.previousCanonicalRange?.rawLine, '| same  |  beta | repeated |')
+    assert.equal(proof.transactionJournal?.journalId, capture.journalId)
+    assert.equal(proof.transactionJournal?.snapshotMatched, true)
+    assert.equal(proof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-row-deleted' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} row-delete candidate not equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-row-deleted' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} row-delete candidate not equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'table-row-delete' &&
-    entry.boundary === boundary
-  ), true, `${label} bypassed Coordinator row-delete boundary: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'table-row-delete' &&
-    entry.boundary === boundary
-  ), true, `${label} missing row-delete owner trace: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'table-row-delete' &&
+      entry.boundary === boundary
+    ), true, `${label} bypassed Coordinator row-delete boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'table-row-delete' &&
+      entry.boundary === boundary
+    ), true, `${label} missing row-delete owner trace: ${JSON.stringify(state.ownerTrace)}`)
+  }, `${label} table row delete`, { since })
   assert.equal(state.tableActions.some((entry) => /button/.test(entry.tagName?.toLowerCase?.() || '')), true,
     `${label} did not use the real Milkdown table action button: ${JSON.stringify(state.tableActions)}`)
 }
@@ -321,6 +325,7 @@ const runScenario = async ({ name, immediateFlush, port }) => {
   let app = await openApp({ file, profile: `${name}-edit`, port })
   try {
     await clearDiagnostics(app)
+    const mark = await publishMark(app.evaluate)
     await deleteTargetRow(app)
 
     let source
@@ -336,10 +341,12 @@ const runScenario = async ({ name, immediateFlush, port }) => {
 
     const state = await snapshot(app)
     console.log(`${name.toUpperCase()}_AFTER_TABLE_ROW_DELETE:`, JSON.stringify(state))
-    assertPublication(
+    await assertPublication(
+      app,
       state,
       'transaction-table-row-delete-forced-flush',
-      name
+      name,
+      mark
     )
 
     if (!immediateFlush) {

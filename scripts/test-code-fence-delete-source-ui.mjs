@@ -5,6 +5,9 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Checks behaviour (source bytes, save, reopen), not which writer ran: it
+// runs on the product path, with the source reprint first.
+
 const root = `/tmp/horsemd-code-fence-delete-${process.pid}`
 const file = join(root, 'code-fence-delete.md')
 const port = Number(process.env.CDP_PORT || 10044)
@@ -44,6 +47,14 @@ const expected = initial
   .replace('单加三保留单个占位', '`')
   .replace('单加三全部删除占位', '单加三全部删除完成')
 
+// The lone backtick left by "type four, delete three" is `\`` when typing is
+// slow (≥ 250 ms a key): each key then syncs on its own, the four-backtick
+// line had to be written escaped (alone it would open a code fence), and the
+// reprint keeps the authored bytes of what stays. Fast typing syncs once and
+// writes the literal. Both read back as the same backtick; every other byte
+// is compared exactly.
+const backtickSpelling = (source) => typeof source === 'string' ? source.replace(/^\\`$/m, '`') : source
+
 async function waitFor(check, message, attempts = 120) {
   for (let index = 0; index < attempts; index += 1) {
     const value = await check()
@@ -62,7 +73,24 @@ async function click(send, point) {
   })
 }
 
+// The caret must be in the paragraph that holds `text`. A click measured
+// before a late layout shift lands on a neighbour (Windows batch 2026-11-06:
+// three later steps typed into the paragraph above), so check and retry.
 async function clickTextEnd(evaluate, send, text) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await clickTextEndOnce(evaluate, send, text)
+    const inside = await evaluate(`(() => {
+      const node = getSelection().anchorNode
+      const block = (node?.nodeType === 1 ? node : node?.parentElement)?.closest('p, h1, h2, h3, li')
+      return block?.textContent === ${JSON.stringify(text)}
+    })()`)
+    if (inside) return
+    await sleep(200)
+  }
+  assert.fail(`caret did not reach the paragraph: ${text}`)
+}
+
+async function clickTextEndOnce(evaluate, send, text) {
   const point = await evaluate(`(() => {
     const editor = [...document.querySelectorAll('.ProseMirror')]
       .find((node) => node.offsetParent)
@@ -225,7 +253,7 @@ async function assertSourceOpened(app, stage, expectedSource = expected) {
     console.error(`${stage} diagnostics:`, diagnostics)
     throw error
   })
-  assert.equal(source, expectedSource, `${stage}: deleted backticks or rich edits did not reach source`)
+  assert.equal(backtickSpelling(source), expectedSource, `${stage}: deleted backticks or rich edits did not reach source`)
 }
 
 async function main() {
@@ -291,7 +319,7 @@ async function main() {
         throw error
       })
     const firstSaved = await readFile(file, 'utf8')
-    if (firstSaved !== expected) {
+    if (backtickSpelling(firstSaved) !== expected) {
       const evidence = await app.evaluate(`({
         preservation: window.__hmPreserveLog || [],
         mapped: window.__hmSourceTransactionLog || [],
@@ -302,7 +330,7 @@ async function main() {
         console.error('TRANSACTION_TRACE', JSON.stringify(evidence, null, 2))
       }
     }
-    assert.equal(firstSaved, expected, 'first save retained deleted backticks or stale rich text')
+    assert.equal(backtickSpelling(firstSaved), expected, 'first save retained deleted backticks or stale rich text')
     const syncWarning = await app.evaluate(`([...document.querySelectorAll('[class*="toast"]')]
       .some((node) => /保存已暂停|Save paused/.test(node.textContent || '')))`) 
     assert.equal(syncWarning, false, 'save displayed the source-sync fail-closed warning')
@@ -320,13 +348,13 @@ async function main() {
     await waitFor(() => app.evaluate(`!!document.querySelector('.hm-save-fab')`), 'second save button did not appear')
     await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
     await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'second save stayed paused')
-    assert.equal(await readFile(file, 'utf8'), expectedAfterSecondSave, 'second save lost the post-recovery edit')
+    assert.equal(backtickSpelling(await readFile(file, 'utf8')), expectedAfterSecondSave, 'second save lost the post-recovery edit')
 
     await stopBuiltElectron(app, { removeProfile: true })
     app = await openApp('reopen', port + 1, true)
     assert.equal(await toggleSource(app.evaluate), true, 'could not inspect reopened source')
     const reopenedSource = await waitFor(() => visibleSource(app.evaluate), 'reopened source did not appear')
-    assert.equal(reopenedSource, expectedAfterSecondSave, 'full reopen changed the saved backtick transaction')
+    assert.equal(backtickSpelling(reopenedSource), expectedAfterSecondSave, 'full reopen changed the saved backtick transaction')
 
     console.log('PASS backtick deletion sync: single/triple/repeated backticks can be deleted, switched, saved, and reopened')
   } finally {

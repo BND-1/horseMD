@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-rs72-single-empty-ordered-backspace-${process.pid}`
 const file = join(root, 'rs-72.md')
 const port = Number(process.env.CDP_PORT || 11458)
@@ -170,46 +176,48 @@ try {
   assert.deepEqual(after.texts, ['吗。不开机；口红', '露娜了'], `RS-72 successor disappeared or changed: ${JSON.stringify(after.texts)}`)
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-72 produced transient integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-72 showed source warning: ${JSON.stringify(after.toasts)}`)
-  const transactionPublication = after.preserve.find((entry) =>
-    entry.reason === 'list-ordered-empty-successor-lifted' &&
-    entry.preserved !== false &&
-    entry.integrityProof?.kind === 'transaction-list-ordered-empty-successor-lift-proof'
-  )
-  assert.ok(transactionPublication,
-    `RS-72 structural Backspace was not owned by the focused ordered successor family: ${JSON.stringify(after.preserve)}`)
-  assert.equal(transactionPublication.integrityProof.family, 'list-ordered-empty-successor-lift')
-  assert.equal(transactionPublication.integrityProof.listType, 'ordered_list')
-  assert.equal(transactionPublication.integrityProof.mapperReason, 'diverged-empty-ordered-backspace-lift')
-  assert.deepEqual(transactionPublication.integrityProof.transientEmptyListItemPath, [1, 0])
-  assert.deepEqual(transactionPublication.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
-  assert.deepEqual(transactionPublication.integrityProof.transactionJournal?.stepNames,
-    ['ReplaceStep', 'ReplaceAroundStep'])
-  assert.equal(transactionPublication.integrityProof.firstStep?.name, 'ReplaceStep')
-  assert.equal(transactionPublication.integrityProof.secondStep?.name, 'ReplaceAroundStep')
-  assert.equal(transactionPublication.integrityProof.secondStep?.insert, 1)
-  assert.equal(transactionPublication.integrityProof.transactionJournal?.snapshotMatched, true)
-  assert.equal(transactionPublication.integrityProof.transactionJournal?.documentMatched, true)
-  assert.equal(after.coordinator.some((entry) =>
-    entry.phase === 'published' && entry.owner === 'transaction' &&
-    entry.family === 'list-ordered-empty-successor-lift' &&
-    entry.boundary === 'transaction-list-ordered-empty-successor-lift-markdown-updated'
-  ), true, `RS-72 bypassed Coordinator transaction publication: ${JSON.stringify(after.coordinator)}`)
-  assert.equal(after.owner.some((entry) =>
-    entry.phase === 'published' && entry.ok === true &&
-    entry.family === 'list-ordered-empty-successor-lift' &&
-    entry.journalId === transactionPublication.integrityProof.journalId
-  ), true, `RS-72 missing focused ordered successor owner trace: ${JSON.stringify(after.owner)}`)
-  assert.equal(after.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
-    `RS-72 unexpectedly reached broad list-subtree publication: ${JSON.stringify(after.broad)}`)
-  assert.equal(after.preserve.some((entry) =>
-    entry.reason === 'diverged-empty-ordered-backspace-lift' ||
-    entry.reason === 'empty-list-item-filled'
-  ), false, `RS-72 fell back to a legacy transient owner: ${JSON.stringify(after.preserve)}`)
-  assert.equal(
-    after.integrity.some((entry) => entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true),
-    true,
-    `RS-72 did not publish a strict list-equivalent candidate: ${JSON.stringify(after.integrity)}`
-  )
+  if (!productPath) {
+    const transactionPublication = after.preserve.find((entry) =>
+      entry.reason === 'list-ordered-empty-successor-lifted' &&
+      entry.preserved !== false &&
+      entry.integrityProof?.kind === 'transaction-list-ordered-empty-successor-lift-proof'
+    )
+    assert.ok(transactionPublication,
+      `RS-72 structural Backspace was not owned by the focused ordered successor family: ${JSON.stringify(after.preserve)}`)
+    assert.equal(transactionPublication.integrityProof.family, 'list-ordered-empty-successor-lift')
+    assert.equal(transactionPublication.integrityProof.listType, 'ordered_list')
+    assert.equal(transactionPublication.integrityProof.mapperReason, 'diverged-empty-ordered-backspace-lift')
+    assert.deepEqual(transactionPublication.integrityProof.transientEmptyListItemPath, [1, 0])
+    assert.deepEqual(transactionPublication.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
+    assert.deepEqual(transactionPublication.integrityProof.transactionJournal?.stepNames,
+      ['ReplaceStep', 'ReplaceAroundStep'])
+    assert.equal(transactionPublication.integrityProof.firstStep?.name, 'ReplaceStep')
+    assert.equal(transactionPublication.integrityProof.secondStep?.name, 'ReplaceAroundStep')
+    assert.equal(transactionPublication.integrityProof.secondStep?.insert, 1)
+    assert.equal(transactionPublication.integrityProof.transactionJournal?.snapshotMatched, true)
+    assert.equal(transactionPublication.integrityProof.transactionJournal?.documentMatched, true)
+    assert.equal(after.coordinator.some((entry) =>
+      entry.phase === 'published' && entry.owner === 'transaction' &&
+      entry.family === 'list-ordered-empty-successor-lift' &&
+      entry.boundary === 'transaction-list-ordered-empty-successor-lift-markdown-updated'
+    ), true, `RS-72 bypassed Coordinator transaction publication: ${JSON.stringify(after.coordinator)}`)
+    assert.equal(after.owner.some((entry) =>
+      entry.phase === 'published' && entry.ok === true &&
+      entry.family === 'list-ordered-empty-successor-lift' &&
+      entry.journalId === transactionPublication.integrityProof.journalId
+    ), true, `RS-72 missing focused ordered successor owner trace: ${JSON.stringify(after.owner)}`)
+    assert.equal(after.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+      `RS-72 unexpectedly reached broad list-subtree publication: ${JSON.stringify(after.broad)}`)
+    assert.equal(after.preserve.some((entry) =>
+      entry.reason === 'diverged-empty-ordered-backspace-lift' ||
+      entry.reason === 'empty-list-item-filled'
+    ), false, `RS-72 fell back to a legacy transient owner: ${JSON.stringify(after.preserve)}`)
+    assert.equal(
+      after.integrity.some((entry) => entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true),
+      true,
+      `RS-72 did not publish a strict list-equivalent candidate: ${JSON.stringify(after.integrity)}`
+    )
+  }
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-72 source')
   const source = await waitFor(() => visibleSource(app), 'RS-72 source textarea missing')

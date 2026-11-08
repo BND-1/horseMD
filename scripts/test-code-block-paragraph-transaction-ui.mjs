@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-block-paragraph-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 15020 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -306,6 +312,7 @@ const assertPublication = (state, scenario, boundary) => {
     `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.deepEqual(state.semanticDiff, [], `${scenario.name} semantic diff`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false)
+  if (productPath) return
   const preservation = state.preserve.find((entry) =>
     entry.reason === 'code-block-converted-to-paragraph' &&
     entry.preserved === true &&
@@ -371,6 +378,28 @@ const runRejectedScenario = async (port) => {
           node.tagName === 'P' && (node.textContent || '') === '# heading'
         )
     })()`), 'semantic rejection did not leave the converted paragraph visible')
+    if (productPath) {
+      // The reprint writes the Markdown-sensitive paragraph (escaped) instead of pausing.
+      await sleep(1100)
+      const state = await snapshot(app)
+      assert.deepEqual(state.paragraphs, ['before', '# heading', 'after'])
+      assert.equal(state.codeBlockCount, 0)
+      assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+        `conversion showed a rich/source warning: ${JSON.stringify(state.toasts)}`)
+      assert.equal(await app.evaluate(`(() => {
+        const harness = globalThis.__hmSourceReprintHarness
+        return harness.equivalent(harness.liveSource(), harness.liveDoc())
+      })()`), true, 'converted source does not read back as the editor document')
+      assert.equal(state.saveVisible, true, `${name} did not mark source dirty`)
+      await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
+      await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`),
+        `${name} save did not complete`)
+      const saved = await readFile(file, 'utf8')
+      assert.equal(saved.charCodeAt(0), 0xFEFF, `${name} lost BOM`)
+      assert.equal(saved.includes('~~~'), false, `${name} retained the authored fence: ${JSON.stringify(saved)}`)
+      assert.equal(saved.includes('heading'), true, `${name} lost the paragraph text: ${JSON.stringify(saved)}`)
+      return
+    }
     await waitFor(() => app.evaluate(`(() =>
       (window.__hmCodeBlockTransactionTrace || []).some((entry) =>
         entry.phase === 'plan' &&

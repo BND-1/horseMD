@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-rs70-task-enter-empty-sibling-${process.pid}`
 const file = join(root, 'rs-70.md')
 const port = Number(process.env.CDP_PORT || 10870)
@@ -25,6 +31,8 @@ const emptyExpected = [
   '- 色个粉色高',
   '',
   '- [ ] 额粉色分',
+  // The product path keeps the list's authored item gap (a blank line).
+  ...(productPath ? [''] : []),
   `- [ ] ${sentinel}`,
   '',
   '## after',
@@ -36,6 +44,8 @@ const filledExpected = [
   '- 色个粉色高',
   '',
   '- [ ] 额粉色分',
+  // The product path keeps the list's authored item gap (a blank line).
+  ...(productPath ? [''] : []),
   '- [ ] 距离近',
   '',
   '## after',
@@ -160,21 +170,23 @@ try {
   assert.deepEqual(created.unchecked, [true, true], `RS-70 task state changed after Enter: ${JSON.stringify(created.unchecked)}`)
   assert.equal(created.integrity.some((entry) => entry.ok === false), false, `RS-70 Enter failed integrity: ${JSON.stringify(created.integrity)}`)
   assert.equal(created.toasts.some((text) => warningPattern.test(text)), false, `RS-70 Enter showed warning: ${JSON.stringify(created.toasts)}`)
-  const focusedPublished = created.owner.filter((entry) =>
-    entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-empty-sibling-split')
-  assert.equal(focusedPublished.length, 1, `RS-70 focused task split publication missing: ${JSON.stringify(created.owner)}`)
-  assert.equal(focusedPublished[0].boundary, 'transaction-list-task-empty-sibling-split-markdown-updated')
-  assert.equal(created.preserve.some((entry) => entry.reason === 'list-task-empty-sibling-split'), true,
-    `RS-70 focused preservation proof missing: ${JSON.stringify(created.preserve)}`)
-  assert.equal(created.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled'), false,
-    `RS-70 legacy sentinel owner returned: ${JSON.stringify(created.preserve)}`)
-  assert.equal(created.preserve.some((entry) => entry.reason === 'list-line-change'), false,
-    `RS-70 list-line-change returned: ${JSON.stringify(created.preserve)}`)
-  assert.equal(created.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
-    `RS-70 broad owner published: ${JSON.stringify(created.broad)}`)
-  assert.equal(created.coordinator.some((entry) =>
-    entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-empty-sibling-split'), true,
-    `RS-70 Coordinator focused publication missing: ${JSON.stringify(created.coordinator)}`)
+  if (!productPath) {
+    const focusedPublished = created.owner.filter((entry) =>
+      entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-empty-sibling-split')
+    assert.equal(focusedPublished.length, 1, `RS-70 focused task split publication missing: ${JSON.stringify(created.owner)}`)
+    assert.equal(focusedPublished[0].boundary, 'transaction-list-task-empty-sibling-split-markdown-updated')
+    assert.equal(created.preserve.some((entry) => entry.reason === 'list-task-empty-sibling-split'), true,
+      `RS-70 focused preservation proof missing: ${JSON.stringify(created.preserve)}`)
+    assert.equal(created.preserve.some((entry) => entry.reason === 'middle-empty-block-list-filled'), false,
+      `RS-70 legacy sentinel owner returned: ${JSON.stringify(created.preserve)}`)
+    assert.equal(created.preserve.some((entry) => entry.reason === 'list-line-change'), false,
+      `RS-70 list-line-change returned: ${JSON.stringify(created.preserve)}`)
+    assert.equal(created.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false,
+      `RS-70 broad owner published: ${JSON.stringify(created.broad)}`)
+    assert.equal(created.coordinator.some((entry) =>
+      entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-empty-sibling-split'), true,
+      `RS-70 Coordinator focused publication missing: ${JSON.stringify(created.coordinator)}`)
+  }
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-70 empty sibling source')
   const emptySource = await waitFor(() => visibleSource(app), 'RS-70 source textarea missing after Enter')

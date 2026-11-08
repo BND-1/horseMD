@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-ordered-successor-chain-retirement-${process.pid}`
 const file = join(root, 'indented-chain.md')
 const port = Number(process.env.CDP_PORT || 20500 + (process.pid % 20))
@@ -20,6 +26,14 @@ const waitFor = async (check, message, attempts = 180) => {
   }
   throw new Error(message)
 }
+
+const sourceReadsBackAsEditor = () => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  // The reprint's own comparison: the empty paragraph Backspace leaves in the
+  // previous item (the caret is in it) has no Markdown, like an editor-only
+  // empty paragraph anywhere (docs/source-reprint-architecture.md §5).
+  return Boolean(harness && harness.equivalentForReprint(harness.liveSource(), harness.liveDoc()))
+})()`)
 
 let app = null
 let completed = false
@@ -63,7 +77,8 @@ try {
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 18 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  if (productPath) await sleep(1000)
+  else await waitFor(() => app.evaluate(`(() =>
     (window.__hmListOrderedEmptySuccessorChainTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' && entry.family === 'list-ordered-empty-successor-chain-lift' &&
       entry.recognized === true && entry.legacyBlocked === true
@@ -87,22 +102,28 @@ try {
       firstParagraphCount: items[0]?.querySelectorAll(':scope > .children > .content-dom > p').length || 0
     }
   })()`)
-  const blocked = state.chain.filter((entry) => entry.phase === 'plan' && entry.recognized === true)
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.chain))
-  assert.equal(blocked.every((entry) => entry.legacyBlocked === true), true)
-  assert.equal(blocked.some((entry) => entry.reason === 'ordered-successor-chain-range-unmapped'), true,
-    `unexpected focused rejection: ${JSON.stringify(blocked)}`)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'list-ordered-empty-successor-chain-lifted'), false)
-  assert.equal(state.preserve.some((entry) =>
-    entry.reason === 'list-ordered-empty-successor-lifted' ||
-    entry.reason === 'transaction-list-subtree' ||
-    entry.reason === 'diverged-empty-ordered-backspace-lift' ||
-    entry.reason === 'diverged-empty-ordered-backspace-successor-chain'
-  ), false, `rejected chain unexpectedly fell back: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
-  assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  if (!productPath) {
+    const blocked = state.chain.filter((entry) => entry.phase === 'plan' && entry.recognized === true)
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.chain))
+    assert.equal(blocked.every((entry) => entry.legacyBlocked === true), true)
+    assert.equal(blocked.some((entry) => entry.reason === 'ordered-successor-chain-range-unmapped'), true,
+      `unexpected focused rejection: ${JSON.stringify(blocked)}`)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'list-ordered-empty-successor-chain-lifted'), false)
+    assert.equal(state.preserve.some((entry) =>
+      entry.reason === 'list-ordered-empty-successor-lifted' ||
+      entry.reason === 'transaction-list-subtree' ||
+      entry.reason === 'diverged-empty-ordered-backspace-lift' ||
+      entry.reason === 'diverged-empty-ordered-backspace-successor-chain'
+    ), false, `rejected chain unexpectedly fell back: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
+    assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  } else {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `rich/source warning on the product path: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await sourceReadsBackAsEditor(), true, 'product path: source does not read back as the editor document')
+  }
   assert.equal(state.itemCount, 3, 'rich PM chain edit should remain applied')
   assert.deepEqual(state.texts, ['alpha', 'beta', 'gamma'])
   assert.equal(state.firstParagraphCount, 2, 'rich PM transient paragraph should remain visible')

@@ -65,20 +65,17 @@ try {
   }
   report.restoredDocuments = paths.length
 
-  app = await launchBuiltElectron(options)
+  // The seed run opens the folder and the documents itself (launch
+  // arguments: files → tabs, a folder → the workspace), so the session the
+  // app writes when it closes holds them. A session written into
+  // localStorage by the test was replaced by that closing write.
+  app = await launchBuiltElectron({ ...options, appArgs: [workspace, ...[...paths].reverse()] })
   await waitFor(() => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')]
-    .find((node) => node.dataset.horsemdReady === 'true')`), 'Seed profile did not finish onboarding')
+    .find((node) => node.offsetParent && node.dataset.horsemdReady === 'true' && node.textContent.includes('Startup regression'))`), 'Seed profile did not open the documents')
   await sleep(700)
   await app.evaluate(`(() => {
     localStorage.setItem('horsemd.onboarded.v1', '1')
     localStorage.setItem('horsemd.settings.v1', JSON.stringify({ restoreSession: true }))
-    localStorage.setItem('minimd.session.v1', JSON.stringify({
-      folderRoots: ${JSON.stringify([workspace])},
-      openPaths: ${JSON.stringify(paths)},
-      activePath: ${JSON.stringify(smoke)},
-      sidebarOpen: false,
-      lang: 'zh'
-    }))
   })()`)
   // Chromium batches localStorage disk commits. Windows SIGTERM force-kills
   // Electron, so allow that batch to persist before the cold-start measurement.

@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 // E0 P3c acceptance — the 0.13.170 16:38:54 trace: Chinese IME composition in
 // a top-level paragraph, commit, then an IMMEDIATE Enter at the paragraph end.
 // The plain-paragraph-terminal-split family must own the whole journal: the
@@ -206,26 +212,28 @@ const assertSplitPublication = (state, expectedBoundary, label) => {
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const split = state.preserve.find((entry) =>
-    entry.reason === 'plain-paragraph-split' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-plain-paragraph-split-proof'
-  )
-  assert.ok(split, `${label} did not publish the terminal split owner: ${JSON.stringify(state.preserve)}`)
-  assert.equal(split.integrityProof.family, 'plain-paragraph-terminal-split')
-  assert.equal(split.integrityProof.terminalSplit, true)
-  assert.equal(split.integrityProof.chainLength >= 2, true,
-    `${label} journal did not retain the IME pending-text chain`)
-  assert.equal(split.integrityProof.transactionJournal?.snapshotMatched, true)
-  assert.equal(split.integrityProof.transactionJournal?.documentMatched, true)
+  if (!productPath) {
+    const split = state.preserve.find((entry) =>
+      entry.reason === 'plain-paragraph-split' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-plain-paragraph-split-proof'
+    )
+    assert.ok(split, `${label} did not publish the terminal split owner: ${JSON.stringify(state.preserve)}`)
+    assert.equal(split.integrityProof.family, 'plain-paragraph-terminal-split')
+    assert.equal(split.integrityProof.terminalSplit, true)
+    assert.equal(split.integrityProof.chainLength >= 2, true,
+      `${label} journal did not retain the IME pending-text chain`)
+    assert.equal(split.integrityProof.transactionJournal?.snapshotMatched, true)
+    assert.equal(split.integrityProof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'plain-paragraph-terminal-split' &&
-    entry.reason === 'plain-paragraph-split' &&
-    entry.boundary === expectedBoundary
-  ), true, `${label} bypassed Coordinator split boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'plain-paragraph-terminal-split' &&
+      entry.reason === 'plain-paragraph-split' &&
+      entry.boundary === expectedBoundary
+    ), true, `${label} bypassed Coordinator split boundary: ${JSON.stringify(state.coordinator)}`)
+  }
 }
 
 const reopenAndVerify = async ({ file, profile, port, label }) => {

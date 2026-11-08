@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-empty-code-block-backspace-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 14730 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -165,6 +171,7 @@ const assertOwned = (state, scenario) => {
     true,
     `${scenario.name} rich text mismatch: ${JSON.stringify(state)}`
   )
+  if (!productPath) {
   const publications = state.preserve.filter((entry) =>
     entry.reason === 'empty-fenced-code-block-backspace-unpack' &&
     entry.preserved === true &&
@@ -197,9 +204,10 @@ const assertOwned = (state, scenario) => {
     entry.owner === 'legacy' &&
     entry.reason === 'empty-fenced-code-block-backspace-unpack'
   ), false, `${scenario.name} published empty-code-block unpack through legacy`)
+  }
   assert.equal(state.integrity.some((entry) => entry.ok === false), false,
     `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
-  assert.equal(state.integrity.some((entry) =>
+  if (!productPath) assert.equal(state.integrity.some((entry) =>
     entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true &&
     entry.preservationReason === 'empty-fenced-code-block-backspace-unpack' &&
     entry.validationSite === scenario.expectedBoundary
@@ -208,6 +216,7 @@ const assertOwned = (state, scenario) => {
     `${scenario.name} semantic diff: ${JSON.stringify(state.semanticDiff)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
+  if (productPath) return
   const coordinator = state.coordinator.filter((entry) =>
     entry.phase === 'published' && entry.owner === 'transaction' &&
     entry.family === 'empty-code-block-backspace-unpack'

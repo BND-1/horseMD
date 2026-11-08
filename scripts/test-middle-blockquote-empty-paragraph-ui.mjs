@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-rs65-middle-quote-${process.pid}`
 const file = join(root, 'rs-65.md')
 const port = Number(process.env.CDP_PORT || 10765)
@@ -128,20 +134,22 @@ try {
   assert.match(afterEnter.orderedText, /斛律v哦/, 'following ordered list changed after quote Enter')
   assert.equal(afterEnter.integrity.some((entry) => entry.ok === false), false, `RS-65 Enter failed integrity: ${JSON.stringify(afterEnter.integrity)}`)
   assert.equal(afterEnter.toasts.some((text) => warningPattern.test(text)), false, `RS-65 Enter showed warning: ${JSON.stringify(afterEnter.toasts)}`)
-  assert.equal(
-    afterEnter.integrity.some((entry) =>
-      // E0 P3: the quote Enter is now owned by the blockquote-split family
-      // (trailing empty right paragraph via the exact nodePath transient);
-      // the legacy reason remains accepted for shapes it still owns.
-      (
-        entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' ||
-        entry.preservationReason === 'blockquote-paragraph-split'
-      ) &&
-      entry.ok === true && entry.semanticOk === true
-    ),
-    true,
-    `RS-65 did not use the strict quote transient proof: ${JSON.stringify(afterEnter.integrity)}`
-  )
+  if (!productPath) {
+    assert.equal(
+      afterEnter.integrity.some((entry) =>
+        // E0 P3: the quote Enter is now owned by the blockquote-split family
+        // (trailing empty right paragraph via the exact nodePath transient);
+        // the legacy reason remains accepted for shapes it still owns.
+        (
+          entry.preservationReason === 'trailing-empty-blockquote-paragraph-created' ||
+          entry.preservationReason === 'blockquote-paragraph-split'
+        ) &&
+        entry.ok === true && entry.semanticOk === true
+      ),
+      true,
+      `RS-65 did not use the strict quote transient proof: ${JSON.stringify(afterEnter.integrity)}`
+    )
+  }
 
   await app.send('Input.insertText', { text: '第二段' })
   await sleep(850)

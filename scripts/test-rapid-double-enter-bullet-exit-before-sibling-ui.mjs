@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs86-rapid-double-enter-bullet-exit-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -157,6 +158,7 @@ try {
   // `*` long-session state is covered by the PID 258 raw trace contract. The UI
   // proves RS-86 never steals the ordinary rapid-double-Enter path.
   await focusEndOfParagraph(app, '前文')
+  const setupMark = await publishMark(app.evaluate)
   await pressKey(app.send, { key: 'Enter', code: 'Enter', delayMs: 90 })
   await rawKey(app.send, '-', 'Minus', 189, '-', 80)
   await rawKey(app.send, ' ', 'Space', 32, ' ', 120)
@@ -172,12 +174,15 @@ try {
   assert.equal(setup.integrity.some((entry) => entry.ok === false), false, `RS-86 setup failed integrity: ${JSON.stringify(setup.integrity)}`)
   assert.equal(setup.toasts.some((text) => warningPattern.test(text)), false, `RS-86 setup showed warning: ${JSON.stringify(setup.toasts)}`)
   assert.deepEqual(setup.listTexts, [['u高科技', '12312', '后继项']], `RS-86 setup list shape differs from the trace: ${JSON.stringify(setup.listTexts)}`)
-  const setupPublication = setup.preserve.at(-1)
-  assert.match(
-    setupPublication?.next || '',
-    /\* u高科技(?:\r?\n){1,2}\* 12312(?:\r?\n){1,2}\* 后继项/,
-    `RS-86 clean control did not use the ordinary all-* live canonical: ${JSON.stringify(setupPublication)}`
-  )
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    const setupPublication = setup.preserve.at(-1)
+    assert.match(
+      setupPublication?.next || '',
+      /\* u高科技(?:\r?\n){1,2}\* 12312(?:\r?\n){1,2}\* 后继项/,
+      `RS-86 clean control did not use the ordinary all-* live canonical: ${JSON.stringify(setupPublication)}`
+    )
+  }, 'RS-86 setup list', { since: setupMark })
   assert.equal(await toggleSource(app), true, 'could not inspect RS-86 setup source')
   const setupSource = await waitFor(() => visibleSource(app), 'RS-86 setup source textarea did not open')
   assert.match(setupSource, /u高科技/, 'RS-86 setup source lost the first item')
@@ -188,6 +193,7 @@ try {
 
   await focusEndOfParagraph(app, '12312')
   await clearDiagnostics(app)
+  const exitMark = await publishMark(app.evaluate)
 
   // The trace used two physical Enters close enough that no source callback
   // published the intermediate empty bullet row. The deferred callback sees
@@ -207,26 +213,30 @@ try {
   assert.equal(exited.topLevelEmptyParagraphs, 1, `RS-86 did not retain exactly one live top-level empty paragraph: ${JSON.stringify(exited)}`)
   assert.equal(exited.integrity.some((entry) => entry.ok === false), false, `RS-86 rapid double Enter produced integrity failure: ${JSON.stringify(exited.integrity)}`)
   assert.equal(exited.toasts.some((text) => warningPattern.test(text)), false, `RS-86 rapid double Enter showed warning: ${JSON.stringify(exited.toasts)}`)
-  assert.equal(
-    exited.preserve.some((entry) =>
-      entry.reason === 'middle-empty-block-created' &&
-      entry.preserved === true && entry.markdown === setupSource),
-    true,
-    `RS-86 clean control was stolen from middle-empty-block-created: ${JSON.stringify(exited.preserve)}`
-  )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      exited.preserve.some((entry) =>
+        entry.reason === 'middle-empty-block-created' &&
+        entry.preserved === true && entry.markdown === setupSource),
+      true,
+      `RS-86 clean control was stolen from middle-empty-block-created: ${JSON.stringify(exited.preserve)}`
+    )
+  }, 'RS-86 rapid double Enter', { since: exitMark })
   assert.equal(
     exited.preserve.some((entry) => entry.reason === 'coalesced-empty-bullet-exit-before-sibling'),
     false,
     `RS-86 dedicated mixed-marker owner must not claim the ordinary all-* path: ${JSON.stringify(exited.preserve)}`
   )
-  assert.equal(
-    exited.integrity.some((entry) =>
-      entry.preservationReason === 'middle-empty-block-created' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true &&
-      entry.candidate === setupSource),
-    true,
-    `RS-86 clean control candidate was not fully source-equivalent: ${JSON.stringify(exited.integrity)}`
-  )
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      exited.integrity.some((entry) =>
+        entry.preservationReason === 'middle-empty-block-created' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true &&
+        entry.candidate === setupSource),
+      true,
+      `RS-86 clean control candidate was not fully source-equivalent: ${JSON.stringify(exited.integrity)}`
+    )
+  }, 'RS-86 rapid double Enter proof', { since: exitMark })
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-86 source')
   const source = await waitFor(() => visibleSource(app), 'RS-86 source textarea did not open')

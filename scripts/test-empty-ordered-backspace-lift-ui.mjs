@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-empty-ordered-backspace-lift-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -135,6 +136,8 @@ try {
 
   const focused = await focusLastEmptyOrderedBefore(app, '你离开你')
   console.log('EMPTY_ORDERED_BACKSPACE_FOCUS:', JSON.stringify(focused))
+  const evaluate = (expression) => app.evaluate(expression)
+  const mark = await publishMark(evaluate)
   await rawKey(app.send, 'Backspace', 'Backspace', 8)
   await sleep(1200)
 
@@ -155,10 +158,13 @@ try {
     false,
     'first Backspace on the empty ordered item showed a source-sync warning'
   )
-  assert.ok(
-    before.preserve.some((entry) => entry.reason === 'diverged-empty-ordered-backspace-lift' && entry.preserved),
-    'first Backspace did not use the transient empty-ordered lift mapper'
-  )
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(evaluate, async () => {
+    assert.ok(
+      before.preserve.some((entry) => entry.reason === 'diverged-empty-ordered-backspace-lift' && entry.preserved),
+      'first Backspace did not use the transient empty-ordered lift mapper'
+    )
+  }, 'empty ordered Backspace lift', { since: mark })
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')

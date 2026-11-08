@@ -2,6 +2,7 @@
 import { reprintSource } from './reprint.js'
 
 export { reprintSource, sameNode } from './reprint.js'
+import { separateAdjacentLists } from './list-boundaries.js'
 export { buildInlineMap, pmInlineUnits } from './inline-map.js'
 
 /**
@@ -9,7 +10,7 @@ export { buildInlineMap, pmInlineUnits } from './inline-map.js'
  * must compare parse(markdown) with `doc` directly (never via canonical).
  * Minimal escaping first (writes exactly what was typed), then full escaping.
  */
-export function reprintVerified({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, equivalent }) {
+export function reprintVerified({ source, editorDoc, previousDoc = null, parse, parseTree = null, remark, serialize, equivalent, newListMarkers = null }) {
   let last = null
   const candidates = []
   // Exact patches first; 'block' (changed text blocks printed whole, marked
@@ -21,11 +22,19 @@ export function reprintVerified({ source, editorDoc, previousDoc = null, parse, 
   for (const escape of ['minimal', 'full', 'segment', 'block']) {
     let result
     try {
-      result = reprintSource({ source, editorDoc, previousDoc, parse, parseTree, remark, serialize, escape })
+      result = reprintSource({ source, editorDoc, previousDoc, parse, parseTree, remark, serialize, escape, newListMarkers })
     } catch (error) {
       return { ok: false, reason: 'reprint-threw', error: String(error?.stack || error) }
     }
     if (!result.ok) return result
+    // An edit that makes an authored ordered list directly adjacent to
+    // another must not merge them on reopen (list-boundaries.js).
+    const separated = separateAdjacentLists(result.markdown, editorDoc, previousDoc, remark)
+    if (separated.unresolved) {
+      last = { ...result, reason: 'reprint-merged-lists' }
+      continue
+    }
+    if (separated.changed) result = { ...result, markdown: separated.markdown, notes: [...(result.notes || []), { level: 'list-boundary' }] }
     last = result
     candidates.push({ result, escape })
     let verified = false

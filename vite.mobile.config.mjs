@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { readFileSync } from 'fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { milkdownFixes } from './vite.milkdown-fixes.mjs'
 
 // Mobile (Capacitor) build: bundles ONLY the renderer into dist-mobile/ as a
 // plain web app — no Electron main/preload. The desktop build (electron-vite)
@@ -27,5 +28,5 @@ export default defineConfig({
       input: { index: resolve(__dirname, 'src/renderer/index.html') }
     }
   },
-  plugins: [react()]
+  plugins: [milkdownFixes(), react()]
 })

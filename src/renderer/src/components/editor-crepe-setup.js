@@ -13,7 +13,7 @@ import { imageBlockConfig } from '@milkdown/kit/component/image-block'
 import { inlineImageConfig } from '@milkdown/kit/component/image-inline'
 import { codeBlockConfig } from '@milkdown/kit/component/code-block'
 import { hardbreakSchema, inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
-import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm'
+import { remarkGFMPlugin, tableCellSchema, tableHeaderSchema } from '@milkdown/kit/preset/gfm'
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language'
 import remarkFrontmatter from 'remark-frontmatter'
 import { tabAtCursorKeymap } from './editor-codeblock-tab.js'
@@ -30,6 +30,7 @@ import {
 } from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
 import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
+import { listItemLeadPlugin } from './editor-list-item-lead.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { disableCrepeLinkPreview } from './editor-link-card.js'
@@ -46,7 +47,8 @@ import { createHtmlTokenEditingPlugin } from './editor-html-token-editing.js'
 import { createTaskListInputPlugin } from './editor-task-list.js'
 import { createSourceTransactionDispatch } from './editor-source-transactions.js'
 import { frontmatterSchema, renderFrontmatterNodeView } from './editor-frontmatter.js'
-import { highlightFeatures, highlightStringifyHandler } from './editor-highlight.js'
+import { highlightFeatures, highlightStringifyHandler, highlightUnsafe } from './editor-highlight.js'
+import { listInterruptJoin } from '../lib/list-interrupt-join.js'
 import { createHtmlSpanPartPlugin, htmlSpanFeatures, htmlSpanStringifyHandler } from './editor-html-span.js'
 import { createSubSupFeatures, subscriptStringifyHandler, superscriptStringifyHandler } from './editor-subsup.js'
 import { createReviewDecorationPlugin } from './editor-review.js'
@@ -60,7 +62,7 @@ import { remarkTaskParagraphPosition } from '../lib/remark-task-paragraph-positi
 import { inlineCodeAtomsPlugin } from './editor-inline-code-atoms.js'
 import { textblockNewlinesPlugin } from './editor-textblock-newlines.js'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
-import { deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../lib/remark-text-handler.js'
+import { deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, taskListItemStringifyHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
 import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
@@ -269,6 +271,8 @@ export function createConfiguredCrepe({
       tableBreakKeymap(),
       // Cells and headings are one line: no soft breaks in them (#171).
       oneLineBlocksPlugin(),
+      // A list item never starts with an empty paragraph + a paragraph.
+      listItemLeadPlugin(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).
@@ -312,6 +316,7 @@ export function createConfiguredCrepe({
         strong: strongStringifyHandler,
         emphasis: emphasisStringifyHandler,
         delete: deleteStringifyHandler,
+        listItem: taskListItemStringifyHandler,
         break: tableCellBreakHandler,
         highlight: highlightStringifyHandler,
         hmHtmlSpan: htmlSpanStringifyHandler,
@@ -319,8 +324,10 @@ export function createConfiguredCrepe({
         superscript: superscriptStringifyHandler
       },
       // With the syntax on, a literal `^` must not pair up on reparse (`~`
-      // is already escaped by GFM strikethrough's own unsafe pattern).
-      unsafe: subSup.attachUnsafe([...(opts?.unsafe || [])])
+      // is already escaped by GFM strikethrough's own unsafe pattern); a
+      // literal `==` that could open a highlight is always escaped.
+      unsafe: subSup.attachUnsafe([...(opts?.unsafe || []), highlightUnsafe]),
+      join: [...(opts?.join || []), listInterruptJoin]
     }))
 
     ctx.update(remarkPluginsCtx, (plugins) => [
@@ -367,6 +374,41 @@ export function createConfiguredCrepe({
   crepe.editor.use(
     hardbreakSchema.extendSchema((prev) => (ctx) => ({ ...prev(ctx), linebreakReplacement: true }))
   )
+  // A cell's trailing line break is content (`a<br>`), but the paragraph
+  // rule inside the cell drops a paragraph's last break (Milkdown
+  // serializeText: right for a paragraph, whose trailing break has no
+  // spelling). Such a cell writes its paragraph's content itself; the
+  // table-break handler spells every break `<br>` (fuzz UI seed 128:
+  // `test<br><br>` saved as `test<br>`).
+  const keepTrailingCellBreak = (schema) => schema.extendSchema((prev) => (ctx) => {
+    const spec = prev(ctx)
+    const runner = spec.toMarkdown.runner
+    return {
+      ...spec,
+      toMarkdown: {
+        ...spec.toMarkdown,
+        runner: (state, node) => {
+          const paragraph = node.childCount === 1 ? node.firstChild : null
+          // An empty cell is empty: the paragraph rule writes `<br />` for an
+          // empty paragraph (Milkdown keeps blank lines that way), which
+          // reopened as a cell holding a line break (fuzz UI seed 274).
+          if (paragraph?.type.name === 'paragraph' && paragraph.content.size === 0) {
+            state.openNode('tableCell')
+            state.closeNode()
+            return
+          }
+          if (paragraph?.type.name !== 'paragraph' || paragraph.lastChild?.type.name !== 'hardbreak') return runner(state, node)
+          state.openNode('tableCell')
+          state.openNode('paragraph')
+          state.next(paragraph.content)
+          state.closeNode()
+          state.closeNode()
+        }
+      }
+    }
+  })
+  crepe.editor.use(keepTrailingCellBreak(tableCellSchema))
+  crepe.editor.use(keepTrailingCellBreak(tableHeaderSchema))
   crepe.editor.use(imageBlockMarkdownSchema)
   crepe.editor.use(subSup.parse)
   crepe.editor.use(highlightFeatures)

@@ -299,9 +299,9 @@ async function main() {
     assert.equal(await toggleSource(app.evaluate), true, 'could not switch held-space fixture to source')
     await waitFor(() => app.evaluate(`!![...document.querySelectorAll('textarea.source-editor')].find((n) => n.offsetParent)`), 'held-space source textarea did not appear')
     const sourceE = await visibleSource(app.evaluate)
-    const expectedHeldSpaceSource = process.env.EXPECT_TRANSACTION_PRIMARY === '1'
-      ? '# test\n\nanchor\n\n\n\n\u200B        abc\n'
-      : '# test\n\nanchor\n\n\u200B        abc\n'
+    // The first Enter leaves an empty paragraph between `anchor` and the
+    // spaced line: a blank line of its own (Typora; the source reprint).
+    const expectedHeldSpaceSource = '# test\n\nanchor\n\n\n\n\u200B        abc\n'
     if (process.env.TRANSACTION_TRACE === '1' && sourceE !== expectedHeldSpaceSource) {
       console.error('HELD_SPACE_TRACE', JSON.stringify(await app.evaluate(`({
         transactions: window.__hmSourceTransactionTrace || [],

@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import { readFileSync } from 'fs'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { milkdownFixes } from './vite.milkdown-fixes.mjs'
 
 // Inject the package version into the renderer at build time so the UI can show
 // it (matches app.getVersion(), which also reads package.json).
@@ -51,6 +52,6 @@ export default defineConfig({
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }
     },
-    plugins: [react()]
+    plugins: [milkdownFixes(), react()]
   }
 })

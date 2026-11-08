@@ -4,12 +4,17 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-list-isolated-ordered-lift-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 18540 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
 const fixture = '\uFEFFbefore\r\n\r\n+ literal\r\n\r\n1) \r\n\r\n- right\r\n\r\nafter\r\n'
-const expected = '\uFEFFbefore\r\n\r\n+ literal\r\n\r\n+ \r\n\r\n- right\r\n\r\nafter\r\n'
+// The lifted empty item joins the `+` list above: the source reprint writes it
+// as that list's next item (`+`, tight, like test-source-reprint-ui 'list
+// merged from removed blocks keeps its + marker'); the legacy path wrote
+// `\r\n\r\n+ `, the same list made loose.
+const expected = '\uFEFFbefore\r\n\r\n+ literal\r\n+\r\n\r\n- right\r\n\r\nafter\r\n'
 const expectedTextarea = expected.replace(/\r\n/g, '\n')
 const scenarios = [
   { name: 'callback', forced: false },
@@ -115,7 +120,7 @@ const assertSource = (source, label) => {
   assert.equal(source.charCodeAt(0), 0xFEFF, `${label} lost BOM`)
   assert.equal(source.includes('\r'), false, `${label} textarea exposed CR bytes`)
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i)
-  assert.ok(source.includes('+ literal\n\n+ \n\n- right'), `${label} marker/boundary spelling drifted`)
+  assert.ok(source.includes('+ literal\n+\n\n- right'), `${label} marker/boundary spelling drifted`)
 }
 
 const open = async ({ file, profile, port, initial = false }) => {
@@ -148,6 +153,7 @@ const runScenario = async (scenario, port) => {
   try {
     await clearDiagnostics(app)
     await focusEmptyOrdered(app)
+    const mark = await publishMark(app.evaluate)
     await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: scenario.forced ? 8 : 24 })
 
     let source = null
@@ -166,26 +172,29 @@ const runScenario = async (scenario, port) => {
       `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false,
       `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
-    const publication = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
-    )
-    assert.equal(publication.length, 1, `${scenario.name} publication: ${JSON.stringify(state.owner)}`)
-    assert.equal(publication[0].boundary,
-      scenario.forced
-        ? 'transaction-list-isolated-empty-ordered-lift-forced-flush'
-        : 'transaction-list-isolated-empty-ordered-lift-markdown-updated')
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-isolated-empty-ordered-lifted' &&
-      entry.integrityProof?.kind === 'transaction-list-isolated-empty-ordered-lift-proof'
-    )
-    assert.ok(preservation, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
-    assert.equal(preservation.integrityProof.family, 'list-isolated-empty-ordered-lift')
-    assert.equal(preservation.integrityProof.orderedSourceRow.token, '1)')
-    assert.equal(preservation.integrityProof.sourceBulletToken, '+')
-    assert.equal(preservation.integrityProof.orderedStart, 1)
-    assert.equal(preservation.integrityProof.previousToken, '1)')
-    assert.equal(preservation.integrityProof.nextToken, '+')
-    assert.equal(preservation.integrityProof.step.name, 'ReplaceStep')
+    // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+    await assertPublishedBy(app.evaluate, async () => {
+      const publication = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-isolated-empty-ordered-lift'
+      )
+      assert.equal(publication.length, 1, `${scenario.name} publication: ${JSON.stringify(state.owner)}`)
+      assert.equal(publication[0].boundary,
+        scenario.forced
+          ? 'transaction-list-isolated-empty-ordered-lift-forced-flush'
+          : 'transaction-list-isolated-empty-ordered-lift-markdown-updated')
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-isolated-empty-ordered-lifted' &&
+        entry.integrityProof?.kind === 'transaction-list-isolated-empty-ordered-lift-proof'
+      )
+      assert.ok(preservation, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
+      assert.equal(preservation.integrityProof.family, 'list-isolated-empty-ordered-lift')
+      assert.equal(preservation.integrityProof.orderedSourceRow.token, '1)')
+      assert.equal(preservation.integrityProof.sourceBulletToken, '+')
+      assert.equal(preservation.integrityProof.orderedStart, 1)
+      assert.equal(preservation.integrityProof.previousToken, '1)')
+      assert.equal(preservation.integrityProof.nextToken, '+')
+      assert.equal(preservation.integrityProof.step.name, 'ReplaceStep')
+    }, `${scenario.name} isolated empty ordered lift`, { since: mark })
     assert.equal(state.topOrdered, 0, `${scenario.name} ordered list still present after lift`)
     assert.equal(state.bulletItems.includes('literal'), true)
     assert.equal(state.bulletItems.includes(''), true)

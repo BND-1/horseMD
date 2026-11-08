@@ -157,6 +157,10 @@ const standalone = [
     script: 'scripts/test-highlight-bold-ui.mjs'
   },
   {
+    name: 'Raw newlines joined into a paragraph become soft breaks (fuzz seed 936)',
+    script: 'scripts/test-textblock-newlines-ui.mjs'
+  },
+  {
     name: 'Mark combinations: every pair of inline marks in every shape / context / text kind round-trips, reprints, serializes stably',
     script: 'scripts/test-mark-combinations-ui.mjs'
   },
@@ -381,12 +385,20 @@ const standalone = [
     script: 'scripts/test-editor-only-document.mjs'
   },
   {
+    name: 'List items follow their list type, also after a drop or paste (pure)',
+    script: 'scripts/test-list-type-sync.mjs'
+  },
+  {
     name: 'Blockquote inline patch and BOM marker fix (pure)',
     script: 'scripts/test-blockquote-inline-patch.mjs'
   },
   {
     name: 'Remark marker offset in BOM files (pure)',
     script: 'scripts/test-remark-marker-bom-fix.mjs'
+  },
+  {
+    name: 'Leading-space sentinel: sentinel + blanks reads back empty (pure)',
+    script: 'scripts/test-leading-space-sentinel.mjs'
   },
   {
     name: 'Auto-save: settings enable, rich/source debounce, external-change guard',
@@ -463,6 +475,124 @@ const standalone = [
   {
     name: 'List conversion source fidelity: immediate typing, save, and full reopen',
     script: 'scripts/test-list-conversion-source-fidelity-ui.mjs'
+  },
+  // Found stale or broken outside the suite (sweep 2026-11-06); kept here so
+  // they cannot rot again.
+  {
+    name: 'Source + rich split: leading caret, preview menu (read-only, Esc), save, scroll links',
+    script: 'scripts/test-source-rich-split-ui.mjs'
+  },
+  {
+    name: 'Rich list source fidelity: paragraph → Enter → typed dash list',
+    script: 'scripts/test-rich-list-source-preservation-ui.mjs'
+  },
+  {
+    name: 'New document: empty nested list items never write <br />',
+    script: 'scripts/test-list-marker-empty-source-ui.mjs'
+  },
+  {
+    name: 'Diverged list structure: nested ordered marker removal and two-level lift',
+    script: 'scripts/test-diverged-list-structure-ui.mjs'
+  },
+  {
+    name: 'Deletion across a bold run keeps the authored bytes around it',
+    script: 'scripts/test-diverged-delete-source-ui.mjs'
+  },
+  {
+    name: '#139 HTML paste line breaks (CSS white-space, reset spans, CRLF)',
+    script: 'scripts/test-issue-139-line-breaks-ui.mjs'
+  },
+  {
+    name: 'System theme follows the OS light/dark preference',
+    script: 'scripts/test-system-theme-ui.mjs'
+  },
+  {
+    name: 'Block handle: one stable rail; inline HTML spans stay control-free',
+    script: 'scripts/test-block-handle-gutter-ui.mjs'
+  },
+  {
+    name: 'Inline <font>/<span> keep the block handle in the gutter',
+    script: 'scripts/test-inline-html-block-handle-ui.mjs'
+  },
+  {
+    name: 'Markers typed into list items stay text; outer markers kept (no stray 1) intent)',
+    script: 'scripts/test-list-item-literal-marker-source-ui.mjs'
+  },
+  {
+    name: 'Backtick deletion; successively emptied paragraphs keep their lines',
+    script: 'scripts/test-code-fence-delete-source-ui.mjs'
+  },
+  {
+    name: 'Bullet exit in the middle of a list keeps the sibling list',
+    script: 'scripts/test-bullet-exit-keeps-sibling-ui.mjs'
+  },
+  {
+    name: 'Leading spaces: sentinel spelling, scratch documents, held Space',
+    script: 'scripts/test-leading-space-entity-ui.mjs'
+  },
+  {
+    name: 'Emptied document retyped (Air 2026-11-06): new document and saved file',
+    script: 'scripts/test-emptied-document-retype-ui.mjs'
+  },
+  {
+    name: 'List input intents: reprint runs first, mixed line endings kept (4 rounds, cold reopen)',
+    script: 'scripts/test-family-multicycle-ui.mjs'
+  },
+  {
+    name: 'RS-51: new document empty bullet Backspace keeps the heading gap',
+    script: 'scripts/test-generated-scratch-empty-bullet-backspace-ui.mjs'
+  },
+  {
+    name: 'Fast `1. ` in an empty bullet: literal text, no trailing blank left',
+    script: 'scripts/test-fast-empty-bullet-ordered-input-rule-ui.mjs'
+  },
+  {
+    name: 'RS-63: empty last item joined above keeps the nested `*`',
+    script: 'scripts/test-empty-bullet-after-nested-list-backspace-ui.mjs'
+  },
+  {
+    name: 'RS-86: double Enter in a list keeps it tight',
+    script: 'scripts/test-rapid-double-enter-bullet-exit-before-sibling-ui.mjs'
+  },
+  {
+    name: 'RS-71: nested ordered Enter keeps indentation',
+    script: 'scripts/test-diverged-nested-ordered-enter-ui.mjs'
+  },
+  {
+    name: 'Ordered Enter before a fence keeps ordinal 2',
+    script: 'scripts/test-ordered-enter-before-fence-ui.mjs'
+  },
+  {
+    name: 'Ordered item trailing space then text',
+    script: 'scripts/test-ordered-item-trailing-space-append-ui.mjs'
+  },
+  {
+    name: 'List exit then `- ` joins the list above',
+    script: 'scripts/test-human-list-exit-dash-space-ui.mjs'
+  },
+  {
+    name: 'Empty bullet Backspace merges into the ordered list',
+    script: 'scripts/test-isolated-empty-bullet-backspace-merge-ordered-ui.mjs'
+  },
+  {
+    name: 'Isolated empty ordered item Backspace lifts to a bullet',
+    script: 'scripts/test-isolated-empty-ordered-backspace-lift-ui.mjs'
+  },
+  {
+    name: 'Empty `1) ` lifted into the `+` list (BOM, CRLF)',
+    script: 'scripts/test-list-isolated-empty-ordered-lift-transaction-ui.mjs'
+  },
+  {
+    name: 'Empty bullet + literal `1. ` before a fence',
+    script: 'scripts/test-empty-bullet-literal-ordered-before-fence-ui.mjs'
+  },
+  {
+    name: 'RS-84: cross-list selection delete',
+    script: 'scripts/test-cross-list-selection-delete-empty-bullet-ui.mjs'
+  },
+  {
+    name: 'List item mount keeps a selection made before the next frame',
+    script: 'scripts/test-list-item-mount-selection-ui.mjs'
   },
   {
     name: 'Soft line breaks: visual lines preserve source bytes and explicit hard breaks',

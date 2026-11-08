@@ -54,7 +54,8 @@ import {
   preserveTransactionOwnedListSubtreeChange,
   replaceMarkdownFrontmatterBlock,
   replaceMarkdownListBlock,
-  restoreTypedBulletMarker
+  restoreTypedBulletMarker,
+  withoutEmptyParagraphPlaceholders
 } from '../markdown-source-preservation.js'
 import { createPmPosToMarkdownOffsetMapper, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createScopedMarkdownOffsetResolver } from './editor-source-map-scope.js'
@@ -307,6 +308,21 @@ export default function Editor({
     if (toolbar) toolbar.dataset.show = 'true'
   }, [selectionToolbar])
   const [ctxMenu, setCtxMenu] = useState(null) // { x, y } viewport coords, or null
+  // Esc closes the context menu (native menus, the tab menu). Capture phase,
+  // stopped there: ProseMirror's Escape would also select the parent node,
+  // and full-screen mode leaves Esc to an open menu.
+  const ctxMenuOpen = !!ctxMenu
+  useEffect(() => {
+    if (!ctxMenuOpen) return undefined
+    const onKey = (event) => {
+      if (event.key !== 'Escape' || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      setCtxMenu(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [ctxMenuOpen])
   // Lightbox: the image src currently shown enlarged, or null.
   const [zoom, setZoom] = useState(null)
   // Mermaid-lightbox pan/zoom state (refs so dragging doesn't re-render per frame).
@@ -372,6 +388,12 @@ export default function Editor({
     const captureSyncReport = (reason, where) => {
       const doc = viewRef.current?.state.doc
       const source = lastMarkdownRef.current || ''
+      // Trace runs (--horsemd-input-trace): keep the exact state of the last
+      // failure for the fuzzer — by the time it reads the page, later
+      // keystrokes may have moved the document on.
+      if (globalThis.__hmSourceReprintHarness) {
+        try { globalThis.__hmLastSyncFailure = { reason, where, source, doc: doc?.toJSON() ?? null } } catch { /* report only */ }
+      }
       const events = syncEventLog.entries()
       const at = new Date().toISOString()
       return () => {
@@ -428,6 +450,8 @@ export default function Editor({
     })
 
     let userEditUntil = 0
+    // The last published source reprint printed a list with no authored marker.
+    let lastReprintPrintedNewList = false
     // `markdownUpdated` normally catches up immediately, but a mode switch can
     // happen in the narrow gap after a visible ProseMirror transaction. Keep a
     // precise flag for that gap: it preserves the required immediate flush
@@ -564,6 +588,49 @@ export default function Editor({
         pendingMarkdownInputIntents,
         pendingMarkdownInputIntent
       )
+    // While a list input intent is pending the source reprint still runs
+    // first (it is verified against the editor document, so a transient
+    // marker state cannot mismatch); the marker the user typed spells the
+    // new list. null when two pending intents of one kind disagree — which
+    // list got which is unknown, so the intent-owning path decides.
+    const pendingListIntentMarkers = () => {
+      const bullets = new Set()
+      const delimiters = new Set()
+      for (const intent of [...pendingMarkdownInputIntents, pendingMarkdownInputIntent]) {
+        if (!isActiveListInputIntent(intent)) continue
+        if (intent.type === 'bullet-list') bullets.add(intent.marker)
+        else delimiters.add(String(intent.marker || '').slice(-1))
+      }
+      if (bullets.size > 1 || delimiters.size > 1) return null
+      return { bullet: [...bullets][0] || null, delimiter: [...delimiters][0] || null }
+    }
+    // After the reprint published the list the intent was for, its marker is
+    // authored source: the intent has nothing left to say and must not reach
+    // a later document (stale `1)` / `+`, glued lists).
+    // Also when the published reprint printed a list with no authored marker
+    // (`new-list-marker`): a late callback (slow machine) arrives after the
+    // caret has left the new list, the intent stayed pending, and once a
+    // later callback had nothing to write the legacy writer rewrote the list
+    // from it (lost the blank line before it; Windows 2026-11-07).
+    // The caret's text block is a typed marker still waiting for its Space
+    // (the intent is noted on that keydown, before the input rule runs).
+    const markerAwaitingSpace = () => {
+      const { $head } = viewRef.current?.state.selection || {}
+      return Boolean($head?.parent?.isTextblock && /^([-+*]|\d{1,9}[.)])$/.test($head.parent.textContent))
+    }
+    const settleListIntentsAfterReprint = () => {
+      const { $head } = viewRef.current?.state.selection || {}
+      let inList = lastReprintPrintedNewList && !markerAwaitingSpace()
+      for (let depth = $head?.depth ?? 0; !inList && depth > 0; depth -= 1) {
+        if ($head.node(depth).type.name === 'list_item') { inList = true; break }
+      }
+      if (!inList) return
+      if (Array.isArray(globalThis.__hmListIntentTrace)) {
+        globalThis.__hmListIntentTrace.push({ phase: 'settled-by-reprint', kept: 0 })
+      }
+      pendingMarkdownInputIntents = []
+      pendingMarkdownInputIntent = null
+    }
     // A physical/IME input sequence can create an outer list and a nested list
     // before Milkdown emits its first markdownUpdated callback. Keep every
     // marker intent until that callback serializes the generated document;
@@ -934,7 +1001,7 @@ export default function Editor({
           const serializer = crepe.editor.ctx.get(serializerCtx)
           const schema = nodes?.[0]?.type?.schema || viewRef.current?.state.schema
           if (!serializer || !schema?.nodes?.doc) return null
-          return serializer(schema.nodes.doc.create(null, nodes))
+          return withoutEmptyParagraphPlaceholders(serializer(schema.nodes.doc.create(null, nodes)))
         },
         validateMarkdown: validateTransactionMarkdown
       })
@@ -2166,9 +2233,21 @@ export default function Editor({
     let publishingReprint = false
     // Last document whose committed source a full flush check verified.
     let verifiedLiveDoc = null
-    const publishReprint = ({ canonical, boundary, notifyChange = true, allowDegraded = false }) => {
+    // The opened document and its source: the editor document paired with
+    // the source before the first edit (the Coordinator's snapshot is made
+    // lazily, on that edit, from the edited document).
+    let openedSourcePair = null
+    const publishReprint = ({ canonical, boundary, notifyChange = true, allowDegraded = false, newListMarkers = null }) => {
+      const trace = (entry) => {
+        if (!Array.isArray(globalThis.__hmSourceReprintTrace)) return
+        globalThis.__hmSourceReprintTrace.push({ boundary, ...entry })
+        if (globalThis.__hmSourceReprintTrace.length > 100) globalThis.__hmSourceReprintTrace.shift()
+      }
       if (globalThis.__hmSourceReprintPrimary === false) return null
-      if (generatedScratchRef.current || viewRef.current?.composing) return null
+      if (generatedScratchRef.current || viewRef.current?.composing) {
+        trace({ phase: 'skipped', reason: generatedScratchRef.current ? 'generated-scratch' : 'composing' })
+        return null
+      }
       const doc = dispatchingExpectedDoc ?? viewRef.current?.state.doc
       const source = String(lastMarkdownRef.current ?? '')
       if (!doc || typeof canonical !== 'string') return null
@@ -2178,15 +2257,12 @@ export default function Editor({
         // lets the engine see editor-only edits such as removing an empty line.
         // (Only once ready: the Coordinator is created lazily on first access.)
         const snapshot = ready ? sourceSyncBridge?.getSnapshot?.() : null
-        const previousDoc = snapshot?.source === source && snapshot.doc !== doc ? snapshot.doc : null
-        result = reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
+        const paired = [snapshot, verifiedLiveDoc, openedSourcePair].find((pair) => pair?.doc && pair.source === source)
+        const previousDoc = paired && paired.doc !== doc ? paired.doc : null
+        result = reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc, newListMarkers })
       } catch {
+        trace({ phase: 'declined', reason: 'threw' })
         return null
-      }
-      const trace = (entry) => {
-        if (!Array.isArray(globalThis.__hmSourceReprintTrace)) return
-        globalThis.__hmSourceReprintTrace.push({ boundary, ...entry })
-        if (globalThis.__hmSourceReprintTrace.length > 100) globalThis.__hmSourceReprintTrace.shift()
       }
       if (!result?.ok || !result.verified) {
         trace({ phase: 'declined', reason: result?.reason || 'unverified' })
@@ -2202,7 +2278,19 @@ export default function Editor({
       // Nothing to write and nothing to advance: let the committed fast path
       // run — except as the rescue, where that path has just failed and the
       // verified unchanged source is the answer.
-      if (!allowDegraded && result.markdown === source && canonical === canonicalMarkdownRef.current) return null
+      if (!allowDegraded && result.markdown === source && canonical === canonicalMarkdownRef.current) {
+        trace({ phase: 'skipped', reason: 'nothing-to-write' })
+        // The source already reads back as this document, new list and all:
+        // a pending list input intent has nothing left to say. Left pending,
+        // the legacy writer that runs next rewrote the list from it (lost the
+        // blank line before it; Windows 2026-11-07, 1 in 5 runs).
+        if (newListMarkers && (pendingMarkdownInputIntent || pendingMarkdownInputIntents.length) && !markerAwaitingSpace()) {
+          pendingMarkdownInputIntents = []
+          pendingMarkdownInputIntent = null
+          if (Array.isArray(globalThis.__hmListIntentTrace)) globalThis.__hmListIntentTrace.push({ phase: 'settled-source-current', kept: 0 })
+        }
+        return null
+      }
       const levels = (result.notes || []).map((note) => note.level).filter(Boolean)
       const proof = Object.freeze({
         kind: 'source-reprint-proof',
@@ -2239,6 +2327,7 @@ export default function Editor({
       }
       trace({ phase: coordinated?.ok ? 'published' : 'rejected', reason: coordinated?.reason || null, levels })
       if (!coordinated?.ok) return null
+      lastReprintPrintedNewList = levels.includes('new-list-marker')
       pendingSourceSyncTransactionJournal = null
       wholeDocumentReplacementPending = null
       transactionSourcePendingPublish = false
@@ -2290,7 +2379,7 @@ export default function Editor({
         const doc = viewRef.current?.state.doc
         if (doc && !generatedScratchRef.current && !viewRef.current?.composing) {
           const canonical = canonicalForSource(crepe.editor.ctx.get(serializerCtx)(doc))
-          const rescued = publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: true, allowDegraded: true })
+          const rescued = publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: true, allowDegraded: true, newListMarkers: pendingListIntentMarkers() })
           if (rescued != null) {
             clearRichFlushPending()
             return true
@@ -2690,6 +2779,15 @@ export default function Editor({
     // identical generated-document serialization. The latter can run before
     // Milkdown has delivered the input-rule callback, so it must still consume
     // the physical `-` / `*` / `+` intent captured by the DOM binding.
+    const caretInListOfKind = (view, type) => {
+      const { $head } = view?.state.selection || {}
+      for (let depth = $head?.depth ?? 0; depth > 1; depth -= 1) {
+        if ($head.node(depth).type.name !== 'list_item') continue
+        const list = $head.node(depth - 1).type.name
+        return list === (type === 'ordered-list' ? 'ordered_list' : 'bullet_list')
+      }
+      return false
+    }
     const generatedScratchMarkdownForCanonical = (canonical, consumeInputIntent = false) => {
       let markdown = generatedScratchMarkdown(canonical)
       const generatedInputIntents = pendingMarkdownInputIntents.length
@@ -2721,6 +2819,12 @@ export default function Editor({
           // serialized list marker.  Otherwise the following list transaction
           // falls back to Crepe's `*` permanently.
           if (restored !== markdown) consumedInputIntents.add(inputIntent)
+          // The typed marker can equal the serializer's (`-`): nothing to
+          // restore, but the input rule did run once the caret is in an item
+          // of that list kind. An intent left pending here was applied to the
+          // NEXT edit (RS-51: Backspace in the empty second bullet glued the
+          // list to the heading above, `# 测试\n- 离婚了`).
+          else if (caretInListOfKind(currentView, inputIntent.type)) consumedInputIntents.add(inputIntent)
           markdown = restored
         } catch {
           // Canonical Markdown is still structurally correct if a transient
@@ -3005,9 +3109,19 @@ export default function Editor({
           const hasPendingListIntent = hasBlockingListInputIntent()
           let pendingPlainParagraphPlan = null
           const plainTransactionMode = transactionFirstMode()
-          if (!pendingPaste && !pendingList && !pendingWholeDocumentReplacement && !hasPendingListIntent) {
-            const reprinted = publishReprint({ canonical, boundary: 'source-reprint-markdown-updated', notifyChange: true })
+          const intentMarkers = hasPendingListIntent ? pendingListIntentMarkers() : null
+          if (Array.isArray(globalThis.__hmSourceReprintTrace) && (pendingPaste || pendingList || pendingWholeDocumentReplacement || (hasPendingListIntent && !intentMarkers))) {
+            globalThis.__hmSourceReprintTrace.push({ boundary: 'source-reprint-markdown-updated', phase: 'gated', paste: Boolean(pendingPaste), list: Boolean(pendingList), whole: Boolean(pendingWholeDocumentReplacement), intent: hasPendingListIntent })
+          }
+          if (!pendingPaste && !pendingList && !pendingWholeDocumentReplacement && (!hasPendingListIntent || intentMarkers)) {
+            const reprinted = publishReprint({
+              canonical,
+              boundary: 'source-reprint-markdown-updated',
+              notifyChange: true,
+              newListMarkers: intentMarkers
+            })
             if (reprinted != null) {
+              if (hasPendingListIntent) settleListIntentsAfterReprint()
               clearRichFlushPending()
               userEditUntil = Date.now() + 1000
               return
@@ -3588,9 +3702,35 @@ export default function Editor({
               // their item-specific punctuation restore remains necessary.
               // A bullet that the ownership helper could not reconstruct still
               // gets the established fallback restore below.
-              const markerRestoreNeeded =
+              // No list was made when the typed marker is still the text the
+              // caret's block starts with (`1) ` has no input rule; a marker
+              // typed inside an item stays text). Restoring it then rewrote
+              // another list's row: the nearest `1.` became `1)`
+              // (test:list-item-literal-marker-source-ui).
+              // Both the caret's block and the block at the intent's own
+              // position: the sync can arrive after the writer moved on to
+              // another item (Windows: a `+ ` typed in one bullet turned the
+              // whole list's `-` into `+` while the caret sat in a later item).
+              const literalMarkerKept = (() => {
+                try {
+                  const state = viewRef.current?.state
+                  const typed = String(pendingMarkdownInputIntent.marker || '')
+                  if (!state || !typed) return false
+                  const startsWithMarker = (parent) => {
+                    const text = parent?.isTextblock ? parent.textContent : ''
+                    return text.startsWith(`${typed} `) || text.startsWith(`${typed} `)
+                  }
+                  if (startsWithMarker(state.selection.$head.parent)) return true
+                  const at = pendingMarkdownInputIntent.pmPos
+                  if (!Number.isInteger(at)) return false
+                  return startsWithMarker(state.doc.resolve(Math.max(0, Math.min(at, state.doc.content.size))).parent)
+                } catch {
+                  return false
+                }
+              })()
+              const markerRestoreNeeded = !literalMarkerKept && (
                 pendingMarkdownInputIntent.type === 'ordered-list' ||
-                (pendingMarkdownInputIntent.type === 'bullet-list' && !inputRuleMarkdown)
+                (pendingMarkdownInputIntent.type === 'bullet-list' && !inputRuleMarkdown))
               if (markerRestoreNeeded) {
                 const markdown = restoreTypedBulletMarker({
                   markdown: preserved.markdown,
@@ -4467,10 +4607,16 @@ export default function Editor({
           validateSourceCandidate,
           publishSourceSyncResult,
           publishPendingTransactionJournal,
-          publishReprint: ({ canonical }) => hasBlockingListInputIntent() || pendingRawMarkdownPasteRef.current || pendingListConversion
-            ? null
-            : publishReprint({ canonical, boundary: 'source-reprint-forced-flush', notifyChange: false }),
-          rescueReprint: ({ canonical }) => publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: false, allowDegraded: true }),
+          publishReprint: ({ canonical }) => {
+            if (pendingRawMarkdownPasteRef.current || pendingListConversion) return null
+            const intentPending = hasBlockingListInputIntent()
+            const newListMarkers = intentPending ? pendingListIntentMarkers() : null
+            if (intentPending && !newListMarkers) return null
+            const published = publishReprint({ canonical, boundary: 'source-reprint-forced-flush', notifyChange: false, newListMarkers })
+            if (published != null && intentPending) settleListIntentsAfterReprint()
+            return published
+          },
+          rescueReprint: ({ canonical }) => publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: false, allowDegraded: true, newListMarkers: pendingListIntentMarkers() }),
           reportSourceSyncFailure
         })
         api.convertList = convertList
@@ -4595,6 +4741,7 @@ export default function Editor({
             { owner: 'bootstrap', reason: 'initial-editor-source-pair' }
           )
           ready = true
+          openedSourcePair = { doc: viewRef.current?.state.doc || null, source: lastMarkdownRef.current }
           if (!deliveredDoc) deliveredDoc = viewRef.current?.state.doc || null
           interactionReadyRef.current = true
           // Large documents: warm the sync caches while idle after opening.
@@ -4649,6 +4796,7 @@ export default function Editor({
               remark: () => crepe.editor.ctx.get(remarkCtx),
               schema: () => view.state.schema,
               liveDoc: () => viewRef.current?.state.doc,
+              view: () => viewRef.current,
               docFromJSON: (json) => view.state.schema.nodeFromJSON(json),
               liveSource: () => lastMarkdownRef.current,
               equivalent: (markdown, doc) => validateTransactionMarkdown({ markdown, expectedDoc: doc }) === true,

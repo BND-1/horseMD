@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 // E0 P2 acceptance — the 0.13.169 manual trace: Backspace deletes the ONLY
 // character of the TRAILING quote paragraph. The blockquote-paragraph family
 // must own the bounded delete: the author's `> ` marker bytes, BOM, CRLF and
@@ -30,7 +36,9 @@ const fixture = '\uFEFF' + [
   ''
 ].join('\r\n')
 
-const expected = fixture.replace(emptiedText, '')
+// The product path drops the emptied quote paragraph's lines (no Markdown;
+// the old writer kept `>` + `> `).
+const expected = productPath ? fixture.replace(/\r\n>\r\n> [^\r]*(?=\r\n\r\n- following)/, '') : fixture.replace(emptiedText, '')
 
 const waitFor = async (check, message, attempts = 180) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -165,7 +173,7 @@ const assertSourceView = (source, label) => {
   assert.equal(source, expectedView, `${label} source differs from quote owner output`)
   assert.equal(source.charCodeAt(0), 0xFEFF, `${label} source lost BOM`)
   assert.equal(source.includes('\r'), false, `${label} textarea exposed raw CR bytes`)
-  assert.equal(source.includes('> second para\n>\n> \n\n- following bullet'), true,
+  assert.equal(source.includes(productPath ? '> second para\n\n- following bullet' : '> second para\n>\n> \n\n- following bullet'), true,
     `${label} lost the authored emptied quote line boundary`)
   assert.equal(source.includes('<br />'), false, `${label} wrote a serializer break placeholder`)
   assert.equal(source.includes('- authored bullet'), true, `${label} changed preceding list`)
@@ -182,6 +190,7 @@ const assertEmptiedPublication = (state, expectedBoundary, label) => {
     `${label} produced source-integrity failure: ${JSON.stringify(state.integrity)}`)
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
+  if (productPath) return
 
   const emptied = state.preserve.find((entry) =>
     entry.reason === 'blockquote-paragraph-emptied' &&

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, cl
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
-import { existsSync, statSync, realpathSync, constants as fsConstants } from 'node:fs'
+import { existsSync, statSync, realpathSync, renameSync, appendFileSync, constants as fsConstants } from 'node:fs'
 import { exec } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { canGrantLocalFonts, createLocalFontGrant, getAllowedExternalUrl } from './security.js'
@@ -38,6 +38,22 @@ const GLOBAL_COMMANDS = {
   'window.toggleVisibility': () => toggleMainWindow()
 }
 const backgroundTestMode = process.argv.includes('--horsemd-test-background')
+// Test runs never hand anything to the system: the rich/source fuzzer clicks
+// at random, and since a plain click opens a link (2026-11-03) it opened
+// https://example.com in the user's browser. Under --horsemd-test-background
+// or HORSEMD_TEST_RUN=1 (every scripts/lib/electron-test-app.mjs launch)
+// shell calls are only recorded in `globalThis.__hmTestShellCalls`; tests
+// that check an open replace these functions with their own recorders.
+if (backgroundTestMode || process.env.HORSEMD_TEST_RUN === '1') {
+  globalThis.__hmTestShellCalls = []
+  const record = (kind, result) => async (target) => {
+    globalThis.__hmTestShellCalls.push(`${kind}:${target}`)
+    return result
+  }
+  shell.openExternal = record('url', undefined)
+  shell.openPath = record('path', '')
+  shell.showItemInFolder = (target) => { globalThis.__hmTestShellCalls.push(`reveal:${target}`) }
+}
 const inputTraceEnabled = process.argv.includes('--horsemd-input-trace')
 
 let mainWindow = null
@@ -64,6 +80,16 @@ let closeToTray = false
 let globalShortcuts = new Map()
 
 const inputTracePath = () => join(app.getPath('temp'), `horsemd-input-trace-${process.pid}.jsonl`)
+// The file is named by process id, and Windows reuses ids: a file left by an
+// earlier process got this run's events appended, and a reader took its old
+// warnings for this run's (Windows 2026-11-08). It is moved aside before the
+// first write; its events are kept.
+if (inputTraceEnabled) {
+  try {
+    const tracePath = inputTracePath()
+    renameSync(tracePath, tracePath.replace(/\.jsonl$/, `-${Math.round(statSync(tracePath).mtimeMs)}.jsonl`))
+  } catch { /* no earlier file */ }
+}
 let inputTraceQueue = Promise.resolve()
 
 // Preload asks synchronously so normal builds do not install per-event input
@@ -1069,10 +1095,11 @@ ipcMain.on('app:cancel-close', () => {
 // In-app update (#164): check, download (verified) and install on restart —
 // see updater.js. "Restart and install" quits through the tray-quit path, so
 // the renderer's unsaved-changes confirm still decides.
+// Written at once: the install on quit is traced in 'will-quit', and the
+// process exits before a queued append runs (a busy machine lost it).
 const traceLog = inputTraceEnabled
   ? (entry) => {
-    const line = JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n'
-    inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
+    try { appendFileSync(inputTracePath(), JSON.stringify({ pid: process.pid, t: Date.now(), ...entry }) + '\n', 'utf8') } catch { /* trace only */ }
   }
   : null
 const updater = registerUpdater({

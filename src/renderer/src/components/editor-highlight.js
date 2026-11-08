@@ -75,32 +75,12 @@ function colorFromClass(cls) {
 // `<mark class="hm-hl-…">…</mark>` → highlight node of that color, also
 // around other formatting (lib/remark-highlight-parse.js). Only `text` and
 // `html` nodes are read, so inline code / code blocks / math are left alone.
-export const highlightRemark = $remark('highlightParse', () => () => (tree) => {
-  highlightParseTransform(tree)
+export const highlightRemark = $remark('highlightParse', () => () => (tree, file) => {
+  highlightParseTransform(tree, file)
   return tree
 })
 
-// Stringify direction (remark handler, registered on remarkStringifyOptionsCtx).
-// yellow → ==text== ; red/blue → <mark class="hm-hl-…">text</mark> (round-trips
-// back into a colored mark via coalesceMarkHtml on reload).
-export function highlightStringifyHandler(node, _parent, state, info) {
-  const color = node.color || 'yellow'
-  const yellow = color === 'yellow'
-  // The content sits between `==` / the tags: bold right inside decides its
-  // delimiters by those characters, not by the text around the highlight.
-  const inner = state.containerPhrasing(node, { ...info, before: yellow ? '=' : '>', after: yellow ? '=' : '<' })
-  if (!inner) return ''
-  // `==` cannot hold a `=` (the parse rule) nor touch one outside (the runs
-  // merge): a highlighted `=` beside others is the HTML spelling, which
-  // reads back the same (fuzz FORMAT seed 6).
-  const touches = String(info?.before || '').endsWith('=') || String(info?.after || '').startsWith('=')
-  if (yellow && !inner.includes('=') && !touches) return `==${inner}==`
-  if (yellow) {
-    const html = state.containerPhrasing(node, { ...info, before: '>', after: '<' })
-    return `<mark class="hm-hl-yellow">${html}</mark>`
-  }
-  return `<mark class="hm-hl-${color}">${inner}</mark>`
-}
+export { highlightStringifyHandler, highlightUnsafe } from '../lib/remark-highlight-parse.js'
 
 export const toggleHighlightCommand = $command('ToggleHighlight', (ctx) => () =>
   toggleMark(highlightSchema.type(ctx))

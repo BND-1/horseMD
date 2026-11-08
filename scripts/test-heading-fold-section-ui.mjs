@@ -86,6 +86,10 @@ const selectText = (tag, text, start, end) => app.evaluate(`(() => {
   const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
   const t = walker.nextNode()
   getSelection().setBaseAndExtent(t, ${start}, t, ${end} < 0 ? t.length : ${end})
+  // ProseMirror reads a DOM selection on selectionchange (async): a key sent
+  // right away acted on the previous selection (1 run in ~7 cut only the
+  // heading text — the partial selection of the step before).
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 50))))
 })()`)
 const keyboard = async (key, code, command) => {
   await app.evaluate('globalThis.__clip = null')

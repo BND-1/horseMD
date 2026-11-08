@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-ordered-successor-lift-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 19600 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -143,25 +149,27 @@ const runScenario = async (scenario, port) => {
     assert.equal(state.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false)
     assert.equal(state.itemCount, 2)
     assert.equal(state.paragraphCounts[0], 2, `${scenario.name} transient trailing paragraph missing`)
-    const publications = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-ordered-empty-successor-lift'
-    )
-    assert.equal(publications.length, 1, JSON.stringify(state.owner))
-    assert.equal(publications[0].boundary,
-      scenario.forced
-        ? 'transaction-list-ordered-empty-successor-lift-forced-flush'
-        : 'transaction-list-ordered-empty-successor-lift-markdown-updated')
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-ordered-empty-successor-lifted' &&
-      entry.integrityProof?.kind === 'transaction-list-ordered-empty-successor-lift-proof'
-    )
-    assert.ok(preservation, JSON.stringify(state.preserve))
-    assert.equal(preservation.integrityProof.family, 'list-ordered-empty-successor-lift')
-    assert.equal(preservation.integrityProof.firstStep?.name, 'ReplaceStep')
-    assert.equal(preservation.integrityProof.secondStep?.name, 'ReplaceAroundStep')
-    assert.equal(preservation.integrityProof.secondStep?.insert, 1)
-    assert.deepEqual(preservation.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    if (!productPath) {
+      const publications = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-ordered-empty-successor-lift'
+      )
+      assert.equal(publications.length, 1, JSON.stringify(state.owner))
+      assert.equal(publications[0].boundary,
+        scenario.forced
+          ? 'transaction-list-ordered-empty-successor-lift-forced-flush'
+          : 'transaction-list-ordered-empty-successor-lift-markdown-updated')
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-ordered-empty-successor-lifted' &&
+        entry.integrityProof?.kind === 'transaction-list-ordered-empty-successor-lift-proof'
+      )
+      assert.ok(preservation, JSON.stringify(state.preserve))
+      assert.equal(preservation.integrityProof.family, 'list-ordered-empty-successor-lift')
+      assert.equal(preservation.integrityProof.firstStep?.name, 'ReplaceStep')
+      assert.equal(preservation.integrityProof.secondStep?.name, 'ReplaceAroundStep')
+      assert.equal(preservation.integrityProof.secondStep?.insert, 1)
+      assert.deepEqual(preservation.integrityProof.transientEmptyParagraphPath, [1, 0, 1])
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

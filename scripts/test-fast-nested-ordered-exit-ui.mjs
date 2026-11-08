@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-fast-nested-ordered-exit-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 10980 + (process.pid % 40))
@@ -140,18 +146,33 @@ try {
     false,
     'rapid nested-list exit showed a source-sync warning'
   )
-  assert.ok(
-    before.preserve.some((entry) => entry.reason === 'diverged-nested-list-change' && entry.preserved),
-    'rapid nested-list exit did not use the diverged nested-list mapper'
-  )
+  if (!productPath) {
+    assert.ok(
+      before.preserve.some((entry) => entry.reason === 'diverged-nested-list-change' && entry.preserved),
+      'rapid nested-list exit did not use the diverged nested-list mapper'
+    )
+  }
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   console.log('FAST_NESTED_EXIT_SOURCE:', JSON.stringify(source))
-  assert.ok(
-    source.includes('-   1. 二哥你来拿如果\n- \n- \u200B     就了解了呢\n* 如果可能老顾客'),
-    'source did not insert the outer empty bullet and promote the unchanged sentinel siblings to top-level'
-  )
+  if (productPath) {
+    // The reprint inserts the new outer item with its siblings' indent and
+    // leaves the two unchanged siblings as authored (the fallback writer
+    // re-wrote them at the margin). `  -` cannot be a setext underline: it is
+    // not inside the ordered item's paragraph (no lazy underline, CommonMark).
+    assert.ok(
+      source.includes('-   1. 二哥你来拿如果\n  -\n  - \u200B     就了解了呢\n  * 如果可能老顾客'),
+      `source did not insert the outer empty bullet with the unchanged siblings kept as authored: ${JSON.stringify(source)}`
+    )
+    assert.equal(await app.evaluate(`globalThis.__hmSourceReprintHarness.equivalent(globalThis.__hmSourceReprintHarness.liveSource(), globalThis.__hmSourceReprintHarness.liveDoc())`), true,
+      'source does not read back as the editor document')
+  } else {
+    assert.ok(
+      source.includes('-   1. 二哥你来拿如果\n- \n- \u200B     就了解了呢\n* 如果可能老顾客'),
+      'source did not insert the outer empty bullet and promote the unchanged sentinel siblings to top-level'
+    )
+  }
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'editor placeholder leaked into authored source')
   console.log('PASS rapid nested ordered exit: batched double-Enter stays source-equivalent')
 } finally {

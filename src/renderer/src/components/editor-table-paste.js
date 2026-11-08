@@ -365,7 +365,13 @@ export function pasteIntoTableCell(view, slice) {
   if (!at) return false
   const grid = pastedGrid(normalizePastedTableSpans(slice))
   if (grid) return fillTable(view, at, grid)
-  if (at.cellSelection || fitsInCell(slice)) return false
+  // Plain inline text over a cell selection: ProseMirror's own replace (the
+  // first cell takes it, the others are cleared). Blocks (a `$$` formula, a
+  // code block) cannot go in a cell: the default replace split the table
+  // around them and could leave a header row without cells (fuzz UI seed
+  // 272: a row selected by its handle, then a paste). They are joined into
+  // inline content with line breaks first, like a paste at a caret in a cell.
+  if (fitsInCell(slice)) return false
   const inline = flattenToInline(slice, view.state.schema)
   if (!inline) return false
   const tr = view.state.tr.replaceSelection(new Slice(inline, 0, 0))

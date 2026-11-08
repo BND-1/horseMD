@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark, reprintPublished } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-list-empty-item-tail-retirement-${process.pid}`
 const file = join(root, 'loose-tail.md')
@@ -61,16 +62,20 @@ try {
   assert.ok(point, 'loose tail empty item not hit-testable')
   await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  // Legacy retirement: a verified source-reprint publication is the correct
+  // outcome now; the fail-closed expectations apply only without it.
+  const backspaceMark = await publishMark(app.evaluate)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 20 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  await waitFor(async () => await reprintPublished(app.evaluate, { since: backspaceMark }) || app.evaluate(`(() =>
     (window.__hmListEmptyItemTailTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' &&
       entry.family === 'list-empty-item-tail-remove' &&
       entry.reason === 'list-empty-item-tail-authored-row-unproven' &&
       entry.recognized === true && entry.legacyBlocked === true
     )
-  )()`), 'loose tail authored rows did not fail closed')
+  )()`), 'loose tail authored rows were neither published by the source reprint nor failed closed')
   await sleep(250)
 
   const state = await app.evaluate(`(() => ({
@@ -85,19 +90,25 @@ try {
     items: [...([...(document.querySelectorAll('.ProseMirror'))].find((node) => node.offsetParent)?.querySelectorAll('li') || [])]
       .map((item) => [...item.querySelectorAll('p')].map((p) => p.textContent || ''))
   }))()`)
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' && entry.reason === 'list-empty-item-tail-authored-row-unproven'
-  )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+  const publishedBy = await assertPublishedBy(app.evaluate, async () => {
+    const blocked = state.owner.filter((entry) =>
+      entry.phase === 'plan' && entry.reason === 'list-empty-item-tail-authored-row-unproven'
+    )
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
+      `failed tail owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
+      `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  }, 'loose tail empty-item removal', { since: backspaceMark })
+  if (publishedBy === 'reprint') {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `source reprint published but a sync warning showed: ${JSON.stringify(state.toasts)}`)
+  }
   assert.equal(state.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), false,
     `legacy unexpectedly rescued loose tail list: ${JSON.stringify(state.preserve)}`)
   assert.equal(state.preserve.some((entry) => entry.reason === 'list-empty-item-tail-removed'), false,
     `failed tail owner unexpectedly preserved: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
-    `failed tail owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
   assert.equal(state.visibleSource, false)
   assert.equal(await readFile(file, 'utf8'), fixture, 'fail-closed loose tail overwrote disk')
   assert.deepEqual(state.items, [['left', '']],

@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-table-row-insert-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13610 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -40,7 +46,9 @@ const fixtureLines = [
 ]
 const fixture = `\uFEFF${fixtureLines.join('\r\n')}`
 const templateLine = fixtureLines[6]
-const blankLine = blankFromAuthoredLine(templateLine, ['same', 'beta', 'repeated'])
+// The product path writes a new row's empty cells shortest (`|  |`); the
+// authored rows keep their bytes either way.
+const blankLine = productPath ? '|  |  |  |' : blankFromAuthoredLine(templateLine, ['same', 'beta', 'repeated'])
 const expectedLines = [...fixtureLines]
 expectedLines.splice(7, 0, blankLine)
 const expected = `\uFEFF${expectedLines.join('\r\n')}`
@@ -279,56 +287,58 @@ const assertPublication = (state, boundary, label) => {
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(captures.length, 1,
-    `${label} did not capture exactly one row-insert transaction: ${JSON.stringify(state.journalTrace)}`)
-  const capture = captures[0]
+  if (!productPath) {
+    const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(captures.length, 1,
+      `${label} did not capture exactly one row-insert transaction: ${JSON.stringify(state.journalTrace)}`)
+    const capture = captures[0]
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-row-inserted' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-row-insert-proof'
-  )
-  assert.ok(preservation, `${label} did not publish row-insert owner: ${JSON.stringify(state.preserve)}`)
-  const proof = preservation.integrityProof
-  assert.equal(proof.family, 'table-row-insert')
-  assert.deepEqual(proof.tablePath, [1])
-  assert.deepEqual(proof.insertedRowPath, [1, 4])
-  assert.equal(proof.insertedRowIndex, 4)
-  assert.deepEqual(proof.templateRowPath, [1, 3])
-  assert.equal(proof.templateRowIndex, 3)
-  assert.equal(proof.columnCount, 3)
-  assert.equal(proof.stepDetail?.name, 'ReplaceStep')
-  assert.equal(proof.stepRange?.from, proof.stepRange?.to)
-  assert.equal(proof.stepRange?.sliceSize > 0, true)
-  assert.equal(proof.sourceTemplateRange?.rawLine, templateLine)
-  assert.equal(proof.sourceTemplateRange?.blankLine, blankLine)
-  assert.equal(proof.sourceTemplateRange?.eol, '\r\n')
-  assert.equal(proof.insertion?.placement, 'after-template-row')
-  assert.equal(proof.insertion?.eol, '\r\n')
-  assert.equal(proof.transactionJournal?.journalId, capture.journalId)
-  assert.equal(proof.transactionJournal?.snapshotMatched, true)
-  assert.equal(proof.transactionJournal?.documentMatched, true)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-row-inserted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-row-insert-proof'
+    )
+    assert.ok(preservation, `${label} did not publish row-insert owner: ${JSON.stringify(state.preserve)}`)
+    const proof = preservation.integrityProof
+    assert.equal(proof.family, 'table-row-insert')
+    assert.deepEqual(proof.tablePath, [1])
+    assert.deepEqual(proof.insertedRowPath, [1, 4])
+    assert.equal(proof.insertedRowIndex, 4)
+    assert.deepEqual(proof.templateRowPath, [1, 3])
+    assert.equal(proof.templateRowIndex, 3)
+    assert.equal(proof.columnCount, 3)
+    assert.equal(proof.stepDetail?.name, 'ReplaceStep')
+    assert.equal(proof.stepRange?.from, proof.stepRange?.to)
+    assert.equal(proof.stepRange?.sliceSize > 0, true)
+    assert.equal(proof.sourceTemplateRange?.rawLine, templateLine)
+    assert.equal(proof.sourceTemplateRange?.blankLine, blankLine)
+    assert.equal(proof.sourceTemplateRange?.eol, '\r\n')
+    assert.equal(proof.insertion?.placement, 'after-template-row')
+    assert.equal(proof.insertion?.eol, '\r\n')
+    assert.equal(proof.transactionJournal?.journalId, capture.journalId)
+    assert.equal(proof.transactionJournal?.snapshotMatched, true)
+    assert.equal(proof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-row-inserted' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} row-insert candidate not equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-row-inserted' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} row-insert candidate not equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'table-row-insert' &&
-    entry.boundary === boundary
-  ), true, `${label} bypassed Coordinator row-insert boundary: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'table-row-insert' &&
-    entry.boundary === boundary
-  ), true, `${label} missing row-insert owner trace: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'table-row-insert' &&
+      entry.boundary === boundary
+    ), true, `${label} bypassed Coordinator row-insert boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'table-row-insert' &&
+      entry.boundary === boundary
+    ), true, `${label} missing row-insert owner trace: ${JSON.stringify(state.ownerTrace)}`)
+  }
   assert.equal(state.tableActions.some((entry) => /button/.test(entry.tagName?.toLowerCase?.() || '')), true,
     `${label} did not use the real Milkdown row add button: ${JSON.stringify(state.tableActions)}`)
 }

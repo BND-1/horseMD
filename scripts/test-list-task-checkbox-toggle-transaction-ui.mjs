@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-task-checkbox-toggle-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 25220 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -160,27 +166,29 @@ const runScenario = async (scenario, port) => {
     const state = await diagnostics(app)
     assert.equal(state.integrity.some((entry) => entry.ok === false), false, `${scenario.name} integrity: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => warningPattern.test(text)), false, `${scenario.name} warning: ${JSON.stringify(state.toasts)}`)
-    const published = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-checkbox-toggle')
-    assert.equal(published.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-    assert.equal(published[0].boundary,
-      scenario.forced ? 'transaction-list-task-checkbox-toggle-forced-flush' : 'transaction-list-task-checkbox-toggle-markdown-updated')
-    const proof = state.preserve.find((entry) =>
-      entry.reason === 'list-task-checkbox-toggled' &&
-      entry.integrityProof?.kind === 'transaction-list-task-checkbox-toggle-proof')?.integrityProof
-    assert.ok(proof, `${scenario.name} preservation: ${JSON.stringify(state.preserve)}`)
-    assert.equal(proof.scope, scenario.scope)
-    assert.equal(proof.previousChecked, scenario.previousChecked)
-    assert.equal(proof.nextChecked, scenario.nextChecked)
-    assert.equal(proof.step?.name, 'AttrStep')
-    assert.equal(proof.step?.attr, 'checked')
-    assert.equal(proof.sourceRow?.token, scenario.token)
-    assert.equal(proof.rawPatch?.from, scenario.previousChecked ? 'x' : ' ')
-    assert.equal(proof.rawPatch?.to, scenario.nextChecked ? 'x' : ' ')
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-    assert.equal(state.preserve.some((entry) => entry.reason === 'list-line-change'), false)
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-checkbox-toggle'), true)
+    if (!productPath) {
+      const published = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-task-checkbox-toggle')
+      assert.equal(published.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
+      assert.equal(published[0].boundary,
+        scenario.forced ? 'transaction-list-task-checkbox-toggle-forced-flush' : 'transaction-list-task-checkbox-toggle-markdown-updated')
+      const proof = state.preserve.find((entry) =>
+        entry.reason === 'list-task-checkbox-toggled' &&
+        entry.integrityProof?.kind === 'transaction-list-task-checkbox-toggle-proof')?.integrityProof
+      assert.ok(proof, `${scenario.name} preservation: ${JSON.stringify(state.preserve)}`)
+      assert.equal(proof.scope, scenario.scope)
+      assert.equal(proof.previousChecked, scenario.previousChecked)
+      assert.equal(proof.nextChecked, scenario.nextChecked)
+      assert.equal(proof.step?.name, 'AttrStep')
+      assert.equal(proof.step?.attr, 'checked')
+      assert.equal(proof.sourceRow?.token, scenario.token)
+      assert.equal(proof.rawPatch?.from, scenario.previousChecked ? 'x' : ' ')
+      assert.equal(proof.rawPatch?.to, scenario.nextChecked ? 'x' : ' ')
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+      assert.equal(state.preserve.some((entry) => entry.reason === 'list-line-change'), false)
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' && entry.owner === 'transaction' && entry.family === 'list-task-checkbox-toggle'), true)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

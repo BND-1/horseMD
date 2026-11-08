@@ -29,7 +29,7 @@ function launch(args = []) {
     `--remote-debugging-port=${port}`,
     'out/main/index.cjs',
     ...args
-  ], { cwd: process.cwd(), stdio: 'ignore' })
+  ], { cwd: process.cwd(), env: { ...process.env, HORSEMD_TEST_RUN: '1' }, stdio: 'ignore' })
 }
 
 async function stop(child) {

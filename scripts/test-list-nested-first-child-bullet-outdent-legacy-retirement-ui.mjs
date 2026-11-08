@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-nested-first-child-outdent-retirement-${process.pid}`
 const file = join(root, 'wide-marker-spacing.md')
 const port = Number(process.env.CDP_PORT || 23520 + (process.pid % 30))
@@ -20,6 +26,11 @@ const waitFor = async (check, message, attempts = 180) => {
   }
   throw new Error(message)
 }
+
+const sourceReadsBackAsEditor = () => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  return Boolean(harness && harness.equivalent(harness.liveSource(), harness.liveDoc()))
+})()`)
 
 let app = null
 let completed = false
@@ -62,7 +73,8 @@ try {
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
   await pressKey(app.send, { key: 'Tab', code: 'Tab', modifiers: 8, delayMs: 80 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  if (productPath) await sleep(1000)
+  else await waitFor(() => app.evaluate(`(() =>
     (window.__hmListNestedFirstChildBulletOutdentTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' && entry.family === 'list-nested-first-child-bullet-outdent' &&
       entry.reason === 'nested-first-child-outdent-source-row-unproven' &&
@@ -90,16 +102,22 @@ try {
         .map((item) => (directParagraph(item)?.textContent || '').trim()))
     }
   })()`)
-  const blocked = state.owner.filter((entry) => entry.phase === 'plan' && entry.reason === 'nested-first-child-outdent-source-row-unproven')
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'list-nested-first-child-bullet-outdented'), false)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'transaction-list-subtree'), false)
-  assert.equal(state.last.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  if (!productPath) {
+    const blocked = state.owner.filter((entry) => entry.phase === 'plan' && entry.reason === 'nested-first-child-outdent-source-row-unproven')
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'list-nested-first-child-bullet-outdented'), false)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'transaction-list-subtree'), false)
+    assert.equal(state.last.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.single.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  } else {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `rich/source warning on the product path: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await sourceReadsBackAsEditor(), true, 'product path: source does not read back as the editor document')
+  }
   assert.deepEqual(state.topTexts, ['alpha', 'beta', 'gamma', 'omega'])
   assert.deepEqual(state.nestedTexts, ['delta'])
   assert.equal(await readFile(file, 'utf8'), fixture, 'fail-closed first-child outdent overwrote disk')

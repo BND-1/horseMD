@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-rs83-middle-thematic-break-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = Number(process.env.CDP_PORT || 11980 + (process.pid % 40))
@@ -178,7 +184,8 @@ try {
   })()`)
 
   await physicalKey(app, { key: '-', code: 'Minus', keyCode: 189, text: '-', hold: 60, after: 280 })
-  await waitFor(
+  if (productPath) await sleep(700)
+  else await waitFor(
     () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
       entry.reason === 'middle-empty-block-filled' && String(entry.markdown || '').includes('\\\\-'))`),
     'RS-83 first dash did not publish as standalone escaped source'
@@ -195,7 +202,8 @@ try {
   })()`)
   await physicalKey(app, { key: '-', code: 'Minus', keyCode: 189, text: '-', hold: 45, after: 45 })
   await physicalKey(app, { key: '-', code: 'Minus', keyCode: 189, text: '-', hold: 45, after: 300 })
-  await waitFor(
+  if (productPath) await sleep(300)
+  else await waitFor(
     () => app.evaluate(`(window.__hmPreserveLog || []).some((entry) =>
       entry.reason === 'escaped-standalone-thematic-break-input-rule')`),
     'RS-83 thematic-break callback did not hit the dedicated owner'
@@ -208,18 +216,20 @@ try {
   assert.equal(converted.separateOrderedLists, true, `RS-83 ordered lists were merged: ${JSON.stringify(converted.listTexts)}`)
   assert.equal(converted.integrity.some((entry) => entry.ok === false), false, `RS-83 produced first-divergence integrity failure: ${JSON.stringify(converted.integrity)}`)
   assert.equal(converted.toasts.some((text) => warningPattern.test(text)), false, `RS-83 showed warning: ${JSON.stringify(converted.toasts)}`)
-  assert.equal(
-    converted.preserve.some((entry) => entry.reason === 'escaped-standalone-thematic-break-input-rule' && entry.preserved === true),
-    true,
-    `RS-83 dedicated owner did not publish: ${JSON.stringify(converted.preserve)}`
-  )
-  assert.equal(
-    converted.integrity.some((entry) =>
-      entry.preservationReason === 'escaped-standalone-thematic-break-input-rule' &&
-      entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
-    true,
-    `RS-83 candidate did not pass strict semantic/list proof: ${JSON.stringify(converted.integrity)}`
-  )
+  if (!productPath) {
+    assert.equal(
+      converted.preserve.some((entry) => entry.reason === 'escaped-standalone-thematic-break-input-rule' && entry.preserved === true),
+      true,
+      `RS-83 dedicated owner did not publish: ${JSON.stringify(converted.preserve)}`
+    )
+    assert.equal(
+      converted.integrity.some((entry) =>
+        entry.preservationReason === 'escaped-standalone-thematic-break-input-rule' &&
+        entry.semanticOk === true && entry.listSlotsMatch === true && entry.ok === true),
+      true,
+      `RS-83 candidate did not pass strict semantic/list proof: ${JSON.stringify(converted.integrity)}`
+    )
+  }
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-83 source')
   const source = await waitFor(() => visibleSource(app), 'RS-83 source textarea missing')

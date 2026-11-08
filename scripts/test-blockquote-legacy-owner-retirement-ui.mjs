@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-blockquote-legacy-retirement-${process.pid}`
 const file = join(root, 'syntax-sensitive.md')
 const profile = join(root, 'profile')
@@ -135,22 +141,26 @@ try {
   await sleep(1400)
 
   const state = await snapshot(app)
-  const ownerPublished = state.owner.some((entry) =>
-    entry.family === 'blockquote-paragraph-text-replace' &&
-    (entry.phase === 'published' || (entry.phase === 'plan' && entry.ok === true))
-  )
-  assert.equal(ownerPublished, true, `blockquote owner did not own the marked edit: ${JSON.stringify(state.owner.slice(-6))}`)
+  if (!productPath) {
+    const ownerPublished = state.owner.some((entry) =>
+      entry.family === 'blockquote-paragraph-text-replace' &&
+      (entry.phase === 'published' || (entry.phase === 'plan' && entry.ok === true))
+    )
+    assert.equal(ownerPublished, true, `blockquote owner did not own the marked edit: ${JSON.stringify(state.owner.slice(-6))}`)
+  }
   assert.deepEqual(state.quoteTexts, [editedText],
     `edit disappeared from rich mode: ${JSON.stringify(state.quoteTexts)}`)
-  assert.equal(state.preserve.some((entry) => [
-    'diverged-tail-block-append',
-    'structural-line-change',
-    'visible-mismatch-line-change'
-  ].includes(entry.reason)), false,
-  `quote edit reached legacy preservation: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' && entry.owner === 'legacy'
-  ), false, `quote edit was published by the retired legacy owner: ${JSON.stringify(state.coordinator)}`)
+  if (!productPath) {
+    assert.equal(state.preserve.some((entry) => [
+      'diverged-tail-block-append',
+      'structural-line-change',
+      'visible-mismatch-line-change'
+    ].includes(entry.reason)), false,
+    `quote edit reached legacy preservation: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' && entry.owner === 'legacy'
+    ), false, `quote edit was published by the retired legacy owner: ${JSON.stringify(state.coordinator)}`)
+  }
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `owned quote edit still warned: ${JSON.stringify(state.toasts)}`)
   assert.equal(await readFile(file, 'utf8'), fixture, 'callback wrote the file before an explicit save')

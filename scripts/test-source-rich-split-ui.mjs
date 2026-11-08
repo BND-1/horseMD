@@ -208,13 +208,22 @@ async function main() {
           const handle = root.querySelector('.milkdown-block-handle')
           return handle ? getComputedStyle(handle).display : 'missing'
         })(),
-        hasContextMenu: !!document.querySelector('.block-ctxmenu'),
         dirty: !!document.querySelector('.tab-close.dirty')
       }
     })()`)
     assert.deepEqual(previewContract, {
-      editable: 'false', toolbarDisplay: 'none', blockHandleDisplay: 'none', hasContextMenu: false, dirty: false
+      editable: 'false', toolbarDisplay: 'none', blockHandleDisplay: 'none', dirty: false
     }, `Rich side was not a non-editing preview: ${JSON.stringify(previewContract)}`)
+    // Its context menu is the read-only one (copy, copy as plain text,
+    // heading folds — like reading mode), never an editing menu. The menu
+    // renders a frame later; Esc closes it.
+    const previewMenu = await waitFor(() => evaluate(`(() => {
+      const items = [...document.querySelectorAll('.block-ctxmenu .block-menu-item')]
+      return items.length ? items.map((item) => item.matches('[data-context-copy], [data-context-copy-plain], [data-heading-fold]') || item.textContent.trim()) : null
+    })()`), 'The preview context menu did not open')
+    assert.ok(previewMenu.every((item) => item === true), `Preview context menu offered editing items: ${JSON.stringify(previewMenu)}`)
+    await pressKey(send, { key: 'Escape', code: 'Escape' })
+    await waitFor(() => evaluate(`!document.querySelector('.block-ctxmenu, .menu-backdrop')`), 'Esc did not close the preview context menu')
 
     // The source edit was already saved before preview refresh. Preview-side
     // reading must not manufacture a second save/dirty state.
@@ -235,15 +244,21 @@ async function main() {
         return { sourceTop: source.scrollTop, richTop: rich.scrollTop }
       })()`)
       assert.ok(values, 'Split scroll surfaces disappeared')
-      await sleep(120)
-      const followed = await evaluate(`(() => {
-        const source = document.querySelector('textarea.source-editor.hm-source-rich-left')
-        const rich = document.querySelector('.editor-scroll.hm-source-rich-right')
-        return source && rich ? { sourceTop: source.scrollTop, richTop: rich.scrollTop } : null
-      })()`)
+      // The other pane follows within a few frames (a slower Windows PC
+      // needed more than the 120 ms this used to wait).
+      let followed = null
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await sleep(attempt ? 50 : 120)
+        followed = await evaluate(`(() => {
+          const source = document.querySelector('textarea.source-editor.hm-source-rich-left')
+          const rich = document.querySelector('.editor-scroll.hm-source-rich-right')
+          return source && rich ? { sourceTop: source.scrollTop, richTop: rich.scrollTop, sourceRoom: source.scrollHeight - source.clientHeight, richRoom: rich.scrollHeight - rich.clientHeight } : null
+        })()`)
+        if (!followed || (side === 'source' ? followed.richTop : followed.sourceTop) > 10) break
+      }
       assert.ok(followed, 'Split scroll surfaces disappeared after sync')
       const opposite = side === 'source' ? followed.richTop : followed.sourceTop
-      assert.ok(opposite > 10, `Scroll ${index + 1} did not move the ${side === 'source' ? 'rich' : 'source'} pane`)
+      assert.ok(opposite > 10, `Scroll ${index + 1} did not move the ${side === 'source' ? 'rich' : 'source'} pane: ${JSON.stringify({ values, followed })}`)
     }
 
     // A visible in-panel close returns directly to the normal rich view; users

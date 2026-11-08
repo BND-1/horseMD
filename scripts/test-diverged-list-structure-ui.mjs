@@ -167,10 +167,14 @@ async function main() {
     await stopBuiltElectron(app, { removeProfile: true })
     app = null
 
-    // Three consecutive Backspaces model the actual ProseMirror lift sequence
-    // without an intervening source-mode reparse: remove `2.`, merge the lifted
-    // paragraph into the outer list item, then remove the remaining `-`.
-    // The paragraph text must survive while both authored markers disappear.
+    // Two consecutive Backspaces lift both levels without an intervening
+    // source-mode reparse: remove `2.` (the lifted paragraph takes the outer
+    // item's marker line — editor-list-item-lead.js drops the empty paragraph
+    // that used to need a Backspace of its own), then remove the remaining
+    // `-`: the text joins the previous item as a paragraph after its ordered
+    // list. The paragraph text must survive while both authored markers
+    // disappear. (The old expectation, `  综合行政部` right below `- 1. …`,
+    // reads back as a lazy line of `管理层` — another structure.)
     const liftFile = join(root, 'lift.md')
     await writeFile(liftFile, authored)
     app = await openApp('lift-both-markers', port + 1, liftFile)
@@ -178,14 +182,13 @@ async function main() {
     await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
     await sleep(700)
     await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
-    await sleep(700)
-    await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
     await sleep(1000)
 
+    const lifted = authored.replace('- 1. 管理层（总经理）\n- 2. 综合行政部', '- 1. 管理层（总经理）\n\n  综合行政部')
     const rawAfterLift = await sourceAfter(app)
     assert.equal(
       rawAfterLift,
-      authored.replace('- 2. 综合行政部', '  综合行政部'),
+      lifted,
       `removing both list levels must preserve the paragraph text (got ${JSON.stringify(rawAfterLift)})`
     )
     assert.equal(await toggleSource(app.evaluate), true, 'could not return to rich mode after lift')
@@ -193,7 +196,7 @@ async function main() {
     await save(app)
     assert.equal(
       await readFile(liftFile, 'utf8'),
-      authored.replace('- 2. 综合行政部', '  综合行政部'),
+      lifted,
       'the two-level marker removal must persist on disk'
     )
 

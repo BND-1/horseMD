@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-table-column-delete-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13710 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -263,65 +269,67 @@ const assertPublication = (state, boundary, label) => {
   assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
     `${label} showed source-sync warning: ${JSON.stringify(state.toasts)}`)
 
-  const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
-  assert.equal(captures.length, 1,
-    `${label} did not capture exactly one column-delete transaction: ${JSON.stringify(state.journalTrace)}`)
-  const capture = captures[0]
+  if (!productPath) {
+    const captures = state.journalTrace.filter((entry) => entry.phase === 'capture' && entry.ok === true)
+    assert.equal(captures.length, 1,
+      `${label} did not capture exactly one column-delete transaction: ${JSON.stringify(state.journalTrace)}`)
+    const capture = captures[0]
 
-  const preservation = state.preserve.find((entry) =>
-    entry.reason === 'table-column-deleted' &&
-    entry.preserved === true &&
-    entry.integrityProof?.kind === 'transaction-table-column-delete-proof'
-  )
-  assert.ok(preservation, `${label} did not publish column-delete owner: ${JSON.stringify(state.preserve)}`)
-  const proof = preservation.integrityProof
-  assert.equal(proof.family, 'table-column-delete')
-  assert.deepEqual(proof.tablePath, [1])
-  assert.equal(proof.deletedColumnIndex, 2)
-  assert.equal(proof.previousColumnCount, 4)
-  assert.equal(proof.nextColumnCount, 3)
-  assert.equal(proof.rowCount, 5)
-  assert.deepEqual(proof.deletedCellTexts, ['Value', 'same', 'same', 'same', 'same'])
-  assert.equal(proof.stepRanges.length, 5)
-  assert.deepEqual(
-    proof.stepRanges.map((entry) => entry.cellPath),
-    [[1, 0, 2], [1, 1, 2], [1, 2, 2], [1, 3, 2], [1, 4, 2]]
-  )
-  assert.equal(proof.sourceLayout?.edits?.length, 6)
-  assert.equal(proof.sourceLayout?.rows?.[0]?.eol, '\r\n')
-  assert.equal(proof.sourceLayout?.delimiter?.eol, '\r\n')
-  assert.equal(
-    proof.sourceLayout?.edits?.find((entry) => entry.kind === 'header')?.resultLine,
-    '| Key    | Value | Note      |'
-  )
-  assert.equal(
-    proof.sourceLayout?.edits?.find((entry) => entry.kind === 'delimiter')?.resultLine,
-    '| :----- | :---: | :-------- |'
-  )
-  assert.equal(proof.transactionJournal?.journalId, capture.journalId)
-  assert.equal(proof.transactionJournal?.stepCount, 5)
-  assert.equal(proof.transactionJournal?.snapshotMatched, true)
-  assert.equal(proof.transactionJournal?.documentMatched, true)
+    const preservation = state.preserve.find((entry) =>
+      entry.reason === 'table-column-deleted' &&
+      entry.preserved === true &&
+      entry.integrityProof?.kind === 'transaction-table-column-delete-proof'
+    )
+    assert.ok(preservation, `${label} did not publish column-delete owner: ${JSON.stringify(state.preserve)}`)
+    const proof = preservation.integrityProof
+    assert.equal(proof.family, 'table-column-delete')
+    assert.deepEqual(proof.tablePath, [1])
+    assert.equal(proof.deletedColumnIndex, 2)
+    assert.equal(proof.previousColumnCount, 4)
+    assert.equal(proof.nextColumnCount, 3)
+    assert.equal(proof.rowCount, 5)
+    assert.deepEqual(proof.deletedCellTexts, ['Value', 'same', 'same', 'same', 'same'])
+    assert.equal(proof.stepRanges.length, 5)
+    assert.deepEqual(
+      proof.stepRanges.map((entry) => entry.cellPath),
+      [[1, 0, 2], [1, 1, 2], [1, 2, 2], [1, 3, 2], [1, 4, 2]]
+    )
+    assert.equal(proof.sourceLayout?.edits?.length, 6)
+    assert.equal(proof.sourceLayout?.rows?.[0]?.eol, '\r\n')
+    assert.equal(proof.sourceLayout?.delimiter?.eol, '\r\n')
+    assert.equal(
+      proof.sourceLayout?.edits?.find((entry) => entry.kind === 'header')?.resultLine,
+      '| Key    | Value | Note      |'
+    )
+    assert.equal(
+      proof.sourceLayout?.edits?.find((entry) => entry.kind === 'delimiter')?.resultLine,
+      '| :----- | :---: | :-------- |'
+    )
+    assert.equal(proof.transactionJournal?.journalId, capture.journalId)
+    assert.equal(proof.transactionJournal?.stepCount, 5)
+    assert.equal(proof.transactionJournal?.snapshotMatched, true)
+    assert.equal(proof.transactionJournal?.documentMatched, true)
 
-  assert.equal(state.integrity.some((entry) =>
-    entry.preservationReason === 'table-column-deleted' &&
-    entry.semanticOk === true &&
-    entry.listSlotsMatch === true &&
-    entry.ok === true
-  ), true, `${label} column-delete candidate not equivalent: ${JSON.stringify(state.integrity)}`)
+    assert.equal(state.integrity.some((entry) =>
+      entry.preservationReason === 'table-column-deleted' &&
+      entry.semanticOk === true &&
+      entry.listSlotsMatch === true &&
+      entry.ok === true
+    ), true, `${label} column-delete candidate not equivalent: ${JSON.stringify(state.integrity)}`)
 
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'table-column-delete' &&
-    entry.boundary === boundary
-  ), true, `${label} bypassed Coordinator column-delete boundary: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.ownerTrace.some((entry) =>
-    entry.phase === 'published' &&
-    entry.ok === true &&
-    entry.family === 'table-column-delete' &&
-    entry.boundary === boundary
-  ), true, `${label} missing column-delete owner trace: ${JSON.stringify(state.ownerTrace)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'table-column-delete' &&
+      entry.boundary === boundary
+    ), true, `${label} bypassed Coordinator column-delete boundary: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.ownerTrace.some((entry) =>
+      entry.phase === 'published' &&
+      entry.ok === true &&
+      entry.family === 'table-column-delete' &&
+      entry.boundary === boundary
+    ), true, `${label} missing column-delete owner trace: ${JSON.stringify(state.ownerTrace)}`)
+  }
   assert.equal(state.tableActions.some((entry) => /button/.test(entry.tagName?.toLowerCase?.() || '')), true,
     `${label} did not use the real Milkdown column delete button: ${JSON.stringify(state.tableActions)}`)
 }

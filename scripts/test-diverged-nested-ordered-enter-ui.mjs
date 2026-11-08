@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-rs71-diverged-nested-ordered-enter-${process.pid}`
 const file = join(root, 'rs-71.md')
@@ -57,8 +58,9 @@ const expected = [
   '',
   '1. 啊额法色饭',
   '   1. 微风、',
-  '   2. ',
-  '',
+  // An empty item is its marker (source reprint); the legacy path wrote
+  // `   2. ` and an extra blank line. Same Markdown.
+  '   2.',
   '',
   '```',
   '尼玛，吗了解',
@@ -204,6 +206,8 @@ try {
     window.__hmSourceIntegrityDiffTrace = []
   })()`)
 
+  const evaluate = (expression) => app.evaluate(expression)
+  const mark = await publishMark(evaluate)
   // PID 59363: punctuation keydown at 04:11:57.082, Enter at 04:11:57.128.
   // Two 23ms key phases reproduce that ~46ms cadence without an intermediate settle.
   await pressDunhao(app)
@@ -218,30 +222,33 @@ try {
   assert.deepEqual(after.nestedText, ['微风、', ''], `RS-71 nested ordered text/empty sibling mismatch: ${JSON.stringify(after.nestedText)}`)
   assert.equal(after.integrity.some((entry) => entry.ok === false), false, `RS-71 produced transient integrity failure: ${JSON.stringify(after.integrity)}`)
   assert.equal(after.toasts.some((text) => warningPattern.test(text)), false, `RS-71 showed source warning: ${JSON.stringify(after.toasts)}`)
-  assert.equal(
-    after.preserve.some((entry) =>
-      entry.reason === 'transaction-list-subtree' &&
-      entry.preserved !== false &&
-      entry.integrityProof?.kind === 'transaction-list-subtree-proof' &&
-      entry.integrityProof?.family === 'list-subtree-replace' &&
-      entry.integrityProof?.mapperReason === 'diverged-nested-list-change'
-    ),
-    true,
-    `RS-71 was not owned by the generic transaction list subtree: ${JSON.stringify(after.preserve)}`
-  )
-  assert.equal(
-    after.integrity.some((entry) =>
-      entry.preservationReason === 'transaction-list-subtree' &&
-      entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
-    ),
-    true,
-    `RS-71 strict transaction/list integrity proof did not pass: ${JSON.stringify(after.integrity)}`
-  )
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(evaluate, async () => {
+    assert.equal(
+      after.preserve.some((entry) =>
+        entry.reason === 'transaction-list-subtree' &&
+        entry.preserved !== false &&
+        entry.integrityProof?.kind === 'transaction-list-subtree-proof' &&
+        entry.integrityProof?.family === 'list-subtree-replace' &&
+        entry.integrityProof?.mapperReason === 'diverged-nested-list-change'
+      ),
+      true,
+      `RS-71 was not owned by the generic transaction list subtree: ${JSON.stringify(after.preserve)}`
+    )
+    assert.equal(
+      after.integrity.some((entry) =>
+        entry.preservationReason === 'transaction-list-subtree' &&
+        entry.ok === true && entry.semanticOk === true && entry.listSlotsMatch === true
+      ),
+      true,
+      `RS-71 strict transaction/list integrity proof did not pass: ${JSON.stringify(after.integrity)}`
+    )
+  }, 'RS-71 nested ordered Enter', { since: mark })
 
   assert.equal(await toggleSource(app), true, 'could not inspect RS-71 source')
   const source = await waitFor(() => visibleSource(app), 'RS-71 source textarea missing')
   assert.equal(source, expected, `RS-71 source did not retain nested ordered indentation: ${JSON.stringify(source)}`)
-  assert.match(source, /1\. 啊额法色饭\n   1\. 微风、\n   2\. /, 'RS-71 source missing nested `   2. ` sibling')
+  assert.match(source, /1\. 啊额法色饭\n   1\. 微风、\n   2\.(?: |\n)/, 'RS-71 source missing nested `   2.` sibling')
   assert.doesNotMatch(source, /1\. 啊额法色饭\n   1\. 微风、\n2\. /, 'RS-71 source promoted new sibling to top level')
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'RS-71 source leaked Crepe placeholder')
 

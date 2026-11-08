@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-ordered-enter-fence-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -125,6 +126,7 @@ try {
   })()`)
 
   await focusTargetEnd(app)
+  const mark = await publishMark(app.evaluate)
   await imeCommitNi(app)
   await pressEnter(app)
   await sleep(1200)
@@ -141,18 +143,23 @@ try {
     false,
     'ordered Enter before fence failed source integrity'
   )
-  assert.equal(
-    before.preserve.some((entry) => entry.reason === 'middle-block-before-authored-fence' && entry.preserved === true),
-    true,
-    'target preservation branch did not handle ordered continuation before fence'
-  )
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(
+      before.preserve.some((entry) => entry.reason === 'middle-block-before-authored-fence' && entry.preserved === true),
+      true,
+      'target preservation branch did not handle ordered continuation before fence'
+    )
+  }, 'ordered Enter before fence', { since: mark })
 
   const toggled = await toggleSource(app)
   assert.equal(toggled, true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   console.log('ORDERED_ENTER_FENCE_SOURCE:', JSON.stringify(source))
 
-  assert.match(source, /(?:^|\n)1\. 了离开你了；你\n2\. (?=\n)/m, 'new empty ordered item did not keep canonical ordinal 2')
+  // An empty item is its marker (`2.`, source reprint); the legacy path wrote
+  // `2. `. Same Markdown.
+  assert.match(source, /(?:^|\n)1\. 了离开你了；你\n2\. ?(?=\n)/m, 'new empty ordered item did not keep canonical ordinal 2')
   assert.doesNotMatch(source, /(?:^|\n)1\. 了离开你了；你\n1\. (?=\n)/m, 'new ordered item incorrectly reused ordinal 1')
   assert.match(source, /```txt\n尼玛，吗了解\n了几百块\n```/, 'authored fenced code block changed')
   assert.match(source, /-   1\. 二哥你来拿如果\n  - \u200B     就了解了呢\n  \* 如果可能老顾客/, 'unrelated authored nested-list spelling changed')

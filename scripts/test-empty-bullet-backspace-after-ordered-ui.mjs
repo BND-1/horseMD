@@ -9,7 +9,8 @@ const root = `/tmp/horsemd-rs54-empty-bullet-after-ordered-${process.pid}`
 const file = join(root, 'rs-54.md')
 const port = Number(process.env.CDP_PORT || 10392)
 const initial = '# 你好\n\n1. 测试\n2. 哪里呢\n\n- \n'
-const expected = '# 你好\n\n1. 测试\n2. 哪里呢'
+// The file keeps its final newline (the removed `- ` row took its own).
+const expected = '# 你好\n\n1. 测试\n2. 哪里呢\n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 async function waitFor(check, message, attempts = 100) {

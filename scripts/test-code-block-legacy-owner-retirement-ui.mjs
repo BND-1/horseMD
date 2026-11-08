@@ -11,6 +11,12 @@ import {
   waitFor
 } from './lib/code-block-exit-test.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-block-legacy-retirement-${process.pid}`
 const file = join(root, 'collision.md')
 const profile = join(root, 'profile')
@@ -78,24 +84,34 @@ try {
   await sleep(1400)
 
   const state = await readCodeBlockExitDiagnostics(app)
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' &&
-    entry.family === 'code-block-content-replace' &&
-    entry.reason === 'code-block-source-fence-collision'
-  )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) =>
-    entry.recognized === true && entry.legacyBlocked === true
-  ), true, JSON.stringify(blocked))
-  assert.equal(state.preserve.some((entry) =>
-    entry.reason === 'fenced-code-block-content-change'
-  ), false, `collision unexpectedly published source: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    (entry.family === 'code-block-content-replace' || entry.owner === 'legacy')
-  ), false, `collision reached Coordinator publication: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `collision did not report a fail-closed warning: ${JSON.stringify(state.toasts)}`)
+  if (!productPath) {
+    const blocked = state.owner.filter((entry) =>
+      entry.phase === 'plan' &&
+      entry.family === 'code-block-content-replace' &&
+      entry.reason === 'code-block-source-fence-collision'
+    )
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) =>
+      entry.recognized === true && entry.legacyBlocked === true
+    ), true, JSON.stringify(blocked))
+    assert.equal(state.preserve.some((entry) =>
+      entry.reason === 'fenced-code-block-content-change'
+    ), false, `collision unexpectedly published source: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      (entry.family === 'code-block-content-replace' || entry.owner === 'legacy')
+    ), false, `collision reached Coordinator publication: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
+      `collision did not report a fail-closed warning: ${JSON.stringify(state.toasts)}`)
+  } else {
+    // The reprint writes the collision instead of pausing the sync.
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `collision reported a rich/source warning: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await app.evaluate(`(() => {
+      const harness = globalThis.__hmSourceReprintHarness
+      return harness.equivalent(harness.liveSource(), harness.liveDoc())
+    })()`), true, 'collision source does not read back as the editor document')
+  }
   assert.equal(await app.evaluate(`Boolean(
     [...document.querySelectorAll('textarea.source-editor')]
       .find((node) => node.offsetParent)

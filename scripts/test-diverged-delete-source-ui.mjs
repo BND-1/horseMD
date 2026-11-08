@@ -5,6 +5,9 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Checks behaviour (source bytes, save, reopen), not which writer ran: it
+// runs on the product path, with the source reprint first.
+
 const root = `/tmp/horsemd-diverged-delete-${process.pid}`
 const file = join(root, 'doc.md')
 const port = Number(process.env.CDP_PORT || 10010)

@@ -16,7 +16,7 @@ const key = new PluginKey('hm-one-line-blocks')
 const isSoftBreak = (node, br) => node.type === br && node.attrs.isInline === true
 
 // Top-level block ranges (final document) that the transactions touched.
-function touchedBlocks(transactions, doc) {
+export function touchedBlocks(transactions, doc) {
   const ranges = []
   transactions.forEach((tr, index) => {
     const maps = tr.mapping.maps

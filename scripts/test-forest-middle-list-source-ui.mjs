@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
-const sourceFixture = '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
+const sourceFixture = process.env.FILE || '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
 const root = `/tmp/horsemd-forest-middle-list-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = 10600 + (process.pid % 100)
@@ -97,7 +97,7 @@ const placeCaretAfter = async (app, text) => {
 const toggleSource = async (app) => {
   const point = await app.evaluate(`(() => {
     const button = [...document.querySelectorAll('.status-btn')]
-      .find((node) => node.offsetParent && /源码|Source|⌘/.test(node.title || node.textContent || ''))
+      .find((node) => node.offsetParent && /源码|Source/.test(node.title || node.textContent || ''))
     if (!button) return null
     const rect = button.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
@@ -211,7 +211,10 @@ async function main() {
     const forest = source.slice(forestStart, forestEnd > forestStart ? forestEnd : forestStart + 900)
     console.log('FOREST_SOURCE_REGION:', JSON.stringify(forest))
     assert.equal((forest.match(/测试是否中间正常/g) || []).length, 3, `source lost a paragraph: ${JSON.stringify(forest)}`)
-    assert.match(forest, /测试是否中间正常\n\n测试是否中间正常/, 'source did not preserve the middle paragraph boundary')
+    // The two Enters leave an empty paragraph between the first two; it is
+    // written as one more blank line (Typora; docs/source-reprint-architecture.md
+    // §5), so the boundary is two or more line endings.
+    assert.match(forest, /测试是否中间正常\n{2,}测试是否中间正常/, 'source did not preserve the middle paragraph boundary')
     assert.match(forest, /测试是否中间正常\n+测试是否中间正常\n+测试是否中间正常\n+这是一个测试\n+1\./, 'source did not preserve the following block boundary')
     const info = await diagnostics(app)
     console.log('FOREST_MIDDLE_RESULT:', JSON.stringify({ rich, source: forest, diagnostics: info }, null, 2))

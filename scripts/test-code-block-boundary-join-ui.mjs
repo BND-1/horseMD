@@ -7,6 +7,12 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-code-block-boundary-join-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 15960 + (process.pid % 30))
 
@@ -117,6 +123,12 @@ const collect = (app) => app.evaluate(`(() => {
     integrity: (window.__hmSourceIntegrityTrace || []).slice(-20),
     coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-20),
     preserve: (window.__hmPreserveLog || []).slice(-20),
+    liveSource: globalThis.__hmSourceReprintHarness?.liveSource?.() ?? null,
+    sourceMatchesDoc: (() => {
+      const harness = globalThis.__hmSourceReprintHarness
+      if (!harness) return null
+      return harness.equivalent(harness.liveSource(), harness.liveDoc())
+    })(),
     warnings
   }
 })()`)
@@ -194,21 +206,29 @@ const main = async () => {
   if ((merged.paragraphs || []).includes('输出完全吻合。')) {
     throw new Error('paragraph still exists outside the code block')
   }
-  const joinOwners = (merged.owners || []).filter((entry) =>
-    String(entry?.family || entry?.reason || '').includes('boundary-join'))
-  if (!joinOwners.length) {
-    throw new Error(`boundary-join owner did not claim the merge: ${JSON.stringify((merged.owners || []).slice(-5)).slice(0, 500)}`)
-  }
-  const publications = (merged.coordinator || []).filter((entry) =>
-    String(entry?.boundary || '').includes('boundary-join') && entry?.ok !== false)
-  if (!publications.length) {
-    throw new Error(`no boundary-join publication reached the coordinator: ${JSON.stringify((merged.coordinator || []).slice(-5)).slice(0, 500)}`)
+  if (!productPath) {
+    const joinOwners = (merged.owners || []).filter((entry) =>
+      String(entry?.family || entry?.reason || '').includes('boundary-join'))
+    if (!joinOwners.length) {
+      throw new Error(`boundary-join owner did not claim the merge: ${JSON.stringify((merged.owners || []).slice(-5)).slice(0, 500)}`)
+    }
+    const publications = (merged.coordinator || []).filter((entry) =>
+      String(entry?.boundary || '').includes('boundary-join') && entry?.ok !== false)
+    if (!publications.length) {
+      throw new Error(`no boundary-join publication reached the coordinator: ${JSON.stringify((merged.coordinator || []).slice(-5)).slice(0, 500)}`)
+    }
   }
 
   // The preserved source keeps CRLF and the fence intact.
-  const preserved = (merged.preserve || []).filter((entry) =>
-    String(entry?.reason || '').includes('boundary-join')).pop()
-  if (!preserved) throw new Error('no boundary-join preserve entry')
+  // Product path: the same checks run on the source the app holds.
+  const preserved = productPath
+    ? (typeof merged.liveSource === 'string' ? { markdown: merged.liveSource } : null)
+    : (merged.preserve || []).filter((entry) =>
+      String(entry?.reason || '').includes('boundary-join')).pop()
+  if (!preserved) throw new Error(productPath ? 'no live source from the reprint harness' : 'no boundary-join preserve entry')
+  if (productPath && merged.sourceMatchesDoc !== true) {
+    throw new Error(`live source does not read back as the editor document: ${JSON.stringify(merged.liveSource).slice(0, 500)}`)
+  }
   if (preserved.markdown.includes('输出完全吻合。\r\n\r\n')) {
     throw new Error('paragraph was not removed from the source')
   }

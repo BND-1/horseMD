@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-mixed-rich-source-${process.pid}`
 const file = join(root, 'mixed.md')
 const port = Number(process.env.CDP_PORT || 10024)
@@ -182,35 +188,37 @@ async function main() {
     // Switch immediately: no sleep is allowed to hide a stale callback race.
     assert.equal(await toggleSource(evaluate), true, 'could not request source mode')
     await assertSource(evaluate, 'immediate rich→source')
-    const listItemOwnership = await evaluate(`(() => ({
-      preserve: (window.__hmPreserveLog || []).filter((entry) =>
-        entry.reason === 'list-item-paragraph-text-change'
-      ),
-      coordinator: (window.__hmSourceSyncCoordinatorTrace || []).filter((entry) =>
-        entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
-      ),
-      owner: (window.__hmListItemTransactionTrace || []).filter((entry) =>
-        entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
+    if (!productPath) {
+      const listItemOwnership = await evaluate(`(() => ({
+        preserve: (window.__hmPreserveLog || []).filter((entry) =>
+          entry.reason === 'list-item-paragraph-text-change'
+        ),
+        coordinator: (window.__hmSourceSyncCoordinatorTrace || []).filter((entry) =>
+          entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
+        ),
+        owner: (window.__hmListItemTransactionTrace || []).filter((entry) =>
+          entry.phase === 'published' && entry.family === 'list-item-paragraph-text-replace'
+        )
+      }))()`)
+      assert.equal(listItemOwnership.preserve.length, 2,
+        `both list-item text edits must use the focused owner: ${JSON.stringify(listItemOwnership)}`)
+      const emptiedPublication = listItemOwnership.preserve.find((entry) =>
+        entry.integrityProof?.emptied === true &&
+        entry.integrityProof?.previousText === '综合行政部' &&
+        entry.integrityProof?.nextText === ''
       )
-    }))()`)
-    assert.equal(listItemOwnership.preserve.length, 2,
-      `both list-item text edits must use the focused owner: ${JSON.stringify(listItemOwnership)}`)
-    const emptiedPublication = listItemOwnership.preserve.find((entry) =>
-      entry.integrityProof?.emptied === true &&
-      entry.integrityProof?.previousText === '综合行政部' &&
-      entry.integrityProof?.nextText === ''
-    )
-    assert.ok(emptiedPublication,
-      `empty list item did not retain its focused proof: ${JSON.stringify(listItemOwnership)}`)
-    assert.equal(listItemOwnership.coordinator.length, 2)
-    assert.equal(listItemOwnership.coordinator.every((entry) =>
-      entry.boundary === 'transaction-list-item-paragraph-forced-flush'
-    ), true)
-    assert.equal(listItemOwnership.owner.length, 2)
-    assert.equal(listItemOwnership.owner.some((entry) =>
-      entry.journalId === emptiedPublication.integrityProof.journalId &&
-      entry.boundary === 'transaction-list-item-paragraph-forced-flush'
-    ), true)
+      assert.ok(emptiedPublication,
+        `empty list item did not retain its focused proof: ${JSON.stringify(listItemOwnership)}`)
+      assert.equal(listItemOwnership.coordinator.length, 2)
+      assert.equal(listItemOwnership.coordinator.every((entry) =>
+        entry.boundary === 'transaction-list-item-paragraph-forced-flush'
+      ), true)
+      assert.equal(listItemOwnership.owner.length, 2)
+      assert.equal(listItemOwnership.owner.some((entry) =>
+        entry.journalId === emptiedPublication.integrityProof.journalId &&
+        entry.boundary === 'transaction-list-item-paragraph-forced-flush'
+      ), true)
+    }
 
     assert.equal(await toggleSource(evaluate), true, 'could not return to rich mode')
     await waitFor(

@@ -5,7 +5,8 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkCjkFriendly from 'remark-cjk-friendly'
-import { emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler } from '../src/renderer/src/lib/remark-text-handler.js'
+import { emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, taskListItemStringifyHandler } from '../src/renderer/src/lib/remark-text-handler.js'
+import { gfmToMarkdown } from 'mdast-util-gfm'
 
 const T = (value) => ({ type: 'text', value })
 const C = (value) => ({ type: 'inlineCode', value })
@@ -36,6 +37,11 @@ assert.equal(
   toMarkdown({ type: 'root', children: [{ type: 'paragraph', children: [T('\n'), T('Second')] }] }, { handlers: { text: safeTrailingWhitespaceTextHandler }, encode: [] }).includes('&#x'),
   false
 )
+// Text that starts with U+200B + a space is not the leading-space sentinel
+// (stripped on read): the zero-width space is written as an entity (seed 1286).
+assert.equal(stringify([T('\u200B a')]), '&#x200B; a\n')
+assert.equal(stringify([T('q'), { type: 'break' }, T('\u200B b')]), 'q\\\n&#x200B; b\n')
+assert.equal(stringify([T('\u200Bab')]), '\u200Bab\n', 'a zero-width space before other text stays literal')
 for (const [children, expected] of cases) {
   const markdown = stringify(children)
   assert.equal(markdown, expected)
@@ -69,5 +75,17 @@ for (const [children, expected] of cases) {
     const back = parseLikeEditor(out(children))
     assert.equal(back.children[0].children[0].type, 'strong', `bold survives the round trip: ${out(children)}`)
   }
+}
+// A task item in an ordered list written with `)` (a list right after
+// another ordered list) keeps its checkbox (fuzz UI seed 236).
+{
+  const item = (value, checked = null) => ({ type: 'listItem', spread: false, checked, children: [{ type: 'paragraph', children: [T(value)] }] })
+  const list = (children) => ({ type: 'list', ordered: true, start: 1, spread: false, children })
+  const tree = { type: 'root', children: [list([item('a'), item('b')]), list([item('c', true), item('d', false)])] }
+  const plainGfm = toMarkdown(tree, { extensions: [gfmToMarkdown()] })
+  const fixed = toMarkdown(tree, { extensions: [gfmToMarkdown()], handlers: { listItem: taskListItemStringifyHandler } })
+  assert.ok(!plainGfm.includes('[x]'), `upstream still drops the checkbox (remove the workaround when it does not): ${JSON.stringify(plainGfm)}`)
+  assert.ok(fixed.includes('1) [x] c') && fixed.includes('2) [ ] d'), `checkboxes after \`)\`: ${JSON.stringify(fixed)}`)
+  assert.equal(toMarkdown({ type: 'root', children: [list([item('c', true)])] }, { extensions: [gfmToMarkdown()], handlers: { listItem: taskListItemStringifyHandler } }), '1. [x] c\n', 'the `.` spelling is unchanged')
 }
 console.log('PASS remark text handler: trailing-whitespace fast path still escapes block syntax and leading spaces; strong/emphasis keep attention encoding and the authored marker')

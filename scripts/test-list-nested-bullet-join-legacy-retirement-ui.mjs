@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-nested-bullet-join-retirement-${process.pid}`
 const file = join(root, 'marker-padding.md')
 const port = Number(process.env.CDP_PORT || 24720 + (process.pid % 30))
@@ -26,6 +32,11 @@ const joinedShape = (app) => app.evaluate(`(() => {
   const nested = [...(editor?.querySelectorAll('ul ul') || [])][0]
   const items = [...(nested?.querySelectorAll(':scope > .milkdown-list-item-block > li') || [])]
   return items.map((item) => [...item.querySelectorAll(':scope > .children > .content-dom > p')].map((p) => p.textContent || ''))
+})()`)
+
+const sourceReadsBackAsEditor = () => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  return Boolean(harness && harness.equivalent(harness.liveSource(), harness.liveDoc()))
 })()`)
 
 let app = null
@@ -71,7 +82,8 @@ try {
   assert.equal(placed, true)
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 80 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  if (productPath) await sleep(1000)
+  else await waitFor(() => app.evaluate(`(() =>
     (window.__hmListNestedBulletJoinTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' && entry.family === 'list-nested-bullet-item-join' &&
       entry.reason === 'nested-bullet-join-source-row-unproven' && entry.recognized === true && entry.legacyBlocked === true
@@ -87,16 +99,24 @@ try {
     coordinator: (window.__hmSourceSyncCoordinatorTrace || []).slice(-40),
     toasts: [...document.querySelectorAll('[class*="toast"]')].filter((node) => node.offsetParent).map((node) => node.textContent || '')
   }))()`)
-  const blocked = state.owner.filter((entry) => entry.phase === 'plan' && entry.reason === 'nested-bullet-join-source-row-unproven')
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+  if (!productPath) {
+    const blocked = state.owner.filter((entry) => entry.phase === 'plan' && entry.reason === 'nested-bullet-join-source-row-unproven')
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+  }
   assert.deepEqual(await joinedShape(app), [['gamma', 'delta']])
-  assert.equal(state.preserve.some((entry) => entry.reason === 'list-nested-bullet-item-joined'), false)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'transaction-list-subtree'), false)
-  assert.equal(state.split.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  if (!productPath) {
+    assert.equal(state.preserve.some((entry) => entry.reason === 'list-nested-bullet-item-joined'), false)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'transaction-list-subtree'), false)
+    assert.equal(state.split.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === true), false)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true, JSON.stringify(state.toasts))
+  } else {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `rich/source warning on the product path: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await sourceReadsBackAsEditor(), true, 'product path: source does not read back as the editor document')
+  }
   assert.equal(await readFile(file, 'utf8'), fixture, 'fail-closed nested join overwrote disk')
 
   completed = true

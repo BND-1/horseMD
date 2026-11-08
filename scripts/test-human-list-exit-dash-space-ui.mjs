@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 
 const root = `/tmp/horsemd-human-list-exit-dash-space-${process.pid}`
 const file = join(root, 'fixture.md')
@@ -120,6 +121,7 @@ try {
   await physicalKey(app, { key: 'Enter', code: 'Enter', keyCode: 13, hold: 78, after: 123 })
   await sleep(1218) // total second Enter -> '-' keydown ≈ 1.54 s including key hold/tail
 
+  const dashMark = await publishMark(app.evaluate)
   await physicalKey(app, { key: '-', code: 'Minus', keyCode: 189, text: '-', hold: 100, after: 228 })
 
   // Critical frame previously omitted: the literal dash MUST publish first as
@@ -127,10 +129,14 @@ try {
   const literal = await diagnostics(app)
   console.log('HUMAN_DASH_LITERAL_FRAME:', JSON.stringify(literal))
   assert.equal(literal.integrity.some((entry) => entry.ok === false), false, 'literal dash frame already failed integrity')
-  assert.equal(literal.preserve.some((entry) =>
-    entry.reason === 'middle-empty-block-filled' && entry.markdown.includes('\n\\-\n\n2. 斛律v哦')
-  ), true, 'dash did not publish as the escaped literal frame seen in the real trace')
+  // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(literal.preserve.some((entry) =>
+      entry.reason === 'middle-empty-block-filled' && entry.markdown.includes('\n\\-\n\n2. 斛律v哦')
+    ), true, 'dash did not publish as the escaped literal frame seen in the real trace')
+  }, 'literal dash frame', { since: dashMark })
 
+  const spaceMark = await publishMark(app.evaluate)
   await physicalKey(app, { key: ' ', code: 'Space', keyCode: 32, text: ' ', hold: 120, after: 170 })
   await sleep(900)
 
@@ -140,13 +146,18 @@ try {
     'Space conversion after a published literal dash failed source integrity')
   assert.equal(converted.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false,
     'Space conversion showed a source-sync warning')
-  assert.equal(converted.intents.some((entry) => entry.phase === 'apply' && entry.inputRuleApplied === true), true,
-    'captured dash intent was not applied by the dedicated input-rule ownership path')
+  await assertPublishedBy(app.evaluate, async () => {
+    assert.equal(converted.intents.some((entry) => entry.phase === 'apply' && entry.inputRuleApplied === true), true,
+      'captured dash intent was not applied by the dedicated input-rule ownership path')
+  }, 'dash Space input rule', { since: spaceMark })
 
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   console.log('HUMAN_DASH_SPACE_SOURCE:', JSON.stringify(source))
-  assert.match(source, /- 看了呢分\n- 1\\\. 当然会更多人\n\n- \n\n2\. 斛律v哦/,
+  // The new `- ` row joins the list above (same marker): the source reprint
+  // writes it as that tight list's next item (`-`); the legacy path wrote
+  // `\n\n- \n`, which reads back as the same list made loose.
+  assert.match(source, /- 看了呢分\n- 1\\\. 当然会更多人\n(?:-\n|\n- \n)\n2\. 斛律v哦/,
     'new empty bullet was not inserted exactly once between the exited list and following ordered row')
   assert.equal((source.match(/- 看了呢分/g) || []).length, 1, 'previous bullet list was duplicated')
   assert.doesNotMatch(source, /<br\s*\/?\s*>/i, 'editor-only placeholder leaked into source')

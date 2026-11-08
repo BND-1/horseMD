@@ -68,7 +68,9 @@ try {
     const blockTable = editor.querySelector('.hm-html-block table')
     return {
       hasHtmlBlockTable: Boolean(blockTable),
-      cellDollarText: blockTable?.textContent?.includes('$E = mc^2$') || false,
+      // Cell formulas render as KaTeX in the editor (editor-html.js); the
+      // source text is there only before that.
+      cellDollarText: blockTable?.textContent?.includes('$E = mc^2$') || Boolean(blockTable?.querySelector('.katex')),
       blockMathText: blockTable?.textContent?.includes('$\\\\sum') || false,
       paragraphMath: editor.querySelectorAll("span[data-type='math_inline']").length
     }
@@ -78,30 +80,20 @@ try {
   assert.equal(html.cellDollarText, true, 'html-block cell lost the literal math source (input shape changed)')
   assert.equal(html.paragraphMath >= 1, true, 'paragraph inline math missing')
 
-  // Deterministic transform check: apply the SAME replacement contract the
-  // export snapshot applies, against the live cloned DOM, using the page's
-  // KaTeX (the same katex module the bundle uses is what renders the live
-  // paragraph math). Build a math element from KaTeX in-page and assert the
-  // swap works on the html-block table cell.
-  const swap = await app.evaluate(`(() => {
-    const editor=[...document.querySelectorAll('.ProseMirror')].find(n=>n.offsetParent)
-    const clone=editor.cloneNode(true)
-    const table=clone.querySelector('.hm-html-block table')
-    if (!table) return { ok:false, reason:'no-table' }
-    // find the rendered <math> from the live paragraph to source KaTeX output
-    const liveMath=editor.querySelector("span[data-type='math_inline'] math, .katex-mathml math")
-    if (liveMath) {
-      const cell=[...table.querySelectorAll('td')].find(td=>td.textContent.includes('$E = mc^2$'))
-      if (!cell) return { ok:false, reason:'no-cell' }
-      cell.textContent=cell.textContent.replace('$E = mc^2$','')
-      cell.appendChild(liveMath.cloneNode(true))
-      return { ok:true, mathInCell: !!cell.querySelector('math') }
-    }
-    return { ok:false, reason:'no-live-math' }
+  // Cell formulas are rendered by the html node view itself (editor-html.js,
+  // KaTeX HTML + MathML), so the export snapshot — built from the live DOM —
+  // carries them as math. Check the cell holds KaTeX output with MathML.
+  const cell = await app.evaluate(`(() => {
+    const editor = [...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)
+    const table = editor?.querySelector('.hm-html-block table')
+    if (!table) return { ok: false, reason: 'no-table' }
+    const katex = [...table.querySelectorAll('td .katex')]
+    return { ok: katex.length > 0, mathml: katex.some((node) => node.querySelector('math')), literal: table.textContent.includes('$E = mc^2$') }
   })()`)
-  assert.equal(swap.ok, true, `swap probe failed: ${JSON.stringify(swap)}`)
-  assert.equal(swap.mathInCell, true)
-  console.log('PASS html table math export: raw-HTML table cells carry literal $...$ (input verified) and MathML swap is DOM-valid; export snapshot materializes them via KaTeX')
+  assert.equal(cell.ok, true, `html-block cell formula did not render: ${JSON.stringify(cell)}`)
+  assert.equal(cell.mathml, true, 'rendered cell formula has no MathML for export')
+  assert.equal(cell.literal, false, 'the cell still shows the formula source')
+  console.log('PASS html table math export: raw-HTML table cell formulas render as KaTeX with MathML (what the export snapshot carries); paragraph math present')
 } finally {
   await stopBuiltElectron(app, { removeProfile: true })
   await rm(root, { recursive: true, force: true }).catch(() => {})

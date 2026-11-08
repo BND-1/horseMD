@@ -4,7 +4,7 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { typeTextLikeUser } from './lib/human-input.mjs'
 
-const sourceFixture = '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
+const sourceFixture = process.env.FILE || '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
 const root = `/tmp/horsemd-user-ordered-corruption-${process.pid}`
 const file = join(root, 'fixture.md')
 const port = 10800 + (process.pid % 100)

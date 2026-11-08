@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-empty-item-retirement-${process.pid}`
 const file = join(root, 'loose.md')
 const port = Number(process.env.CDP_PORT || 15480 + (process.pid % 30))
@@ -20,6 +26,14 @@ const waitFor = async (check, message, attempts = 180) => {
   }
   throw new Error(message)
 }
+
+const sourceReadsBackAsEditor = () => app.evaluate(`(() => {
+  const harness = globalThis.__hmSourceReprintHarness
+  // The reprint's own comparison: the empty paragraph Backspace leaves in the
+  // previous item (the caret is in it) has no Markdown, like an editor-only
+  // empty paragraph anywhere (docs/source-reprint-architecture.md §5).
+  return Boolean(harness && harness.equivalentForReprint(harness.liveSource(), harness.liveDoc()))
+})()`)
 
 let app = null
 let completed = false
@@ -63,7 +77,8 @@ try {
   await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 20 })
 
-  await waitFor(() => app.evaluate(`(() =>
+  if (productPath) await sleep(1000)
+  else await waitFor(() => app.evaluate(`(() =>
     (window.__hmListEmptyItemTransactionTrace || []).some((entry) =>
       entry.phase === 'plan' &&
       entry.family === 'list-empty-item-remove' &&
@@ -84,18 +99,24 @@ try {
     items: [...([...(document.querySelectorAll('.ProseMirror'))].find((node) => node.offsetParent)?.querySelectorAll('li') || [])]
       .map((item) => [...item.querySelectorAll('p')].map((p) => p.textContent || ''))
   }))()`)
-  const blocked = state.owner.filter((entry) =>
-    entry.phase === 'plan' &&
-    entry.reason === 'list-empty-item-authored-row-unproven'
-  )
-  assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
-  assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
-  assert.equal(state.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), false,
-    `legacy unexpectedly rescued loose list: ${JSON.stringify(state.preserve)}`)
-  assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
-    `failed owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
-  assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
-    `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  if (!productPath) {
+    const blocked = state.owner.filter((entry) =>
+      entry.phase === 'plan' &&
+      entry.reason === 'list-empty-item-authored-row-unproven'
+    )
+    assert.equal(blocked.length >= 1, true, JSON.stringify(state.owner))
+    assert.equal(blocked.every((entry) => entry.recognized === true && entry.legacyBlocked === true), true)
+    assert.equal(state.preserve.some((entry) => entry.reason === 'empty-list-item-removed'), false,
+      `legacy unexpectedly rescued loose list: ${JSON.stringify(state.preserve)}`)
+    assert.equal(state.coordinator.some((entry) => entry.phase === 'published'), false,
+      `failed owner unexpectedly published: ${JSON.stringify(state.coordinator)}`)
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), true,
+      `fail-closed warning missing: ${JSON.stringify(state.toasts)}`)
+  } else {
+    assert.equal(state.toasts.some((text) => warningPattern.test(text)), false,
+      `rich/source warning on the product path: ${JSON.stringify(state.toasts)}`)
+    assert.equal(await sourceReadsBackAsEditor(), true, 'product path: source does not read back as the editor document')
+  }
   assert.equal(state.visibleSource, false)
   assert.equal(await readFile(file, 'utf8'), fixture, 'fail-closed loose list overwrote disk')
   assert.deepEqual(state.items, [['left', ''], ['right']],

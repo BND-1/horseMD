@@ -123,11 +123,14 @@ async function openApp(profile, appPort) {
     `editor did not mount for ${profile}`
   )
   await sleep(700)
+  // CPU_THROTTLE=4: a slow machine (late markdownUpdated callbacks, Windows).
+  if (Number(process.env.CPU_THROTTLE) > 1) await app.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.CPU_THROTTLE) })
   await app.evaluate(`(() => {
     window.__hmPreserveLog = []
     window.__hmSourceTransactionLog = []
     window.__hmSourceTransactionTrace = []
     window.__hmListIntentTrace = []
+    window.__hmSourceReprintTrace = []
     window.__hmTransactionSourcePrimary = ${transactionPrimary}
   })()`)
   return app
@@ -203,7 +206,7 @@ async function inspectSource(app, expected, checkpoint) {
       })`), null, 2))
       throw error
     })
-  if (source !== normalizeForTextarea(expected)) {
+  if (source !== normalizeForTextarea(expected) || process.env.MC_DEBUG === checkpoint) {
     console.error(`${checkpoint} source mismatch`, JSON.stringify({
       actualTail: source.slice(-500),
       expectedTail: normalizeForTextarea(expected).slice(-500),
@@ -227,6 +230,7 @@ async function inspectSource(app, expected, checkpoint) {
           canonicalTail: canonical?.slice(-120),
           markdownTail: markdown?.slice(-120)
         })),
+        reprint: (window.__hmSourceReprintTrace || []).slice(-16),
         toasts: [...document.querySelectorAll('[class*="toast"]')].map((node) => node.textContent || '')
       })`)
     }, null, 2))
@@ -264,7 +268,13 @@ async function saveAndAssert(app, expected, checkpoint) {
   await waitFor(
     async () => await readFile(file, 'utf8') === expected,
     `${checkpoint}: disk did not reach expected bytes`
-  )
+  ).catch(async (error) => {
+    const disk = await readFile(file, 'utf8')
+    const at = [...disk].findIndex((character, index) => character !== expected[index])
+    console.error(`${checkpoint} disk tail:`, JSON.stringify(disk.slice(Math.max(0, at - 80))))
+    console.error(`${checkpoint} expected tail:`, JSON.stringify(expected.slice(Math.max(0, at - 80))))
+    throw error
+  })
   assert.equal(await readFile(file, 'utf8'), expected, `${checkpoint}: disk bytes differ`)
 }
 

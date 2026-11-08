@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-list-empty-item-first-lift-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 17220 + (process.pid % 30))
 const packagedAppPath = process.env.HORSEMD_APP_PATH || ''
@@ -150,30 +156,34 @@ const runScenario = async (scenario, port) => {
     assert.equal(state.integrity.some((entry) => entry.ok === false), false,
       `${scenario.name} integrity failure: ${JSON.stringify(state.integrity)}`)
     assert.equal(state.toasts.some((text) => /保存已暂停|无法安全映射|原文件未被覆盖|Save paused/.test(text)), false)
-    const publication = state.owner.filter((entry) =>
-      entry.phase === 'published' && entry.ok === true && entry.family === 'list-empty-item-first-lift'
-    )
-    assert.equal(publication.length, 1, `${scenario.name} publication: ${JSON.stringify(state.owner)}`)
-    assert.equal(publication[0].boundary,
-      scenario.forced
-        ? 'transaction-list-empty-item-first-lift-forced-flush'
-        : 'transaction-list-empty-item-first-lift-markdown-updated')
-    const preservation = state.preserve.find((entry) =>
-      entry.reason === 'list-empty-item-first-lifted' &&
-      entry.integrityProof?.kind === 'transaction-list-empty-item-first-lift-proof'
-    )
-    assert.ok(preservation, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
-    assert.equal(preservation.integrityProof.family, 'list-empty-item-first-lift')
-    assert.deepEqual(preservation.integrityProof.removedPath, [1, 0])
-    assert.deepEqual(preservation.integrityProof.liftedParagraphPath, [1])
-    assert.deepEqual(preservation.integrityProof.remainingListPath, [2])
-    assert.deepEqual(preservation.integrityProof.successorOldPath, [1, 1])
-    assert.deepEqual(preservation.integrityProof.successorNewPath, [2, 0])
-    assert.equal(preservation.integrityProof.step.name, 'ReplaceAroundStep')
+    if (!productPath) {
+      const publication = state.owner.filter((entry) =>
+        entry.phase === 'published' && entry.ok === true && entry.family === 'list-empty-item-first-lift'
+      )
+      assert.equal(publication.length, 1, `${scenario.name} publication: ${JSON.stringify(state.owner)}`)
+      assert.equal(publication[0].boundary,
+        scenario.forced
+          ? 'transaction-list-empty-item-first-lift-forced-flush'
+          : 'transaction-list-empty-item-first-lift-markdown-updated')
+      const preservation = state.preserve.find((entry) =>
+        entry.reason === 'list-empty-item-first-lifted' &&
+        entry.integrityProof?.kind === 'transaction-list-empty-item-first-lift-proof'
+      )
+      assert.ok(preservation, `${scenario.name} proof missing: ${JSON.stringify(state.preserve)}`)
+      assert.equal(preservation.integrityProof.family, 'list-empty-item-first-lift')
+      assert.deepEqual(preservation.integrityProof.removedPath, [1, 0])
+      assert.deepEqual(preservation.integrityProof.liftedParagraphPath, [1])
+      assert.deepEqual(preservation.integrityProof.remainingListPath, [2])
+      assert.deepEqual(preservation.integrityProof.successorOldPath, [1, 1])
+      assert.deepEqual(preservation.integrityProof.successorNewPath, [2, 0])
+      assert.equal(preservation.integrityProof.step.name, 'ReplaceAroundStep')
+    }
     assert.equal(state.topLevelEmptyParagraphs, 1, `${scenario.name} lifted editor-only paragraph missing`)
-    assert.equal(state.tail.some((entry) => entry.phase === 'published'), false)
-    assert.equal(state.interior.some((entry) => entry.phase === 'published'), false)
-    assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === false), false)
+    if (!productPath) {
+      assert.equal(state.tail.some((entry) => entry.phase === 'published'), false)
+      assert.equal(state.interior.some((entry) => entry.phase === 'published'), false)
+      assert.equal(state.broad.some((entry) => entry.phase === 'published' && entry.ok === false), false)
+    }
 
     if (!scenario.forced) {
       assert.equal(await toggleSource(app), true)

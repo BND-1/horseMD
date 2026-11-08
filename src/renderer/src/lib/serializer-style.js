@@ -159,9 +159,20 @@ export const createSerializerStyleHolder = (initialMarkdown) => {
 // backslash made it `\\\  ` (a hard break: LaTeX `\\` joined into a
 // paragraph, fuzz seed 18).
 const endsWithHardBreakBackslash = (line) => (/\\+$/.exec(line)?.[0].length || 0) % 2 === 1
+// A line holding only the break (two breaks in a row, `a\` + `\` + `b`)
+// keeps its backslash: as two spaces it is a blank line, which ends the
+// paragraph (fuzz UI seed 151).
+// A line of only `-` or `=` before the break: remark saw `-\` (no escape
+// needed) but `-␠␠` is a setext underline — the line above became a heading
+// (fuzz seed 3908). Escape its first character.
 const rewriteHardBreaks = (markdown, spelling) => {
   if (spelling === '\\' || !markdown) return markdown
-  return mapSyntaxLines(markdown, (line) => (endsWithHardBreakBackslash(line) ? `${line.slice(0, -1)}  ` : line))
+  return mapSyntaxLines(markdown, (line) => {
+    if (!endsWithHardBreakBackslash(line)) return line
+    const content = line.slice(0, -1)
+    if (/^[ \t>]*$/.test(content)) return line
+    return `${content.replace(/^([ \t>]*)(-+|=+)$/, '$1\\$2')}  `
+  })
 }
 
 // Calls `map(line)` for every line that is Markdown syntax and keeps the

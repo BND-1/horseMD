@@ -6,6 +6,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { pressKey } from './lib/human-input.mjs'
 import { sleep } from './lib/cdp.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const tracePath = process.env.TABLE_CELL_INPUT_TRACE
 const forced = process.env.TABLE_CELL_FORCE === '1'
 let source = [
@@ -78,7 +84,7 @@ const assertClean = (result, label) => {
   assert.equal(result.integrity.length, 0, label + ': first integrity rejection')
   assert.equal(result.rejected.length, 0, label + ': coordinator rejection')
   assert.equal(result.toast, null, label + ': warning toast')
-  assert.ok(result.published.some(e => e.family === 'table-cell-plain-text-replace'), label + ': focused owner did not publish')
+  if (!productPath) assert.ok(result.published.some(e => e.family === 'table-cell-plain-text-replace'), label + ': focused owner did not publish')
 }
 const start = profile => launchBuiltElectron({
   profileDir: join(root, profile), cleanProfile: false,
@@ -99,7 +105,7 @@ try {
   assertClean(deleted, 'EMPTY')
   assert.equal(deleted.value, '')
   assert.deepEqual(deleted.columns, before.columns, 'table column count changed')
-  if (forced) assert.ok(deleted.published.some(e => e.boundary.includes('forced-flush')), 'forced flush not exercised')
+  if (forced && !productPath) assert.ok(deleted.published.some(e => e.boundary.includes('forced-flush')), 'forced flush not exercised')
   if (!forced) assert.equal(await toggle(app), true)
   assert.equal(await waitFor(() => sourceValue(app), 'empty source did not open'), emptySource, 'emptying rewrote unrelated source bytes')
   await toggle(app)

@@ -5,6 +5,12 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
+// Tests the established owner / legacy path: the source reprint, primary
+// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
+process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+
 const root = `/tmp/horsemd-source-sync-coordinator-ui-${process.pid}`
 const file = join(root, 'coordinator.md')
 const port = Number(process.env.CDP_PORT || 10218)
@@ -106,20 +112,24 @@ async function main() {
     await clickTextEnd(evaluate, send, 'alpha')
     await typeTextLikeUser(send, 'X', { delayMs: 35 })
 
-    const publication = await waitFor(
-      async () => {
-        const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
-        return trace.find((entry) =>
-          entry.phase === 'published' &&
-          entry.boundary === 'markdown-updated' &&
-          entry.owner === 'legacy' &&
-          entry.family === 'legacy-preservation'
-        ) || null
-      },
-      'ordinary markdownUpdated did not publish through SourceSyncCoordinator'
-    )
-    assert.ok(publication.revision >= 1)
-    assert.notEqual(publication.reason, 'source-sync-candidate-invalid')
+    if (!productPath) {
+      const publication = await waitFor(
+        async () => {
+          const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
+          return trace.find((entry) =>
+            entry.phase === 'published' &&
+            entry.boundary === 'markdown-updated' &&
+            entry.owner === 'legacy' &&
+            entry.family === 'legacy-preservation'
+          ) || null
+        },
+        'ordinary markdownUpdated did not publish through SourceSyncCoordinator'
+      )
+      assert.ok(publication.revision >= 1)
+      assert.notEqual(publication.reason, 'source-sync-candidate-invalid')
+    } else {
+      await sleep(1000)
+    }
 
     const integrityFailures = await evaluate(`
       (window.__hmSourceIntegrityTrace || []).filter((entry) => entry?.ok === false)
