@@ -10,8 +10,11 @@ const file = join(root, 'rs-66.md')
 const port = Number(process.env.CDP_PORT || 10766)
 const sentinel = '\u200B'
 const fixture = '# RS66\n\n- 额发疯\n- 企鹅分\n\n占位\n\n1\n'
-const emptyExpected = `# RS66\n\n- 额发疯\n- 企鹅分\n\n- [ ] ${sentinel}\n\n1\n`
-const filledExpected = '# RS66\n\n- 额发疯\n- 企鹅分\n\n- [ ] 任务\n\n1\n'
+// The paragraph turned task right under the list joins it (Markdown reads
+// `- 企鹅分` + `- [ ] …` as one list; editor-list-join.js) and takes the
+// list's tight spelling.
+const emptyExpected = `# RS66\n\n- 额发疯\n- 企鹅分\n- [ ] ${sentinel}\n\n1\n`
+const filledExpected = '# RS66\n\n- 额发疯\n- 企鹅分\n- [ ] 任务\n\n1\n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
 async function waitFor(check, message, attempts = 140) {

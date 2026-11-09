@@ -890,6 +890,9 @@ async function runSeed(seed) {
     await app.send('Runtime.enable')
     for (let attempt = 0; attempt < 60 && !(await docJson(app)); attempt += 1) await sleep(150)
     await installToastRecorder(app)
+    // P2 shadow (lib/source-sync/projection.js): the projection comparison
+    // runs next to the existing one; disagreements are kept in the report.
+    if (process.env.FUZZ_PROJECTION === '1') await app.evaluate('globalThis.__hmProjectionShadow = true')
     if (process.env.FUZZ_WATCH_NEWLINE === '1') await installNewlineWatch(app)
     // Start like a user: click into the document first.
     report.ops.push({ index: -1, op: 'click', target: await clickRandomText(app, rand) })
@@ -944,6 +947,9 @@ async function runSeed(seed) {
       }
     }
   } finally {
+    if (process.env.FUZZ_PROJECTION === '1') {
+      try { report.projection = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmProjectionShadowLog || null)') || 'null') } catch { /* app gone */ }
+    }
     await writeFile(join(seedDir, 'report.json'), JSON.stringify(report, null, 2))
     await stopBuiltElectron(app, { removeProfile: false })
   }
@@ -975,7 +981,8 @@ for (const seed of seeds) {
       ops: report.ops.length,
       pause: report.firstPause ? `op ${report.firstPause.opIndex} ${report.firstPause.op}` : null,
       corrupt: report.firstCorrupt ? (report.firstCorrupt.bloat ? `bloat op ${report.firstCorrupt.opIndex}` : report.firstCorrupt.diff.path) : null,
-      shadow: shadowSummary(report.shadow)
+      shadow: shadowSummary(report.shadow),
+      ...(report.projection ? { projection: { agree: report.projection.agree, disagree: report.projection.disagree, byOptions: report.projection.byOptions } } : {})
     })
   } catch (error) {
     summary.push({ seed, error: String(error?.stack || error).slice(0, 400) })

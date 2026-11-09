@@ -169,6 +169,14 @@ const standalone = [
     script: 'scripts/test-spec-corpus-ui.mjs'
   },
   {
+    name: 'Projection audit: every repo Markdown file and spec example keeps its meaning when serialized',
+    script: 'scripts/test-projection-audit-ui.mjs'
+  },
+  {
+    name: 'List join: lists an edit makes adjacent join (Typora), authored separate lists stay apart',
+    script: 'scripts/test-list-join-ui.mjs'
+  },
+  {
     name: 'Image marks: Mod+B / Mod+I on a selected image save the marks, no warning',
     script: 'scripts/test-image-mark-ui.mjs'
   },
@@ -475,6 +483,12 @@ const standalone = [
   {
     name: 'List conversion source fidelity: immediate typing, save, and full reopen',
     script: 'scripts/test-list-conversion-source-fidelity-ui.mjs'
+  },
+  {
+    // Outside the list it failed unnoticed for the whole P3 stage (a list
+    // whose type was converted joined the task list above it).
+    name: 'List conversion: current level, task lists, a converted list stays its own',
+    script: 'scripts/test-list-conversion-ui.mjs'
   },
   // Found stale or broken outside the suite (sweep 2026-11-06); kept here so
   // they cannot rot again.

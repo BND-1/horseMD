@@ -6,7 +6,11 @@ import { sleep } from './lib/cdp.mjs'
 
 // Tests the established owner / legacy path: the source reprint, primary
 // since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
-process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
+// Product path by default (2026-11-08): the Backspace makes the merged list
+// directly adjacent to the authored `1.` list below, and the editor joins
+// them (editor-list-join.js; Markdown reads them as one, Typora shows one).
+// The legacy owner this test pinned never sees that shape now.
+process.env.HM_TEST_REPRINT_PRIMARY ??= '1'
 // HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
 const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
 
@@ -47,7 +51,9 @@ const expected = fixture
     // blank line between two items of one list makes the whole list loose.
     productPath ? '2. 斛律v哦\n3. u高科技\n4. 1\\. 色粉色分' : '2. 斛律v哦\n\n3. u高科技\n4. 1\\. 色粉色分'
   )
-  .replace('1. 啊额法色饭\n   1. 微风', '1) 啊额法色饭\n   1. 微风')
+  // The authored list below is now directly after it: one list (the editor
+  // joins them, Markdown reads them as one), its item continues the count.
+  .replace('4. 1\\. 色粉色分\n\n1. 啊额法色饭\n   1. 微风', '4. 1\\. 色粉色分\n5. 啊额法色饭\n   1. 微风')
 
 const waitFor = async (check, message, attempts = 180) => {
   for (let index = 0; index < attempts; index += 1) {
@@ -193,7 +199,7 @@ try {
   assert.deepEqual(await pauseToasts(app), [], 'merge showed a source-sync warning')
   assert.deepEqual(await documentShape(app), {
     merged: true,
-    followingSeparate: true,
+    followingSeparate: false,
     childNestedUnderFollowing: true,
     mergedText: ['斛律v哦', 'u高科技', '1. 色粉色分']
   })
@@ -201,7 +207,7 @@ try {
   assert.equal(await toggleSource(app), true, 'source toggle failed')
   const source = await waitFor(() => visibleSource(app), 'source textarea did not open')
   assert.equal(source, expected, 'source mode did not contain the exact authored marker-only patch')
-  assert.ok(source.includes('1) 啊额法色饭\n   1. 微风'), 'following list separator or nested child was written incorrectly')
+  assert.ok(source.includes('5. 啊额法色饭\n   1. 微风'), 'following list item or nested child was written incorrectly')
   assert.ok(source.includes('```\n尼玛，吗了解\n了几百块\n```'), 'unrelated fence changed')
   assert.ok(source.includes('-   1. 二哥你来拿如果\n  - \u200B     就了解了呢\n  * 如果可能老顾客'), 'unrelated diverged list changed')
 
@@ -214,7 +220,7 @@ try {
   app = await openApp('reopen', port + 1)
   assert.deepEqual(await documentShape(app), {
     merged: true,
-    followingSeparate: true,
+    followingSeparate: false,
     childNestedUnderFollowing: true,
     mergedText: ['斛律v哦', 'u高科技', '1. 色粉色分']
   }, 'cold reopen changed the merged/following list structure')

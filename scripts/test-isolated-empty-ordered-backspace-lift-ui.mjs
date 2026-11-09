@@ -227,7 +227,9 @@ try {
   assert.equal(
     // The lifted row joins the bullet list above as its next item: `-`
     // (source reprint, tight) or `\n\n- \n` (legacy). Same list.
+    // Or tight once the editor joined the lists (editor-list-join.js).
     first.integrity.some((entry) => entry.candidate.includes('- 1\\. 是人干v是v\n-\n\n- u高科技') ||
+      entry.candidate.includes('- 1\\. 是人干v是v\n-\n- u高科技') ||
       entry.candidate.includes('- 1\\. 是人干v是v\n\n- \n\n- u高科技')),
     true,
     'first Backspace did not convert only the isolated empty ordered marker to an authored bullet'

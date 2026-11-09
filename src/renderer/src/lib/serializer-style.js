@@ -22,6 +22,9 @@
 //   2. set the compile settings (bullet, ordered delimiter) to the document's
 //      dominant authored spelling.
 
+import { defaultHandlers } from 'mdast-util-to-markdown'
+
+const defaultHardBreak = defaultHandlers.break
 const BULLETS = ['-', '*', '+']
 const ORDERED_DELIMITERS = ['.', ')']
 
@@ -88,31 +91,17 @@ export const detectMarkdownListStyle = (markdown) => {
 const blockContentChildren = (item) =>
   (item.children || []).filter((child) => child && child.type !== 'list').length
 
-// An EMPTY paragraph serializes as the inline-html `<br />` placeholder —
-// either an empty mdast paragraph (fresh serializer state) or a paragraph
-// whose only child IS that html node (what the editor round-trips). When more
-// blocks follow it inside the same item, tight spacing turns the next line
-// into a lazy continuation of that paragraph instead of a new block (only an
-// ordered list starting at `1.` may interrupt a paragraph), so the blank
-// separator is REQUIRED for the item to round-trip.
-const isEmptyPlaceholderParagraph = (paragraph) =>
-  (paragraph?.children || []).every((child) =>
-    (!child.children && child.type === 'html' &&
-      /^<br\s*\/?>$/i.test(String(child.value || '').trim())) ||
-    (child.type === 'text' && !String(child.value || '').trim()))
-
-const hasEmptyNonLastParagraph = (item) => {
+// A block right after a nested list must be a blank line away: on the next
+// line it is the list's lazy continuation (`- 1. a` + `  b` reads `a b`).
+const listFollowedByBlock = (item) => {
   const children = item.children || []
-  return children.some((child, index) =>
-    index < children.length - 1 &&
-    child && child.type === 'paragraph' &&
-    isEmptyPlaceholderParagraph(child))
+  return children.some((child, index) => child?.type === 'list' && children[index + 1] && children[index + 1].type !== 'list')
 }
 
 // Re-derive mdast spread from content plus the authored loose/tight style:
 //   listItem.spread — loose style OR the item genuinely has two block children
 //     (two paragraphs always need the blank line to stay two paragraphs) OR
-//     an empty placeholder paragraph is followed by more blocks.
+//     a block follows a nested list.
 //   list.spread — the authored loose/tight style ONLY. CommonMark would also
 //     call a list loose when an item contains internal blank lines, but the
 //     authored bytes of such documents keep the OTHER rows adjacent, and the
@@ -129,13 +118,59 @@ const normalizeListSpread = (tree, style) => {
     if (node.type === 'listItem') {
       node.spread = Boolean(style.loose) ||
         blockContentChildren(node) > 1 ||
-        hasEmptyNonLastParagraph(node)
+        listFollowedByBlock(node)
     } else if (node.type === 'list') {
       node.spread = Boolean(style.loose)
     }
     if (Array.isArray(node.children)) node.children.forEach(visit)
   }
   visit(tree)
+}
+
+// An empty paragraph has no Markdown (docs/empty-paragraph-contract.md §1).
+// Milkdown writes one as a `<br />` line ("preserve empty line"; the parser
+// reads such a line back as an empty paragraph), which every writer then had
+// to strip again. Before the compile it becomes an empty paragraph: at the
+// top level a blank line; inside a list item or a quote nothing — written as
+// an empty line it ended the item (`-` + blank line + `  ***` puts the
+// divider outside the list; CommonMark spec 61). The editor keeps one in
+// front of an item that starts with a block (its schema wants a paragraph
+// first): the block goes on the marker line, as it reads back.
+const isBrPlaceholder = (child) => child?.type === 'html' && /^<br\s*\/?>$/i.test(String(child.value || '').trim())
+const isEmptyParagraph = (node) => node?.type === 'paragraph' && !(node.children || []).length
+const normalizeEmptyParagraphs = (node) => {
+  if (!node || typeof node !== 'object' || !Array.isArray(node.children)) return
+  node.children.forEach(normalizeEmptyParagraphs)
+  if (node.type === 'listItem' || node.type === 'blockquote') {
+    // Milkdown's `<br />` placeholder (preserve empty line) is an empty
+    // paragraph. At the top level it stays: it reads back as one, the
+    // projection drops it, and the incremental serializer's segments keep
+    // text at their edges (written as nothing, every window next to one fell
+    // back to a full serialization).
+    for (const child of node.children) {
+      if (child.type === 'paragraph' && child.children?.length === 1 && isBrPlaceholder(child.children[0])) child.children = []
+    }
+    // A task's first line is its checkbox line: an empty one stays (the task
+    // handler writes `[ ]` + U+200B there), or the block below moves up.
+    const task = node.type === 'listItem' && typeof node.checked === 'boolean'
+    const kept = []
+    let removed = false
+    node.children.forEach((child, index) => {
+      if (!(task && index === 0) && isEmptyParagraph(child)) { removed = true; return }
+      const previous = kept[kept.length - 1]
+      // Two lists of one kind with only empty paragraphs between them read
+      // back as one list (the projection reads the top level the same way):
+      // one list, not two with alternating markers.
+      if (removed && previous?.type === 'list' && child.type === 'list' && Boolean(previous.ordered) === Boolean(child.ordered)) {
+        previous.children = [...previous.children, ...child.children]
+      } else {
+        kept.push(child)
+      }
+      removed = false
+    })
+    // A quote of nothing but empty paragraphs is one empty `>` line.
+    node.children = kept.length || node.type === 'listItem' ? kept : node.children.slice(0, 1)
+  }
 }
 
 export const createSerializerStyleHolder = (initialMarkdown) => {
@@ -149,30 +184,49 @@ export const createSerializerStyleHolder = (initialMarkdown) => {
   return holder
 }
 
-// Patch the live remark instance so every serialization mirrors the authored
-// style. Returns a restore function (unused in production, handy in tests).
-// remark-stringify always emits backslash hard breaks; authors who wrote
-// `text␠␠\n` get their two-space spelling back. Only outside fenced code,
-// where a literal trailing backslash is content, not syntax.
-// Only an ODD run of trailing backslashes is a hard break: `\\\\` + newline
-// is two escaped (literal) backslashes and a soft break — rewriting its last
-// backslash made it `\\\  ` (a hard break: LaTeX `\\` joined into a
-// paragraph, fuzz seed 18).
-const endsWithHardBreakBackslash = (line) => (/\\+$/.exec(line)?.[0].length || 0) % 2 === 1
-// A line holding only the break (two breaks in a row, `a\` + `\` + `b`)
-// keeps its backslash: as two spaces it is a blank line, which ends the
-// paragraph (fuzz UI seed 151).
-// A line of only `-` or `=` before the break: remark saw `-\` (no escape
-// needed) but `-␠␠` is a setext underline — the line above became a heading
-// (fuzz seed 3908). Escape its first character.
-const rewriteHardBreaks = (markdown, spelling) => {
-  if (spelling === '\\' || !markdown) return markdown
-  return mapSyntaxLines(markdown, (line) => {
-    if (!endsWithHardBreakBackslash(line)) return line
-    const content = line.slice(0, -1)
-    if (/^[ \t>]*$/.test(content)) return line
-    return `${content.replace(/^([ \t>]*)(-+|=+)$/, '$1\\$2')}  `
-  })
+// The style of the document being serialized right now. The serializer is
+// synchronous: the patched stringify sets it for the duration of one compile,
+// and the compile options below read it (list markers, hard-break spelling).
+let activeStyle = null
+export const activeSerializerStyle = () => activeStyle
+
+// Hard break in the author's spelling, written by the compiler itself — not
+// rewritten on the output afterwards. Two spaces, except on a line that holds
+// only the break (two breaks in a row): as two spaces that line is blank and
+// ends the paragraph (fuzz UI seed 151), so it keeps the backslash. `peek`
+// tells the text before the break what follows it (a space, not `\`), so the
+// stock `unsafe` patterns escape a line that would otherwise read as syntax
+// (a lone `-` before `␠␠` is a setext underline; fuzz seed 3908).
+export function styledHardBreak(node, parent, state, info) {
+  const stock = defaultHardBreak(node, parent, state, info)
+  if (stock !== '\\\n' || activeStyle?.hardBreak !== '  ') return stock
+  return info?.before === '\n' || info?.before === '\r' ? stock : '  \n'
+}
+styledHardBreak.peek = (node, parent, state, info) =>
+  styledHardBreak(node, parent, state, { ...info, before: 'x' })
+
+// A line break written together with what follows it (inline-serializer.js:
+// `&#10;` soft breaks after it, or inline HTML that must not start a line on
+// its own — mdast-util-to-markdown turns a line ending right before HTML into
+// a space). The break is spelled here, at compile time, like `styledHardBreak`.
+export function hmLineBreakRun(node, parent, state, info) {
+  const tail = String(node.tail || '')
+  // A table cell is one line: a soft break is `&#10;`, a hard one `<br>`.
+  if (state.stack?.includes('tableCell')) return (node.hard ? '<br>' : '&#10;') + tail
+  if (!node.hard) return '\n' + tail
+  const lineStart = !info?.before || info.before === '\n' || info.before === '\r'
+  const twoSpaces = activeStyle?.hardBreak === '  ' && !lineStart
+  return (twoSpaces ? '  \n' : '\\\n') + tail
+}
+hmLineBreakRun.peek = (node, parent, state, info) =>
+  hmLineBreakRun(node, parent, state, { ...info, before: 'x' })
+
+// Compile options that follow the active style. The getters are read on
+// every compile (remark-stringify spreads its options per call), so one
+// options object serves every document.
+export const serializerStyleStringifyOptions = {
+  get bullet() { return activeStyle?.bullet || '*' },
+  get bulletOrdered() { return activeStyle?.ordered || '.' }
 }
 
 // Calls `map(line)` for every line that is Markdown syntax and keeps the
@@ -213,46 +267,26 @@ function mapSyntaxLines(markdown, map) {
   return parts.join('')
 }
 
-// The unified instance is FROZEN long before we get it (Milkdown parses the
-// default value during create), so `data('settings')` cannot carry compile
-// options — styling the markers must happen on the compiled string. Line-level
-// and fence-aware: `*` markers become the authored bullet (`*emphasis*` needs
-// a following space and never matches), and `1.` becomes `1)` only for
-// authors who wrote it that way. Nested lists keep the stock alternate marker;
-// same-marker nesting re-parses to the identical tree either way.
-const rewriteListMarkers = (markdown, style) => {
-  if (!markdown) return markdown
-  if (style.bullet === '*' && style.ordered === '.') return markdown
-  return mapSyntaxLines(markdown, (line) => {
-    let next = line
-    if (style.bullet !== '*') {
-      next = next.replace(/^([ \t>]*)\*([ \t]|$)/, `$1${style.bullet}$2`)
-    }
-    if (style.ordered === ')') {
-      next = next.replace(/^([ \t>]*\d{1,9})\.([ \t]|$)/, '$1)$2')
-    }
-    return next
-  })
-}
-
+// Patch the live remark instance so every serialization mirrors the authored
+// style: list / item spread re-derived from content, and the active style set
+// for the compile options above. Returns a restore function (tests).
 export const applySerializerStyleToRemark = (remark, styleHolder) => {
   if (!remark || typeof remark.stringify !== 'function') return () => {}
   const originalStringify = remark.stringify.bind(remark)
   remark.stringify = (tree, ...rest) => {
     try {
+      normalizeEmptyParagraphs(tree)
       normalizeListSpread(tree, styleHolder.style)
     } catch {
       // Style application must never block serialization; fall through to the
       // original compile untouched.
     }
-    const output = originalStringify(tree, ...rest)
+    const previous = activeStyle
+    activeStyle = styleHolder.style
     try {
-      return rewriteHardBreaks(
-        rewriteListMarkers(output, styleHolder.style),
-        styleHolder.style.hardBreak
-      )
-    } catch {
-      return output
+      return originalStringify(tree, ...rest)
+    } finally {
+      activeStyle = previous
     }
   }
   return () => {

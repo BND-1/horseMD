@@ -21,7 +21,9 @@ const expected = [
   '1. one',
   '2. two',
   '   1. nested',
-  '1. rebuilt',
+  // `1. ` typed right after the list continues it (Typora; editor-list-
+  // join.js): the editor shows item 3 and the file says 3.
+  '3. rebuilt',
   '   1. nested-rebuilt',
   '- final-one',
   '- final-two',

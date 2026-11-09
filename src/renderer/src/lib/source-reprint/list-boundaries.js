@@ -1,23 +1,19 @@
-// Two ordered lists that sit directly next to each other in the editor (no
-// empty paragraph between) are two lists, but `1. a` … `1. b` reads back as
-// one: the lower list's numbering continues (its item 1 becomes item 5).
-// The reprint keeps authored bytes, so when an edit (a Backspace merge, a
-// block move) makes an authored ordered list directly adjacent to another,
-// the lower list's delimiter switches (`.`↔`)`; Milkdown's serializer and the
-// older writers do the same).
+// Two lists of the same kind that sit directly next to each other in the
+// editor (no empty paragraph between) are two lists, but written with the
+// same marker they read back as one: the lower list's items join the upper
+// one (`1.` … `1.`: its item 1 becomes item 5). The editor document is the
+// truth (docs/reprint-root-cause-plan.md: what reads back must equal the
+// projection, and the serializer writes them apart), so the lower list's
+// marker switches — `.`↔`)`, `-`↔`*` — the way mdast-util-to-markdown
+// alternates them; an ordered list's first number is its start.
 //
-// Only that case. Kept as written (Typora: what you type is what is saved):
-// - a list the user just typed (`1. ` after a list): its node is new, not in
-//   the editor document paired with the source (`test-repeated-ordered-list-
-//   middle-ui`, from a user report: `1.` must not become `1)`);
-// - a list that was already directly after the other one (the merge was
-//   accepted when it was made; later edits leave it alone);
-// - bullet lists: merged on reopen, nothing visible changes
-//   (`test-isolated-empty-ordered-backspace-lift-ui`);
-// - lists separated by an editor-only empty paragraph (RS-86).
-// Without the paired document nothing is changed. Where the editor document
-// and the source cannot be lined up, nothing is changed and nothing is
-// reported (the other checks stand).
+// Lists that only become adjacent through an edit are joined in the editor
+// (editor-list-join.js, Typora parity: a typed `1. ` after a list continues
+// it), so this is left for lists that were next to each other already —
+// written apart in the file — and were reprinted with one marker.
+// Lists separated by an editor-only empty paragraph read back as one, like
+// the projection (RS-86). Where the editor document and the source cannot be
+// lined up, nothing is changed and nothing is reported (the verifier stands).
 
 const isList = (node) => node?.type?.name === 'bullet_list' || node?.type?.name === 'ordered_list'
 const isBlankParagraph = (node) => {
@@ -52,35 +48,11 @@ function runsOf(container) {
   return runs
 }
 
-// Every ordered list of `doc` → whether it sits directly after another
-// ordered list (the same rule as `runsOf`).
-function directlyAfterOrdered(doc) {
-  const map = new Map()
-  const visit = (container) => {
-    let previous = null
-    container.forEach((child) => {
-      if (isBlankParagraph(child)) { previous = null; return }
-      if (child.type.name === 'ordered_list') map.set(child, previous?.type.name === 'ordered_list')
-      previous = child
-    })
-  }
-  visit(doc)
-  doc.descendants((node) => {
-    if (!node.isTextblock && node.childCount) visit(node)
-    return !node.isTextblock
-  })
-  return map
-}
-
 const mdContainerKids = (node) => (node.children || []).filter((child) => child.type !== 'definition')
 
-export function listBoundaryPlan(body, mdRoot, editorDoc, previousDoc) {
-  const fixes = [] // { items: [mdast listItem], before: the mdast item before }
+export function listBoundaryPlan(body, mdRoot, editorDoc, { merged = null } = {}) {
+  const fixes = [] // { items: [mdast listItem], before: the mdast item before, list: the PM list }
   let unresolved = 0
-  const before = directlyAfterOrdered(previousDoc)
-  // A list the edit made directly adjacent: it existed (same node) and was
-  // not directly after an ordered list then.
-  const newlyAdjacent = (node) => before.has(node) && before.get(node) === false
   const walk = (pm, md) => {
     const runs = runsOf(pm)
     const kids = mdContainerKids(md)
@@ -109,10 +81,11 @@ export function listBoundaryPlan(body, mdRoot, editorDoc, previousDoc) {
       let offset = 0
       run.lists.forEach((entry, listIndex) => {
         const size = entry.node.childCount
-        if (listIndex > 0 && entry.direct && entry.node.type.name === 'ordered_list' && !mdItems[offset].first && newlyAdjacent(entry.node)) {
-          fixes.push({ items: mdItems.slice(offset, offset + size).filter((x) => x.listIndex === mdItems[offset].listIndex).map((x) => x.item), before: mdItems[offset - 1].item })
+        if (listIndex > 0 && entry.direct && !mdItems[offset].first) {
+          merged?.add(entry.node)
+          fixes.push({ items: mdItems.slice(offset, offset + size).filter((x) => x.listIndex === mdItems[offset].listIndex).map((x) => x.item), before: mdItems[offset - 1].item, list: entry.node })
         }
-        entry.node.forEach((pmItem, index) => {
+        entry.node.forEach((pmItem, _offset, index) => {
           const mdItem = mdItems[offset + index]?.item
           if (mdItem?.type === 'listItem') walk(pmItem, mdItem)
         })
@@ -127,32 +100,36 @@ export function listBoundaryPlan(body, mdRoot, editorDoc, previousDoc) {
   }
   for (const fix of fixes) {
     fix.edits = []
-    const markerOf = (item) => /^(\d{1,9})([.)])/.exec(body.slice(item.position?.start?.offset ?? -1))
+    const ordered = fix.list.type.name === 'ordered_list'
+    const markerOf = (item) => (ordered ? /^(\d{1,9})([.)])/ : /^()([-+*])/).exec(body.slice(item.position?.start?.offset ?? -1))
     const previous = markerOf(fix.before)
     if (!previous) { unresolved += 1; continue }
-    const delimiter = previous[2] === '.' ? ')' : '.'
-    for (const item of fix.items) {
+    const other = ordered ? (previous[2] === '.' ? ')' : '.') : (previous[2] === '-' ? '*' : '-')
+    fix.items.forEach((item, index) => {
+      if (!fix.edits) return
       const marker = markerOf(item)
       const start = item.position?.start?.offset
-      if (!marker || !Number.isInteger(start)) { fix.edits = null; break }
-      fix.edits.push([start + marker[1].length, start + marker[0].length, delimiter])
-    }
+      if (!marker || !Number.isInteger(start)) { fix.edits = null; return }
+      // The first number of the list is its start (the editor's `order`).
+      if (ordered && index === 0) fix.edits.push([start, start + marker[0].length, `${fix.list.attrs.order ?? 1}${other}`])
+      else fix.edits.push([start + marker[1].length, start + marker[0].length, other])
+    })
     if (!fix.edits) unresolved += 1
   }
   return { fixes: fixes.filter((fix) => fix.edits?.length), unresolved }
 }
 
 // → { markdown, changed, unresolved }
-export function separateAdjacentLists(markdown, editorDoc, previousDoc, remark) {
+export function separateAdjacentLists(markdown, editorDoc, remark) {
   const text = String(markdown ?? '')
   const unchanged = { markdown: text, changed: false, unresolved: 0 }
-  if (!previousDoc || !remark || typeof remark.parse !== 'function' || typeof remark.runSync !== 'function') return unchanged
-  // Only documents that hold two directly adjacent ordered lists.
+  if (!remark || typeof remark.parse !== 'function' || typeof remark.runSync !== 'function') return unchanged
+  // Only documents that hold two directly adjacent lists of one kind.
   let candidate = false
   const scan = (node) => {
     let previous = null
     node.forEach((child) => {
-      if (child.type.name === 'ordered_list' && previous?.type.name === 'ordered_list') candidate = true
+      if (isList(child) && previous?.type === child.type) candidate = true
       previous = child
     })
   }
@@ -171,7 +148,7 @@ export function separateAdjacentLists(markdown, editorDoc, previousDoc, remark) 
   for (let round = 0; round < 4; round += 1) {
     let plan
     try {
-      plan = listBoundaryPlan(body, remark.runSync(remark.parse(body), body), editorDoc, previousDoc)
+      plan = listBoundaryPlan(body, remark.runSync(remark.parse(body), body), editorDoc)
     } catch {
       return unchanged
     }
@@ -183,4 +160,19 @@ export function separateAdjacentLists(markdown, editorDoc, previousDoc, remark) 
     for (const [from, to, value] of [...first.edits].sort((a, b) => b[0] - a[0])) body = body.slice(0, from) + value + body.slice(to)
   }
   return { markdown: text, changed: false, unresolved: 1 }
+}
+
+// The lower lists of the editor's directly adjacent same-kind pairs that
+// `markdown` reads as one list with the list above (same marker): a Set of
+// PM list nodes. What the file says decides (editor-list-join.js): `- a` +
+// `* b` are two lists, `1. a` + `1. b` one.
+export function listsReadAsOne(markdown, editorDoc, remark) {
+  const merged = new Set()
+  try {
+    const text = String(markdown ?? '').replace(/^\uFEFF/, '')
+    listBoundaryPlan(text, remark.runSync(remark.parse(text), text), editorDoc, { merged })
+  } catch {
+    return new Set()
+  }
+  return merged
 }

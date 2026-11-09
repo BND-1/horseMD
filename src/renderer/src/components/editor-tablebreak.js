@@ -12,7 +12,7 @@
 //                   previously-dropped <br> now shows up).
 import { keymap } from '@milkdown/prose/keymap'
 import { baseKeymap, chainCommands } from '@milkdown/prose/commands'
-import { defaultHandlers } from 'mdast-util-to-markdown'
+import { styledHardBreak } from '../lib/serializer-style.js'
 
 const BR_RE = /^<br\s*\/?>$/i
 // Node types whose children are phrasing content — the only places an inline
@@ -54,8 +54,12 @@ export function tableCellBreakHandler(node, parent, state, info) {
     const next = parent.children[parent.children.indexOf(node) + 1]
     if (next?.type === 'html') return '<br>'
   }
-  return defaultHandlers.break(node, parent, state, info)
+  return styledHardBreak(node, parent, state, info)
 }
+// What the text before a break sees after it (`<`, a space, `\\`): the
+// stock `unsafe` patterns decide escapes from it.
+tableCellBreakHandler.peek = (node, parent, state, info) =>
+  tableCellBreakHandler(node, parent, state, { ...info, before: 'x' })
 
 // --- 3. parse: inline <br> html → break ---
 export function brToBreakRemarkPlugin() {

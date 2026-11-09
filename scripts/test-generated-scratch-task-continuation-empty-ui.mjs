@@ -275,7 +275,7 @@ async function main() {
     assert.equal(emptied.paragraphs.at(-1), '', `continuation was not emptied: ${JSON.stringify(emptied)}`)
     assert.equal(emptied.integrity.some((entry) => entry.ok === false), false, `RS-58 integrity failure: ${JSON.stringify(emptied)}`)
     // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
-    await assertPublishedBy(app.evaluate, async () => {
+    if (process.env.HM_TEST_REPRINT_PRIMARY === '0') await assertPublishedBy(app.evaluate, async () => {
       assert.ok(
         emptied.integrity.some((entry) =>
           entry.preservationReason === 'trailing-list-item-paragraph-emptied' &&

@@ -191,8 +191,68 @@ function separateAttentionRuns(element) {
   })
 }
 
+// The lines at the start and end of a text block that hold only line breaks
+// and blanks show nothing and have no Markdown (CommonMark: a break at the
+// end of a block is no break, blanks around a line ending are stripped, a
+// leading empty line is not part of the paragraph). They are not written —
+// spelled (`&#x20;`), a paragraph of spaces read back as a paragraph of
+// text, and every such line had its own exception in the comparisons.
+// Blanks that lead into text on the first line are text (`&#x20; a`).
+const isBreakNode = (node) => /^hard_?break$/.test(node.type.name)
+const isBlankTextNode = (node) => node.isText && /^[ \t]*$/.test(node.text) && !node.marks.some((mark) => mark.type.spec.code)
+export const trimEdgeLines = (nodes) => {
+  let start = 0
+  for (;;) {
+    let at = start
+    while (at < nodes.length && isBlankTextNode(nodes[at])) at += 1
+    if (at < nodes.length && isBreakNode(nodes[at])) { start = at + 1; continue }
+    if (at === nodes.length) start = at
+    break
+  }
+  let end = nodes.length
+  while (end > start && (isBreakNode(nodes[end - 1]) || isBlankTextNode(nodes[end - 1]))) end -= 1
+  return start === 0 && end === nodes.length ? nodes : nodes.slice(start, end)
+}
+
+// A cell's lines are `<br>`-separated: blank-only text at its edges or next
+// to a break shows nothing (HTML) and GFM trims the edges.
+// In a table cell, blanks at the cell's edges and next to a `<br>` are not
+// written — all of them, whether a text of only blanks or the first / last
+// characters of a longer text: GFM trims the edges, and a space at a line
+// start after `<br>` shows nothing. Trimming only blank-only texts made the
+// serializer write the same cell two ways (` **alp` from a bold " alp",
+// `**alp` once read back as " " + bold "alp"), so a reprint verified by
+// writing both sides never matched (fuzz seed 5344, Windows).
+const trimCellEdgeBlanks = (nodes) => {
+  let changed = false
+  const out = []
+  nodes.forEach((node, index) => {
+    // Inline code keeps its blanks: they are its content.
+    if (!node.isText || node.marks.some((mark) => mark.type.spec.code)) { out.push(node); return }
+    const atStart = index === 0 || isBreakNode(nodes[index - 1])
+    const atEnd = index === nodes.length - 1 || isBreakNode(nodes[index + 1])
+    let text = node.text
+    if (atStart) text = text.replace(/^[ \t]+/, '')
+    if (atEnd) text = text.replace(/[ \t]+$/, '')
+    if (text === node.text) { out.push(node); return }
+    changed = true
+    if (text) out.push(node.type.schema.text(text, node.marks))
+  })
+  return changed ? out : nodes
+}
+
 function serializeInline(state, fragment, runPlain) {
   const schema = state.schema
+  const all = []
+  fragment.forEach((node) => all.push(node))
+  // A table cell is one line: a `<br>` at its edge is an empty line in the
+  // cell, which GFM keeps (written `<br>`).
+  // Its edge blanks are trimmed (GFM): blank-only text there is not written
+  // (a cell of one space was written `&#x20;` and read back as a space).
+  const inCell = (state.elements || []).some((element) => element?.type === 'tableCell')
+  const kept = inCell ? trimCellEdgeBlanks(all) : trimEdgeLines(all)
+  if (!kept.length) return true
+  if (kept !== all) fragment = fragment.constructor.fromArray(kept)
   const pieces = piecesOf(fragment)
   // Records per mark (wrapper marks do not depend on the node; consuming
   // marks are recorded again per piece).
@@ -303,11 +363,13 @@ function serializeInline(state, fragment, runPlain) {
   // example 148). The break goes INTO the HTML node's value instead; a tag
   // that could start a paragraph-interrupting HTML block (types 1–6) is
   // indented 4 spaces — a continuation line, its indentation stripped.
+  // The break goes into one node with what follows it; the compiler spells
+  // it (serializer-style.js `hmLineBreakRun`: the document's hard-break style,
+  // decided from the real character before it).
   const htmlAfterBreak = (breakNode, htmlNode) => {
     const value = String(htmlNode.attrs?.value ?? '')
-    const lead = breakNode.attrs?.isInline ? '\n' : '\\\n'
     const indent = HTML_BLOCK_START.test(value) ? '    ' : ''
-    return htmlNode.type.create({ ...htmlNode.attrs, value: lead + indent + value }, null, htmlNode.marks)
+    return { hard: !breakNode.attrs?.isInline, tail: indent + value, marks: htmlNode.marks }
   }
   const writeAll = (children, top = false) => {
     for (let index = 0; index < children.length; index += 1) {
@@ -331,7 +393,7 @@ function serializeInline(state, fragment, runPlain) {
         }
         // One HTML value holding the first line ending too (a line ending
         // right before an HTML node would become a space).
-        state.addNode('html', undefined, '\n' + '&#10;'.repeat(run - 1))
+        state.addNode('hmLineBreakRun', undefined, undefined, { hard: false, tail: '&#10;'.repeat(run - 1) })
         index += run - 1
         continue
       }
@@ -348,7 +410,7 @@ function serializeInline(state, fragment, runPlain) {
           index += run
           continue
         }
-        state.addNode('html', undefined, '\\\n' + '&#10;'.repeat(run))
+        state.addNode('hmLineBreakRun', undefined, undefined, { hard: true, tail: '&#10;'.repeat(run) })
         index += run
         continue
       }
@@ -362,7 +424,9 @@ function serializeInline(state, fragment, runPlain) {
         continue
       }
       if (isBreak(child) && next?.node?.type?.name === 'html' && next.node.isInline) {
-        runPlain(htmlAfterBreak(child.node, next.node))
+        const { hard, tail, marks } = htmlAfterBreak(child.node, next.node)
+        if (marks?.length) runPlain(next.node.type.create({ ...next.node.attrs, value: (hard ? '\\\n' : '\n') + tail }, null, marks))
+        else state.addNode('hmLineBreakRun', undefined, undefined, { hard, tail })
         index += 1
         continue
       }

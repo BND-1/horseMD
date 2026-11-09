@@ -147,7 +147,10 @@ try {
   )
   // A leading space at a line start is written as U+200B + space (two plain
   // spaces after `3.` would be marker padding and drop the space on reopen).
-  assert.match(source, /(?:^|\n)3\. \u200B 色粉色分看了你快乐 \n/m, 'the ordered item must keep its leading space (U+200B + space) and the trailing space')
+  // The trailing space has no Markdown (CommonMark strips blanks at a
+  // paragraph end, so reopening drops it either way): it is not written
+  // (docs/reprint-root-cause-plan.md P3, remark-text-handler.js).
+  assert.match(source, /(?:^|\n)3\. \u200B 色粉色分看了你快乐\n/m, 'the ordered item must keep its leading space (U+200B + space)')
   assert.equal((source.match(/\u200B/g) || []).length, 1, 'a stale extra U+200B sentinel remained in source')
   console.log('PASS leading-space ordered-list transition: leading space kept as one U+200B sentinel after continued typing')
 } finally {

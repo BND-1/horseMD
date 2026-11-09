@@ -28,8 +28,16 @@ const cases = [
   [[T('    '), C('c')], '&#x20;   `c`\n'],
   // The fast path's purpose is kept: whitespace before a mark stays raw.
   [[T('a '), S(T('b'))], 'a **b**\n'],
-  [[T('a  '), S(T('b')), T(' tail ')], 'a  **b** tail \n'],
-  [[T('x'), C('c'), T('  '), C('d')], 'x`c`  `d`\n']
+  // Blanks before the paragraph's end (or any line ending) have no Markdown.
+  [[T('a  '), S(T('b')), T(' tail ')], 'a  **b** tail\n'],
+  [[T('a  '), { type: 'text', value: '\n' }, T('b')], 'a\nb\n'],
+  [[T('x'), C('c'), T('  '), C('d')], 'x`c`  `d`\n'],
+  // Blank-only text before a line ending after other content on the line
+  // (bold, an `&#10;`): no Markdown — written, it made the soft break a hard
+  // one (fuzz seeds 936, 236, 3815).
+  [[S(T('a')), T('  '), { type: 'text', value: '\n' }, T('b')], '**a**\nb\n'],
+  [[T('a'), { type: 'text', value: '\n' }, T('    '), { type: 'text', value: '\n' }, T('b')], 'a\n&#x20;\nb\n'],
+  [[T('a *  \nb')], 'a \\*\nb\n']
 ]
 // A soft-break text node at a paragraph start is not indentation.
 assert.equal(stringify([T('a'), { type: 'break' }, T('\n'), T('b')]).includes('&#xA;'), false)
@@ -48,8 +56,9 @@ for (const [children, expected] of cases) {
   const reparsed = fromMarkdown(markdown)
   assert.equal(reparsed.children.length, 1, `one block for ${JSON.stringify(markdown)}`)
   assert.equal(reparsed.children[0].type, 'paragraph', `still a paragraph: ${JSON.stringify(markdown)}`)
-  const expectedText = children.map(plain).join('').replace(/[ \t]+$/, '')
-  assert.equal(plain(reparsed.children[0]).replace(/[ \t]+$/, ''), expectedText, `text kept: ${JSON.stringify(markdown)}`)
+  const expectedText = children.map(plain).join('').replace(/[ \t]+(?=\n|$)/g, '')
+  // (A line of only blanks reads back as one encoded blank.)
+  assert.equal(plain(reparsed.children[0]).replace(/[ \t]+(?=\n|$)/g, ''), expectedText, `text kept: ${JSON.stringify(markdown)}`)
 }
 // Strong/emphasis handlers (Milkdown's defaults skip attention encoding):
 // `**foo.**abc` parses back as literal asterisks, so the letter is encoded.

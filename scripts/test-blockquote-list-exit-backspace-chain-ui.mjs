@@ -4,6 +4,11 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
+// Product path by default (2026-11-08): the source reprint publishes these
+// edits; the focused owners they used to pin are the fallback behind it and
+// no longer see these shapes since empty paragraphs are not written as
+// `<br />`. HM_TEST_REPRINT_PRIMARY=0 pins the owners (their checks below).
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY !== '0'
 
 const root = `/tmp/horsemd-blockquote-list-exit-backspace-${process.pid}`
 const port = Number(process.env.CDP_PORT || 23840 + (process.pid % 30))
@@ -137,7 +142,7 @@ const openApp = async ({ file, profile, reopen = false }) => {
     // path behind the source reprint engine (docs/source-reprint-architecture.md
     // R3); the engine's user-visible result for the same sequences is covered
     // by test:rich-source-pause-families-ui.
-    await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
+    if (!productPath) await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
     return app
   } catch (error) {
     await stopBuiltElectron(app, { removeProfile: true })
@@ -174,15 +179,17 @@ try {
     entry.reason === 'trailing-empty-blockquote-paragraph-after-list-exit' &&
     entry.integrityProof?.kind === 'transaction-blockquote-list-exit-pending-proof'
   )
-  assert.ok(publication, `list exit did not use focused blockquote owner: ${JSON.stringify(exited.preserve)}`)
-  assert.deepEqual(publication.integrityProof.nodePath, [3])
-  assert.equal(publication.integrityProof.listType, 'ordered_list')
-  assert.equal(exited.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'blockquote-paragraph-exit' &&
-    entry.reason === 'trailing-empty-blockquote-paragraph-after-list-exit'
-  ), true, `list exit bypassed Coordinator: ${JSON.stringify(exited.coordinator)}`)
+  if (!productPath) {
+    assert.ok(publication, `list exit did not use focused blockquote owner: ${JSON.stringify(exited.preserve)}`)
+    assert.deepEqual(publication.integrityProof.nodePath, [3])
+    assert.equal(publication.integrityProof.listType, 'ordered_list')
+    assert.equal(exited.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'blockquote-paragraph-exit' &&
+      entry.reason === 'trailing-empty-blockquote-paragraph-after-list-exit'
+    ), true, `list exit bypassed Coordinator: ${JSON.stringify(exited.coordinator)}`)
+  }
 
   // Reproduce the user's later "all on Backspace" phase from a CLEAN source
   // baseline. These edits are intentionally elsewhere in the document: if the
@@ -198,19 +205,21 @@ try {
     entry.reason === 'list-nested-first-ordered-parent-joined' &&
     entry.integrityProof?.kind === 'transaction-list-nested-first-ordered-parent-join-proof'
   )
-  assert.ok(
-    orderedJoinPublication,
-    `nested ordered Backspace did not use focused owner: ${JSON.stringify(afterNestedBackspace)}`
-  )
-  assert.equal(orderedJoinPublication.integrityProof.chainLength, 2)
-  assert.equal(orderedJoinPublication.integrityProof.firstStep.sliceSize, 1)
-  assert.equal(orderedJoinPublication.integrityProof.secondStep.sliceSize, 2)
-  assert.equal(afterNestedBackspace.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'list-nested-first-ordered-parent-join' &&
-    entry.reason === 'list-nested-first-ordered-parent-joined'
-  ), true, `nested ordered Backspace bypassed Coordinator: ${JSON.stringify(afterNestedBackspace.coordinator)}`)
+  if (!productPath) {
+    assert.ok(
+      orderedJoinPublication,
+      `nested ordered Backspace did not use focused owner: ${JSON.stringify(afterNestedBackspace)}`
+    )
+    assert.equal(orderedJoinPublication.integrityProof.chainLength, 2)
+    assert.equal(orderedJoinPublication.integrityProof.firstStep.sliceSize, 1)
+    assert.equal(orderedJoinPublication.integrityProof.secondStep.sliceSize, 2)
+    assert.equal(afterNestedBackspace.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'list-nested-first-ordered-parent-join' &&
+      entry.reason === 'list-nested-first-ordered-parent-joined'
+    ), true, `nested ordered Backspace bypassed Coordinator: ${JSON.stringify(afterNestedBackspace.coordinator)}`)
+  }
 
   await focusParagraphText(app, 'ul li p', 'bullet-beta', 'start')
   await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 35 })
@@ -226,22 +235,24 @@ try {
     entry.reason === 'transaction-list-subtree' &&
     entry.integrityProof?.kind === 'transaction-list-subtree-proof'
   )
-  assert.ok(
-    bulletJoinPublication,
-    `bullet Backspace did not use proof-gated list-subtree mapping: ${JSON.stringify(afterBulletBackspace)}`
-  )
-  if (bulletJoinPublication.integrityProof.mapperReason === 'diverged-sibling-list-item-paragraph-join') {
-    assert.equal(
-      bulletJoinPublication.integrityProof.siblingParagraphJoin?.kind,
-      'transaction-list-sibling-item-paragraph-join-proof'
+  if (!productPath) {
+    assert.ok(
+      bulletJoinPublication,
+      `bullet Backspace did not use proof-gated list-subtree mapping: ${JSON.stringify(afterBulletBackspace)}`
     )
+    if (bulletJoinPublication.integrityProof.mapperReason === 'diverged-sibling-list-item-paragraph-join') {
+      assert.equal(
+        bulletJoinPublication.integrityProof.siblingParagraphJoin?.kind,
+        'transaction-list-sibling-item-paragraph-join-proof'
+      )
+    }
+    assert.equal(afterBulletBackspace.coordinator.some((entry) =>
+      entry.phase === 'published' &&
+      entry.owner === 'transaction' &&
+      entry.family === 'list-subtree-replace' &&
+      entry.reason === 'transaction-list-subtree'
+    ), true, `bullet Backspace bypassed Coordinator: ${JSON.stringify(afterBulletBackspace.coordinator)}`)
   }
-  assert.equal(afterBulletBackspace.coordinator.some((entry) =>
-    entry.phase === 'published' &&
-    entry.owner === 'transaction' &&
-    entry.family === 'list-subtree-replace' &&
-    entry.reason === 'transaction-list-subtree'
-  ), true, `bullet Backspace bypassed Coordinator: ${JSON.stringify(afterBulletBackspace.coordinator)}`)
 
   assert.equal(await toggleSource(app), true, 'could not inspect source')
   finalSource = await waitFor(() => visibleSource(app), 'source did not open')

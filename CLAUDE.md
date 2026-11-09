@@ -496,10 +496,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   heading, a joined `$$` block) and drops a just-converted block's
   blank-only first / last lines (no Markdown: the editor showed lines the
   file never held; `test:textblock-newlines-ui`); a highlighted `=` beside others is written
-  `<mark class="hm-hl-yellow">`; serializer-style rewrites only an ODD run
-  of trailing backslashes into a two-space break, and a line of only `-` /
-  `=` there gets `\-` (remark escaped nothing in `-\`; `-␠␠` is a setext
-  underline — seed 3908). Settings changes ask main
+  `<mark class="hm-hl-yellow">`. The document's spelling (bullet, `1)`,
+  two-space or backslash breaks) is chosen at compile time, never by regexes
+  over the output (`serializer-style.js`: getter options, `styledHardBreak`,
+  `hmLineBreakRun` — they tell the compiler what follows, so a line of only
+  `-` / `=` before a two-space break is escaped by remark's own rules, seed
+  3908). Lines of only breaks / blanks at a text block's edges are not
+  written (`trimEdgeLines`, not in table cells), blanks before any line
+  break are dropped (`remark-text-handler.js` `blankLines`; a line of only
+  blanks keeps one `&#x20;`, else it is an empty line), empty paragraphs in items /
+  quotes are not written and lists they separated are one
+  (`normalizeEmptyParagraphs`). Settings changes ask main
   to `flushStorageData()` (`storage:flush`): Chromium may hold localStorage
   for minutes, and a crash / forced quit lost them.
 - **CJK-friendly emphasis** (`remark-cjk-friendly`, first in `remarkPluginsCtx`):
@@ -1248,7 +1255,40 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   with its container) is printed again, closed, once a block follows it
   (seed 3737); the print passes rewrite only the serializer's own
   `&#x20;`, not an escaped `\&#x20;` (literal text, seed 3735); two
-  lists that read back as one are never separated by blank lines (RS-86). Tests: `test:source-reprint-ui` (real Crepe,
+  lists that read back as one are never separated by blank lines (RS-86).
+  Projection (2026-11-08, `lib/source-sync/projection.js`,
+  docs/reprint-root-cause-plan.md): the reprint compares and verifies by ONE
+  definition — a block's meaning is parse(serialize(block)) without
+  editor-only attrs (heading id, spread, label, colwidth, `*`/`_` marker),
+  guarded so text and block skeleton never change; text blocks via
+  `textblockMeaning` (cached per node; cells as their cell type), documents
+  top-level block by block (`areDocumentsEquivalentByProjection`: empty
+  paragraphs gone, lists separated only by them are one, directly adjacent
+  lists two). No hand-written blank / break exceptions in the reprint; only
+  Option A still asks the older comparison, scoped by `literalEmphasisOnly`.
+  Lists an edit makes directly adjacent join in the editor
+  (`editor-list-join.js`, Typora: a typed `1. ` after a list continues it;
+  never for source-mode / reload / chunk-load transactions, nor for a list
+  whose type was just converted — it stays its own list); lists still
+  adjacent are written apart (`list-boundaries.js`: `-`↔`*`, `.`↔`)`, first
+  number = `order`). An emptied first item line keeps no blank line after
+  it (`joinEmptyItemContinuations`, CommonMark 5.2, tried only after a
+  failed verification). `test:projection-audit-ui` checks the serializer
+  over every repo file + spec example, and that each reprints to its own
+  bytes unedited. The Coordinator's save check (`validator.js`) and
+  `validateTransactionMarkdown` ask the same projection for every
+  candidate; older writers also keep the list-slot check. (A second
+  comparison with its own exceptions paused saves the engine had proven,
+  and counted directly adjacent lists as one.) The guard keeps
+  soft vs hard for every break between visible content, a lone unmarked
+  image paragraph = an image block, autolink literals; the list join asks
+  the source (`readsAsOneList` → `listsReadAsOne`: only a same-marker pair
+  joins). The reprint does not reshape nodes before printing (no break-mark
+  stripping); a whole cell is printed inside a one-cell table by the
+  serializer (`printCellFragment`). Root empty paragraphs stay `<br />`
+  (the incremental serializer's segments depend on it). ProseMirror
+  `forEach` is (node, offset, index) — list-boundaries.js read the offset
+  as the index (seed 5210). Tests: `test:source-reprint-ui` (real Crepe,
   `__hmSourceReprintHarness` under `--horsemd-input-trace`); fuzz reports carry
   shadow stats; `scripts/lib/shadow-triage.mjs` summarizes them.
 - **Full-screen mode** (`hooks/useImmersiveMode.js`, command `view.immersive`,

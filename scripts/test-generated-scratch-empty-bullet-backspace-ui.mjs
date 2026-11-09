@@ -9,7 +9,11 @@ import { assertPublishedBy, publishMark } from './lib/publish-path.mjs'
 const root = `/tmp/horsemd-rs51-empty-bullet-backspace-${process.pid}`
 const file = join(root, 'rs-51.md')
 const port = Number(process.env.CDP_PORT || 10391)
-const afterBackspaceExpected = '# 测试\n\n- 离婚了\n\n'
+// The empty paragraph Backspace leaves in the item has no Markdown: a new
+// document ends with one line ending (docs/empty-paragraph-contract.md §3.2).
+// It used to be `\n\n` (Milkdown's `<br />` placeholder, stripped to a blank
+// line); typing below the list still lands in the right place (finalExpected).
+const afterBackspaceExpected = '# 测试\n\n- 离婚了\n'
 const finalExpected = '# 测试\n\n- 离婚了\n\n后续\n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
@@ -162,7 +166,10 @@ try {
   assert.equal(finalIntegrity?.ok, true, `RS-51 did not finish on a proven candidate: ${JSON.stringify(afterBackspace.integrity)}`)
   // Owner/reason checks apply only when the legacy path published (the source reprint is primary since R3).
   await assertPublishedBy(app.evaluate, async () => {
-    assert.equal(finalIntegrity?.preservationReason, 'empty-list-item-removed', `RS-51 did not reuse the proven empty-list-item-removed contract: ${JSON.stringify(finalIntegrity)}`)
+    // The serializer writes an empty item correctly (an empty paragraph has
+    // no Markdown, serializer-style.js), so the new document's own canonical
+    // serialization is the candidate; the legacy owner is no longer needed.
+    assert.ok(['empty-list-item-removed', 'generated-scratch-canonical'].includes(finalIntegrity?.preservationReason), `RS-51 published by an unexpected path: ${JSON.stringify(finalIntegrity)}`)
   }, 'RS-51 empty bullet Backspace', { since: backspaceMark })
   assert.equal(finalIntegrity?.candidate, afterBackspaceExpected, 'RS-51 candidate lost the post-list empty block slot')
 

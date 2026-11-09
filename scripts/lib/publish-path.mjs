@@ -22,8 +22,14 @@ export async function publishMark(evaluate) {
 
 // `legacyCheck` runs only when the legacy path published; otherwise the
 // reprint must have published.
+// Nothing published (or only `unchanged`: the source already read back as the document —
+// a blank typed at a line end has no Markdown): neither check applies; the
+// outcome assertions decide.
 export async function assertPublishedBy(evaluate, legacyCheck, label, options = {}) {
   if (await reprintPublished(evaluate, options)) return 'reprint'
+  const since = Number(options.since) || 0
+  const anyPublished = Boolean(await evaluate(`(() => (globalThis.__hmSourceSyncCoordinatorTrace || []).slice(${since}).some((entry) => entry?.phase === 'published' && entry?.reason !== 'unchanged'))()`))
+  if (!anyPublished && Number.isInteger(options.since)) return 'none'
   await legacyCheck()
   return 'legacy'
 }

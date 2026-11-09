@@ -1,3 +1,4 @@
+import { tightMarkers } from './lib/marker-spelling.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -12,6 +13,8 @@ process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
 const root = `/tmp/horsemd-generated-scratch-empty-ordered-indent-${process.pid}`
 const file = join(root, 'rs-45.md')
 const port = Number(process.env.CDP_PORT || 10221)
+// An empty item is `1.` on the product path and `1. ` from the fallback
+// writers: both read back the same (marker-spelling.mjs).
 const expected = '# 你好\n\n1. 测试\n\n   1. \n'
 const warningPattern = /源码.*不一致|富文本.*源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
@@ -97,8 +100,8 @@ async function saveAndAssert(app) {
   await waitFor(() => app.evaluate(`!!document.querySelector('.hm-save-fab')`), 'save button did not appear')
   await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
   await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not finish')
-  await waitFor(async () => await readFile(file, 'utf8') === expected, 'disk did not reach RS-45 expected source')
-  assert.equal(await readFile(file, 'utf8'), expected, 'saved RS-45 bytes differ')
+  await waitFor(async () => tightMarkers(await readFile(file, 'utf8')) === tightMarkers(expected), 'disk did not reach RS-45 expected source')
+  assert.equal(tightMarkers(await readFile(file, 'utf8')), tightMarkers(expected), 'saved RS-45 bytes differ')
 }
 
 async function openApp(profile, appPort) {
@@ -154,8 +157,8 @@ try {
     `RS-45 Tab did not finish on a proven source candidate: ${JSON.stringify(afterTab.integrity)}`
   )
   assert.equal(
-    finalIntegrity?.candidate,
-    expected,
+    tightMarkers(finalIntegrity?.candidate),
+    tightMarkers(expected),
     `RS-45 final proven candidate differs from parse-safe authored source: ${JSON.stringify(finalIntegrity)}`
   )
   assert.equal(
@@ -173,14 +176,14 @@ try {
 
   assert.equal(await toggleSource(app), true, 'could not switch RS-45 document to source mode')
   const source1 = await waitFor(() => visibleSource(app), 'RS-45 source textarea did not open')
-  assert.equal(source1, expected, 'RS-45 source after Tab is not the bare nested empty ordered item')
+  assert.equal(tightMarkers(source1), tightMarkers(expected), 'RS-45 source after Tab is not the bare nested empty ordered item')
   assert.doesNotMatch(source1, /<br\s*\/?\s*>/i, 'RS-45 leaked Crepe <br /> placeholder into source')
 
   assert.equal(await toggleSource(app), true, 'could not return RS-45 document to rich mode')
   await sleep(300)
   assert.equal(await toggleSource(app), true, 'could not reopen RS-45 source mode')
   const source2 = await waitFor(() => visibleSource(app), 'RS-45 source textarea did not reopen')
-  assert.equal(source2, expected, 'RS-45 rich/source round-trip drifted')
+  assert.equal(tightMarkers(source2), tightMarkers(expected), 'RS-45 rich/source round-trip drifted')
 
   assert.equal(await toggleSource(app), true, 'could not return to rich mode before RS-45 save')
   await sleep(250)
@@ -200,7 +203,7 @@ try {
   assert.equal(reopenedShape.nestedOrderedLists, 1, `RS-45 cold reopen lost nested empty ordered list: ${JSON.stringify(reopenedShape)}`)
   assert.equal(await toggleSource(app), true, 'could not inspect RS-45 source after cold reopen')
   const reopenedSource = await waitFor(() => visibleSource(app), 'RS-45 cold-reopen source did not open')
-  assert.equal(reopenedSource, expected, 'RS-45 cold reopen normalized or lost authored source')
+  assert.equal(tightMarkers(reopenedSource), tightMarkers(expected), 'RS-45 cold reopen normalized or lost authored source')
 
   console.log('PASS RS-45 generated scratch empty ordered indent: Tab, source, save, and cold reopen stay equivalent')
 } finally {

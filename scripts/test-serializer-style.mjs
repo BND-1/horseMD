@@ -7,8 +7,19 @@ import remarkMath from 'remark-math'
 import {
   applySerializerStyleToRemark,
   createSerializerStyleHolder,
-  detectMarkdownListStyle
+  detectMarkdownListStyle,
+  serializerStyleStringifyOptions,
+  styledHardBreak,
+  hmLineBreakRun
 } from '../src/renderer/src/lib/serializer-style.js'
+
+// The compile options the editor passes (editor-crepe-setup.js): the
+// document's markers and hard-break spelling come from the compiler itself.
+const styledOptions = () => ({
+  handlers: { break: styledHardBreak, hmLineBreakRun },
+  get bullet() { return serializerStyleStringifyOptions.bullet },
+  get bulletOrdered() { return serializerStyleStringifyOptions.bulletOrdered }
+})
 
 // ---------------------------------------------------------------------------
 // Detection contracts
@@ -58,7 +69,7 @@ console.log('ok detection')
     '1. first', '2. second', ''
   ].join('\n')
   const holder = createSerializerStyleHolder(authored)
-  const remark = unified().use(remarkParse).use(remarkStringify).use(remarkGfm)
+  const remark = unified().use(remarkParse).use(remarkStringify, styledOptions()).use(remarkGfm)
   const restore = applySerializerStyleToRemark(remark, holder)
   // Poison every list/listItem spread the way PM attr defaults would.
   const tree = remark.parse(authored)
@@ -76,7 +87,7 @@ console.log('ok detection')
   // blank line) even in a tight document — the P6c join shape.
   const joined = '- **a**：one.\n\n  second paragraph.\n- b\n'
   const holder2 = createSerializerStyleHolder(joined)
-  const remark2 = unified().use(remarkParse).use(remarkStringify).use(remarkGfm)
+  const remark2 = unified().use(remarkParse).use(remarkStringify, styledOptions()).use(remarkGfm)
   applySerializerStyleToRemark(remark2, holder2)
   const tree2 = remark2.parse(joined)
   const canonical2 = remark2.stringify(tree2)
@@ -86,6 +97,16 @@ console.log('ok detection')
   restore()
   const stock = remark.stringify(remark.parse('- a\n- b\n'))
   assert.equal(stock, '* a\n* b\n', 'restore returns the stock `*` serializer')
+}
+{
+  // `*` bullets, `+` bullets and `1)` ordered lists, from the compiler's own
+  // options (they were regex rewrites of `*` / `1.` on the output).
+  for (const authored of ['* a\n* b\n\n1) x\n2) y\n', '+ a\n+ b\n', '1) one\n   - two\n']) {
+    const holder = createSerializerStyleHolder(authored)
+    const remark = unified().use(remarkParse).use(remarkStringify, styledOptions()).use(remarkGfm)
+    applySerializerStyleToRemark(remark, holder)
+    assert.equal(remark.stringify(remark.parse(authored)), authored, `markers kept: ${JSON.stringify(authored)}`)
+  }
 }
 console.log('ok application')
 
@@ -110,7 +131,7 @@ console.log('ok application')
   const holder = createSerializerStyleHolder(authored)
   assert.equal(holder.style.hardBreak, '  ')
   assert.equal(holder.style.bullet, '-')
-  const remark = unified().use(remarkParse).use(remarkStringify).use(remarkGfm).use(remarkMath)
+  const remark = unified().use(remarkParse).use(remarkStringify, styledOptions()).use(remarkGfm).use(remarkMath)
   applySerializerStyleToRemark(remark, holder)
   const out = remark.stringify(remark.parse(authored))
   for (const line of ['a &= b \\\\', '* c &= d', 'x\\', 'y \\\\', 'not a fence end\\', 'still code\\', 'tilde code\\']) {

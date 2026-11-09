@@ -4,6 +4,11 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+// Product path by default (2026-11-08): the source reprint publishes these
+// edits; the focused owners they used to pin are the fallback behind it and
+// no longer see these shapes since empty paragraphs are not written as
+// `<br />`. HM_TEST_REPRINT_PRIMARY=0 pins the owners (their checks below).
+const productPath = process.env.HM_TEST_REPRINT_PRIMARY !== '0'
 
 const root = `/tmp/horsemd-blockquote-transient-trace-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 23920 + (process.pid % 30))
@@ -153,7 +158,7 @@ const openApp = async ({ file, profile, port, marker }) => {
     // path behind the source reprint engine (docs/source-reprint-architecture.md
     // R3); the engine's user-visible result for the same sequences is covered
     // by test:rich-source-pause-families-ui.
-    await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
+    if (!productPath) await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
     return app
   } catch (error) {
     await stopBuiltElectron(app, { removeProfile: true })
@@ -196,22 +201,24 @@ await mkdir(root, { recursive: true })
     const splitPublication = state.preserve.find((entry) =>
       entry.integrityProof?.kind === 'transaction-blockquote-split-proof'
     )
-    assert.ok(exitPublication || splitPublication, `suffix+Enter bypassed the focused quote owners: ${JSON.stringify(state)}`)
-    if (exitPublication) {
-      const proof = exitPublication.integrityProof
-      const coalesced = proof.insertedSuffix === ' ' &&
-        proof.preSplitTextStepCount === 1 && proof.chainLength === 2 && proof.sourceUnchanged === false
-      const staged = proof.insertedSuffix === '' &&
-        proof.preSplitTextStepCount === 0 && proof.chainLength === 1 &&
-        proof.sourceUnchanged === true && proof.baselineSingleTrailingSpace === true
-      assert.equal(coalesced || staged, true,
-        `suffix+Enter used an unproven timing shape: ${JSON.stringify(proof)}`)
+    if (!productPath) {
+      assert.ok(exitPublication || splitPublication, `suffix+Enter bypassed the focused quote owners: ${JSON.stringify(state)}`)
+      if (exitPublication) {
+        const proof = exitPublication.integrityProof
+        const coalesced = proof.insertedSuffix === ' ' &&
+          proof.preSplitTextStepCount === 1 && proof.chainLength === 2 && proof.sourceUnchanged === false
+        const staged = proof.insertedSuffix === '' &&
+          proof.preSplitTextStepCount === 0 && proof.chainLength === 1 &&
+          proof.sourceUnchanged === true && proof.baselineSingleTrailingSpace === true
+        assert.equal(coalesced || staged, true,
+          `suffix+Enter used an unproven timing shape: ${JSON.stringify(proof)}`)
+      }
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' &&
+        entry.owner === 'transaction' &&
+        (entry.family === 'blockquote-paragraph-exit' || entry.family === 'blockquote-paragraph-split')
+      ), true, `suffix+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
     }
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' &&
-      entry.owner === 'transaction' &&
-      (entry.family === 'blockquote-paragraph-exit' || entry.family === 'blockquote-paragraph-split')
-    ), true, `suffix+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
     assert.equal(state.coordinator.some((entry) => entry.phase === 'published' && entry.owner === 'legacy'), false,
       'suffix+Enter reached the retired legacy owner')
     assert.equal(await toggleSource(app), true, 'could not inspect suffix+Enter source')
@@ -266,17 +273,19 @@ await mkdir(root, { recursive: true })
       entry.integrityProof?.kind === 'transaction-blockquote-split-proof' &&
       entry.integrityProof?.trailingEmptySplit === true
     )
-    assert.ok(publication, `rapid text+Enter did not atomically map pending text: ${JSON.stringify(state)}`)
-    assert.equal(publication.integrityProof.chainLength >= 6, true,
-      'split publication did not retain the full character chain')
-    assert.equal(publication.integrityProof.leftText, 'quote-imerapid')
-    assert.equal(publication.integrityProof.rightText, '')
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' &&
-      entry.owner === 'transaction' &&
-      entry.family === 'blockquote-paragraph-split' &&
-      entry.reason === 'blockquote-paragraph-split'
-    ), true, `rapid text+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    if (!productPath) {
+      assert.ok(publication, `rapid text+Enter did not atomically map pending text: ${JSON.stringify(state)}`)
+      assert.equal(publication.integrityProof.chainLength >= 6, true,
+        'split publication did not retain the full character chain')
+      assert.equal(publication.integrityProof.leftText, 'quote-imerapid')
+      assert.equal(publication.integrityProof.rightText, '')
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' &&
+        entry.owner === 'transaction' &&
+        entry.family === 'blockquote-paragraph-split' &&
+        entry.reason === 'blockquote-paragraph-split'
+      ), true, `rapid text+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    }
     assert.equal(await toggleSource(app), true, 'could not inspect rapid text+Enter source')
     finalSource = await waitFor(() => visibleSource(app), 'rapid text+Enter source did not open')
     assert.equal(finalSource.includes('> quote-imerapid'), true,
@@ -326,22 +335,25 @@ await mkdir(root, { recursive: true })
       entry.integrityProof?.kind === 'transaction-blockquote-exit-pending-proof' &&
       entry.integrityProof?.emptyBaselineFill === true
     )
-    assert.ok(publication, `empty quote fill+Enter bypassed focused owner: ${JSON.stringify(state)}`)
-    const proof = publication.integrityProof
-    assert.equal(proof.preSplitTextStepCount > 0, true)
-    assert.equal(proof.emptyRowProof?.previousAnchorPath?.length > 0, true,
-      `empty quote fill lacked previous stable anchor: ${JSON.stringify(proof)}`)
-    assert.equal(proof.emptyRowProof?.nextAnchorPath?.length > 0, true,
-      `empty quote fill lacked next stable anchor: ${JSON.stringify(proof)}`)
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' &&
-      entry.owner === 'transaction' &&
-      entry.family === 'blockquote-paragraph-exit' &&
-      entry.reason === 'trailing-empty-blockquote-paragraph-created'
-    ), true, `empty quote fill+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    if (!productPath) {
+      assert.ok(publication, `empty quote fill+Enter bypassed focused owner: ${JSON.stringify(state)}`)
+      const proof = publication.integrityProof
+      assert.equal(proof.preSplitTextStepCount > 0, true)
+      assert.equal(proof.emptyRowProof?.previousAnchorPath?.length > 0, true,
+        `empty quote fill lacked previous stable anchor: ${JSON.stringify(proof)}`)
+      assert.equal(proof.emptyRowProof?.nextAnchorPath?.length > 0, true,
+        `empty quote fill lacked next stable anchor: ${JSON.stringify(proof)}`)
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' &&
+        entry.owner === 'transaction' &&
+        entry.family === 'blockquote-paragraph-exit' &&
+        entry.reason === 'trailing-empty-blockquote-paragraph-created'
+      ), true, `empty quote fill+Enter bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    }
     assert.equal(await toggleSource(app), true, 'could not inspect empty quote fill source')
     finalSource = await waitFor(() => visibleSource(app), 'empty quote fill source did not open')
-    assert.equal(finalSource.includes('>rapid'), true,
+    // The owner kept the authored `>` (no space); the reprint writes `> `.
+    assert.equal(finalSource.includes('>rapid') || (productPath && finalSource.includes('> rapid')), true,
       `empty authored quote row was not filled in source: ${JSON.stringify(finalSource)}`)
     assert.equal(finalSource.includes('> <br />'), false, 'empty quote fill leaked transient quote placeholder')
     assert.equal(await toggleSource(app), true, 'could not return empty quote fill to rich mode')
@@ -397,16 +409,18 @@ await mkdir(root, { recursive: true })
       entry.integrityProof?.kind === 'transaction-list-empty-item-tail-remove-proof' &&
       entry.integrityProof?.containerType === 'blockquote'
     )
-    assert.ok(publication, `quote-list tail Backspace bypassed tail owner: ${JSON.stringify(state)}`)
-    assert.deepEqual(publication.integrityProof.listPath, [1, 1])
-    assert.deepEqual(publication.integrityProof.removedPath, [1, 1, 2])
-    assert.deepEqual(publication.integrityProof.transientEmptyParagraphPath, [1, 1, 1, 1])
-    assert.equal(state.coordinator.some((entry) =>
-      entry.phase === 'published' &&
-      entry.owner === 'transaction' &&
-      entry.family === 'list-empty-item-tail-remove' &&
-      entry.reason === 'list-empty-item-tail-removed'
-    ), true, `quote-list tail Backspace bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    if (!productPath) {
+      assert.ok(publication, `quote-list tail Backspace bypassed tail owner: ${JSON.stringify(state)}`)
+      assert.deepEqual(publication.integrityProof.listPath, [1, 1])
+      assert.deepEqual(publication.integrityProof.removedPath, [1, 1, 2])
+      assert.deepEqual(publication.integrityProof.transientEmptyParagraphPath, [1, 1, 1, 1])
+      assert.equal(state.coordinator.some((entry) =>
+        entry.phase === 'published' &&
+        entry.owner === 'transaction' &&
+        entry.family === 'list-empty-item-tail-remove' &&
+        entry.reason === 'list-empty-item-tail-removed'
+      ), true, `quote-list tail Backspace bypassed Coordinator: ${JSON.stringify(state.coordinator)}`)
+    }
 
     assert.equal(await toggleSource(app), true, 'could not inspect quote-tail source')
     finalSource = await waitFor(() => visibleSource(app), 'quote-tail source did not open')

@@ -16,8 +16,30 @@ import { withLiteralBlocksProtected } from '../literal-blocks.js'
 import { Fragment } from '@milkdown/prose/model'
 import { buildInlineMap, pmInlineUnits } from './inline-map.js'
 import { cachedParse, parseMarkdownCached, rememberParse } from './incremental-parse.js'
+import { textblockMeaning } from '../source-sync/projection.js'
 
 const SENTINEL = '​'
+// The leading-space sentinel reads back only at the start of a text node
+// (markdown-leading-space.js): a block's first line or the line after a
+// hard break. A continuation line after a soft break is inside one text
+// node, where U+200B would stay as text: there the serializer's `&#x20;`
+// stays.
+const BLOCK_PREFIX = '(?:[ \\t]*(?:>|[-*+]|\\d{1,9}[.)]|#{1,6})[ \\t]+(?:\\[[ xX]\\][ \\t]+)?)'
+const LINE_START_ENTITY = new RegExp(`(^|\\n)(${BLOCK_PREFIX}*)&#x20;`, 'g')
+const LINE_START_ENTITY_AFTER_PREFIX = new RegExp(`(^|\\n)(${BLOCK_PREFIX}+)&#x20;`, 'g')
+const sentinelWhereItReadsBack = (match, lead, prefix, offset, whole) => {
+  // Only before text: a line of only blanks loses them at its end and the
+  // U+200B stays as text (it reads back as the sentinel only when a blank
+  // follows it in the value).
+  const lineEnd = whole.indexOf('\n', offset + match.length)
+  if (!/[^ \t\r]/.test(whole.slice(offset + match.length, lineEnd < 0 ? whole.length : lineEnd))) return match
+  const opensBlock = /(?:[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?$/.test(prefix)
+  if (!lead || opensBlock) return `${lead}${prefix}${SENTINEL} `
+  const previousStart = whole.lastIndexOf('\n', offset - 1) + 1
+  const previous = whole.slice(previousStart, offset).replace(/^(?:[ \t]*>)*[ \t]*/, '')
+  const hardBreak = /(?:^|[^\\])(?:\\\\)*\\$/.test(previous) || / {2,}$/.test(previous)
+  return !previous.trim() || hardBreak ? `${lead}${prefix}${SENTINEL} ` : match
+}
 
 const startOf = (node) => node?.position?.start?.offset
 const endOf = (node) => node?.position?.end?.offset
@@ -203,9 +225,20 @@ export function sameNode(left, right) {
   if (left === right) return true
   if (!left || !right) return false
   if (left.eq(right)) return true
-  if (left.isTextblock && right.isTextblock && left.type === right.type && !left.type.spec.code &&
-      attrsEqual(left, right) && sameInlineModuloAutolinks(left, right)) return true
+  if (left.isTextblock && right.isTextblock && left.type === right.type && !left.type.spec.code && attrsEqual(left, right)) {
+    // The same Markdown meaning (lib/source-sync/projection.js): blanks,
+    // marks and links compare the way they read back, by one definition.
+    const meaning = sameTextblockMeaning(left, right)
+    if (meaning != null) return meaning
+    if (sameInlineModuloAutolinks(left, right)) return true
+  }
   if (!attrsEqual(left, right) || left.childCount !== right.childCount) return false
+  // A cell's paragraph reads as a cell (GFM trims its edges; a `<br>` at an
+  // edge is an empty line in it).
+  if (/^table_(cell|header)$/.test(left.type.name) && left.childCount === 1 && left.firstChild.isTextblock && right.firstChild.isTextblock) {
+    const meaning = sameTextblockMeaning(left.firstChild, right.firstChild, { cell: left.type.name })
+    if (meaning != null) return meaning
+  }
   if (left.isText) return left.text === right.text && sameMarkSet(left.marks, right.marks)
   // An image / formula's marks are part of it (`[==![i](a.png)==](u)`); a
   // line break's show nothing.
@@ -214,6 +247,18 @@ export function sameNode(left, right) {
     if (!sameNode(left.child(index), right.child(index))) return false
   }
   return true
+}
+
+// GFM trims a cell's spaces and tabs only: a no-break space (Excel's empty
+// merged cell) or U+3000 is the cell's content (`.trim()` dropped them).
+const trimCell = (text) => text.replace(/^[ \t]+|[ \t]+$/g, '')
+
+// Whether two text blocks read back the same (null: no projector, e.g. a
+// test without an editor). In a table cell GFM trims the edges.
+function sameTextblockMeaning(left, right, { cell = false } = {}) {
+  const a = textblockMeaning(left, { cell })
+  const b = a == null ? null : textblockMeaning(right, { cell })
+  return a == null || b == null ? null : a === b
 }
 
 // GFM column alignment: each delimiter-row segment `:?-+:?`; the editor keeps
@@ -329,13 +374,15 @@ const sameModuloEditorOnly = (left, right) => {
   // Before, its patch failed on them, it was printed whole (degraded) and
   // the fallback writers took the edit (fuzz seed 3716).
   if (left?.isTextblock && right?.isTextblock && left.type === right.type && attrsEqual(left, right)) {
-    return sameNode(withoutUnencodedBlanks(left), withoutUnencodedBlanks(right))
+    const meaning = left.type.spec.code ? null : sameTextblockMeaning(left, right)
+    return meaning ?? sameNode(withoutUnencodedBlanks(left), withoutUnencodedBlanks(right))
   }
   if (!left || !right || left.type !== right.type || left.isTextblock || left.isLeaf || !left.childCount || !right.childCount) return false
   if (!attrsEqual(left, right)) return false
   if (/^table_(cell|header)$/.test(left.type.name)) {
     if (left.childCount !== 1 || right.childCount !== 1) return false
-    return sameNode(withoutUnencodedBlanks(left.child(0), { cell: true }), withoutUnencodedBlanks(right.child(0), { cell: true }))
+    const meaning = sameTextblockMeaning(left.child(0), right.child(0), { cell: left.type.name })
+    return meaning ?? sameNode(withoutUnencodedBlanks(left.child(0), { cell: true }), withoutUnencodedBlanks(right.child(0), { cell: true }))
   }
   const kept = (node) => {
     const children = []
@@ -506,167 +553,8 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   }
   const schema = editorDoc.type.schema
   const docWith = (nodes) => schema.topNodeType.create(null, nodes)
-  // Shapes with no Markdown spelling are normalized before printing
-  // (design §5): emphasis/strong/strike around only whitespace or a break
-  // loses the mark; a text block's leading/trailing line breaks are dropped.
+  // A line break's marks before printing (below).
   const SPAN_MARKS = new Set(['strong', 'emphasis', 'strike_through', 'highlight'])
-  // Stand-in for a blank at the start of the line after a hard break: not
-  // whitespace, so Milkdown does not move it out of a <font>/<span> (where
-  // Yuque writes it and where it survives parsing); printed back below.
-  const LINE_START_BLANK = '\uE000'
-  const normalizeForPrint = (node, { trimBreaks = true, inCell: inCellAbove = false } = {}) => {
-    if (node.isText) {
-      // Blanks only: bold / italic / strike / highlight show nothing on them —
-      // but in inline code the blank is content and keeps every mark.
-      if (node.text.trim() === '' && node.marks.some((mark) => SPAN_MARKS.has(mark.type.name)) &&
-          !node.marks.some((mark) => mark.type.spec.code)) {
-        return node.mark(node.marks.filter((mark) => !SPAN_MARKS.has(mark.type.name)))
-      }
-      return node
-    }
-    if (node.isLeaf) {
-      // A line break inside an editable <font>/<span> stays inside it (Yuque's
-      // `text  \n</font>`). With a delimiter mark on it too the break leaves
-      // every mark, as before: keeping only the span would cross the nesting
-      // (`_<font>a_` + break + `_</font>`; Yuque's `_…</font>__<font>…_`).
-      if (/^hard_?break$/.test(node.type.name) && node.marks.length) {
-        return node.marks.every((mark) => mark.type.name === 'html_span') ? node : node.mark([])
-      }
-      return node
-    }
-    const children = []
-    // Inside a table cell a line break is a visible `<br>`: keep it.
-    const inCell = /^table_(cell|header)$/.test(node.type.name)
-    node.forEach((child) => children.push(normalizeForPrint(child, { trimBreaks: trimBreaks && !inCell, inCell: inCellAbove || inCell })))
-    // A heading of only spaces has no encoding beyond the empty heading
-    // (`#     ` parses as `#`; seed 71).
-    if (node.type.name === 'heading' && children.every((child) => child.isText && !/[^ \t]/.test(child.text))) {
-      return node.copy(Fragment.empty)
-    }
-    if (node.isTextblock) {
-      const isSoftBreak = (child) => /^hard_?break$/.test(child?.type?.name || '') && child.attrs?.isInline === true
-      if (trimBreaks) {
-        // Outside table cells a hard break at the very start or end has no
-        // encoding either (`  \n` there is a blank line / is dropped).
-        const isEdgeBreak = (child) => /^hard_?break$/.test(child?.type?.name || '')
-        // A blank-only text between edge breaks is a blank line there: it
-        // goes too, and the break behind it (`4. ` + `  ` line + text — the
-        // blank line ended the item; fuzz seed 1001).
-        const isBlankText = (child) => child?.isText && !/[^ \t]/.test(child.text)
-        if (children.some((child) => !isEdgeBreak(child) && !isBlankText(child))) {
-          let droppedBlankLine = false
-          for (;;) {
-            if (isEdgeBreak(children[0])) children.shift()
-            else if (isBlankText(children[0]) && isEdgeBreak(children[1])) { children.shift(); droppedBlankLine = true } else break
-          }
-          // After a dropped blank line the blanks that start the next line have
-          // no encoding either (no U+200B sentinel; seed 1001). After plain
-          // leading breaks they stay (`    }` from a code block turned
-          // paragraph; seed 1053) — what the validator compares.
-          if (droppedBlankLine && children[0]?.isText && /^[ \t]/.test(children[0].text)) {
-            const text = children[0].text.replace(/^[ \t]+/, '')
-            if (text) children[0] = children[0].withText(text)
-            else children.shift()
-          }
-          for (;;) {
-            if (isEdgeBreak(children.at(-1))) children.pop()
-            else if (isBlankText(children.at(-1)) && isEdgeBreak(children.at(-2))) children.pop()
-            else break
-          }
-        } else {
-          while (children.length && isSoftBreak(children[0])) children.shift()
-          while (children.length && isSoftBreak(children[children.length - 1])) children.pop()
-        }
-      }
-      // Spaces before a line break have no encoding (and 2+ would turn a soft
-      // break into a hard one): drop them.
-      const isAnyBreak = (child) => /^hard_?break$/.test(child?.type?.name || '')
-      for (let index = 0; index < children.length - 1; index += 1) {
-        const child = children[index]
-        if (child.isText && isAnyBreak(children[index + 1]) && /[ \t]+$/.test(child.text)) {
-          const text = child.text.replace(/[ \t]+$/, '')
-          children[index] = text ? node.type.schema.text(text, child.marks) : null
-        }
-      }
-      for (let index = children.length - 1; index >= 0; index -= 1) if (!children[index]) children.splice(index, 1)
-      // Milkdown's serializer moves edge spaces out of every mark run, but it
-      // picks the outer run's "last text child" even when a nested run follows
-      // it: `*alph* + ***␠a b***` prints `*alph**a b*** ` and the space is lost
-      // (seed 57). Blanks where the bold/italic marks change have no visible
-      // meaning (the validator moves them too), so print them unmarked.
-      const isSpan = (mark) => SPAN_MARKS.has(mark.type.name)
-      const splitEdgeBlanks = []
-      children.forEach((child, index) => {
-        if (!child?.isText || !child.marks.some(isSpan) || child.marks.some((mark) => mark.type.name === 'inlineCode')) {
-          splitEdgeBlanks.push(child)
-          return
-        }
-        const match = /^([ \t]*)([\s\S]*?)([ \t]*)$/.exec(child.text)
-        // An editable <font>/<span> leaves the blank too: alone it would print
-        // as an empty `<font …></font>` (Milkdown moves the space out), which
-        // parses back as raw html. Edge blanks of a span compare unmarked.
-        const plainMarks = child.marks.filter((mark) => !isSpan(mark) && mark.type.name !== 'html_span')
-        // At the block start too: with a span nested in bold, Milkdown's
-        // #moveSpaces hands the inner run's leading blank to the outer run as
-        // its only text child and then moves it out as TRAILING space
-        // (`**<font> b</font>**` → `**<font>b</font>** `). Split first; the
-        // block-start blank prints as `&#x20;`.
-        const lead = (index === 0 || children[index - 1]?.isText) ? match[1] : ''
-        const trail = index < children.length - 1 && children[index + 1]?.isText ? match[3] : ''
-        if ((!lead && !trail) || !match[2]) {
-          splitEdgeBlanks.push(child)
-          return
-        }
-        if (lead) splitEdgeBlanks.push(node.type.schema.text(lead, plainMarks))
-        splitEdgeBlanks.push(node.type.schema.text(lead ? match[2] + (trail ? '' : match[3]) : match[1] + match[2], child.marks))
-        if (trail) splitEdgeBlanks.push(node.type.schema.text(trail, plainMarks))
-      })
-      children.splice(0, children.length, ...splitEdgeBlanks)
-      // ...nor do blanks at the start of a continuation line, after a soft
-      // break (CommonMark strips them; seed 129).
-      // After a hard break (outside a table cell) they are kept, spelled so
-      // they survive: Yuque's `_<font> text` holds one inside the tag, and
-      // Milkdown would move a span's edge blank out to the line start, where
-      // the parser drops it (and the next edit would reprint it again).
-      const isHardLineBreak = (child) => !inCellAbove && !inCell && /^hard_?break$/.test(child?.type?.name || '') && child.attrs?.isInline !== true
-      for (let index = 1; index < children.length; index += 1) {
-        const child = children[index]
-        if (!child?.isText || !/^[ \t]+/.test(child.text)) continue
-        if (isSoftBreak(children[index - 1])) {
-          const text = child.text.replace(/^[ \t]+/, '')
-          children[index] = text ? node.type.schema.text(text, child.marks) : null
-        } else if (isHardLineBreak(children[index - 1])) {
-          // Only a span keeps the blank inside (`<font> text`). Under bold /
-          // italic it leaves the mark first: `*    b*` would print a space
-          // after the delimiter — not emphasis, and `* ` at a line start is
-          // a list marker (fuzz UI seed 410: an indented code block turned
-          // into a paragraph, then made italic).
-          const [blanks] = /^[ \t]+/.exec(child.text)
-          const rest = child.text.slice(blanks.length)
-          const standIn = LINE_START_BLANK.repeat(blanks.length)
-          if (rest && !child.marks.some((mark) => mark.type.name === 'html_span' || mark.type.spec.code) && child.marks.some(isSpan)) {
-            children.splice(index, 1,
-              node.type.schema.text(standIn, child.marks.filter((mark) => !isSpan(mark))),
-              node.type.schema.text(rest, child.marks))
-            index += 1
-          } else {
-            children[index] = node.type.schema.text(standIn + rest, child.marks)
-          }
-        }
-      }
-      // Blanks right before a soft break have no encoding either (2+ would
-      // make it a hard break; seed 119: a deleted link left `bet    `).
-      for (let index = 0; index < children.length - 1; index += 1) {
-        const child = children[index]
-        if (child?.isText && isSoftBreak(children[index + 1]) && /[ \t]+$/.test(child.text)) {
-          const text = child.text.replace(/[ \t]+$/, '')
-          children[index] = text ? node.type.schema.text(text, child.marks) : null
-        }
-      }
-      for (let index = children.length - 1; index >= 0; index -= 1) if (!children[index]) children.splice(index, 1)
-    }
-    return node.copy(Fragment.fromArray(children))
-  }
   // Empty text blocks print as Crepe's `<br />` placeholder; in source an
   // empty paragraph/item body is simply empty.
   const withoutPlaceholders = (text) => text.replace(
@@ -675,31 +563,28 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     // is the U+200B sentinel (RS-50 convention).
     (match, prefix) => (/\[[ xX]\][ \t]*$/.test(prefix) ? prefix.replace(/[ \t]*$/, ' ') + SENTINEL : prefix.replace(/[ \t]+$/, ''))
   )
-  // A trailing space has no encoding; the serializer's `&#x20;` at a line
-  // end only adds noise.
+  // (A `&#x20;` the serializer writes at a line end is a line of only
+  // blanks: removing it made an empty line, which split the paragraph —
+  // fuzz seed 34. Blanks with no Markdown are not written at all.)
   // The passes below read Markdown syntax: fenced code / `$$` content is
   // kept as printed (fuzz seed 562: `## &#x20;` inside a code block).
   const serializeNodes = (nodes, options) => withLiteralBlocksProtected(
-    serialize(docWith(nodes.map((node) => normalizeForPrint(node, options)))).replace(/\n+$/, ''),
+    // Edge lines, blanks before a break, marks on a line break: the
+    // serializer writes them as they read back (inline-serializer.js,
+    // remark-text-handler.js) — one definition, nothing re-shaped here.
+    // (Taking the marks off a break split the mark run around it and moved
+    // the blank after it out of the mark: fuzz seed 1142.)
+    serialize(docWith(nodes)).replace(/\n+$/, ''),
     (printed) => withoutPlaceholders(printed)
-    // The stand-in right before a delimiter is not punctuation or a blank,
-    // so the serializer encodes it to keep `*}*` flanking (`&#xE000;*}*`);
-    // as the blank it stands for, nothing needs encoding (fuzz UI seed 410).
-    .replace(/&#(?:x[eE]000|57344);/g, LINE_START_BLANK)
     // Only the serializer's own entities: `\&#x20;` is the text `&#x20;`
     // (an even run of backslashes before it escapes only themselves) —
     // rewriting it printed `\ ` (fuzz seed 3735: code text with `&#x20;`
     // dropped into a heading).
-    .replace(/(?<=(?:^|[^\\])(?:\\\\)*)(?:&#x20;)+(?=\n|$)/g, '')
     // A leading space right after a block prefix (`## `, `- `, `> `) keeps
     // the sentinel spelling (fuzz seed 66: Enter before the space of a
     // heading); every other mid-line `&#x20;` is a plain space.
-    .replace(/(^|\n)((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?)+)&#x20;/g, `$1$2${SENTINEL} `)
+    .replace(LINE_START_ENTITY_AFTER_PREFIX, sentinelWhereItReadsBack)
     .replace(/(?<=[^\n\\](?:\\\\)*)&#x20;/g, ' ')
-    // Line-start blanks after a hard break: `&#x20;` at the line start,
-    // a plain space after an opening tag or delimiter.
-    .replace(/(^|\n)([ \t]*(?:>[ \t]?)*)(\uE000+)/g, (_match, start, prefix, blanks) => start + prefix + '&#x20;'.repeat(blanks.length))
-    .replace(/\uE000/g, ' ')
   )
 
   // Prefix every line after the first; blank lines get the trimmed prefix.
@@ -810,13 +695,25 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
 
   // Leading spaces are spelled with the U+200B sentinel (Typora), not the
   // serializer's `&#x20;`, at the start of any printed line or item body.
-  const withSentinels = (text) => withLiteralBlocksProtected(text, (printed) => printed.replace(
-    /(^|\n)((?:[ \t]*(?:>|[-*+]|\d{1,9}[.)]|#{1,6})[ \t]+(?:\[[ xX]\][ \t]+)?)*)&#x20;/g,
-    `$1$2${SENTINEL} `
-  ))
-  // A cell is one line: runs between line breaks joined with `<br>` (leading
-  // and trailing breaks included), pipes escaped.
+  const withSentinels = (text) => withLiteralBlocksProtected(text, (printed) => printed.replace(LINE_START_ENTITY, sentinelWhereItReadsBack))
+  // A cell is printed where it lives, in a one-cell table: the serializer
+  // knows the cell's rules (`<br>` breaks, `&#10;`, `\|`, marks running over
+  // a break). Printed run by run, between its breaks, marks crossing a
+  // break were closed and reopened around it and the blank after it left
+  // the mark (fuzz seed 1142: `*test<br> ok*` printed `*test*<br> *ok*`).
   const printCellFragment = (fragment) => {
+    const { table, table_header_row: headerRow, table_header: header, paragraph } = schema.nodes
+    if (table && headerRow && header) {
+      const cell = table.create(null, headerRow.create(null, header.create(null, paragraph.create(null, fragment))))
+      const line = serializeNodes([cell], { trimBreaks: false }).split('\n')[0]
+      if (/^\|.*\|$/.test(line)) return trimCell(line.slice(1, -1))
+    }
+    return printCellSegment(fragment)
+  }
+  // Part of a cell (a segment patch inside it): its edge blanks are inside
+  // the cell, so it is printed run by run between its breaks, joined with
+  // `<br>`, pipes escaped.
+  const printCellSegment = (fragment) => {
     const runs = [[]]
     fragment.forEach((child) => {
       if (/^hard_?break$/.test(child.type.name)) runs.push([])
@@ -843,7 +740,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const width = Math.max(...rows.map((row) => row.childCount))
     const cellsOf = (row) => {
       const cells = []
-      row.forEach((cell) => cells.push(cell.childCount === 1 ? printCellFragment(cell.child(0).content).trim() : ''))
+      row.forEach((cell) => cells.push(cell.childCount === 1 ? trimCell(printCellFragment(cell.child(0).content)) : ''))
       while (cells.length < width) cells.push('')
       return cells
     }
@@ -1014,7 +911,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     // whole table was printed again.
     if (node.type.name === 'table_row' && parentNode?.type.name === 'table' && parentNode.firstChild !== node) {
       const cells = []
-      node.forEach((cell) => cells.push(cell.childCount === 1 ? printCellFragment(cell.child(0).content).trim() : ''))
+      node.forEach((cell) => cells.push(cell.childCount === 1 ? trimCell(printCellFragment(cell.child(0).content)) : ''))
       if (!cells.length) return null
       return `| ${cells.join(' | ')} |`
     }
@@ -1046,7 +943,9 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       : text.replace(/\\(?=[!-/:-@[-`{-~])/g, '\\\\')
     if (cell) output = output.replace(/\|/g, '\\|')
     if (lineStart) {
-      output = sentinel ? output.replace(/^([ \t]+)/, `${SENTINEL}$1`) : output.replace(/^[ \t]+/, '')
+      // After a line break the serializer's spelling: the first blank as an
+      // entity (`&#x20; b`); CommonMark strips raw blanks there.
+      output = sentinel ? output.replace(/^([ \t]+)/, `${SENTINEL}$1`) : output.replace(/^[ \t]/, (blank) => `&#x${blank.charCodeAt(0).toString(16).toUpperCase()};`)
       output = output.replace(/^(#{1,6}(?=[ \t]|$)|[-+*](?=[ \t]|$)|>|`{3,}|~{3,}|\d{1,9}(?=[.)](?:[ \t]|$)))/, (match) =>
         /^\d/.test(match) ? match.replace(/(\d+)$/, '$1\\') : `\\${match}`)
       output = output.replace(/^(\d+)\\$/, '$1')
@@ -1098,7 +997,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         degraded = true
         return false
       }
-      const text = printCellFragment(newBlock.content).trim()
+      const text = trimCell(printCellFragment(newBlock.content))
       if (!text) return true
       if (inner.length >= 2) replace(innerEnd - 1, innerEnd - 1, text)
       else replace(from + 1, innerEnd, ` ${text} `)
@@ -1306,7 +1205,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
         const fragment = newBlock.content.cut(unitFrom + leadTrim, unitTo + delta + leadTrim)
         let printed
         if (cell) {
-          printed = printCellFragment(fragment)
+          printed = printCellSegment(fragment)
         } else {
           const paragraph = schema.nodes.paragraph.create(null, fragment)
           printed = fragment.size ? serializeNodes([paragraph], { trimBreaks: false }) : ''
@@ -1449,7 +1348,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       if (starts.some((at) => !Number.isInteger(at) || body[at] !== '|')) return null
       if (inserted) {
         const cell = newRows[index].child(column)
-        const text = cell.childCount === 1 ? printCellFragment(cell.child(0).content).trim() : ''
+        const text = cell.childCount === 1 ? trimCell(printCellFragment(cell.child(0).content)) : ''
         if (column < cells.length) edits.push([starts[column], starts[column], `| ${text} `])
         else if (column === cells.length) edits.push([rowEnd - 1, rowEnd - 1, `| ${text} `])
         else if (text) return null
@@ -2119,6 +2018,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     let from = prev ? endOf(prev.md) : (gap.oldTo > gap.oldFrom ? startOf(kids[gap.oldFrom]) : next ? startOf(next.md) : null)
     if (!prev && from != null && printedNew.length) from = wholeBlockFrom(from, printedNew[0].text, frame.prefix)
     let to = next ? startOf(next.md) : (gap.oldTo > gap.oldFrom ? endOf(kids[gap.oldTo - 1]) : prev ? endOf(prev.md) : null)
+    // Lines after a quote's last child that hold only `>` markers and
+    // blanks read back as nothing (an empty paragraph written as `>` + `> `
+    // after Enter in a quote): they are the quote's empty tail. Blocks
+    // appended at its end take their place — left there, they followed the
+    // paragraph typed into that empty line (test:middle-blockquote-empty-
+    // paragraph-ui, RS-65).
+    if (!next && to != null && srcNode.type.name === 'blockquote' && Number.isInteger(endOf(mdNode)) && endOf(mdNode) > to &&
+        /^(?:\r?\n[ \t]*(?:>[ \t]*)+)+$/.test(body.slice(to, endOf(mdNode)))) {
+      to = endOf(mdNode)
+    }
     // An empty document (its text all deleted: `\n`, or nothing) has no
     // block to anchor on: the new blocks become the whole source. Without
     // this every edit after emptying a document failed to sync until the

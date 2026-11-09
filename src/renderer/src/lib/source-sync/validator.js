@@ -8,6 +8,7 @@ import {
   areMarkdownListSlotsEquivalent
 } from '../source-structure-fingerprint.js'
 import { bindSourceSyncValidation } from './proof.js'
+import { areDocumentsEquivalentByProjection, literalEmphasisOnly } from './projection.js'
 
 export function createSourceSyncValidator({ validate }) {
   if (typeof validate !== 'function') {
@@ -818,17 +819,31 @@ export function createLegacySourceIntegrityValidator({
       const candidateMatchesDocument = () => Boolean(
         expectedDoc && areSourceDocumentsEquivalent(parsed, expectedDoc, documentOptions)
       )
-      const semanticOk = canonicalStructureOk &&
+      // Every candidate is judged by one definition, the projection
+      // (projection.js), against the editor document itself — the canonical
+      // plays no part. A second comparison with its own exceptions paused
+      // saves the reprint engine had proven (both ways), and counted two
+      // directly adjacent lists as one, so a writer could save two lists as
+      // one unnoticed (fuzz seed 5210). Writers other than the reprint still
+      // pass the list-slot check below (authored numbering).
+      const reprintProjection = expectedDoc && parsed
+        ? areDocumentsEquivalentByProjection(parsed, expectedDoc)
+        : null
+      const projectionDecides = Boolean(reprintProjection) && !/no-projector/.test(reprintProjection.reason || '')
+      // Option A (Typora parity): a source-reprint candidate that spells
+      // unencodable bold/italic as literal delimiters, losing nothing else.
+      const literalEmphasisOk = () => preservationReason === 'source-reprint' && Boolean(expectedDoc) &&
+        areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, { ...semanticOptions, ignoreAllTableColumnWidths: true }) &&
+        (!projectionDecides || literalEmphasisOnly(parsed, expectedDoc))
+      const semanticOk = (projectionDecides || canonicalStructureOk) &&
         !tableColumnWidthProofInvalid &&
         !transactionListTransientProofInvalid &&
         !transactionBlockquoteTransientProofInvalid &&
         (
-          (areSourceDocumentsEquivalent(parsed, expected, semanticOptions) &&
-            (canonicalFaithful || candidateMatchesDocument())) ||
-          // Option A (Typora parity): a source-reprint candidate that spells
-          // unencodable bold/italic as literal delimiters, losing nothing else.
-          (preservationReason === 'source-reprint' && Boolean(expectedDoc) &&
-            areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, { ...semanticOptions, ignoreAllTableColumnWidths: true }))
+          (projectionDecides
+            ? reprintProjection.equal
+            : areSourceDocumentsEquivalent(parsed, expected, semanticOptions) && (canonicalFaithful || candidateMatchesDocument())) ||
+          literalEmphasisOk()
         )
       const checkpointTrusted = checkpointStore.has(authoredSource, canonicalBaseline)
       const committedCheckpointOk = Boolean(
@@ -936,7 +951,9 @@ export function createLegacySourceIntegrityValidator({
       // child is empty as `- <br />` + lazy text, collapsing the rest of the
       // list; fuzz seed 75), that text is no oracle: a source-reprint
       // candidate has already been matched against the document itself.
-      let reprintDocumentProof = preservationReason === 'source-reprint' && !canonicalFaithful && semanticOk
+      // The projection compares lists as the parser reads them (nesting,
+      // kind, where one ends): it is the list proof too.
+      let reprintDocumentProof = preservationReason === 'source-reprint' && (projectionDecides || !canonicalFaithful) && semanticOk
       if (!listSlotsMatch && !reprintDocumentProof && preservationReason === 'source-reprint' && semanticOk && expectedDoc) {
         reprintDocumentProof = areMarkdownListSlotsEquivalent(
           markdown,

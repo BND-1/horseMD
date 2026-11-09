@@ -80,7 +80,8 @@ export async function appendChunks({ rest, view, getParser, isDestroyed, getEdit
       // spans two chunks.)
       try { parsed = parser ? parser(normalizeReviewMarkupMarkdown(normalizeDisplayMath(chunkText))) : null } catch { /* skip unparseable chunk */ }
       if (parsed && parsed.content && parsed.content.size > 0 && !isDestroyed()) {
-        view.dispatch(view.state.tr.insert(view.state.doc.content.size, parsed.content))
+        // `hm-programmatic`: parsed source, not an edit (editor-list-join.js).
+        view.dispatch(view.state.tr.insert(view.state.doc.content.size, parsed.content).setMeta('hm-programmatic', true))
       }
       // Yield to the event loop so paint/input happen between chunks (setTimeout
       // fires even when occluded; rAF/idle don't).

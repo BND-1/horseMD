@@ -31,6 +31,7 @@ import {
 import { mathPreviewPlugin } from './editor-math-preview.js'
 import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { listItemLeadPlugin } from './editor-list-item-lead.js'
+import { listJoinPlugin } from './editor-list-join.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { disableCrepeLinkPreview } from './editor-link-card.js'
@@ -62,10 +63,11 @@ import { remarkTaskParagraphPosition } from '../lib/remark-task-paragraph-positi
 import { inlineCodeAtomsPlugin } from './editor-inline-code-atoms.js'
 import { textblockNewlinesPlugin } from './editor-textblock-newlines.js'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
-import { deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, taskListItemStringifyHandler } from '../lib/remark-text-handler.js'
+import { autolinkSafeLinkHandler, deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, taskListItemStringifyHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
 import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
+import { hmLineBreakRun, serializerStyleStringifyOptions } from '../lib/serializer-style.js'
 import { createTableSpanPastePlugin, pasteIntoTableCell } from './editor-table-paste.js'
 import {
   createStrikeGuardPlugin,
@@ -130,6 +132,10 @@ export function createConfiguredCrepe({
   onInlineCodeValueChange,
   onSlashCommand,
   onSourceTransactions,
+  // () => true while source mode / a reload replaces the document.
+  isProgrammaticChange = () => false,
+  // (doc) => Set of lower lists the current source reads as one with the list above.
+  readsAsOneList = () => new Set(),
   // () => { subscript, superscript }: Typora's `H~2~O` / `x^2^` (Settings),
   // read live.
   getMarkdownSyntax = () => ({})
@@ -273,6 +279,8 @@ export function createConfiguredCrepe({
       oneLineBlocksPlugin(),
       // A list item never starts with an empty paragraph + a paragraph.
       listItemLeadPlugin(),
+      // Lists an edit puts next to each other join (Markdown reads them as one).
+      listJoinPlugin({ isProgrammaticChange, readsAsOne: readsAsOneList }),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).
@@ -317,7 +325,9 @@ export function createConfiguredCrepe({
         emphasis: emphasisStringifyHandler,
         delete: deleteStringifyHandler,
         listItem: taskListItemStringifyHandler,
+        link: autolinkSafeLinkHandler,
         break: tableCellBreakHandler,
+        hmLineBreakRun,
         highlight: highlightStringifyHandler,
         hmHtmlSpan: htmlSpanStringifyHandler,
         subscript: subscriptStringifyHandler,
@@ -327,7 +337,11 @@ export function createConfiguredCrepe({
       // is already escaped by GFM strikethrough's own unsafe pattern); a
       // literal `==` that could open a highlight is always escaped.
       unsafe: subSup.attachUnsafe([...(opts?.unsafe || []), highlightUnsafe]),
-      join: [...(opts?.join || []), listInterruptJoin]
+      join: [...(opts?.join || []), listInterruptJoin],
+      // The document's own list markers, read on every compile (getters:
+      // remark-stringify spreads these options per call).
+      get bullet() { return serializerStyleStringifyOptions.bullet },
+      get bulletOrdered() { return serializerStyleStringifyOptions.bulletOrdered }
     }))
 
     ctx.update(remarkPluginsCtx, (plugins) => [

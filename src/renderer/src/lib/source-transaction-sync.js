@@ -7,6 +7,7 @@
 // cannot be mapped byte-for-byte, the caller keeps the authored source intact
 // and lets the existing fail-closed preservation path handle the batch.
 
+import { recordProjectionShadow } from './source-sync/projection.js'
 import { hasBlank, isAllBlank, splitBlanks } from './markdown-blanks.js'
 
 const unsafeInlineSyntax = /[`*_{}\[\]<>#|\\]/
@@ -1067,6 +1068,7 @@ export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => 
       fast = null
     }
     if (fast === true) {
+      recordProjectionShadow(parsed, expected, true, options)
       if (globalThis.__hmSemanticMemoCheck === true) {
         const full = JSON.stringify(semanticJson(parsed, options)) === JSON.stringify(semanticJson(expected, options))
         if (!full) {
@@ -1085,6 +1087,7 @@ export const areSourceDocumentsEquivalent = (parsed, expected, options = {}) => 
     reconcileSingleEmptyParagraphBeforeOrderedList(left, right)
   }
   const equal = JSON.stringify(left) === JSON.stringify(right)
+  recordProjectionShadow(parsed, expected, equal, options)
   if (
     !equal &&
     options.recordDifference !== false &&

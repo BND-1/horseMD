@@ -218,7 +218,11 @@ export const htmlSpanSchema = $markSchema('html_span', () => ({
       state.withMark(mark, 'hmHtmlSpan', undefined, {
         tag: mark.attrs.tag,
         open: mark.attrs.open,
-        close: mark.attrs.close
+        close: mark.attrs.close,
+        // Milkdown merges adjacent mark nodes whose props are equal: two
+        // keys (`<kbd>Ctrl</kbd><kbd>V</kbd>`, parts 0 and 1) were written
+        // as one key. Only <kbd>/<q> get another part; <font> still merges.
+        part: mark.attrs.part ?? 0
       })
     }
   }

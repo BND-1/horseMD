@@ -17,8 +17,10 @@ const cases = [
     name: 'paragraph start',
     build: [['type', '标题'], ['enter'], ['type', '价格优势：'], ['enter'], ['type', '尾']],
     edit: [['click', ['价格优势', 0]], ['key', shiftEnter], ['click', ['尾', 1]], ['type', 'X']],
-    // A leading plain newline is one more blank line (Typora writes the same).
-    expected: '# 标题\n\n\n价格优势：\n\n尾X\n'
+    // A break at the start of a paragraph has no Markdown (it reads back as
+    // nothing): not written (inline-serializer.js trimEdgeLines, 2026-11-08;
+    // it was one more blank line, which reads back the same).
+    expected: '# 标题\n\n价格优势：\n\n尾X\n'
   },
   {
     name: 'heading start',

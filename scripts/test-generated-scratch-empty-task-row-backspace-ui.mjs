@@ -222,7 +222,9 @@ async function main() {
     assert.equal(merged.tasks[0]?.paragraphs.at(-1), '', `task continuation was not empty: ${JSON.stringify(merged)}`)
     assert.equal(merged.topParagraphs.some((text) => text.includes('后文')), true, `following paragraph disappeared: ${JSON.stringify(merged)}`)
     assert.equal(merged.integrity.some((entry) => entry.ok === false), false, `RS-60 integrity failure: ${JSON.stringify(merged)}`)
-    assert.ok(
+    // Which writer published is a fallback-path detail (the source reprint
+    // is primary): checked only with HM_TEST_REPRINT_PRIMARY=0.
+    if (process.env.HM_TEST_REPRINT_PRIMARY === '0') assert.ok(
       merged.integrity.some((entry) =>
         entry.preservationReason === 'empty-task-item-merged-to-continuation' &&
         entry.ok === true && entry.semanticOk === true

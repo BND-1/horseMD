@@ -126,7 +126,7 @@ import {
   sameIgnoringHeadingIds,
   transactionTopLevelRange
 } from '../lib/source-sync/editor-only-document.js'
-import { reprintVerified } from '../lib/source-reprint/index.js'
+import { listsReadAsOne, reprintSource, reprintVerified } from '../lib/source-reprint/index.js'
 import { forgetParses, incrementalParse, parseMarkdownCached, parseMarkdownFull } from '../lib/source-reprint/incremental-parse.js'
 import { createIncrementalSerializer } from '../lib/incremental-serialize.js'
 import { createMilkdownSerializer } from '../lib/inline-serializer.js'
@@ -142,6 +142,7 @@ if (import.meta.env?.VITE_HM_SYNC_SELF_CHECK === '1') {
 }
 import { SOURCE_SYNC_OWNERS } from '../lib/source-sync/proof.js'
 import { withoutEmptyContainerParagraphs } from '../lib/source-sync/validator.js'
+import { areDocumentsEquivalentByProjection, literalEmphasisOnly, projectDocument, registerProjector } from '../lib/source-sync/projection.js'
 import { createTopLevelBlockRemovalTransactionSourceSyncOwner } from '../lib/source-sync/top-level-block-removal-transaction-owner.js'
 import {
   createSourceSnapshotHistory,
@@ -769,6 +770,7 @@ export default function Editor({
     })
 
     let crepe
+    let readsAsOneList = null
     let sourceSyncBridge = null
     const sourceSyncTransactionJournal = createSourceSyncTransactionJournal()
     const transactionMarkdownOffsets = createScopedMarkdownOffsetResolver()
@@ -834,12 +836,27 @@ export default function Editor({
           ...(semanticOptions.ignoreTrailingEmptyBlockquoteParagraphPaths || [])
         ]
       }
-      if (!areSourceDocumentsEquivalent(parsed, expectedDoc, mergedSemanticOptions)) {
+      // Same meaning = the projection (lib/source-sync/projection.js), for
+      // every writer: one definition. The older comparison (its own list of
+      // exceptions, and two directly adjacent lists counted as one — a
+      // writer could save two lists as one unnoticed, fuzz seed 5210) only
+      // runs where no projector is registered.
+      const projected = areDocumentsEquivalentByProjection(parsed, expectedDoc)
+      const projectionDecides = !/no-projector/.test(projected.reason || '')
+      const sameMeaning = projectionDecides
+        ? projected.equal
+        : areSourceDocumentsEquivalent(parsed, expectedDoc, mergedSemanticOptions)
+      if (projectionDecides && !projected.equal && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace) && window.api?.inputTraceEnabled === true) {
+        globalThis.__hmSourceIntegrityDiffTrace.push({ at: Date.now(), source: 'validate-projection', reason: projected.reason, detail: projected.detail })
+        if (globalThis.__hmSourceIntegrityDiffTrace.length > 40) globalThis.__hmSourceIntegrityDiffTrace.shift()
+      }
+      if (!sameMeaning) {
         // Option A (Typora parity): the reprint may spell bold/italic that
         // Markdown cannot delimit there as literal `*`/`_`; nothing else may
         // differ (no list structure is involved in that difference).
         return semanticOptions.relaxOrderedNumbers === true && semanticOptions.allowLiteralEmphasis !== false &&
-          areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, mergedSemanticOptions)
+          areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, mergedSemanticOptions) &&
+          (!projectionDecides || literalEmphasisOnly(parsed, expectedDoc))
       }
       if (areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
         // Source reprint keeps the author's numbering (`1. 1. 1.`) or
@@ -2121,7 +2138,9 @@ export default function Editor({
       onFrontmatterValueChange: handleFrontmatterValueChange,
       onInlineCodeValueChange: handleInlineCodeValueChange,
       onSlashCommand: handleSlashCommand,
-      onSourceTransactions: handleSourceTransactions
+      onSourceTransactions: handleSourceTransactions,
+      isProgrammaticChange: () => Boolean(programmaticReplaceRef.current),
+      readsAsOneList: (doc) => (readsAsOneList ? readsAsOneList(doc) : new Set())
     })
     crepeRef.current = crepe
     const serializerStyleHolder = createSerializerStyleHolder(firstContent)
@@ -2171,20 +2190,47 @@ export default function Editor({
       },
       remark: crepe.editor.ctx.get(remarkCtx),
       serialize: (node) => crepe.editor.ctx.get(serializerCtx)(node),
-      // `literalEmphasis: false`: no Option A (reprintVerified asks for an
-      // exact spelling first).
-      equivalent: (markdown, expectedDoc, { literalEmphasis = true } = {}) => validateTransactionMarkdown({
-        markdown,
-        expectedDoc,
-        semanticOptions: {
-          ignoreTrailingEmptyBlockquoteParagraphPaths: trailingEmptyQuotePaths(expectedDoc),
-          ignoreAllTableColumnWidths: true,
-          ignoreEmptyContainerParagraphs: true,
-          relaxOrderedNumbers: true,
-          allowLiteralEmphasis: literalEmphasis
+      // The candidate reads back as the editor document: one definition,
+      // the projection (lib/source-sync/projection.js; docs/reprint-root-
+      // cause-plan.md P2) — no list of exceptions. `literalEmphasis`: Option
+      // A (user decision 2026-10-10: bold / italic Markdown cannot delimit
+      // there written as literal `*`), asked only after every exact spelling
+      // failed; it still goes through the older comparison, which knows it.
+      equivalent: (markdown, expectedDoc, { literalEmphasis = true } = {}) => {
+        const parser = crepe.editor.ctx.get(parserCtx)
+        if (lastValidationParse.markdown !== markdown || !lastValidationParse.doc) {
+          lastValidationParse.doc = parseCandidate(markdown, parser)
+          lastValidationParse.markdown = markdown
         }
-      }) === true
+        const verdict = areDocumentsEquivalentByProjection(lastValidationParse.doc, expectedDoc)
+        if (verdict.equal) return true
+        if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace) && window.api?.inputTraceEnabled === true) {
+          globalThis.__hmSourceIntegrityDiffTrace.push({ at: Date.now(), source: 'reprint-projection', reason: verdict.reason, detail: verdict.detail })
+          if (globalThis.__hmSourceIntegrityDiffTrace.length > 40) globalThis.__hmSourceIntegrityDiffTrace.shift()
+        }
+        if (!literalEmphasis) return false
+        return validateTransactionMarkdown({
+          markdown,
+          expectedDoc,
+          semanticOptions: {
+            ignoreTrailingEmptyBlockquoteParagraphPaths: trailingEmptyQuotePaths(expectedDoc),
+            ignoreAllTableColumnWidths: true,
+            ignoreEmptyContainerParagraphs: true,
+            relaxOrderedNumbers: true,
+            allowLiteralEmphasis: true
+          }
+        }) === true && literalEmphasisOnly(lastValidationParse.doc, expectedDoc)
+      }
     })
+    // Which of the editor's directly adjacent lists the file reads as one
+    // (editor-list-join.js): the edit printed against the current source,
+    // typed list markers included. Unverified on purpose — only the list
+    // markers it writes are read.
+    readsAsOneList = (doc) => {
+      const source = String(lastMarkdownRef.current ?? '')
+      const printed = reprintSource({ ...reprintDeps(), source, editorDoc: doc, escape: 'minimal', newListMarkers: pendingListIntentMarkers() })
+      return printed?.ok ? listsReadAsOne(printed.markdown, doc, crepe.editor.ctx.get(remarkCtx)) : new Set()
+    }
     const shadowReprint = (phase, { previousSource, publishedMarkdown = null, doc }) => {
       if (window.api?.inputTraceEnabled !== true || !doc || typeof previousSource !== 'string') return
       if (!Array.isArray(globalThis.__hmSourceReprintShadowTrace)) globalThis.__hmSourceReprintShadowTrace = []
@@ -4776,6 +4822,14 @@ export default function Editor({
             }, 1000)
             cleanups.push(() => clearTimeout(warmTimer))
           }
+          // The Markdown meaning of a document (lib/source-sync/projection.js,
+          // P2): parse(serialize(doc)) with this editor's parser and serializer.
+          registerProjector(view.state.schema, {
+            // Unmemoized: block projections are many small parses, and the
+            // memo (last 3) holds the document's own parses.
+            parse: (markdown) => { const parser = crepe.editor.ctx.get(parserCtx); return (parser.unmemoized || parser)(markdown) },
+            serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc)
+          })
           // Test-only harness for the source reprint engine (R1, see
           // docs/source-reprint-architecture.md): the real Crepe parser,
           // serializer and remark chain, exposed only under input trace.
@@ -4791,6 +4845,7 @@ export default function Editor({
               },
               parseTree: (markdown) => { const r = crepe.editor.ctx.get(remarkCtx); return reprintDeps().parseTree(r.runSync(r.parse(markdown), markdown)) },
               serialize: (doc) => crepe.editor.ctx.get(serializerCtx)(doc),
+              project: (doc) => projectDocument(doc),
               // Milkdown's serializer without lib/inline-serializer.js.
               serializeMilkdown: (doc) => createMilkdownSerializer(view.state.schema, crepe.editor.ctx.get(remarkCtx))(doc),
               remark: () => crepe.editor.ctx.get(remarkCtx),
@@ -4805,6 +4860,10 @@ export default function Editor({
               // relaxed), without Option A's literal `*`.
               equivalentForReprint: (markdown, doc) => reprintDeps().equivalent(markdown, doc, { literalEmphasis: false }),
               reprint: (source, doc, previousDoc = null) => reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
+              ,
+              // Lists of `doc` that `markdown` reads as one with the list above
+              // (list-boundaries.js; what editor-list-join.js joins).
+              listsReadAsOne: (markdown, doc) => [...listsReadAsOne(markdown, doc, crepe.editor.ctx.get(remarkCtx))].map((node) => node.textContent)
               ,
               // Incremental serialization (lib/incremental-serialize.js):
               // counters, and serialize a document through it (the test then

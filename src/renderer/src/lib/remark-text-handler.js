@@ -1,5 +1,6 @@
 import { cjkFriendlyToMarkdown } from 'mdast-util-to-markdown-cjk-friendly'
 import { gfmTaskListItemToMarkdown } from 'mdast-util-gfm-task-list-item'
+import { defaultHandlers } from 'mdast-util-to-markdown'
 
 // Milkdown's default remark `text` stringify handler has a fast path,
 // `if (/^[^*_\\]*\s+$/.test(value)) return value`, meant to keep the space
@@ -47,6 +48,16 @@ export function safeTrailingWhitespaceTextHandler(node, parent, state, info) {
 }
 
 function textHandler(node, parent, state, info) {
+  // A table cell is one line: a line ending in its text (a soft break, or
+  // `&#10;` read from the file) would end the row and lose the rest of it
+  // (docs/rich-source-fuzzing.md read back cut, found by the projection
+  // guard). It is written `&#10;`, as the file had it.
+  if (/[\r\n]/.test(node.value) && state.stack?.includes('tableCell')) {
+    const parts = node.value.split(/\r\n|\r|\n/)
+    return parts.map((part, index) => (part
+      ? textHandler({ ...node, value: part }, parent, state, { ...info, before: index ? ';' : info?.before, after: index < parts.length - 1 ? '&' : info?.after })
+      : '')).join('&#10;')
+  }
   // The CJK-friendly strong/emphasis handler (below) asks the next text node
   // to encode its first character when it is outside the BMP (an emoji):
   // `**foo.**&#x1F600;`. Its own text handler does that; this one replaces it.
@@ -66,18 +77,53 @@ function textHandler(node, parent, state, info) {
     const rest = textHandler({ ...node, value: node.value.slice(1) }, parent, state, { ...info, before: ';' })
     return `&#x200B;${rest}`
   }
-  const value = node.value
+  // Blanks right before a line break have no Markdown (CommonMark strips
+  // them before a line ending; before a cell's `<br>` or a backslash break
+  // they show nothing either). Written, two of them turn a soft break into
+  // a hard one. Text of only blanks keeps its spelling (an empty line ends
+  // the paragraph).
+  const siblings = parent?.children
+  const at = siblings ? siblings.indexOf(node) : -1
+  const next = at >= 0 ? siblings[at + 1] : undefined
+  // The end of a paragraph / heading is a line end too, whether or not a
+  // block follows (the last block wrote its blanks, the others did not: the
+  // same block serialized differently by position).
+  const blockEnd = at >= 0 && at === siblings.length - 1 && (parent.type === 'paragraph' || parent.type === 'heading')
+  const beforeBreak = blockEnd || next?.type === 'break' || next?.type === 'hmLineBreakRun' || /^[\r\n]/.test(info?.after || '')
+  let value = node.value.replace(/([^ \t\r\n])[ \t]+(?=[\r\n])/g, '$1')
+  if (beforeBreak && /[^ \t][ \t]+$/.test(value)) value = value.replace(/[ \t]+$/, '')
   const match = TRAILING_WHITESPACE_FAST_PATH.exec(value)
   if (!match) return state.safe(value, { ...info, encode: [] })
   const [, head, tail] = match
-  if (!head) {
-    const before = info?.before
-    const atLineStart = !before || /[\r\n]$/.test(before)
-    // Only a leading space/tab is indentation; a soft-break text node ("\n")
-    // stays raw exactly as before.
-    return atLineStart && /^[ \t]/.test(value) ? encodeCharacter(value[0]) + value.slice(1) : value
+  if (!head) return blankLines(value, !info?.before || /[\r\n]$/.test(info.before), beforeBreak)
+  const spelled = blankLines(tail, false, beforeBreak)
+  if (!spelled) return state.safe(head, { ...info, encode: [] })
+  return state.safe(head, { ...info, after: spelled[0], encode: [] }) + spelled
+}
+
+// Whitespace after the text's last visible character, line by line. Blanks
+// before a line ending have no Markdown: CommonMark strips them, and two of
+// them turn the soft break after them into a hard one (`**a**  ` + a soft
+// break, a blank-only text after `&#10;`; projection guard). A line of ONLY
+// blanks keeps one, encoded: dropped, the empty line would end the
+// paragraph; raw, it is that empty line. A leading space/tab is indentation:
+// its first character is encoded as mdast-util-to-markdown encodes any
+// leading space (`&#x20;`, which source preservation spells as the U+200B
+// sentinel). A soft-break text node ("\n") stays raw.
+function blankLines(text, lineStart, endsWithBreak) {
+  const parts = text.split(/(\r\n|\r|\n)/)
+  let out = ''
+  for (let index = 0; index < parts.length; index += 2) {
+    const line = parts[index]
+    const eol = parts[index + 1] || ''
+    const atStart = index === 0 ? lineStart : true
+    const endsLine = Boolean(eol) || (index === parts.length - 1 && endsWithBreak)
+    let spelled = endsLine ? line.replace(/[ \t]+$/, '') : line
+    if (endsLine && !spelled && line && atStart) spelled = line[0]
+    if (atStart && /^[ \t]/.test(spelled)) spelled = encodeCharacter(spelled[0]) + spelled.slice(1)
+    out += spelled + eol
   }
-  return state.safe(head, { ...info, after: tail[0], encode: [] }) + tail
+  return out
 }
 
 // Milkdown's default strong/emphasis stringify handlers keep the authored
@@ -130,7 +176,24 @@ deleteStringifyHandler.peek = () => '~'
 // task's `[x]` was dropped: `1) 已完成任务` (fuzz UI seed 236). Same
 // insertion as upstream, for `)`.
 const gfmTaskListItem = gfmTaskListItemToMarkdown().handlers.listItem
+// A task's checkbox is written in front of its first paragraph's text. With
+// nothing there, the stock handler dropped the checkbox (`*`) or wrote it on
+// the next line (`*\n[ ]   * x`): `- [ ]` alone is a plain item holding the
+// text `[ ]`. An empty task item keeps the box with a U+200B after it (Typora
+// writes the same), as its first paragraph — also before a nested list or a
+// block that leads the item.
+const isEmptyParagraph = (child) => child?.type === 'paragraph' &&
+  (child.children || []).every((inline) => inline.type === 'text' && !/[^ \t]/.test(inline.value || ''))
 export const taskListItemStringifyHandler = (node, parent, state, info) => {
+  if (typeof node.checked === 'boolean') {
+    const children = node.children || []
+    const head = children[0]
+    if (!head || isEmptyParagraph(head) || head.type !== 'paragraph') {
+      const sentinel = { type: 'paragraph', children: [{ type: 'text', value: '\u200B' }] }
+      const rest = head && head.type === 'paragraph' ? children.slice(1) : children
+      node = { ...node, children: [sentinel, ...rest] }
+    }
+  }
   let value = gfmTaskListItem(node, parent, state, info)
   const head = node.children?.[0]
   if (typeof node.checked === 'boolean' && head?.type === 'paragraph' && /^\d+\)/.test(value) &&
@@ -139,3 +202,22 @@ export const taskListItemStringifyHandler = (node, parent, state, info) => {
   }
   return value
 }
+
+// An autolink (`<https://…>`) has no escapes: a backslash in it is the
+// character itself. The stock link handler writes its text through the
+// phrasing escapes anyway, so `<https://a?b=\*>` came back as `\\*` — another
+// URL (CommonMark spec examples 20, 603; found by the projection guard,
+// lib/source-sync/projection.js). Same test as upstream
+// (format-link-as-autolink.js); the URL is written as it is.
+const isAutolink = (node, state) => {
+  const child = node.children?.length === 1 ? node.children[0] : null
+  return Boolean(!state.options.resourceLink && node.url && !node.title && child?.type === 'text' &&
+    (child.value === node.url || 'mailto:' + child.value === node.url) &&
+    /^[a-z][a-z+.-]+:/i.test(node.url) && !/[\0- <>\u007F]/.test(node.url))
+}
+export const autolinkSafeLinkHandler = (node, parent, state, info) => {
+  if (!isAutolink(node, state)) return defaultHandlers.link(node, parent, state, info)
+  return `<${node.children[0].value}>`
+}
+autolinkSafeLinkHandler.peek = (node, parent, state, info) =>
+  isAutolink(node, state) ? '<' : defaultHandlers.link.peek(node, parent, state, info)

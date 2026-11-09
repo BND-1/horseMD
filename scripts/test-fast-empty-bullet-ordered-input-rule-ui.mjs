@@ -90,7 +90,8 @@ try {
     // `1\\.`: the ordered input rule cannot wrap a list item's first
     // paragraph, so the item holds the text "1. " (the continued check below
     // already accepts that spelling).
-    (e.candidate.includes('\n- 1. \n\n2. 斛律v哦') || e.candidate.includes('\n- 1\\. \n\n2. 斛律v哦') || e.candidate.includes('\n-   1. \n\n2. 斛律v哦'))
+    // A blank at a paragraph's end has no Markdown: not written (2026-11-08).
+    (e.candidate.includes('\n- 1. \n\n2. 斛律v哦') || e.candidate.includes('\n- 1\\. \n\n2. 斛律v哦') || e.candidate.includes('\n- 1\\.\n\n2. 斛律v哦') || e.candidate.includes('\n-   1. \n\n2. 斛律v哦'))
   ), true, 'fast coalesced frame did not persist a source-equivalent temporary ordered slot')
 
   await key(app, '测', 'KeyA', 65, '测', 40)
