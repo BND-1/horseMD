@@ -27,7 +27,10 @@ const cases = [
     build: [['type', '标题'], ['enter'], ['type', '### 还没上'], ['enter'], ['type', '尾']],
     edit: [['click', ['还没上', 0]], ['key', shiftEnter], ['click', ['尾', 1]], ['type', 'X']],
     // Shift+Enter in a heading is Enter (Typora): an empty paragraph above.
-    expected: '# 标题\n\n\n\n### 还没上\n\n尾X\n'
+    // An empty paragraph between two blocks that keep their bytes has no
+    // Markdown: as in an opened file, no line is added for it (live sync
+    // would otherwise write every transient empty line into the source).
+    expected: '# 标题\n\n### 还没上\n\n尾X\n'
   },
   {
     name: 'paragraph end after deleting the second line',
@@ -93,7 +96,12 @@ for (const [index, testCase] of cases.entries()) {
     await sleep(1200)
     await waitFor(() => app.evaluate(`!!document.querySelector('.hm-save-fab')`), 'save button not shown')
     await app.evaluate(`document.querySelector('.hm-save-fab')?.click()`)
-    await waitFor(async () => (await readFile(file, 'utf8')) === testCase.expected, `saved bytes differ: ${JSON.stringify(await readFile(file, 'utf8'))}`, 40)
+    try {
+      await waitFor(async () => (await readFile(file, 'utf8')) === testCase.expected, 'saved bytes differ', 40)
+    } catch {
+      // The bytes as they are now, not as they were before the save.
+      throw new Error(`saved bytes differ: ${JSON.stringify(await readFile(file, 'utf8'))}`)
+    }
     const toasts = await app.evaluate('window.__toasts.slice()')
     assert.equal(toasts.some((text) => warningPattern.test(text)), false, `warning: ${JSON.stringify(toasts)}`)
     assert.deepEqual(await app.evaluate('(globalThis.__hmSourceIntegrityTrace || []).filter(e => e && e.ok === false).map(e => e.preservationReason)'), [])

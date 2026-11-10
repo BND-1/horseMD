@@ -120,7 +120,7 @@ function restoreSelectionInReplacement(tr, list, replacement, selection) {
 
 // Converts only the closest list container. Converting a task list explicitly
 // removes its checkbox attrs; the item text and nested list levels stay intact.
-export function convertListAtSelection(view, targetTypeNameValue, listPos, beforeDispatch) {
+export function convertListAtSelection(view, targetTypeNameValue, listPos) {
   const state = view?.state
   if (!state || ![...LIST_TYPES, 'task_list'].includes(targetTypeNameValue)) return false
   const nodeAtContextPos = Number.isFinite(listPos) ? state.doc.nodeAt(listPos) : null
@@ -145,7 +145,6 @@ export function convertListAtSelection(view, targetTypeNameValue, listPos, befor
   const replacement = convertedListLevel(list.node, targetType, targetTypeNameValue)
   tr = tr.replaceWith(list.pos, list.pos + list.node.nodeSize, replacement)
   tr = restoreSelectionInReplacement(tr, list, replacement, state.selection)
-  if (beforeDispatch?.(tr.doc) === false) return false
   view.dispatch(tr.scrollIntoView())
   return true
 }

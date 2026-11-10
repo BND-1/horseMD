@@ -95,11 +95,15 @@ export const focusExitParagraph = (app) => app.evaluate(`(() => {
   }
 })()`)
 
+// Mod-Enter leaves a code block: Cmd on macOS, Ctrl elsewhere (CDP
+// modifiers: Ctrl 2, Meta 4). Meta+Enter does nothing on Windows.
+const MOD = process.platform === 'darwin' ? 4 : 2
+
 export async function pressCodeBlockExit(app, delayMs = 15) {
   await pressKey(app.send, {
     key: 'Enter',
     code: 'Enter',
-    modifiers: 4,
+    modifiers: MOD,
     delayMs
   })
 }

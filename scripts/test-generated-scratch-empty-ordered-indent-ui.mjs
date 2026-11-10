@@ -6,9 +6,6 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
-// Tests the established owner / legacy path: the source reprint, primary
-// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
-process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
 
 const root = `/tmp/horsemd-generated-scratch-empty-ordered-indent-${process.pid}`
 const file = join(root, 'rs-45.md')

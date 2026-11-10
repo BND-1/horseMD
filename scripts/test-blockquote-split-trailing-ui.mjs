@@ -5,11 +5,8 @@ import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
-// Tests the established owner / legacy path: the source reprint, primary
-// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
-process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
-// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
-const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+// The source reprint is the only writer: only behaviour is checked.
+const productPath = true
 
 // E0 P3 acceptance — the 0.13.170 16:39:14 trace: Chinese IME composition in
 // the LAST quote paragraph, commit, then an IMMEDIATE Enter at the paragraph

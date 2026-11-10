@@ -148,7 +148,9 @@ try {
     .replace('- target', '- targetpha **bold** om')
     .replace('- other', '- otherthird')
     .replace('2. goal', '2. goalrst *em* it')
-    .replace('3. third\n', '3. third\n\n   - targetpha **bold** om\n   - other\n'), `saved bytes:\n${saved}`)
+    // The pasted nested list goes right under its item: a blank line there
+    // would make the tight ordered list loose (CommonMark).
+    .replace('3. third\n', '3. third\n   - targetpha **bold** om\n   - other\n'), `saved bytes:\n${saved}`)
   const toasts = await app.evaluate(`[...document.querySelectorAll('.toast, [class*=toast], [role=dialog]')].map(n => n.innerText).filter(Boolean)`)
   assert.ok(!toasts.some((t) => /不一致|未被覆盖|mismatch|not overwritten/i.test(t)), `warning shown: ${JSON.stringify(toasts)}`)
   console.log('PASS list partial copy: text inside one list item / quote copies without its marker; a whole item pasted into another item inserts only its text; multi-item copy/paste stays a list; save exact')

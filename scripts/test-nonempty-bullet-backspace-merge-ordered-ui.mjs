@@ -11,8 +11,8 @@ import { sleep } from './lib/cdp.mjs'
 // them (editor-list-join.js; Markdown reads them as one, Typora shows one).
 // The legacy owner this test pinned never sees that shape now.
 process.env.HM_TEST_REPRINT_PRIMARY ??= '1'
-// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
-const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+// The source reprint is the only writer: only behaviour is checked.
+const productPath = true
 
 const root = `/tmp/horsemd-nonempty-bullet-merge-ordered-${process.pid}`
 const file = join(root, 'fixture.md')

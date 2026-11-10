@@ -52,21 +52,7 @@ export function createLegacySourceSyncCandidateFromResult({
   })
 }
 
-export function blocksRetiredLegacySourceSyncFallback({
-  ownerEntry,
-  ownership
-} = {}) {
-  return Boolean(
-    ownerEntry?.legacyRetired === true &&
-    ownership?.ok !== true &&
-    ownership?.recognized === true
-  )
-}
 
-export function retiredLegacySourceSyncFailureReason(result) {
-  if (result?.legacyBlocked !== true) return null
-  return result.reason || 'retired-legacy-owner-rejected'
-}
 
 export function createLegacySourceSyncOwner({ preserve }) {
   if (typeof preserve !== 'function') {

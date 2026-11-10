@@ -4,7 +4,7 @@
 // fills that empty sibling. The empty marker row contributes zero visible
 // characters, so the legacy locally-aligned mapper drifted the fill into the
 // PREVIOUS paragraph and the strict gate fail-closed with a warning. The
-// list-empty-item-text-filled owner must publish the fill into the authored
+// fill must land in the authored
 // empty row: zero warnings, exact source bytes, disk and cold reopen stable.
 import assert from 'node:assert/strict'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -133,14 +133,10 @@ const placeCaretAtContinuationEnd = async (app, markerText) => {
   })()`)
   assert.equal(result?.ok, true, 'caret at continuation end failed')
 }
-// This test pins the focused-owner fallback; the source reprint engine
-// (primary since 0.13.237) would otherwise publish first.
 const clearDiagnostics = (app) => app.evaluate(`(() => {
-  globalThis.__hmSourceReprintPrimary = false
   window.__hmPreserveLog = []
   window.__hmSourceIntegrityTrace = []
   window.__hmSourceSyncCoordinatorTrace = []
-  window.__hmListEmptyItemTextFillTransactionTrace = []
 })()`)
 const snapshot = (app) => app.evaluate(`(() => ({
   preserve: (window.__hmPreserveLog || []).slice(-60).map(({ source, previous, next, markdown, ...entry }) => entry),
@@ -151,7 +147,6 @@ const snapshot = (app) => app.evaluate(`(() => ({
     preservationReason: entry.preservationReason,
     validationSite: entry.validationSite
   })),
-  owner: (window.__hmListEmptyItemTextFillTransactionTrace || []).slice(-60),
   toasts: [...document.querySelectorAll('[class*="toast"]')]
     .filter((node) => node.offsetParent)
     .map((node) => node.textContent || '')
@@ -213,31 +208,6 @@ const runScenario = async (scenario, port) => {
       false,
       `${scenario.name} warning: ${JSON.stringify(state.toasts)}`
     )
-    if (scenario.settleAfterSplit >= 400) {
-      // The incident's failing call: the split already published, the fill is
-      // its own pure-text journal — the focused owner must own it.
-      const publications = state.owner.filter((entry) =>
-        entry.phase === 'published' && entry.ok === true &&
-        entry.family === 'list-empty-item-text-filled'
-      )
-      assert.equal(publications.length, 1, `${scenario.name} owner: ${JSON.stringify(state.owner)}`)
-      const preservation = state.preserve.find((entry) =>
-        entry.reason === 'list-empty-item-text-filled' &&
-        entry.integrityProof?.kind === 'transaction-list-empty-item-text-filled-proof'
-      )
-      assert.ok(preservation, `${scenario.name} proof: ${JSON.stringify(state.preserve)}`)
-      assert.equal(preservation.integrityProof?.finalText, '色不放假')
-    } else {
-      // No settle: split + fill coalesce into one journal; the owner stays out
-      // (chain stage, plain reject) and the observable contract — zero
-      // warnings, exact bytes — is what stays locked here.
-      assert.equal(
-        state.owner.some((entry) => entry.recognized === true),
-        false,
-        `${scenario.name} owner must not fail-close the coalesced shape: ${JSON.stringify(state.owner)}`
-      )
-    }
-
     // Source mode shows the fill inside the authored empty marker row.
     assert.equal(await toggleSource(app), true, `${scenario.name} source toggle failed`)
     const source = await waitFor(() => visibleSource(app), `${scenario.name} source missing`)
@@ -299,7 +269,7 @@ try {
   }
   await runColdReopen(basePort + 50)
   completed = true
-  console.log('PASS ime loose item split UI: IME commit + Enter split + IME fill of the empty sibling publishes the authored row through the focused owner — zero warnings, exact source bytes, disk and cold reopen stable')
+  console.log('PASS ime loose item split UI: IME commit + Enter split + IME fill of the empty sibling publishes the authored row — zero warnings, exact source bytes, disk and cold reopen stable')
 } finally {
   if (completed) await rm(root, { recursive: true, force: true })
 }

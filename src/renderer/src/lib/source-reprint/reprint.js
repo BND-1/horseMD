@@ -942,6 +942,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
 
 
   // ---- separators between siblings ----------------------------------------
+  // The mdast parent of a node (built once per reprint).
+  let mdParents = null
+  const mdParentOf = (node) => {
+    if (!mdParents) {
+      mdParents = new WeakMap()
+      const walk = (parent) => { for (const child of parent.children || []) { mdParents.set(child, parent); walk(child) } }
+      walk(mdRoot)
+    }
+    return mdParents.get(node) || null
+  }
   const separatorFor = (parentNode, parentMd, frame) => {
     const kids = mdChildren(parentNode, parentMd) || []
     if (kids.length >= 2) {
@@ -951,6 +961,16 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const name = parentNode.type.name
     if (name === 'bullet_list' || name === 'ordered_list') return '\n' + frame.prefix
     if (name === 'table' || /^table_/.test(name)) return '\n' + frame.prefix
+    // An item without an authored gap of its own follows its list: in a
+    // tight list (no blank line before or after the item) tight wherever a
+    // single newline is safe — a nested list right under the item's line;
+    // the pair rule still puts a blank line between two paragraphs. A blank
+    // line there made a tight list loose (test:new-document-list-source-
+    // preservation-ui: Tab under `2. 第二项`).
+    if (name === 'list_item') {
+      const listMd = mdParentOf(parentMd)
+      if (!listMd || !sourceItemsLoose(listMd)) return '\n' + frame.prefix
+    }
     return '\n' + frame.prefix.replace(/[ \t]+$/, '') + '\n' + frame.prefix
   }
 
@@ -1387,7 +1407,13 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     const without = (cells, k) => cells.filter((_cell, index) => index !== k)
     const width = Math.max(before.length, after.length)
     let column = -1
+    // Two columns can hold the same cells (table copied, then a column
+    // duplicated): their alignment tells which one went.
+    const sameAlignments = (k) => inserted
+      ? JSON.stringify(without(after, k)) === JSON.stringify(before)
+      : JSON.stringify(without(before, k)) === JSON.stringify(after)
     for (let k = 0; k < width && column < 0; k += 1) {
+      if (!sameAlignments(k)) continue
       const fits = oldRows.every((row, index) => {
         const oldCells = contents(row)
         const newCells = contents(newRows[index])
@@ -1850,6 +1876,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     }
     return true
   }
+
 
   // The counterpart of keeping an emptied paragraph's line: when the editor
   // removes an empty top-level paragraph (Backspace on the blank line), the

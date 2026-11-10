@@ -97,12 +97,8 @@ const standalone = [
     env: { CDP_PORT: '9484' }
   },
   {
-    name: 'Transaction-first source sync: atomic plain-text mapper',
+    name: 'Source document equivalence, select-all replacement and the dispatch wrapper (pure)',
     script: 'scripts/test-source-transaction-sync.mjs'
-  },
-  {
-    name: 'Transaction-first source sync: plain paragraph, quote, and list edits',
-    script: 'scripts/test-transaction-source-sync-ui.mjs'
   },
   {
     name: 'Background CDP: no native focus and per-character input',
@@ -395,10 +391,6 @@ const standalone = [
   {
     name: 'List items follow their list type, also after a drop or paste (pure)',
     script: 'scripts/test-list-type-sync.mjs'
-  },
-  {
-    name: 'Blockquote inline patch and BOM marker fix (pure)',
-    script: 'scripts/test-blockquote-inline-patch.mjs'
   },
   {
     name: 'Remark marker offset in BOM files (pure)',

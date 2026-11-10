@@ -10,7 +10,6 @@ const root = `/tmp/horsemd-family-multicycle-${process.pid}`
 const file = join(root, 'multicycle.md')
 const port = Number(process.env.CDP_PORT || 10170)
 const delay = Number(process.env.KEY_DELAY || 55)
-const transactionPrimary = process.env.TRANSACTION_PRIMARY === '1'
 const originalTail = '# 测试a f\n\n-\n\n1. 啊发我发\n2. 气氛 分\n'
 const generatedFixture = '\uFEFF# 多轮源码保真回归\r\n\r\n' +
   '测试\r\n\r\n' +
@@ -131,7 +130,6 @@ async function openApp(profile, appPort) {
     window.__hmSourceTransactionTrace = []
     window.__hmListIntentTrace = []
     window.__hmSourceReprintTrace = []
-    window.__hmTransactionSourcePrimary = ${transactionPrimary}
   })()`)
   return app
 }
@@ -466,7 +464,7 @@ async function main() {
     assert.equal(await readFile(file, 'utf8'), roundFour, 'round 4 cold reopen changed disk')
     await inspectSource(app, roundFour, 'round 4 cold reopen')
 
-    console.log(`PASS family multicycle (${transactionPrimary ? 'transaction-primary' : 'release-default'}): repeated edit/source/save/reopen remains exact`)
+    console.log(`PASS family multicycle: repeated edit/source/save/reopen remains exact`)
   } finally {
     if (app) await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

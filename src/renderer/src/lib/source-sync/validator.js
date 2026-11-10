@@ -317,7 +317,7 @@ const activeTrailingEmptyBlockquotePaths = (expectedDoc, paths) => {
 // paragraphs, the synthetic empty title of a new document) and merging
 // adjacent same-type lists (Markdown cannot keep them apart; lossless).
 // Crepe's image-block is the parsed form of a paragraph holding one image.
-export const topLevelStructureSignature = (doc) => {
+const topLevelStructureSignature = (doc) => {
   const types = []
   doc?.forEach?.((node) => {
     let type = node?.type?.name || 'unknown'

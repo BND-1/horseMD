@@ -4,11 +4,8 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
-// Tests the established owner / legacy path: the source reprint, primary
-// since R3, would take the edit first (scripts/lib/electron-test-app.mjs).
-process.env.HM_TEST_REPRINT_PRIMARY ??= '0'
-// HM_TEST_REPRINT_PRIMARY=1: the product path (source reprint first). Only behaviour is checked there — which internal writer ran is a fallback-path detail.
-const productPath = process.env.HM_TEST_REPRINT_PRIMARY === '1'
+// The source reprint is the only writer: only behaviour is checked.
+const productPath = true
 
 const root = `/tmp/horsemd-table-column-alignment-transaction-${process.pid}`
 const basePort = Number(process.env.CDP_PORT || 13910 + (process.pid % 30))

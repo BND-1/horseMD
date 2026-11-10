@@ -8,7 +8,7 @@ import { pressKey } from './lib/human-input.mjs'
 // edits; the focused owners they used to pin are the fallback behind it and
 // no longer see these shapes since empty paragraphs are not written as
 // `<br />`. HM_TEST_REPRINT_PRIMARY=0 pins the owners (their checks below).
-const productPath = process.env.HM_TEST_REPRINT_PRIMARY !== '0'
+const productPath = true
 
 const root = `/tmp/horsemd-blockquote-list-exit-backspace-${process.pid}`
 const port = Number(process.env.CDP_PORT || 23840 + (process.pid % 30))
@@ -142,7 +142,6 @@ const openApp = async ({ file, profile, reopen = false }) => {
     // path behind the source reprint engine (docs/source-reprint-architecture.md
     // R3); the engine's user-visible result for the same sequences is covered
     // by test:rich-source-pause-families-ui.
-    if (!productPath) await app.evaluate('globalThis.__hmSourceReprintPrimary = false')
     return app
   } catch (error) {
     await stopBuiltElectron(app, { removeProfile: true })

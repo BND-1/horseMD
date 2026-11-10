@@ -1088,13 +1088,12 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   remark stringify `break` handler emits `<br>` **only inside `tableCell`** (else
   default); a remark transform parses inline `<br>` back to a break. Don't let a
   cell break serialize to a newline — it corrupts the table.
-- **List conversion source fidelity**: right-click conversion owns only the
-  current list level's marker/checkbox. Use the actual hit text position, build
-  the converted canonical snapshot from the transaction document before
-  dispatch, and patch only changed marker prefixes. `markdownUpdated` can arrive
-  during dispatch, after the next keystroke, or at source flush; waiting for it
-  and replacing the complete serializer list rewrites nested compact spacing and
-  indentation. `npm run test:list-conversion-ui` must cover immediate human-like
+- **List conversion source fidelity**: right-click conversion is a command:
+  `convertList` / `convertBlockToList` dispatch the change and publish the
+  source reprint of the converted document at once (`publishReprintNow`) —
+  `markdownUpdated` can arrive during dispatch, after the next keystroke, or
+  at source flush. The reprint's `patchListType` rewrites only the changed
+  markers. `npm run test:list-conversion-ui` must cover immediate human-like
   typing, source bytes, save, process exit and full reopen.
 - **List item lead** (`editor-list-item-lead.js`, appendTransaction over the
   touched top-level blocks): a list item never starts with an empty paragraph
@@ -1185,7 +1184,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
 - **Rich/source pause families (0.13.235)** — found by
   `scripts/fuzz-rich-source-ui.mjs` (seeded real-Electron random editing; oracle =
   live PM doc vs Save → cold reopen, plus mismatch toasts). Fixes, each locked by
-  `test:rich-source-pause-families-ui` + a pure test:
+  `test:rich-source-pause-families-ui` + a pure test. (The blockquote /
+  table-cell owners, the journal and `preserveParagraphSplit` below were
+  removed with the other fallback writers on 2026-11-10; the fixes now live
+  in the source reprint. Kept: the validator rule, the editor-only
+  adoptions and the BOM marker fix.)
   - Blockquote owner: quote paragraphs with marks or several `> `/lazy lines no
     longer fail closed on every keystroke. `planInlineLocalizedPatch` diffs the
     paragraph, aligns PM text to the paragraph's own prefix-stripped raw lines
@@ -1210,15 +1213,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   - `preserveParagraphSplit`: Enter next to inline markup splits after the
     closing delimiters and before the opening ones, using the canonical output
     around the inserted separator as the oracle.
-  - **Journal locality + editor-only changes** (`lib/source-sync/editor-only-document.js`):
-    focused owners prove ONE top-level block, so `handleSourceTransactions`
-    publishes the pending journal (forced flush; dispatch runs before
-    `view.updateState`, so it sees exactly oldState) when a transaction touches
-    top-level blocks disjoint from the journal's changed range — `markUserEdit`'s
-    DOM-driven flush misses CodeMirror/IME/undo edits. Milkdown's
-    `syncHeadingIdPlugin` dispatches separate id-only `setNodeMarkup`
-    transactions after heading edits; `isHeadingIdOnlyChange` closes the
-    pending journal and adopts them as editor-only (ids have no Markdown).
+  - **Editor-only changes** (`lib/source-sync/editor-only-document.js`):
+    Milkdown's `syncHeadingIdPlugin` dispatches separate id-only
+    `setNodeMarkup` transactions after heading edits; `isHeadingIdOnlyChange`
+    adopts them as editor-only (ids have no Markdown), like the trailing
+    empty paragraph above (`handleSourceTransactions`).
   - `remarkFixMarkerOffsetForBom`: Milkdown's `remarkMarker` reads
     `file.value.charAt(offset)` where offsets exclude a BOM but `file.value`
     includes it → every `*`/`_` marker in a BOM file was the char to its left
@@ -1229,24 +1228,27 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   document, keeps authored bytes of unchanged subtrees and the frames of changed
   containers, patches text blocks at character/segment level, and is verified
   **directly against the editor document** (never via canonical). It is
-  the only writer (2026-11-10, `reprintOnlyActive` in Editor.jsx): exact
+  the only writer (2026-11-10; the ~40 focused owners, the transaction
+  journal and mapper, the list-conversion / slash snapshot owners and the
+  10 000-line legacy mapper `preserveRichMarkdownSource` were deleted): exact
   patches → text blocks printed whole → changed top-level blocks printed
   whole (`top`) → the whole document (`document`: the serializer's own
   output, which is the projection) → a pause only if even that fails the
   guard. Commands (list conversion, slash blocks, front matter / inline
   code values) publish its reprint right away. Kept besides it: raw pastes
-  (clipboard bytes), history restore, generated scratch (new untitled
-  documents). The older focused owners / legacy writers still exist for
-  `__hmReprintOnly = false` and `__hmSourceReprintPrimary = false`
-  (fallback-path tests) until they are removed. Editor-only/no-encoding states are listed
-  once in the design doc §5 — extend that table, do not add per-gesture owners.
-  `globalThis.__hmSourceReprintPrimary = false` switches it off (owner tests do
-  this to pin the fallback path). It also runs first while a list input
+  and select-all replacements (their own bytes, else the reprint), history
+  restore (undo back to a recorded document). New untitled documents go
+  through the reprint too (their untouched empty title placeholder is
+  editor-only: `withoutSyntheticTitle` — any other empty heading is written
+  as `#`); `generatedScratchMarkdown` remains only for the
+  recovery copy and whole-document replacements. Editor-only/no-encoding states are listed
+  once in the design doc §5 — extend that table, do not add per-gesture
+  owners. It also runs while a list input
   intent (`- ` / `1. ` just typed) is pending: a list with no authored
   marker is printed with the typed one (`newListMarkers`), and the intent is
   dropped once the caret is in the list or a published reprint printed a list
   with no authored marker (`new-list-marker`; a late callback on a slow
-  machine came after the caret had left it) — left pending, the legacy writers
+  machine came after the caret had left it) — left pending, the old writers
   applied it to a later edit (glued lists, `1)`, RS-51). When an edit makes an
   authored ordered list directly adjacent to another (Backspace merge),
   its delimiter switches `.`↔`)` so it does not read back as one

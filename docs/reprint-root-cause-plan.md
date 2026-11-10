@@ -157,3 +157,26 @@ A–D 都不是“Markdown 本身有这么多特殊情况”，而是**同一件
   - **代码块里的 `$…$` 变成行内公式**（种子 5714，P0 就有）：`editor-inline-math.js` 只要光标在文字块里就记下待转换的 `$x$`，代码块也是文字块；失去焦点（切换源码）时转换，公式节点把代码块拆开、后面几行变成段落。改：代码块 / 行内代码里不记、不转。测试 `test:inline-math-code-ui`（在 P0 上失败）。
   - 最后一级 `document` 原样用序列化器输出（`&#x20;` → 空格的美化会改变 `*` 的定界，种子 410）。
 - 诊断：输入记录里的事务带 meta 键（是哪个插件发的）；`replaceMarkdown` 在记录模式下留最近几次的输入和结果（`__hmReplaceTrace`）；模糊测试逐步记录多了 `op-N.state.json`（组字状态、光标所在、焦点）。
+
+### 删除旧写入方（2026-11-10）
+
+“只用重打印”成为默认后，旧写入方已经走不到。这次把它们删掉（提交 3cd2d6f 之后）：
+
+- **新文档也走重打印**（D1）：新建未保存的文档不再用“序列化器输出就是源码”的特殊路径，和打开的文件一样由重打印写。`generatedScratchMarkdown` 只留给恢复副本和全选替换。
+  - 新文档开头编辑器自己插入的空一级标题（Typora 式的标题占位）在用户碰它之前不算内容：重打印和保存校验都用去掉它的文档（`withoutSyntheticTitle`），否则会写出一行孤零零的 `#`。
+  - 曾经误把**所有**空标题都当成不写（序列化器和重打印里各一处）：`#` 单独一行就是合法的空标题，打开的文件里的空标题保存后就没了，后面的结构跟着错位（gate15：12 个历史种子、5 个新种子，Windows 同样）。已撤回，只认上面那个占位。
+  - 嵌套列表紧跟在紧凑列表项下面时不再插空行（插了会把整个列表变成松散列表）；`test-list-partial-copy-ui` 的期望随之更新。
+- **Editor.jsx 5476 → 2605 行，editor-api.js 616 → 374 行**：
+  - markdownUpdated：粘贴 / 全选替换先试自己的字节，不行交给重打印，再不行暂停；其余编辑只走重打印。删掉约 40 个 focused owner 的注册表和发布链、结构事务发布、纯段落事务、旧映射器兜底、新文档的序列化器兜底。
+  - 每次输入的事务处理只剩：粘贴字节绑定、全选替换捕获、撤销恢复、两种编辑器内部变化（标题 id、末尾空段落）的认领。删掉事务日志（journal）、日志就近刷新、事务映射器（`__hmTransactionSourcePrimary`）。
+  - 命令（列表转换两种、斜杠块、前置元数据、行内代码改值）改完立即发布重打印，不再准备源码快照。
+  - 保存 / 切换源码的强制刷新：重打印成功就写，失败就暂停。
+  - 开关 `__hmReprintOnly` / `__hmSourceReprintPrimary` 和测试环境变量 `HM_TEST_REPRINT_PRIMARY` / `HM_TEST_REPRINT_ONLY` 删除。
+  - 顺带修了一个旧问题：列表输入意图记录里 `topIndex` 等变量在 try 里声明、在外面用，开了 `__hmListIntentTrace` 时会抛错。
+- **删除的模块**：`lib/source-sync/` 下 40 个 `*-transaction-owner.js` 和它们的辅助模块（共 54 个文件，含 `transaction-journal`、`flush-journal`、`list-conversion-snapshot-owner`、`slash-block-owner`、`unchanged-source-result`、`lib/step-source-mapper.js`、`lib/transaction-first-source-sync.js`、`editor-block-list-source.js`、`editor-slash-source.js`、`editor-source-map-scope.js`）。
+- **旧映射器**（`preserveRichMarkdownSource` 及 `markdown-preservation/*`，约 1.2 万行）只剩 `generatedScratchMarkdown` 用到的约 1650 行（含 `source-transaction-sync.js` 里保存校验用的文档比较）。
+- **测试**：
+  - 删除只测旧写入方的测试 71 个（owner 合同、旧映射器、事务映射器、日志）；`test-source-transaction-sync` 只留文档比较、全选替换和 dispatch 包装的部分。
+  - 原来强制走旧路径的 70 个界面测试改为一律走产品路径（只检查用户看得到的行为：编辑器内容、源码字节、保存、冷启动重开、不报警）；其中表格删列暴露一个问题：两列内容完全相同时按内容找不出删的是哪列，退回整表重印、丢了作者的列宽对齐，现在同时比对齐方式（`planColumnChange`）。
+- 保留并且仍在用的：保存校验（`validator.js`，投影决定）、Coordinator、粘贴 / 全选替换 owner、撤销恢复、列表输入意图（重打印用它拼新列表的标记）。
+- 已知、与本次无关：`test-source-document-equivalence-transients`、`test-source-sync-coordinator` 在删除前就失败（测的是校验器里旧的比较选项，不在回归清单里），留到精简校验器时处理。

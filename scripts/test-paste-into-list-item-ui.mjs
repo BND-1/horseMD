@@ -142,14 +142,13 @@ await session('top-level', async ({ clickEndOf, paste, check, key }) => {
   assert.match(source, /正文。\r\n\r\n```\r\ncode line\r\n```\r\n\r\n## 工厂/, source)
 })
 
-// 4. The legacy owners (reprint off) after the nested fence: a list edit
-//    below it is compared with its own list.
-await session('legacy-list-edit', async ({ evaluate, clickEndOf, check, key, app }) => {
-  await evaluate('globalThis.__hmSourceReprintPrimary = false')
+// 4. After the nested fence, a list edit below it is compared with its own
+//    list.
+await session('list-edit-after-fence', async ({ evaluate, clickEndOf, check, key, app }) => {
   await clickEndOf('iterator()')
   await key('Enter', { text: '\r' })
   for (const ch of '新的一项') { await app.send('Input.insertText', { text: ch }); await new Promise((resolve) => setTimeout(resolve, 30)) }
-  const source = await check('list edit through the legacy owners')
+  const source = await check('list edit after the fence')
   // (On Windows the click can land inside the code span: the new item then
   // continues the code mark — still the editor's document, exactly saved.)
   assert.match(source, /- 例子：`Collection\.iterator\(\)`\r\n- `?新的一项`?\r\n/, source)
