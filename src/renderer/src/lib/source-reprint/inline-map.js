@@ -14,11 +14,11 @@
 // cursor, unpositioned ones are scanned sequentially. Any disagreement returns
 // null: the caller then reprints the whole block instead of guessing.
 
+import { decodeNamedCharacterReference } from 'decode-named-character-reference'
 import { HTML_SPAN_CLOSE_TAG_RE as CLOSE_TAG_RE, HTML_SPAN_OPEN_TAG_RE as OPEN_TAG_RE } from '../html-span-tags.js'
 
 const SENTINEL = '​'
 const ENTITY = /^&(?:#[xX]([0-9a-fA-F]{1,6})|#(\d{1,7})|([A-Za-z][A-Za-z0-9]{1,31}));/
-const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
 const PUNCT = /[!-/:-@[-`{-~]/
 
 const decodeEntity = (raw, index) => {
@@ -27,7 +27,10 @@ const decodeEntity = (raw, index) => {
   let text = null
   if (match[1]) text = String.fromCodePoint(parseInt(match[1], 16))
   else if (match[2]) text = String.fromCodePoint(parseInt(match[2], 10))
-  else if (NAMED[match[3]]) text = NAMED[match[3]]
+  // Every HTML named reference, decoded as micromark decodes it (only six
+  // were known: `&copy;` / `&hellip;` in a paragraph made every edit there
+  // reprint the whole paragraph, respelling them as characters).
+  else if (match[3]) text = decodeNamedCharacterReference(match[3]) || null
   return text == null ? null : { text, length: match[0].length }
 }
 
@@ -126,13 +129,18 @@ export function buildInlineMap({ source, block, quoteDepth = 0 }) {
       }
       // A backslash escape wins over a literal match: in `\\` the value's
       // single `\` is spelled by both characters.
+      // A valid character reference in text is always decoded (CommonMark):
+      // `&amp;` spells `&` — matched literally, its `&` took one byte and
+      // `amp;` failed the map, so every edit in that paragraph reprinted
+      // it whole.
+      const reference = source[cursor] === '&' ? decodeEntity(source, cursor) : null
       if (source[cursor] === '\\' && source[cursor + 1] === char && PUNCT.test(char)) {
         cursor += 2
-      } else if (source[cursor] === char) {
+      } else if (!reference && source[cursor] === char) {
         cursor += 1
-      } else if (source[cursor] === '&') {
-        const entity = decodeEntity(source, cursor)
-        if (!entity || entity.text[0] !== char) { failed = true; return }
+      } else if (reference) {
+        const entity = reference
+        if (entity.text[0] !== char) { failed = true; return }
         // Astral code points span two UTF-16 units in value.
         if (entity.text.length === 2) {
           if (value[index + 1] !== entity.text[1]) { failed = true; return }

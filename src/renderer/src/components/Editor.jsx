@@ -155,6 +155,20 @@ import {
   markSourceSyncListInputIntentConsumed
 } from '../lib/source-sync/list-input-intent-lifecycle.js'
 
+// The source reprint as the only writer (docs/reprint-root-cause-plan.md: the
+// fallback writers are retired). The default since 2026-11-10; tests of the
+// fallback path switch the reprint off (`__hmSourceReprintPrimary = false`),
+// and `__hmReprintOnly = false` restores the old order.
+const reprintOnlyActive = () => globalThis.__hmReprintOnly !== false && globalThis.__hmSourceReprintPrimary !== false
+// An IME composition in the editor's own text. ProseMirror's flag stays set
+// when a composition starts in its DOM and ends in a CodeMirror code block
+// (the caret had just moved there, after a paste): compositionend went to
+// CodeMirror and every later code edit was held as "composing" — a save
+// then wrote the source as it was before them (fuzz seed 5686). Inside a
+// code block CodeMirror owns the composition.
+const proseComposing = (view) => Boolean(view?.composing) &&
+  !(typeof document !== 'undefined' && document.activeElement?.closest?.('.cm-editor'))
+
 // Every mounted rich editor registers itself here. A rich-text tab stays mounted
 // after its first activation, so several editors (and several Crepe selection
 // toolbars) can coexist. The heading button injected into a toolbar resolves its
@@ -549,7 +563,7 @@ export default function Editor({
         // Same for an active IME composition: a pause on uncommitted pinyin
         // must not flush transient candidate text (compositionend delivers
         // the committed characters through markdownUpdated).
-        if (hasBlockingListInputIntent() || viewRef.current?.composing) {
+        if (hasBlockingListInputIntent() || proseComposing(viewRef.current)) {
           scheduleRichDirtyReconcile(120)
           return
         }
@@ -655,6 +669,11 @@ export default function Editor({
     }
 
     const handleFrontmatterValueChange = ({ view, getPos }) => {
+      if (reprintOnlyActive()) {
+        markUserEdit()
+        publishReprintNow(view.state.doc)
+        return
+      }
       try {
         const pos = getPos?.()
         if (!Number.isFinite(pos)) return
@@ -715,6 +734,13 @@ export default function Editor({
     }
 
     const handleInlineCodeValueChange = () => {
+      if (reprintOnlyActive()) {
+        if (viewRef.current) {
+          markUserEdit()
+          publishReprintNow(viewRef.current.state.doc)
+        }
+        return
+      }
       try {
         // Inline-code transactions are plugin-owned and can run before
         // Crepe's cached getMarkdown() snapshot catches up. Serialize the live
@@ -1521,6 +1547,11 @@ export default function Editor({
       return 'disabled'
     }
     const handleSlashCommand = ({ phase, id, view, token }) => {
+      // Reprint only: the slash block is an ordinary edit for the reprint.
+      if (reprintOnlyActive()) {
+        if (phase === 'before') markUserEdit()
+        return null
+      }
       if (phase === 'before') {
         if (!slashBlockSourceSyncOwner.handles(id)) return null
         try {
@@ -2283,14 +2314,21 @@ export default function Editor({
     // the source before the first edit (the Coordinator's snapshot is made
     // lazily, on that edit, from the edited document).
     let openedSourcePair = null
-    const publishReprint = ({ canonical, boundary, notifyChange = true, allowDegraded = false, newListMarkers = null }) => {
+    const publishReprint = ({ canonical, boundary, notifyChange = true, allowDegraded = false, newListMarkers = null, force = false }) => {
       const trace = (entry) => {
         if (!Array.isArray(globalThis.__hmSourceReprintTrace)) return
+        // Why the reprint did not publish, counted for the session (the
+        // fallback writers run after these).
+        if (entry.phase !== 'published') {
+          const tally = (globalThis.__hmReprintTally ||= {})
+          const key = `${boundary}|${entry.phase}|${entry.reason || '-'}`
+          tally[key] = (tally[key] || 0) + 1
+        }
         globalThis.__hmSourceReprintTrace.push({ boundary, ...entry })
         if (globalThis.__hmSourceReprintTrace.length > 100) globalThis.__hmSourceReprintTrace.shift()
       }
       if (globalThis.__hmSourceReprintPrimary === false) return null
-      if (generatedScratchRef.current || viewRef.current?.composing) {
+      if (generatedScratchRef.current || (!force && proseComposing(viewRef.current))) {
         trace({ phase: 'skipped', reason: generatedScratchRef.current ? 'generated-scratch' : 'composing' })
         return null
       }
@@ -2317,14 +2355,21 @@ export default function Editor({
       // A degraded reprint (a text block printed whole because its character
       // map failed) must not beat the established path's exact spelling; it
       // is only the last resort before a pause.
-      if (result.degraded && !allowDegraded) {
+      // Reprint only (docs/reprint-root-cause-plan.md: the fallback writers
+      // are retired): a degraded print — a text block printed whole — is the
+      // answer, not a reason to hand the edit to another writer.
+      const reprintOnly = reprintOnlyActive()
+      if (result.degraded && !allowDegraded && !reprintOnly) {
         trace({ phase: 'declined', reason: 'degraded' })
         return null
       }
       // Nothing to write and nothing to advance: let the committed fast path
       // run — except as the rescue, where that path has just failed and the
       // verified unchanged source is the answer.
-      if (!allowDegraded && result.markdown === source && canonical === canonicalMarkdownRef.current) {
+      // Reprint only: the source already reads back as this document — it
+      // is published as such (the snapshot follows the document), never left
+      // to a writer that would change the bytes anyway.
+      if (!allowDegraded && !reprintOnly && result.markdown === source && canonical === canonicalMarkdownRef.current) {
         trace({ phase: 'skipped', reason: 'nothing-to-write' })
         // The source already reads back as this document, new list and all:
         // a pending list input intent has nothing left to say. Left pending,
@@ -2382,6 +2427,20 @@ export default function Editor({
       transactionSourceQuarantined = false
       return result.markdown
     }
+    // A command that changed the document itself (list conversion, slash
+    // block, front matter / inline code value): reprint-only publishes the
+    // reprint of the live document right away; nothing else writes it.
+    const publishReprintNow = (doc) => {
+      const canonical = canonicalForSource(crepe.editor.ctx.get(serializerCtx)(doc))
+      const published = publishReprint({ canonical, boundary: 'source-reprint-command', notifyChange: true })
+      if (published == null) {
+        reportSourceSyncFailure('source-reprint-failed')
+        return false
+      }
+      pendingSourceSyncTransactionJournal = null
+      clearRichFlushPending()
+      return true
+    }
     sourceSyncBridge = createEditorSourceSyncBridge({
       checkpointStore: sourceIntegrityCheckpoints,
       getSource: () => lastMarkdownRef.current,
@@ -2407,6 +2466,20 @@ export default function Editor({
       trace: (entry) => {
         if (!Array.isArray(globalThis.__hmSourceSyncCoordinatorTrace)) return
         globalThis.__hmSourceSyncCoordinatorTrace.push(entry)
+        // Which writer published, counted for the whole session (the trace
+        // keeps only the last 100): how much the fallback writers still do.
+        if (entry?.phase === 'published') {
+          const tally = (globalThis.__hmPublishTally ||= {})
+          const key = `${entry.family || '?'}|${entry.reason || '?'}`
+          tally[key] = (tally[key] || 0) + 1
+          // A fallback writer published: what the reprint did just before.
+          if (entry.family !== 'source-reprint') {
+            const last = (globalThis.__hmSourceReprintTrace || []).at(-1)
+            const cause = last ? `${last.boundary}|${last.phase}|${last.reason || (last.phase === 'gated' ? ['paste', 'list', 'whole', 'intent'].filter((flag) => last[flag]).join('+') : '-')}` : 'no-reprint-trace'
+            const causes = (globalThis.__hmLegacyCause ||= {})
+            causes[`${key} <- ${cause}`] = (causes[`${key} <- ${cause}`] || 0) + 1
+          }
+        }
         if (globalThis.__hmSourceSyncCoordinatorTrace.length > 100) {
           globalThis.__hmSourceSyncCoordinatorTrace.shift()
         }
@@ -2423,7 +2496,7 @@ export default function Editor({
       // verified directly against the editor document.
       if (rescue) try {
         const doc = viewRef.current?.state.doc
-        if (doc && !generatedScratchRef.current && !viewRef.current?.composing) {
+        if (doc && !generatedScratchRef.current && !proseComposing(viewRef.current)) {
           const canonical = canonicalForSource(crepe.editor.ctx.get(serializerCtx)(doc))
           const rescued = publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: true, allowDegraded: true, newListMarkers: pendingListIntentMarkers() })
           if (rescued != null) {
@@ -2935,6 +3008,11 @@ export default function Editor({
         // mapping is temporarily unavailable during teardown.
       }
       const converted = convertCurrentBlockToList(targetType, blockPos)
+      if (converted && reprintOnlyActive()) {
+        markUserEdit()
+        publishReprintNow(viewRef.current.state.doc)
+        return converted
+      }
       if (converted) {
         markUserEdit()
         // ProseMirror has already committed the structural change, while
@@ -3047,6 +3125,9 @@ export default function Editor({
       const pending = pendingListConversion
       let conversionPreparationFailed = false
       const converted = convertListAtSelection(view, targetType, listPos, (convertedDoc) => {
+        // Reprint only: no source snapshot to prepare — the reprint prints the
+        // converted list after the dispatch.
+        if (reprintOnlyActive()) return true
         if (!pending || pendingListConversion !== pending) {
           conversionPreparationFailed = true
           return false
@@ -3087,6 +3168,13 @@ export default function Editor({
         pendingListConversion = null
         if (conversionPreparationFailed) fireToast(tRef.current('list.convertFailed'))
         return false
+      }
+      if (reprintOnlyActive()) {
+        pendingListConversion = null
+        publishReprintNow(view.state.doc)
+        view.focus()
+        setCtxMenu(null)
+        return true
       }
       // Some Milkdown paths do not emit markdownUpdated until a later input or
       // source-mode flush. Commit the verified conversion snapshot now; if the
@@ -3147,7 +3235,7 @@ export default function Editor({
         // `view.composing` is true only while a composition is active, and
         // compositionend fires a final markdownUpdated with the committed
         // characters, which is the only state worth preserving.
-        if (viewRef.current?.composing) return
+        if (proseComposing(viewRef.current)) return
         const pendingPaste = pendingRawMarkdownPasteRef.current
         const pendingList = pendingListConversion
         const pendingWholeDocumentReplacement = wholeDocumentReplacementPending
@@ -3157,9 +3245,13 @@ export default function Editor({
           const plainTransactionMode = transactionFirstMode()
           const intentMarkers = hasPendingListIntent ? pendingListIntentMarkers() : null
           if (Array.isArray(globalThis.__hmSourceReprintTrace) && (pendingPaste || pendingList || pendingWholeDocumentReplacement || (hasPendingListIntent && !intentMarkers))) {
+            const gate = pendingPaste ? 'paste' : pendingList ? 'list-conversion' : pendingWholeDocumentReplacement ? 'whole-document' : 'list-intent'
+            const tally = (globalThis.__hmReprintTally ||= {})
+            tally[`source-reprint-markdown-updated|gated|${gate}`] = (tally[`source-reprint-markdown-updated|gated|${gate}`] || 0) + 1
             globalThis.__hmSourceReprintTrace.push({ boundary: 'source-reprint-markdown-updated', phase: 'gated', paste: Boolean(pendingPaste), list: Boolean(pendingList), whole: Boolean(pendingWholeDocumentReplacement), intent: hasPendingListIntent })
           }
-          if (!pendingPaste && !pendingList && !pendingWholeDocumentReplacement && (!hasPendingListIntent || intentMarkers)) {
+          const reprintOnlyMode = reprintOnlyActive() && !generatedScratchRef.current
+          if (!pendingPaste && !pendingWholeDocumentReplacement && (reprintOnlyMode || (!pendingList && (!hasPendingListIntent || intentMarkers)))) {
             const reprinted = publishReprint({
               canonical,
               boundary: 'source-reprint-markdown-updated',
@@ -3168,8 +3260,15 @@ export default function Editor({
             })
             if (reprinted != null) {
               if (hasPendingListIntent) settleListIntentsAfterReprint()
+              if (reprintOnlyMode) pendingListConversion = null
               clearRichFlushPending()
               userEditUntil = Date.now() + 1000
+              return
+            }
+            // Reprint only: no other writer takes the edit — the rescue
+            // (degraded reprint) or the pause.
+            if (reprintOnlyMode) {
+              reportSourceSyncFailure('source-reprint-failed')
               return
             }
           }
@@ -3491,6 +3590,10 @@ export default function Editor({
               userEditUntil = Date.now() + 1000
               return
             }
+          }
+          if (reprintOnlyActive() && !generatedScratchRef.current) {
+            reportSourceSyncFailure('source-reprint-failed')
+            return
           }
           let preserved
           if (generatedScratchRef.current) {
@@ -4212,7 +4315,7 @@ export default function Editor({
         const heavyDocPipeline = markdownSyncLastMs > SYNC_DEFER_THRESHOLD_MS || isLargeSyncDocument(doc)
         const activelyEditing = ready && !appending &&
           !pendingRawMarkdownPasteRef.current && !wholeDocumentReplacementPending &&
-          !programmaticReplaceRef.current && !viewRef.current?.composing &&
+          !programmaticReplaceRef.current && !proseComposing(viewRef.current) &&
           hasRecentUserEdit()
         if (heavyDocPipeline && activelyEditing) {
           const overdue = markdownSyncDeferSince > 0 &&
@@ -4224,7 +4327,7 @@ export default function Editor({
               markdownSyncDeferTimer = null
               markdownSyncDeferSince = 0
               const view = viewRef.current
-              if (!view || view.composing || !richFlushPending) return
+              if (!view || proseComposing(view) || !richFlushPending) return
               // PM may have advanced since Milkdown supplied this callback,
               // even before its next callback arrives. Pair candidate bytes
               // and expectedDoc from the SAME live document at execution time.
@@ -4654,14 +4757,23 @@ export default function Editor({
           publishSourceSyncResult,
           publishPendingTransactionJournal,
           publishReprint: ({ canonical }) => {
-            if (pendingRawMarkdownPasteRef.current || pendingListConversion) return null
+            const reprintOnly = reprintOnlyActive()
+            if (!reprintOnly && (pendingRawMarkdownPasteRef.current || pendingListConversion)) return null
             const intentPending = hasBlockingListInputIntent()
             const newListMarkers = intentPending ? pendingListIntentMarkers() : null
-            if (intentPending && !newListMarkers) return null
-            const published = publishReprint({ canonical, boundary: 'source-reprint-forced-flush', notifyChange: false, newListMarkers })
+            if (intentPending && !newListMarkers && !reprintOnly) return null
+            // A save / source switch writes what the editor holds, composing or not.
+            const published = publishReprint({ canonical, boundary: 'source-reprint-forced-flush', notifyChange: false, newListMarkers, force: true })
             if (published != null && intentPending) settleListIntentsAfterReprint()
+            if (published != null && reprintOnly) {
+              // The paste and the conversion are in the published source now.
+              pendingListConversion = null
+              pendingRawMarkdownPasteRef.current = null
+            }
             return published
           },
+          // Reprint only: after a failed reprint no other writer runs.
+          reprintOnly: () => reprintOnlyActive() && !generatedScratchRef.current,
           rescueReprint: ({ canonical }) => publishReprint({ canonical, boundary: 'source-reprint-rescue', notifyChange: false, allowDegraded: true, newListMarkers: pendingListIntentMarkers() }),
           reportSourceSyncFailure
         })
@@ -4798,7 +4910,7 @@ export default function Editor({
           if (isLargeSyncDocument(view.state.doc)) {
             const warm = () => {
               globalThis.__hmSyncWarmup = { at: Date.now(), skipped: true }
-              if (destroyed || hasRecentUserEdit() || viewRef.current?.composing) return
+              if (destroyed || hasRecentUserEdit() || proseComposing(viewRef.current)) return
               const started = performance.now()
               globalThis.__hmSyncWarmup.skipped = false
               try {
@@ -4860,6 +4972,9 @@ export default function Editor({
               // relaxed), without Option A's literal `*`.
               equivalentForReprint: (markdown, doc) => reprintDeps().equivalent(markdown, doc, { literalEmphasis: false }),
               reprint: (source, doc, previousDoc = null) => reprintVerified({ ...reprintDeps(), source, editorDoc: doc, previousDoc })
+              ,
+              // One reprint level, unverified (diagnostics).
+              reprintAt: (source, doc, escape) => reprintSource({ ...reprintDeps(), source, editorDoc: doc, escape })
               ,
               // Lists of `doc` that `markdown` reads as one with the list above
               // (list-boundaries.js; what editor-list-join.js joins).

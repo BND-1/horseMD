@@ -84,12 +84,15 @@ async function main() {
     })()`), true, 'could not update frontmatter textarea')
     const publication = await waitFor(async () => {
       const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
+      // The fallback path's front matter writer, or (reprint only) the
+      // source reprint of the edited document.
       return trace.find((entry) =>
-        entry.phase === 'published' &&
-        entry.boundary === 'frontmatter-value-change' &&
-        entry.owner === 'legacy' &&
-        entry.family === 'legacy-preservation' &&
-        entry.reason === 'frontmatter-block-change'
+        entry.phase === 'published' && (
+          (entry.boundary === 'frontmatter-value-change' &&
+            entry.owner === 'legacy' &&
+            entry.family === 'legacy-preservation' &&
+            entry.reason === 'frontmatter-block-change') ||
+          entry.family === 'source-reprint')
       ) || null
     }, 'frontmatter node-view publication bypassed SourceSyncCoordinator')
     assert.ok(publication.revision >= 1)

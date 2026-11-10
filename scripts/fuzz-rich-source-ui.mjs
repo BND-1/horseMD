@@ -235,6 +235,18 @@ function normalizeDoc(json) {
     if (!node || typeof node !== 'object') return node
     // Marks on a line break have no visible meaning (validator ignores them).
     if ((node.type === 'hardbreak' || node.type === 'hard_break') && node.marks) delete node.marks
+    // A GFM autolink literal (`https://a.com`, `www.a.com`, `a@b.cn`) is
+    // text while typed and a link once read — the projection's guard treats
+    // it the same (lib/source-sync/projection.js isAutolinkLiteral; Typora
+    // links a typed URL on reopen too). Windows fuzz seed 5469.
+    if (node.type === 'text' && Array.isArray(node.marks)) {
+      const value = String(node.text || '')
+      const literal = (href) => (/^https?:\/\/\S+$/i.test(value) && href === value) ||
+        (/^www\.\S+$/i.test(value) && href === `http://${value}`) ||
+        (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value) && href === `mailto:${value}`)
+      node.marks = node.marks.filter((mark) => !(mark?.type === 'link' && literal(mark.attrs?.href)))
+      if (!node.marks.length) delete node.marks
+    }
     // `*` vs `_` (strong / emphasis `marker`) is spelling (validator too).
     if (Array.isArray(node.marks)) {
       node.marks = node.marks.map((mark) => {
@@ -323,10 +335,14 @@ function normalizeDoc(json) {
         const width = Math.max(0, ...node.content.map((row) => row.content?.length || 0))
         for (const row of node.content) {
           const cells = row.content || []
-          for (let column = cells.length; cells.length && column < width; column += 1) {
+          // An empty row is padded too (projection.js stripAttrs does the
+          // same); a header row takes header cells.
+          const cellType = cells[0]?.type || (row.type === 'table_header_row' ? 'table_header' : 'table_cell')
+          for (let column = cells.length; column < width; column += 1) {
             const model = node.content.find((other) => other.content?.[column])?.content[column]
-            cells.push({ type: cells[0].type, attrs: { ...(model?.attrs || {}) }, content: [{ type: 'paragraph' }] })
+            cells.push({ type: cellType, attrs: { ...(model?.attrs || {}) }, content: [{ type: 'paragraph' }] })
           }
+          row.content = cells
         }
       }
       // A text-less paragraph directly under doc/blockquote has no Markdown
@@ -913,6 +929,7 @@ async function runSeed(seed) {
       if (process.env.FUZZ_DUMP_SOURCE === '1') {
         await writeFile(join(seedDir, `op-${index}.md`), (await app.evaluate(`globalThis.__hmSourceReprintHarness?.liveSource?.() ?? ''`)) || '')
         await writeFile(join(seedDir, `op-${index}.doc.json`), (await docJson(app)) || 'null')
+        await writeFile(join(seedDir, `op-${index}.state.json`), String(await app.evaluate(`JSON.stringify((() => { const v = globalThis.__hmSourceReprintHarness?.view?.(); return v ? { composing: v.composing, head: v.state.selection.$head.parent.type.name, active: String(document.activeElement?.className || '').slice(0, 40) } : null })())`)))
       }
       await drainShadow(index)
       if (sizes?.source != null && sizes.serialized != null && sizes.source > sizes.serialized * 3 + 4000 && !report.firstCorrupt) {
@@ -947,6 +964,11 @@ async function runSeed(seed) {
       }
     }
   } finally {
+    // Which writer published how often (Editor.jsx __hmPublishTally).
+    try { report.publishers = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmPublishTally || null)') || 'null') } catch { /* app gone */ }
+    try { report.reprintDeclines = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmReprintTally || null)') || 'null') } catch { /* app gone */ }
+    try { report.legacyCauses = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmLegacyCause || null)') || 'null') } catch { /* app gone */ }
+    if (process.env.FUZZ_DUMP_SOURCE === '1') { try { report.replaceTrace = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmReplaceTrace || null)') || 'null') } catch { /* app gone */ } }
     if (process.env.FUZZ_PROJECTION === '1') {
       try { report.projection = JSON.parse(await app.evaluate('JSON.stringify(globalThis.__hmProjectionShadowLog || null)') || 'null') } catch { /* app gone */ }
     }

@@ -68,6 +68,14 @@ export async function launchBuiltElectron({
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: pin }).catch(() => {})
     await cdp.evaluate(pin).catch(() => {})
   }
+  // The source reprint is the only writer (the default; the fallback
+  // writers are being retired, docs/reprint-root-cause-plan.md).
+  // HM_TEST_REPRINT_ONLY=0 restores the old order (reprint, then them).
+  if (process.env.HM_TEST_REPRINT_ONLY === '0') {
+    const pin = 'globalThis.__hmReprintOnly = false'
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: pin }).catch(() => {})
+    await cdp.evaluate(pin).catch(() => {})
+  }
   await sleep(800)
   return { ...cdp, child, profileDir, launched: true }
 }

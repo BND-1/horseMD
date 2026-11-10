@@ -434,6 +434,8 @@
     "fuzz:math-block-ui": "node scripts/fuzz-math-block-ui.mjs",
     "test:projection-audit-ui": "node scripts/test-projection-audit-ui.mjs",
     "test:list-join-ui": "node scripts/test-list-join-ui.mjs",
+    "test:table-empty-header-ui": "node scripts/test-table-empty-header-ui.mjs",
+    "test:inline-math-code-ui": "node scripts/test-inline-math-code-ui.mjs",
     "test:serializer-style": "node scripts/test-serializer-style.mjs",
     "test:serializer-style-follow-doc-ui": "node scripts/test-serializer-style-follow-doc-ui.mjs",
     "test:custom-theme-style-order-ui": "node scripts/test-custom-theme-style-order-ui.mjs",

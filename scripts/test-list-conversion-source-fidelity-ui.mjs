@@ -127,10 +127,13 @@ async function main() {
     await convertFirstListAndType(app)
     const commandSnapshot = await waitFor(() => app.evaluate(`
       (window.__hmSourceSyncCoordinatorTrace || []).find((entry) =>
-        entry.phase === 'published' &&
-        entry.boundary === 'list-conversion-command-snapshot' &&
-        entry.owner === 'legacy' &&
-        entry.family === 'legacy-preservation'
+        entry.phase === 'published' && (
+          // The fallback path's command snapshot, or (reprint only) the
+          // source reprint of the converted document.
+          (entry.boundary === 'list-conversion-command-snapshot' &&
+            entry.owner === 'legacy' &&
+            entry.family === 'legacy-preservation') ||
+          entry.family === 'source-reprint')
       ) || null
     `), 'list conversion command snapshot bypassed SourceSyncCoordinator')
     assert.ok(commandSnapshot.revision >= 1)

@@ -1228,9 +1228,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `reprint(source, editorDoc)` diffs `parse(source)` against the editor
   document, keeps authored bytes of unchanged subtrees and the frames of changed
   containers, patches text blocks at character/segment level, and is verified
-  **directly against the editor document** (never via canonical). Run order:
-  precise reprint → existing focused owners/legacy → degraded reprint (inside
-  `reportSourceSyncFailure`) → pause. Editor-only/no-encoding states are listed
+  **directly against the editor document** (never via canonical). It is
+  the only writer (2026-11-10, `reprintOnlyActive` in Editor.jsx): exact
+  patches → text blocks printed whole → changed top-level blocks printed
+  whole (`top`) → the whole document (`document`: the serializer's own
+  output, which is the projection) → a pause only if even that fails the
+  guard. Commands (list conversion, slash blocks, front matter / inline
+  code values) publish its reprint right away. Kept besides it: raw pastes
+  (clipboard bytes), history restore, generated scratch (new untitled
+  documents). The older focused owners / legacy writers still exist for
+  `__hmReprintOnly = false` and `__hmSourceReprintPrimary = false`
+  (fallback-path tests) until they are removed. Editor-only/no-encoding states are listed
   once in the design doc §5 — extend that table, do not add per-gesture owners.
   `globalThis.__hmSourceReprintPrimary = false` switches it off (owner tests do
   this to pin the fallback path). It also runs first while a list input

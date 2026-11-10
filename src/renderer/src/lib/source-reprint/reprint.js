@@ -515,6 +515,14 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   // blank after a soft break in one paragraph lost the line break), the
   // verifier used to have nothing left and the sync paused.
   const blockOnly = escape === 'block'
+  // `escape: 'top'`: every changed top-level block is printed whole by the
+  // serializer, unchanged ones keep their bytes; `'document'`: the whole
+  // document is the serializer's (docs/reprint-root-cause-plan.md P3: widen
+  // until it verifies). Both are degraded — the last steps, so a sync never
+  // has to pause for a document the serializer can write (an empty item
+  // opening a quote right after a paragraph line reads as text: Windows
+  // fuzz seed 286).
+  const topOnly = escape === 'top'
   const bom = source.startsWith('﻿') ? '﻿' : ''
   const body = bom ? source.slice(1) : source
   const eol = /\r\n/.test(body) ? '\r\n' : '\n'
@@ -553,6 +561,7 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
   }
   const schema = editorDoc.type.schema
   const docWith = (nodes) => schema.topNodeType.create(null, nodes)
+
   // A line break's marks before printing (below).
   const SPAN_MARKS = new Set(['strong', 'emphasis', 'strike_through', 'highlight'])
   // Empty text blocks print as Crepe's `<br />` placeholder; in source an
@@ -586,6 +595,18 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     .replace(LINE_START_ENTITY_AFTER_PREFIX, sentinelWhereItReadsBack)
     .replace(/(?<=[^\n\\](?:\\\\)*)&#x20;/g, ' ')
   )
+
+  // The whole document in the serializer's spelling (the last step) —
+  // exactly as written, only the empty-block placeholders taken out: the
+  // `&#x20;` → space respelling above can move an emphasis delimiter's
+  // flanking (`*a&#x20;*` is not `*a *`), and the last step must be the
+  // projection itself (fuzz seed 410).
+  if (escape === 'document') {
+    const children = []
+    editorDoc.forEach((child) => children.push(child))
+    const printed = `${withLiteralBlocksProtected(serialize(docWith(children)).replace(/\n+$/, ''), (text) => withoutPlaceholders(text))}\n`
+    return { ok: true, markdown: bom + (eol === '\r\n' ? printed.replace(/\r?\n/g, '\r\n') : printed), edits: [], notes: [{ level: 'document' }], degraded: true }
+  }
 
   // Prefix every line after the first; blank lines get the trimmed prefix.
   const indentContinuation = (text, prefix) => text
@@ -1253,8 +1274,45 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
     }
     return done
   }
+  // A list whose type alone changed (right-click conversion, ordered ↔
+  // bullet) with every item as it was: only the markers are rewritten — the
+  // items, their nested lists and blank lines keep their bytes. Printed
+  // whole, the nested lists took the serializer's spacing and markers
+  // (test:list-conversion-source-fidelity-ui). A wider marker moves the
+  // item's later lines (as renumbering does); a narrower one leaves them.
+  const patchListType = (srcNode, mdNode, newNode, frame) => {
+    if (mdNode?.type !== 'list' || srcNode.childCount !== newNode.childCount) return false
+    const kids = mdChildren(srcNode, mdNode)
+    if (!kids || kids.length !== srcNode.childCount) return false
+    for (let index = 0; index < srcNode.childCount; index += 1) {
+      const before = srcNode.child(index)
+      const after = newNode.child(index)
+      if (before.attrs.checked !== after.attrs.checked || before.childCount !== after.childCount) return false
+      for (let child = 0; child < before.childCount; child += 1) {
+        if (!sameNode(before.child(child), after.child(child))) return false
+      }
+    }
+    const ordered = newNode.type.name === 'ordered_list'
+    const start = Number(newNode.attrs.order ?? 1)
+    const itemFrame = childFrame(srcNode, mdNode, frame)
+    for (let index = 0; index < kids.length; index += 1) {
+      const item = kids[index]
+      const at = startOf(item)
+      const marker = Number.isInteger(at) ? LIST_MARKER.exec(body.slice(at, at + 16)) : null
+      if (!marker) return false
+      const next = ordered ? `${start + index}.` : '-'
+      const delta = next.length - marker[2].length
+      if (delta > 0 && !shiftItemLines(item, delta, itemFrame)) return false
+      replace(at + marker[1].length, at + marker[1].length + marker[2].length, next)
+    }
+    notes.push({ level: 'list-type' })
+    return true
+  }
   const patchNodeInner = (srcNode, mdNode, newNode, frame) => {
     const name = srcNode.type.name
+    if (srcNode.type !== newNode.type && /^(bullet|ordered)_list$/.test(name) && /^(bullet|ordered)_list$/.test(newNode.type.name)) {
+      return patchListType(srcNode, mdNode, newNode, frame)
+    }
     if (srcNode.type !== newNode.type) return false
     if (name === 'paragraph' || name === 'heading') {
       if (!attrsEqual(srcNode, newNode)) return false
@@ -1756,13 +1814,14 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
             continue
           }
           if (!flushRegion()) return false
-          if (patchNode(before, md, after, innerFrame)) {
+          if (!(topOnly && containerName === 'doc') && patchNode(before, md, after, innerFrame)) {
             survivors.push([oldIndex, newIndex])
           } else {
             const printed = typedThematicBreak(after, [md]) ?? printBlock(after, newNode, mdNode, gap.newFrom + offset, md)
             if (printed == null) return false
             replace(wholeBlockFrom(startOf(md), printed, innerFrame.prefix), endOf(md), indentContinuation(printed, innerFrame.prefix))
-            notes.push({ level: 'block', type: after.type.name })
+            notes.push({ level: topOnly && containerName === 'doc' ? 'top' : 'block', type: after.type.name })
+            if (topOnly && containerName === 'doc') degraded = true
           }
         }
         if (!flushRegion()) return false

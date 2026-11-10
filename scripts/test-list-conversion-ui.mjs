@@ -398,12 +398,15 @@ async function main() {
       failures: (window.__hmSourceIntegrityTrace || [])
         .filter((entry) => entry?.ok === false)
     }))()`)
+    // Which writer published is a fallback-path detail: with the source
+    // reprint as the only writer the conversions are its publications.
+    const reprintOnly = process.env.HM_TEST_REPRINT_ONLY !== '0' && process.env.HM_TEST_REPRINT_PRIMARY !== '0'
     assert.ok(
-      sourceSyncState.publications.some((entry) => entry.boundary === 'list-conversion-command-snapshot'),
+      sourceSyncState.publications.some((entry) => entry.boundary === (reprintOnly ? 'source-reprint-command' : 'list-conversion-command-snapshot')),
       'list-type conversion bypassed its command-snapshot owner'
     )
     assert.ok(
-      sourceSyncState.publications.some((entry) => entry.boundary === 'block-to-list-command-snapshot'),
+      sourceSyncState.publications.some((entry) => entry.boundary === (reprintOnly ? 'source-reprint-command' : 'block-to-list-command-snapshot')),
       'paragraph-to-list conversion bypassed its command-snapshot owner'
     )
     assert.equal(

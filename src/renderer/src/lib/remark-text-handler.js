@@ -1,4 +1,5 @@
 import { cjkFriendlyToMarkdown } from 'mdast-util-to-markdown-cjk-friendly'
+import { gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTaskListItemToMarkdown } from 'mdast-util-gfm-task-list-item'
 import { defaultHandlers } from 'mdast-util-to-markdown'
 
@@ -221,3 +222,23 @@ export const autolinkSafeLinkHandler = (node, parent, state, info) => {
 }
 autolinkSafeLinkHandler.peek = (node, parent, state, info) =>
   isAutolink(node, state) ? '<' : defaultHandlers.link.peek(node, parent, state, info)
+
+// A GFM table row has as many cells as the widest row; the stock handler
+// writes each row as it is, and a header row without cells (left by a
+// prosemirror-tables fix that cannot add body cells to a header row) made
+// the first body row the header — one row was lost on reopen (fuzz seed
+// 5619). Rows are padded with empty cells before writing (the editor and
+// the projection read short rows as padded too).
+const gfmTable = gfmTableToMarkdown()
+export const tableStringifyHandler = (node, parent, state, info) => {
+  let rows = node.children || []
+  // Milkdown leaves a row without cells out of the mdast (its runner); the
+  // header row it marks `isHeader`. A first row without the mark means the
+  // header row was empty: it comes back as an empty header row.
+  if (rows.length && rows[0].isHeader !== true) rows = [{ type: 'tableRow', isHeader: true, children: [] }, ...rows]
+  const width = Math.max(0, ...rows.map((row) => row.children?.length || 0))
+  const padded = rows !== node.children || rows.some((row) => (row.children?.length || 0) < width)
+    ? { ...node, children: rows.map((row) => ((row.children?.length || 0) < width ? { ...row, children: [...(row.children || []), ...Array.from({ length: width - (row.children?.length || 0) }, () => ({ type: 'tableCell', children: [] }))] } : row)) }
+    : node
+  return gfmTable.handlers.table(padded, parent, state, info)
+}

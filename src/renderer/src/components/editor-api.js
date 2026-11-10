@@ -55,7 +55,8 @@ export function createEditorApi({
   publishSourceSyncResult,
   publishPendingTransactionJournal,
   rescueReprint,
-  reportSourceSyncFailure
+  reportSourceSyncFailure,
+  reprintOnly = null
 }) {
   const getPdfSource = async () => {
     const v = viewRef.current
@@ -194,6 +195,11 @@ export function createEditorApi({
       clearPendingRichFlush?.()
       if (programmaticReplaceRef) programmaticReplaceRef.current = programmaticReplace
       crepe.editor.action(replaceAll(next))
+      // Diagnostics (input trace only): what source mode handed over and the
+      // document it became.
+      if (Array.isArray(globalThis.__hmSourceReprintTrace)) {
+        globalThis.__hmReplaceTrace = [...(globalThis.__hmReplaceTrace || []).slice(-4), { at: Date.now(), source, next: next === source ? null : next, doc: viewRef.current?.state.doc?.toJSON?.() }]
+      }
       recordSourceSnapshot?.({ doc: viewRef.current?.state.doc, source })
       const canonical = canonicalForSource(serializeCurrentDocument())
       canonicalMarkdownRef.current = canonical
@@ -233,7 +239,9 @@ export function createEditorApi({
       if (!force && !hasPendingRichFlush?.()) return lastMarkdownRef.current
       // An unforced flush during IME composition would sync uncommitted
       // candidate text; keep the pending flag and let compositionend publish.
-      if (!force && viewRef?.current?.composing) return lastMarkdownRef.current
+      // Composition in the editor's own text (not a stale flag left by one
+      // that ended inside a CodeMirror block): an unforced flush waits.
+      if (!force && viewRef?.current?.composing && !document.activeElement?.closest?.('.cm-editor')) return lastMarkdownRef.current
       // A press or edit intent raises the pending flag before anything has
       // changed (pointerdown fires before the selection even moves). When the
       // live document is still the exact one the committed source was proven
@@ -254,6 +262,11 @@ export function createEditorApi({
         if (typeof reprinted === 'string') {
           clearPendingRichFlush?.()
           return reprinted
+        }
+        // Reprint only: no fallback writer — the rescue or the pause. A
+        // pending paste still has its own exact-bytes path below.
+        if (reprintOnly?.() === true) {
+          return failOrRescue('source-reprint-failed')
         }
       }
       // A pending transaction journal owns the live PM revision even when the

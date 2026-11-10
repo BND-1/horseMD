@@ -39,9 +39,16 @@ const textblockStream = (node) => {
   return text
 }
 
+// Code is text: `$…$` in a code block (a code_block is a textblock too) is
+// never math. Committed there, the math node split the block and the rest
+// of its lines became a paragraph — on a source-mode switch, the blur that
+// commits (fuzz seed 5714).
+const inCode = ($pos) => Boolean($pos.parent.type.spec.code) ||
+  $pos.marks().some((mark) => mark.type.spec.code)
+
 const pendingAtSelection = (state) => {
   const { selection } = state
-  if (!selection.empty || !selection.$head.parent.isTextblock) return null
+  if (!selection.empty || !selection.$head.parent.isTextblock || inCode(selection.$head)) return null
   const $head = selection.$head
   const span = inlineMathAtCaret(textblockStream($head.parent), $head.parentOffset)
   if (!span) return null
@@ -119,6 +126,7 @@ export function createInlineMathEditingPlugin({ getDeleteMode = () => 'protect' 
       const mathType = newState.schema.nodes.math_inline
       if (!mathType || pending.to > newState.doc.content.size) return null
       if (newState.doc.textBetween(pending.from, pending.to) !== `$${pending.value}$`) return null
+      if (inCode(newState.doc.resolve(pending.from))) return newState.tr.setMeta(INLINE_MATH_KEY, { clear: true })
       return newState.tr
         .replaceWith(pending.from, pending.to, mathType.create({ value: pending.value }))
         .setMeta(INLINE_MATH_KEY, { clear: true })

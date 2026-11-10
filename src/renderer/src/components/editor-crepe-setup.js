@@ -32,6 +32,7 @@ import { mathPreviewPlugin } from './editor-math-preview.js'
 import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { listItemLeadPlugin } from './editor-list-item-lead.js'
 import { listJoinPlugin } from './editor-list-join.js'
+import { tableHeaderCellsPlugin } from './editor-table-header-cells.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { disableCrepeLinkPreview } from './editor-link-card.js'
@@ -63,7 +64,7 @@ import { remarkTaskParagraphPosition } from '../lib/remark-task-paragraph-positi
 import { inlineCodeAtomsPlugin } from './editor-inline-code-atoms.js'
 import { textblockNewlinesPlugin } from './editor-textblock-newlines.js'
 import { createListTypeSyncPlugin } from '../lib/list-type-sync.js'
-import { autolinkSafeLinkHandler, deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, taskListItemStringifyHandler } from '../lib/remark-text-handler.js'
+import { autolinkSafeLinkHandler, deleteStringifyHandler, emphasisStringifyHandler, safeTrailingWhitespaceTextHandler, strongStringifyHandler, tableStringifyHandler, taskListItemStringifyHandler } from '../lib/remark-text-handler.js'
 import { remarkFixMarkerOffsetForBom } from '../lib/remark-marker-bom-fix.js'
 import { remarkSpacedLinkDestinations } from '../lib/remark-spaced-link-destination.js'
 import { remarkNormalizeCodeLineEndings } from '../lib/remark-code-line-endings.js'
@@ -281,6 +282,7 @@ export function createConfiguredCrepe({
       listItemLeadPlugin(),
       // Lists an edit puts next to each other join (Markdown reads them as one).
       listJoinPlugin({ isProgrammaticChange, readsAsOne: readsAsOneList }),
+      tableHeaderCellsPlugin(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).
@@ -326,6 +328,7 @@ export function createConfiguredCrepe({
         delete: deleteStringifyHandler,
         listItem: taskListItemStringifyHandler,
         link: autolinkSafeLinkHandler,
+        table: tableStringifyHandler,
         break: tableCellBreakHandler,
         hmLineBreakRun,
         highlight: highlightStringifyHandler,

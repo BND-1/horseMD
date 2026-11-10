@@ -38,6 +38,9 @@ export function createEditorTransactionTracer({
         traceId,
         transactions: (transactions || []).map(transaction => ({
           docChanged: transaction?.docChanged || false,
+          // Which plugin / input path made it (meta keys: input rules,
+          // paste, uiEvent, appendedTransaction, plugin keys…).
+          meta: Object.keys(transaction?.meta || {}).slice(0, 12),
           selection: {
             anchor: transaction?.selection?.anchor ?? null,
             head: transaction?.selection?.head ?? null,

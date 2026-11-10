@@ -485,6 +485,14 @@ const standalone = [
     script: 'scripts/test-list-conversion-source-fidelity-ui.mjs'
   },
   {
+    name: 'Inline math never forms inside a code block (blur / source switch)',
+    script: 'scripts/test-inline-math-code-ui.mjs'
+  },
+  {
+    name: 'Table whose header row lost its cells: refilled, every row written',
+    script: 'scripts/test-table-empty-header-ui.mjs'
+  },
+  {
     // Outside the list it failed unnoticed for the whole P3 stage (a list
     // whose type was converted joined the task list above it).
     name: 'List conversion: current level, task lists, a converted list stays its own',

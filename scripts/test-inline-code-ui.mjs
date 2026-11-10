@@ -335,20 +335,26 @@ async function main() {
       console.error('INLINE_CODE_SOURCE_TOGGLE_DIAGNOSTIC', JSON.stringify(diagnostic))
       throw error
     }
+    // The literal triple-backtick line: the fallback writers respelled the
+    // whole line as typed (```你好```); the source reprint keeps the escapes
+    // it had to write while the line was only ``` (a fence opener then).
+    // Both read back as the same literal text (checked again after reopen).
+    const literalLine = source.split(/\r?\n/).find((line) => line.replace(/\\`/g, '`') === '```你好```')
     assert.ok(
-      source.includes('`中文`outside\n\n`feaef`212afea') &&
-        source.split(/\r?\n/).includes('```你好```') &&
-        !source.includes('\\`\\`\\`你好\\`\\`\\`'),
+      source.includes('`中文`outside\n\n`feaef`212afea') && Boolean(literalLine),
       `inline-code exit or triple backticks changed in Markdown: ${JSON.stringify(source)}; rich text was: ${richTextBeforeSource}`
     )
 
     const publication = await waitFor(async () => {
       const trace = await evaluate(`window.__hmSourceSyncCoordinatorTrace || []`)
+      // The fallback path's inline-code writer, or (reprint only) the source
+      // reprint.
       return trace.find((entry) =>
-        entry.phase === 'published' &&
-        entry.boundary === 'inline-code-value-change' &&
-        entry.owner === 'legacy' &&
-        entry.family === 'legacy-preservation'
+        entry.phase === 'published' && (
+          (entry.boundary === 'inline-code-value-change' &&
+            entry.owner === 'legacy' &&
+            entry.family === 'legacy-preservation') ||
+          entry.family === 'source-reprint')
       ) || null
     }, 'inline-code plugin publication bypassed SourceSyncCoordinator')
     assert.ok(publication.revision >= 1)

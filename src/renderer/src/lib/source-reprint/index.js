@@ -44,7 +44,7 @@ export function reprintVerified({ source, editorDoc, previousDoc = null, parse, 
   // for places Markdown cannot spell them at all — a `minimal` patch that
   // left `gamm**\`a\`…**` literal used to win although `full` / `block`
   // spell it (`gam&#x6D;**…`), and reopening showed asterisks.
-  for (const escape of ['minimal', 'full', 'segment', 'block']) {
+  for (const escape of ['minimal', 'full', 'segment', 'block', 'top', 'document']) {
     let result
     try {
       result = reprintSource({ source, editorDoc, previousDoc, parse, parseTree, remark, serialize, escape, newListMarkers })

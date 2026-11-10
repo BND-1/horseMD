@@ -141,6 +141,10 @@ const skeleton = (json, path = [], out = []) => {
     out.push(`${here.join('>')}:<atom>`)
     return out
   }
+  // A table's rows, empty ones included: an empty row has no text, so only
+  // its count shows a row the serializer lost (a header row without cells
+  // made the first body row the header: fuzz seed 5619).
+  if (json.type === 'table') out.push(`${here.join('>')}:rows=${children.length}`)
   for (const child of children) skeleton(child, here, out)
   return out
 }
