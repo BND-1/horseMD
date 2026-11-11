@@ -130,7 +130,7 @@ const bridge = createEditorSourceSyncBridge({
   setSource: (value) => { source = value },
   setCanonical: (value) => { canonical = value },
   onChange: (value) => changes.push(value),
-  validateLegacyCandidate: (markdown, expectedDoc, nextCanonical) => ({
+  validateCandidate: (markdown, expectedDoc, nextCanonical) => ({
     ok: markdown === rawPlan.result.markdown &&
       expectedDoc === pastedDoc &&
       nextCanonical === 'Before\n\n# Pasted\n'

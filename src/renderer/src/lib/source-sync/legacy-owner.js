@@ -54,32 +54,3 @@ export function createLegacySourceSyncCandidateFromResult({
 
 
 
-export function createLegacySourceSyncOwner({ preserve }) {
-  if (typeof preserve !== 'function') {
-    throw new TypeError('legacy source-sync owner requires a preserve function')
-  }
-  return Object.freeze({
-    owner: SOURCE_SYNC_OWNERS.LEGACY,
-    family: 'legacy-preservation',
-    createCandidate({
-      snapshot,
-      previousCanonical = snapshot?.canonical ?? '',
-      nextCanonical,
-      expectedDoc = null,
-      validationSite = ''
-    } = {}) {
-      const result = preserve(
-        snapshot?.source ?? '',
-        previousCanonical,
-        String(nextCanonical ?? '')
-      )
-      return createLegacySourceSyncCandidateFromResult({
-        snapshot,
-        result,
-        canonical: String(nextCanonical ?? ''),
-        expectedDoc,
-        validationSite
-      })
-    }
-  })
-}

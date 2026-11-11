@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
 import { AllSelection, EditorState, Plugin } from '@milkdown/prose/state'
 import {
-  areSourceDocumentTransitionsEquivalent,
   areSourceDocumentsEquivalent,
   formatWholeDocumentReplacementSource,
   isWholeDocumentReplacementBatch
@@ -683,52 +682,26 @@ assert.equal(
   'the legacy (non-path) blockquote allowance stays exactly one trailing empty paragraph after text'
 )
 
-// A trusted baseline may already have a stable serializer/source divergence.
-// The integrity gate may accept a later edit only when BOTH representations
-// undergo the same normalized semantic transition.
-const divergedSourceBefore = schema.nodes.doc.create(null, [
-  paragraph('前文'),
-  paragraph('旧表示')
-])
-const divergedCanonicalBefore = schema.nodes.doc.create(null, [
-  paragraph('前文'),
-  quote('旧表示')
-])
-const divergedSourceAfterAppend = schema.nodes.doc.create(null, [
-  paragraph('前文'),
-  paragraph('旧表示'),
-  paragraph('新增')
-])
-const divergedCanonicalAfterAppend = schema.nodes.doc.create(null, [
-  paragraph('前文'),
-  quote('旧表示'),
-  paragraph('新增')
-])
-assert.equal(
-  areSourceDocumentTransitionsEquivalent(
-    divergedSourceBefore,
-    divergedSourceAfterAppend,
-    divergedCanonicalBefore,
-    divergedCanonicalAfterAppend
-  ),
-  true,
-  'a pre-existing divergence must allow an identical later semantic append'
-)
-const divergedCanonicalWrongAppend = schema.nodes.doc.create(null, [
-  paragraph('前文'),
-  quote('旧表示'),
-  paragraph('错误新增')
-])
-assert.equal(
-  areSourceDocumentTransitionsEquivalent(
-    divergedSourceBefore,
-    divergedSourceAfterAppend,
-    divergedCanonicalBefore,
-    divergedCanonicalWrongAppend
-  ),
-  false,
-  'different source/canonical transitions must remain fail-closed'
-)
+// Marks are compared in full-document equivalence, while adjacent text runs
+// carrying the same marks merge (0.13.179). Moved here from the retired
+// transition-channel test (test-transition-inline-textual.mjs).
+{
+  const strong = schema.marks.strong.create()
+  const markedDoc = (...runs) => schema.nodes.doc.create(null, [schema.nodes.paragraph.create(null, runs)])
+  assert.equal(
+    areSourceDocumentsEquivalent(markedDoc(schema.text('甲乙', [strong])), markedDoc(schema.text('甲乙'))),
+    false,
+    'full-document equivalence must keep comparing marks'
+  )
+  assert.equal(
+    areSourceDocumentsEquivalent(
+      markedDoc(schema.text('甲', [strong]), schema.text('乙', [strong])),
+      markedDoc(schema.text('甲乙', [strong]))
+    ),
+    true,
+    'adjacent same-mark text runs still merge'
+  )
+}
 
 // The dispatch boundary forwards one complete applyTransaction batch,
 // including recursively appended plugin transactions, before updating the
@@ -833,4 +806,4 @@ assert.equal(
   assert.equal(areSourceDocumentsEquivalent(para(code('c'), soft(), t('d')), para(code('c '), soft(), t('d'))), false, 'space in code before a break is content')
 }
 
-console.log('PASS source transaction sync: document equivalence, select-all replacement detection/formatting and the dispatch wrapper')
+console.log('PASS source transaction sync: document equivalence (marks compared, same-mark runs merged), select-all replacement detection/formatting and the dispatch wrapper')

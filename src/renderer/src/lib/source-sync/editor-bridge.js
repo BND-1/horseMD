@@ -2,10 +2,7 @@ import { sameIgnoringHeadingIds } from './editor-only-document.js'
 import { createLegacySourceSyncCandidateFromResult } from './legacy-owner.js'
 import { createSourceSyncCoordinator } from './coordinator.js'
 import { createSourceSyncCandidate } from './proof.js'
-import {
-  createSourceSyncValidator,
-  sourceSyncSemanticOptionsFromContext
-} from './validator.js'
+import { createSourceSyncValidator } from './validator.js'
 
 const sameDocument = (left, right) => {
   if (left === right) return true
@@ -26,7 +23,7 @@ export function createEditorSourceSyncBridge({
   setSource,
   setCanonical,
   onChange = null,
-  validateLegacyCandidate,
+  validateCandidate,
   trace = null
 } = {}) {
   if (!checkpointStore?.has || !checkpointStore?.trust) {
@@ -37,7 +34,7 @@ export function createEditorSourceSyncBridge({
     getCanonical,
     setSource,
     setCanonical,
-    validateLegacyCandidate
+    validateCandidate
   })) {
     if (typeof value !== 'function') {
       throw new TypeError(`editor source-sync bridge requires ${name}`)
@@ -45,18 +42,14 @@ export function createEditorSourceSyncBridge({
   }
 
   const candidateValidator = createSourceSyncValidator({
-    validate: (candidate, { snapshot }) => validateLegacyCandidate(
+    validate: (candidate, { snapshot }) => validateCandidate(
       candidate.markdown,
       candidate.expectedDoc,
       candidate.canonical,
       snapshot.source,
       candidate.reason,
-      candidate.proof?.preservationProof || null,
       candidate.validationSite,
-      {
-        trustCheckpoint: false,
-        inheritedSemanticContext: snapshot.semanticContext
-      }
+      { trustCheckpoint: false }
     )
   })
 
@@ -338,11 +331,6 @@ export function createEditorSourceSyncBridge({
     getCoordinator,
     getSnapshot: () => getCoordinator().getSnapshot(),
     adoptEditorOnlyDocument,
-    getSemanticOptions: (expectedDoc = getExpectedDoc()) =>
-      sourceSyncSemanticOptionsFromContext(
-        getCoordinator().getSnapshot().semanticContext,
-        expectedDoc
-      ),
     synchronizeCurrent,
     prepare,
     prepareOwnedResult,

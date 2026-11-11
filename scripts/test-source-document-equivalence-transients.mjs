@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { areSourceDocumentsEquivalent } from '../src/renderer/src/lib/source-transaction-sync.js'
-import { sourceSyncSemanticOptionsFromContext } from '../src/renderer/src/lib/source-sync/validator.js'
 
 const node = (json) => ({ toJSON: () => JSON.parse(JSON.stringify(json)) })
 const paragraph = (text = '') => text
@@ -137,56 +136,17 @@ assert.equal(
   // proof-owned path collapses the whole run (previously exactly-one).
   'owned quote path must collapse a run of trailing empty paragraphs'
 )
+// A quote cannot encode how many empty paragraphs it holds (`>` is one):
+// consecutive empties collapse to one with or without an owned path (fuzz
+// seed 1142). So an empty previous sibling no longer keeps the run strict.
 assert.equal(
-  areSourceDocumentsEquivalent(
-    quoteDoc([paragraph()]),
-    quoteEmptyPrevious,
-    { ignoreTrailingEmptyBlockquoteParagraphPaths: [[0]] }
-  ),
-  false,
-  'owned quote path must not activate after an empty previous sibling'
-)
-
-// The validator derives active transient paths from the inherited semantic
-// context. Activation must mirror the semantic rule: a trailing empty RUN
-// (≥1 paragraphs) after a nonempty text paragraph OR a list — and nothing
-// wider.
-const activePaths = (doc, paths) =>
-  sourceSyncSemanticOptionsFromContext({ trailingEmptyBlockquoteParagraphPaths: paths }, doc)
-    .ignoreTrailingEmptyBlockquoteParagraphPaths
-assert.deepEqual(
-  activePaths(quoteWithTextPrevious, [[0]]),
-  [[0]],
-  'text-previous emptied quote paragraph must stay an active transient path'
-)
-assert.deepEqual(
-  activePaths(quoteWithListPrevious, [[0]]),
-  [[0]],
-  'list-previous quote paragraph keeps the list-exit transient path active'
-)
-assert.deepEqual(
-  activePaths(quoteTwoTrailingEmpties, [[0]]),
-  [[0]],
-  'a consecutive empty RUN (E0 P3d) stays an active transient path'
-)
-assert.deepEqual(
-  activePaths(quoteSingleChild, [[0]]),
-  [],
-  'a single-child quote has no provable transient topology'
-)
-assert.deepEqual(
-  activePaths(quoteEmptyPrevious, [[0]]),
-  [],
-  'an empty previous sibling must deactivate the transient path'
-)
-assert.deepEqual(
-  activePaths(quoteWithTextPrevious, [['x']]),
-  [],
-  'non-integer paths stay rejected'
+  areSourceDocumentsEquivalent(quoteSingleChild, quoteEmptyPrevious),
+  true,
+  'consecutive empty quote paragraphs collapse to one by default'
 )
 
 // E0 P3d: the proof-owned path collapses the WHOLE consecutive trailing
-// empty run; the legacy boolean stays exactly-one.
+// empty run.
 const quoteOnlyText = quoteDoc([paragraph('alpha')])
 assert.equal(
   areSourceDocumentsEquivalent(
@@ -202,14 +162,26 @@ assert.equal(
   false,
   'default comparison must keep a multi-empty trailing run strict'
 )
+// The legacy boolean drops one trailing empty after a TEXT paragraph only.
+// (A run of empties is already one by the collapse above, so "exactly one"
+// can no longer be observed through consecutive empties.)
 assert.equal(
   areSourceDocumentsEquivalent(
     quoteOnlyText,
-    quoteTwoTrailingEmpties,
+    quoteWithTextPrevious,
+    { ignoreTrailingEmptyBlockquoteParagraph: true }
+  ),
+  true,
+  'legacy boolean collapses one trailing empty after text'
+)
+assert.equal(
+  areSourceDocumentsEquivalent(
+    quoteWithListPreviousNoTransient,
+    quoteWithListPrevious,
     { ignoreTrailingEmptyBlockquoteParagraph: true }
   ),
   false,
-  'legacy boolean must keep collapsing exactly one trailing empty'
+  'legacy boolean must stay strict after a list (only the owned path covers the list-exit transient)'
 )
 assert.equal(
   areSourceDocumentsEquivalent(
@@ -220,20 +192,4 @@ assert.equal(
   true,
   'owned path keeps collapsing a single trailing empty'
 )
-assert.deepEqual(
-  activePaths(quoteSingleChild, [[0]]),
-  [],
-  'a single-child quote has no provable transient topology'
-)
-assert.deepEqual(
-  activePaths(quoteEmptyPrevious, [[0]]),
-  [],
-  'an empty previous sibling must deactivate the transient path'
-)
-assert.deepEqual(
-  activePaths(quoteWithTextPrevious, [['x']]),
-  [],
-  'non-integer paths stay rejected'
-)
-
-console.log('PASS source document equivalence transient option stays narrow')
+console.log('PASS source document equivalence: transient options stay narrow; consecutive empty quote paragraphs collapse to one')

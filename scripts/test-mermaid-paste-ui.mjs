@@ -7,6 +7,7 @@ import {
   stopBuiltElectron
 } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { MOD_MODIFIER } from './lib/human-input.mjs'
 
 const port = Number(process.env.CDP_PORT || 9392)
 const rawMermaid = [
@@ -29,7 +30,7 @@ async function selectAll(send, evaluate) {
     type: 'rawKeyDown',
     key: 'a',
     code: 'KeyA',
-    modifiers: 4,
+    modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 65,
     nativeVirtualKeyCode: 65
   })
@@ -37,7 +38,7 @@ async function selectAll(send, evaluate) {
     type: 'keyUp',
     key: 'a',
     code: 'KeyA',
-    modifiers: 4,
+    modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 65,
     nativeVirtualKeyCode: 65
   })

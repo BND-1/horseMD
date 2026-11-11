@@ -1,10 +1,11 @@
 import { open, sleep, pressKey } from './probe-session.mjs'
+import { MOD_MODIFIER } from './human-input.mjs'
 const s = await open('raw-paste', 'Old heading\n\nOld body\n')
 const { app } = s
 const replacement = '# Raw heading\n\n- exact item\n'
 try {
   await app.evaluate(`[...document.querySelectorAll('.ProseMirror')].find(n=>n.offsetParent).focus()`)
-  await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: 4, delayMs: 80 })
+  await pressKey(app.send, { key: 'a', code: 'KeyA', modifiers: MOD_MODIFIER, delayMs: 80 })
   await app.evaluate(`(() => { const e=[...document.querySelectorAll('.ProseMirror')].find(n=>n.offsetParent); const d=new DataTransfer(); d.setData('text/markdown', ${JSON.stringify(replacement)}); d.setData('text/plain', ${JSON.stringify(replacement)}); e.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:d})) })()`)
   await sleep(900)
   console.log('source:', JSON.stringify(await s.source()))

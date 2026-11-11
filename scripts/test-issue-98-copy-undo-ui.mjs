@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { MOD_MODIFIER } from './lib/human-input.mjs'
 
 if (process.platform !== 'darwin') {
   console.log('SKIP issue 98 clipboard verification: native clipboard assertion runs on macOS')
@@ -72,7 +73,7 @@ const pressMetaKey = async (key, code, virtualKeyCode) => {
   const params = {
     key,
     code,
-    modifiers: 4,
+    modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: virtualKeyCode,
     nativeVirtualKeyCode: virtualKeyCode,
     ...(command ? { commands: [command] } : {})
@@ -311,7 +312,7 @@ try {
     type: 'rawKeyDown',
     key: 'z',
     code: 'KeyZ',
-    modifiers: 4,
+    modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 90,
     nativeVirtualKeyCode: 90
   })
@@ -319,7 +320,7 @@ try {
     type: 'keyUp',
     key: 'z',
     code: 'KeyZ',
-    modifiers: 4,
+    modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 90,
     nativeVirtualKeyCode: 90
   })

@@ -1,12 +1,10 @@
-// Editor-only document changes and journal locality helpers (0.13.235).
+// Editor-only document changes (0.13.235).
 import assert from 'node:assert/strict'
 import { Schema } from '@milkdown/prose/model'
 import { EditorState } from '@milkdown/prose/state'
 import {
-  changedTopLevelRange,
   isHeadingIdOnlyChange,
-  isTrailingEmptyParagraphAppend,
-  transactionTopLevelRange
+  isTrailingEmptyParagraphAppend
 } from '../src/renderer/src/lib/source-sync/editor-only-document.js'
 
 const schema = new Schema({
@@ -47,24 +45,4 @@ const doc = (...blocks) => schema.nodes.doc.create(null, blocks)
   assert.equal(isHeadingIdOnlyChange([text], oldDoc, text.doc), false, 'text edit is authored')
 }
 
-// changedTopLevelRange trims identical ends and ignores heading-id-only diffs.
-{
-  const before = doc(p('a'), h('T', 'x'), p('b'), p('c'))
-  assert.equal(changedTopLevelRange(before, before), null)
-  assert.deepEqual(changedTopLevelRange(before, doc(p('a'), h('T', 'x'), p('bX'), p('c'))), { from: 2, to: 2 })
-  assert.deepEqual(changedTopLevelRange(before, doc(p('a'), h('T', 'y'), p('bX'), p('c'))), { from: 2, to: 2 })
-  assert.deepEqual(changedTopLevelRange(before, doc(p('a'), h('T', 'x'), p('b'), p('new'), p('c'))), { from: 3, to: 3 })
-}
-
-// transactionTopLevelRange resolves the first step of each transaction in doc.
-{
-  const base = doc(p('a'), p('b'), p('c'))
-  const state = EditorState.create({ schema, doc: base })
-  const typeInSecond = state.tr.insertText('X', 4)
-  assert.deepEqual(transactionTopLevelRange([typeInSecond], base), { from: 1, to: 1 })
-  const join = state.tr.delete(2, 4) // join paragraphs 0 and 1
-  assert.deepEqual(transactionTopLevelRange([join], base), { from: 0, to: 1 })
-  assert.equal(transactionTopLevelRange([typeInSecond], doc(p('z'))), null, 'steps from another doc are ignored')
-}
-
-console.log('PASS editor-only document: trailing empty paragraph append, heading-id-only sync, changed/transaction top-level ranges')
+console.log('PASS editor-only document: trailing empty paragraph append, heading-id-only sync')

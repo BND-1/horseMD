@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
+import { MOD_MODIFIER } from './lib/human-input.mjs'
 
 const dir = '/tmp/horsemd-issue-77-source-preservation'
 const file = join(dir, 'source-preservation.md')
@@ -260,7 +261,7 @@ async function main() {
       type: 'rawKeyDown',
       key: 'a',
       code: 'KeyA',
-      modifiers: 4,
+      modifiers: MOD_MODIFIER,
       windowsVirtualKeyCode: 65,
       nativeVirtualKeyCode: 65
     })
@@ -268,7 +269,7 @@ async function main() {
       type: 'keyUp',
       key: 'a',
       code: 'KeyA',
-      modifiers: 4,
+      modifiers: MOD_MODIFIER,
       windowsVirtualKeyCode: 65,
       nativeVirtualKeyCode: 65
     })
@@ -302,7 +303,7 @@ async function main() {
       type: 'rawKeyDown',
       key: 'a',
       code: 'KeyA',
-      modifiers: 4,
+      modifiers: MOD_MODIFIER,
       windowsVirtualKeyCode: 65,
       nativeVirtualKeyCode: 65
     })
@@ -310,7 +311,7 @@ async function main() {
       type: 'keyUp',
       key: 'a',
       code: 'KeyA',
-      modifiers: 4,
+      modifiers: MOD_MODIFIER,
       windowsVirtualKeyCode: 65,
       nativeVirtualKeyCode: 65
     })

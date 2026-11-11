@@ -7,7 +7,7 @@ import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './lib/human-input.mjs'
 
 const sourceFile = process.env.FILE
 assert.ok(sourceFile, 'FILE is required')
@@ -144,7 +144,7 @@ async function main() {
     // 4. Save button — must complete, not pause.
     const saveViaShortcut = process.env.SAVE_VIA_SHORTCUT === '1'
     if (saveViaShortcut) {
-      await pressKey(send, { key: 's', code: 'KeyS', modifiers: 4, delayMs: 60 })
+      await pressKey(send, { key: 's', code: 'KeyS', modifiers: MOD_MODIFIER, delayMs: 60 })
     } else {
       await waitFor(() => evaluate(`!!document.querySelector('.hm-save-fab')`), 'save button missing (edit not dirty?)')
       await evaluate(`document.querySelector('.hm-save-fab')?.click()`)

@@ -1,3 +1,7 @@
+// CDP modifier bit for the app's Mod key: Cmd on macOS (Meta 4), Ctrl
+// elsewhere (2) — Meta+A / Meta+S / Meta+Enter do nothing on Windows.
+export const MOD_MODIFIER = process.platform === 'darwin' ? 4 : 2
+
 import { sleep } from './cdp.mjs'
 
 const keyCode = (value) => {

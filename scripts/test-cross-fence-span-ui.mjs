@@ -9,7 +9,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey } from './lib/human-input.mjs'
+import { pressKey, MOD_MODIFIER } from './lib/human-input.mjs'
 
 const root = `/tmp/horsemd-cross-fence-${process.pid}`
 const file = join(root, 'span.md')
@@ -138,7 +138,7 @@ try {
 
     // 2) Undo: the fence comes back. Before the owner this was the silent
     //    desync (editor restored, source baseline did not).
-    await pressKey(send, { key: 'z', modifiers: 4 })
+    await pressKey(send, { key: 'z', modifiers: MOD_MODIFIER })
     await waitFor(
       () => visible(evaluate, `editor.textContent.includes('Clash Party') ? 'ok' : null`),
       'undo did not restore the code block'

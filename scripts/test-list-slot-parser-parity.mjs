@@ -16,7 +16,6 @@
 import assert from 'node:assert/strict'
 import {
   areMarkdownListSlotsEquivalent,
-  areMarkdownListSlotTransitionsEquivalent,
   markdownListSlotFingerprint as scan,
   markdownListSlotFingerprintExact as parse
 } from '../src/renderer/src/lib/source-structure-fingerprint.js'
@@ -89,11 +88,6 @@ for (const markdown of [...CORPUS, ...KNOWN]) {
   assert.equal(shape(scan('-\n  text\n- b\n')), 'Eb | b')
   assert.equal(areMarkdownListSlotsEquivalent('-\n  text\n- b\n', '- text\n- b\n', { strictNesting: true }), true)
   assert.ok(globalThis.__hmSourceIntegrityDiffTrace.some((entry) => entry.kind === 'list-slot-scanner-overruled-by-parser'), 'the overrule is traced')
-  assert.equal(
-    areMarkdownListSlotTransitionsEquivalent('- a\n', '- a\n-\n  text\n', '- a\n', '- a\n- text\n', { strictNesting: true }),
-    true,
-    'transitions too'
-  )
   delete globalThis.__hmSourceIntegrityDiffTrace
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { launchBuiltElectron, stopBuiltElectron } from './electron-test-app.mjs'
 import { sleep } from './cdp.mjs'
-import { pressKey, typeTextLikeUser } from './human-input.mjs'
+import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './human-input.mjs'
 
 export const CODE_BLOCK_EXIT_WARNING = /检测到富文本与源码不一致|源码.*不一致|保存已暂停|无法安全映射|原文件未被覆盖|Save paused/i
 
@@ -95,15 +95,11 @@ export const focusExitParagraph = (app) => app.evaluate(`(() => {
   }
 })()`)
 
-// Mod-Enter leaves a code block: Cmd on macOS, Ctrl elsewhere (CDP
-// modifiers: Ctrl 2, Meta 4). Meta+Enter does nothing on Windows.
-const MOD = process.platform === 'darwin' ? 4 : 2
-
 export async function pressCodeBlockExit(app, delayMs = 15) {
   await pressKey(app.send, {
     key: 'Enter',
     code: 'Enter',
-    modifiers: MOD,
+    modifiers: MOD_MODIFIER,
     delayMs
   })
 }

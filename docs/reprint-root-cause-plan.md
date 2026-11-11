@@ -180,3 +180,11 @@ A–D 都不是“Markdown 本身有这么多特殊情况”，而是**同一件
   - 原来强制走旧路径的 70 个界面测试改为一律走产品路径（只检查用户看得到的行为：编辑器内容、源码字节、保存、冷启动重开、不报警）；其中表格删列暴露一个问题：两列内容完全相同时按内容找不出删的是哪列，退回整表重印、丢了作者的列宽对齐，现在同时比对齐方式（`planColumnChange`）。
 - 保留并且仍在用的：保存校验（`validator.js`，投影决定）、Coordinator、粘贴 / 全选替换 owner、撤销恢复、列表输入意图（重打印用它拼新列表的标记）。
 - 已知、与本次无关：`test-source-document-equivalence-transients`、`test-source-sync-coordinator` 在删除前就失败（测的是校验器里旧的比较选项，不在回归清单里），留到精简校验器时处理。
+
+### 保存校验只用投影（2026-11-10，提交 bf01188 之后）
+
+- `validator.js` 1030 → 162 行（`createSourceIntegrityValidator`）：所有候选源码（重打印、粘贴、全选替换、撤销恢复）只由投影判断含义，投影比较列表时就是按解析器的读法，所以也是列表检查；另外只有“可信检查点且源码和 canonical 都没变”直接通过，重打印的 Option A（字面 `*`）保留。
+- 删除：owner 证明（表格列宽、列表 / 引用里的过渡空段落、`localized-list-slots`）、过渡比较（`areSourceDocumentTransitionsEquivalent`、`areMarkdownListSlotTransitionsEquivalent`）、快照里的语义上下文（`semanticContext`）、`changedTopLevelRange` / `transactionTopLevelRange`、`markSourceSyncListInputIntentConsumed`、`createLegacySourceSyncOwner`。
+- `Editor.jsx validateTransactionMarkdown` 同样只看投影（没有注册投影时才用旧的文档比较——只有纯逻辑测试会这样）。
+- 测试：纯逻辑测试按新接口改写；`test-transition-inline-textual`、`fixtures/redis-transition-wall`、孤儿测试 `test-source-sync-programmatic-source-authority`（引用早已不存在的接口）删除。界面测试里写死的 Cmd 快捷键改为按平台（`MOD_MODIFIER`，`scripts/lib/human-input.mjs`）。
+- 之前在删除前就失败的 `test-source-document-equivalence-transients`、`test-source-sync-coordinator` 现在通过：前者那条断言测的形状已被“引用里连续空段落合成一个”的默认规则覆盖，换成了测默认规则的断言。

@@ -58,10 +58,7 @@ export function createSourceSyncCoordinator({
       doc: nextDoc,
       owner,
       family,
-      reason,
-      // Synchronization means live refs changed outside a validated candidate.
-      // Never carry a transaction-only semantic exception across that boundary.
-      semanticContext: null
+      reason
     })
     if (trust) {
       checkpointStore.trust(snapshot.source, snapshot.canonical, {
@@ -126,10 +123,7 @@ export function createSourceSyncCoordinator({
       doc: publication.expectedDoc,
       owner: publication.owner,
       family: publication.family,
-      reason: publication.reason,
-      // Semantic context is produced by the candidate-bound validator, so it
-      // advances atomically with the exact source/canonical/doc revision.
-      semanticContext: validation.semanticContext || null
+      reason: publication.reason
     })
     let committed
     try {

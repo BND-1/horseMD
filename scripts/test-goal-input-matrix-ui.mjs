@@ -9,7 +9,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './lib/human-input.mjs'
 
 const root = `/tmp/horsemd-goal-matrix-${process.pid}`
 const basePort = 13500 + (process.pid % 40)
@@ -235,7 +235,7 @@ async function groupA(port) {
 
     currentScenario = 'A4 select-all delete'
     await initDiag(app)
-    await key(app, 'a', { code: 'KeyA', modifiers: 4 }) // Cmd/Ctrl+A
+    await key(app, 'a', { code: 'KeyA', modifiers: MOD_MODIFIER }) // Cmd/Ctrl+A
     await sleep(150)
     await backspace(app, 1)
     await checkpoint(app, 'A4 select-all deleted')
@@ -479,7 +479,7 @@ async function groupC(port) {
       if (selector === 'cm' || selector === 'math') {
         // Mod+Enter is the product's code/math-block exit keybinding
         // (code-block-exit family); Escape does NOT leave the editor.
-        await key(app, 'Enter', { code: 'Enter', modifiers: 4 })
+        await key(app, 'Enter', { code: 'Enter', modifiers: MOD_MODIFIER })
         await sleep(400)
         await enter(app)
       } else if (selector === 'table') {
@@ -549,7 +549,7 @@ async function groupC2(port) {
     await typeTextLikeUser(app.send, 'x^2', { delayMs: 40 })
     await sleep(700)
     const katex = await formatCount(app, 'math')
-    await key(app, 'Enter', { code: 'Enter', modifiers: 4 })
+    await key(app, 'Enter', { code: 'Enter', modifiers: MOD_MODIFIER })
     await sleep(400)
     await enter(app)
     const okMath = await checkpoint(app, 'C2 math inserted + rendered + exited')

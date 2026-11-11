@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey } from './lib/human-input.mjs'
+import { pressKey, MOD_MODIFIER } from './lib/human-input.mjs'
 
 // PID 25389: delete 粉色分 one character at a time, then remove the empty
 // ordered item. Always edit an isolated COPY, never the supplied original.
@@ -78,7 +78,7 @@ try {
   await waitFor(() => app.evaluate(`Boolean([...document.querySelectorAll('textarea.source-editor')].find(n => n.offsetParent))`), 'source view did not open')
   const raw = await app.evaluate(`[...document.querySelectorAll('textarea.source-editor')].find(n => n.offsetParent).value`)
   assert.ok(raw === expected, `source bytes differ: actual=${raw.length}, expected=${expected.length}`)
-  await pressKey(app.send, { key: 's', code: 'KeyS', modifiers: 4, delayMs: 20 })
+  await pressKey(app.send, { key: 's', code: 'KeyS', modifiers: MOD_MODIFIER, delayMs: 20 })
   await waitFor(() => app.evaluate(`!document.querySelector('.hm-save-fab')`), 'save did not complete')
   const disk = await readFile(file, 'utf8')
   let firstDifferent = 0

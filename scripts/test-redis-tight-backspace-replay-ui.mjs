@@ -9,7 +9,7 @@ import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './lib/human-input.mjs'
 
 const fixtureDir = new URL('./fixtures/redis-tight/', import.meta.url)
 const root = `/tmp/horsemd-redis-tight-${process.pid}`
@@ -123,7 +123,7 @@ try {
   let state = await collect(app)
   await assertClean(app, state, 'after junk typing')
 
-  await pressKey(app.send, { key: 'z', code: 'KeyZ', modifiers: 4, delayMs: 20 })
+  await pressKey(app.send, { key: 'z', code: 'KeyZ', modifiers: MOD_MODIFIER, delayMs: 20 })
   await sleep(1500)
   state = await collect(app)
   await assertClean(app, state, 'after undo')

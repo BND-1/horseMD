@@ -19,7 +19,6 @@ import { frontmatter } from 'micromark-extension-frontmatter'
 import { frontmatterFromMarkdown } from 'mdast-util-frontmatter'
 
 const markerPattern = /^([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/
-const nestedMarkerPattern = /^([-+*]|\d{1,9}[.)])([ \t]+)(.*)$/
 const fenceLinePattern = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/
 const closingFencePattern = /^ {0,3}(`{3,}|~{3,})[ \t]*$/
 
@@ -367,65 +366,9 @@ const sameSlot = (left, right, strictOrderedNumbers, strictNesting) =>
   left.empty === right.empty &&
   (!strictOrderedNumbers || left.kind !== 'ordered' || left.number === right.number)
 
-const comparableGroup = (group, { strictOrderedNumbers = false, strictNesting = false } = {}) =>
-  (group || []).map((slot) => ({
-    kind: slot.kind,
-    ...(strictNesting ? { depth: slot.depth } : {}),
-    task: slot.task,
-    empty: slot.empty,
-    ...(strictOrderedNumbers && slot.kind === 'ordered' ? { number: slot.number } : {})
-  }))
 
-const listSlotTransition = (beforeMarkdown, afterMarkdown, options = {}, fp = fingerprint) => {
-  const before = fp(beforeMarkdown)
-  const after = fp(afterMarkdown)
-  let prefix = 0
-  while (
-    prefix < before.length &&
-    prefix < after.length &&
-    groupSignature(before[prefix]) === groupSignature(after[prefix])
-  ) prefix += 1
-  let suffix = 0
-  while (
-    suffix < before.length - prefix &&
-    suffix < after.length - prefix &&
-    groupSignature(before[before.length - 1 - suffix]) ===
-      groupSignature(after[after.length - 1 - suffix])
-  ) suffix += 1
-  return {
-    // The old source/canonical pair is already trusted by the caller. Crepe may
-    // have renumbered an ordered list across reopen (`1.` authored versus `3.`
-    // canonical), so the removed/replaced OLD slots prove count/kind/nesting/
-    // task/emptiness but not their normalized ordered number. Newly produced
-    // slots stay fully strict, which still rejects wrong numbering or nesting.
-    before: before
-      .slice(prefix, before.length - suffix)
-      .map((group) => comparableGroup(group, { ...options, strictOrderedNumbers: false })),
-    after: after
-      .slice(prefix, after.length - suffix)
-      .map((group) => comparableGroup(group, options))
-  }
-}
 
-// A trusted authored/canonical baseline can already have a different absolute
-// list-group count. For a later local edit, compare the slot transition on each
-// side instead of reusing canonical group indexes against the authored file.
-// This remains strict about the fields requested by the caller and is only a
-// transition primitive; the UI integrity gate decides whether the old pair is
-// trusted enough to use it.
-const transitionsEquivalent = (fp, beforeLeft, afterLeft, beforeRight, afterRight, options) =>
-  JSON.stringify(listSlotTransition(beforeLeft, afterLeft, options, fp)) ===
-  JSON.stringify(listSlotTransition(beforeRight, afterRight, options, fp))
 
-export const areMarkdownListSlotTransitionsEquivalent = (
-  beforeLeft,
-  afterLeft,
-  beforeRight,
-  afterRight,
-  options = {}
-) => transitionsEquivalent(fingerprint, beforeLeft, afterLeft, beforeRight, afterRight, options) ||
-  confirmedByParser([beforeLeft, afterLeft, beforeRight, afterRight], () =>
-    transitionsEquivalent(exactFingerprint, beforeLeft, afterLeft, beforeRight, afterRight, options))
 
 export const markdownListSlotFingerprint = (markdown) => fingerprint(markdown)
 

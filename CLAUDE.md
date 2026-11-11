@@ -1285,9 +1285,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   it (`joinEmptyItemContinuations`, CommonMark 5.2, tried only after a
   failed verification). `test:projection-audit-ui` checks the serializer
   over every repo file + spec example, and that each reprints to its own
-  bytes unedited. The Coordinator's save check (`validator.js`) and
-  `validateTransactionMarkdown` ask the same projection for every
-  candidate; older writers also keep the list-slot check. (A second
+  bytes unedited. The Coordinator's save check (`validator.js`
+  `createSourceIntegrityValidator`, 2026-11-10: ~160 lines) and
+  `validateTransactionMarkdown` ask only the projection for every
+  candidate (reprint, raw paste, select-all replacement, history restore)
+  — it is the list check too; besides it only an unchanged trusted
+  checkpoint passes, and Option A for the reprint. Owner proofs, the
+  transition fallback and semantic contexts are gone. (A second
   comparison with its own exceptions paused saves the engine had proven,
   and counted directly adjacent lists as one.) The guard keeps
   soft vs hard for every break between visible content, a lone unmarked

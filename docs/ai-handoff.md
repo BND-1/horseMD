@@ -1,5 +1,7 @@
 # HorseMD AI 接手手册
 
+
+> **2026-11-10 当前状态（优先于下文历史记录）**：富文本 → 源码只剩一个写入方——源码重排（`Editor.jsx publishReprint`），保存校验只用投影（`lib/source-sync/projection.js` + 精简后的 `validator.js`）。下文提到的 focused owners、transaction journal、transaction-first 映射器（`__hmTransactionSourcePrimary` 等）、`preserveRichMarkdownSource`、开关 `__hmSourceReprintPrimary` / `__hmReprintOnly` / `HM_TEST_REPRINT_PRIMARY` 都已删除（提交 bf01188 及之后），仅作历史参考。详见 `docs/reprint-root-cause-plan.md`「删除旧写入方」。
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-10-06。
 
 ## 接手第一步（2026-10-06）

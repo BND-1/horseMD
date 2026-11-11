@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
-import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
+import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './lib/human-input.mjs'
 
 const root = `/tmp/horsemd-leading-space-${process.pid}`
 const file = join(root, 'doc.md')
@@ -166,10 +166,10 @@ async function main() {
       editor?.focus()
     })()`)
     await app.send('Input.dispatchKeyEvent', {
-      type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: 4, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
+      type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: MOD_MODIFIER, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
     })
     await app.send('Input.dispatchKeyEvent', {
-      type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 4, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
+      type: 'keyUp', key: 'a', code: 'KeyA', modifiers: MOD_MODIFIER, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
     })
     await sleepMs(200)
     await pressKey(app.send, { key: 'Backspace', code: 'Backspace', delayMs: 60 })

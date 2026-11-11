@@ -48,11 +48,10 @@ import {
   formatWholeDocumentReplacementSource,
   isWholeDocumentReplacementBatch
 } from '../lib/source-transaction-sync.js'
-import { areMarkdownListSlotsEquivalent } from '../lib/source-structure-fingerprint.js'
 import {
   createDocumentReplacementSourceSyncOwner,
   createEditorSourceSyncBridge,
-  createLegacySourceIntegrityValidator,
+  createSourceIntegrityValidator,
   createSourceSyncCheckpointStore
 } from '../lib/source-sync/index.js'
 import { isHeadingIdOnlyChange, isTrailingEmptyParagraphAppend, sameIgnoringHeadingIds } from '../lib/source-sync/editor-only-document.js'
@@ -71,7 +70,6 @@ if (import.meta.env?.VITE_HM_SYNC_SELF_CHECK === '1') {
   globalThis.__hmIncrementalSerializeCheck = true
 }
 import { SOURCE_SYNC_OWNERS } from '../lib/source-sync/proof.js'
-import { withoutEmptyContainerParagraphs } from '../lib/source-sync/validator.js'
 import { areDocumentsEquivalentByProjection, literalEmphasisOnly, projectDocument, registerProjector } from '../lib/source-sync/projection.js'
 import {
   createSourceSnapshotHistory,
@@ -636,65 +634,27 @@ export default function Editor({
     }
     const validateTransactionMarkdown = ({ markdown, expectedDoc, semanticOptions = {} }) => {
       const parser = crepe.editor.ctx.get(parserCtx)
-      const serializer = crepe.editor.ctx.get(serializerCtx)
       if (lastValidationParse.markdown !== markdown || !lastValidationParse.doc) {
         lastValidationParse.doc = parseCandidate(markdown, parser)
         lastValidationParse.markdown = markdown
       }
       const parsed = lastValidationParse.doc
-      if (lastValidationCanonical.doc !== expectedDoc) {
-        lastValidationCanonical.markdown = canonicalForSource(serializer(expectedDoc))
-        lastValidationCanonical.doc = expectedDoc
-      }
-      const expectedCanonical = lastValidationCanonical.markdown
-      const inheritedSemanticOptions = sourceSyncBridge?.getSemanticOptions(expectedDoc) || {}
-      const mergedSemanticOptions = {
-        ...inheritedSemanticOptions,
-        ...semanticOptions,
-        ignoreTrailingEmptyBlockquoteParagraphPaths: [
-          ...(inheritedSemanticOptions.ignoreTrailingEmptyBlockquoteParagraphPaths || []),
-          ...(semanticOptions.ignoreTrailingEmptyBlockquoteParagraphPaths || [])
-        ]
-      }
-      // Same meaning = the projection (lib/source-sync/projection.js), for
-      // every writer: one definition. The older comparison (its own list of
-      // exceptions, and two directly adjacent lists counted as one — a
-      // writer could save two lists as one unnoticed, fuzz seed 5210) only
-      // runs where no projector is registered.
+      // Same meaning = the projection (lib/source-sync/projection.js): one
+      // definition for every writer and the save check. It compares lists as
+      // the parser reads them, so it is the list check too.
       const projected = areDocumentsEquivalentByProjection(parsed, expectedDoc)
-      const projectionDecides = !/no-projector/.test(projected.reason || '')
-      const sameMeaning = projectionDecides
-        ? projected.equal
-        : areSourceDocumentsEquivalent(parsed, expectedDoc, mergedSemanticOptions)
-      if (projectionDecides && !projected.equal && Array.isArray(globalThis.__hmSourceIntegrityDiffTrace) && window.api?.inputTraceEnabled === true) {
+      if (/no-projector/.test(projected.reason || '')) return areSourceDocumentsEquivalent(parsed, expectedDoc, semanticOptions)
+      if (projected.equal) return true
+      if (Array.isArray(globalThis.__hmSourceIntegrityDiffTrace) && window.api?.inputTraceEnabled === true) {
         globalThis.__hmSourceIntegrityDiffTrace.push({ at: Date.now(), source: 'validate-projection', reason: projected.reason, detail: projected.detail })
         if (globalThis.__hmSourceIntegrityDiffTrace.length > 40) globalThis.__hmSourceIntegrityDiffTrace.shift()
       }
-      if (!sameMeaning) {
-        // Option A (Typora parity): the reprint may spell bold/italic that
-        // Markdown cannot delimit there as literal `*`/`_`; nothing else may
-        // differ (no list structure is involved in that difference).
-        return semanticOptions.relaxOrderedNumbers === true && semanticOptions.allowLiteralEmphasis !== false &&
-          areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, mergedSemanticOptions) &&
-          (!projectionDecides || literalEmphasisOnly(parsed, expectedDoc))
-      }
-      if (areMarkdownListSlotsEquivalent(markdown, expectedCanonical, {
-        // Source reprint keeps the author's numbering (`1. 1. 1.`) or
-        // renumbers deliberately; only the start number has meaning and the
-        // document comparison checks it (ordered_list `order`).
-        strictOrderedNumbers: semanticOptions.relaxOrderedNumbers !== true,
-        previousMarkdown: canonicalMarkdownRef.current
-      })) return true
-      if (semanticOptions.relaxOrderedNumbers !== true) return false
-      // Source reprint: list slots are read from the canonical TEXT, and
-      // Milkdown prints an editor-only empty paragraph inside a list item or
-      // quote as `- <br />` + lazy text, which the slot reader cannot follow
-      // (fuzz seed 75). Those paragraphs have no Markdown encoding (design
-      // §5), so read the slots from the document without them.
-      return areMarkdownListSlotsEquivalent(markdown, canonicalForSource(serializer(withoutEmptyContainerParagraphs(expectedDoc))), {
-        strictOrderedNumbers: false,
-        previousMarkdown: canonicalMarkdownRef.current
-      })
+      // Option A (Typora parity): the reprint may spell bold/italic that
+      // Markdown cannot delimit there as literal `*`/`_`; nothing else may
+      // differ.
+      return semanticOptions.relaxOrderedNumbers === true && semanticOptions.allowLiteralEmphasis !== false &&
+        areSourceDocumentsEquivalentWithLiteralEmphasis(parsed, expectedDoc, { ...semanticOptions, ignoreAllTableColumnWidths: true }) &&
+        literalEmphasisOnly(parsed, expectedDoc)
     }
     // A user-test session launched with `--horsemd-input-trace` keeps the
     // in-page evidence arrays alive from the start, so a reported
@@ -1007,7 +967,7 @@ export default function Editor({
     // now lives behind the SourceSyncCoordinator contract, while all legacy
     // validation rules and trace fields remain byte-for-byte compatible.
     const sourceIntegrityCheckpoints = createSourceSyncCheckpointStore({ limit: 4 })
-    const validateSourceCandidate = createLegacySourceIntegrityValidator({
+    const validateSourceCandidate = createSourceIntegrityValidator({
       getParser: () => crepe.editor.ctx.get(parserCtx),
       getSerializer: () => crepe.editor.ctx.get(serializerCtx),
       getExpectedDoc: () => withoutSyntheticTitle(viewRef.current?.state.doc),
@@ -1248,7 +1208,7 @@ export default function Editor({
       },
       setCanonical: (canonical) => { canonicalMarkdownRef.current = canonical },
       onChange: (markdown) => onChange?.(markdown, false),
-      validateLegacyCandidate: validateSourceCandidate,
+      validateCandidate: validateSourceCandidate,
       trace: (entry) => {
         if (!Array.isArray(globalThis.__hmSourceSyncCoordinatorTrace)) return
         globalThis.__hmSourceSyncCoordinatorTrace.push(entry)

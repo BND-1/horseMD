@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
+import { Schema } from '@milkdown/prose/model'
 import {
   createEditorSourceSyncBridge,
-  createLegacySourceIntegrityValidator,
   createLegacySourceSyncCandidateFromResult,
-  createLegacySourceSyncOwner,
+  createSourceIntegrityValidator,
   createSourceSyncCandidate,
   createSourceSyncCheckpointStore,
   createSourceSyncCoordinator,
@@ -37,18 +37,30 @@ assert.equal(checkpoints.has('c', 'C'), true)
 checkpoints.trust('b', 'B')
 assert.equal(checkpoints.latest().source, 'b')
 
-const fakeDoc = (text) => ({
-  toJSON: () => ({
-    type: 'doc',
-    content: [{
-      type: 'paragraph',
-      content: text ? [{ type: 'text', text }] : []
-    }]
-  })
+// The integrity validator compares ProseMirror documents (the projection
+// walks top-level nodes), so the fixtures are real nodes of a small schema.
+const cellAttrs = { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: 'left' } }
+const integritySchema = new Schema({
+  nodes: {
+    doc: { content: 'block+' },
+    paragraph: { content: 'text*', group: 'block' },
+    table: { content: 'table_row+', group: 'block' },
+    table_row: { content: '(table_header | table_cell)+' },
+    table_header: { content: 'paragraph+', attrs: cellAttrs },
+    table_cell: { content: 'paragraph+', attrs: cellAttrs },
+    text: {}
+  }
+})
+const fakeDoc = (text) => integritySchema.nodeFromJSON({
+  type: 'doc',
+  content: [{
+    type: 'paragraph',
+    content: text ? [{ type: 'text', text }] : []
+  }]
 })
 const integrityCheckpoints = createSourceSyncCheckpointStore({ limit: 4 })
 integrityCheckpoints.trust('integrity-base\n', 'integrity-base\n')
-const legacyIntegrityValidator = createLegacySourceIntegrityValidator({
+const integrityValidator = createSourceIntegrityValidator({
   getParser: () => (markdown) => fakeDoc(String(markdown || '').trim()),
   getSerializer: () => () => 'integrity-next\n',
   getExpectedDoc: () => fakeDoc('integrity-next'),
@@ -58,61 +70,57 @@ const legacyIntegrityValidator = createLegacySourceIntegrityValidator({
   checkpointStore: integrityCheckpoints,
   getTrace: () => null
 })
-const tableWidthParsed = {
-  toJSON: () => ({
-    type: 'doc',
-    content: [{
-      type: 'table',
-      content: [
-        {
-          type: 'table_row',
-          content: [{
-            type: 'table_header',
-            attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
-          }]
-        },
-        {
-          type: 'table_row',
-          content: [{
-            type: 'table_cell',
-            attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
-          }]
-        }
-      ]
-    }]
-  })
-}
-const tableWidthExpected = {
-  toJSON: () => ({
-    type: 'doc',
-    content: [{
-      type: 'table',
-      content: [
-        {
-          type: 'table_row',
-          content: [{
-            type: 'table_header',
-            attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
-          }]
-        },
-        {
-          type: 'table_row',
-          content: [{
-            type: 'table_cell',
-            attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
-          }]
-        }
-      ]
-    }]
-  })
-}
+const tableWidthParsed = integritySchema.nodeFromJSON({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_header',
+          attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+        }]
+      },
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: null, alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+        }]
+      }
+    ]
+  }]
+})
+const tableWidthExpected = integritySchema.nodeFromJSON({
+  type: 'doc',
+  content: [{
+    type: 'table',
+    content: [
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_header',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }]
+        }]
+      },
+      {
+        type: 'table_row',
+        content: [{
+          type: 'table_cell',
+          attrs: { colspan: 1, rowspan: 1, colwidth: [188], alignment: 'left' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }]
+        }]
+      }
+    ]
+  }]
+})
 const widthCheckpoints = createSourceSyncCheckpointStore({ limit: 4 })
 widthCheckpoints.trust('| A |\n| - |\n| a |\n', '| A |\n| - |\n| a |\n')
-const widthValidator = createLegacySourceIntegrityValidator({
+const widthValidator = createSourceIntegrityValidator({
   getParser: () => () => tableWidthParsed,
   getSerializer: () => () => '| A |\n| - |\n| a |\n',
   getExpectedDoc: () => tableWidthExpected,
@@ -122,54 +130,44 @@ const widthValidator = createLegacySourceIntegrityValidator({
   checkpointStore: widthCheckpoints,
   getTrace: () => null
 })
-const exactWidthProof = {
-  kind: 'transaction-table-column-width-proof',
-  family: 'table-column-width',
-  topLevelIndex: 0,
-  columnIndex: 0,
-  rowCount: 2,
-  cellPaths: [[0, 0, 0], [0, 1, 0]],
-  sourceUnchanged: true,
-  canonicalUnchanged: true
+// Column widths have no Markdown: a colwidth-only difference between the
+// parsed source and the editor document passes for every reason, with no
+// owner proof (the table-column-width proof was retired with the owners).
+for (const reason of ['source-reprint', 'table-column-width-changed', 'other-reason']) {
+  assert.equal(widthValidator(
+    '| A |\n| - |\n| a |\n',
+    tableWidthExpected,
+    '| A |\n| - |\n| a |\n',
+    '| A |\n| - |\n| a |\n',
+    reason,
+    'table-width-unit',
+    { trustCheckpoint: false }
+  ).ok, true, `colwidth-only difference must pass integrity validation (${reason})`)
 }
-assert.equal(widthValidator(
-  '| A |\n| - |\n| a |\n',
-  tableWidthExpected,
-  '| A |\n| - |\n| a |\n',
-  '| A |\n| - |\n| a |\n',
-  'table-column-width-changed',
-  exactWidthProof,
-  'table-width-unit',
-  { trustCheckpoint: false }
-).ok, true, 'exact owner-bound width proof must pass full integrity validation')
-assert.equal(widthValidator(
-  '| A |\n| - |\n| a |\n',
-  tableWidthExpected,
-  '| A |\n| - |\n| a |\n',
-  '| A |\n| - |\n| a |\n',
-  'table-column-width-changed',
-  { ...exactWidthProof, cellPaths: [[0, 0, 0]] },
-  'table-width-missing-path',
-  { trustCheckpoint: false }
-).ok, false, 'incomplete width proof must remain strict')
-assert.equal(widthValidator(
-  '| A |\n| - |\n| a |\n',
-  tableWidthExpected,
-  '| A |\n| - |\n| a |\n',
-  '| A |\n| - |\n| a |\n',
-  'other-reason',
-  exactWidthProof,
-  'table-width-wrong-reason',
-  { trustCheckpoint: false }
-).ok, false, 'width proof cannot be reused by another reason')
+assert.equal(
+  widthCheckpoints.size(),
+  1,
+  'trustCheckpoint:false validation must not add a checkpoint'
+)
 
-const validationOnly = legacyIntegrityValidator(
+const mismatch = integrityValidator(
+  'integrity-other\n',
+  fakeDoc('integrity-next'),
+  'integrity-next\n',
+  'integrity-base\n',
+  'source-reprint',
+  'unit-mismatch',
+  { trustCheckpoint: false }
+)
+assert.equal(mismatch.ok, false, 'a text difference must fail integrity validation')
+assert.equal(mismatch.reason, 'source-document-mismatch')
+
+const validationOnly = integrityValidator(
   'integrity-next\n',
   fakeDoc('integrity-next'),
   'integrity-next\n',
   'integrity-base\n',
   'unit-validation-only',
-  null,
   'unit-validation-only',
   { trustCheckpoint: false }
 )
@@ -179,22 +177,22 @@ assert.equal(
   false,
   'Coordinator validation must not trust an unpublished checkpoint'
 )
-const legacyDirectValidation = legacyIntegrityValidator(
+const directValidation = integrityValidator(
   'integrity-next\n',
   fakeDoc('integrity-next'),
   'integrity-next\n',
   'integrity-base\n',
   'unit-direct-validation'
 )
-assert.equal(legacyDirectValidation.ok, true)
+assert.equal(directValidation.ok, true)
 assert.equal(
   integrityCheckpoints.has('integrity-next\n', 'integrity-next\n'),
   true,
-  'legacy direct validation keeps its historical trust behavior by default'
+  'direct validation trusts the validated pair by default'
 )
 
 const preservationProof = {
-  kind: 'localized-list-slots',
+  kind: 'unit-preservation-proof',
   beforeSource: { start: 0, end: 5 },
   afterSource: { start: 0, end: 6 }
 }
@@ -245,18 +243,18 @@ assert.equal(createSourceSyncCandidate({
 }).reason, 'candidate-missing-canonical')
 
 const sharedOwnershipProof = {
-  kind: 'transaction-table-column-width-proof',
-  family: 'table-column-width',
+  kind: 'unit-shared-path-proof',
+  family: 'shared-paths',
   cellPaths: [[1, 0, 1], [1, 1, 1]]
 }
 const sharedProofCandidate = createSourceSyncCandidate({
   snapshot: initial,
   owner: 'transaction',
-  family: 'table-column-width',
+  family: 'shared-paths',
   markdown: 'alpha\n',
   canonical: 'alpha\n',
   expectedDoc: doc1,
-  reason: 'table-column-width-changed',
+  reason: 'unit-shared-paths',
   proof: {
     kind: 'owned-source-sync-proof',
     ownershipProof: sharedOwnershipProof,
@@ -426,7 +424,7 @@ const bridge = createEditorSourceSyncBridge({
   setSource: (value) => { bridgeSource = value },
   setCanonical: (value) => { bridgeCanonical = value },
   onChange: (value) => bridgeChanges.push(value),
-  validateLegacyCandidate: (markdown, expectedDoc, canonical) => ({
+  validateCandidate: (markdown, expectedDoc, canonical) => ({
     ok: markdown === canonical && expectedDoc === bridgeDoc,
     reason: 'bridge-validation-failed'
   })
@@ -480,13 +478,12 @@ const atomicBridge = createEditorSourceSyncBridge({
   setSource: (value) => { atomicSource = value },
   setCanonical: (value) => { atomicCanonical = value },
   onChange: () => { throw new Error('atomic-on-change') },
-  validateLegacyCandidate: (
+  validateCandidate: (
     markdown,
     expectedDoc,
     canonical,
     _authoredSource,
     _reason,
-    _proof,
     _site,
     validationOptions
   ) => {
@@ -531,7 +528,7 @@ const revisionBridge = createEditorSourceSyncBridge({
   getExpectedDoc: () => doc0,
   setSource: (value) => { revisionSource = value },
   setCanonical: (value) => { revisionCanonical = value },
-  validateLegacyCandidate: (markdown, expectedDoc, canonical) => ({
+  validateCandidate: (markdown, expectedDoc, canonical) => ({
     ok: markdown === canonical && expectedDoc === doc0,
     reason: 'revision-owned-validation-failed'
   })
@@ -599,23 +596,4 @@ assert.equal(staleCanonicalPrepared.candidate.reason, 'source-sync-owned-canonic
 assert.equal(revisionSource, 'revision-next\n', 'rejected owned revisions must not mutate source')
 assert.equal(revisionCanonical, 'revision-next\n', 'rejected owned revisions must not mutate canonical')
 
-const owner = createLegacySourceSyncOwner({
-  preserve: (source, previous, next) => ({
-    markdown: `${source.slice(0, -1)}!\n`,
-    preserved: true,
-    reason: `${previous}->${next}`,
-    integrityProof: { kind: 'owner-proof' }
-  })
-})
-const ownerCandidate = owner.createCandidate({
-  snapshot: synchronized,
-  previousCanonical: synchronized.canonical,
-  nextCanonical: 'external!\n',
-  expectedDoc: doc1,
-  validationSite: 'owner-unit'
-})
-assert.equal(ownerCandidate.ok, true)
-assert.equal(ownerCandidate.reason, 'external\n->external!\n')
-assert.equal(ownerCandidate.proof.preservationProof.kind, 'owner-proof')
-
-console.log('PASS source sync coordinator: revision, candidate/proof binding, stale rejection, validation, publication, checkpoints, and legacy owner')
+console.log('PASS source sync coordinator: revision, candidate/proof binding, stale rejection, validation, publication, checkpoints, and the source integrity validator (colwidth-only differences, checkpoint-pure validation)')

@@ -1,15 +1,16 @@
 // Real Electron regression for clicking below the rich document and for web
 // editors (notably WeChat) that copy visual paragraphs as <section>/<div>.
 import { connectCdp, sleep } from './lib/cdp.mjs'
+import { MOD_MODIFIER } from './lib/human-input.mjs'
 
 async function resetEditor(send, evaluate) {
   await evaluate(`document.querySelector('.editor-scroll:not([style*="display: none"]) .ProseMirror')?.focus()`)
   await send('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: 4,
+    type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
   })
   await send('Input.dispatchKeyEvent', {
-    type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 4,
+    type: 'keyUp', key: 'a', code: 'KeyA', modifiers: MOD_MODIFIER,
     windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65
   })
   await send('Input.dispatchKeyEvent', {

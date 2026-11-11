@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import {
-  areMarkdownListSlotTransitionsEquivalent,
   areMarkdownListSlotsEquivalent,
   markdownListSlotFingerprint
 } from '../src/renderer/src/lib/source-structure-fingerprint.js'
@@ -105,77 +104,6 @@ assert.equal(
   'exiting an empty list item drops the item and its <br /> placeholder without changing list groups'
 )
 
-// A blank line before each paragraph: a line right below an item is that
-// item's lazy continuation, not a fence.
-const preexistingSourceSlots = [
-  '- source-only',
-  '',
-  'plain fence'
-].join('\n')
-const preexistingCanonicalSlots = [
-  '- canonical-a',
-  '',
-  'plain fence',
-  '- canonical-b',
-  '',
-  'tail fence'
-].join('\n')
-assert.equal(
-  areMarkdownListSlotTransitionsEquivalent(
-    preexistingSourceSlots,
-    `${preexistingSourceSlots}\n\n1. new`,
-    preexistingCanonicalSlots,
-    `${preexistingCanonicalSlots}\n\n1. new`,
-    { strictOrderedNumbers: true, strictNesting: true }
-  ),
-  true,
-  'pre-existing list-group count divergence may still append the same strict ordered slot transition'
-)
-assert.equal(
-  areMarkdownListSlotTransitionsEquivalent(
-    preexistingSourceSlots,
-    `${preexistingSourceSlots}\n\n1. new`,
-    preexistingCanonicalSlots,
-    `${preexistingCanonicalSlots}\n\n2. new`,
-    { strictOrderedNumbers: true, strictNesting: true }
-  ),
-  false,
-  'slot transition proof must reject a different ordered number'
-)
-assert.equal(
-  areMarkdownListSlotTransitionsEquivalent(
-    preexistingSourceSlots,
-    `${preexistingSourceSlots}\n\n- parent\n  1. new`,
-    preexistingCanonicalSlots,
-    `${preexistingCanonicalSlots}\n\n1. new`,
-    { strictOrderedNumbers: true, strictNesting: true }
-  ),
-  false,
-  'slot transition proof must reject a different nesting structure'
-)
-assert.equal(
-  areMarkdownListSlotTransitionsEquivalent(
-    `${preexistingSourceSlots}\n\n1. saved`,
-    `${preexistingSourceSlots}\n\n4. `,
-    `${preexistingCanonicalSlots}\n\n3. saved`,
-    `${preexistingCanonicalSlots}\n\n4. <br />`,
-    { strictOrderedNumbers: true, strictNesting: true }
-  ),
-  true,
-  'trusted old ordered numbers may differ after serializer renumbering when the new empty slot number and structure match exactly'
-)
-assert.equal(
-  areMarkdownListSlotTransitionsEquivalent(
-    `${preexistingSourceSlots}\n\n1. saved`,
-    `${preexistingSourceSlots}\n\n5. `,
-    `${preexistingCanonicalSlots}\n\n3. saved`,
-    `${preexistingCanonicalSlots}\n\n4. <br />`,
-    { strictOrderedNumbers: true, strictNesting: true }
-  ),
-  false,
-  'new ordered slot numbering remains strict even when the trusted old numbers differ'
-)
-
 // Yuque export (面试问题.md): `    - x` after a blank line is an indented code
 // block, which Crepe prints fenced. It is not a list slot, so the authored
 // file and canonical agree, and a new item in the next list stays provable.
@@ -186,9 +114,9 @@ assert.equal(
   const canonical = 'para\n\n```\n- x\n- y\n```\n\n2\\. B\n\n* a one\n* b two\n'
   assert.equal(areMarkdownListSlotsEquivalent(source, canonical), true, 'indented code is not a list slot')
   assert.equal(
-    areMarkdownListSlotTransitionsEquivalent(
-      source, source.replace('+ a one\n', '+ a one\n+ c\n'),
-      canonical, canonical.replace('* a one\n', '* a one\n* c\n'),
+    areMarkdownListSlotsEquivalent(
+      source.replace('+ a one\n', '+ a one\n+ c\n'),
+      canonical.replace('* a one\n', '* a one\n* c\n'),
       { strictOrderedNumbers: true, strictNesting: true }
     ),
     true,

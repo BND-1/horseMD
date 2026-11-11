@@ -745,55 +745,7 @@ const firstSemanticDifference = (left, right, path = '$') => {
   return { path, left, right }
 }
 
-const semanticTransition = (before, after, options = {}) => {
-  // P7b (trace-62663): the transition channel compares CHANGED WINDOWS on a
-  // document whose authored bytes and serialized bytes already parse
-  // differently at inline spots. Inline form must not decide whether the two
-  // sides made "the same edit" — block structure and visible text must. Both
-  // sides are normalized symmetrically, so a genuine text/structure change on
-  // one side still fails the comparison.
-  const left = semanticJson(before, { ...options, inlineTextual: true })
-  const right = semanticJson(after, { ...options, inlineTextual: true })
-  if (!left || !right || left.type !== 'doc' || right.type !== 'doc') return null
-  const beforeContent = Array.isArray(left.content) ? left.content : []
-  const afterContent = Array.isArray(right.content) ? right.content : []
-  let prefix = 0
-  while (
-    prefix < beforeContent.length &&
-    prefix < afterContent.length &&
-    JSON.stringify(beforeContent[prefix]) === JSON.stringify(afterContent[prefix])
-  ) prefix += 1
-  let suffix = 0
-  while (
-    suffix < beforeContent.length - prefix &&
-    suffix < afterContent.length - prefix &&
-    JSON.stringify(beforeContent[beforeContent.length - 1 - suffix]) ===
-      JSON.stringify(afterContent[afterContent.length - 1 - suffix])
-  ) suffix += 1
-  return {
-    before: beforeContent.slice(prefix, beforeContent.length - suffix),
-    after: afterContent.slice(prefix, afterContent.length - suffix)
-  }
-}
 
-// Existing authored Markdown can legitimately parse to a different whole-doc
-// shape than Crepe's serializer while still representing the file HorseMD
-// opened. For a later LOCAL edit, prove the delta instead of requiring the two
-// already-diverged end states to suddenly become identical. Both sides must
-// have the exact same normalized semantic transition; callers still apply raw
-// structure/list-slot guards separately.
-export const areSourceDocumentTransitionsEquivalent = (
-  beforeSource,
-  afterSource,
-  beforeExpected,
-  afterExpected,
-  options = {}
-) => {
-  const sourceTransition = semanticTransition(beforeSource, afterSource, options)
-  const expectedTransition = semanticTransition(beforeExpected, afterExpected, options)
-  if (!sourceTransition || !expectedTransition) return false
-  return JSON.stringify(sourceTransition) === JSON.stringify(expectedTransition)
-}
 
 // Per-block memo of the comparison (large-document sync cost, 2026-10-23).
 // ProseMirror nodes are immutable and an edit keeps every untouched block's

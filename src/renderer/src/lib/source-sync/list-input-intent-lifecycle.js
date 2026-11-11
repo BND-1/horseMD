@@ -11,18 +11,6 @@ export const isSourceSyncListInputIntentActive = (intent, now = Date.now()) => {
 export const sourceSyncListInputIntentBlocksStructuralJournal = (intent, now = Date.now()) =>
   isSourceSyncListInputIntentActive(intent, now) && intent?.consumed !== true
 
-export const markSourceSyncListInputIntentConsumed = (intent, callbackTailUntil) => {
-  if (!intent || !Number.isFinite(callbackTailUntil)) return intent
-  return {
-    ...intent,
-    consumed: true,
-    consumedAt: Date.now(),
-    batchUntil: Math.min(
-      Number.isFinite(intent.batchUntil) ? intent.batchUntil : callbackTailUntil,
-      callbackTailUntil
-    )
-  }
-}
 
 export const hasBlockingSourceSyncListInputIntent = (intents, currentIntent, now = Date.now()) => {
   const seen = new Set()

@@ -31,52 +31,7 @@ export function isTrailingEmptyParagraphAppend(transactions, oldDoc, newDoc) {
   return true
 }
 
-/**
- * Inclusive range of top-level child indexes (in `newDoc`) that differ between
- * two documents, found by trimming identical leading and trailing children.
- * Returns null when the documents are identical.
- */
-export function changedTopLevelRange(oldDoc, newDoc) {
-  if (!oldDoc || !newDoc) return null
-  let from = 0
-  const oldCount = oldDoc.childCount
-  const newCount = newDoc.childCount
-  const same = (left, right) => sameIgnoringHeadingIds(left, right)
-  while (from < oldCount && from < newCount && same(oldDoc.child(from), newDoc.child(from))) from += 1
-  if (from === oldCount && from === newCount) return null
-  let oldTail = oldCount - 1
-  let newTail = newCount - 1
-  while (oldTail >= from && newTail >= from && same(oldDoc.child(oldTail), newDoc.child(newTail))) {
-    oldTail -= 1
-    newTail -= 1
-  }
-  return { from, to: Math.max(from, newTail) }
-}
 
-/**
- * Inclusive range of top-level child indexes of `doc` touched by the first
- * step of each transaction (positions resolved in the document each step was
- * applied to, which for the first changed step is `doc`). Returns null if no
- * step can be resolved.
- */
-export function transactionTopLevelRange(transactions, doc) {
-  let from = Infinity
-  let to = -Infinity
-  for (const transaction of transactions || []) {
-    const step = transaction?.steps?.[0]
-    const stepDoc = transaction?.docs?.[0]
-    if (!step || !stepDoc || stepDoc !== doc) continue
-    try {
-      const start = stepDoc.resolve(Math.min(step.from, stepDoc.content.size))
-      const end = stepDoc.resolve(Math.min(step.to ?? step.from, stepDoc.content.size))
-      from = Math.min(from, start.index(0))
-      to = Math.max(to, end.depth === 0 ? Math.max(0, end.index(0) - 1) : end.index(0))
-    } catch {
-      return null
-    }
-  }
-  return Number.isFinite(from) ? { from, to: Math.max(from, to) } : null
-}
 
 // Milkdown's syncHeadingIdPlugin recomputes every heading `id` from its text
 // after a document change (skipping IME composition) and dispatches the fix as
