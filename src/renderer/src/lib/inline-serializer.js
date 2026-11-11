@@ -222,19 +222,32 @@ export const trimEdgeLines = (nodes) => {
 // start after `<br>` shows nothing. Trimming only blank-only texts made the
 // serializer write the same cell two ways (` **alp` from a bold " alp",
 // `**alp` once read back as " " + bold "alp"), so a reprint verified by
-// writing both sides never matched (fuzz seed 5344, Windows).
+// writing both sides never matched (fuzz seed 5344, Windows). A line's
+// edge is wherever its visible content starts / ends, across text nodes:
+// `<br>` + "       " + struck " note" kept the struck space (written
+// `<br> ~~note~~`, then `<br>~~note~~` once read back; seed 6057).
 const trimCellEdgeBlanks = (nodes) => {
+  // Inline code keeps its blanks: they are its content (and it is visible).
+  const texts = nodes.map((node) => (node.isText && !node.marks.some((mark) => mark.type.spec.code) ? node.text : null))
+  let edge = true
+  for (let index = 0; index < nodes.length; index += 1) {
+    if (isBreakNode(nodes[index])) { edge = true; continue }
+    if (texts[index] == null) { edge = false; continue }
+    if (edge) texts[index] = texts[index].replace(/^[ \t]+/, '')
+    if (texts[index]) edge = false
+  }
+  edge = true
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    if (isBreakNode(nodes[index])) { edge = true; continue }
+    if (texts[index] == null) { edge = false; continue }
+    if (edge) texts[index] = texts[index].replace(/[ \t]+$/, '')
+    if (texts[index]) edge = false
+  }
   let changed = false
   const out = []
   nodes.forEach((node, index) => {
-    // Inline code keeps its blanks: they are its content.
-    if (!node.isText || node.marks.some((mark) => mark.type.spec.code)) { out.push(node); return }
-    const atStart = index === 0 || isBreakNode(nodes[index - 1])
-    const atEnd = index === nodes.length - 1 || isBreakNode(nodes[index + 1])
-    let text = node.text
-    if (atStart) text = text.replace(/^[ \t]+/, '')
-    if (atEnd) text = text.replace(/[ \t]+$/, '')
-    if (text === node.text) { out.push(node); return }
+    const text = texts[index]
+    if (text == null || text === node.text) { out.push(node); return }
     changed = true
     if (text) out.push(node.type.schema.text(text, node.marks))
   })

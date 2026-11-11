@@ -485,6 +485,23 @@ const standalone = [
     script: 'scripts/test-table-empty-header-ui.mjs'
   },
   {
+    name: 'Large document: keys typed at a programmatic caret land there (content-visibility)',
+    script: 'scripts/test-cv-caret-ui.mjs'
+  },
+  {
+    name: 'Quit flow traced: clean quit steps, unsaved edit shows the confirm',
+    script: 'scripts/test-quit-trace-ui.mjs'
+  },
+  {
+    name: 'IME composition ending in a code block: later edits still reach the source',
+    script: 'scripts/test-composition-into-code-block-ui.mjs'
+  },
+  {
+    // Outside the list it rotted (it still asked for the retired writers' bytes).
+    name: 'Typed ```text``` stays literal text through source, save and reopen',
+    script: 'scripts/test-literal-triple-backtick-source-ui.mjs'
+  },
+  {
     // Outside the list it failed unnoticed for the whole P3 stage (a list
     // whose type was converted joined the task list above it).
     name: 'List conversion: current level, task lists, a converted list stays its own',

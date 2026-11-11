@@ -33,6 +33,8 @@ import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { listItemLeadPlugin } from './editor-list-item-lead.js'
 import { listJoinPlugin } from './editor-list-join.js'
 import { tableHeaderCellsPlugin } from './editor-table-header-cells.js'
+import { cvKeepPlugin } from './editor-cv-keep.js'
+import { compositionEndPlugin } from './editor-composition-end.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { disableCrepeLinkPreview } from './editor-link-card.js'
@@ -283,6 +285,8 @@ export function createConfiguredCrepe({
       // Lists an edit puts next to each other join (Markdown reads them as one).
       listJoinPlugin({ isProgrammaticChange, readsAsOne: readsAsOneList }),
       tableHeaderCellsPlugin(),
+      cvKeepPlugin(),
+      compositionEndPlugin(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).

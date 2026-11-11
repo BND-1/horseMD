@@ -91,6 +91,13 @@ if (inputTraceEnabled) {
   } catch { /* no earlier file */ }
 }
 let inputTraceQueue = Promise.resolve()
+// The quit flow (before-quit → window close → the renderer's answer →
+// will-quit), written at once: a quit that never finished left no trace of
+// where it stopped (mini 2026-11-10: Cmd+Q and SIGTERM ignored).
+const traceQuit = (step, extra = {}) => {
+  if (!inputTraceEnabled) return
+  try { appendFileSync(inputTracePath(), JSON.stringify({ pid: process.pid, t: Date.now(), kind: 'quit', step, ...extra }) + '\n', 'utf8') } catch { /* trace only */ }
+}
 
 // Preload asks synchronously so normal builds do not install per-event input
 // listeners or send IPC traffic. The actual trace writer is also gated here,
@@ -452,6 +459,7 @@ function createWindow() {
   // Windows log off / shut down (see powerMonitor 'shutdown' in whenReady).
   mainWindow.on('session-end', () => updater.markSessionEnding())
   mainWindow.on('close', (e) => {
+    traceQuit('window-close', { allowClose, isQuitting, rendererReady })
     if (allowClose) return
     e.preventDefault()
     // Closing to the tray keeps the app (and every open tab) alive, so the
@@ -544,12 +552,14 @@ ipcMain.handle('permissions:allowLocalFonts', (event) => {
 // A real quit is starting (Cmd/Ctrl+Q, menu Quit, app.quit()). Mark it so the
 // window 'close' handler quits the app rather than just closing the window.
 app.on('before-quit', () => {
+  traceQuit('before-quit')
   isQuitting = true
 })
 
 // Global accelerators are process-wide; release them on the way out so a
 // relaunch (or another app) can register the same combination again.
 app.on('will-quit', () => {
+  traceQuit('will-quit')
   globalShortcut.unregisterAll()
   // A downloaded update the user chose to install starts now (detached).
   updater.runPendingInstall()
@@ -1072,6 +1082,7 @@ ipcMain.on('storage:flush', () => {
 })
 
 ipcMain.on('app:confirm-close', () => {
+  traceQuit('renderer-confirmed', { isQuitting, closeToTray })
   if (isQuitting) {
     allowClose = true
     app.quit()
@@ -1087,6 +1098,7 @@ ipcMain.on('app:confirm-close', () => {
 // The user cancelled the close. Clear the quit intent so a later window-close
 // (e.g. the macOS traffic light) isn't mistaken for a quit.
 ipcMain.on('app:cancel-close', () => {
+  traceQuit('renderer-cancelled')
   isQuitting = false
   updater.cancelPendingInstall()
 })

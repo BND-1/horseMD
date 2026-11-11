@@ -5,12 +5,14 @@
 import assert from 'node:assert/strict'
 import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser, MOD_MODIFIER } from './lib/human-input.mjs'
 
-const sourceFile = process.env.FILE
-assert.ok(sourceFile, 'FILE is required')
+// FILE=<any Markdown file> (copied, never edited in place); default: the
+// 13 000-line Redis fixture (a chunk-loaded, content-visibility document).
+const sourceFile = process.env.FILE || fileURLToPath(new URL('./fixtures/redis-tight/start.md', import.meta.url))
 const marker = `序列验证${process.pid}`
 const root = `/tmp/horsemd-real-seq-${process.pid}`
 const file = join(root, basename(sourceFile))
@@ -32,21 +34,25 @@ async function click(send, point) {
 }
 
 async function focusEnd(evaluate, send) {
+  // Put the editor's own caret at the end of the last text block, as a click
+  // there would. A collapsed DOM range after the editor's last child mapped
+  // to the START of the last paragraph on Windows, and every typed key went
+  // there.
   const done = await evaluate(`(() => {
-    const editor = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
-    if (!editor) return false
-    editor.focus()
-    const selection = getSelection()
-    const range = document.createRange()
-    range.selectNodeContents(editor)
-    range.collapse(false)
-    selection.removeAllRanges()
-    selection.addRange(range)
-    document.dispatchEvent(new Event('selectionchange'))
-    return true
+    const view = globalThis.__hmSourceReprintHarness?.view?.()
+    if (!view) return false
+    let last = null
+    view.state.doc.descendants((node, pos) => { if (node.isTextblock) last = { node, pos } })
+    if (!last) return false
+    const end = last.pos + 1 + last.node.content.size
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(end), -1)))
+    return view.state.selection.$head.parent === last.node ? (last.node.content.size ? 'text' : 'empty') : false
   })()`)
   assert.ok(done, 'could not focus document end')
-  await pressKey(send, { key: 'End', code: 'End', delayMs: 40 })
+  await sleep(100)
+  // The sequence starts on a line of its own (`1. ` mid-paragraph is text).
+  if (done === 'text') await pressKey(send, { key: 'Enter', code: 'Enter', delayMs: 120 })
 }
 
 async function typeDelimiter(send, key, code, keyCode) {
@@ -89,7 +95,11 @@ const visibleSource = (evaluate) => evaluate(`(
 async function openApp(profile, appPort) {
   const app = await launchBuiltElectron({ profileDir: join(root, profile), port: appPort, appArgs: [file] })
   await waitFor(() => app.evaluate(`!![...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent)`), 'editor did not mount')
-  await sleep(700)
+  // A document over 120 000 characters loads in chunks and stays read-only
+  // until the last one is in (editor-chunked-parse.js): wait for that, or
+  // typing on a slower machine (Windows) goes nowhere.
+  await waitFor(() => app.evaluate(`(() => { const e = [...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent); return e?.dataset.horsemdReady === 'true' && e.contentEditable === 'true' })()`), 'editor did not become editable', 600)
+  await sleep(300)
   return app
 }
 

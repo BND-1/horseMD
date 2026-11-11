@@ -311,12 +311,23 @@ export function useGlobalKeys({
       commitAllLive()
       flushPendingRichEdits?.()
       flushSession()
-      const dirty = tabsRef.current.some(isTabDirty)
+      const dirtyTabs = tabsRef.current.filter(isTabDirty)
+      const dirty = dirtyTabs.length > 0
+      // The quit flow in the input trace (a quit that never finished left no
+      // trace of why: an unanswered confirm, or no answer at all).
+      const trace = (step) => {
+        if (window.api.inputTraceEnabled !== true) return
+        window.api.writeInputTrace?.({ t: Date.now(), kind: 'quit', step, closeToTray: Boolean(payload?.closeToTray), dirty: dirtyTabs.length, dirtyKinds: dirtyTabs.map((tab) => (tab.path ? 'file' : 'untitled')) })
+      }
+      trace('close-request-received')
       // Closing to the tray only hides the window: every tab stays alive, so
       // there is nothing to lose and no confirm is needed.
+      if (!payload?.closeToTray && dirty) trace('confirm-shown')
       if (payload?.closeToTray || !dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+        trace('confirmed')
         window.api.confirmAppClose()
       } else {
+        trace('cancelled')
         window.api.cancelAppClose?.()
       }
     })

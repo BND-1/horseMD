@@ -83,7 +83,9 @@ import { hasBlockingSourceSyncListInputIntent, isSourceSyncListInputIntentActive
 // (the caret had just moved there, after a paste): compositionend went to
 // CodeMirror and every later code edit was held as "composing" — a save
 // then wrote the source as it was before them (fuzz seed 5686). Inside a
-// code block CodeMirror owns the composition.
+// code block CodeMirror owns the composition. Once that composition ends,
+// editor-composition-end.js ends ProseMirror's too (seed 5964: the caret
+// left the code block and the flag held every later edit).
 const proseComposing = (view) => Boolean(view?.composing) &&
   !(typeof document !== 'undefined' && document.activeElement?.closest?.('.cm-editor'))
 

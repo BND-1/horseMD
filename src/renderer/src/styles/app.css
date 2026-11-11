@@ -2939,8 +2939,11 @@ body.hm-col-resizing * {
    :has(.hm-review-widget) excludes paragraphs holding a review margin-note:
    contain:paint (implied by content-visibility) would clip its absolute
    position:right:-2.7rem button. :has is style-recalc only (no layout), and
-   content-visibility already skips style recalc off-screen, so no perf hit. */
-.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.milkdown-code-block):not(:has(.hm-review-widget)) {
+   content-visibility already skips style recalc off-screen, so no perf hit.
+   .hm-cv-keep (editor-cv-keep.js) is the block holding the caret: Chromium
+   places a typed character wrongly in a block it skipped (after an inline
+   atom at a paragraph end, it went to the paragraph start). */
+.editor-scroll.hm-cv .milkdown .ProseMirror > *:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(.milkdown-code-block):not(.hm-cv-keep):not(:has(.hm-review-widget)) {
   content-visibility: auto;
   contain-intrinsic-size: auto 5em;
 }

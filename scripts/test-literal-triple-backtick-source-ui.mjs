@@ -155,8 +155,10 @@ async function main() {
       console.error('LITERAL_TRIPLE_SOURCE_TOGGLE_DIAGNOSTIC', JSON.stringify(diagnostic))
       throw error
     }
-    assert.ok(source.includes('```你好```'), `source lost literal triple backticks: ${JSON.stringify(source)}`)
-    assert.ok(!source.includes('\\`'), `source leaked serializer backtick escapes: ${JSON.stringify(source)}`)
+    // The source reprint is the only writer (2026-11-10): typed backticks
+    // are written by the serializer, which escapes them (`\``) like remark
+    // does. The bytes may differ from the keys; the meaning must not.
+    assert.ok(/^# (?:\\?`){3}你好(?:\\?`){3}\n$/.test(source), `source spells the literal triple backticks: ${JSON.stringify(source)}`)
 
     assert.equal(await app.evaluate(`(() => {
       const save = document.querySelector('.hm-save-fab')

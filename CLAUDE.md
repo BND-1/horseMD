@@ -194,7 +194,33 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (`allowClose` guard) and sends `app-close-request`; the renderer checks dirty
   tabs and calls `confirmAppClose()` to let it close. Covers the macOS traffic
   light, the Windows close button, and Cmd/Ctrl+Q (closing a tab is separate, in
-  `closeTab`).
+  `closeTab`). With --horsemd-input-trace every step is traced (`kind: 'quit'`;
+  main: before-quit, window-close, renderer-confirmed / -cancelled, will-quit;
+  renderer: close-request-received, confirm-shown with the dirty tab count,
+  confirmed / cancelled): a quit that never finished (mini 2026-11-10) had left
+  nothing to read. Locked by `test:quit-trace-ui` (Windows closes the window:
+  its SIGTERM is TerminateProcess).
+- **Content-visibility keeps the caret's block** (`editor-cv-keep.js`): large
+  documents skip layout for off-screen blocks (`.editor-scroll.hm-cv`), and
+  Chromium put keys typed at a caret set without scrolling (mode switch,
+  command) in a skipped block at the START of the paragraph (a paragraph
+  ending with an `<img>` atom; Windows real-file test). A node decoration
+  `hm-cv-keep` on the caret's top-level block exempts it. Only a COLLAPSED
+  caret moves it: a decoration change between two range selections in
+  different blocks makes ProseMirror re-set the DOM selection on Chromium
+  (`forceSelUpdate`) — a copy of a selected `<strong>` lost its markup
+  (`test:issue-98-ui`). Locked by `test:cv-caret-ui`.
+- **An IME composition can end inside a code block** (`editor-composition-end.js`):
+  ProseMirror ends a composition only on a compositionend that belongs to
+  it, and one inside a CodeMirror code block does not. With a block selected
+  (block drag + undo), the first candidate moves the selection into a code
+  block and CodeMirror takes focus, so the end went to CodeMirror and
+  ProseMirror stayed "composing" (no timeout on desktop): every later edit
+  was held as candidate text, the tab never turned dirty and a save wrote the
+  old file (fuzz seed 5964). After any compositionend that leaves
+  ProseMirror composing, the plugin dispatches a non-bubbling compositionend
+  on view.dom (ProseMirror's own handler ends it; CodeMirror's end is not
+  always `isTrusted`). Locked by `test:composition-into-code-block-ui`.
 - **App version** is injected at build time via Vite `define` (`__APP_VERSION__`
   in `electron.vite.config.mjs`, from `package.json`); shown on the welcome page.
   Main has the same define: in an unpackaged run (dev, tests)
