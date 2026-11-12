@@ -106,7 +106,10 @@ const PAGE = String.raw`(job) => {
       if (found || !n.isTextblock) return !found
       const chars = []
       n.forEach((child, offset) => {
-        if (child.isText) for (let i = 0; i < child.text.length; i += 1) chars.push(pos + 1 + offset + i)
+        // A position between the two halves of a surrogate pair (an emoji)
+        // is no place a user can select (Chromium moves by character), and
+        // half an emoji has no Markdown: such an edge moves past the pair.
+        if (child.isText) for (let i = 0; i < child.text.length; i += 1) chars.push(/[\uDC00-\uDFFF]/.test(child.text[i]) && /[\uD800-\uDBFF]/.test(child.text[i - 1] || '') ? pos + 1 + offset + i + 1 : pos + 1 + offset + i)
         else chars.push(pos + 1 + offset)
       })
       const flat = n.textBetween(0, n.content.size, '', '￼')
