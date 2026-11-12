@@ -2,6 +2,7 @@ import { cjkFriendlyToMarkdown } from 'mdast-util-to-markdown-cjk-friendly'
 import { gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTaskListItemToMarkdown } from 'mdast-util-gfm-task-list-item'
 import { defaultHandlers } from 'mdast-util-to-markdown'
+import { restoreHighlightEscapes } from './remark-highlight-parse.js'
 
 // Milkdown's default remark `text` stringify handler has a fast path,
 // `if (/^[^*_\\]*\s+$/.test(value)) return value`, meant to keep the space
@@ -94,12 +95,13 @@ function textHandler(node, parent, state, info) {
   let value = node.value.replace(/([^ \t\r\n])[ \t]+(?=[\r\n])/g, '$1')
   if (beforeBreak && /[^ \t][ \t]+$/.test(value)) value = value.replace(/[ \t]+$/, '')
   const match = TRAILING_WHITESPACE_FAST_PATH.exec(value)
-  if (!match) return state.safe(value, { ...info, encode: [] })
+  // `restoreHighlightEscapes`: a `\==` mdast skipped after another escape.
+  if (!match) return restoreHighlightEscapes(state.safe(value, { ...info, encode: [] }))
   const [, head, tail] = match
   if (!head) return blankLines(value, !info?.before || /[\r\n]$/.test(info.before), beforeBreak)
   const spelled = blankLines(tail, false, beforeBreak)
-  if (!spelled) return state.safe(head, { ...info, encode: [] })
-  return state.safe(head, { ...info, after: spelled[0], encode: [] }) + spelled
+  if (!spelled) return restoreHighlightEscapes(state.safe(head, { ...info, encode: [] }))
+  return restoreHighlightEscapes(state.safe(head, { ...info, after: spelled[0], encode: [] })) + spelled
 }
 
 // Whitespace after the text's last visible character, line by line. Blanks

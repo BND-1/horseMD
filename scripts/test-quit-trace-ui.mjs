@@ -4,8 +4,9 @@
 // finished (mini 2026-11-10: Cmd+Q and SIGTERM ignored) had left no trace of
 // where it stopped.
 //  1. A clean document: SIGTERM quits, every step traced.
-//  2. An unsaved edit: SIGTERM shows the unsaved-changes confirm (traced with
-//     the dirty count) and does not quit behind the user's back.
+//  2. An unsaved edit: SIGTERM brings the window forward, shows the
+//     unsaved-changes confirm (traced with the dirty count) and does not quit
+//     behind the user's back.
 // On Windows SIGTERM is TerminateProcess (no quit flow at all), so the test
 // closes the window there instead — the close button's path.
 import assert from 'node:assert/strict'
@@ -63,6 +64,9 @@ try {
   const dirty = await run('dirty', true)
   assert.equal(dirty.exited, false, 'an unsaved edit is not dropped by SIGTERM')
   assert.ok(dirty.steps.some((step) => step.startsWith('confirm-shown:')), `the unsaved-changes confirm is traced with its dirty count: ${JSON.stringify(dirty.steps)}`)
+  // The window comes forward before the confirm (it is a modal of the window).
+  assert.ok(dirty.steps.indexOf('window-shown-for-confirm') >= 0 && dirty.steps.indexOf('window-shown-for-confirm') < dirty.steps.findIndex((step) => step.startsWith('confirm-shown:')), `the window is brought forward before the confirm: ${JSON.stringify(dirty.steps)}`)
+  assert.ok(!clean.steps.includes('window-shown-for-confirm'), 'a clean quit does not bring the window forward')
   try { dirty.app.child.kill('SIGKILL') } catch { /* gone */ }
   await exitWithin(dirty.app.child, 10000)
   console.log(`PASS quit trace: clean quit traced (${clean.steps.join(' → ')}); an unsaved edit shows the confirm (${dirty.steps.join(' → ')})`)

@@ -305,7 +305,7 @@ export function useGlobalKeys({
     const onOpenFolderEvt = () => openFolder()
     window.addEventListener('mm:openFolder', onOpenFolderEvt)
     // Main asks before the window closes so we can warn about unsaved changes.
-    const offClose = window.api.onAppCloseRequest?.((payload) => {
+    const offClose = window.api.onAppCloseRequest?.(async (payload) => {
       // Flush textarea edits still inside the per-tab debounce window, then write
       // the session — so a recent keystroke isn't lost on quit.
       commitAllLive()
@@ -322,8 +322,14 @@ export function useGlobalKeys({
       trace('close-request-received')
       // Closing to the tray only hides the window: every tab stays alive, so
       // there is nothing to lose and no confirm is needed.
-      if (!payload?.closeToTray && dirty) trace('confirm-shown')
-      if (payload?.closeToTray || !dirty || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+      const ask = !payload?.closeToTray && dirty
+      // The confirm is a modal of the window: shown in a minimized / hidden /
+      // background window, nobody saw it and the quit seemed ignored.
+      if (ask) {
+        try { await window.api.showForConfirm?.() } catch { /* best effort */ }
+        trace('confirm-shown')
+      }
+      if (!ask || window.confirm(tRef.current('confirm.quitUnsaved'))) {
         trace('confirmed')
         window.api.confirmAppClose()
       } else {

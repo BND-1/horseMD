@@ -17,6 +17,7 @@ import { gfm } from 'micromark-extension-gfm'
 import { findAndReplace } from 'mdast-util-find-and-replace'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { highlightParseTransform, highlightStringifyHandler, highlightUnsafe } from '../src/renderer/src/lib/remark-highlight-parse.js'
+import { safeTrailingWhitespaceTextHandler } from '../src/renderer/src/lib/remark-text-handler.js'
 
 const HIGHLIGHT_RE = /(?<![={])(==)(?!\})([^=\s][^=]*[^=\s]|[^=\s])\1(?![=])/g
 
@@ -167,11 +168,22 @@ const merge = (nodes) => {
   }
   return out
 }
+// The editor's own text handler: mdast skipped the `\==` escape right
+// after another escaped character (`2\*\*==第一`, fuzz seed 6142), which
+// `restoreHighlightEscapes` puts back; `*` `_` `[` in the pieces reach it.
 const write = (children) => toMarkdown({ type: 'root', children: [{ type: 'paragraph', children }] }, {
-  handlers: { highlight: highlightStringifyHandler },
+  handlers: { highlight: highlightStringifyHandler, text: safeTrailingWhitespaceTextHandler },
   unsafe: [highlightUnsafe]
 })
-const pieces = ['=', '=', '==', 'a', '中', ' ', '{', '}', 'b', '编']
+{
+  const children = [{ type: 'text', value: '2**==第一' }, { type: 'highlight', color: 'yellow', children: [{ type: 'text', value: 'b' }] }, { type: 'text', value: 'c' }]
+  const md = write(children)
+  assert.equal(md, '2\\*\\*\\==第一==b==c\n', 'a literal `==` after an escaped `*` is escaped too (seed 6142)')
+  const tree = fromMarkdown(md, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] })
+  highlightParseTransform(tree, { value: md })
+  assert.deepEqual(merge(tree.children[0].children), strip(children), 'it reads back as text + the highlight')
+}
+const pieces = ['=', '=', '==', 'a', '中', ' ', '{', '}', 'b', '编', '*', '_', '[']
 let roundTrips = 0
 for (let i = 0; i < 20000; i += 1) {
   const children = []
@@ -198,7 +210,9 @@ for (let i = 0; i < 20000; i += 1) {
   if (!expected.length || (first.type === 'text' && /^\s/.test(first.value)) || (last.type === 'text' && /\s$/.test(last.value))) continue
   // Two highlights side by side are one mark run in the editor.
   if (expected.some((n, k) => n.type === 'highlight' && expected[k + 1]?.type === 'highlight')) continue
-  const md = write(children)
+  // Written as the editor hands them over: ProseMirror merges adjacent text
+  // of the same marks, so two text nodes never touch.
+  const md = write(expected)
   const tree = fromMarkdown(md, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] })
   highlightParseTransform(tree, { value: md })
   const back = merge(tree.children[0]?.children || [])

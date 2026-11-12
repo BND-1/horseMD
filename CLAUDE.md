@@ -198,8 +198,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   main: before-quit, window-close, renderer-confirmed / -cancelled, will-quit;
   renderer: close-request-received, confirm-shown with the dirty tab count,
   confirmed / cancelled): a quit that never finished (mini 2026-11-10) had left
-  nothing to read. Locked by `test:quit-trace-ui` (Windows closes the window:
-  its SIGTERM is TerminateProcess).
+  nothing to read. The trace then showed why: one unsaved tab, so the quit
+  waited on the unsaved-changes confirm — a `window.confirm`, a modal of the
+  window, asked in a background window nobody looked at. Before the confirm
+  the renderer asks main to bring the window forward (`app:show-for-confirm`:
+  restore, show, focus; on macOS `app.focus({ steal: true })`; traced
+  `window-shown-for-confirm`). Locked by `test:quit-trace-ui` (Windows closes
+  the window: its SIGTERM is TerminateProcess).
 - **Content-visibility keeps the caret's block** (`editor-cv-keep.js`): large
   documents skip layout for off-screen blocks (`.editor-scroll.hm-cv`), and
   Chromium put keys typed at a caret set without scrolling (mode switch,
@@ -595,8 +600,20 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   flavor as a normal copy (list markers, tab-separated table rows). Plain
   text puts a blank line between top-level blocks (`spaceTopLevelBlocks`:
   innerText only spaced <p>, so a list glued to a following table). Locked by
-  `test:context-copy-ui` (its cell-drag step fails on Windows before this
-  change too: synthetic drags make no CellSelection there).
+  `test:context-copy-ui`.
+- **Mouse cell selection** (`editor-table-cell-drag.js`, Windows): a drag
+  across cells left the first cell over Crepe's row handle, prosemirror-
+  tables set a one-cell CellSelection whose DOM selection covered the press
+  point, and Chromium on Windows (no text-drag delay, macOS has ~150 ms)
+  started a text drag that ended the cell drag — no cells selected. While a
+  cell drag is in progress a native dragstart is cancelled (capture on the
+  editor root: the table node view hides events from ProseMirror, the table
+  plugin stops on a dragstart that reaches the document). A right-click on
+  a selected cell moved the caret (a CellSelection's DOM selection is the
+  last cell); Windows opens the menu on the release, so 复制 was disabled:
+  the selection at the press is put back when the menu opens. Locked by
+  `test:context-copy-ui` (a fresh drag from a caret outside the table; a
+  press ON a range selection drags its text, as in any browser).
 - **Partial copy inside one paragraph** (`editor-copy.js`
   `copiedMarkdownContent`): `selection.content()` keeps every ancestor, so
   text inside one list item / quote / table cell serialized as `- x` / `> x` /

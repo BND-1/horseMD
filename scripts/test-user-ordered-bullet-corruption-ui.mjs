@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
@@ -117,6 +118,19 @@ async function main() {
     console.log('AFTER_FOLLOWUP')
     console.log('RICH', forestSnippet(await app.evaluate(`([...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)?.textContent || '')`)))
     console.log('DIAGNOSTICS', JSON.stringify(final, null, 2))
+    // The source reprint is the only writer (2026-11-10): the typed list and
+    // the paragraph after it reach the source, and it means what the editor
+    // shows (no mismatch toast).
+    const sync = await app.evaluate(`(() => {
+      const h = globalThis.__hmSourceReprintHarness
+      const source = h.liveSource()
+      return { source: source.slice(source.indexOf('# 森林'), source.indexOf('# 森林') + 300), equivalent: h.equivalent(source, h.liveDoc()) }
+    })()`)
+    assert.deepEqual(final.toasts.filter((text) => /不一致|mismatch/i.test(text)), [], 'a mismatch toast appeared')
+    assert.match(sync.source, /\n1\. 比你厉害\n/, `the typed ordered item is in the source: ${JSON.stringify(sync.source)}`)
+    assert.match(sync.source, /\n厉害吧你是否i额\n/, `the paragraph typed after the list is in the source: ${JSON.stringify(sync.source)}`)
+    assert.equal(sync.equivalent, true, 'source and editor document differ')
+    console.log('PASS user ordered item after a paragraph: list and following paragraph reach the source, no mismatch')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

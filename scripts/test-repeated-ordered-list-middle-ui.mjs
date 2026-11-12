@@ -179,10 +179,13 @@ async function main() {
     assert.equal((forest.match(/测试/g) || []).length >= 3, true, 'source lost repeated test text')
     assert.doesNotMatch(forest, /undefined/, 'source contains an unexpected undefined paragraph')
     assert.doesNotMatch(forest, /1\) 测试/, 'typed ordered punctuation changed from 1. to 1)')
+    // `1. ` typed on the line after a list continues it (editor-list-join.js,
+    // Typora; 2026-11-09): `1. a` + `1. b` read back as one list in Markdown,
+    // so the editor shows them as one too — items 1 and 2, delimiter `.`.
     assert.match(
       forest,
-      /1\. 测试\n\n1\. 测试\n\n测试/,
-      'source did not preserve two separate ordered blocks followed by a paragraph'
+      /1\. 测试\n2\. 测试\n\n测试/,
+      'source did not continue the ordered list and end it before the paragraph'
     )
     assert.doesNotMatch(
       forest,
@@ -219,7 +222,7 @@ async function main() {
     const reopenedForest = reopened.slice(reopened.indexOf('# 森林'), reopened.indexOf('# 森林') + 700)
     assert.equal(reopenedForest, expectedForest, 'reopen changed the repeated ordered-list structure')
 
-    console.log('PASS repeated ordered-list middle source sync: separate ordered blocks survive source switch, save, and reopen')
+    console.log('PASS repeated ordered-list middle source sync: the typed `1. ` continues the list; source switch, save and reopen stable')
   } finally {
     await stopBuiltElectron(app, { removeProfile: true })
     await rm(root, { recursive: true, force: true })

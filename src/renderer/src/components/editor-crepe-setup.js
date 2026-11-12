@@ -35,6 +35,7 @@ import { listJoinPlugin } from './editor-list-join.js'
 import { tableHeaderCellsPlugin } from './editor-table-header-cells.js'
 import { cvKeepPlugin } from './editor-cv-keep.js'
 import { compositionEndPlugin } from './editor-composition-end.js'
+import { tableCellDragPlugin } from './editor-table-cell-drag.js'
 import { createInlineMathEditingPlugin } from './editor-inline-math.js'
 import { createSlashPlugin, disableCrepeSlash } from './editor-slash-menu.js'
 import { disableCrepeLinkPreview } from './editor-link-card.js'
@@ -287,6 +288,7 @@ export function createConfiguredCrepe({
       tableHeaderCellsPlugin(),
       cvKeepPlugin(),
       compositionEndPlugin(),
+      tableCellDragPlugin(),
       // #152: merged cells from Excel / web tables split into a plain grid.
       // A plugin, not an editorViewOptionsCtx prop: that one would replace
       // Milkdown's paste-rule runner (its empty-header-row fix runs first).

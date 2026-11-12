@@ -1095,6 +1095,16 @@ ipcMain.on('app:confirm-close', () => {
   allowClose = true
   mainWindow?.close()
 })
+// The unsaved-changes confirm is a modal of this window: a quit from the Dock,
+// a SIGTERM or Cmd+Q in a minimized / hidden / background window asked it
+// where nobody saw it, and the app seemed to ignore the quit (mini
+// 2026-11-10). Bring the window forward first, as document apps do.
+ipcMain.handle('app:show-for-confirm', () => {
+  const shown = focusMainWindow()
+  if (shown && !backgroundTestMode && process.platform === 'darwin') app.focus({ steal: true })
+  traceQuit('window-shown-for-confirm', { shown })
+  return shown
+})
 // The user cancelled the close. Clear the quit intent so a later window-close
 // (e.g. the macOS traffic light) isn't mistaken for a quit.
 ipcMain.on('app:cancel-close', () => {

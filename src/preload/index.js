@@ -168,6 +168,8 @@ const api = {
   // app close: main asks before closing so the renderer can warn about unsaved
   // changes, then calls confirmAppClose() to proceed or cancelAppClose() to abort.
   confirmAppClose: () => ipcRenderer.send('app:confirm-close'),
+  // Bring the window forward before the unsaved-changes confirm (a modal of it).
+  showForConfirm: () => ipcRenderer.invoke('app:show-for-confirm'),
   // Write localStorage to disk now (after the settings change).
   flushStorage: () => ipcRenderer.send('storage:flush'),
   cancelAppClose: () => ipcRenderer.send('app:cancel-close'),

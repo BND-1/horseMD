@@ -129,7 +129,15 @@ try {
   assert.equal(rangeTable.plain, tablePlain, 'range table copy put cells on separate lines')
   assertTableHtml(rangeTable.html, 'range table copy')
   // Mouse drag across cells = ProseMirror CellSelection; the DOM selection
-  // stays on the last cell only.
+  // stays on the last cell only. A fresh drag, from a caret outside the
+  // table: a press ON the range selection above drags its text (Chromium on
+  // Windows at once, on macOS after ~150 ms). Leaving the first cell crosses
+  // Crepe's row handle, a one-cell CellSelection covers the press point, and
+  // Windows started a text drag that ended the cell drag
+  // (editor-table-cell-drag.js).
+  await click(await select('p', 'First bold text.'))
+  await app.evaluate('getSelection().collapseToEnd()')
+  await sleep(150)
   const from = await cellPoint('Key'), to = await cellPoint('row two')
   await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...from })
   for (let i = 1; i <= 8; i++) await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1, x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8 })

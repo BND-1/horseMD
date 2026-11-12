@@ -238,6 +238,15 @@ function coalesceMarkHtml(node) {
 // before a highlight `==步骤==` reopened as a highlight of `编` (fuzz seed 525).
 export const highlightUnsafe = { character: '=', inConstruct: 'phrasing', before: '^|[^{=]', after: '(?==[^=\\s}])' }
 
+// mdast-util-to-markdown skips an escape whose pattern has a `before` when
+// the character before it is escaped unconditionally (it takes the escape as
+// fulfilling the condition): text `2**==第一` was written `2\*\*==第一`, and
+// in a table cell that `==` paired with a later highlight's (fuzz seed 6142).
+// Applied to the text handler's output: an unescaped `==` that could open,
+// right after an escaped punctuation character other than `=`, gets its `\`.
+const SKIPPED_HIGHLIGHT_ESCAPE = /((?:^|[^\\])(?:\\\\)*\\[!-/:-<>-@[-`{-~])==(?=[^=\s}])/g
+export const restoreHighlightEscapes = (written) => (written.includes('==') ? written.replace(SKIPPED_HIGHLIGHT_ESCAPE, '$1\\==') : written)
+
 // Stringify direction (remark handler, registered on remarkStringifyOptionsCtx).
 // yellow → ==text== ; red/blue → <mark class="hm-hl-…">text</mark> (round-trips
 // back into a colored mark via coalesceMarkHtml on reload).

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 
-const sourceFixture = '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
+const sourceFixture = process.env.FILE || '/Users/yangtingyi/vibe_everything/test/无序列表测试.md'
 const root = `/tmp/horsemd-table-column-delete-${process.pid}`
 const fixture = join(root, 'fixture.md')
 const port = 10400 + (process.pid % 200)
