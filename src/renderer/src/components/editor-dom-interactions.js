@@ -1,4 +1,5 @@
 import { TextSelection } from '@milkdown/prose/state'
+import { CellSelection } from '@milkdown/prose/tables'
 import { keybindingMatchesEvent } from '../lib/commands/keybinding-normalize.js'
 import { getEffectiveKeybindingMap } from '../lib/commands/keybinding-store.js'
 import { isReadOnlyMutationKey } from './editor-read-only.js'
@@ -238,7 +239,12 @@ export function mountEditorInteractionBindings({
           if (listConversion) break
         }
         const domSelection = currentView.dom.ownerDocument.getSelection()
-        let preservedTextSelection = false
+        // A right-click inside selected cells keeps the cells (Typora,
+        // spreadsheets). The DOM selection of a CellSelection is the last
+        // cell's text only: read below, it turned the cells into that text.
+        const selected = currentView.state.selection
+        let preservedTextSelection = selected instanceof CellSelection &&
+          selected.ranges.some((range) => at.pos >= range.$from.pos && at.pos <= range.$to.pos)
         // CodeMirror owns its DOM selection and ProseMirror can therefore keep
         // a stale selection in a neighbouring paragraph. Before a block action
         // runs, bridge a collapsed caret only when it belongs to the exact code

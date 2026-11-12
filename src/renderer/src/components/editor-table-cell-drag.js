@@ -11,14 +11,15 @@
 //    selected. A text drag needs a press ON an existing selection; this one
 //    was made by the drag itself: while a cell drag is in progress the
 //    native drag is cancelled and kept from the table plugin's stop handler.
-// 2. A right-click on a selected cell. A CellSelection's DOM selection is
-//    the last cell only, so the right button's press moved the caret to the
-//    click point and the cells were deselected. macOS opens the context
-//    menu on the press (it still saw the cells), Windows on the release (it
-//    saw a caret: 复制 disabled). The selection at the press is kept and
-//    put back when the menu opens, as in Typora and spreadsheet apps
-//    (preventing the press instead let ProseMirror read the last cell's DOM
-//    selection as a text selection).
+// 2. A right-click on a selected cell. The right button's press moved the
+//    caret to the click point and the cells were deselected: Windows opens
+//    the context menu on the release (it saw a caret: 复制 disabled), macOS
+//    on the press, before the caret move (cells gone while the menu was
+//    open). The press on a selected cell is prevented, and the selection at
+//    the press is put back if anything still moved it when the menu opens,
+//    as in Typora and spreadsheet apps. The menu handler
+//    (editor-dom-interactions.js) keeps a CellSelection too: its DOM
+//    selection is the last cell's text, which it used to commit.
 import { Plugin, PluginKey } from '@milkdown/prose/state'
 import { CellSelection, tableEditingKey } from '@milkdown/prose/tables'
 import { traceEditorEvent } from './editor-input-trace.js'
@@ -43,6 +44,9 @@ export function tableCellDragPlugin() {
         rightPress = null
         if (event.button !== 2 || !(view.state.selection instanceof CellSelection)) return
         if (!event.target?.closest?.('td, th')?.classList.contains('selectedCell')) return
+        // The press would move the caret: macOS opens the menu first, then
+        // the caret move replaced the cells while the menu was open.
+        event.preventDefault()
         rightPress = { selection: view.state.selection, doc: view.state.doc, at: Date.now() }
       }
       // Capture on the editor root: runs before the context menu handler

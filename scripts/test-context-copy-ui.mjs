@@ -146,6 +146,14 @@ try {
   const dragged = await keyboardCopy()
   assert.equal(dragged.plain, tablePlain, 'cell-selection copy lost cells')
   assertTableHtml(dragged.html, 'cell-selection copy')
+  // The menu opens with the cells still selected: the menu handler read the
+  // DOM selection (a CellSelection's is the last cell's text) and turned the
+  // cells into that text while the menu was open.
+  await click(await cellPoint('example'), 'right')
+  await waitFor(() => app.evaluate('!!document.querySelector("[data-context-copy]")?.offsetParent'), 'context menu did not open')
+  assert.equal(await app.evaluate(`(${editor}).querySelectorAll('.selectedCell').length`), 6, 'right-click on selected cells deselected them')
+  await key('Escape', 27)
+  await waitFor(() => app.evaluate('!document.querySelector("[data-context-copy]")?.offsetParent'), 'Esc did not close the menu')
   const draggedMenu = await copyFromMenu(await cellPoint('example'))
   assert.equal(draggedMenu.plain, tablePlain, 'context-menu copy of a cell selection lost cells')
   assertTableHtml(draggedMenu.html, 'cell-selection menu copy')

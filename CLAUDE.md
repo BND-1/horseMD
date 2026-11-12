@@ -609,11 +609,16 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   cell drag is in progress a native dragstart is cancelled (capture on the
   editor root: the table node view hides events from ProseMirror, the table
   plugin stops on a dragstart that reaches the document). A right-click on
-  a selected cell moved the caret (a CellSelection's DOM selection is the
-  last cell); Windows opens the menu on the release, so 复制 was disabled:
-  the selection at the press is put back when the menu opens. Locked by
-  `test:context-copy-ui` (a fresh drag from a caret outside the table; a
-  press ON a range selection drags its text, as in any browser).
+  a selected cell moved the caret; Windows opens the menu on the release,
+  so 复制 was disabled: that press is prevented and the selection at the
+  press is put back when the menu opens. The menu handler
+  (`editor-dom-interactions.js`) keeps a CellSelection: it used to commit
+  the DOM selection — for a CellSelection only the last cell's text — so
+  the cells were deselected while the menu was open, on macOS too (seen
+  with real OS mouse input on Windows, 2026-11-12). Locked by
+  `test:context-copy-ui` (a fresh drag from a caret outside the table;
+  cells still selected while the menu is open; a press ON a range
+  selection drags its text, as in any browser).
 - **Partial copy inside one paragraph** (`editor-copy.js`
   `copiedMarkdownContent`): `selection.content()` keeps every ancestor, so
   text inside one list item / quote / table cell serialized as `- x` / `> x` /
