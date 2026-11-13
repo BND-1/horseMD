@@ -46,14 +46,23 @@ export const isRestrictedPath = (p) => {
 // workspaces, no switching (HorseMD is a writing app, one workspace is enough;
 // users add/remove folders within it). Session persists `folderRoots: [abs,…]`.
 
-// Filter to absolute, non-restricted, de-duplicated roots (mirrors main's
-// isRestrictedRoot; a relative/restricted root would crash the chokidar watcher).
-export function sanitizeFolderRoots(list) {
+// Filter to valid, de-duplicated roots (mirrors main's isRestrictedRoot).
+// On desktop a relative/restricted root would crash the chokidar watcher, so
+// the absolute-path + restricted checks are enforced. On mobile (Capacitor)
+// paths are opaque strings relative to the app's filesystem root and the
+// watcher is a no-op, so those guards are relaxed — only reject empty/dot
+// paths that would resolve against nothing.
+export function sanitizeFolderRoots(list, isMobile = false) {
   if (!Array.isArray(list)) return []
   const seen = new Set()
   const out = []
   for (const p of list) {
-    if (typeof p !== 'string' || !isAbsolutePath(p) || isRestrictedPath(p)) continue
+    if (typeof p !== 'string') continue
+    if (isMobile) {
+      if (!p || p === '.' || p === '..') continue
+    } else if (!isAbsolutePath(p) || isRestrictedPath(p)) {
+      continue
+    }
     const k = normalizePathKey(p)
     if (seen.has(k)) continue
     seen.add(k)
@@ -66,16 +75,19 @@ export function sanitizeFolderRoots(list) {
 // { folderRoots } plus two legacy shapes (no data loss across upgrades):
 //   - { workspaces: [{ folderRoots }] }   (the multi-workspace build) → merge all roots
 //   - { workspace: { rootPath } }          (the original single-folder build) → [rootPath]
-export function loadFolderRootsFromSession(session) {
+//
+// isMobile relaxes the absolute-path guard (mobile paths are opaque strings
+// relative to the app's filesystem root — see sanitizeFolderRoots).
+export function loadFolderRootsFromSession(session, isMobile = false) {
   if (!session) return []
-  if (Array.isArray(session.folderRoots)) return sanitizeFolderRoots(session.folderRoots)
+  if (Array.isArray(session.folderRoots)) return sanitizeFolderRoots(session.folderRoots, isMobile)
   if (Array.isArray(session.workspaces)) {
     const all = session.workspaces.flatMap((w) => (w && Array.isArray(w.folderRoots) ? w.folderRoots : []))
-    return sanitizeFolderRoots(all)
+    return sanitizeFolderRoots(all, isMobile)
   }
   const legacy = session.workspace
-  if (legacy && isAbsolutePath(legacy.rootPath) && !isRestrictedPath(legacy.rootPath)) {
-    return sanitizeFolderRoots([legacy.rootPath])
+  if (legacy && (isMobile || (isAbsolutePath(legacy.rootPath) && !isRestrictedPath(legacy.rootPath)))) {
+    return sanitizeFolderRoots([legacy.rootPath], isMobile)
   }
   return []
 }
