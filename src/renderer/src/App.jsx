@@ -96,12 +96,14 @@ const PandocExportStatus = __MOBILE_BUILD__
 
 export default function App() {
   const session = useRef(loadSession()).current
-  // Migrate + sanitize the session's workspace folder roots once (stable session).
-  // Legacy single-folder and short-lived multi-workspace sessions are flattened.
-  const initialFolderRoots = useRef(loadFolderRootsFromSession(session)).current
   // Mobile (Capacitor) builds run the same renderer; a few affordances differ
   // (drawer sidebar, no split/image-host buttons). Desktop is unaffected.
+  // Computed before initialFolderRoots so the mobile path guard (paths.js)
+  // can relax the absolute-path check the desktop watcher requires.
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
+  // Migrate + sanitize the session's workspace folder roots once (stable session).
+  // Legacy single-folder and short-lived multi-workspace sessions are flattened.
+  const initialFolderRoots = useRef(loadFolderRootsFromSession(session, isMobile)).current
   const [tabs, setTabs] = useState([])
   const [activeId, setActiveId] = useState(null)
   // On phones the sidebar overlays the editor, so it starts closed to keep the

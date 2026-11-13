@@ -81,7 +81,7 @@ export function useFileOps({
   sourceTextareas,
   editorHosts
 }) {
-  const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen })
+  const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen, isMobile })
   const { bumpRefresh } = workspace
 
   // --------------------------- open files --------------------------
