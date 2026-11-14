@@ -119,6 +119,8 @@ src/renderer/src/
   {blocks,themes,i18n,onboarding}.{js,jsx}
   styles/app.css       all styles + theme variables
 build/                 icon.ico (Windows) + icon.icns (macOS) + icons/ PNG set (Linux) + installer.nsh
+scripts/icon/          the app icon's source (mark.pbm) + renderer: build-icons.sh writes every icon,
+                       logo, favicon and mobile splash; never edit those images by hand
 scripts/               CDP-based e2e helpers (etv.mjs, inspect.mjs)
 docs/                  architecture / features / implementation-notes / development
 guide/                 VitePress user tutorial + versioned current-app screenshots

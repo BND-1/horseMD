@@ -1,7 +1,7 @@
 // Left activity bar: Home / Files / Outline / Search / collapse. Extracted
 // verbatim in behavior from App.jsx (phase-2 refactor, US-7).
 import { Icon } from '../icons.jsx'
-import logoUrl from '../../assets/logo.png'
+import logoUrl from '../../assets/logo-small.png'
 
 export default function ActivityBar({ home, sidebarMode, sidebarOpen, settingsActive, t, onHome, onFiles, onOutline, onSearch, onSettings, onToggleSidebar }) {
   return (
