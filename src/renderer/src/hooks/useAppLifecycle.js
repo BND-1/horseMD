@@ -262,7 +262,7 @@ export function useAppLifecycle({
       restoreSession !== false &&
       ((session.openPaths || []).filter(Boolean).length || (session.untitled || []).length)
     ) return
-    const doc = welcomeDoc(session.lang || DEFAULT_LANG)
+    const doc = welcomeDoc(session.lang || DEFAULT_LANG, { mobile: isMobile })
     const id = genId()
     setTabs((prev) => [
       ...prev,

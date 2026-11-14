@@ -191,9 +191,127 @@ $$\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
 祝写作愉快！✨
 `
 
-export function welcomeDoc(lang) {
+// Phones and tablets get their own tour: the desktop one talks about the
+// activity bar and keyboard shortcuts. One paragraph per line — a line break
+// inside a paragraph shows as a break in the editor.
+const MOBILE_EN = `# Welcome to HorseMD 🐎
+
+**HorseMD** is a warm, modern **Markdown editor**. Type Markdown and it renders right where you write — no preview pane.
+
+> This page is a quick tour. Edit it, or close it with the ✕ on its tab — you won't see it again.
+
+## Getting around
+
+- **☰** (top left) opens the drawer: Home, your files and the outline of this document.
+- **Tabs** keep several documents open. Tap one to switch, ✕ to close.
+- **+** makes a new document, **⌘** searches files and commands.
+- The **lock** turns on reading mode: scroll, select and copy without accidental edits. Tap it again to edit.
+- **⋯ More** (bottom right) has Save, Source mode, themes and language.
+- **Export** (bottom right) sends the document to Files, Mail or any other app.
+
+## Write as you read
+
+Start a line with \`# \` for a heading, \`- \` for a list or \`> \` for a quote.
+
+### Code, diagrams, math
+
+\`\`\`python
+def greet(name):
+    return f"Hello, {name}!"
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+    A[Idea] --> B[Draft]
+    B --> C[Publish]
+\`\`\`
+
+An inline formula $E = mc^2$, or a block:
+
+$$\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
+
+### Highlights, tables, tasks
+
+Wrap text in \`==\` to ==highlight it==.
+
+| Feature | Try it |
+| --- | --- |
+| Table | Tap a cell to edit |
+| Task | Tap the box below |
+
+- [ ] Write something
+- [x] Open HorseMD
+
+## Your files
+
+- **Save** from ⋯ More. A new document asks for a name first.
+- On iPhone and iPad, documents are in the **Files** app → On My iPhone → HorseMD.
+- Share a \`.md\` file from Files or another app to open it here.
+
+Happy writing! ✨
+`
+
+const MOBILE_ZH = `# 欢迎使用 HorseMD 🐎
+
+**HorseMD** 是一款温暖、现代的 **Markdown 编辑器**。输入 Markdown，当场渲染成你要的样子，不用切预览。
+
+> 这一页是快速导览。可以直接改它，也可以点标签上的 ✕ 关掉，以后不会再出现。
+
+## 认识界面
+
+- 左上角 **☰** 打开抽屉：主页、文件列表、本文的大纲。
+- **标签页**：几个文档同时开着，点标签切换，点 ✕ 关闭。
+- **+** 新建文档，**⌘** 搜索文件和命令。
+- **锁**：阅读锁定，只能滚动、选择、复制，不会误触改动；再点一下恢复编辑。
+- 右下角 **⋯ 更多**：保存、源码模式、主题、语言。
+- 右下角 **导出**：把文档存到「文件」，或发到邮件、聊天等其他 App。
+
+## 边写边渲染
+
+行首输入 \`# \` 是标题，\`- \` 是列表，\`> \` 是引用。
+
+### 代码、图表、公式
+
+\`\`\`python
+def greet(name):
+    return f"你好，{name}！"
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+    A[想法] --> B[草稿]
+    B --> C[发布]
+\`\`\`
+
+行内公式 $E = mc^2$，或者块级公式：
+
+$$\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$
+
+### 高亮、表格、任务
+
+用 \`==\` 包住文字就是==高亮==。
+
+| 功能 | 试试看 |
+| --- | --- |
+| 表格 | 点单元格直接改 |
+| 任务 | 点下面的方框 |
+
+- [ ] 写点什么
+- [x] 打开 HorseMD
+
+## 文件在哪
+
+- **⋯ 更多 → 保存**。新文档会先让你起个名字。
+- iPhone 和 iPad 上，文档在「文件」App → 我的 iPhone → HorseMD。
+- 在「文件」或别的 App 里分享 \`.md\`，可以直接用 HorseMD 打开。
+
+祝写作愉快！✨
+`
+
+export function welcomeDoc(lang, { mobile = false } = {}) {
+  const zh = lang === 'zh'
   return {
-    title: lang === 'zh' ? '欢迎使用 HorseMD.md' : 'Welcome to HorseMD.md',
-    content: lang === 'zh' ? ZH : EN
+    title: zh ? '欢迎使用 HorseMD.md' : 'Welcome to HorseMD.md',
+    content: mobile ? (zh ? MOBILE_ZH : MOBILE_EN) : (zh ? ZH : EN)
   }
 }
