@@ -28,6 +28,8 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
   const widthIdx = PAGE_WIDTH_PRESETS.findIndex((p) =>
     p.width === 'full' ? isFull : !isFull && pageWidth === p.width
   )
+  const canPickFonts = window.api?.capabilities?.localFonts !== false
+  const canSetPageWidth = window.api?.capabilities?.pageWidth !== false
   const fontsLoadedRef = useRef(false)
   const previewRef = useRef(null)
   const [fontFamilies, setFontFamilies] = useState(null)
@@ -52,6 +54,7 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
   return (
     <div className="settings-typo">
       <div className="settings-typo-controls">
+        {canPickFonts && <>
         <div className="settings-typo-row settings-typo-fonts">
           <FontPicker
             label={t('settings.fontWrite')}
@@ -95,6 +98,7 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
           />
         </div>
         <p className="settings-font-hint">{t('settings.fontHint')}</p>
+        </>}
         <div className="settings-typo-row">
           <AdjustGroup
             title={t('settings.fontSize')} valueLabel={fontSize + ' px'}
@@ -119,13 +123,13 @@ export default function TypographyControls({ settings, onUpdateSettings, onHover
             value={paragraphSpacing} min={PARA_SPACING_MIN} max={PARA_SPACING_MAX} round={round1}
             onSet={(v) => onUpdateSettings({ paragraphSpacing: v })} liveApply={applyParagraphSpacing}
           />
-          <AdjustGroup
+          {canSetPageWidth && <AdjustGroup
             title={t('settings.pageWidth')} valueLabel={isFull ? t('settings.width.full') : pageWidth + ' px'}
             presets={PAGE_WIDTH_PRESETS.map((p) => ({ ...p, label: t('settings.width.' + p.id) }))}
             activeIndex={widthIdx} onPick={(p) => onUpdateSettings({ pageWidth: p.width })}
             value={isFull ? PAGE_WIDTH_MAX : pageWidth} min={PAGE_WIDTH_MIN} max={PAGE_WIDTH_MAX} round={round10}
             onSet={(w) => onUpdateSettings({ pageWidth: w })} liveApply={applyPageWidthPreview}
-          />
+          />}
         </div>
         <div className="settings-typo-row settings-typo-row-single">
           <AdjustGroup

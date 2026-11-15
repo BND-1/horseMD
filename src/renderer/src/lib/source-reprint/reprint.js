@@ -1573,6 +1573,20 @@ export function reprintSource({ source, editorDoc, previousDoc = null, parse, pa
       notes.push({ level: 'code', at: start })
       return true
     }
+    // A one-line `$$…$$` math block (remarkSingleLineDisplayMath): a
+    // formula edited on one line keeps the authored line; only the formula
+    // between the `$$` changes. Anything else (a line break, `$$` inside)
+    // is written as a block below / by the next level; the result is
+    // verified either way.
+    if (lines.length === 1 && open && open[2] === '$$' && mdNode?.lang === 'LaTeX') {
+      const one = /^([ \t]*)\$\$(.*)\$\$[ \t]*$/.exec(lines[0])
+      const content = newNode.textContent
+      if (!one || !content || /\n|\$\$|^\$|\$$/.test(content)) return false
+      const at = start + one[1].length + 2
+      replace(at, at + one[2].length, content)
+      notes.push({ level: 'code', at: start })
+      return true
+    }
     if (lines.length < 2) return false
     const fence = open[2]
     const last = lines[lines.length - 1].replace(/^[ \t>]*/, '')

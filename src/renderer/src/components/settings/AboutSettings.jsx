@@ -38,8 +38,9 @@ export default function AboutSettings({ settings = {}, onUpdateSettings, t }) {
       <div className="settings-row">
         <div className="settings-row-label">HorseMD {APP_VERSION && <span className="settings-version">{APP_VERSION}</span>}</div>
       </div>
-      <UpdateChecker t={t} />
-      {onUpdateSettings && <UpdateModeRow settings={settings} onUpdateSettings={onUpdateSettings} t={t} />}
+      {/* Phones update through the app store / TestFlight / a new APK. */}
+      {window.api.capabilities?.updates !== false && <UpdateChecker t={t} />}
+      {onUpdateSettings && window.api.capabilities?.updates !== false && <UpdateModeRow settings={settings} onUpdateSettings={onUpdateSettings} t={t} />}
       <div className="settings-row settings-row-actions">
         <button className="settings-link-btn" onClick={() => window.api.openExternal('https://horsemd.yangsir.net')}>{t('settings.website')}</button>
         <button className="settings-link-btn" onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}>GitHub</button>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
-import { isMarkdownName } from '../paths.js'
+import { displayPath, isMarkdownName } from '../paths.js'
 import { copyToClipboard } from '../ui.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 import ExportContextSubmenu from './ExportContextSubmenu.jsx'
@@ -130,7 +130,7 @@ export default function Tabs({
                   onClose(tab.id)
                 }
               }}
-              title={tab.path || tab.title}
+              title={displayPath(tab.path) || tab.title}
             >
               <span className="tab-title">{tab.title}</span>
               <span
@@ -183,9 +183,18 @@ export default function Tabs({
                       <div className="tab-menu-sep" />
                     </>
                   )}
-                  <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => copyPath(tab))}>
-                    {t('tab.copyPath')}
-                  </button>
+                  {/* A phone path (sandbox, ext:<id>/…) is nothing a person can
+                      use: share the file there instead. */}
+                  {!isMobile && (
+                    <button className="tab-menu-item" disabled={!hasPath} title={noPathTip} onClick={run(() => copyPath(tab))}>
+                      {t('tab.copyPath')}
+                    </button>
+                  )}
+                  {isMobile && hasPath && window.api.capabilities?.canShare && (
+                    <button className="tab-menu-item" onClick={run(() => window.api.shareFile?.(tab.path))}>
+                      {t('status.shareShort')}
+                    </button>
+                  )}
                   <button className="tab-menu-item" onClick={run(() => copyName(tab))}>
                     {t('tab.copyName')}
                   </button>

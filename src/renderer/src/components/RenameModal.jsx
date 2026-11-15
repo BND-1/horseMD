@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 // Small modal for renaming a tab's file (Electron has no window.prompt). The
 // filename (without extension) is pre-selected; Enter confirms, Esc cancels.
 export default function RenameModal({ t, initial, onConfirm, onCancel, title }) {
+  const keysShown = window.api?.capabilities?.keyboardShortcuts !== false
   const [value, setValue] = useState(initial)
   const inputRef = useRef(null)
   useEffect(() => {
@@ -14,7 +15,7 @@ export default function RenameModal({ t, initial, onConfirm, onCancel, title }) 
   }, [initial])
   return (
     <>
-      <div className="menu-backdrop" onMouseDown={onCancel} />
+      <div className="menu-backdrop hm-modal-backdrop" onMouseDown={onCancel} />
       <div className="hm-rename-modal" role="dialog" aria-modal="true">
         <div className="hm-rename-title">{title || t('side.rename')}</div>
         <input
@@ -29,8 +30,9 @@ export default function RenameModal({ t, initial, onConfirm, onCancel, title }) 
           }}
         />
         <div className="hm-rename-actions">
-          <button onClick={onCancel}>{t('edit.cancel')}</button>
-          <button className="primary" onClick={() => onConfirm(value)}>{t('edit.confirm')}</button>
+          {/* No Esc / Enter keys on a phone: plain labels there. */}
+          <button onClick={onCancel}>{t(keysShown ? 'edit.cancel' : 'common.cancel')}</button>
+          <button className="primary" onClick={() => onConfirm(value)}>{t(keysShown ? 'edit.confirm' : 'common.confirm')}</button>
         </div>
       </div>
     </>

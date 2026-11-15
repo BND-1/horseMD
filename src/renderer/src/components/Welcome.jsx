@@ -1,6 +1,7 @@
 import { Icon } from './icons.jsx'
 import logoUrl from '../assets/logo.png'
 import { getCommandShortcut } from '../lib/commands/shortcut-labels.js'
+import { displayPath } from '../paths.js'
 
 // App version, injected at build time from package.json (see electron.vite.config).
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
@@ -41,7 +42,13 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
           HorseMD
           {APP_VERSION && <span className="welcome-version">v{APP_VERSION}</span>}
         </h1>
-        <p className="welcome-tagline">{t('welcome.tagline')}</p>
+        {/* Two phrases that each stay whole; a narrow screen breaks between
+            them, not inside 写作空间. */}
+        <p className="welcome-tagline">
+          {t('welcome.tagline').split(/\s+(?=——|—\s)/).map((part, i) => (
+            <span key={i} className="welcome-tagline-part">{i ? ' ' : ''}{part}</span>
+          ))}
+        </p>
         <div className="welcome-actions">
           <button className="btn-primary" onClick={onNew}>
             <Icon name="file-plus" size={16} /> {t('welcome.newFile')}
@@ -50,7 +57,8 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
             <Icon name="file" size={16} /> {t('welcome.openFile')}
           </button>
           <button onClick={onOpenFolder}>
-            <Icon name="folder" size={16} /> {t('welcome.openFolder')}
+            {/* On a phone the folder is added to the workspace, the same words as the drawer's button. */}
+            <Icon name="folder" size={16} /> {t(window.api?.platform === 'ios' || window.api?.platform === 'android' ? 'workspace.addFolder' : 'welcome.openFolder')}
           </button>
         </div>
 
@@ -59,11 +67,11 @@ export default function Welcome({ t, lang, recents, onNew, onOpen, onOpenFolder,
             <div className="welcome-recents-head">{t('welcome.recent')}</div>
             <div className="welcome-recents-list">
               {recents.map((r) => (
-                <div key={r.path} className="recent-item" onClick={() => onOpenRecent(r.path)} title={r.path}>
+                <div key={r.path} className="recent-item" onClick={() => onOpenRecent(r.path)} title={displayPath(r.path)}>
                   <Icon name="file" size={16} className="recent-icon" />
                   <span className="recent-main">
                     <span className="recent-name">{r.name}</span>
-                    <span className="recent-path">{r.dir}</span>
+                    <span className="recent-path">{displayPath(r.dir)}</span>
                   </span>
                   <span className="recent-time">{relTime(r.openedAt, lang, t)}</span>
                   {onRemoveRecent && (

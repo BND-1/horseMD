@@ -4,7 +4,6 @@ import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
-import { normalizeDisplayMath } from './editor-math.js'
 import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
@@ -160,7 +159,7 @@ export function createEditorApi({
       if (!hasPendingRichFlush?.()) {
         recordSourceSnapshot?.({ doc: viewRef.current?.state.doc, source: lastMarkdownRef.current })
       }
-      const next = normalizeReviewMarkupMarkdown(normalizeDisplayMath(source))
+      const next = normalizeReviewMarkupMarkdown(source)
       // Re-choose the code-block mount mode for the incoming document: pasting
       // a block-heavy document into a small one must not eager-mount hundreds
       // of CodeMirror instances (issue #126).

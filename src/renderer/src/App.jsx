@@ -1289,7 +1289,6 @@ export default function App() {
         splitId={home ? null : splitId}
         focusedPane={focusedPane}
         split={split}
-        imageUploadCommand={settings.imageUploadCommand}
         effectiveKeybindings={effectiveKeybindings}
         onActivate={(id) => {
           setHome(false)
@@ -1300,7 +1299,7 @@ export default function App() {
         onClose={closeTab}
         onNew={newTab}
         onCloseOthers={closeOthers}
-        onOpenRight={openRight}
+        onOpenRight={isMobile ? undefined : openRight}
         onRename={renameTabFile}
         onDuplicate={duplicateTabFile}
         onDelete={deleteTabFile}
@@ -1312,9 +1311,9 @@ export default function App() {
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onToggleReadOnly={() => updateSettings({ mobileReadOnly: !settings.mobileReadOnly })}
         onToggleSplit={toggleSplit}
-        onImageHostChange={(cmd) => updateSettings({ imageUploadCommand: cmd })}
         onOpenPalette={() => setPaletteOpen(true)}
-        onToggleImmersive={home || activeTab?.kind === 'settings' ? undefined : toggleImmersive}
+        onToggleImmersive={home || !activeTab || activeTab.kind === 'settings' ? undefined : toggleImmersive}
+        docActive={!home && !!activeTab && activeTab.kind !== 'settings'}
       />
 
       {isMobile && sidebarOpen && (
@@ -1341,7 +1340,7 @@ export default function App() {
                 onRemoveFolder={removeFolder}
                 activePath={activePath}
                 onOpenFile={(p) => { openPaths([p]); if (isMobile) setSidebarOpen(false) }}
-                onOpenRight={openFileRight}
+                onOpenRight={isMobile ? undefined : openFileRight}
                 onExportPdf={exportPathToPdf}
                 onExportHtml={exportPathToHtml}
                 onExportPandoc={exportPathWithPandoc}

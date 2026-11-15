@@ -21,7 +21,7 @@ import { renderHtmlNodeView, remarkMergeInlineHtml } from './editor-html.js'
 import { createAngleAutolinkInputPlugin, remarkUnwrapNonAsciiAutolinks } from './editor-autolink.js'
 import { remarkPreserveLiteralTripleBacktickTextBlocks } from './editor-literal-backticks.js'
 import { createMermaidPreviewRenderer, createMermaidSplitPlugin } from './editor-mermaid.js'
-import { remarkMathBlockWithPosition } from '../lib/remark-math-block-position.js'
+import { remarkMathBlockWithPosition, remarkSingleLineDisplayMath } from '../lib/remark-math-block-position.js'
 import { isSvgCodeLanguage, requestSvgCodeBlockScan, svgCodePreviewHtml } from './editor-svg-codeblock.js'
 import {
   tableBreakKeymap,
@@ -362,6 +362,8 @@ export function createConfiguredCrepe({
       // Before Milkdown's remark-image-block (registered later and appended):
       // the same conversion, but the image block keeps its source position.
       { plugin: remarkImageBlockWithPosition, options: undefined },
+      // A line that is exactly `$$…$$` is a math block, positioned.
+      { plugin: remarkSingleLineDisplayMath, options: undefined },
       // Same for `$$` math blocks (Crepe's remarkMathBlock drops the position).
       { plugin: remarkMathBlockWithPosition, options: undefined },
       ...plugins,

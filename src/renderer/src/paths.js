@@ -20,8 +20,22 @@ export function isNewerVersion(a, b) {
 // path like "." would resolve against the process CWD (= "/" under launchd), so a
 // workspace must be absolute — otherwise the file tree / watcher target the wrong
 // place (and recursively watching "/" crashes the app).
+// On a phone every path lives in the app's own sandbox (Capacitor resolves
+// "HorseMD/a.md" against Documents / External), so a sandbox path is absolute
+// there: the library folder "HorseMD" was dropped as relative and 添加文件夹
+// did nothing (#175).
+const inMobileSandbox = () => {
+  const platform = globalThis.window?.api?.platform
+  return platform === 'ios' || platform === 'android'
+}
 export const isAbsolutePath = (p) =>
-  typeof p === 'string' && (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p))
+  typeof p === 'string' &&
+  (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^\\\\/.test(p) ||
+    (inMobileSandbox() && /^[^./\\]/.test(p) && !/(^|\/)\.\.(\/|$)/.test(p)))
+
+// What a person reads for a path: a file opened in place on a phone is
+// `ext:<id>/<folder or file>/…` internally (platform/capacitor-api.js).
+export const displayPath = (p) => (typeof p === 'string' ? p.replace(/^ext:[a-z0-9]+(\/|$)/, '') : p)
 
 export function normalizePathKey(p) {
   let s = String(p || '').replace(/\\/g, '/')

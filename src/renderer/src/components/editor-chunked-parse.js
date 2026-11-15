@@ -12,7 +12,6 @@
 // `appending` (the onChange-suppression flag) is NOT managed here — the caller
 // owns it, so it can be read by the editor's markdownUpdated handler.
 import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
-import { normalizeDisplayMath } from './editor-math.js'
 
 export const CHUNK_THRESHOLD = 120000 // above this, parse incrementally
 export const CHUNK_SIZE = 40000 // chars per chunk (first chunk renders in ~one frame)
@@ -49,7 +48,7 @@ export function splitMarkdown(md, target) {
 
 // Stream the remaining chunks (chunks[0] is already rendered) into the live
 // editor in the background. Behavior-preserving extraction from Editor.jsx:
-// normalizes review markup + display math per chunk, yields between chunks,
+// normalizes review markup per chunk, yields between chunks,
 // toggles the editor non-editable during load, and signals the host via
 // onLoadingChange / onStructureChange at the same points.
 //
@@ -73,12 +72,10 @@ export async function appendChunks({ rest, view, getParser, isDestroyed, getEdit
     for (const chunkText of rest) {
       if (isDestroyed()) break
       let parsed = null
-      // Normalize review markup + display math in each appended chunk too —
-      // defaultValue wraps firstContent with both, but these background-appended
-      // chunks are parsed directly, so wrap them. (Chunking splits only at blank
-      // lines; a normalized $$…$$ block has no internal blank line, so math never
-      // spans two chunks.)
-      try { parsed = parser ? parser(normalizeReviewMarkupMarkdown(normalizeDisplayMath(chunkText))) : null } catch { /* skip unparseable chunk */ }
+      // Normalize review markup in each appended chunk too — defaultValue
+      // wraps firstContent with it, but these background-appended chunks are
+      // parsed directly. (`$$…$$` lines are math blocks in the parse itself.)
+      try { parsed = parser ? parser(normalizeReviewMarkupMarkdown(chunkText)) : null } catch { /* skip unparseable chunk */ }
       if (parsed && parsed.content && parsed.content.size > 0 && !isDestroyed()) {
         // `hm-programmatic`: parsed source, not an edit (editor-list-join.js).
         view.dispatch(view.state.tr.insert(view.state.doc.content.size, parsed.content).setMeta('hm-programmatic', true))

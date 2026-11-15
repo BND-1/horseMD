@@ -20,7 +20,8 @@ export default function FilesSettings({ settings, onUpdateSettings, t }) {
           />
         </div>
       </section>
-      <section className="settings-block">
+      {/* The upload command runs a program: not on phones (#175). */}
+      {window.api.capabilities?.imageHostExec !== false && <section className="settings-block">
         <h2 className="settings-block-title">{t('settings.imageHost')}</h2>
         <p className="settings-block-desc">{t('settings.imageHostDesc')}</p>
         <input
@@ -29,7 +30,8 @@ export default function FilesSettings({ settings, onUpdateSettings, t }) {
           value={settings.imageUploadCommand || ''}
           onChange={(e) => onUpdateSettings({ imageUploadCommand: e.target.value })}
         />
-      </section>
+        <p className="settings-font-hint settings-input-hint">{t('settings.imageHostHint')}</p>
+      </section>}
       {window.api.capabilities?.pandocExport && <DocumentToolsSettings t={t} />}
     </>
   )

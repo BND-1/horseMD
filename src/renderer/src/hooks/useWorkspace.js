@@ -8,8 +8,16 @@ import {
 
 // Owns the renderer-side multi-root workspace. Open-document file watchers stay
 // in useFileOps because they have a different lifecycle and dirty-content guard.
+// On a phone the app's own folder (window.api.libraryRoot, where new
+// documents are saved) is always the first root, like iA Writer's "On My
+// iPhone": 添加文件夹 then picks other folders through the system picker.
+const withLibrary = (roots) => {
+  const lib = window.api?.libraryRoot
+  return lib && !roots.includes(lib) ? [lib, ...roots] : roots
+}
+
 export function useWorkspace({ initialFolderRoots, setSidebarOpen }) {
-  const [folderRoots, setFolderRoots] = useState(() => sanitizeFolderRoots(initialFolderRoots))
+  const [folderRoots, setFolderRoots] = useState(() => withLibrary(sanitizeFolderRoots(initialFolderRoots)))
   const folderRootsKey = folderRoots.join('\n')
   const [files, setFiles] = useState([])
   const [refreshNonce, setRefreshNonce] = useState(0)
@@ -27,7 +35,7 @@ export function useWorkspace({ initialFolderRoots, setSidebarOpen }) {
 
   const removeFolder = useCallback((rootPath) => {
     const target = normalizePathKey(rootPath)
-    setFolderRoots((prev) => prev.filter((root) => normalizePathKey(root) !== target))
+    setFolderRoots((prev) => withLibrary(prev.filter((root) => normalizePathKey(root) !== target)))
   }, [])
 
   const openFolder = useCallback(async () => {

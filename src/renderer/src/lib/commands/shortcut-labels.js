@@ -7,7 +7,13 @@ export function currentShortcutPlatform() {
   return 'win32'
 }
 
+// Phones assume no keyboard (capabilities.keyboardShortcuts false): no hints
+// in the palette, tooltips or menus — they all showed Ctrl+… (#175).
+const keyboardShortcutsOff = () =>
+  typeof window !== 'undefined' && window.api?.capabilities?.keyboardShortcuts === false
+
 export function getCommandShortcut(commandId, effectiveKeybindings, platform = currentShortcutPlatform()) {
+  if (keyboardShortcutsOff()) return ''
   const command = COMMAND_BY_ID[commandId]
   if (!command) return ''
   const bindings = effectiveKeybindings?.[commandId] ?? command.defaultKeybindings ?? []

@@ -34,9 +34,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // A file handed over by another app ("Open in HorseMD", Files app). Queued
+        // on HorseFilesPlugin, which works at cold start before the plugin exists.
+        if url.isFileURL {
+            let inPlace = options[.openInPlace] as? Bool ?? false
+            HorseFilesPlugin.receiveIncoming(url, inPlace: inPlace)
+        }
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
-        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+        let handled = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+        return handled || url.isFileURL
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {

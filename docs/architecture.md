@@ -126,7 +126,6 @@ src/
         editor-block-handle-guard.js 块操作条触发过滤与 BlockProvider 统一轨道锚点
         editor-codeblock-eager.js 代码块 eager-mount 根治跳页（#25 prototype 修改）
         LayoutControl.jsx  排版 popover（字号/行距/段距/页宽）
-        ImageHostButton.jsx 顶栏图床配置按钮
         Sidebar.jsx        文件树侧边栏编排（支持多根与显示隐藏文件）
         SidebarContextMenu.jsx 文件树右键菜单视图
         Tabs.jsx           顶部标签条（拖拽排序 #31）+ 右键菜单

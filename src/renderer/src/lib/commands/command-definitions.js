@@ -269,6 +269,7 @@ export const COMMAND_DEFINITIONS = [
     // copying can never edit them. Renderer-only, like view.immersive.
     id: 'view.readingMode',
     handler: 'toggleReadingMode',
+    capability: 'readingMode',
     titleKey: 'cmd.readingMode',
     fallbackTitle: 'Reading Mode',
     category: COMMAND_CATEGORIES.VIEW,

@@ -1,22 +1,21 @@
-// Top bar: mobile menu button, tab strip, new/split/image-host/palette buttons,
+// Top bar: mobile menu button, tab strip, new/split/palette buttons,
 // and the Windows window controls. Extracted verbatim in behavior from App.jsx
 // (phase-2 refactor, US-7).
 import Tabs from '../Tabs.jsx'
 import { Icon } from '../icons.jsx'
-import ImageHostButton from '../ImageHostButton.jsx'
 import WindowControls from '../WindowControls.jsx'
 import { labelWithShortcut } from '../../lib/commands/shortcut-labels.js'
 
 export default function Topbar({
   isMobile,
   readOnly,
+  docActive = true,
   t,
   tabs,
   activeId,
   splitId,
   focusedPane,
   split,
-  imageUploadCommand,
   effectiveKeybindings,
   onActivate,
   onClose,
@@ -35,7 +34,6 @@ export default function Topbar({
   onToggleReadOnly,
   onToggleImmersive,
   onToggleSplit,
-  onImageHostChange,
   onOpenPalette
 }) {
   return (
@@ -70,7 +68,8 @@ export default function Topbar({
         effectiveKeybindings={effectiveKeybindings}
       />
       <div className="topbar-spacer" />
-      {isMobile && (
+      {/* The lock is about the open document: not on Home or Settings. */}
+      {isMobile && docActive && (
         <button
           className={`icon-btn drag-no hm-readonly-btn${readOnly ? ' active' : ''}`}
           title={readOnly ? t('mobile.readOnlyOff') : t('mobile.readOnlyOn')}
@@ -96,13 +95,6 @@ export default function Topbar({
           <Icon name="columns" size={16} />
         </button>
       )}
-      {!isMobile && (
-        <ImageHostButton
-          t={t}
-          command={imageUploadCommand}
-          onChange={onImageHostChange}
-        />
-      )}
       {onToggleImmersive && (
         <button
           className="icon-btn drag-no hm-immersive-btn"
@@ -118,7 +110,8 @@ export default function Topbar({
         title={labelWithShortcut(t('cmd.palette'), 'view.commandPalette', effectiveKeybindings)}
         onClick={onOpenPalette}
       >
-        <Icon name="command" size={16} />
+        {/* ⌘ means nothing on a phone; there the palette is "search files and commands". */}
+        <Icon name={isMobile ? 'search' : 'command'} size={isMobile ? 18 : 16} />
       </button>
       {(window.api.platform === 'win32' || window.api.platform === 'linux') && <WindowControls t={t} />}
     </div>

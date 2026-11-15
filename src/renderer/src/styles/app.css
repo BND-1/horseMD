@@ -494,6 +494,12 @@ button:focus-visible,
 .recent-item:active { background: var(--active); opacity: 0.85; }
 .sidebar-head-actions button:active { background: var(--active); transform: scale(0.9); }
 .context-menu button:active { background: var(--active); opacity: 0.85; }
+/* Phone long-press menu (portaled to <body>, so not under .app.is-mobile):
+   rows a finger can hit, readable text. */
+.app.is-mobile .tab-ctxmenu { min-width: 200px; padding: 6px; border-radius: 14px; }
+.app.is-mobile .tab-menu-item { min-height: 42px; padding: 10px 14px; font-size: 15px; border-radius: 9px; }
+.context-menu.hm-touch-menu { min-width: 200px; padding: 6px; border-radius: 14px; }
+.context-menu.hm-touch-menu button { min-height: 42px; padding: 10px 14px; font-size: 15px; border-radius: 9px; }
 .findbar button:active { background: var(--active); opacity: 0.9; }
 
 /* =====================================================
@@ -1467,34 +1473,6 @@ button:focus-visible,
   animation: menuFadeIn 0.12s var(--ease-out);
 }
 
-/* Image-host popover: position:fixed (set inline) so the top bar's
-   overflow:hidden can't clip it. */
-.hm-imghost {
-  position: relative;
-  display: inline-flex;
-}
-.icon-btn.hm-imghost-on {
-  position: relative;
-  color: var(--accent);
-}
-.icon-btn.hm-imghost-on::after {
-  content: '';
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.hm-imghost-pop {
-  position: fixed;
-  z-index: 200;
-  width: 320px;
-  max-width: 86vw;
-  animation: menuFadeIn 0.12s var(--ease-out);
-}
-
 /* ---- Mermaid live preview (rendered under a ```mermaid code block) ---- */
 /* Mermaid preview states (shown inside the code-block's built-in preview panel). */
 .hm-mermaid-hint {
@@ -1527,6 +1505,14 @@ button:focus-visible,
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   pointer-events: none;
   animation: hm-toast-in 0.22s var(--ease-out);
+}
+/* A message with \n (first save on a phone: name + place) shows its lines. */
+.hm-toast .hm-toast-msg { white-space: pre-line; }
+.app.is-mobile .hm-toast:not(.sticky) {
+  max-width: calc(100vw - 48px);
+  border-radius: 14px;
+  line-height: 1.45;
+  text-align: center;
 }
 /* Sticky toast (e.g. "saved to …"): stays until tapped, so it's interactive and
    carries a ✕. Lets the message wrap instead of staying a one-line pill. */
@@ -1784,6 +1770,13 @@ body.resizing-pane .pane-left-resizer::before {
   min-width: 0;
 }
 .tabs-scroll::-webkit-scrollbar { display: none; }
+/* Phone: a tab scrolled half out fades instead of leaving a lone ✕ at the
+   edge (the strip scrolls; Safari / Chrome tab strips do the same). */
+.app.is-mobile .tabs-scroll {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  padding-inline: 6px;
+}
 
 .tab {
   display: flex;
@@ -2524,6 +2517,18 @@ body.hm-row-resizing { cursor: row-resize; user-select: none; }
   color: var(--accent);
 }
 .app.is-mobile .outline-drag-handle { display: none; }
+/* Phone drawer lists: rows a finger can hit (desktop rows are 28–30 px with
+   13 px text; Material lists are 40+ px). */
+.app.is-mobile .tree-row { height: 40px; font-size: 15px; gap: 8px; }
+.app.is-mobile .tree-chevron { width: 16px; }
+.app.is-mobile .outline-item { min-height: 40px; padding-block: 8px; font-size: 14.5px; }
+.app.is-mobile .outline-twisty {
+  /* A 28 px hit area around the 14 px arrow, without moving the text. */
+  width: 28px;
+  height: 28px;
+  margin: -7px;
+}
+.app.is-mobile .sidebar-title { font-size: 14px; }
 /* Skeleton shown in the outline while a huge document is still streaming in
    (chunked parse). Mimics a heading list (with indented sub-items) so the user
    sees "loading" instead of an empty/stale list. Reuses the editor skeleton's
@@ -4757,7 +4762,10 @@ body.hm-full-width .source-editor {
   transform: translateY(-1px);
 }
 .settings-swatch.active {
-  border-color: var(--text-strong);
+  /* A ring outside the card: a border in the text colour vanished on the
+     dark cards. */
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .settings-swatch-name {
   position: absolute;
@@ -4775,6 +4783,12 @@ body.hm-full-width .source-editor {
 .settings-row-actions {
   margin-top: 12px;
   gap: 12px;
+}
+/* Links grouped at the start (they were spread to both edges on a phone). */
+.app.is-mobile .settings-row-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 20px;
 }
 .settings-link-btn {
   background: none;
@@ -4982,29 +4996,8 @@ body.hm-full-width .source-editor {
   margin-top: 2px;
 }
 /* Language — segmented choice. */
-.settings-langs {
-  display: flex;
-  gap: 8px;
-}
-.settings-lang {
-  padding: 7px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
-}
-.settings-lang:hover {
-  border-color: var(--accent);
-}
-.settings-lang.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-strong);
-  font-weight: 600;
-}
+.settings-langs { display: inline-flex; }
+.settings-lang { min-width: 88px; font-size: 13px; }
 /* Image host command input. */
 .settings-input {
   width: 100%;
@@ -5749,6 +5742,9 @@ body.hm-full-width .source-editor {
   line-height: 1.5;
   color: var(--faint);
 }
+.settings-font-hint.settings-input-hint {
+  margin: 8px 0 0;
+}
 /* 'Get more fonts' — expandable list of external font sites. */
 .settings-font-more {
   margin-top: 4px;
@@ -5837,6 +5833,15 @@ body.hm-full-width .source-editor {
   border-right: 0;
   border-bottom: 1px solid var(--border-soft);
   overflow-x: auto;
+  /* A swipeable chip row (Android Settings, App Store): no scrollbar, the
+     last chip fades out to show there is more. */
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  scroll-padding-inline: 10px;
+}
+.app.is-mobile .settings-nav::-webkit-scrollbar {
+  display: none;
 }
 .app.is-mobile .settings-nav-item {
   flex: 0 0 auto;
@@ -5854,6 +5859,34 @@ body.hm-full-width .source-editor {
   margin: 0;
   min-height: 0;
   padding: 24px 14px 64px;
+}
+/* A row's text keeps at least 60 % of the line; a control that does not fit
+   beside it (segmented choices) goes below, as in the system Settings. The
+   text used to shrink to one character per line (#175). */
+.app.is-mobile .settings-row {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.app.is-mobile .settings-row > .settings-row-text {
+  flex: 1 0 60%;
+}
+.app.is-mobile .settings-row > :not(.settings-row-text) {
+  max-width: 100%;
+}
+/* A row's choices sit under its label and span the line, like iOS's
+   segmented control, with taller touch targets. */
+.app.is-mobile .settings-row:has(> .settings-segmented) > .settings-row-text {
+  flex-basis: 100%;
+}
+.app.is-mobile .settings-row > .settings-segmented,
+.app.is-mobile .settings-block > .settings-segmented {
+  display: flex;
+  flex: 1 1 100%;
+}
+.app.is-mobile .settings-segmented-option {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 34px;
 }
 .app.is-mobile .settings-typo-controls {
   width: 100%;
@@ -5887,7 +5920,8 @@ body.hm-full-width .source-editor {
   border-bottom: 1px solid var(--border-soft);
 }
 .app.is-mobile .settings-swatches {
-  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  /* Six themes as two even rows of three (auto-fill gave 4 + 2). */
+  grid-template-columns: repeat(3, 1fr);
 }
 .app.is-mobile .settings-shortcut-row {
   align-items: flex-start;
@@ -7293,7 +7327,7 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   /* Real status bar height (from StatusBar.getInfo), falling back to the CSS
      safe-area inset. env() alone is unreliable on Android (cutout only) and on
      MIUI (overlaps the clock), so the measured height wins when available. */
-  --safe-top: var(--hm-safe-top, env(safe-area-inset-top));
+  --safe-top: var(--hm-safe-top, var(--safe-area-inset-top, env(safe-area-inset-top)));
   /* Grow the top/bottom bars into the safe area (notch / home indicator) rather
      than padding the whole app, which would offset the absolute drawer. */
   grid-template-rows:
@@ -7374,7 +7408,9 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   max-width: min(76vw, 300px);
   padding-top: var(--safe-top);
   padding-bottom: env(safe-area-inset-bottom);
-  transform: translateX(calc(-100% - 56px));
+  /* 24px further than the panel itself: its shadow (blur 20px) showed as a
+     grey band down the left edge of the closed app. */
+  transform: translateX(calc(-100% - 56px - 24px));
   transition: transform 0.25s var(--ease-out);
   z-index: 41;
   box-shadow: 2px 0 20px rgba(0, 0, 0, 0.2);
@@ -7408,6 +7444,28 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
    is always full width here) and the desktop keyboard-shortcut hints. */
 .app.is-mobile .hm-pagewidth { display: none; }
 .app.is-mobile .welcome-hints { display: none; }
+/* Code blocks: Crepe reveals the language label and 复制 / fold buttons on
+   hover. A phone has no hover, so the 30 px toolbar was an empty band over
+   every block; there it is always shown, quieter than on hover. */
+.app.is-mobile .milkdown .milkdown-code-block .language-button,
+.app.is-mobile .milkdown .milkdown-code-block .tools-button-group > button {
+  opacity: 0.75;
+}
+/* Phone home: the actions stack full width (primary first) instead of a
+   2 + 1 row with the third button alone; the tagline breaks evenly. */
+.app.is-mobile .welcome-actions {
+  flex-direction: column;
+  align-items: stretch;
+  width: min(320px, 100%);
+  margin-inline: auto;
+}
+.app.is-mobile .welcome-actions button {
+  min-height: 46px;
+  font-size: 15px;
+}
+.welcome-tagline-part {
+  display: inline-block;
+}
 /* iOS/Android own text selection, copy/paste and accessibility actions. Crepe's
    selection tooltip is disabled in editor-crepe-setup; keep this as a defensive
    fallback so an upstream toolbar cannot overlap the native system menu. */
@@ -7431,9 +7489,11 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   margin-bottom: 4px;
 }
 .app.is-mobile .hm-sheet-themes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
+  /* One even row for the six built-in themes (it wrapped 5 + 1). */
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  justify-items: center;
+  gap: 8px 4px;
   padding: 4px 10px 8px;
 }
 .app.is-mobile .hm-sheet-swatch {
@@ -7443,10 +7503,31 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   border: 2px solid transparent;
   box-shadow: 0 0 0 1px var(--border) inset;
 }
-.app.is-mobile .hm-sheet-swatch.active { border-color: var(--accent); }
+.app.is-mobile .hm-sheet-swatch.active {
+  /* A ring with a gap, so the current theme is obvious at a glance. */
+  box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--text-strong);
+}
 .app.is-mobile .hm-sheet-swatch-custom { background: var(--accent); }
-.app.is-mobile .hm-sheet-langs { display: flex; gap: 4px; }
-.app.is-mobile .hm-sheet-langs .block-menu-item { flex: 1; justify-content: center; }
+.app.is-mobile .hm-sheet-langs {
+  /* A segmented control: both choices sit on one track. */
+  display: flex;
+  gap: 2px;
+  margin: 2px 10px 8px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--hover);
+}
+.app.is-mobile .hm-sheet-langs .block-menu-item {
+  flex: 1;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 8px;
+}
+.app.is-mobile .hm-sheet-langs .block-menu-name { text-align: center; }
+.app.is-mobile .hm-sheet-langs .block-menu-item.active {
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
 
 /* Font-size stepper in the mobile "more" sheet: −  16px  + */
 .app.is-mobile .hm-sheet-fontsize {
@@ -7538,7 +7619,43 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
     color: var(--text);
   }
 }
+/* Phone dialogs (save as, rename): a dimmed page behind, a roomier card,
+   16 px input text (iOS zooms the page into anything smaller) and buttons a
+   finger can hit. */
+.app.is-mobile .hm-modal-backdrop {
+  background: rgba(0, 0, 0, 0.32);
+  animation: hmScrimFade 0.18s var(--ease-out);
+}
+.app.is-mobile .hm-rename-modal {
+  top: 22%;
+  width: calc(100vw - 48px);
+  max-width: 400px;
+  padding: 20px 20px 16px;
+  border-radius: 16px;
+}
+.app.is-mobile .hm-rename-title {
+  font-size: 17px;
+  color: var(--text-strong);
+  margin-bottom: 14px;
+}
+.app.is-mobile .hm-rename-input {
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+.app.is-mobile .hm-rename-actions { margin-top: 18px; gap: 10px; }
+.app.is-mobile .hm-rename-actions button {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+/* Phones scroll by touch: no permanent 10 px desktop scrollbar down the
+   right edge of the document and the drawer. Horizontal ones (wide code,
+   tables) stay as a thin hint. */
+.app.is-mobile *::-webkit-scrollbar { width: 0; height: 3px; }
 .app.is-mobile .hm-sheet-save { font-weight: 600; }
+.app.is-mobile .hm-sheet-save:disabled { font-weight: 500; opacity: 0.45; }
 .app.is-mobile .hm-sheet-save-dot {
   width: 7px;
   height: 7px;

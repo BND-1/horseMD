@@ -399,7 +399,7 @@ export function useFileOps({
   const deleteTabFile = useCallback(async (id) => {
     const tab = tabsRef.current.find((t) => t.id === id)
     if (!tab?.path) return
-    if (!window.confirm(tRef.current('confirm.trash', { name: tab.title }))) return
+    if (!window.confirm(tRef.current(isMobile ? 'confirm.deleteForever' : 'confirm.trash', { name: tab.title }))) return
     try {
       await window.api.deleteItem(tab.path)
       // Remove the tab outright (the file is gone; don't re-prompt about unsaved edits).
@@ -413,7 +413,7 @@ export function useFileOps({
     } catch (e) {
       window.alert(tRef.current('err.delete') + e.message)
     }
-  }, [tabsRef, setTabs, setActiveId, bumpRefresh, tRef])
+  }, [tabsRef, setTabs, setActiveId, bumpRefresh, tRef, isMobile])
 
   // Close every tab except `keepId` (from the tab right-click menu).
   const closeOthers = useCallback((keepId) => {
@@ -560,14 +560,16 @@ export function useFileOps({
       notifySaved(targetPath)
       if (auto) return { ok: true }
       // On mobile, where files land in a system folder, confirm what + where —
-      // sticky so the user can read the location before dismissing it.
-      if (isMobile) {
+      // for 4 s, not a card the user must close (Notes / Files just save).
+      // Saving a file that already had a place (one opened in place from
+      // iCloud / phone storage included) just says 已保存; only a new
+      // document's first save shows where it went.
+      if (isMobile && tab.path !== targetPath) {
         const loc =
           window.api.platform === 'ios' ? tRef.current('save.locIos') : tRef.current('save.locAndroid')
-        fireToast(tRef.current('save.savedTo', { name: baseName(targetPath), loc }), {
-          sticky: true,
-          duration: 5000
-        })
+        fireToast(tRef.current('save.savedTo', { name: baseName(targetPath), loc }), { duration: 4000 })
+      } else if (isMobile) {
+        fireToast(tRef.current('save.saved'), { duration: 1500 })
       } else {
         // Desktop: a brief "Saved ✓" so Ctrl+S / the save button give feedback
         // (Typora-style). Short-lived so it doesn't linger over writing.
@@ -707,13 +709,18 @@ export function useFileOps({
         // Mobile has no native save dialog: ask for a filename, then write into
         // the local library (see commitMobileSave). Desktop keeps the dialog.
         if (isMobile) {
-          const base = (tab.title || 'Untitled').replace(/\.(md|markdown|mdx)$/i, '')
+          // A new document suggests its first heading as the name (iA Writer,
+          // Bear); one that already has a name keeps it.
+          const heading = !tab.path && /^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/m.exec(tab.content || '')?.[1]
+          const fromHeading = heading && heading.replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)
+          const base = fromHeading || (tab.title || 'Untitled').replace(/\.(md|markdown|mdx)$/i, '')
           setSaveNameState({ id, value: base + '.md' })
           return
         }
         target = await window.api.saveAs(tab.title.endsWith('.md') ? tab.title : tab.title + '.md')
         if (!target) return
-      } else if (!isMobile) {
+      } else if (!isMobile || window.api.conflictCopyPath) {
+        // Phones too: iCloud / another app can change a file opened in place.
         const handled = await saveOverExternalChange(tab)
         if (handled) return handled
       }

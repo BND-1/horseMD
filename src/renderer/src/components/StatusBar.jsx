@@ -253,7 +253,7 @@ function MobileMore({
           >
             <Icon name="code" size={14} />
             <span className="block-menu-name">
-              {sourceMode ? t('status.source') : t('status.rich')}
+              {sourceMode ? t('mobile.toRich') : t('mobile.toSource')}
             </span>
           </button>
 
@@ -284,7 +284,10 @@ function MobileMore({
               <button
                 key={th.id}
                 className={`hm-sheet-swatch${!customTheme && th.id === theme ? ' active' : ''}`}
-                style={{ background: th.swatch }}
+                // A dark theme shows its dark page beside the accent, so 暖夜
+                // no longer reads as a second orange.
+                style={{ background: th.dark ? `linear-gradient(135deg, #2b2724 0 50%, ${th.swatch} 50% 100%)` : th.swatch }}
+                aria-label={lang === 'zh' ? th.zh : th.en}
                 title={lang === 'zh' ? th.zh : th.en}
                 onClick={() => setTheme(th.id)}
               />
@@ -431,8 +434,9 @@ export default function StatusBar({
             <>
               <span className={`status-dot ${dirty ? 'mod' : 'ok'}`}>{dirty ? '●' : '✓'}</span>
               <span className="status-counts">
-                {t('status.words', { n: s.words })} · {t('status.chars', { n: s.chars })} ·{' '}
-                {t('status.read', { n: s.readMin })}
+                {t('status.words', { n: s.words })} · {t('status.chars', { n: s.chars })}
+                {/* An empty document is not "1 min read". */}
+                {s.words > 0 && <> · {t('status.read', { n: s.readMin })}</>}
               </span>
             </>
           ) : (

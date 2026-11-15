@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { isMarkdownName } from '../paths.js'
 import { clampFloatingRect } from '../lib/menuPosition.js'
 import ExportContextSubmenu from './ExportContextSubmenu.jsx'
@@ -59,10 +60,14 @@ export default function SidebarContextMenu({
     onClose()
   }
 
-  return (
+  // Rendered into <body>: inside the phone drawer (a transformed, clipped
+  // ancestor) a fixed menu was positioned against the drawer and its right
+  // part cut off (#175).
+  const isPhone = window.api?.platform === 'ios' || window.api?.platform === 'android'
+  return createPortal(
     <div
       ref={menuRef}
-      className="context-menu"
+      className={`context-menu${isPhone ? ' hm-touch-menu' : ''}`}
       role="menu"
       style={position}
       onClick={(event) => event.stopPropagation()}
@@ -89,7 +94,7 @@ export default function SidebarContextMenu({
           {onStopSync && <button className="danger" onClick={run(() => onStopSync(node.path))}>{t('cloud.stopSync')}</button>}
         </>
       )}
-      {isRoot && !cloudRoot && (
+      {isRoot && !cloudRoot && node.path !== window.api?.libraryRoot && (
         <>
           <div className="menu-sep" />
           <button className="danger" onClick={run(() => onRemoveFolder?.(node.path))}>
@@ -108,7 +113,12 @@ export default function SidebarContextMenu({
         </>
       )}
       {node && <div className="menu-sep" />}
-      {node && <button onClick={run(() => onCopyText(node.path))}>{t('tab.copyPath')}</button>}
+      {/* A phone path (the app's sandbox, ext:<id>/…) is nothing a person can
+          use; there a file is shared instead. */}
+      {node && !isPhone && <button onClick={run(() => onCopyText(node.path))}>{t('tab.copyPath')}</button>}
+      {node?.type === 'file' && isPhone && window.api.capabilities?.canShare && (
+        <button onClick={run(() => window.api.shareFile?.(node.path))}>{t('status.shareShort')}</button>
+      )}
       {node && <button onClick={run(() => onCopyText(node.name))}>{t('tab.copyName')}</button>}
       {node && window.api.capabilities?.revealInFolder !== false && (
         <button onClick={run(() => window.api.showInFolder(node.path))}>{t('side.reveal')}</button>
@@ -130,6 +140,7 @@ export default function SidebarContextMenu({
       )}
       {node && !isRoot && <div className="menu-sep" />}
       {node && !isRoot && <button className="danger" onClick={run(() => onDelete(node))}>{t('side.delete')}</button>}
-    </div>
+    </div>,
+    document.body
   )
 }

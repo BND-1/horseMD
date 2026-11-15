@@ -5,7 +5,7 @@ import EditorSettings from './settings/EditorSettings.jsx'
 import FilesSettings from './settings/FilesSettings.jsx'
 import GeneralSettings from './settings/GeneralSettings.jsx'
 import KeyboardSettings from './settings/KeyboardSettings.jsx'
-import SettingsNav from './settings/SettingsNav.jsx'
+import SettingsNav, { visibleSettingsSections } from './settings/SettingsNav.jsx'
 import SyncSettings from './settings/SyncSettings.jsx'
 
 export default function SettingsView({
@@ -32,7 +32,9 @@ export default function SettingsView({
   onRemoveSyncFolder
 }) {
   const { t } = useI18n()
-  const active = activeSection || 'editor'
+  // A remembered section this device does not show (keyboard on a phone) opens the editor's.
+  const requested = activeSection || 'editor'
+  const active = visibleSettingsSections(cloudSync).some((section) => section.id === requested) ? requested : 'editor'
 
   return (
     <div className="settings-page">

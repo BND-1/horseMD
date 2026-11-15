@@ -24,7 +24,6 @@ import { useI18n } from '../i18n.jsx'
 import { copyToClipboard, fireToast } from '../ui.js'
 import { Icon } from './icons.jsx'
 import { createImagePersister } from './editor-image-persistence.js'
-import { normalizeDisplayMath } from './editor-math.js'
 import { runHeadingFold } from './editor-heading-fold.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
@@ -942,7 +941,10 @@ export default function Editor({
       // documents (issue #126, 394-fence redis doc) must not eager-mount a
       // CodeMirror per fence.
       defaultValue: (() => {
-        const normalized = normalizeReviewMarkupMarkdown(normalizeDisplayMath(firstContent))
+        // `$$x$$` lines are math blocks in the parse itself
+        // (remarkSingleLineDisplayMath): rewriting the text here put a block
+        // in the editor that the authored source did not parse to.
+        const normalized = normalizeReviewMarkupMarkdown(firstContent)
         chooseCodeBlockMountMode(normalized)
         return normalized
       })(),

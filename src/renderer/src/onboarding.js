@@ -204,10 +204,10 @@ const MOBILE_EN = `# Welcome to HorseMD 🐎
 
 - **☰** (top left) opens the drawer: Home, your files and the outline of this document.
 - **Tabs** keep several documents open. Tap one to switch, ✕ to close.
-- **+** makes a new document, **⌘** searches files and commands.
+- **+** makes a new document, the **magnifier** searches files and commands.
 - The **lock** turns on reading mode: scroll, select and copy without accidental edits. Tap it again to edit.
 - **⋯ More** (bottom right) has Save, Source mode, themes and language.
-- **Export** (bottom right) sends the document to Files, Mail or any other app.
+- **Share** (bottom right) sends the document to Files, Mail or any other app.
 
 ## Write as you read
 
@@ -261,10 +261,10 @@ const MOBILE_ZH = `# 欢迎使用 HorseMD 🐎
 
 - 左上角 **☰** 打开抽屉：主页、文件列表、本文的大纲。
 - **标签页**：几个文档同时开着，点标签切换，点 ✕ 关闭。
-- **+** 新建文档，**⌘** 搜索文件和命令。
+- **+** 新建文档，**放大镜** 搜索文件和命令。
 - **锁**：阅读锁定，只能滚动、选择、复制，不会误触改动；再点一下恢复编辑。
 - 右下角 **⋯ 更多**：保存、源码模式、主题、语言。
-- 右下角 **导出**：把文档存到「文件」，或发到邮件、聊天等其他 App。
+- 右下角 **分享**：把文档存到「文件」，或发到邮件、聊天等其他 App。
 
 ## 边写边渲染
 

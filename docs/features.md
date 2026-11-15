@@ -320,9 +320,9 @@ Windows/Linux 下不再用系统原生的标题栏覆盖层，改由渲染层自
 
 ## 25. 可配置图床（类 Typora 自定义命令）
 
-**右上角图片按钮**配置一条上传命令(如 `picgo upload`)。之后**粘贴 / 拖入 / 上传**图片会:把图片写到临时文件 → 运行 `<命令> "<临时文件>"` → 取它打印到 stdout 的图片 URL 插入文档。命令留空 = 保持默认(图片为本地引用,不拦截粘贴/拖入,避免插入刷新即失效的 `blob:`)。
+在**设置 › 文件与图片 › 图床上传命令**里配置一条上传命令(如 `picgo upload`)。之后**粘贴 / 拖入 / 上传**图片会:把图片写到临时文件 → 运行 `<命令> "<临时文件>"` → 取它打印到 stdout 的图片 URL 插入文档。命令留空 = 保持默认(图片为本地引用,不拦截粘贴/拖入,避免插入刷新即失效的 `blob:`)。
 
-**实现**：`ImageHostButton.jsx`(顶栏 popover,`position:fixed` 避开顶栏 `overflow:hidden`;配置后图标带强调色小点)+ `Editor.jsx` 的 `onUpload` / 粘贴 / 拖放钩子(代码块内不拦截)+ 主进程 `image:upload` IPC(临时文件 + `exec` + 解析最后一个 http(s) URL)。命令存 `localStorage["horsemd.settings.v1"]`。
+**实现**：`settings/FilesSettings.jsx`(设置项;顶栏按钮 2026-11-14 按用户要求去掉)+ `Editor.jsx` 的 `onUpload` / 粘贴 / 拖放钩子(代码块内不拦截)+ 主进程 `image:upload` IPC(临时文件 + `exec` + 解析最后一个 http(s) URL)。命令存 `localStorage["horsemd.settings.v1"]`。
 
 ## 26. 自定义页面宽度
 

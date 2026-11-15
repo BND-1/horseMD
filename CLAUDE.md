@@ -1100,7 +1100,14 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   plugins, like `remarkImageBlockWithPosition`); `patchCodeBlock` treats `$$`
   as a fence for LaTeX nodes (only the content lines change); `reprintSource`
   refuses any edit without integer offsets (`reprint-unpositioned`). Locked
-  by `test:math-block-edit-ui`. The serializer's authored-style pass
+  by `test:math-block-edit-ui`. A line that is exactly `$$…$$` (#18) is a
+  math block in the parse itself (`remarkSingleLineDisplayMath`, positioned;
+  `- $$x$$`, `> $$x$$`, `a $$x$$ b` stay inline); an edit on one line keeps
+  the one-line spelling (`patchCodeBlock`). Opening a file used to rewrite
+  the text first (`normalizeDisplayMath`, now only for Markdown pastes), so
+  the editor held a block the authored source did not parse to and the
+  first sync after any click rewrote the line as three — dirty with no edit
+  (mobile review 2026-11-14; test cases 6–7). The serializer's authored-style pass
   (`serializer-style.js` `mapSyntaxLines`: two-space hard breaks, bullet /
   `1)` markers, and the hard-break count it detects from) skips fenced code
   AND `$$` math lines — it turned LaTeX `\\` / a trailing `\` into `  `, so
@@ -1540,6 +1547,35 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   / http image hosts, Typora-compatible). `script-src 'self'` (no `'unsafe-inline'`)
   and `default-src 'self'` stay strict. There is NO main-process CSP header
   override, so this meta is the single source — don't regress `http:` from img-src.
+- **Phone files outside the app** (#175, 2026-11-14; iA Writer / Runestone /
+  Markor parity): native plugin `HorseFiles` (`ios/App/App/HorseFilesPlugin.swift`
+  registered in `MainViewController.swift`; `android/…/HorseFilesPlugin.java`;
+  spec in the plugin headers). A granted file or folder is a root; the renderer
+  sees `ext:<id>/<name>[/<rel>]` (`platform/capacitor-api.js` dispatches every fs
+  call on the prefix; `paths.js` `displayPath` for anything a person reads; mobile
+  `isAbsolutePath` accepts sandbox paths — the library `HorseMD` was dropped as
+  relative and 添加文件夹 did nothing). 打开文件 / 添加文件夹 use the system
+  pickers and edit in place (iOS bookmarks, Android persisted SAF grants);
+  the library is always the first root (`useWorkspace` `withLibrary`). Files
+  other apps hand us (iOS open-in-place, Android VIEW / EDIT / SEND) are edited
+  in place when the grant allows, else imported as a copy with a toast; a file
+  inside an added folder resolves to that folder's path so its open tab is
+  focused (`adopt` → `rel`). Writes are read back and compared; `expectedMtime`
+  conflicts + `conflictCopyPath` make merge-on-save work on phones; changes made
+  while the app was in the background are reported on resume (`onFileChanged`).
+  Found on the way: an iOS bookmark follows its folder into 最近删除 (.Trash) —
+  treated as lost, with a one-time toast; Android `createDocument` with a text
+  mime appends `.txt` (octet-stream keeps the name); Android's WebView turned a
+  long press on a tree row into an HTML5 drag (rows are not draggable on
+  phones); WKWebView never fires `contextmenu` on touch
+  (`lib/ios-long-press-menu.js`); the sidebar menu is a portal (the drawer's
+  transform clipped it); phones delete for good, so the confirm says so
+  (`confirm.deleteForever`). Android's back button (`setupBackButton` in
+  `capacitor-api.js`) closes the top layer first — menu / sheet / palette /
+  dialog (Escape, else its backdrop), then the drawer, then full screen —
+  and only then minimizes the app (Capacitor's default finished the
+  activity). Tested on the Android 15 emulator, the Huawei
+  nova 5 Pro and iPhone 13 mini (2026-11-14).
 - **Unsaved scratch tabs persist**: the session stores untitled (pathless) tabs
   whose content is dirty under `untitled: [{title, content}]`, and the mount
   restore recreates them (with `savedContent: ''` so they stay marked unsaved).

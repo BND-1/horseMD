@@ -202,7 +202,35 @@ try {
     assert.ok(live.includes('$$\nE_1:y^2 = x^3 + b\\\\\n <br /> - d \\{a\\}\n$$'), `formula kept in the generated source: ${JSON.stringify(live)}`)
   })
 
-  console.log('PASS math block edit UI: a new document\'s formula keeps \\\\ / <br /> / \\{ (no warning, no failed check); LaTeX \\\\ line breaks survive a full serialization;  typing in a slash-menu 公式 block and in $$ blocks from LF / CRLF files keeps the source exact, no mismatch warning')
+  // 6. A line that is exactly `$$…$$` (mobile review 2026-11-14, the
+  // welcome tour): opening the file rewrote it to the three-line form
+  // before parsing, so after one click the next sync printed the block
+  // again and the document turned dirty with no edit. The parse makes it a
+  // math block itself now: a click + source switch changes nothing.
+  const oneLine = '段落一。\n\n$$\\int_{0}^{\\infty} e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$\n\n段落二。\n'
+  await session('one-line-click', oneLine, async (h, file) => {
+    assert.equal(await h.evaluate(`[...document.querySelectorAll('.ProseMirror')].find((n) => n.offsetParent).querySelectorAll('.milkdown-code-block').length`), 1, 'the $$…$$ line is a math block')
+    await h.click(await h.endOfText('段落一'))
+    await sleep(800)
+    assert.equal(await h.source(), oneLine, 'a click does not rewrite the formula line')
+    assert.equal(await h.evaluate(`Boolean(document.querySelector('.tab.active .tab-close.dirty'))`), false, 'not dirty')
+    assert.deepEqual(await h.toasts(), [])
+    assert.equal(await fs.readFile(file, 'utf8'), oneLine)
+  })
+
+  // 7. Editing that formula keeps its one-line spelling; only the formula
+  // between the `$$` changes.
+  await session('one-line-edit', 'a\n\n$$x^2$$\n\nb\n', async (h, file) => {
+    await editMath(h, 'x^2')
+    await h.type('+1')
+    await sleep(1500)
+    assert.deepEqual(await h.toasts(), [], 'no warning while typing in a one-line formula')
+    assert.equal(await h.source(), 'a\n\n$$x^2+1$$\n\nb\n')
+    await h.save()
+    assert.equal(await fs.readFile(file, 'utf8'), 'a\n\n$$x^2+1$$\n\nb\n', 'saved bytes')
+  })
+
+  console.log('PASS math block edit UI: one-line $$…$$ stays as written (click, edit);  a new document\'s formula keeps \\\\ / <br /> / \\{ (no warning, no failed check); LaTeX \\\\ line breaks survive a full serialization;  typing in a slash-menu 公式 block and in $$ blocks from LF / CRLF files keeps the source exact, no mismatch warning')
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }

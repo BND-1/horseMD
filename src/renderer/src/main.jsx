@@ -19,6 +19,7 @@ installPlatformBridge()
   .catch(() => {
     /* a failed mobile bridge still renders — features degrade, the shell lives */
   })
-  .then(() => {
+  .then(async () => {
+    if (window.api?.platform === 'ios') (await import('./lib/ios-long-press-menu.js')).installIosLongPressMenu()
     createRoot(document.getElementById('root')).render(<App />)
   })

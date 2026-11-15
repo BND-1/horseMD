@@ -11,9 +11,15 @@ export default function GeneralSettings({ lang, setLang, settings, onUpdateSetti
     <>
       <section className="settings-block">
         <h2 className="settings-block-title">{t('settings.language')}</h2>
-        <div className="settings-langs">
+        {/* The same segmented control as every other one-of-N setting. */}
+        <div className="settings-segmented settings-langs">
           {LANGS.map((l) => (
-            <button key={l.id} className={`settings-lang${l.id === lang ? ' active' : ''}`} onClick={() => setLang(l.id)}>
+            <button
+              key={l.id}
+              type="button"
+              className={`settings-segmented-option settings-lang${l.id === lang ? ' active' : ''}`}
+              onClick={() => setLang(l.id)}
+            >
               {l.label}
             </button>
           ))}

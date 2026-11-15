@@ -12,7 +12,11 @@ import { Plugin, PluginKey } from '@milkdown/prose/state'
 // (GitHub issue #18: "$$…$$ forced into $…$"). VSCode's math parser is lenient
 // about this; remark-math is not.
 //
-// normalizeDisplayMath rewrites a standalone `$$…$$` line into the multi-line
+// Opening a file no longer rewrites the text: the parse itself makes such a
+// line a math block (lib/remark-math-block-position.js
+// remarkSingleLineDisplayMath), so the authored line stays in the source.
+// normalizeDisplayMath is left for Markdown pastes, whose bytes are parsed
+// separately. It rewrites a standalone `$$…$$` line into the multi-line
 // block form BEFORE parse, so it renders as display math. It is:
 //   - idempotent (already-multi-line block math is untouched);
 //   - code-safe (fenced ```/~~~ blocks and inline `code` are stashed so `$$`

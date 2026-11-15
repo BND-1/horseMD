@@ -480,13 +480,28 @@ class SlashMenu {
   }
 
   update(view, prev) {
-    this.provider.update(view, prev)
+    // Milkdown's SlashProvider skips every update while the view is
+    // composing. Android keyboards (Gboard, Huawei) keep each typed word in a
+    // composition, so a typed "/" never opened the menu on phones. There the
+    // provider sees a view that is not composing; the menu is a separate
+    // element outside the contenteditable, so the IME is not disturbed.
+    this.provider.update(TOUCH_UI && view.composing ? notComposing(view) : view, prev)
   }
   destroy() {
     this.provider.destroy()
     this.content.remove()
   }
 }
+
+const TOUCH_UI = typeof window !== 'undefined' && ['ios', 'android'].includes(window.api?.platform)
+const notComposing = (view) =>
+  new Proxy(view, {
+    get: (target, key) => {
+      if (key === 'composing') return false
+      const value = target[key]
+      return typeof value === 'function' ? value.bind(target) : value
+    }
+  })
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>

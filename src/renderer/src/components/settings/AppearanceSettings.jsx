@@ -74,7 +74,9 @@ export default function AppearanceSettings({
             <button
               key={th.id}
               className={`settings-swatch${!customTheme && th.id === theme ? ' active' : ''}`}
-              style={{ background: th.swatch }}
+              // Dark themes show their dark page with the accent in a corner:
+              // a plain accent made 暖夜 look like a second orange 暖光.
+              style={{ background: th.dark ? `radial-gradient(circle at 82% 22%, ${th.swatch} 0 13px, transparent 14px), #2b2724` : th.swatch }}
               title={followsSystemTheme ? t('settings.manualThemeHint') : themeLabel(th)}
               onClick={() => setTheme(th.id)}
             >
@@ -93,10 +95,11 @@ export default function AppearanceSettings({
             </button>
           ))}
         </div>
-        <div className="settings-row settings-row-actions">
+        {/* Theme files live in a folder the phone has no way to open (#175). */}
+        {window.api.capabilities?.customThemes !== false && <div className="settings-row settings-row-actions">
           <button className="settings-link-btn" onClick={() => onOpenThemesFolder && onOpenThemesFolder()}>{t('settings.openThemesFolder')}</button>
           <button className="settings-link-btn" onClick={() => onGetMoreThemes && onGetMoreThemes()}>{t('settings.getMoreThemes')}</button>
-        </div>
+        </div>}
       </section>
       <DocumentAppearanceSettings
         settings={settings}

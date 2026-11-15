@@ -3,6 +3,7 @@ import { Icon } from './icons.jsx'
 import { useI18n } from '../i18n.jsx'
 import {
   baseName,
+  displayPath,
   dirName as parentDir,
   joinPath as join,
   isValidName,
@@ -52,6 +53,7 @@ export default function Sidebar({
   onStopSync,
   workspaceRootPaths = []
 }) {
+  const touchUi = window.api?.platform === 'ios' || window.api?.platform === 'android'
   const cloud = variant === 'cloud'
   const { t } = useI18n()
   const copyText = (text) => copyToClipboard(text, t('code.copied'))
@@ -93,11 +95,15 @@ export default function Sidebar({
   const closeMenu = useCallback(() => setMenu(null), [])
   useEffect(() => {
     if (!menu) return
+    // Esc closes it like every menu (and Android's back button, which sends one).
+    const onKey = (event) => { if (event.key === 'Escape') closeMenu() }
     window.addEventListener('click', closeMenu)
     window.addEventListener('blur', closeMenu)
+    window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('click', closeMenu)
       window.removeEventListener('blur', closeMenu)
+      window.removeEventListener('keydown', onKey)
     }
   }, [menu, closeMenu])
 
@@ -168,7 +174,8 @@ export default function Sidebar({
   }
 
   const doDelete = async (node) => {
-    if (!window.confirm(t('confirm.trash', { name: node.name }))) return
+    // Phones have no trash to move to (the files are deleted for good).
+    if (!window.confirm(t(touchUi ? 'confirm.deleteForever' : 'confirm.trash', { name: node.name }))) return
     try {
       await window.api.deleteItem(node.path)
       await refreshParentOf(node.path)
@@ -459,7 +466,10 @@ export default function Sidebar({
           // Focusable on click, so F2 renames the row the user picked
           // (a folder too) rather than the open document.
           tabIndex={-1}
-          draggable={!renaming && !isRoot}
+          // No drag on phones (like the tabs): a long press is the menu there,
+          // and Android's WebView turned it into a drag that tried to move
+          // the file onto whatever row it ended on.
+          draggable={!renaming && !isRoot && !touchUi}
           onDragStart={(e) => {
             if (isRoot) {
               e.preventDefault()
@@ -490,7 +500,7 @@ export default function Sidebar({
               syncRootRegistered: syncRootPath ? syncRootSet.has(normalizePathKey(syncRootPath)) : false
             })
           }}
-          title={node.path}
+          title={displayPath(node.path)}
         >
           {isDir ? (
             <Icon name="chevron-right" size={14} className={`tree-chevron${isOpen ? ' chevron-expanded' : ''}`} />
