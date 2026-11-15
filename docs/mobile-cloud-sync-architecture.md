@@ -71,3 +71,86 @@ SyncSettings / useSyncWorkspaces
 
 在第 5 步之前，手机不显示同步设置。这不是功能缺失，而是避免用户误以为凭据和文件
 已经被安全同步。
+
+## 6. 共享同步引擎（Shared engine，2026-11-15）
+
+同步逻辑已从 `src/main/sync/` 移到 `src/shared/sync/`，桌面和手机用同一份代码；平台差异只
+通过注入的 adapter 进来。共享代码不 import `node:*` / `electron`，不用 `Buffer` /
+`process`（环境变量经 `platform.env` 注入），只用 ES module、`Uint8Array`、
+`TextEncoder/TextDecoder`、`Response/Headers`、`AbortController`；`@smithy/signature-v4`、
+`@aws-crypto/sha256-js`、`fast-xml-parser`、`node-diff3` 都可在 WebView 里运行。
+
+### 6.1 模块
+
+| `src/shared/sync/` | 内容 |
+|---|---|
+| `sync-engine.js` | `SyncEngine({ platform, provider, rootPath, workspaceId, deviceName, onProgress, control, busyPaths, history })`、`massDeletion`、`readRemoteManifest` |
+| `sync-service.js` | `SyncService({ platform, credentials, request \| http, traceLog, history, connectionsStore, secretAccessKeyId })`、`busyRelativePaths(paths, root, list)` |
+| `sync-workspaces.js` | 同步文件夹注册表与 `.horsemd/workspace.json` 标记：`readWorkspaceRegistry / adoptSyncWorkspace / unregisterSyncWorkspace / bindSyncWorkspace / joinSyncWorkspace / listSyncWorkspaces(platform, …)` |
+| `connections.js` | `ConnectionRegistry({ store, credentialStore, createWebDavProvider, createS3Provider, uuid, secretAccessKeyId })` |
+| `s3-provider.js` / `webdav-provider.js` | 原 provider，新增可选 `bytes`、`uuid` |
+| `local-files.js` | `scanLocalWorkspace(platform, root, { entries, cache, maxFiles })`、`scanLocalEmptyDirs`、`createHashCache` |
+| `sync-state.js` / `sync-base.js` | 状态与三方合并祖先，经 `platform.store` |
+| `sync-plan.js`、`sync-ignore.js`、`sync-control.js`、`request-pacer.js`、`sync-request.js`、`conflict-name.js` | 原纯逻辑（`sync-plan` 的 POSIX 路径函数是 `node:path/posix` 的逐行移植 `posix-path.js`，冲突副本名不变） |
+| `bytes.js`、`http.js`、`web-adapters.js` | 字节编解码、把原始 HTTP adapter 包成 fetch 形式、WebView 用的 `webHash`（crypto.subtle）/ `webGzip`（CompressionStream）/ `createPosixPaths` |
+
+桌面：`src/main/sync/*.js` 保留原路径和原签名（`new SyncEngine({ userDataPath, … })`、
+`readSyncState(userDataPath, id)` 等），内部用 `src/main/sync/node-platform.js` 的 Node adapter
+调共享代码；`src/main/sync-service.js` / `sync-workspaces.js` 保留 IPC 注册，接口不变。
+`credential-store.js`（safeStorage）和 `electron-request.js`（net.request）仍是桌面专用。
+
+### 6.2 adapter 合同（`platform` 对象）
+
+路径一律是字符串；共享代码只拼相对路径（`/` 分隔），绝对路径由 `paths` 生成，桌面按
+`node:path`（含 Windows），手机按 POSIX。fs 错误必须带 Node 风格的 `code`：
+`ENOENT`、`EEXIST`、`ENOTEMPTY`。
+
+```text
+platform.fs
+  scan(root) → [{ kind: 'file'|'dir', rel, abs, size?, mtimeMs?, cacheKey? }]
+      递归、深度优先；不跟随符号链接；不进入 .horsemd/.git/.obsidian/node_modules；
+      系统文件（.DS_Store 等）可省略。file 需要 size、mtimeMs；cacheKey 相同 = 内容未变
+      （桌面：size:mtime:ctime:inode；没有可靠 key 的平台不给，每次都重算哈希）
+  readBytes(abs) → Uint8Array                 缺失时抛 ENOENT
+  writeAtomic(abs, bytes, { private? })        建父目录 + 临时文件 + rename
+  writeNew(abs, bytes, { private? })           只新建，已存在抛 EEXIST
+  mkdirp(abs, { private? })
+  moveFile(from, to)                           先建 to 的父目录
+  rm(abs)                                      不存在也不报错
+  unlink(abs) / rmdir(abs)                     rmdir 非空抛 ENOTEMPTY
+  readdir(abs) → [{ name, isFile, isDirectory }]
+  exists(abs) → boolean                        ENOENT 以外的错误照抛
+  stat(abs) → { isDirectory, isFile, size, mtimeMs }
+platform.paths
+  resolveInside(root, rel) → abs | null        严格在 root 内，否则 null
+  relativeInside(root, path) → rel | null      编辑中文件 → 相对路径
+  join(...parts) / basename(path)
+  normalizeRoot(root) / isRootAllowed(root) / isRestrictedRoot(root)
+platform.hash.sha256(bytes) → Promise<hex>
+platform.bytes   fromText / toText / fromArrayBuffer / empty / base64（bytes.js）
+platform.store   App 私有目录里的小文档，名字如 sync/state/<id>.json
+  readText(name) → string|null    writeText(name, text, { private? })
+  readBytes(name) → bytes|null    writeBytes(name, bytes)
+  exists(name) → boolean          list(dir) → names      remove(name)   removeTree(dir)
+platform.gzip(bytes) / gunzip(bytes) → Promise<Uint8Array>
+platform.uuid() → string;  platform.deviceName() → string（冲突副本里的设备名）
+platform.env                      只读，测试钩子（HORSEMD_TEST_SYNC_PACER 等）
+platform.hashCache?               createHashCache()，每进程一个
+```
+
+服务另外需要：
+
+```text
+credentials   get(id) → object|null   set(id, object)   remove(id)
+              桌面：safeStorage 加密文件；手机：Keychain / Keystore
+request       (url, { method, headers, body, signal }) → Response（fetch 形式），或
+http          request({ method, url, headers, body: Uint8Array|null, timeoutMs })
+                → { status, headers: { 小写名: string }, body: Uint8Array }
+              由 http.js 包成 fetch 形式；任意方法（PROPFIND / MKCOL）、不走缓存、
+              非 Latin-1 头按 UTF-8 字节传（同 electron-request.js）
+history       可选 { keep(absPath, bytes, reason) }；手机没有，删除/覆盖退回 .horsemd/trash
+```
+
+手机端设置：`secretAccessKeyId: true`（S3 Access Key ID 也只进安全存储），
+`paths = createPosixPaths({ isRootAllowed: (p) => p === 'HorseMD' })`，`hash = webHash`，
+`gzip/gunzip = webGzip/webGunzip`，`bytes = webBytes`。

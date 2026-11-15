@@ -1,0 +1,244 @@
+// Saved cloud connections (WebDAV / S3), shared by desktop and phones.
+// Non-secret fields live in the platform's private store
+// (sync/connections.json); passwords and secret keys only in the credential
+// store (`credentialStore`: get(id) / set(id, object) / remove(id) — the
+// desktop's safeStorage blob file, the phone's Keychain / Keystore).
+// `secretAccessKeyId`: also keep the S3 Access Key ID in the credential store
+// instead of the connections file (phones; the desktop keeps it in the file).
+
+const VERSION = 1
+const FILE = 'sync/connections.json'
+const defaultUuid = () => globalThis.crypto.randomUUID()
+
+function normalizeUserAgent(value) {
+  const userAgent = String(value || '').trim()
+  if (/[\r\n]/.test(userAgent)) throw new Error('User-Agent 不能包含换行。')
+  if (userAgent.length > 256) throw new Error('User-Agent 不能超过 256 个字符。')
+  return userAgent
+}
+
+// Not persisted: tells the form the uploads were throttled during the test.
+const withCheck = (connection, check) => (check?.uploadThrottled ? { ...connection, uploadThrottled: true } : connection)
+
+function publicConnection(entry) {
+  const { credentialId, ...publicEntry } = entry
+  return publicEntry
+}
+
+const SUPPORTED_TYPES = ['webdav', 's3']
+
+// Every stored entry, also of types this version does not know (a newer
+// HorseMD may add e.g. GitHub): they are written back untouched, so using
+// an older version never deletes them.
+async function readAllConnections(store) {
+  try {
+    const text = await store.readText(FILE)
+    if (text == null) return []
+    const raw = JSON.parse(text)
+    return Array.isArray(raw?.connections) ? raw.connections.filter((item) => item?.id) : []
+  } catch (error) {
+    throw new Error(`无法读取云端连接：${error?.message || error}`)
+  }
+}
+
+export async function readConnections(store) {
+  return (await readAllConnections(store)).filter((item) => SUPPORTED_TYPES.includes(item.type))
+}
+
+// The service the connection was set up with in Settings (坚果云, 七牛…;
+// sync-providers.js) — display only, the sync never reads it.
+function normalizeProviderId(value) {
+  const id = String(value || '').trim()
+  return /^[a-z0-9-]{1,32}$/.test(id) ? id : ''
+}
+
+async function writeConnections(store, connections) {
+  await store.writeText(FILE, JSON.stringify({ version: VERSION, connections }, null, 2) + '\n', { private: true })
+}
+
+export class ConnectionRegistry {
+  constructor({ store, credentialStore, createWebDavProvider, createS3Provider, uuid = defaultUuid, secretAccessKeyId = false }) {
+    this.store = store
+    this.credentialStore = credentialStore
+    this.createWebDavProvider = createWebDavProvider
+    this.createS3Provider = createS3Provider
+    this.uuid = uuid
+    this.secretAccessKeyId = secretAccessKeyId
+  }
+
+  // The S3 Access Key ID of a saved connection: from the file, or (phones)
+  // from its credential.
+  async withAccessKeyId(connection, credential) {
+    if (!this.secretAccessKeyId || connection.type !== 's3') return connection
+    const stored = credential === undefined ? await this.credentialStore.get(connection.credentialId).catch(() => null) : credential
+    return { ...connection, accessKeyId: stored?.accessKeyId || connection.accessKeyId || '' }
+  }
+
+  // What the connections file keeps of an S3 entry.
+  storedS3(entry) {
+    return this.secretAccessKeyId ? { ...entry, accessKeyId: '' } : entry
+  }
+
+  async list() {
+    const connections = await readConnections(this.store)
+    if (!this.secretAccessKeyId) return connections.map(publicConnection)
+    const out = []
+    for (const connection of connections) out.push(publicConnection(await this.withAccessKeyId(connection)))
+    return out
+  }
+
+  async addWebDav({ name, endpoint, username, password, allowInsecure = false, userAgent = '', provider: providerId = '' }) {
+    const trimmedName = String(name || '').trim()
+    if (!trimmedName) throw new Error('请填写连接名称。')
+    if (!String(endpoint || '').trim()) throw new Error('请填写 WebDAV 地址。')
+    if (!String(password || '')) throw new Error('请填写 WebDAV 密码或应用专用密码。')
+    const normalizedUserAgent = normalizeUserAgent(userAgent)
+    const provider = this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent: normalizedUserAgent })
+    const check = await provider.testConnection()
+    const id = this.uuid()
+    const credentialId = `webdav:${id}`
+    await this.credentialStore.set(credentialId, { password: String(password) })
+    const connections = await readAllConnections(this.store)
+    const connection = {
+      id,
+      type: 'webdav',
+      provider: normalizeProviderId(providerId),
+      name: trimmedName,
+      endpoint: String(endpoint).trim(),
+      username: String(username || ''),
+      userAgent: normalizedUserAgent,
+      allowInsecure: Boolean(allowInsecure),
+      credentialId,
+      createdAt: new Date().toISOString()
+    }
+    connections.push(connection)
+    await writeConnections(this.store, connections)
+    return withCheck(publicConnection(connection), check)
+  }
+
+  async addS3({ name, endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure = false, userAgent = '', provider: providerId = '' }) {
+    const trimmedName = String(name || '').trim()
+    if (!trimmedName) throw new Error('请填写连接名称。')
+    if (!String(endpoint || '').trim()) throw new Error('请填写 S3 Endpoint。')
+    if (!String(bucket || '').trim()) throw new Error('请填写 Bucket 名称。')
+    if (!String(region || '').trim()) throw new Error('请填写 Region。')
+    if (!String(accessKeyId || '').trim() || !String(secretAccessKey || '')) {
+      throw new Error('请填写 S3 Access Key 和 Secret Key。')
+    }
+    const normalizedUserAgent = normalizeUserAgent(userAgent)
+    const provider = this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent: normalizedUserAgent })
+    const check = await provider.testConnection()
+    const id = this.uuid()
+    const credentialId = `s3:${id}`
+    await this.credentialStore.set(credentialId, this.secretAccessKeyId
+      ? { secretAccessKey: String(secretAccessKey), accessKeyId: String(accessKeyId).trim() }
+      : { secretAccessKey: String(secretAccessKey) })
+    const connections = await readAllConnections(this.store)
+    const connection = {
+      id,
+      type: 's3',
+      provider: normalizeProviderId(providerId),
+      name: trimmedName,
+      endpoint: String(endpoint).trim(),
+      bucket: String(bucket).trim(),
+      region: String(region).trim(),
+      accessKeyId: String(accessKeyId).trim(),
+      userAgent: normalizedUserAgent,
+      allowInsecure: Boolean(allowInsecure),
+      credentialId,
+      createdAt: new Date().toISOString()
+    }
+    connections.push(this.storedS3(connection))
+    await writeConnections(this.store, connections)
+    return withCheck(publicConnection(connection), check)
+  }
+
+  async update(id, config) {
+    const connections = await readAllConnections(this.store)
+    const index = connections.findIndex((connection) => connection.id === id && SUPPORTED_TYPES.includes(connection.type))
+    if (index < 0) throw new Error('找不到云端连接。')
+    const current = connections[index]
+    // Absent = keep the saved service; '' = the full form (no service).
+    const provider = config.provider === undefined ? (current.provider || '') : normalizeProviderId(config.provider)
+    const credential = await this.credentialStore.get(current.credentialId)
+
+    if (current.type === 'webdav') {
+      const name = String(config.name || '').trim()
+      const endpoint = String(config.endpoint || '').trim()
+      const username = String(config.username || '')
+      const password = String(config.password || '') || credential?.password
+      if (!name) throw new Error('请填写连接名称。')
+      if (!endpoint) throw new Error('请填写 WebDAV 地址。')
+      if (!password) throw new Error('请填写 WebDAV 密码或应用专用密码。')
+      const allowInsecure = Boolean(config.allowInsecure)
+      const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
+      const check = await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
+      const next = { ...current, provider, name, endpoint, username, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
+      if (password !== credential?.password) await this.credentialStore.set(current.credentialId, { password })
+      connections[index] = next
+      await writeConnections(this.store, connections)
+      return withCheck(publicConnection(next), check)
+    }
+
+    if (current.type === 's3') {
+      const name = String(config.name || '').trim()
+      const endpoint = String(config.endpoint || '').trim()
+      const bucket = String(config.bucket || '').trim()
+      const region = String(config.region || '').trim()
+      const accessKeyId = String(config.accessKeyId || '').trim()
+      const secretAccessKey = String(config.secretAccessKey || '') || credential?.secretAccessKey
+      if (!name) throw new Error('请填写连接名称。')
+      if (!endpoint) throw new Error('请填写 S3 Endpoint。')
+      if (!bucket) throw new Error('请填写 Bucket 名称。')
+      if (!region) throw new Error('请填写 Region。')
+      if (!accessKeyId || !secretAccessKey) throw new Error('请填写 S3 Access Key 和 Secret Key。')
+      const allowInsecure = Boolean(config.allowInsecure)
+      const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
+      const check = await this.createS3Provider({ endpoint, bucket, region, accessKeyId, secretAccessKey, allowInsecure, userAgent }).testConnection()
+      const next = { ...current, provider, name, endpoint, bucket, region, accessKeyId, userAgent, allowInsecure, updatedAt: new Date().toISOString() }
+      if (this.secretAccessKeyId) {
+        if (secretAccessKey !== credential?.secretAccessKey || accessKeyId !== credential?.accessKeyId) {
+          await this.credentialStore.set(current.credentialId, { secretAccessKey, accessKeyId })
+        }
+        connections[index] = this.storedS3(next)
+      } else {
+        if (secretAccessKey !== credential?.secretAccessKey) await this.credentialStore.set(current.credentialId, { secretAccessKey })
+        connections[index] = next
+      }
+      await writeConnections(this.store, connections)
+      return withCheck(publicConnection(next), check)
+    }
+
+    throw new Error('不支持的云端连接类型。')
+  }
+
+  async remove(id) {
+    const connections = await readAllConnections(this.store)
+    const current = connections.find((connection) => connection.id === id)
+    if (!current) return false
+    await writeConnections(this.store, connections.filter((connection) => connection.id !== id))
+    await this.credentialStore.remove(current.credentialId)
+    return true
+  }
+
+  async test(id) {
+    const provider = await this.createProvider(id)
+    return provider.testConnection()
+  }
+
+  async createProvider(id, options = {}) {
+    const saved = (await readConnections(this.store)).find((item) => item.id === id)
+    if (!saved) throw new Error('找不到云端连接。')
+    const credential = await this.credentialStore.get(saved.credentialId)
+    const connection = await this.withAccessKeyId(saved, credential)
+    if (connection.type === 'webdav') {
+      if (!credential?.password) throw new Error('云端密码不可用，请重新连接。')
+      return this.createWebDavProvider({ ...connection, ...options, password: credential.password })
+    }
+    if (connection.type === 's3') {
+      if (!credential?.secretAccessKey) throw new Error('S3 密钥不可用，请重新连接。')
+      return this.createS3Provider({ ...connection, ...options, secretAccessKey: credential.secretAccessKey })
+    }
+    throw new Error('不支持的云端连接类型。')
+  }
+}

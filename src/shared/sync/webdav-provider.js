@@ -1,0 +1,219 @@
+import { XMLParser } from 'fast-xml-parser'
+import { RequestPacer, throttleHint } from './request-pacer.js'
+import { webBytes } from './bytes.js'
+
+// Shared by desktop and phones; see s3-provider.js for `request`, `bytes`
+// and `uuid`.
+const defaultUuid = () => globalThis.crypto.randomUUID()
+
+// htmlEntities: numeric character references (&#34;) are standard XML; see
+// s3-provider.js (七牛 escapes quotes that way).
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  removeNSPrefix: true,
+  textNodeName: '#text',
+  htmlEntities: true
+})
+
+const asArray = (value) => (value == null ? [] : Array.isArray(value) ? value : [value])
+const text = (value) => (typeof value === 'object' ? value?.['#text'] || '' : value || '')
+
+function collectResponses(value, output = []) {
+  if (!value || typeof value !== 'object') return output
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'response') output.push(...asArray(child))
+    else collectResponses(child, output)
+  }
+  return output
+}
+
+export function parsePropfind(xml) {
+  const responses = collectResponses(parser.parse(xml))
+  return responses.map((response) => {
+    const propstats = asArray(response.propstat)
+    const prop = propstats.find((item) => / 2\d\d /.test(text(item.status)))?.prop || {}
+    const type = prop.resourcetype || {}
+    return {
+      href: decodeURIComponent(text(response.href)),
+      etag: String(text(prop.getetag) || '').replace(/^"|"$/g, '') || null,
+      isDirectory: Object.prototype.hasOwnProperty.call(type, 'collection'),
+      size: Number(text(prop.getcontentlength) || 0)
+    }
+  })
+}
+
+function normalizeEndpoint(endpoint, { allowInsecure = false } = {}) {
+  const url = new URL(endpoint)
+  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('WebDAV 地址必须以 http:// 或 https:// 开头。')
+  if (url.protocol !== 'https:' && !allowInsecure) throw new Error('WebDAV 连接必须使用 HTTPS。')
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/`
+  return url
+}
+
+function encodePath(path) {
+  return String(path || '')
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')
+}
+
+export class WebDavProvider {
+  constructor({ endpoint, username, password, request, allowInsecure = false, prefix = '', userAgent = '', pacer = new RequestPacer(), bytes = webBytes, uuid = defaultUuid }) {
+    if (typeof request !== 'function') throw new Error('WebDAV requires a network request function.')
+    this.baseUrl = normalizeEndpoint(endpoint, { allowInsecure })
+    this.request = request
+    this.prefix = String(prefix || '').replace(/^\/+|\/+$/g, '')
+    this.userAgent = String(userAgent || '').trim()
+    this.pacer = pacer
+    this.bytes = bytes
+    this.uuid = uuid
+    this.authorization = username || password
+      ? `Basic ${bytes.base64(`${username || ''}:${password || ''}`)}`
+      : null
+  }
+
+  urlFor(path = '') {
+    return new URL(encodePath([this.prefix, path].filter(Boolean).join('/')), this.baseUrl).toString()
+  }
+
+  headers(extra = {}) {
+    return {
+      ...(this.authorization ? { authorization: this.authorization } : {}),
+      ...(this.userAgent ? { 'user-agent': this.userAgent } : {}),
+      ...extra
+    }
+  }
+
+  async requestPath(path, init = {}, { quick = false } = {}) {
+    return this.pacer.run(() => this.request(this.urlFor(path), {
+      ...init,
+      headers: this.headers(init.headers)
+    }), { write: init.method === 'PUT', quick })
+  }
+
+  async testConnection() {
+    const response = await this.requestPath('', {
+      method: 'PROPFIND',
+      headers: { Depth: '0' }
+    }, { quick: true })
+    if (![200, 207].includes(response.status)) {
+      throw new Error(`WebDAV 连接失败（HTTP ${response.status}${throttleHint(response.status)}）。请检查地址、账号和权限。`)
+    }
+    const probePath = `HorseMD/.connection-check/${this.uuid()}`
+    let revision = null
+    try {
+      const uploaded = await this.put(probePath, this.bytes.empty(), { createOnly: true, quick: true })
+      if (uploaded.throttled) return { ok: true, uploadThrottled: true }
+      revision = uploaded.revision
+      await this.delete(probePath, { revision })
+    } catch (error) {
+      if (revision) {
+        try { await this.delete(probePath, { revision }) } catch { /* preserve the useful original error */ }
+      }
+      throw new Error(`WebDAV 上传权限验证失败：${error?.message || error}`)
+    }
+    return { ok: true }
+  }
+
+  async stat(path) {
+    const response = await this.requestPath(path, { method: 'PROPFIND', headers: { Depth: '0' } })
+    if (response.status === 404) return null
+    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法读取文件信息（HTTP ${response.status}${throttleHint(response.status)}）。`)
+    return parsePropfind(await response.text())[0] || null
+  }
+
+  async list(path = '') {
+    const response = await this.requestPath(path, { method: 'PROPFIND', headers: { Depth: '1' } })
+    if (response.status === 404) return []
+    if (![200, 207].includes(response.status)) throw new Error(`WebDAV 无法列出同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
+    return parsePropfind(await response.text())
+  }
+
+  async get(path) {
+    const response = await this.requestPath(path, { method: 'GET' })
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`WebDAV 下载失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
+    return {
+      bytes: this.bytes.fromArrayBuffer(await response.arrayBuffer()),
+      revision: response.headers.get('etag')?.replace(/^"|"$/g, '') || null
+    }
+  }
+
+  // The workspace prefix (HorseMD/<id>) itself: a WebDAV server answers 409
+  // to MKCOL / PUT under a collection that does not exist (RFC 4918 — WsgiDAV,
+  // Apache, Nextcloud), so a new workspace's first upload failed. Created
+  // once per provider; the engine never deletes it.
+  async ensurePrefix({ quick = false } = {}) {
+    if (this.prefixReady || !this.prefix) return true
+    let current = ''
+    for (const segment of this.prefix.split('/').filter(Boolean)) {
+      current = current ? `${current}/${segment}` : segment
+      const url = new URL(encodePath(current), this.baseUrl).toString()
+      const response = await this.pacer.run(() => this.request(url, { method: 'MKCOL', headers: this.headers() }), { quick })
+      if (quick && (response.status === 429 || response.status === 503)) return false
+      if (![200, 201, 204, 405].includes(response.status)) {
+        throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
+      }
+    }
+    this.prefixReady = true
+    return true
+  }
+
+  async ensureDirectory(path, { quick = false } = {}) {
+    if (await this.ensurePrefix({ quick }) === false) return false
+    const segments = String(path || '').split('/').filter(Boolean)
+    let current = ''
+    for (const segment of segments) {
+      current = current ? `${current}/${segment}` : segment
+      const response = await this.requestPath(current, { method: 'MKCOL' }, { quick })
+      if (quick && (response.status === 429 || response.status === 503)) return false
+      if (![200, 201, 204, 405].includes(response.status)) {
+        throw new Error(`WebDAV 无法创建同步目录（HTTP ${response.status}${throttleHint(response.status)}）。`)
+      }
+    }
+  }
+
+  async put(path, bytes, { revision = null, createOnly = false, contentType = 'application/octet-stream', quick = false } = {}) {
+    const slash = String(path).lastIndexOf('/')
+    if (await this.ensurePrefix({ quick }) === false) return { revision: null, throttled: true }
+    if (slash > 0 && await this.ensureDirectory(String(path).slice(0, slash), { quick }) === false) return { revision: null, throttled: true }
+    const headers = { 'content-type': contentType }
+    if (revision) headers['if-match'] = `"${revision}"`
+    if (createOnly) headers['if-none-match'] = '*'
+    const response = await this.requestPath(path, { method: 'PUT', headers, body: bytes }, { quick })
+    if (quick && (response.status === 429 || response.status === 503)) return { revision: null, throttled: true }
+    if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
+    if (!response.ok) throw new Error(`WebDAV 上传失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
+    const writtenRevision = response.headers.get('etag')?.replace(/^"|"$/g, '') || null
+    // Apache DAV and several self-hosted servers omit ETag on PUT. Fetch the
+    // metadata immediately so the next sync still has a conditional revision.
+    if (writtenRevision) return { revision: writtenRevision }
+    return { revision: (await this.stat(path))?.etag || null }
+  }
+
+  // Empty folder: a real collection (MKCOL, parents first).
+  async createDirectory(path) {
+    await this.ensureDirectory(path)
+    return true
+  }
+
+  // DELETE on a collection removes everything inside it, so only a folder
+  // that is still empty is removed (PROPFIND Depth 1 lists only itself).
+  async removeDirectory(path) {
+    const entries = await this.list(path)
+    if (entries.length > 1) return false
+    if (entries.length === 0) return true
+    const response = await this.pacer.run(() => this.request(`${this.urlFor(path)}/`, { method: 'DELETE', headers: this.headers() }))
+    if ([200, 204, 404].includes(response.status)) return true
+    throw new Error(`WebDAV 无法删除空文件夹“${path}”（HTTP ${response.status}${throttleHint(response.status)}）。`)
+  }
+
+  async delete(path, { revision = null } = {}) {
+    const headers = revision ? { 'if-match': `"${revision}"` } : {}
+    const response = await this.requestPath(path, { method: 'DELETE', headers })
+    if ([200, 204, 404].includes(response.status)) return true
+    if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
+    throw new Error(`WebDAV 删除失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
+  }
+}
