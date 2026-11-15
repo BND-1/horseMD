@@ -82,3 +82,48 @@ export function useTabDragGuard(enabled) {
     }
   }, [enabled])
 }
+
+// The picture under the cursor while a tab is dragged (tear-off / merge /
+// reorder): a small document card — file icon, name, folder — instead of the
+// browser's translucent snapshot of the tab pill (user review 2026-11-15:
+// "like dragging a file out"). Built in the DOM for the drag start only:
+// Chromium snapshots it in setDragImage, then it is removed.
+const FILE_ICON = 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h5'
+export function setTabDragImage(dataTransfer, { title, folder, dirty }) {
+  if (!dataTransfer?.setDragImage || typeof document === 'undefined') return
+  const card = document.createElement('div')
+  card.className = 'hm-tab-drag-card'
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  icon.setAttribute('viewBox', '0 0 24 24')
+  icon.setAttribute('class', 'hm-tab-drag-icon')
+  for (const seg of FILE_ICON.split(' M')) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', seg.startsWith('M') ? seg : 'M' + seg)
+    icon.appendChild(path)
+  }
+  const text = document.createElement('div')
+  text.className = 'hm-tab-drag-text'
+  const name = document.createElement('div')
+  name.className = 'hm-tab-drag-name'
+  name.textContent = title || ''
+  text.appendChild(name)
+  if (folder) {
+    const sub = document.createElement('div')
+    sub.className = 'hm-tab-drag-folder'
+    sub.textContent = folder
+    text.appendChild(sub)
+  }
+  card.appendChild(icon)
+  card.appendChild(text)
+  if (dirty) {
+    const dot = document.createElement('span')
+    dot.className = 'hm-tab-drag-dot'
+    card.appendChild(dot)
+  }
+  ;(document.querySelector('.app') || document.body).appendChild(card)
+  try {
+    // Grab point: a little inside the card's top-left, like picking up a file.
+    dataTransfer.setDragImage(card, 22, 18)
+  } catch { /* old engines */ }
+  setTimeout(() => card.remove(), 0)
+}

@@ -57,6 +57,7 @@ import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useAutoSave } from './hooks/useAutoSave.js'
 import { useDrawerSwipe } from './hooks/useDrawerSwipe.js'
+import { useMobileBarsAutoHide } from './hooks/useMobileBarsAutoHide.js'
 import { useImmersiveMode } from './hooks/useImmersiveMode.js'
 import { useReadingMode } from './hooks/useReadingMode.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
@@ -235,6 +236,10 @@ export default function App() {
   const [richForced, setRichForced] = useState(() => new Set())
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId) || null, [tabs, activeId])
+  // Phones: scrolling the document down hides the top bar and the floating
+  // status bar (full screen without a button), scrolling up brings them back.
+  const mobileBars = useMobileBarsAutoHide(isMobile, activeId)
+  const onDocument = !!activeTab && activeTab.kind !== 'settings'
   const activePath = activeTab?.path || null
   // Opening the Settings tab auto-closes the sidebar (outline/files) so the
   // settings page gets full width — the settings page has its own section jump-bar.
@@ -1626,7 +1631,7 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}${immersive && !isMobile ? ' hm-immersive-edges' : ''}${immersiveReveal ? ' hm-reveal' : ''}${isSecondary ? ' hm-secondary-window' : ''}`} style={appFontStyle}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}${immersive && !isMobile ? ' hm-immersive-edges' : ''}${immersiveReveal ? ' hm-reveal' : ''}${isSecondary ? ' hm-secondary-window' : ''}${isMobile && mobileBars.scrollHidden && onDocument && !home && !sidebarOpen ? ' hm-bars-hidden' : ''}`} style={appFontStyle}>
       {dropOpenActive && <DropOpenOverlay t={t} />}
       {!isSecondary && <ActivityBar
         home={home}
@@ -1674,7 +1679,8 @@ export default function App() {
         onToggleReadOnly={() => updateSettings({ mobileReadOnly: !settings.mobileReadOnly })}
         onToggleSplit={toggleSplit}
         onOpenPalette={() => setPaletteOpen(true)}
-        onToggleImmersive={home || !activeTab || activeTab.kind === 'settings' ? undefined : toggleImmersive}
+        // Phones: no full-screen button — scrolling down is full screen.
+        onToggleImmersive={isMobile || home || !activeTab || activeTab.kind === 'settings' ? undefined : toggleImmersive}
         docActive={!home && !!activeTab && activeTab.kind !== 'settings'}
         isSecondary={isSecondary}
         onBuildTransfer={tabTransferSupported ? buildTabPayload : undefined}
@@ -1904,6 +1910,7 @@ export default function App() {
       </div>
 
       <StatusBar
+        barHidden={mobileBars.scrollHidden || mobileBars.keyboardUp}
         tab={home || activeTab?.kind === 'settings' ? null : activeTab}
         isMobile={isMobile}
         onSave={() => handlers.current.save()}

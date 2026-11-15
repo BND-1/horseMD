@@ -7341,6 +7341,23 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
     1fr;
 }
 .app.is-mobile .topbar { padding-top: var(--safe-top); }
+/* Scrolling the document down hides the top bar too: its grid row shrinks to
+   the system status bar's band (the document gets the room, as in Safari /
+   Chrome on phones), the bar fades and slides up within it; scrolling up
+   brings it back (App.jsx hm-bars-hidden, hooks/useMobileBarsAutoHide.js). */
+.app.is-mobile { transition: grid-template-rows 0.24s var(--ease-out); }
+.app.is-mobile .topbar {
+  overflow: hidden;
+  transition: opacity 0.2s var(--ease-out);
+}
+.app.is-mobile.hm-bars-hidden {
+  grid-template-rows: var(--safe-top) 1fr;
+}
+.app.is-mobile.hm-bars-hidden .topbar {
+  opacity: 0;
+  pointer-events: none;
+  border-bottom-color: transparent;
+}
 /* The status bar as a floating pill over the document, above the home
    indicator, so the text runs to the bottom of the screen (user review
    2026-11-15: the bar left an empty strip under it). It slides away while
@@ -9353,4 +9370,67 @@ body.dark .sync-provider-mark.generic {
   .sync-connections .sync-form .sync-field-help { margin-left: 0; }
   .sync-connections .sync-field-error { grid-column: 1; }
   .sync-protocol-badge { display: none; }
+}
+
+/* ---- Tab drag picture (tear-off / merge, lib/tab-transfer.js) ----
+   A small document card under the cursor while a tab is dragged. Rendered
+   off-screen for the moment setDragImage snapshots it. */
+.hm-tab-drag-card {
+  position: fixed;
+  top: -400px;
+  left: -600px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 168px;
+  max-width: 260px;
+  padding: 10px 14px 10px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+  font-family: var(--font-ui);
+  pointer-events: none;
+  z-index: 9999;
+}
+.hm-tab-drag-icon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  box-sizing: border-box;
+}
+.hm-tab-drag-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hm-tab-drag-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-tab-drag-folder {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-tab-drag-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
 }

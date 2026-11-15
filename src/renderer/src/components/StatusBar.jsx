@@ -342,51 +342,6 @@ function MobileMore({
   )
 }
 
-// Phones: the status bar floats over the document (a pill above the home
-// indicator) and slides away while the reader scrolls down, back on any
-// scroll up, at the top / end of the document, on a tab switch, and stays
-// away while the keyboard is up (it would cover the line being typed) —
-// Safari / Feishu / Notion. Scroll events do not bubble: one capture
-// listener on document sees the rich editor's .editor-scroll and the source
-// textarea alike.
-function useMobileBarAutoHide(isMobile, tabId) {
-  const [scrollHidden, setScrollHidden] = useState(false)
-  const [keyboardUp, setKeyboardUp] = useState(false)
-  useEffect(() => { setScrollHidden(false) }, [tabId])
-  useEffect(() => {
-    if (!isMobile) return undefined
-    const last = new WeakMap()
-    const onScroll = (event) => {
-      const el = event.target
-      if (!(el instanceof Element) || !el.closest('.pane-center')) return
-      const top = el.scrollTop
-      const prev = last.has(el) ? last.get(el) : top
-      last.set(el, top)
-      const atEnd = top + el.clientHeight >= el.scrollHeight - 4
-      if (top <= 8 || atEnd) { setScrollHidden(false); return }
-      const delta = top - prev
-      if (Math.abs(delta) < 6) return
-      setScrollHidden(delta > 0)
-    }
-    document.addEventListener('scroll', onScroll, true)
-    // Keyboard: the WebView shrinks (Android adjustResize / iOS visual
-    // viewport) by far more than any toolbar does.
-    const vv = window.visualViewport
-    let tallest = vv ? vv.height : window.innerHeight
-    const onResize = () => {
-      const h = vv ? vv.height : window.innerHeight
-      tallest = Math.max(tallest, h)
-      setKeyboardUp(h < tallest - 150)
-    }
-    ;(vv || window).addEventListener('resize', onResize)
-    return () => {
-      document.removeEventListener('scroll', onScroll, true)
-      ;(vv || window).removeEventListener('resize', onResize)
-    }
-  }, [isMobile])
-  return isMobile && (scrollHidden || keyboardUp)
-}
-
 export default function StatusBar({
   tab,
   isMobile,
@@ -425,7 +380,10 @@ export default function StatusBar({
   onPickCustom,
   onRefreshThemes,
   onOpenThemesFolder,
-  onGetMoreThemes
+  onGetMoreThemes,
+  // Phones: hidden while the reader scrolls down / the keyboard is up
+  // (App.jsx, hooks/useMobileBarsAutoHide.js).
+  barHidden = false
 }) {
   const { t } = useI18n()
   // Debounce the (O(n) over the whole document) stats compute: recompute
@@ -473,7 +431,6 @@ export default function StatusBar({
     }
   }, [tab?.id, tab?.content])
   const dirty = isTabDirty(tab)
-  const barHidden = useMobileBarAutoHide(isMobile, tab?.id)
   // Phones: the bar is about the open document (counts, share, more); Home
   // and Settings show none (user review 2026-11-15: a lone 「就绪」 strip).
   if (isMobile && !tab) return null

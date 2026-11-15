@@ -6,7 +6,7 @@ import { copyToClipboard } from '../ui.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 import ExportContextSubmenu from './ExportContextSubmenu.jsx'
 import { isTabDirty } from '../lib/tab-state.js'
-import { TAB_DRAG_TYPE, hasTabDrag, tabStripScreenRect } from '../lib/tab-transfer.js'
+import { TAB_DRAG_TYPE, hasTabDrag, tabStripScreenRect, setTabDragImage } from '../lib/tab-transfer.js'
 
 export default function Tabs({
   tabs,
@@ -158,6 +158,11 @@ export default function Tabs({
                 if (payload) {
                   const key = `${window.api.windowId ?? 'w'}:${tab.id}:${Date.now()}`
                   e.dataTransfer.setData(TAB_DRAG_TYPE, key)
+                  setTabDragImage(e.dataTransfer, {
+                    title: tab.title,
+                    folder: tab.path ? displayPath(tab.path).replace(/[\\/][^\\/]*$/, '').split(/[\\/]/).pop() : '',
+                    dirty
+                  })
                   let token = null
                   try {
                     token = Promise.resolve(window.api.tabDragStart({ ...payload, dragId: key }))
