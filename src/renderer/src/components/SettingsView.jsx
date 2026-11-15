@@ -29,7 +29,9 @@ export default function SettingsView({
   folderRoots,
   onEnableSyncFolder,
   onAddSyncFolder,
-  onRemoveSyncFolder
+  onRemoveSyncFolder,
+  // Phones: the library folder, the only one that syncs (phase 1).
+  syncLibraryRoot = null
 }) {
   const { t } = useI18n()
   // A remembered section this device does not show (keyboard on a phone) opens the editor's.
@@ -90,6 +92,7 @@ export default function SettingsView({
             loading={syncWorkspaces?.loading}
             onEnableFolder={onEnableSyncFolder}
             onAddSyncFolder={onAddSyncFolder}
+            libraryRoot={syncLibraryRoot}
             onRemoveFolder={onRemoveSyncFolder}
             onAddWebDavConnection={syncWorkspaces?.addWebDavConnection}
             onAddS3Connection={syncWorkspaces?.addS3Connection}

@@ -2,12 +2,15 @@
 <!-- Cloud backup and device-to-device transfer on Android 12+
      (android:dataExtractionRules). Only exclusions: everything else is backed
      up / transferred exactly as before. horsemd_sync_secure =
-     HorseSecureStorePlugin.PREFS_FILE (see backup_rules.xml). -->
+     HorseSecureStorePlugin.PREFS_FILE, horsemd-sync = the cloud sync's
+     private documents (see backup_rules.xml). -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="horsemd_sync_secure.xml" />
+        <exclude domain="file" path="horsemd-sync" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="horsemd_sync_secure.xml" />
+        <exclude domain="file" path="horsemd-sync" />
     </device-transfer>
 </data-extraction-rules>

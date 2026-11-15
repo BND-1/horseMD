@@ -9,7 +9,10 @@ import Sidebar from './Sidebar.jsx'
 // workspace marks the ones in 云空间). A folded section is just its title
 // and the other takes the height; with both open the line between them is
 // dragged. Folds and the split are remembered (localStorage, per device).
-// Without cloud sync (mobile) only the workspace tree is shown, as before.
+// Without cloud sync only the workspace tree is shown. On a phone (`mobile`)
+// only the library syncs and it is always in the workspace, so there is no
+// second tree: the workspace tree marks it ☁ and one line above it shows the
+// sync state (tap → Settings › 云同步).
 
 const LAYOUT_KEY = 'horsemd.sidebarPanes.v1'
 const DEFAULT_LAYOUT = { workspaceCollapsed: false, cloudCollapsed: false, cloudRatio: 0.38 }
@@ -41,6 +44,7 @@ export default function SidebarPanes({
   onAddToWorkspace,
   onOpenSyncSettings,
   onStopSync,
+  mobile = false,
   apiRef,
   ...shared
 }) {
@@ -103,6 +107,28 @@ export default function SidebarPanes({
   }
 
   if (!cloudEnabled) return <Sidebar {...shared} apiRef={apiRef} cloudRootPaths={[]} />
+
+  if (mobile) {
+    return (
+      <div ref={containerRef} className="sidebar-panes sidebar-panes-mobile">
+        {syncStatus && (
+          <button
+            type="button"
+            className={`sidebar-mobile-sync ${syncStatus.state}`}
+            aria-label={`${t('sync.mobile.drawerLabel')}: ${syncStatus.text}`}
+            onClick={() => onOpenSyncSettings?.()}
+          >
+            <Icon name={syncStatus.state === 'busy' ? 'refresh' : 'cloud'} size={14} />
+            <span>{syncStatus.text}</span>
+            <Icon name="chevron-right" size={13} className="sidebar-mobile-sync-arrow" />
+          </button>
+        )}
+        <div className="sidebar-pane sidebar-pane-workspace">
+          <Sidebar {...shared} apiRef={workspaceApi} variant="workspace" cloudRootPaths={cloudRoots} />
+        </div>
+      </div>
+    )
+  }
 
   const workspaceOpen = !layout.workspaceCollapsed
   const cloudOpen = !layout.cloudCollapsed

@@ -63,6 +63,10 @@ const FOCUS_MIN_GAP = 60000
 // skipped save run retries once that sync ends.
 // The result of every run is kept per folder (`byFolder`) for Settings and
 // the status bar; `recordResult` lets a manual run update it too.
+// Phones (window.api.isAppActive / onAppStateChange, capacitor-api.js): the
+// same triggers, never while the app is in the background — a run that comes
+// due there is remembered and runs when the app is back in front; coming back
+// (resume) counts like the window coming back.
 export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
   const enabled = sync.supported && on
   const [status, setStatus] = useState({})
@@ -71,6 +75,7 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
   syncRef.current = sync
   const passRef = useRef(null) // promise of the running pass
   const retryRef = useRef(new Set()) // save-triggered folders skipped while busy
+  const backgroundRef = useRef(new Set()) // phones: folders that came due in the background
   const savesRef = useRef(new Map()) // folder key → { firstAt, timer }
   const lastRunRef = useRef(new Map()) // folder key → time its last run started
   const noticeRef = useRef(new Map()) // folder key → last notice signature
@@ -134,6 +139,8 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
 
   // Read synchronously: `busyRoot` in syncRef lags one render behind.
   const busy = () => syncRef.current.isBusy?.() ?? Boolean(syncRef.current.busyRoot)
+  // Phones only: the app is in the background (desktop: never).
+  const inBackground = () => typeof window.api?.isAppActive === 'function' && !window.api.isAppActive()
 
   // Runs the folders in `keys` (null = every bound folder) one after another.
   // `retry`: remember them if they cannot run now. `wait`: wait for a running
@@ -147,6 +154,11 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
       await passRef.current
     }
     if (busy()) return skip()
+    if (inBackground()) {
+      // Run when the app is back in front (onAppStateChange below).
+      for (const key of keys || (syncRef.current.registered || []).filter((entry) => entry.connectionId).map((entry) => keyOf(entry.rootPath))) backgroundRef.current.add(key)
+      return undefined
+    }
     let finish
     passRef.current = new Promise((resolve) => { finish = resolve })
     try {
@@ -166,7 +178,7 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
   }
 
   const retryLater = () => {
-    if (!retryRef.current.size || passRef.current || busy()) return
+    if (!retryRef.current.size || passRef.current || busy() || inBackground()) return
     setTimeout(() => {
       const keys = [...retryRef.current]
       retryRef.current.clear()
@@ -200,6 +212,7 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
       for (const pending of saves.values()) clearTimeout(pending.timer)
       saves.clear()
       retryRef.current.clear()
+      backgroundRef.current.clear()
       return undefined
     }
     const enabledAt = Date.now()
@@ -217,14 +230,19 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
         saves.set(key, pending)
       }
     }
-    const onBack = () => {
-      if (document.visibilityState === 'hidden') return
+    // `resumed`: the phone app came back to the foreground (its WebView may
+    // still report hidden for a moment).
+    const onBack = (resumed = false) => {
+      if (resumed !== true && document.visibilityState === 'hidden') return
       const now = Date.now()
       const keys = (syncRef.current.registered || [])
         .filter((entry) => entry.connectionId)
         .map((entry) => keyOf(entry.rootPath))
-        .filter((key) => now - (lastRunRef.current.get(key) ?? enabledAt) > FOCUS_MIN_GAP)
-      if (keys.length) run(keys)
+        .filter((key) => now - (lastRunRef.current.get(key) ?? enabledAt) > FOCUS_MIN_GAP ||
+          (resumed === true && backgroundRef.current.has(key)))
+      if (resumed === true) backgroundRef.current.clear()
+      // A resume that finds a pass running retries after it (nothing lost).
+      if (keys.length) run(keys, resumed === true ? { retry: true } : undefined)
     }
     const interval = minutes * 60000
     const tick = () => {
@@ -237,6 +255,9 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
     window.addEventListener('hm:file-saved', onSaved)
     window.addEventListener('focus', onBack)
     document.addEventListener('visibilitychange', onBack)
+    const offAppState = window.api?.onAppStateChange?.((active) => {
+      if (active) onBack(true)
+    })
     // Tests: a round of every folder now / what a save triggers, without the wait.
     const testTick = () => run(null, { wait: true })
     const testSaved = (path) => {
@@ -255,6 +276,7 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
       window.removeEventListener('hm:file-saved', onSaved)
       window.removeEventListener('focus', onBack)
       document.removeEventListener('visibilitychange', onBack)
+      offAppState?.()
       if (globalThis.__hmAutoSyncTick === testTick) delete globalThis.__hmAutoSyncTick
       if (globalThis.__hmAutoSyncSaved === testSaved) delete globalThis.__hmAutoSyncSaved
     }

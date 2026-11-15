@@ -150,7 +150,9 @@ function AutoSyncSettings({ on, minutes, folderCount, nextAt, onToggle, onChange
     <div className="settings-heading-row">
       <div>
         <h2 className="settings-block-title">{t('sync.auto.label')}</h2>
-        <p className="settings-block-desc">{t('sync.auto.desc')}</p>
+        {/* Phones have no local version history: replaced / deleted files go to
+            the folder's .horsemd/trash instead. */}
+        <p className="settings-block-desc">{t(window.api?.platform === 'ios' || window.api?.platform === 'android' ? 'sync.auto.descMobile' : 'sync.auto.desc')}</p>
       </div>
       <Toggle checked={on} onChange={onToggle} label={t('sync.auto.label')} />
     </div>
@@ -236,6 +238,8 @@ export default function SyncSettings({
   autoSync = null,
   settings = {},
   onUpdateSettings,
+  // Phones: the app's library folder, the only one that syncs (phase 1).
+  libraryRoot = null,
   t
 }) {
   const [error, setError] = useState('')
@@ -246,7 +250,12 @@ export default function SyncSettings({
   const [remoteChoices, setRemoteChoices] = useState({})
   const [syncStates, setSyncStates] = useState({})
   const byPath = new Map(registered.map((entry) => [pathKey(entry.rootPath), entry]))
-  const localOnly = folderRoots.filter((path) => !byPath.has(pathKey(path)))
+  const localOnly = libraryRoot
+    ? (byPath.has(pathKey(libraryRoot)) ? [] : [libraryRoot])
+    : folderRoots.filter((path) => !byPath.has(pathKey(path)))
+  const isLibrary = (rootPath) => Boolean(libraryRoot) && pathKey(rootPath) === pathKey(libraryRoot)
+  const folderName = (rootPath, entry = null) => (isLibrary(rootPath) ? t('sync.mobile.libraryName') : entry?.name || baseName(rootPath))
+  const folderPath = (rootPath) => (isLibrary(rootPath) ? t('sync.mobile.libraryWhere') : rootPath)
   const connectionName = (id) => connections.find((item) => item.id === id)?.name || ''
   const connectionFor = (entry) => selectedConnections[pathKey(entry.rootPath)] || ''
   const setConnectionFor = (entry, connectionId) => {
@@ -385,14 +394,14 @@ export default function SyncSettings({
           <h2 className="settings-block-title">{t('sync.folders')}</h2>
           <p className="settings-block-desc">{t('sync.foldersDesc')}</p>
         </div>
-        <button type="button" className="settings-action-btn" onClick={onAddSyncFolder}>
+        {!libraryRoot && <button type="button" className="settings-action-btn" onClick={onAddSyncFolder}>
           <Icon name="folder-plus" size={15} />
           {t('sync.addFolder')}
-        </button>
+        </button>}
       </div>
       <div className="sync-tip">
         <Icon name="info" size={15} />
-        <span>{t('sync.localFolderTip')}</span>
+        <span>{t(libraryRoot ? 'sync.mobile.tip' : 'sync.localFolderTip')}</span>
       </div>
       {loading && <div className="sync-empty">{t('sync.loading')}</div>}
       {!loading && <div className="sync-folder-list">
@@ -408,8 +417,8 @@ export default function SyncSettings({
             <div className="sync-folder-row">
               <Icon name="folder-open" size={17} className="sync-folder-icon" />
               <div className="sync-folder-copy">
-                <div className="sync-folder-name">{entry.name || baseName(entry.rootPath)}</div>
-                <div className="sync-folder-path">{entry.rootPath}</div>
+                <div className="sync-folder-name">{folderName(entry.rootPath, entry)}</div>
+                <div className="sync-folder-path">{folderPath(entry.rootPath)}</div>
                 {entry.connectionId ? <div className="sync-folder-status">{connectionName(entry.connectionId)}</div> : <>
                   <div className="sync-folder-status muted">{t('sync.readyToConnect')}</div>
                   <ConnectionPicker
@@ -478,8 +487,8 @@ export default function SyncSettings({
         {localOnly.map((rootPath) => <div className="sync-folder-row" key={rootPath}>
           <Icon name="folder" size={17} className="sync-folder-icon muted" />
           <div className="sync-folder-copy">
-            <div className="sync-folder-name">{baseName(rootPath)}</div>
-            <div className="sync-folder-path">{rootPath}</div>
+            <div className="sync-folder-name">{folderName(rootPath)}</div>
+            <div className="sync-folder-path">{folderPath(rootPath)}</div>
             <div className="sync-folder-status muted">{t('sync.localOnly')}</div>
           </div>
           <button type="button" className="settings-link-btn" onClick={() => safely(() => onEnableFolder(rootPath))}>{t('sync.enable')}</button>

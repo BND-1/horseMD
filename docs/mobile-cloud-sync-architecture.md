@@ -1,6 +1,6 @@
 # 移动端云同步架构
 
-> 状态：设计已确认，尚未开放。更新：2026-07-20。
+> 状态：第一期已实现（2026-11-15）：手机同步 App 自己的 `HorseMD/` 文件夹。更新：2026-11-15。
 
 ## 1. 结论
 
@@ -154,3 +154,19 @@ history       可选 { keep(absPath, bytes, reason) }；手机没有，删除/�
 手机端设置：`secretAccessKeyId: true`（S3 Access Key ID 也只进安全存储），
 `paths = createPosixPaths({ isRootAllowed: (p) => p === 'HorseMD' })`，`hash = webHash`，
 `gzip/gunzip = webGzip/webGunzip`，`bytes = webBytes`。
+
+
+## 7. 第一期实现（2026-11-15）
+
+- 共享引擎 `src/shared/sync/`（§6），手机平台适配 `src/renderer/src/platform/mobile-sync/`
+  （`@capacitor/filesystem` 读写库目录；写入先写临时文件再改名），原生插件
+  `HorseHttp`（任意 HTTP 方法、无缓存、base64 正文）、`HorseSecureStore`（iOS Keychain
+  ThisDeviceOnly / Android EncryptedSharedPreferences）、`HorseDevice`（冲突副本里的设备名）。
+- 同步状态放在 iOS `Library/NoCloud`、Android `Data` 下的 `horsemd-sync/`，不进备份、不随换机
+  迁移（否则两台手机会被当成同一台）。S3 的 Access Key ID 也只存安全存储。
+- 只在 App 前台同步：启动后 10 秒、切回前台（距上次超过 60 秒）、保存后约 30 秒（最多 2 分钟）、
+  每 5 分钟兜底；进后台时正在跑的同步暂停，回来继续。
+- 手机没有本地历史版本：被同步覆盖 / 删除的文件先放进 `HorseMD/.horsemd/trash`。
+- http（局域网 NAS 的 WebDAV）放行：iOS `NSAllowsLocalNetworking`，Android network security config。
+- 验证：Android 模拟器 + 本机 WsgiDAV：手机上传、电脑加入同一工作区下载、两边互相修改、不同处自动合并、
+  同一处生成带设备名的冲突副本、切回前台自动同步、打开的标签随同步刷新。

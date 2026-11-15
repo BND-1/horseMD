@@ -964,6 +964,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   the field (region / keys / client / network) and show only the server's
   `HTTP …` code. Locked by `test:sync-providers`, `test:sync-providers-ui`
   (real accounts with `HM_QINIU_*` / `HM_CSTCLOUD_*` env only).
+- **Phone cloud sync (2026-11-15)**: the sync engine lives in
+  `src/shared/sync/` on injected platform adapters (contract:
+  docs/mobile-cloud-sync-architecture.md §6); desktop wraps it with
+  `src/main/sync/node-platform.js` (unchanged behaviour), phones with
+  `platform/mobile-sync/` + native `HorseHttp` / `HorseSecureStore` /
+  `HorseDevice` (`platform/native-sync.js`). Phones sync only the `HorseMD/`
+  library, only in the foreground (start, resume after 60 s, 30 s after a
+  save, 5-minute fallback), keep secrets in Keychain / Keystore, state in
+  Library/NoCloud / Data (not backed up), and have no local history
+  (`.horsemd/trash`). Tested on the Android emulator against a local WsgiDAV
+  with desktop interop (§7).
 - **云空间 (Cloud space, 2026-10-29)**: the file pane is `SidebarPanes.jsx`
   — 工作区 above 云空间, each the same `Sidebar.jsx` tree (`variant:
   'workspace' | 'cloud'`) with its own expanded folders / rename / drag

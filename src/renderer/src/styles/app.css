@@ -9434,3 +9434,125 @@ body.dark .sync-provider-mark.generic {
   border-radius: 50%;
   background: var(--accent);
 }
+
+/* ---- Cloud sync on phones (Settings › 云同步, the drawer's sync line) ----
+   Touch-size rows and buttons (44 px, Apple HIG), fields at 16 px so iOS
+   does not zoom into them, dialogs that fit the screen. Desktop unchanged:
+   everything is under .app.is-mobile. */
+.app.is-mobile .sync-provider-fields input,
+.app.is-mobile .sync-provider-fields .sync-select,
+.app.is-mobile .sync-connections .sync-form input,
+.app.is-mobile .sync-form input,
+.app.is-mobile .sync-select {
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+.app.is-mobile .sync-provider-fields .sync-field,
+.app.is-mobile .sync-connections .sync-form .sync-field {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.is-mobile .sync-provider-fields .sync-field-label,
+.app.is-mobile .sync-connections .sync-form .sync-field-label,
+.app.is-mobile .sync-field-label {
+  font-size: 14px;
+}
+.app.is-mobile .sync-connections .sync-form .sync-field-help { margin-left: 0; font-size: 13px; }
+.app.is-mobile .sync-connections .sync-field-error { grid-column: 1; }
+.app.is-mobile .sync-icon-btn,
+.app.is-mobile .sync-state-icon {
+  width: 40px;
+  height: 40px;
+}
+.app.is-mobile .sync-icon-actions { gap: 4px; }
+/* No hover on a phone: the row actions are always fully visible. */
+.app.is-mobile .sync-connection-card .sync-icon-actions { opacity: 1; }
+.app.is-mobile .sync-connection-card-row { min-height: 60px; flex-wrap: wrap; }
+.app.is-mobile .sync-connection-card-copy { flex: 1 1 calc(100% - 64px); }
+.app.is-mobile .sync-connection-card-row > .sync-icon-actions { margin-left: auto; }
+.app.is-mobile .sync-connection-card-name,
+.app.is-mobile .sync-folder-name { font-size: 15px; }
+.app.is-mobile .sync-connection-card-detail,
+.app.is-mobile .sync-folder-path,
+.app.is-mobile .sync-folder-status { font-size: 13px; }
+.app.is-mobile .sync-provider-row { min-height: 60px; padding: 10px 12px; }
+.app.is-mobile .sync-provider-row-copy small { white-space: normal; }
+.app.is-mobile .sync-provider-panel-body,
+.app.is-mobile .sync-connection-card-edit { padding: 14px 12px; }
+.app.is-mobile .sync-protocol-badge { display: none; }
+.app.is-mobile .sync-connections .settings-heading-row { flex-wrap: wrap; gap: 10px; }
+.app.is-mobile .sync-connections .settings-action-btn,
+.app.is-mobile .sync-attention-actions .settings-action-btn,
+.app.is-mobile .sync-preview-actions .settings-action-btn {
+  min-height: 44px;
+  height: auto;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.app.is-mobile .sync-folder-row .settings-link-btn,
+.app.is-mobile .sync-folder-actions .settings-link-btn,
+.app.is-mobile .sync-remote-list .settings-link-btn,
+.app.is-mobile .sync-progress-actions .settings-link-btn,
+.app.is-mobile .sync-attention-actions .settings-link-btn,
+.app.is-mobile .sync-preview-actions .settings-link-btn { min-height: 40px; font-size: 14px; }
+/* Form actions: 取消 · 测试并保存 share the line, 使用完整设置 below. */
+.app.is-mobile .sync-provider-actions,
+.app.is-mobile .sync-connections .sync-form-actions { justify-content: stretch; }
+.app.is-mobile .sync-provider-actions-spacer { display: none; }
+.app.is-mobile .sync-provider-actions .settings-action-btn,
+.app.is-mobile .sync-connections .sync-form-actions .settings-action-btn { flex: 1 1 0; }
+.app.is-mobile .sync-provider-full { order: 3; flex: 1 1 100%; min-height: 40px; font-size: 14px; }
+/* Folders: name + path on the first line, the actions under them. */
+.app.is-mobile .sync-folder-row { align-items: flex-start; flex-wrap: wrap; min-height: 64px; }
+.app.is-mobile .sync-folder-copy { flex: 1 1 calc(100% - 80px); }
+.app.is-mobile .sync-folder-row > .sync-icon-actions { order: 3; flex: 1 1 100%; margin-left: 24px; justify-content: flex-start; }
+.app.is-mobile .sync-folder-row > .settings-link-btn { margin-left: 28px; }
+.app.is-mobile .sync-remote-choice { min-height: 40px; font-size: 14px; }
+.app.is-mobile .sync-auto-line,
+.app.is-mobile .sync-progress-line { margin-left: 24px; font-size: 13px; }
+.app.is-mobile .sync-attention { margin-left: 0; }
+.app.is-mobile .sync-plan-preview { margin-left: 0; }
+.app.is-mobile .sync-preview-changes { max-height: 40vh; }
+.app.is-mobile .sync-preview-changes li { font-size: 13px; }
+.app.is-mobile .sync-tip,
+.app.is-mobile .sync-notice,
+.app.is-mobile .sync-error { font-size: 13px; }
+/* Recovery dialog (cloud emptied / replaced): fits the screen, scrolls. */
+.app.is-mobile .sync-preview {
+  padding: calc(var(--safe-top, env(safe-area-inset-top)) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px);
+}
+.app.is-mobile .sync-preview-card {
+  max-height: 100%;
+  overflow: auto;
+  padding: 18px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.app.is-mobile .sync-preview-card .sync-preview-actions > * { flex: 1 1 100%; }
+/* The drawer: one line above the file tree with the sync state. */
+.sidebar-panes-mobile > .sidebar-pane-workspace { flex: 1 1 0; }
+.sidebar-mobile-sync {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin: 6px 10px 0;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-mobile-sync > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-mobile-sync-arrow { flex: 0 0 auto; color: var(--faint); }
+.sidebar-mobile-sync.busy { color: var(--accent-strong); }
+.sidebar-mobile-sync.busy > svg:first-child { animation: sync-state-spin .9s linear infinite; }
+.sidebar-mobile-sync.confirm { color: var(--warning, #b7791f); }
+.sidebar-mobile-sync.error { color: var(--danger); }
+.sidebar-mobile-sync.off { color: var(--faint); }

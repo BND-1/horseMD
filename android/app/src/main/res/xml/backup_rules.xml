@@ -3,7 +3,13 @@
      Only exclusions: everything else is backed up exactly as before.
      horsemd_sync_secure = HorseSecureStorePlugin.PREFS_FILE (sync credentials,
      EncryptedSharedPreferences): its Keystore key never leaves the phone, so a
-     restored copy could not be decrypted. -->
+     restored copy could not be decrypted.
+     horsemd-sync = the cloud sync's private documents (connections, sync
+     folders, per-folder sync state, merge ancestors) in the app's files dir
+     (Capacitor Directory.Data, src/renderer/src/platform/mobile-sync/
+     store-location.js): a sync state copied to a new phone would make two
+     phones look like one device to the cloud. -->
 <full-backup-content>
     <exclude domain="sharedpref" path="horsemd_sync_secure.xml" />
+    <exclude domain="file" path="horsemd-sync" />
 </full-backup-content>

@@ -748,7 +748,9 @@ export default function App() {
   }, [isSecondary, openFolder])
 
   const getDirtyPaths = useCallback(() => tabsRef.current.filter((t) => t.path && isTabDirty(t)).map((t) => t.path), [])
-  const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths })
+  // Phones sync the library folder only (phase 1, docs/mobile-cloud-sync-architecture.md).
+  const syncLibraryRoot = isMobile ? window.api.libraryRoot || null : null
+  const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths, libraryRoot: syncLibraryRoot })
   const autoSync = useAutoSync({ sync: syncWorkspaces, enabled: settings.syncAuto && !isSecondary, minutes: settings.syncAutoMinutes, tRef })
   // Automatic sync of a cloud-bound folder pairs with auto-save (Obsidian-like):
   // edits are saved after SYNC_AUTO_SAVE_DELAY s when the user's own is off.
@@ -1706,8 +1708,10 @@ export default function App() {
                 syncStatus={syncSummary({ sync: syncWorkspaces, autoSync, syncAuto: settings.syncAuto, t })}
                 onAddCloudFolder={addCloudFolder}
                 onAddToWorkspace={addFolder}
-                onOpenSyncSettings={openSyncSettings}
+                onOpenSyncSettings={isMobile ? () => { setSidebarOpen(false); openSyncSettings() } : openSyncSettings}
                 onStopSync={stopCloudFolder}
+                mobile={isMobile}
+                canSyncRoot={syncLibraryRoot ? (rootPath) => rootPath === syncLibraryRoot : undefined}
                 folderRoots={folderRoots}
                 onAddFolder={openFolder}
                 onRemoveFolder={removeFolder}
@@ -1888,6 +1892,7 @@ export default function App() {
               onEnableSyncFolder={enableSyncFolder}
               onAddSyncFolder={addSyncFolder}
               onRemoveSyncFolder={removeSyncFolder}
+              syncLibraryRoot={syncLibraryRoot}
             />
           )}
 

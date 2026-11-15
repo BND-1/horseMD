@@ -6,7 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // getDirtyPaths(): absolute paths of files open with unsaved edits; every run
 // passes them so the sync never downloads over / deletes them (the save that
 // follows would overwrite the other device's version — docs/cloud-sync-review.md R1).
-export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null }) {
+// `libraryRoot` (phones): the app's own folder, the only one that syncs in
+// phase 1 — 添加要同步的文件夹 enables it instead of opening a folder picker,
+// and it is always in the workspace already (useWorkspace withLibrary).
+export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null, libraryRoot = null }) {
   const supported = window.api.capabilities?.cloudSync !== false
   const [registered, setRegistered] = useState([])
   const [connections, setConnections] = useState([])
@@ -98,16 +101,17 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
   const enableFolder = useCallback(async (rootPath) => {
     if (!supported || !window.api.syncAdoptWorkspace) throw new Error('当前平台暂不支持云同步。')
     const entry = await window.api.syncAdoptWorkspace(rootPath)
-    addFolder(rootPath)
+    if (!libraryRoot || rootPath !== libraryRoot) addFolder(rootPath)
     await refresh()
     return entry
-  }, [addFolder, refresh, supported])
+  }, [addFolder, refresh, supported, libraryRoot])
 
   const addSyncFolder = useCallback(async () => {
+    if (libraryRoot) return enableFolder(libraryRoot)
     const rootPath = await window.api.openFolder()
     if (!rootPath) return null
     return enableFolder(rootPath)
-  }, [enableFolder])
+  }, [enableFolder, libraryRoot])
 
   const removeFolder = useCallback(async (rootPath) => {
     if (!supported || !window.api.syncRemoveWorkspace) return false

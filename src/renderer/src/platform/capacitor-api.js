@@ -19,6 +19,7 @@ import { Share } from '@capacitor/share'
 import { FilePicker } from '@capawesome/capacitor-file-picker'
 import { fireToast } from '../ui.js'
 import { searchFiles } from '../../../main/globalsearch-core.js'
+import { STORE_SETUP_FILES, storeDirectory } from './mobile-sync/store-location.js'
 
 // Files and folders OUTSIDE the app (iCloud Drive, On My iPhone, phone storage,
 // a file another app hands us), opened and saved in place like iA Writer /
@@ -132,6 +133,7 @@ const writeFile = async (path, content, options) => {
     if (!current) return { conflict: 'missing' }
     if (current > expected) return { conflict: 'modified', mtimeMs: current }
   }
+  forgetSyncHash(path)
   await Filesystem.writeFile({
     path,
     directory: DIR,
@@ -199,6 +201,8 @@ const rename = async (oldPath, newPath) => {
   if (newPath.toLowerCase() !== oldPath.toLowerCase() && (await exists(newPath))) {
     throw new Error('A file or folder with that name already exists.')
   }
+  forgetSyncHash(oldPath)
+  forgetSyncHash(newPath)
   await Filesystem.rename({ from: oldPath, to: newPath, directory: DIR, toDirectory: DIR })
   return true
 }
@@ -209,6 +213,7 @@ const deleteItem = async (path) => {
     await ext('remove', { id: target.id, rel: target.rel })
     return true
   }
+  forgetSyncHash(path)
   // Try as file first, then as directory.
   try {
     await Filesystem.deleteFile({ path, directory: DIR })
@@ -519,6 +524,46 @@ const onFileChanged = (cb) => {
   return () => fileChangedListeners.delete(cb)
 }
 
+// The desktop watcher's folder event (useWorkspace refreshes the tree). A
+// phone has no watcher; cloud sync reports the library after a run.
+const watchChangedListeners = new Set()
+const onWatchChanged = (cb) => {
+  watchChangedListeners.add(cb)
+  return () => watchChangedListeners.delete(cb)
+}
+// A sync run wrote / removed files in the library: open tabs follow through
+// the external-change path (useFileOps reloads clean tabs, warns about dirty
+// ones — a dirty tab's file is never touched by the sync) and the tree
+// re-reads its folders.
+const notifyLocalChange = (dir) => {
+  checkWatchedFiles().catch(() => {})
+  for (const cb of [...watchChangedListeners]) {
+    try { cb(dir) } catch { /* listener error */ }
+  }
+}
+
+// Foreground state: automatic sync runs only while the app is in front
+// (hooks/useAutoSync.js reads isAppActive / onAppStateChange).
+let appActive = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+const appStateListeners = new Set()
+let appStateHooked = false
+const hookAppState = () => {
+  if (appStateHooked) return
+  appStateHooked = true
+  CapApp.getState?.().then(({ isActive }) => { appActive = isActive !== false }).catch(() => {})
+  CapApp.addListener('appStateChange', ({ isActive }) => {
+    appActive = isActive !== false
+    for (const cb of [...appStateListeners]) {
+      try { cb(appActive) } catch { /* listener error */ }
+    }
+  }).catch(() => {})
+}
+const onAppStateChange = (cb) => {
+  hookAppState()
+  appStateListeners.add(cb)
+  return () => appStateListeners.delete(cb)
+}
+
 // Share a document out (system sheet). An external file is shared from a
 // temporary copy in the cache (the share sheet needs a plain file URL).
 const shareFile = async (path) => {
@@ -655,7 +700,9 @@ const capabilities = {
   // The narrowest page width (600 px) is wider than a phone screen.
   pageWidth: false,
   fileAttachments: false,
-  cloudSync: false,
+  // Phase 1 syncs the library folder only (docs/mobile-cloud-sync-architecture.md);
+  // needs the native HTTP client and the Keychain / Keystore store.
+  cloudSync: Capacitor.isPluginAvailable('HorseHttp') && Capacitor.isPluginAvailable('HorseSecureStore'),
   nativeDropOpen: false
 }
 
@@ -702,8 +749,101 @@ const setupBackButton = () => {
   })
 }
 
+// ---- cloud sync (lazy) -------------------------------------------------------
+// The engine (src/shared/sync/ + ./mobile-sync/) is a separate chunk, loaded
+// the first time sync is needed. Until a sync folder or a connection exists,
+// the list calls answer from two stat()s and the engine never loads, so app
+// start is not slower for people who do not use sync.
+let syncModule = null // the loaded { api, … }
+let syncLoading = null
+const syncProgressListeners = new Set()
+const phaseOneError = () => new Error(zh()
+  ? '手机上目前只能同步「HorseMD 文件夹」（App 自己的文件夹）。用「添加文件夹」打开的其他位置暂不支持云同步。'
+  : 'On a phone only the HorseMD folder (the app\'s own folder) can sync for now. Folders added from other locations do not sync yet.')
+const loadSync = () => {
+  if (syncModule) return Promise.resolve(syncModule)
+  if (!syncLoading) {
+    syncLoading = import('./mobile-sync/index.js')
+      .then((m) => m.createMobileSync({ directory: DIR, root: LIB, onLocalChange: notifyLocalChange, phaseOneError }))
+      .then((loaded) => {
+        loaded.api.onSyncProgress((event) => {
+          for (const cb of [...syncProgressListeners]) {
+            try { cb(event) } catch { /* listener error */ }
+          }
+        })
+        syncModule = loaded
+        return loaded
+      })
+      .catch((error) => {
+        syncLoading = null
+        throw error
+      })
+  }
+  return syncLoading
+}
+const syncSetUp = async () => {
+  if (syncModule) return true
+  for (const path of STORE_SETUP_FILES) {
+    try {
+      await Filesystem.stat({ path, directory: storeDirectory() })
+      return true
+    } catch { /* not there */ }
+  }
+  return false
+}
+const syncCall = (name) => async (...args) => (await loadSync()).api[name](...args)
+// Lists: empty without loading the engine while nothing is set up.
+const syncList = (name) => async (...args) => ((await syncSetUp()) ? syncCall(name)(...args) : [])
+const forgetSyncHash = (path) => {
+  if (syncModule && typeof path === 'string' && !isExt(path)) syncModule.platform.forgetHash(path)
+}
+const syncApi = () => (capabilities.cloudSync
+  ? {
+      syncListWorkspaces: syncList('syncListWorkspaces'),
+      syncAdoptWorkspace: async (rootPath) => {
+        if (String(rootPath || '').replace(/\/+$/, '') !== LIB) throw phaseOneError()
+        return syncCall('syncAdoptWorkspace')(rootPath)
+      },
+      syncRemoveWorkspace: syncCall('syncRemoveWorkspace'),
+      syncListConnections: syncList('syncListConnections'),
+      syncAddWebDavConnection: syncCall('syncAddWebDavConnection'),
+      syncAddS3Connection: syncCall('syncAddS3Connection'),
+      syncUpdateConnection: syncCall('syncUpdateConnection'),
+      syncRemoveConnection: syncCall('syncRemoveConnection'),
+      syncTestConnection: syncCall('syncTestConnection'),
+      syncBindWorkspaceConnection: syncCall('syncBindWorkspaceConnection'),
+      syncPreview: syncCall('syncPreview'),
+      syncRun: syncCall('syncRun'),
+      onSyncProgress: (cb) => {
+        syncProgressListeners.add(cb)
+        return () => syncProgressListeners.delete(cb)
+      },
+      // Nothing can run before the engine is loaded.
+      syncControl: async (rootPath, action) => (syncModule ? syncModule.api.syncControl(rootPath, action) : false),
+      syncStatus: async () => (syncModule ? syncModule.api.syncStatus() : { running: [] }),
+      syncListRemoteWorkspaces: syncCall('syncListRemoteWorkspaces'),
+      syncJoinWorkspace: syncCall('syncJoinWorkspace')
+    }
+  : {
+      syncListWorkspaces: async () => [],
+      syncAdoptWorkspace: async () => { throw new Error('unsupported') },
+      syncRemoveWorkspace: async () => false,
+      syncListConnections: async () => [],
+      syncAddWebDavConnection: async () => { throw new Error('unsupported') },
+      syncAddS3Connection: async () => { throw new Error('unsupported') },
+      syncUpdateConnection: async () => { throw new Error('unsupported') },
+      syncRemoveConnection: async () => false,
+      syncTestConnection: async () => { throw new Error('unsupported') },
+      syncBindWorkspaceConnection: async () => { throw new Error('unsupported') },
+      syncPreview: async () => { throw new Error('unsupported') },
+      syncRun: async () => { throw new Error('unsupported') },
+      syncListRemoteWorkspaces: async () => [],
+      syncJoinWorkspace: async () => { throw new Error('unsupported') }
+    })
+
 export function makeCapacitorApi() {
   ensureLib()
+  hookAppState()
   setupStatusBar()
   setupBackButton()
   return {
@@ -734,20 +874,10 @@ export function makeCapacitorApi() {
     openFolderTree,
     getPathForDroppedFile: () => '',
     classifyDroppedPaths: async () => [],
-    syncListWorkspaces: async () => [],
-    syncAdoptWorkspace: async () => { throw new Error('unsupported') },
-    syncRemoveWorkspace: async () => false,
-    syncListConnections: async () => [],
-    syncAddWebDavConnection: async () => { throw new Error('unsupported') },
-    syncAddS3Connection: async () => { throw new Error('unsupported') },
-    syncUpdateConnection: async () => { throw new Error('unsupported') },
-    syncRemoveConnection: async () => false,
-    syncTestConnection: async () => { throw new Error('unsupported') },
-    syncBindWorkspaceConnection: async () => { throw new Error('unsupported') },
-    syncPreview: async () => { throw new Error('unsupported') },
-    syncRun: async () => { throw new Error('unsupported') },
-    syncListRemoteWorkspaces: async () => [],
-    syncJoinWorkspace: async () => { throw new Error('unsupported') },
+    ...syncApi(),
+    // Foreground state for automatic sync (desktop: not present).
+    isAppActive: () => appActive,
+    onAppStateChange,
 
     // watch (no-op on mobile)
     watchStart: async () => true,
@@ -813,7 +943,7 @@ export function makeCapacitorApi() {
     onOpenPaths,
     onOpenFolderPath: noopOff,
     onMenu: noopOff,
-    onWatchChanged: noopOff,
+    onWatchChanged,
     onFileChanged,
     onWindowMaximized: noopOff,
     onAppCloseRequest: noopOff,

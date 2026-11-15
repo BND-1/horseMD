@@ -30,6 +30,8 @@ export default function Sidebar({
   syncSupported = false,
   syncFolderPaths = [],
   onEnableSyncFolder,
+  // Which roots may be added to cloud sync (phones: the library only).
+  canSyncRoot = null,
   // Open tabs follow a file/folder renamed or moved in the tree.
   onPathMoved,
   // Filled with { startRename(path) } for the rename command (F2, #156).
@@ -488,7 +490,8 @@ export default function Sidebar({
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            const syncRootPath = syncSupported ? syncRootForPath(node.path) : null
+            const syncCandidate = syncSupported ? syncRootForPath(node.path) : null
+            const syncRootPath = syncCandidate && (!canSyncRoot || canSyncRoot(syncCandidate)) ? syncCandidate : null
             setMenu({
               x: e.clientX,
               y: e.clientY,
