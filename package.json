@@ -371,6 +371,7 @@
     "test:math-literal-source": "node scripts/test-math-literal-source.mjs",
     "test:list-slot-parser-parity": "node scripts/test-list-slot-parser-parity.mjs",
     "test:paste-into-list-item-ui": "node scripts/test-paste-into-list-item-ui.mjs",
+    "test:plain-text-paste-ui": "node scripts/test-plain-text-paste-ui.mjs",
     "test:kbd-edit-ui": "node scripts/test-kbd-edit-ui.mjs",
     "fuzz:math-block-ui": "node scripts/fuzz-math-block-ui.mjs",
     "test:projection-audit-ui": "node scripts/test-projection-audit-ui.mjs",

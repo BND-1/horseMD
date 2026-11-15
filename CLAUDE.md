@@ -577,6 +577,17 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   preview appears switches it to 代码. View-only, works read-only. Export
   always shows the picture. Highlighted as XML (an `SVG` language entry).
   Locked by `test:svg-codeblock-ui`.
+- **Plain multi-line paste** (`editor-md-paste.js` `plainTextParagraphs`,
+  user report 2026-11-15): a clipboard with only text/plain and no Markdown
+  structure (WeChat, Notepad) pastes one paragraph per non-blank line
+  (Notion / Feishu / Word / ProseMirror). Milkdown's clipboard plugin parsed
+  it as Markdown, so single line breaks stayed inside one paragraph and a
+  heading or triple-click + bold took every line. A line keeps its inline
+  Markdown when it parses as one paragraph alone, else it is literal text;
+  the first / last lines join the text around the caret (`Slice.maxOpen`);
+  in a table cell the lines join with `<br>`. Markdown-looking text and HTML
+  clipboards are unchanged (macOS native apps put RTF, which Chromium turns
+  into one `<p>` per line). Locked by `test:plain-text-paste-ui`.
 - **Table paste** (`editor-table-paste.js`, #152): a GFM table is a plain
   grid with one paragraph per cell, so anything else fails the save gate
   closed. Merged cells (colspan/rowspan from Excel/WPS/web) are split by a

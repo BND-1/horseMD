@@ -204,6 +204,26 @@ export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markU
         to: view.state.selection.to
       })
       handled = insert(view, Fragment.from(node))
+    } else if (!shouldHandleRawMarkdown && !markdownText && !html && /\S[^\n]*\n[\s\S]*\S/.test(text)) {
+      // Plain text from a chat or notes app (WeChat, Notepad): one paragraph
+      // per line, as in Notion, Feishu, Word and ProseMirror's own text paste.
+      // Milkdown's clipboard plugin read it as Markdown, where a single line
+      // break stays inside the paragraph: lines typed in WeChat became one
+      // block, so a heading or a triple-click + bold took all of them (user
+      // report 2026-11-15). Text with Markdown structure keeps its Markdown
+      // meaning above (Typora); HTML clipboards keep the HTML path.
+      const pasted = plainTextParagraphs(schema, parse, text)
+      const slice = new Slice(pasted.fragment, 0, 0)
+      if (pasteIntoTableCell(view, slice)) {
+        handled = true
+      } else {
+        cancelRawPaste = pasted.markdown == null ? null : prepareRawMarkdownPaste?.({
+          markdown: pasted.markdown,
+          from: view.state.selection.from,
+          to: view.state.selection.to
+        })
+        handled = insert(view, pasted.fragment, { open: true })
+      }
     } else if (shouldHandleRawMarkdown) {
       const doc = parse(normalizeDisplayMath(text))
       // In a table cell, a pasted table fills the cells and other blocks join
@@ -276,9 +296,46 @@ function pasteListItemTextIntoItem(view, fragment, text, prepareRawMarkdownPaste
   return false
 }
 
-function insert(view, fragment) {
+// Each non-blank line of plain text as a paragraph. A line keeps its inline
+// Markdown (`**b**`, links) when it parses as exactly one paragraph on its
+// own, else it is literal text (`1) a`, `=====`). Leading / trailing blanks
+// go, as a paragraph's would; blank lines only separate (an empty paragraph
+// has no Markdown). `markdown` is the exact source of the fragment (lines
+// joined by blank lines) when every line kept its own bytes, else null and
+// the source reprint writes it.
+export function plainTextParagraphs(schema, parse, text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n')
+    .map((line) => line.replace(/^[ \t]+|[ \t]+$/g, ''))
+    .filter((line) => line.trim())
+  const markdown = lines.join('\n\n')
+  // Usually every line is plain prose: one parse of the whole text.
+  let whole = null
+  try { whole = parse(markdown) } catch {}
+  if (whole?.childCount === lines.length) {
+    const nodes = []
+    whole.forEach((node, _offset, index) => {
+      if (node.type === schema.nodes.paragraph && node.textContent.trim() === lines[index].trim()) nodes.push(node)
+    })
+    if (nodes.length === lines.length) return { fragment: Fragment.fromArray(nodes), markdown }
+  }
+  let exact = true
+  const paragraphs = lines.map((line) => {
+    let doc = null
+    try { doc = parse(line) } catch {}
+    const only = doc?.childCount === 1 ? doc.firstChild : null
+    if (only?.type === schema.nodes.paragraph && only.textContent.trim()) return only
+    exact = false
+    return schema.nodes.paragraph.create(null, schema.text(line))
+  })
+  return { fragment: Fragment.fromArray(paragraphs), markdown: exact ? lines.join('\n\n') : null }
+}
+
+// `open`: the first pasted paragraph joins the text before the caret and the
+// last one the text after it (ProseMirror's own paste), instead of standing
+// apart.
+function insert(view, fragment, { open = false } = {}) {
   try {
-    const tr = view.state.tr.replaceSelection(new Slice(fragment, 0, 0))
+    const tr = view.state.tr.replaceSelection(open ? Slice.maxOpen(fragment) : new Slice(fragment, 0, 0))
     tr.scrollIntoView()
     view.dispatch(tr)
     return true

@@ -88,7 +88,9 @@ try {
   }
   if (family === 'all' || family === 'paste') {
     const cases = [
-      {id:'plain', plain:'LEFT\nRIGHT', expected:'LEFT\nRIGHT'},
+      // Plain text (chat / Notepad clipboards): one paragraph per line since
+      // 2026-11-15 (user report: WeChat lines pasted as ONE block).
+      {id:'plain', plain:'LEFT\nRIGHT', expected:'LEFT\n\nRIGHT'},
       {id:'html-br', html:'<p>LEFT<br>RIGHT</p>', expected:'LEFT  \nRIGHT'},
       {id:'html-paragraphs', html:'<p>LEFT</p><p>RIGHT</p>', expected:'LEFT\n\nRIGHT'},
       {id:'css-span', html:'<span style="white-space:pre-wrap">LEFT\nRIGHT</span>', expected:'LEFT  \nRIGHT'},

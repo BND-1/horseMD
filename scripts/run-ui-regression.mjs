@@ -233,6 +233,10 @@ const standalone = [
     script: 'scripts/test-paste-into-list-item-ui.mjs'
   },
   {
+    name: 'Plain multi-line text (WeChat) pastes one paragraph per line; Markdown text keeps its meaning',
+    script: 'scripts/test-plain-text-paste-ui.mjs'
+  },
+  {
     name: '<kbd> / <u> / <b> keys and tags are editable in rich mode, bytes kept, adjacent keys stay two',
     script: 'scripts/test-kbd-edit-ui.mjs'
   },
@@ -709,11 +713,19 @@ const attempt = async (name, run) => {
   }
 }
 
-for (const session of sessions) {
-  await attempt(session.name, () => runSession(session))
+// HM_FROM=<script name part> resumes a stopped run: the sessions and every
+// standalone test before the first matching script are skipped.
+const from = process.env.HM_FROM || ''
+let started = !from
+if (!from) {
+  for (const session of sessions) {
+    await attempt(session.name, () => runSession(session))
+  }
 }
 
 for (const item of standalone) {
+  if (!started && item.script.includes(from)) started = true
+  if (!started) continue
   console.log(`\n[ui-regression] ${item.name}`)
   await attempt(item.name, () => runNode(item.script, [], item.env))
 }
