@@ -3,8 +3,10 @@
 [![CI](https://github.com/BND-1/horseMD/actions/workflows/ci.yml/badge.svg)](https://github.com/BND-1/horseMD/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/BND-1/horseMD?include_prereleases)](https://github.com/BND-1/horseMD/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![AtomGit G-Star](https://atomgit.com/YAng_yty/horseMD/star/new_badge.svg)](https://atomgit.com/YAng_yty/horseMD)
 
 > **GitHub**: [BND-1/horseMD](https://github.com/BND-1/horseMD) ·
+> **AtomGit（国内托管）**: [YAng_yty/horseMD](https://atomgit.com/YAng_yty/horseMD) ·
 > **Gitee（国内镜像）**: [yty11167/horse-md](https://gitee.com/yty11167/horse-md) ·
 > **官网**: [horsemd.yangsir.net](https://horsemd.yangsir.net)
 
