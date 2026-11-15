@@ -7335,21 +7335,53 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   --safe-top: var(--hm-safe-top, var(--safe-area-inset-top, env(safe-area-inset-top)));
   /* Grow the top/bottom bars into the safe area (notch / home indicator) rather
      than padding the whole app, which would offset the absolute drawer. */
+  /* No status row: the status bar floats over the document (below). */
   grid-template-rows:
     calc(var(--topbar-h) + var(--safe-top))
-    1fr
-    calc(var(--status-h) + env(safe-area-inset-bottom));
+    1fr;
 }
 .app.is-mobile .topbar { padding-top: var(--safe-top); }
-.app.is-mobile .statusbar { padding-bottom: env(safe-area-inset-bottom); }
+/* The status bar as a floating pill over the document, above the home
+   indicator, so the text runs to the bottom of the screen (user review
+   2026-11-15: the bar left an empty strip under it). It slides away while
+   the reader scrolls down (StatusBar.jsx useMobileBarAutoHide). */
+.app.is-mobile .statusbar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  height: 40px;
+  padding: 0 4px 0 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+  z-index: 30;
+  transition: transform 0.24s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+.app.is-mobile .statusbar.hm-bar-hidden {
+  transform: translateY(calc(100% + 12px + env(safe-area-inset-bottom)));
+  opacity: 0;
+  pointer-events: none;
+}
+/* Clear the floating bar: the save button and toasts sit above it. */
+.app.is-mobile .hm-save-fab { right: 16px; bottom: calc(env(safe-area-inset-bottom) + 62px); }
+.app.is-mobile .hm-toast:not(.sticky) { bottom: calc(env(safe-area-inset-bottom) + 64px); }
+/* The source textarea scrolls its last line above the bar. */
+.app.is-mobile .source-editor { padding-bottom: calc(env(safe-area-inset-bottom) + 72px) !important; }
 
 /* Touch-friendly hit targets. */
 .app.is-mobile .activity-item { width: 48px; height: 48px; }
 .app.is-mobile .icon-btn { width: 40px; height: 40px; }
 .app.is-mobile .hm-menu-btn { margin-right: 2px; }
-.app.is-mobile .hm-readonly-btn.active {
+/* Read-only on: the lock turns accent-coloured, nothing else (a filled grey
+   block behind it read as a big shadow, user review 2026-11-15). */
+.app.is-mobile .hm-readonly-btn.active,
+.app.is-mobile .hm-readonly-btn.active:active {
   color: var(--accent);
-  background: var(--active);
+  background: transparent;
 }
 
 /* Editor fills the screen — ignore the desktop 800px page-width preset and the
@@ -7367,6 +7399,10 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   padding-right: 18px !important;
 }
 .app.is-mobile .editor-skeleton { padding-top: 18px; }
+/* The first line sits close under the top bar: 16 px + its own top margin
+   (an h1's 36 px) left a wide band (user review 2026-11-15). */
+.app.is-mobile .editor-host { padding-top: 16px !important; }
+.app.is-mobile .milkdown .ProseMirror > :first-child { margin-top: 0 !important; }
 .app.is-mobile .source-editor {
   padding-left: 18px !important;
   padding-right: 18px !important;

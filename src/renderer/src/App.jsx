@@ -56,6 +56,7 @@ import { useAppLifecycle } from './hooks/useAppLifecycle.js'
 import { useColDrag } from './hooks/useColDrag.js'
 import { useFileOps } from './hooks/useFileOps.js'
 import { useAutoSave } from './hooks/useAutoSave.js'
+import { useDrawerSwipe } from './hooks/useDrawerSwipe.js'
 import { useImmersiveMode } from './hooks/useImmersiveMode.js'
 import { useReadingMode } from './hooks/useReadingMode.js'
 import { useSourceModeSwitch } from './hooks/useSourceModeSwitch.js'
@@ -118,6 +119,8 @@ export default function App() {
   // On phones the sidebar overlays the editor, so it starts closed to keep the
   // writing surface front-and-center (desktop keeps its previous default).
   const [sidebarOpen, setSidebarOpen] = useState(isSecondary ? false : (session.sidebarOpen ?? !isMobile))
+  // Phones: a leftward swipe on the open drawer closes it.
+  useDrawerSwipe({ enabled: isMobile && sidebarOpen, onClose: () => setSidebarOpen(false) })
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
   // Left-pane (outline / file-tree) width — draggable on hover (#resizable-pane).
   // Persisted in session; .pane-left reads it via the --pane-left-w CSS var.
