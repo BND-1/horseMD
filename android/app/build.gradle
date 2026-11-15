@@ -64,6 +64,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Cloud sync (HorseHttpPlugin / HorseSecureStorePlugin).
+    implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+    implementation "androidx.security:security-crypto:$androidxSecurityCryptoVersion"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

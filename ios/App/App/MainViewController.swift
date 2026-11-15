@@ -6,5 +6,9 @@ import Capacitor
 class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(HorseFilesPlugin())
+        // Cloud sync on phones: HTTP client, credential store, device label.
+        bridge?.registerPluginInstance(HorseHttpPlugin())
+        bridge?.registerPluginInstance(HorseSecureStorePlugin())
+        bridge?.registerPluginInstance(HorseDevicePlugin())
     }
 }

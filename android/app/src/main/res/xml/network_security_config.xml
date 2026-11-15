@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cloud sync (HorseHttp) may talk plain http to a WebDAV server on the
+     local network (NAS, Nextcloud at home), as the desktop app can. Only the
+     sync's own requests use it; the app's pages stay https://localhost. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

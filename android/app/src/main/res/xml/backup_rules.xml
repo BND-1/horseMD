@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup on Android 11 and lower (android:fullBackupContent).
+     Only exclusions: everything else is backed up exactly as before.
+     horsemd_sync_secure = HorseSecureStorePlugin.PREFS_FILE (sync credentials,
+     EncryptedSharedPreferences): its Keystore key never leaves the phone, so a
+     restored copy could not be decrypted. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="horsemd_sync_secure.xml" />
+</full-backup-content>
