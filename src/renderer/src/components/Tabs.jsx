@@ -6,6 +6,7 @@ import { copyToClipboard } from '../ui.js'
 import { labelWithShortcut } from '../lib/commands/shortcut-labels.js'
 import ExportContextSubmenu from './ExportContextSubmenu.jsx'
 import { isTabDirty } from '../lib/tab-state.js'
+import { TAB_DRAG_TYPE, hasTabDrag, tabStripScreenRect } from '../lib/tab-transfer.js'
 
 export default function Tabs({
   tabs,
@@ -25,7 +26,15 @@ export default function Tabs({
   onExportPandoc,
   onShowHistory,
   onReorder,
-  effectiveKeybindings
+  effectiveKeybindings,
+  // Multi-window (tab tear-off). `onBuildTransfer(id)` → the tab's payload
+  // (null = it cannot move now); `onTransferred(id)` drops it here after
+  // main moved it to another window. Absent on mobile / older preloads.
+  onBuildTransfer,
+  onTransferred,
+  onMoveToNewWindow,
+  onMoveToMain,
+  isSecondary = false
 }) {
   const { t } = useI18n()
   const activeRef = useRef(null)
@@ -35,6 +44,20 @@ export default function Tabs({
   // dragOverIndex drives the visual insertion indicator (the tab being hovered).
   const dragIndexRef = useRef(null)
   const [dragOverIndex, setDragOverIndex] = useState(-1)
+  // The tab being dragged OUT of this window: { tabId, token: Promise }. The
+  // token comes from main (tab:dragStart); dragend reports where it ended.
+  const dragSessionRef = useRef(null)
+  const canTearOff = window.api.platform !== 'ios' && window.api.platform !== 'android' && !!onBuildTransfer && !!onTransferred &&
+    !!window.api?.tabDragStart && !!window.api?.tabDragEnd
+  // A tab of ANOTHER window dragged over this strip (no local drag index).
+  const isForeignTabDrag = (e) => dragIndexRef.current === null && hasTabDrag(e)
+  const dropForeignTab = (e, index) => {
+    e.preventDefault()
+    setDragOverIndex(-1)
+    let key = ''
+    try { key = e.dataTransfer.getData(TAB_DRAG_TYPE) } catch { key = '' }
+    window.api?.tabDropIndex?.(key || null, index)
+  }
   // On touch there's no hover to reveal the close ✕, so show it always and use a
   // clear ✕ (the unsaved state is shown in the bottom bar, not as a tab dot).
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
@@ -89,7 +112,25 @@ export default function Tabs({
 
   return (
     <div className="tabs">
-      <div className="tabs-scroll" ref={scrollRef}>
+      <div
+        className="tabs-scroll"
+        ref={scrollRef}
+        // The strip's empty part after the last tab: a tab from another window
+        // dropped there is appended (marker on the last tab's right edge).
+        onDragOver={(e) => {
+          if (e.target.closest?.('.tab') || !isForeignTabDrag(e)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          if (dragOverIndex !== tabs.length) setDragOverIndex(tabs.length)
+        }}
+        onDragLeave={(e) => {
+          if (dragOverIndex === tabs.length && !e.currentTarget.contains(e.relatedTarget)) setDragOverIndex(-1)
+        }}
+        onDrop={(e) => {
+          if (e.target.closest?.('.tab') || !isForeignTabDrag(e)) return
+          dropForeignTab(e, tabs.length)
+        }}
+      >
         {tabs.map((tab, index) => {
           const dirty = isTabDirty(tab)
           const isLeft = tab.id === activeId
@@ -102,23 +143,71 @@ export default function Tabs({
             <div
               key={tab.id}
               ref={isLeft ? activeRef : null}
-              className={`tab${isActive ? ' active' : ''}${isActive && !focused ? ' split-peer' : ''}${dragOverIndex === index ? ' drag-over' : ''}`}
+              className={`tab${isActive ? ' active' : ''}${isActive && !focused ? ' split-peer' : ''}${dragOverIndex === index ? ' drag-over' : ''}${dragOverIndex === tabs.length && index === tabs.length - 1 ? ' drag-over-after' : ''}`}
               draggable={!!onReorder && !isMobile}
               onDragStart={(e) => {
                 if (e.target.closest('.tab-close')) { e.preventDefault(); return }
                 dragIndexRef.current = index
+                dragSessionRef.current = null
                 e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData('text/plain', '') // Firefox requires data
+                // Tear-off (multi-window): ONLY the custom type — never text in
+                // text/plain, which an editor drop would type into a document.
+                // The value is a drag key another window hands back to main on
+                // drop (tab:dropIndex); main's token arrives asynchronously.
+                const payload = canTearOff && tab.kind !== 'settings' ? onBuildTransfer(tab.id) : null
+                if (payload) {
+                  const key = `${window.api.windowId ?? 'w'}:${tab.id}:${Date.now()}`
+                  e.dataTransfer.setData(TAB_DRAG_TYPE, key)
+                  let token = null
+                  try {
+                    token = Promise.resolve(window.api.tabDragStart({ ...payload, dragId: key }))
+                      .then((r) => (typeof r === 'string' ? r : r?.token || null))
+                      .catch(() => null)
+                  } catch {
+                    token = null
+                  }
+                  dragSessionRef.current = { tabId: tab.id, token }
+                } else {
+                  e.dataTransfer.setData('text/plain', '') // Firefox requires data
+                }
               }}
-              onDragOver={(e) => { e.preventDefault(); if (dragIndexRef.current !== null && dragOverIndex !== index) setDragOverIndex(index) }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                const foreign = isForeignTabDrag(e)
+                if (foreign) e.dataTransfer.dropEffect = 'move'
+                if ((dragIndexRef.current !== null || foreign) && dragOverIndex !== index) setDragOverIndex(index)
+              }}
               onDragLeave={() => { if (dragOverIndex === index) setDragOverIndex(-1) }}
               onDrop={(e) => {
+                if (isForeignTabDrag(e)) {
+                  // Another window's tab: insert before this one.
+                  dropForeignTab(e, index)
+                  return
+                }
                 e.preventDefault()
                 if (dragIndexRef.current !== null && onReorder) onReorder(dragIndexRef.current, index)
                 dragIndexRef.current = null
                 setDragOverIndex(-1)
               }}
-              onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(-1) }}
+              onDragEnd={(e) => {
+                dragIndexRef.current = null
+                setDragOverIndex(-1)
+                const session = dragSessionRef.current
+                dragSessionRef.current = null
+                if (!session?.token) return
+                // Main decides from the cursor where the drag ended: on this
+                // strip (nothing), on another window (moved there) or anywhere
+                // else (torn off into a new window).
+                const stripRect = tabStripScreenRect(e.currentTarget.closest('.topbar') || e.currentTarget.closest('.tabs'))
+                const tabCount = tabs.length
+                session.token
+                  .then((token) => (token ? window.api.tabDragEnd(token, { stripRect, tabCount }) : null))
+                  .then((res) => {
+                    const result = typeof res === 'string' ? res : res?.result
+                    if (result === 'moved' || result === 'torn') onTransferred(session.tabId)
+                  })
+                  .catch(() => {})
+              }}
               onClick={() => onActivate(tab.id)}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -173,8 +262,29 @@ export default function Tabs({
               const hasPath = !!tab.path
               const noPathTip = !hasPath ? t('tab.noPath') : undefined
               const run = (fn) => () => { fn(); setMenu(null) }
+              // Multi-window: a secondary keeps at least one tab (dragging the
+              // last one moves the window); the main window may empty itself.
+              const canMoveOut = !isMobile && tab.kind !== 'settings' && !!onMoveToNewWindow &&
+                !!window.api?.moveTabToNewWindow && (isSecondary ? tabs.length >= 2 : tabs.length >= 1)
+              const canMoveToMain = !isMobile && isSecondary && tab.kind !== 'settings' && !!onMoveToMain &&
+                !!window.api?.moveTabToMain
               return (
                 <>
+                  {(canMoveOut || canMoveToMain) && (
+                    <>
+                      {canMoveOut && (
+                        <button className="tab-menu-item" onClick={run(() => onMoveToNewWindow(tab.id))}>
+                          {t('tab.moveToNewWindow')}
+                        </button>
+                      )}
+                      {canMoveToMain && (
+                        <button className="tab-menu-item" onClick={run(() => onMoveToMain(tab.id))}>
+                          {t('tab.moveToMain')}
+                        </button>
+                      )}
+                      <div className="tab-menu-sep" />
+                    </>
+                  )}
                   {window.api.capabilities?.splitView !== false && onOpenRight && tabs.length > 1 && (
                     <>
                       <button className="tab-menu-item" onClick={run(() => onOpenRight(tab.id))}>

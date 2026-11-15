@@ -25,6 +25,7 @@ import HistoryDialog from './components/HistoryDialog.jsx'
 import DeletedFilesDialog from './components/DeletedFilesDialog.jsx'
 import { historySupported, openDeletedFiles, openFileHistory } from './lib/history-ui.js'
 import {
+  SETTINGS_KEY,
   loadSettings,
   saveSettings,
   applyPageWidth,
@@ -72,7 +73,8 @@ import { useSystemColorScheme } from './hooks/useSystemColorScheme.js'
 import { useDropOpen } from './hooks/useDropOpen.js'
 import { buildElectronAcceleratorPayload, buildGlobalAcceleratorPayload } from './lib/commands/electron-accelerators.js'
 import { createMenuHandlers, useGlobalKeys, useCommands } from './lib/menuHandlers.js'
-import { isAbsolutePath, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
+import { LS, genId, isAbsolutePath, isHeavyDoc, isPlainTextDoc, loadSession, loadFolderRootsFromSession } from './paths.js'
+import { useTabDragGuard, windowRole } from './lib/tab-transfer.js'
 import { createReviewActions } from './lib/reviewActions.js'
 import { createEditorApiRegistry } from './lib/editor-api-registry.js'
 import { moveHeadingSection } from './outline-reorder.js'
@@ -83,6 +85,11 @@ import { moveHeadingSection } from './outline-reorder.js'
 const PANE_MIN = 160
 const PANE_MAX = 560
 const PANE_DEFAULT = 260
+
+// Multi-window (tab tear-off): a secondary window that changes theme / custom
+// theme / language says so here; the main window (and other secondaries)
+// adopt it, and the main window keeps persisting it in its session as before.
+const APPEARANCE_KEY = 'horsemd.appearance.v1'
 
 const PdfExportStudio = __MOBILE_BUILD__
   ? null
@@ -102,11 +109,15 @@ export default function App() {
   // Mobile (Capacitor) builds run the same renderer; a few affordances differ
   // (drawer sidebar, no split/image-host buttons). Desktop is unaffected.
   const isMobile = window.api.platform === 'ios' || window.api.platform === 'android'
+  // Multi-window (tab tear-off): 'main' (the default, and always on phones) or
+  // a 'secondary' window — tab bar + editor + status bar only. Every new
+  // behaviour is gated on isSecondary or on an explicit user action.
+  const isSecondary = !isMobile && windowRole() === 'secondary'
   const [tabs, setTabs] = useState([])
   const [activeId, setActiveId] = useState(null)
   // On phones the sidebar overlays the editor, so it starts closed to keep the
   // writing surface front-and-center (desktop keeps its previous default).
-  const [sidebarOpen, setSidebarOpen] = useState(session.sidebarOpen ?? !isMobile)
+  const [sidebarOpen, setSidebarOpen] = useState(isSecondary ? false : (session.sidebarOpen ?? !isMobile))
   const [sidebarMode, setSidebarMode] = useState(session.sidebarMode || 'files') // 'files' or 'outline'
   // Left-pane (outline / file-tree) width — draggable on hover (#resizable-pane).
   // Persisted in session; .pane-left reads it via the --pane-left-w CSS var.
@@ -124,7 +135,9 @@ export default function App() {
   // "Home" shows the welcome/landing page while keeping open tabs mounted (so
   // returning to a document doesn't re-create its editor). Cleared whenever a
   // tab is activated or a file is opened.
-  const [home, setHome] = useState(false)
+  const [homeState, setHome] = useState(false)
+  // A secondary window never shows Home (its last tab closing closes it).
+  const home = isSecondary ? false : homeState
   // Split view: id of the tab shown in the right pane (null = no split). The left
   // pane always shows the active tab; the right pane shows this one. A second,
   // independent editor — both panes are fully editable. Driven by the tab
@@ -278,10 +291,12 @@ export default function App() {
 
   const {
     sourceMode,
+    sourceModeIds,
     sourceRef,
     sourceTextareas,
     sourceEditedIds,
-    toggleSource
+    toggleSource,
+    setTabSourceMode
   } = useSourceModeSwitch({
     tabs,
     activeId,
@@ -447,13 +462,18 @@ export default function App() {
   useEffect(() => {
     applyUserCss(settings.userCssSnippets)
   }, [settings.userCssSnippets])
+  // Settings adopted from another window (storage event below) are already
+  // saved: writing them back would only echo.
+  const adoptedSettingsRef = useRef(null)
   useEffect(() => {
+    if (settings === adoptedSettingsRef.current) return
     saveSettings(settings)
   }, [settings])
   // Local version history: main prunes by the retention the user picked.
   useEffect(() => {
+    if (isSecondary) return
     window.api.historyConfigure?.({ retentionDays: settings.historyRetentionDays })?.catch?.(() => {})
-  }, [settings.historyRetentionDays])
+  }, [isSecondary, settings.historyRetentionDays])
   // Merge a partial settings change (from the Settings modal).
   const updateSettings = useCallback((partial) => {
     setSettings((prev) => ({ ...prev, ...partial }))
@@ -509,6 +529,62 @@ export default function App() {
     setCustomTheme(null)
     updateSettings({ themeMode: 'manual' })
   }, [updateSettings])
+
+  // ------------------- multi-window: shared preferences -------------------
+  // Every HorseMD window shares localStorage. Settings changed in one window
+  // apply in all (storage event); theme / custom theme / language live in the
+  // main window's session, so a secondary window announces its own changes
+  // under APPEARANCE_KEY and follows the main window's session. Without other
+  // windows no storage event ever fires, so the main window is unchanged.
+  const appearanceRef = useRef({ theme, customTheme, lang })
+  const appearanceLocalAtRef = useRef(0)
+  useEffect(() => {
+    const last = appearanceRef.current
+    if (last.theme === theme && last.customTheme === customTheme && last.lang === lang) return
+    appearanceRef.current = { theme, customTheme, lang }
+    if (!isSecondary) return
+    appearanceLocalAtRef.current = Date.now()
+    try {
+      localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ theme, customTheme, lang, at: Date.now() }))
+    } catch { /* storage unavailable */ }
+  }, [isSecondary, theme, customTheme, lang])
+  useEffect(() => {
+    const adoptAppearance = (next) => {
+      if (!next || typeof next !== 'object') return
+      const cur = appearanceRef.current
+      const value = {
+        theme: typeof next.theme === 'string' && next.theme ? next.theme : cur.theme,
+        customTheme: 'customTheme' in next ? (next.customTheme || null) : cur.customTheme,
+        lang: typeof next.lang === 'string' && next.lang ? next.lang : cur.lang
+      }
+      if (value.theme === cur.theme && value.customTheme === cur.customTheme && value.lang === cur.lang) return
+      appearanceRef.current = value
+      setTheme(value.theme)
+      setCustomTheme(value.customTheme)
+      setLang(value.lang)
+    }
+    const parse = (raw) => {
+      try { return raw ? JSON.parse(raw) : null } catch { return null }
+    }
+    const onStorage = (event) => {
+      if (event.storageArea && event.storageArea !== localStorage) return
+      if (event.key === SETTINGS_KEY) {
+        const next = loadSettings()
+        adoptedSettingsRef.current = next
+        setSettings(next)
+      } else if (event.key === APPEARANCE_KEY) {
+        adoptAppearance(parse(event.newValue))
+      } else if (event.key === LS && isSecondary) {
+        // The main window's session carries the current appearance; ignore
+        // it briefly after a change made here, until main has adopted ours.
+        if (Date.now() - appearanceLocalAtRef.current < 2000) return
+        const next = parse(event.newValue)
+        if (next) adoptAppearance({ theme: next.theme, customTheme: next.customTheme ?? null, lang: next.lang })
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [isSecondary])
 
   const {
     pdfExportState,
@@ -599,6 +675,7 @@ export default function App() {
     markRichEditPending,
     closeTab,
     closeOthers,
+    removeTabs,
     renameTabFile,
     commitTabRename,
     retargetTabs,
@@ -648,27 +725,45 @@ export default function App() {
     initialFolderRoots: initialFolderRoots,
     editorApis,
     sourceTextareas,
-    editorHosts
+    editorHosts,
+    watchFolders: !isSecondary
   })
+
+  // A secondary window has no Settings page: it opens in the main window.
+  const openSettingsHere = useCallback(() => {
+    if (isSecondary) window.api.windowToMain?.('settings')
+    else openSettingsTab()
+  }, [isSecondary, openSettingsTab])
+  const openFolderHere = useCallback(() => {
+    if (isSecondary) window.api.windowToMain?.('openFolder')
+    else return openFolder()
+  }, [isSecondary, openFolder])
 
   const getDirtyPaths = useCallback(() => tabsRef.current.filter((t) => t.path && isTabDirty(t)).map((t) => t.path), [])
   const syncWorkspaces = useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths })
-  const autoSync = useAutoSync({ sync: syncWorkspaces, enabled: settings.syncAuto, minutes: settings.syncAutoMinutes, tRef })
+  const autoSync = useAutoSync({ sync: syncWorkspaces, enabled: settings.syncAuto && !isSecondary, minutes: settings.syncAutoMinutes, tRef })
   // Automatic sync of a cloud-bound folder pairs with auto-save (Obsidian-like):
   // edits are saved after SYNC_AUTO_SAVE_DELAY s when the user's own is off.
   const syncAutoSave = syncWorkspaces.supported && settings.syncAuto && syncWorkspaces.registered.some((entry) => entry.connectionId)
   const autoSave = useAutoSave({ tabs, delaySec: settings.autoSaveDelay || (syncAutoSave ? SYNC_AUTO_SAVE_DELAY : 0), saveTab, isMobile, tRef })
   autoSaveActiveRef.current = autoSave.active
   const openSyncSettings = useCallback(() => {
+    if (isSecondary) {
+      window.api.windowToMain?.('settings')
+      return
+    }
     setSettingsViewState((current) => ({ ...current, activeSection: 'sync' }))
     openSettingsTab()
-  }, [openSettingsTab])
+  }, [isSecondary, openSettingsTab])
   const addDroppedFolder = useCallback((path) => {
+    // The workspace belongs to the main window; a folder dropped on a
+    // secondary window is ignored (its files still open here).
+    if (isSecondary) return
     addFolder(path)
     // A dropped directory is a workspace action. Reveal the file tree even on
     // a first-run session that currently shows the welcome document outline.
     setSidebarMode('files')
-  }, [addFolder])
+  }, [isSecondary, addFolder])
   const dropOpenActive = useDropOpen({
     enabled: !isMobile && window.api.capabilities?.nativeDropOpen !== false,
     openPaths,
@@ -720,23 +815,26 @@ export default function App() {
   // when the folder is not in the workspace.
   const cloudWatchKey = (syncWorkspaces.supported ? syncWorkspaces.registered : []).map((entry) => entry.rootPath).join('\n')
   useEffect(() => {
+    if (isSecondary) return undefined
     const roots = cloudWatchKey ? cloudWatchKey.split('\n') : []
     for (const root of roots) window.api.watchStart?.(root, 'cloud')
     return () => { for (const root of roots) window.api.watchStop?.(root, 'cloud') }
-  }, [cloudWatchKey])
+  }, [isSecondary, cloudWatchKey])
 
   // Sync the show-hidden-files setting to main (readTree filter) + refresh the
   // file tree when it changes (#29).
   useEffect(() => {
+    if (isSecondary) return
     window.api.setShowHidden?.(settings.showHiddenFiles)
     if (folderRoots.length) bumpRefresh()
-  }, [settings.showHiddenFiles, bumpRefresh, folderRoots])
+  }, [isSecondary, settings.showHiddenFiles, bumpRefresh, folderRoots])
 
   // Keep main's close-to-tray behavior in sync with the persisted preference
   // (opt-in: both sides default to off, so this only pushes explicit choices).
   useEffect(() => {
+    if (isSecondary) return
     window.api.setCloseToTray?.(settings.closeToTray === true)
-  }, [settings.closeToTray])
+  }, [isSecondary, settings.closeToTray])
 
   // Show a tab in the right (split) pane. If it's currently the active tab, move
   // the left pane to a different tab so the two panes differ.
@@ -1053,21 +1151,23 @@ export default function App() {
     revealEdges: !isMobile
   })
   useEffect(() => {
+    if (isSecondary) return
     window.api.setMenuKeybindings?.(buildElectronAcceleratorPayload(effectiveKeybindings))
-  }, [effectiveKeybindings])
+  }, [isSecondary, effectiveKeybindings])
   // OS-level commands (show/hide window) are registered by the main process with
   // globalShortcut, so the resolved binding has to be pushed there too. The reply
   // names any combination the OS/another app already owns — the keyboard settings
   // page surfaces that instead of failing silently.
   const [globalShortcutStatus, setGlobalShortcutStatus] = useState(null)
   useEffect(() => {
+    if (isSecondary) return
     window.api
       .setGlobalShortcuts?.(buildGlobalAcceleratorPayload(effectiveKeybindings))
       .then((res) => {
         if (res?.ok) setGlobalShortcutStatus({ accelerators: res.accelerators, unregistered: res.unregistered })
       })
       .catch(() => {})
-  }, [effectiveKeybindings])
+  }, [isSecondary, effectiveKeybindings])
   handlers.current = createMenuHandlers({
     pickEditableId,
     activeId,
@@ -1098,7 +1198,7 @@ export default function App() {
     deletedFiles: deletedFilesCommand,
     newTab,
     openPaths,
-    openFolder,
+    openFolder: openFolderHere,
     saveTab,
     attachFiles,
     closeTab,
@@ -1116,7 +1216,9 @@ export default function App() {
     review,
     requestPdfExport,
     requestHtmlExport,
-    requestPandocExport
+    requestPandocExport,
+    openSettings: openSettingsHere,
+    isSecondary
   })
 
   // App lifecycle (session restore/persist/flush + update check + toast +
@@ -1124,9 +1226,11 @@ export default function App() {
   // flushSession is also used by the window-close guard; update/toast/
   // dismissUpdate/setToast feed the JSX. These are read only inside effect/event
   // closures, so defining them here is safe (resolved at commit/call time).
-  const { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession } = useAppLifecycle({
+  const { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession, stopWindowSession } = useAppLifecycle({
     session,
+    isSecondary,
     tabs,
+    activeId,
     activePath,
     folderRoots,
     theme,
@@ -1154,8 +1258,9 @@ export default function App() {
   const updateDl = useUpdateDownload()
   // Main installs a quietly downloaded update on quit only in 'auto' (#170).
   useEffect(() => {
+    if (isSecondary) return
     window.api.updateSetMode?.(settings.updateMode)
-  }, [settings.updateMode])
+  }, [isSecondary, settings.updateMode])
   const quietUpdateReady = settings.updateMode === 'auto' && quietUpdate && updateDl.state.status === 'ready' && updateDl.state.version === quietUpdate.latest ? quietUpdate : null
   const lastUpdateRef = useRef(null)
   if (update) lastUpdateRef.current = update
@@ -1200,9 +1305,9 @@ export default function App() {
   useGlobalKeys({
     handlers,
     openPaths,
-    openFolder,
+    openFolder: openFolderHere,
     isAbsolutePath,
-    addFolderByPath: addFolder,
+    addFolderByPath: isSecondary ? null : addFolder,
     setSidebarMode,
     setSidebarOpen,
     commitAllLive,
@@ -1215,10 +1320,264 @@ export default function App() {
     activeTabKind: !home ? activeTab?.kind || null : null,
     setActiveId,
     setHome,
-    effectiveKeybindings
+    effectiveKeybindings,
+    onWindowCloseConfirmed: isSecondary ? stopWindowSession : undefined
   })
   // --------------------------- commands ----------------------------
   const commands = useCommands({ t, handlers, effectiveKeybindings })
+
+  // ---------------- multi-window: moving tabs between windows ----------------
+  // The tab as another window needs it (lib/tab-transfer.js, main's tab:*
+  // IPC): the live Markdown (textarea edits committed, the rich editor
+  // force-flushed), the saved baseline (so a dirty tab stays dirty), the view
+  // (source mode, rich-forced heavy doc) and the caret / viewport.
+  const buildTabPayload = useCallback((id) => {
+    commitLive(id)
+    const tab = tabsRef.current.find((item) => item.id === id)
+    if (!tab || tab.kind === 'settings') return null
+    const textarea = sourceTextareas.current[id]
+    const api = editorApis.current[id]
+    // A source-mode tab that is not showing keeps its source edits in
+    // tab.content only: its hidden rich editor has not taken them yet.
+    const content = !textarea && sourceEditedIds.current.has(id)
+      ? tab.content ?? ''
+      : getMarkdownForTab(id)
+    if (typeof content !== 'string') {
+      fireToast(tRef.current('tab.moveFailed'), { sticky: true })
+      return null
+    }
+    let caretOffset = null
+    let scrollTop = null
+    if (textarea) {
+      caretOffset = textarea.selectionStart ?? null
+      scrollTop = textarea.scrollTop || null
+    } else if (api) {
+      try { caretOffset = api.markdownOffsetFromSelection?.() ?? null } catch { caretOffset = null }
+      const scroller = editorHosts.current[id]
+      // A hidden tab (display:none) reads 0: no viewport to carry.
+      scrollTop = scroller?.offsetParent ? (scroller.scrollTop || null) : null
+    } else if ((tab.restoreNonce ?? 0) === tab.reloadNonce) {
+      // Never mounted: carry its pending open-time restore.
+      caretOffset = tab.restoreOffset ?? null
+      scrollTop = tab.restoreScrollTop ?? null
+    }
+    return {
+      path: tab.path || null,
+      title: tab.title,
+      kind: 'doc',
+      content,
+      savedContent: tab.savedContent ?? '',
+      mtimeMs: tab.mtimeMs ?? null,
+      heavy: !!tab.heavy,
+      sourceMode: sourceModeIds.has(id),
+      sourceEdited: sourceEditedIds.current.has(id),
+      richForced: richForced.has(id),
+      caretOffset: Number.isFinite(caretOffset) ? caretOffset : null,
+      scrollTop: Number.isFinite(scrollTop) ? scrollTop : null
+    }
+  }, [commitLive, editorApis, editorHosts, getMarkdownForTab, richForced, sourceEditedIds, sourceModeIds, sourceTextareas, tRef])
+
+  // The tab now lives in another window: drop it here without the
+  // unsaved-changes confirm, then persist the session right away (a crash
+  // must not leave the document in both windows' sessions).
+  const pendingSessionFlushRef = useRef(false)
+  const removeTransferredTab = useCallback((id) => {
+    pendingSessionFlushRef.current = true
+    removeTabs([id])
+  }, [removeTabs])
+  // Declared after useAppLifecycle: its persistence effect has already taken
+  // the new tab list when this runs.
+  useEffect(() => {
+    if (!pendingSessionFlushRef.current) return
+    pendingSessionFlushRef.current = false
+    flushSession()
+  }, [tabs, flushSession])
+
+  // Tab menu: 「移到新窗口」/「移回主窗口」.
+  const moveTabToWindow = useCallback(async (id, target) => {
+    const send = target === 'main' ? window.api.moveTabToMain : window.api.moveTabToNewWindow
+    if (!send) return
+    const payload = buildTabPayload(id)
+    if (!payload) return
+    try {
+      const res = await send(payload)
+      if (res?.ok) removeTransferredTab(id)
+    } catch { /* the tab stays here */ }
+  }, [buildTabPayload, removeTransferredTab])
+
+  // Tabs arriving from another window (tab:receive) or, in a secondary window,
+  // its first tabs (window:initialTabs). A full payload becomes a new tab with
+  // a NEW id (ids are per window) at `index` (null = end), placed where it was
+  // in the other window; a restored-session entry ({ path, title,
+  // untitledContent }) is re-read from disk / reopened as an unsaved document.
+  // A path already open here is activated instead (never open twice); it takes
+  // the incoming unsaved edits only when it has none of its own.
+  const receiveTabs = useCallback(async (payloads, index = null, { activeIndex = null } = {}) => {
+    const list = Array.isArray(payloads) ? payloads : []
+    let insertAt = Number.isInteger(index) && index >= 0 ? index : null
+    const ids = []
+    let lastId = null
+    const norm = (path) => String(path || '').replace(/\\/g, '/')
+    for (const p of list) {
+      if (!p || typeof p !== 'object' || (p.kind && p.kind !== 'doc')) { ids.push(null); continue }
+      const key = p.path ? norm(p.path) : null
+      const existing = key
+        ? tabsRef.current.find((tab) => tab.kind !== 'settings' && tab.path && norm(tab.path) === key)
+        : null
+      if (existing) {
+        commitLive(existing.id)
+        const current = tabsRef.current.find((tab) => tab.id === existing.id)
+        const incomingDirty = typeof p.content === 'string' && p.content !== (p.savedContent ?? p.content)
+        if (current && incomingDirty && !isTabDirty(current)) {
+          liveContentRef.current.delete(existing.id)
+          const adopt = (items) => items.map((tab) => tab.id !== existing.id ? tab : {
+            ...tab,
+            content: p.content,
+            savedContent: p.savedContent ?? tab.savedContent,
+            mtimeMs: p.mtimeMs ?? tab.mtimeMs,
+            pendingRichEdit: false,
+            heavy: isHeavyDoc(p.content),
+            reloadNonce: tab.reloadNonce + 1,
+            restoreOffset: p.caretOffset ?? null,
+            restoreScrollTop: p.scrollTop ?? null,
+            restoreNonce: tab.reloadNonce + 1
+          })
+          tabsRef.current = adopt(tabsRef.current)
+          setTabs(adopt)
+        }
+        lastId = existing.id
+        ids.push(existing.id)
+        continue
+      }
+      if (typeof p.content !== 'string') {
+        if (p.path) {
+          await openPaths([p.path], true)
+          const opened = tabsRef.current.find((tab) => tab.path && norm(tab.path) === key)
+          if (opened) lastId = opened.id
+          ids.push(opened?.id || null)
+        } else if (typeof p.untitledContent === 'string' && p.untitledContent.trim()) {
+          const tab = {
+            id: genId(),
+            kind: 'doc',
+            path: null,
+            title: p.title || tRef.current('tab.untitled'),
+            content: p.untitledContent,
+            // No prior save → it shows as unsaved, like a restored scratch tab.
+            savedContent: '',
+            mtimeMs: null,
+            reloadNonce: 0,
+            heavy: isHeavyDoc(p.untitledContent)
+          }
+          tabsRef.current = [...tabsRef.current, tab]
+          setTabs((prev) => [...prev, tab])
+          lastId = tab.id
+          ids.push(tab.id)
+        } else {
+          ids.push(null)
+        }
+        continue
+      }
+      const id = genId()
+      const tab = {
+        id,
+        kind: 'doc',
+        path: p.path || null,
+        title: p.title || tRef.current('tab.untitled'),
+        content: p.content,
+        savedContent: typeof p.savedContent === 'string' ? p.savedContent : p.content,
+        mtimeMs: typeof p.mtimeMs === 'number' ? p.mtimeMs : null,
+        reloadNonce: 0,
+        heavy: typeof p.heavy === 'boolean' ? p.heavy : isHeavyDoc(p.content),
+        // EditorArea applies these once, for the mount whose reloadNonce
+        // equals restoreNonce: caret without scrolling, then the viewport.
+        restoreOffset: Number.isFinite(p.caretOffset) ? p.caretOffset : null,
+        restoreScrollTop: Number.isFinite(p.scrollTop) && p.scrollTop > 0 ? p.scrollTop : null,
+        restoreNonce: 0
+      }
+      const at = insertAt
+      const put = (items) => {
+        if (at == null || at >= items.length) return [...items, tab]
+        const next = [...items]
+        next.splice(at, 0, tab)
+        return next
+      }
+      tabsRef.current = put(tabsRef.current)
+      setTabs(put)
+      if (insertAt != null) insertAt += 1
+      if (p.sourceMode) setTabSourceMode(id, true)
+      if (p.sourceEdited) sourceEditedIds.current.add(id)
+      if (p.richForced) setRichForced((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+      lastId = id
+      ids.push(id)
+    }
+    const pick = Number.isInteger(activeIndex) && ids[activeIndex] ? ids[activeIndex] : lastId
+    if (pick) {
+      setActiveId(pick)
+      setHome(false)
+    }
+    return ids
+  }, [commitLive, liveContentRef, openPaths, setTabSourceMode, sourceEditedIds, tRef])
+
+  useEffect(() => window.api.onTabReceive?.((message) => {
+    void receiveTabs(message?.payloads || [], Number.isInteger(message?.index) ? message.index : null)
+  }), [receiveTabs])
+
+  // A secondary window's first tabs come from main (tear-off / 移到新窗口 /
+  // the restored windows.json); then it tells main it is ready for routed
+  // file opens. With no tabs left it closes (Notepad).
+  const [secondaryReady, setSecondaryReady] = useState(false)
+  useEffect(() => {
+    if (!isSecondary) return undefined
+    let alive = true
+    ;(async () => {
+      let initial = null
+      try { initial = await window.api.takeInitialTabs?.() } catch { initial = null }
+      if (!alive) return
+      try {
+        await receiveTabs(initial?.tabs || [], null, {
+          activeIndex: Number.isInteger(initial?.activeIndex) ? initial.activeIndex : null
+        })
+      } catch { /* an unreadable file is skipped */ }
+      if (!alive) return
+      setSecondaryReady(true)
+      window.api.appReady?.()
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!isSecondary || !secondaryReady || tabs.length) return undefined
+    const timer = setTimeout(() => {
+      if (!tabsRef.current.length) window.api.windowClose?.()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [isSecondary, secondaryReady, tabs.length])
+
+  // Quitting from the main window: each secondary window flushes its edits and
+  // session, then tells main how many unsaved documents it holds (main's one
+  // quit confirm counts them).
+  useEffect(() => {
+    if (!isSecondary) return undefined
+    return window.api.onAppQuitPrepare?.(() => {
+      commitAllLive()
+      flushPendingRichEdits()
+      flushSession()
+      const dirty = tabsRef.current.filter((tab) => tab.kind !== 'settings' && isTabDirty(tab)).length
+      window.api.quitPrepared?.({ dirty })
+    })
+  }, [isSecondary, commitAllLive, flushPendingRichEdits, flushSession])
+
+  // A secondary window is named after its document (the main window keeps
+  // its title).
+  const activeTitle = activeTab?.title || ''
+  useEffect(() => {
+    if (!isSecondary) return
+    document.title = activeTitle ? `${activeTitle} — HorseMD` : 'HorseMD'
+  }, [isSecondary, activeTitle])
+
+  // Tab drags of any HorseMD window never reach the editor / file tree.
+  useTabDragGuard(!isMobile && !!(window.api.tabDragStart || window.api.onTabReceive))
+  const tabTransferSupported = !isMobile && !!window.api.tabDragStart
 
   const platformClass =
     ({ win32: ' is-win', linux: ' is-linux', darwin: ' is-mac', ios: ' is-ios is-mobile', android: ' is-android is-mobile' }[
@@ -1264,9 +1623,9 @@ export default function App() {
 
   return (
     <I18nProvider lang={lang} setLang={setLang}>
-    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}${immersive && !isMobile ? ' hm-immersive-edges' : ''}${immersiveReveal ? ' hm-reveal' : ''}`} style={appFontStyle}>
+    <div className={`app${platformClass}${isMobile && sidebarOpen ? ' drawer-open' : ''}${settings.selectionToolbar === false ? ' hm-selection-toolbar-disabled' : ''}${immersive ? ' hm-immersive' : ''}${immersive && !isMobile ? ' hm-immersive-edges' : ''}${immersiveReveal ? ' hm-reveal' : ''}${isSecondary ? ' hm-secondary-window' : ''}`} style={appFontStyle}>
       {dropOpenActive && <DropOpenOverlay t={t} />}
-      <ActivityBar
+      {!isSecondary && <ActivityBar
         home={home}
         sidebarMode={sidebarMode}
         sidebarOpen={sidebarOpen}
@@ -1278,7 +1637,7 @@ export default function App() {
         onSearch={() => handlers.current.globalSearch()}
         onSettings={openSettingsTab}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
-      />
+      />}
 
       <Topbar
         isMobile={isMobile}
@@ -1314,6 +1673,11 @@ export default function App() {
         onOpenPalette={() => setPaletteOpen(true)}
         onToggleImmersive={home || !activeTab || activeTab.kind === 'settings' ? undefined : toggleImmersive}
         docActive={!home && !!activeTab && activeTab.kind !== 'settings'}
+        isSecondary={isSecondary}
+        onBuildTransfer={tabTransferSupported ? buildTabPayload : undefined}
+        onTransferred={tabTransferSupported ? removeTransferredTab : undefined}
+        onMoveToNewWindow={tabTransferSupported ? (id) => moveTabToWindow(id, 'new') : undefined}
+        onMoveToMain={tabTransferSupported && isSecondary ? (id) => moveTabToWindow(id, 'main') : undefined}
       />
 
       {isMobile && sidebarOpen && (
@@ -1321,7 +1685,7 @@ export default function App() {
       )}
 
       <div className="body">
-        <aside
+        {!isSecondary && <aside
           className={`pane-left${sidebarOpen ? '' : ' collapsed'}`}
           style={{ '--pane-left-w': paneWidth + 'px' }}
         >
@@ -1375,8 +1739,8 @@ export default function App() {
               />
             )
           )}
-        </aside>
-        {sidebarOpen && !isMobile && (
+        </aside>}
+        {sidebarOpen && !isMobile && !isSecondary && (
           <div
             className="pane-left-resizer"
             role="separator"
@@ -1476,7 +1840,7 @@ export default function App() {
           {/* Settings page — a full-tab view for kind:'settings' tabs (the
               ActivityBar gear button opens one). EditorArea skips settings
               tabs, so this sibling renders in their place. */}
-          {!home && activeTab?.kind === 'settings' && (
+          {!isSecondary && !home && activeTab?.kind === 'settings' && (
             <SettingsView
               settings={settings}
               onUpdateSettings={updateSettings}
@@ -1518,7 +1882,7 @@ export default function App() {
             />
           )}
 
-          {(home || !activeTab) && (
+          {!isSecondary && (home || !activeTab) && (
             <Welcome
               t={t}
               lang={lang}
@@ -1548,12 +1912,13 @@ export default function App() {
           }
           window.api.shareFile?.(activeTab.path)
         }}
-        onSettings={openSettingsTab}
+        onSettings={openSettingsHere}
         sync={syncWorkspaces}
         autoSync={autoSync}
         syncAuto={settings.syncAuto}
         onOpenSync={openSyncSettings}
-        updateReady={quietUpdateReady}
+        showSync={!isSecondary}
+        updateReady={isSecondary ? null : quietUpdateReady}
         onOpenUpdate={() => quietUpdateReady && showUpdate(quietUpdateReady)}
         theme={effectiveTheme}
         setTheme={pickBuiltinTheme}
@@ -1669,7 +2034,7 @@ export default function App() {
               return { dirty: isTabDirty(tab), read: () => getMarkdownForTab(tab.id) ?? tab.content }
             }}
           />
-          <DeletedFilesDialog folderRoots={folderRoots} retentionDays={settings.historyRetentionDays} />
+          {!isSecondary && <DeletedFilesDialog folderRoots={folderRoots} retentionDays={settings.historyRetentionDays} />}
         </>
       )}
 
@@ -1729,7 +2094,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {update && (
+      {update && !isSecondary && (
         <UpdateToast
           t={t}
           latest={update.latest}

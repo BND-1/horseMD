@@ -32,9 +32,26 @@ const LAST_VERSION_KEY = 'horsemd.lastVersion'
 /* global __APP_VERSION__ */
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
 
+// A secondary window's tabs (tab tear-off) as main persists them in
+// userData/windows.json: files by path (re-read at the next start), unsaved
+// untitled documents with their text. Nothing else survives a restart.
+function secondarySessionTabs(list) {
+  const entries = []
+  for (const tab of list) {
+    if (tab.kind === 'settings') continue
+    if (tab.path) entries.push({ path: tab.path, title: tab.title })
+    else if (isTabDirty(tab) && (tab.content || '').trim()) {
+      entries.push({ path: null, title: tab.title, untitledContent: tab.content })
+    }
+  }
+  return entries
+}
+
 export function useAppLifecycle({
   session,
+  isSecondary = false,
   tabs,
+  activeId = null,
   activePath,
   folderRoots,
   theme,
@@ -65,9 +82,38 @@ export function useAppLifecycle({
   // Latest session snapshot, kept in a ref so the close/flush path can persist it
   // synchronously without waiting on the debounced write.
   const sessionRef = useRef(null)
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+  // A secondary window the user closed: main drops its saved session; a late
+  // pagehide flush must not bring it back.
+  const windowSessionStoppedRef = useRef(false)
+  const stopWindowSession = useCallback(() => { windowSessionStoppedRef.current = true }, [])
   // Write the latest snapshot now (close / pagehide / debounce all funnel here,
   // so the persisted shape lives in exactly one place).
   const flushSession = useCallback(() => {
+    if (isSecondary) {
+      // Only the main window writes minimd.session.v1; a secondary window's
+      // tabs (and bounds) are kept by main in userData/windows.json.
+      if (windowSessionStoppedRef.current || !window.api?.saveWindowSession) return
+      try {
+        const docs = tabsRef.current.filter((t) => t.kind !== 'settings')
+        const entries = secondarySessionTabs(docs)
+        const active = docs.find((t) => t.id === activeIdRef.current) || null
+        const activeEntry = active ? secondarySessionTabs([active])[0] : null
+        const activeIndex = activeEntry
+          ? entries.findIndex((e) => (activeEntry.path ? e.path === activeEntry.path : e.untitledContent === activeEntry.untitledContent && e.title === activeEntry.title))
+          : -1
+        window.api.saveWindowSession({
+          tabs: entries,
+          activePath: active?.path || null,
+          activeIndex: activeIndex >= 0 ? activeIndex : 0,
+          openPaths: docs.map((t) => t.path).filter(Boolean)
+        })
+      } catch {
+        /* serialization failure — skip this snapshot */
+      }
+      return
+    }
     if (!sessionRef.current) return
     try {
       // Patch unsaved-scratch content from the live mirror so a close-time write
@@ -80,7 +126,7 @@ export function useAppLifecycle({
     } catch {
       /* quota / serialization failure — skip this snapshot */
     }
-  }, [tabsRef])
+  }, [tabsRef, isSecondary])
 
   // Register the launch-file listener before the restore effect below calls
   // appReady(). Main delivers queued argv/open-file paths immediately on that
@@ -90,8 +136,10 @@ export function useAppLifecycle({
     return window.api.onOpenPaths((paths) => openPaths(paths))
   }, [openPaths])
 
-  // Restore session tabs on first mount
+  // Restore session tabs on first mount. A secondary window gets its tabs from
+  // main instead (App: takeInitialTabs).
   useEffect(() => {
+    if (isSecondary) return
     const paths = restoreSession === false ? [] : (session.openPaths || []).filter(Boolean)
     const untitled = restoreSession === false
       ? []
@@ -140,7 +188,23 @@ export function useAppLifecycle({
   }, [])
 
   // --------------------------- persistence -------------------------
+  // Secondary window: report its tabs to main (debounced like the session).
   useEffect(() => {
+    if (!isSecondary) return undefined
+    const id = setTimeout(flushSession, 400)
+    return () => clearTimeout(id)
+  }, [isSecondary, tabs, activeId, flushSession])
+
+  // Main window: tell main which files it holds, so a file opened again from
+  // Finder / Explorer is routed to the window that already has it.
+  const mainOpenPathsKey = isSecondary ? '' : tabs.map((t) => t.path).filter(Boolean).join('\n')
+  useEffect(() => {
+    if (isSecondary) return
+    window.api.saveWindowSession?.({ openPaths: mainOpenPathsKey ? mainOpenPathsKey.split('\n') : [] })
+  }, [isSecondary, mainOpenPathsKey])
+
+  useEffect(() => {
+    if (isSecondary) return undefined
     const data = {
       folderRoots,
       theme,
@@ -168,7 +232,7 @@ export function useAppLifecycle({
     // for a brief pause, then write once. The close path flushes the last edit.
     const id = setTimeout(flushSession, 400)
     return () => clearTimeout(id)
-  }, [folderRoots, theme, customTheme, lang, recents, sidebarOpen, sidebarMode, paneWidth, tabs, activePath, flushSession])
+  }, [isSecondary, folderRoots, theme, customTheme, lang, recents, sidebarOpen, sidebarMode, paneWidth, tabs, activePath, flushSession])
 
   // Flush the pending session snapshot immediately when the window is closing,
   // so the debounce above never drops the user's last few keystrokes.
@@ -189,6 +253,8 @@ export function useAppLifecycle({
   // bundle) or a failed download falls back to the prompt — and 'manual'
   // checks nothing. Read once: a changed mode applies from the next start.
   useEffect(() => {
+    // Update check, 已更新到 and the update prompt belong to the main window.
+    if (isSecondary) return undefined
     let alive = true
     let timer = null
     // Installed since the last run (an update): say so briefly.
@@ -254,6 +320,7 @@ export function useAppLifecycle({
 
   // ------------------------- first-run onboarding ------------------
   useEffect(() => {
+    if (isSecondary) return
     if (localStorage.getItem(ONBOARDED_KEY)) return
     localStorage.setItem(ONBOARDED_KEY, '1')
     // Only greet on a genuinely fresh start (no restored session — neither saved
@@ -283,5 +350,5 @@ export function useAppLifecycle({
   const hideUpdate = useCallback(() => setUpdate(null), [])
   const showUpdate = useCallback((info) => { if (info?.latest) setUpdate(info) }, [])
 
-  return { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession }
+  return { update, quietUpdate, dismissUpdate, hideUpdate, showUpdate, toast, setToast, flushSession, stopWindowSession }
 }

@@ -6,7 +6,10 @@
 //   - the CommonMark / GFM spec corpus,
 //   - the random fuzzer with formatting, the editor's UI (slash menu, block
 //     drag, table handles) and pasting on (FUZZ_FORMAT=1, FUZZ_UI=1,
-//     FUZZ_PASTE=1) over seeds from the date.
+//     FUZZ_PASTE=1) over seeds from the date,
+//   - the full UI regression (HM_KEEP_GOING=1: every failure is listed), so a
+//     day of focused testing (docs/development.md test tiers) is backed by a
+//     complete run within a day.
 // The working copy, its out/ and the installed app are never touched.
 // A short summary goes to $NIGHTLY_LOG_DIR (default
 // ~/Library/Logs/HorseMD-nightly, or ~/.horsemd-nightly elsewhere)
@@ -32,7 +35,7 @@ const work = join(tmpdir(), `horsemd-nightly-${process.pid}`)
 const run = (name, command, args, env = {}) => new Promise((done) => {
   const started = Date.now()
   let output = ''
-  const child = spawn(command, args, { cwd: work, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { cwd: work, env: { ...process.env, HORSEMD_TEST_RUN: '1', ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
   child.stdout.on('data', (chunk) => { output += chunk })
   child.stderr.on('data', (chunk) => { output += chunk })
   child.on('close', (code) => done({ name, code, output, seconds: Math.round((Date.now() - started) / 1000) }))
@@ -54,6 +57,10 @@ try {
     const fuzzOut = join(work, 'fuzz-out')
     results.push(await run(`fuzz (FORMAT+UI+PASTE, seeds ${seeds}, ${fuzzOps} ops)`, 'node', ['scripts/fuzz-rich-source-ui.mjs'], { FUZZ_SEEDS: seeds, FUZZ_OPS: String(fuzzOps), FUZZ_FORMAT: '1', FUZZ_UI: '1', FUZZ_PASTE: '1', FUZZ_OUT: fuzzOut }))
     if (existsSync(fuzzOut)) await cp(fuzzOut, join(logDir, 'fuzz'), { recursive: true })
+    const regression = await run('UI regression (full, keep going)', 'node', ['scripts/run-ui-regression.mjs'], { HM_KEEP_GOING: '1' })
+    const failedNames = regression.output.match(/KEEPGOING-SUMMARY failed=(.*)/)?.[1]
+    if (failedNames) regression.name += ` — failed: ${failedNames}`
+    results.push(regression)
   }
 } finally {
   try { execFileSync('rm', ['-f', join(work, 'node_modules')]) } catch {}

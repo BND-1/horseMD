@@ -54,7 +54,11 @@ const probePandoc = async (path) => {
   }
 }
 
-export function createPandocExportService({ getMainWindow, getUserDataPath = () => app.getPath('userData') }) {
+export function createPandocExportService({
+  getMainWindow,
+  getParentWindow = () => getMainWindow(),
+  getUserDataPath = () => app.getPath('userData')
+}) {
   let configuredPath = ''
   let configLoaded = false
 
@@ -86,8 +90,8 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     return { available: false, path: null, version: null, custom: false }
   }
 
-  const chooseExecutable = async () => {
-    const result = await dialog.showOpenDialog(getMainWindow(), {
+  const chooseExecutable = async (event) => {
+    const result = await dialog.showOpenDialog(getParentWindow(event), {
       title: 'Select Pandoc executable',
       properties: ['openFile'],
       filters: process.platform === 'win32'
@@ -102,7 +106,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     return { ok: true, ...selected, custom: true }
   }
 
-  const exportDocument = async ({ markdown, format, defaultName, sourcePath, figures = [] } = {}) => {
+  const exportDocument = async ({ markdown, format, defaultName, sourcePath, figures = [] } = {}, event = null) => {
     const descriptor = PANDOC_FORMATS[format]
     if (!descriptor) return { ok: false, code: 'unsupported-format', error: 'Unsupported Pandoc format.' }
     const content = String(markdown || '')
@@ -117,7 +121,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
     // Per-file: default to this document's own folder, or the folder it was
     // last saved to. Other files keep their own defaults.
     const startDir = await getSaveDirFor(sourcePath)
-    const save = await dialog.showSaveDialog(getMainWindow(), {
+    const save = await dialog.showSaveDialog(getParentWindow(event), {
       defaultPath: startDir ? join(startDir, `${safeBase}.${descriptor.extension}`) : `${safeBase}.${descriptor.extension}`,
       filters: [{ name: descriptor.label, extensions: [descriptor.extension] }]
     })
@@ -162,7 +166,7 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
       }
       // Nothing is opened here: the success dialog asks (open the file / show
       // it in its folder), through openResult below.
-      lastExportPath = save.filePath
+      rememberExport(event, save.filePath)
       return {
         ok: true,
         path: save.filePath,
@@ -179,9 +183,22 @@ export function createPandocExportService({ getMainWindow, getUserDataPath = () 
   }
 
   // The success dialog's buttons. Only the file this module just wrote can be
-  // opened — the renderer names an action, never a path.
-  let lastExportPath = null
-  const openResult = async (kind) => {
+  // opened — the renderer names an action, never a path. Kept per window
+  // (sender), so each window's dialog opens its own export.
+  const lastExportPaths = new Map()
+  const trackedSenders = new WeakSet()
+  const senderKey = (event) => event?.sender?.id ?? 0
+  function rememberExport(event, path) {
+    const sender = event?.sender
+    if (sender && typeof sender.once === 'function' && !trackedSenders.has(sender)) {
+      trackedSenders.add(sender)
+      const id = sender.id
+      sender.once('destroyed', () => lastExportPaths.delete(id))
+    }
+    lastExportPaths.set(senderKey(event), path)
+  }
+  const openResult = async (kind, event = null) => {
+    const lastExportPath = lastExportPaths.get(senderKey(event)) || null
     if (!lastExportPath) return { ok: false, error: 'No exported file.' }
     try {
       await fs.access(lastExportPath)

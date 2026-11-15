@@ -16,7 +16,10 @@ const withLibrary = (roots) => {
   return lib && !roots.includes(lib) ? [lib, ...roots] : roots
 }
 
-export function useWorkspace({ initialFolderRoots, setSidebarOpen }) {
+// `watchFolders` false (a secondary window, tab tear-off): the folders are
+// still listed (command palette) but not watched — the main window owns the
+// workspace and its watchers.
+export function useWorkspace({ initialFolderRoots, setSidebarOpen, watchFolders = true }) {
   const [folderRoots, setFolderRoots] = useState(() => withLibrary(sanitizeFolderRoots(initialFolderRoots)))
   const folderRootsKey = folderRoots.join('\n')
   const [files, setFiles] = useState([])
@@ -56,10 +59,10 @@ export function useWorkspace({ initialFolderRoots, setSidebarOpen }) {
 
   useEffect(() => {
     const roots = folderRootsKey ? folderRootsKey.split('\n') : []
-    for (const root of roots) window.api.watchStart(root)
+    if (watchFolders) for (const root of roots) window.api.watchStart(root)
     listAllRoots()
     return () => {
-      for (const root of roots) window.api.watchStop(root)
+      if (watchFolders) for (const root of roots) window.api.watchStop(root)
     }
     // listAllRoots is keyed by the same stable root string.
     // eslint-disable-next-line react-hooks/exhaustive-deps

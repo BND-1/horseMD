@@ -12,6 +12,18 @@ const on = (channel) => (cb) => {
 // cost when the switch is present.
 const inputTraceEnabled = ipcRenderer.sendSync('debug:inputTraceEnabled') === true
 
+// Multi-window (tab tear-off): a secondary window loads the same page with
+// ?hmWindow=secondary&wid=<n>; the main window has no query.
+const windowQuery = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '')
+  } catch {
+    return new URLSearchParams()
+  }
+})()
+const windowRole = windowQuery.get('hmWindow') === 'secondary' ? 'secondary' : 'main'
+const windowId = windowRole === 'secondary' ? (Number.parseInt(windowQuery.get('wid') || '', 10) || 0) : 0
+
 const api = {
   // dialogs
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
@@ -175,7 +187,37 @@ const api = {
   cancelAppClose: () => ipcRenderer.send('app:cancel-close'),
   // Renderer signals it has registered its main→renderer listeners (e.g.
   // open-paths); main then delivers any files/folders queued at launch (#36).
+  // A secondary window calls it too (main then routes opens / closes to it).
   appReady: () => ipcRenderer.send('app-ready'),
+
+  // Multi-window (tab tear-off). Tab payloads are the renderer's own JSON;
+  // main reads only `path`.
+  windowRole,
+  windowId,
+  // Drag of a tab: start → token (invoke); a TARGET window that got the drop
+  // on its tab bar reports the insert index; the SOURCE ends the drag and main
+  // decides: { result: 'none' | 'moved' | 'torn' }.
+  tabDragStart: (payload) => ipcRenderer.invoke('tab:dragStart', payload),
+  tabDropIndex: (token, index) => ipcRenderer.send('tab:dropIndex', token, index),
+  tabDragEnd: (token, info) => ipcRenderer.invoke('tab:dragEnd', token, info),
+  moveTabToNewWindow: (payload) => ipcRenderer.invoke('tab:toNewWindow', payload),
+  moveTabToMain: (payload) => ipcRenderer.invoke('tab:toMain', payload),
+  // { payloads: [payload], index: number | null }
+  onTabReceive: on('tab:receive'),
+  // Secondary window at start: { tabs: payload[], activeIndex }.
+  takeInitialTabs: () => ipcRenderer.invoke('window:initialTabs'),
+  // Paths this window should open itself; ones open in another window are
+  // shown there (focused) by main.
+  claimPaths: (paths) => ipcRenderer.invoke('window:claimPaths', paths),
+  // Secondary: { tabs: [{ path, title, untitledContent? }], activePath, openPaths };
+  // main: { openPaths } (routing only).
+  saveWindowSession: (state) => ipcRenderer.send('window:session', state),
+  // action: 'settings' | 'openFolder' | 'globalSearch' | 'home' | 'toggleSidebar'
+  windowToMain: (action) => ipcRenderer.send('window:toMain', action),
+  // Quit with secondary windows: main asks each to flush and report its
+  // unsaved count, quitPrepared({ dirty }).
+  onAppQuitPrepare: on('app-quit-prepare'),
+  quitPrepared: (info) => ipcRenderer.send('app:quit-prepared', info),
 
   // events from main
   onOpenPaths: on('open-paths'),
@@ -213,7 +255,9 @@ const api = {
     splitView: true,
     fileAttachments: true,
     cloudSync: true,
-    nativeDropOpen: true
+    nativeDropOpen: true,
+    // Tabs can be torn off into secondary windows and moved between them.
+    multiWindow: true
   }
 }
 

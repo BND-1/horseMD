@@ -80,14 +80,24 @@ export function useFileOps({
   initialFolderRoots,
   editorApis,
   sourceTextareas,
-  editorHosts
+  editorHosts,
+  watchFolders = true
 }) {
-  const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen })
+  const workspace = useWorkspace({ initialFolderRoots, setSidebarOpen, watchFolders })
   const { bumpRefresh } = workspace
 
   // --------------------------- open files --------------------------
   const openPaths = useCallback(async (paths, silent = false) => {
     if (!paths || !paths.length) return
+    // Multi-window: a file already open in another window is shown there
+    // (main focuses it) instead of being opened a second time here.
+    if (window.api?.claimPaths && paths.some((p) => !tabsRef.current.some((t) => t.path === p))) {
+      try {
+        const own = await window.api.claimPaths(paths)
+        if (Array.isArray(own)) paths = paths.filter((p) => own.includes(p) || tabsRef.current.some((t) => t.path === p))
+      } catch { /* main unavailable: open here */ }
+      if (!paths.length) return
+    }
     let lastId = null
     const seen = new Set()
     const remember = (fp) => {
@@ -318,6 +328,35 @@ export function useFileOps({
     },
     [commitAllLive, setTabs, setActiveId, liveTimersRef, liveContentRef, tRef]
   )
+
+  // A tab that moved to another window (tab tear-off): drop it here WITHOUT
+  // the unsaved-changes confirm — its content, dirty state included, lives on
+  // in the other window. The per-file watcher is released by the effect below.
+  const removeTabs = useCallback((ids) => {
+    const drop = new Set((ids || []).filter(Boolean))
+    if (!drop.size) return
+    for (const id of drop) {
+      const timer = liveTimersRef.current.get(id)
+      if (timer) clearTimeout(timer)
+      liveTimersRef.current.delete(id)
+      liveContentRef.current.delete(id)
+    }
+    const prevList = tabsRef.current
+    const next = prevList.filter((x) => !drop.has(x.id))
+    if (next.length === prevList.length) return
+    tabsRef.current = next
+    setTabs((prev) => prev.filter((x) => !drop.has(x.id)))
+    setActiveId((cur) => {
+      if (!drop.has(cur)) return cur
+      if (!next.length) return null
+      const idx = prevList.findIndex((x) => x.id === cur)
+      // The tab that took the removed one's place (or the one before it).
+      const remaining = prevList.slice(0, idx).filter((x) => !drop.has(x.id))
+      const after = prevList.slice(idx + 1).find((x) => !drop.has(x.id))
+      return (after || remaining[remaining.length - 1] || next[0]).id
+    })
+    setSplitId((cur) => (drop.has(cur) ? null : cur))
+  }, [tabsRef, setTabs, setActiveId, setSplitId, liveTimersRef, liveContentRef])
 
   // --- File operations shared by the tab menu and the sidebar menu, so both
   //     right-click menus offer the same actions on a file. ---
@@ -885,6 +924,7 @@ export function useFileOps({
     markRichEditPending,
     closeTab,
     closeOthers,
+    removeTabs,
     renameTabFile,
     commitTabRename,
     retargetTabs,

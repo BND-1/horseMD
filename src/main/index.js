@@ -19,6 +19,7 @@ import { registerGlobalSearchIpc } from './globalsearch.js'
 import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingPayload } from './menu-keybindings.js'
 import { loadThemeCss } from './theme-css.js'
 import { userCommandEnv, userCommandPath } from './shell-path.js'
+import { createWindowManager } from './windows.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -94,10 +95,32 @@ let inputTraceQueue = Promise.resolve()
 // The quit flow (before-quit → window close → the renderer's answer →
 // will-quit), written at once: a quit that never finished left no trace of
 // where it stopped (mini 2026-11-10: Cmd+Q and SIGTERM ignored).
-const traceQuit = (step, extra = {}) => {
+const traceKind = (kind, step, extra = {}) => {
   if (!inputTraceEnabled) return
-  try { appendFileSync(inputTracePath(), JSON.stringify({ pid: process.pid, t: Date.now(), kind: 'quit', step, ...extra }) + '\n', 'utf8') } catch { /* trace only */ }
+  try { appendFileSync(inputTracePath(), JSON.stringify({ pid: process.pid, t: Date.now(), kind, step, ...extra }) + '\n', 'utf8') } catch { /* trace only */ }
 }
+const traceQuit = (step, extra = {}) => traceKind('quit', step, extra)
+
+// Multi-window (tab tear-off): the registry of app windows, secondary
+// windows, tab transfer, their sessions and the quit preparation
+// (windows.js). `mainWindow` below stays the main window; it registers itself
+// in createWindow. Only webContents of registered app windows are trusted.
+const windows = createWindowManager({
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  isMainReady: () => rendererReady,
+  focusMain: () => focusMainWindow(),
+  windowOptions: (extra) => appWindowOptions(extra),
+  installGuards: (win) => installWindowGuards(win),
+  loadRenderer: (win, query) => loadAppRenderer(win, query),
+  getUserDataPath: () => app.getPath('userData'),
+  isQuitting: () => isQuitting,
+  traceQuit,
+  trace: (step, extra) => traceKind('window', step, extra),
+  backgroundTestMode,
+  onSessionEnd: () => updater.markSessionEnding()
+})
+const isAppSender = (event) => windows.isAppWindowSender(event)
 
 // Preload asks synchronously so normal builds do not install per-event input
 // listeners or send IPC traffic. The actual trace writer is also gated here,
@@ -111,7 +134,7 @@ ipcMain.handle('debug:inputTraceInfo', () => ({
   path: inputTraceEnabled ? inputTracePath() : null
 }))
 ipcMain.handle('debug:inputTrace', (event, entry) => {
-  if (!inputTraceEnabled || !mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  if (!inputTraceEnabled || !isAppSender(event)) return false
   let line
   try {
     const payload = entry && typeof entry === 'object' ? entry : { value: String(entry ?? '') }
@@ -147,16 +170,21 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_e, argv) => {
     const { files, folders } = extractArgs(argv)
-    focusMainWindow()
     // macOS keeps the process alive after its final window closes. A new launch
     // reaches this handler before a replacement renderer is ready, so queue its
     // paths instead of sending them into a missing (or still loading) window.
     if (!rendererReady) {
+      focusMainWindow()
       enqueueLaunch(files, folders)
       return
     }
+    // A file already open in a secondary window goes there (focused); the
+    // rest, and folders, go to the main window.
+    const { forMain, groups } = windows.planOpenPaths(files)
+    if (folders.length || forMain.length || !groups.length) focusMainWindow()
+    windows.deliverOpenPaths(groups)
     if (folders.length) sendToRenderer('open-folder', folders[0])
-    if (files.length) sendToRenderer('open-paths', files)
+    if (forMain.length) sendToRenderer('open-paths', forMain)
   })
 }
 
@@ -165,12 +193,25 @@ if (!gotLock) {
 // listener. Hold them until the renderer signals 'app-ready', then deliver —
 // otherwise the launched file is lost and the restored session shows instead.
 let pendingLaunch = { files: [], folders: [] }
-ipcMain.on('app-ready', () => {
+ipcMain.on('app-ready', (event) => {
+  // A secondary window's renderer: its own listeners are up (it gets no
+  // launch queue; its tabs come from window:initialTabs).
+  const entry = windows.entryOf(event)
+  if (entry?.role === 'secondary') {
+    windows.markReady(event)
+    return
+  }
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return
   rendererReady = true
   const { files, folders } = pendingLaunch
   pendingLaunch = { files: [], folders: [] }
+  const { forMain, groups } = windows.planOpenPaths(files)
+  windows.deliverOpenPaths(groups)
   if (folders.length) sendToRenderer('open-folder', folders[0])
-  if (files.length) sendToRenderer('open-paths', files)
+  if (forMain.length) sendToRenderer('open-paths', forMain)
+  windows.onMainReady()
+  // Secondary windows of the last run come back once the main one is up.
+  windows.restoreSaved({ skipPaths: files })
 })
 
 function enqueueLaunch(files = [], folders = []) {
@@ -243,13 +284,17 @@ function showMainWindow() {
     if (app.isReady()) createWindow()
     return
   }
+  // Secondary windows hidden with it (close to tray / show-hide) come back.
+  windows.showHiddenSecondaries()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
 }
 
+// Hiding HorseMD hides every window; showing the main one brings them back.
 function hideMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide()
+  windows.hideSecondaries()
 }
 
 function toggleMainWindow() {
@@ -259,7 +304,7 @@ function toggleMainWindow() {
   }
   // Visible AND focused -> hide. Anything else (hidden, minimized, or behind
   // another window) -> bring it to the front.
-  if (!mainWindow.isMinimized() && mainWindow.isVisible() && mainWindow.isFocused()) {
+  if (!mainWindow.isMinimized() && mainWindow.isVisible() && (mainWindow.isFocused() || windows.anyFocused())) {
     hideMainWindow()
   } else {
     showMainWindow()
@@ -389,9 +434,11 @@ async function openExternalUrl(url) {
   return { ok: true }
 }
 
-function createWindow() {
-  rendererReady = false
-  mainWindow = new BrowserWindow({
+// The BrowserWindow options of every app window (main and secondary): same
+// title bar per platform, same preload and webPreferences. `extra` carries a
+// secondary window's bounds.
+function appWindowOptions(extra = {}) {
+  return {
     width: 1280,
     height: 820,
     minWidth: 720,
@@ -418,8 +465,43 @@ function createWindow() {
       sandbox: false,
       spellcheck: true,
       backgroundThrottling: !backgroundTestMode
-    }
+    },
+    ...extra
+  }
+}
+
+// Security: never let a window navigate away from our own app content (e.g. a
+// malicious link in a Markdown file), nor open new windows. External URLs open
+// in the user's browser instead. Installed on every app window.
+function installWindowGuards(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void openExternalUrl(url)
+    return { action: 'deny' }
   })
+  win.webContents.on('will-navigate', (event, url) => {
+    const devUrl = process.env.ELECTRON_RENDERER_URL
+    if (devUrl && url.startsWith(devUrl)) return
+    event.preventDefault()
+    void openExternalUrl(url)
+  })
+}
+
+// The renderer of a secondary window: the same page with
+// ?hmWindow=secondary&wid=<n> (read by the preload).
+function loadAppRenderer(win, query) {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const url = new URL(process.env.ELECTRON_RENDERER_URL)
+    for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, value)
+    win.loadURL(url.href)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { query: query || {} })
+  }
+}
+
+function createWindow() {
+  rendererReady = false
+  mainWindow = new BrowserWindow(appWindowOptions())
+  windows.registerMain(mainWindow)
 
   mainWindow.once('ready-to-show', () => {
     if (!backgroundTestMode) focusMainWindow()
@@ -429,20 +511,7 @@ function createWindow() {
     // (issue #36).
   })
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void openExternalUrl(url)
-    return { action: 'deny' }
-  })
-
-  // Security: never let the window navigate away from our own app content
-  // (e.g. a malicious link in a Markdown file). Open external URLs in the
-  // user's browser instead.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const devUrl = process.env.ELECTRON_RENDERER_URL
-    if (devUrl && url.startsWith(devUrl)) return
-    event.preventDefault()
-    void openExternalUrl(url)
-  })
+  installWindowGuards(mainWindow)
 
   // Keep the renderer's maximize/restore button icon in sync with the real
   // window state (e.g. double-click drag-to-maximize, OS shortcuts).
@@ -464,7 +533,18 @@ function createWindow() {
     e.preventDefault()
     // Closing to the tray keeps the app (and every open tab) alive, so the
     // renderer only has to flush pending edits — no unsaved-changes confirm.
-    sendToRenderer('app-close-request', { closeToTray: closeToTray && !isQuitting })
+    const toTray = closeToTray && !isQuitting
+    if (toTray || !windows.hasSecondaries()) {
+      sendToRenderer('app-close-request', { closeToTray: toTray, scope: 'app', extraDirty: 0 })
+      return
+    }
+    // Closing the main window quits HorseMD. Secondary windows are asked
+    // first (they flush and report their unsaved count); the main renderer's
+    // one confirm then counts every window's unsaved documents.
+    if (windows.isPreparingQuit()) return
+    windows.prepareQuit().then(({ dirty }) => {
+      sendToRenderer('app-close-request', { closeToTray: false, scope: 'app', extraDirty: dirty })
+    })
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -482,6 +562,14 @@ function createWindow() {
 // macOS: opening a file from Finder
 app.on('open-file', (event, path) => {
   event.preventDefault()
+  // Already open in a secondary window: that window shows it.
+  if (rendererReady) {
+    const { groups } = windows.planOpenPaths([path])
+    if (groups.length) {
+      windows.deliverOpenPaths(groups)
+      return
+    }
+  }
   if (rendererReady && focusMainWindow()) {
     sendToRenderer('open-paths', [path])
   } else {
@@ -509,7 +597,9 @@ app.whenReady().then(() => {
     canGrantLocalFonts({
       permission,
       webContentsId: webContents?.id,
-      trustedWebContentsId: mainWindow?.webContents.id,
+      // Every app window (main and secondary) may enumerate fonts; preview
+      // workers and anything else may not.
+      trustedWebContentsId: windows.isAppWebContents(webContents) ? webContents.id : -1,
       requestingUrl,
       currentUrl: webContents?.getURL() || '',
       devRendererUrl: process.env.ELECTRON_RENDERER_URL,
@@ -544,7 +634,7 @@ app.whenReady().then(() => {
 })
 
 ipcMain.handle('permissions:allowLocalFonts', (event) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  if (!isAppSender(event)) return false
   localFontGrant = createLocalFontGrant(event.sender.id)
   return true
 })
@@ -560,6 +650,8 @@ app.on('before-quit', () => {
 // relaunch (or another app) can register the same combination again.
 app.on('will-quit', () => {
   traceQuit('will-quit')
+  // Secondary windows closed by this quit come back on the next launch.
+  windows.persistNow()
   globalShortcut.unregisterAll()
   // A downloaded update the user chose to install starts now (detached).
   updater.runPendingInstall()
@@ -577,7 +669,7 @@ registerDocumentIpc(ipcMain, {
   getMainWindow: () => mainWindow,
   getUserDataPath: () => app.getPath('userData'),
   markdownExtensions: MD_EXTS,
-  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+  isTrustedSender: isAppSender
 })
 
 registerFileSystemIpc(ipcMain, { shell, markdownPattern: MD_RE })
@@ -592,7 +684,7 @@ registerGlobalSearchIpc(ipcMain, { markdownPattern: MD_RE })
 
 registerSyncWorkspaceIpc(ipcMain, {
   getUserDataPath: () => app.getPath('userData'),
-  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id
+  isTrustedSender: isAppSender
 })
 registerSyncServiceIpc(ipcMain, {
   syncService: new SyncService({
@@ -611,14 +703,14 @@ registerSyncServiceIpc(ipcMain, {
       }
       : null
   }),
-  isTrustedSender: (event) => !!mainWindow && event.sender.id === mainWindow.webContents.id,
+  isTrustedSender: isAppSender,
   sendToRenderer
 })
 
 registerWatcherIpc(ipcMain, { sendToRenderer, markdownExtensions: MD_EXTS })
 
 ipcMain.handle('shell:openExternal', async (event, url) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+  if (!isAppSender(event)) {
     return { ok: false, error: 'Untrusted renderer.' }
   }
   return openExternalUrl(url)
@@ -626,7 +718,7 @@ ipcMain.handle('shell:openExternal', async (event, url) => {
 // options.markdownInApp (a link in a document, Typora parity): an existing
 // Markdown file is not opened by the system — the renderer opens it as a tab.
 ipcMain.handle('shell:openFileUrl', async (event, url, options = {}) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+  if (!isAppSender(event)) {
     return { ok: false, error: 'Untrusted renderer.' }
   }
   try {
@@ -646,7 +738,7 @@ ipcMain.handle('shell:openFileUrl', async (event, url, options = {}) => {
 })
 ipcMain.handle('shell:showInFolder', async (_e, path) => shell.showItemInFolder(path))
 ipcMain.handle('clipboard:writeText', (event, text) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
+  if (!isAppSender(event)) return false
   clipboard.writeText(String(text ?? ''))
   return true
 })
@@ -1025,15 +1117,17 @@ ipcMain.handle('image:inlineForSave', async (_e, content, targetPath) => {
 // ----------------------------- window controls -----------------------------
 // Custom min/max/close buttons (the native overlay is disabled so the renderer
 // can style their hover states). macOS keeps its native traffic lights.
-ipcMain.handle('window:minimize', () => mainWindow?.minimize())
-ipcMain.handle('window:toggleMaximize', () => {
-  if (!mainWindow) return false
-  if (mainWindow.isMaximized()) mainWindow.unmaximize()
-  else mainWindow.maximize()
-  return mainWindow.isMaximized()
+// Each acts on the window that asked (main or secondary).
+ipcMain.handle('window:minimize', (event) => windows.windowOfSender(event)?.minimize())
+ipcMain.handle('window:toggleMaximize', (event) => {
+  const win = windows.windowOfSender(event)
+  if (!win) return false
+  if (win.isMaximized()) win.unmaximize()
+  else win.maximize()
+  return win.isMaximized()
 })
-ipcMain.handle('window:close', () => mainWindow?.close())
-ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
+ipcMain.handle('window:close', (event) => windows.windowOfSender(event)?.close())
+ipcMain.handle('window:isMaximized', (event) => windows.windowOfSender(event)?.isMaximized() ?? false)
 // Settings › General. The preference itself is persisted by the renderer; main
 // only needs the live value.
 ipcMain.handle('window:setCloseToTray', (event, value) => {
@@ -1046,7 +1140,7 @@ ipcMain.handle('window:setCloseToTray', (event, value) => {
 // Command palette ("Show / Hide Window"): the renderer can't hide/show its own
 // window, so it asks main — the same toggle the tray icon and global shortcut use.
 ipcMain.handle('window:toggleVisibility', (event) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { ok: false }
+  if (!isAppSender(event)) return { ok: false }
   toggleMainWindow()
   return { ok: true }
 })
@@ -1063,8 +1157,9 @@ ipcMain.handle('window:setGlobalShortcuts', (event, payload) => {
 // This is intentionally a narrow bridge to Electron's existing View menu role.
 // DevTools remains desktop-only and renderer code never receives Node access.
 ipcMain.handle('window:toggleDevTools', (event) => {
-  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return false
-  mainWindow.webContents.toggleDevTools()
+  const win = windows.windowOfSender(event)
+  if (!win) return false
+  win.webContents.toggleDevTools()
   return true
 })
 
@@ -1081,10 +1176,19 @@ ipcMain.on('storage:flush', () => {
   try { session.defaultSession.flushStorageData() } catch { /* best effort */ }
 })
 
-ipcMain.on('app:confirm-close', () => {
-  traceQuit('renderer-confirmed', { isQuitting, closeToTray })
+ipcMain.on('app:confirm-close', (event) => {
+  const entry = windows.entryOf(event)
+  // A secondary window's own close confirm: only that window closes.
+  if (entry?.role === 'secondary') {
+    windows.confirmSecondaryClose(entry)
+    return
+  }
+  if (!entry) return
+  const multiWindow = windows.hasSecondaries()
+  traceQuit('renderer-confirmed', { isQuitting, closeToTray, ...(multiWindow ? { secondaries: true } : {}) })
   if (isQuitting) {
     allowClose = true
+    windows.allowAllToClose()
     app.quit()
     return
   }
@@ -1093,13 +1197,30 @@ ipcMain.on('app:confirm-close', () => {
     return
   }
   allowClose = true
+  // Closing the main window with secondary windows open quits HorseMD: they
+  // close too (their unsaved documents were in the confirm) and come back on
+  // the next launch.
+  if (multiWindow) {
+    traceQuit('main-close-quits')
+    isQuitting = true
+    windows.allowAllToClose()
+    app.quit()
+    return
+  }
   mainWindow?.close()
 })
 // The unsaved-changes confirm is a modal of this window: a quit from the Dock,
 // a SIGTERM or Cmd+Q in a minimized / hidden / background window asked it
 // where nobody saw it, and the app seemed to ignore the quit (mini
 // 2026-11-10). Bring the window forward first, as document apps do.
-ipcMain.handle('app:show-for-confirm', () => {
+ipcMain.handle('app:show-for-confirm', (event) => {
+  const entry = windows.entryOf(event)
+  if (entry?.role === 'secondary') {
+    const shown = windows.focusEntry(entry)
+    if (shown && !backgroundTestMode && process.platform === 'darwin') app.focus({ steal: true })
+    traceQuit('window-shown-for-confirm', { shown, wid: entry.wid })
+    return shown
+  }
   const shown = focusMainWindow()
   if (shown && !backgroundTestMode && process.platform === 'darwin') app.focus({ steal: true })
   traceQuit('window-shown-for-confirm', { shown })
@@ -1107,7 +1228,13 @@ ipcMain.handle('app:show-for-confirm', () => {
 })
 // The user cancelled the close. Clear the quit intent so a later window-close
 // (e.g. the macOS traffic light) isn't mistaken for a quit.
-ipcMain.on('app:cancel-close', () => {
+ipcMain.on('app:cancel-close', (event) => {
+  const entry = windows.entryOf(event)
+  // A secondary window kept open: nothing app-wide changes.
+  if (entry?.role === 'secondary') {
+    windows.cancelSecondaryClose(entry)
+    return
+  }
   traceQuit('renderer-cancelled')
   isQuitting = false
   updater.cancelPendingInstall()
@@ -1154,9 +1281,11 @@ ipcMain.handle('menu:getKeybindings', async () => ({ ...menuKeybindings }))
 
 ipcMain.handle('menu:getSnapshot', async () => getMenuSnapshot())
 
-// Menu actions are forwarded to renderer as commands.
+// Menu actions are forwarded to renderer as commands: to the focused app
+// window (main when none); commands for the main window's own surfaces
+// (folder, sidebar panes, global search) always go to main (windows.js).
 function menuCmd(cmd) {
-  return () => sendToRenderer('menu', cmd)
+  return (_item, focusedWindow) => windows.sendMenu(cmd, focusedWindow)
 }
 
 let menuKeybindings = {}

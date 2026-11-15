@@ -405,11 +405,27 @@ export function useSourceModeSwitch({
     }
   }, [activeIdRef, editorApis, editorHostRef, findStateRef, focusedTabRef, richLoadingRef, sourceMode])
 
+  // A tab moved in from another window (tab tear-off) keeps its view: put it
+  // straight into source mode without a caret/viewport transition (the tab's
+  // restoreOffset / restoreScrollTop place it once it mounts).
+  const setTabSourceMode = useCallback((id, on) => {
+    if (!id) return
+    setSourceModeIds((prev) => {
+      if (prev.has(id) === !!on) return prev
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
   return {
     sourceMode,
+    sourceModeIds,
     sourceRef,
     sourceTextareas,
     sourceEditedIds,
-    toggleSource
+    toggleSource,
+    setTabSourceMode
   }
 }

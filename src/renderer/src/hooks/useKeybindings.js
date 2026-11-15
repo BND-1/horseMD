@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  KEYBINDINGS_KEY,
   getEffectiveKeybindingMap,
   loadKeybindingState,
   resetAllKeybindings,
@@ -34,6 +35,18 @@ export function useKeybindings() {
   const resetAll = useCallback(() => {
     persist(resetAllKeybindings())
   }, [persist])
+
+  // Another HorseMD window (tab tear-off) changed the keybindings: adopt them.
+  // Saving happens only on an explicit change, so adopting never echoes.
+  useEffect(() => {
+    const onStorage = (event) => {
+      if (event.key !== KEYBINDINGS_KEY) return
+      if (event.storageArea && event.storageArea !== globalThis.localStorage) return
+      setState(loadKeybindingState())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const effectiveKeybindings = useMemo(
     () => getEffectiveKeybindingMap(state.overrides),

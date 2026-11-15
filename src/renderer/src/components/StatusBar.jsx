@@ -352,6 +352,8 @@ export default function StatusBar({
   autoSync,
   syncAuto,
   onOpenSync,
+  // A secondary window (tab tear-off) shows no sync status: main owns sync.
+  showSync = true,
   updateReady = null,
   onOpenUpdate,
   theme,
@@ -493,7 +495,7 @@ export default function StatusBar({
                 <Icon name="sparkle" size={14} /> {t('update.quietReady', { v: updateReady.latest })}
               </button>
             )}
-            <SyncStatusItem sync={sync} autoSync={autoSync} syncAuto={syncAuto} onOpen={onOpenSync} />
+            {showSync && <SyncStatusItem sync={sync} autoSync={autoSync} syncAuto={syncAuto} onOpen={onOpenSync} />}
             {tab && <StatsControl stats={s} />}
             {onToggleReadingMode && (
               <button

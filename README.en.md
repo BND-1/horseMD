@@ -51,6 +51,7 @@ renderer for iOS and Android, and the whole interface speaks both **English and 
 **Beyond Typora**
 
 - **Tabs** — many files in one window (`Ctrl/Cmd+Tab` to cycle); a `+` in the top bar for a new doc; right-click a tab to copy its path / name, reveal it in Finder/Explorer, or close others
+- **Tear off windows** — drag a tab out of the tab bar to give it its own window, drop it on another window's tab bar to merge it back; the window with the sidebar is the main one, closing it quits, and the windows come back next launch
 - **Split view** — two documents side by side, both editable (right-click a tab → "Open in Split", or the split button in the top bar; close with the ✕ on the right pane)
 - **Adjustable editor width** — status-bar presets (Narrow/Medium/Wide/Full) + a fine-tune slider
 - **Document and code fonts** — choose separately from installed system fonts, with search and live preview

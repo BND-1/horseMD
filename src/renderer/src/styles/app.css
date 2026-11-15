@@ -485,6 +485,11 @@ button:focus-visible,
 .tab:active { background: var(--active); }
 /* Drag-reorder indicator: accent left border on the tab being hovered (#31). */
 .tab.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
+/* Multi-window (tab tear-off): a secondary window has no activity bar or
+   sidebar — the grid's left column collapses, like on phones. */
+.app.hm-secondary-window { --activity-bar-w: 0; }
+/* A tab from another window dropped after the last tab (multi-window). */
+.tab.drag-over-after { box-shadow: inset -2px 0 0 var(--accent); }
 .activity-item:active { background: var(--active); transform: scale(0.93); }
 .icon-btn:active { background: var(--active); transform: scale(0.92); }
 .tree-row:active { background: var(--active); opacity: 0.9; }

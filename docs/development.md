@@ -112,6 +112,21 @@ Linux job 安装桌面构建依赖，打包后执行 `dpkg-deb --info`；由于 
 
 ## 自动化测试：CDP 端到端验证
 
+### 测试分档（2026-11-15 起）
+
+全量 UI 回归要跑一个多小时，不是每次改动都跑：
+
+| 档位 | 什么时候 | 跑什么 |
+|---|---|---|
+| 小改动 | 只改一个功能点 | 这个功能自己的测试 + 直接相关的几个（例如粘贴改动跑三个粘贴测试） |
+| 核心改动 | 编辑器核心、富文本写回源码（reprint / serializer / validator）、App.jsx 外壳、主进程的启动 / 退出 / 会话 | `npm run test:ui-regression`（`HM_KEEP_GOING=1` 跑完全部再报失败；`HM_FROM=<脚本名>` 从某一项接着跑） |
+| 发版前 | 打 tag 之前 | 全量回归 + Windows 上的那一批 |
+
+mini 每天 03:30 自动跑一遍（`scripts/nightly-rich-source.mjs`，launchd
+`com.horsemd.nightly-rich-source`，`scripts/nightly-install.sh` 安装）：组合标记、
+规格语料、随机 fuzz 和全量 UI 回归，结果在
+`~/Library/Logs/HorseMD-nightly/<日期>.md`。每次开工先看最近一份。
+
 项目以 **Chrome DevTools Protocol** 端到端验证为主，同时为可纯函数验证的源码映射提供快速 Node 单测。CDP 连进运行中的 Electron，真实派发鼠标/键盘事件并回读 DOM，测的是"用户真实体验"。
 
 自动化默认通过 `launchBuiltElectron()` 加入 `--horsemd-test-background`，主

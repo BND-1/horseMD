@@ -189,6 +189,8 @@ export const STRINGS = {
     'confirm.deleteForever': 'Delete "{name}"? This cannot be undone.',
     'confirm.closeUnsaved': '"{name}" has unsaved changes. Close anyway?',
     'confirm.quitUnsaved': 'You have unsaved changes. Quit anyway?',
+    'confirm.quitUnsavedCount': '{n} documents have unsaved changes. Quit anyway?',
+    'confirm.closeWindowUnsaved': 'This window has {n} unsaved document(s). Close it anyway?',
     'error.fileMissing': '"{name}" no longer exists — it may have been moved or deleted. Removed it from Recent.',
     'error.openFailed': 'Could not open "{name}".',
     'warning.externalChangedUnsaved': '“{name}” was changed elsewhere (in another app, or on another device and synced here). Your unsaved edits here are kept. Saving merges both sets of changes; if both changed the same lines, your version is saved as a separate conflict copy and the other version is not overwritten.',
@@ -1062,6 +1064,9 @@ export const STRINGS = {
     'tab.openRight': 'Open in Split (Right)',
     'tab.close': 'Close',
     'tab.closeOthers': 'Close Others',
+    'tab.moveToNewWindow': 'Move to New Window',
+    'tab.moveToMain': 'Move to Main Window',
+    'tab.moveFailed': 'This document cannot be moved right now: its rich text could not be mapped to source safely. Save it first, then try again.',
     'tab.noPath': 'Unsaved file — save it first',
 
     // split view
@@ -1276,6 +1281,8 @@ export const STRINGS = {
     'confirm.deleteForever': '删除“{name}”？删除后无法恢复。',
     'confirm.closeUnsaved': '“{name}”有未保存的更改，仍要关闭吗？',
     'confirm.quitUnsaved': '有未保存的更改，仍要退出吗？',
+    'confirm.quitUnsavedCount': '有 {n} 个文档未保存，仍要退出吗？',
+    'confirm.closeWindowUnsaved': '这个窗口有 {n} 个未保存的文档，仍要关闭吗？',
     'error.fileMissing': '“{name}”已不存在——可能被移动或删除了。已从“最近打开”中移除。',
     'error.openFailed': '无法打开“{name}”。',
     'warning.externalChangedUnsaved': '“{name}”在别处被修改了（其他应用，或另一台设备同步过来的）。你在这里未保存的内容仍然保留。保存时会自动合并两边的修改；如果改到了同一处，你的版本会另存为一份冲突副本，不会覆盖另一边的内容。',
@@ -2142,6 +2149,9 @@ export const STRINGS = {
     'tab.openRight': '在右侧分屏打开',
     'tab.close': '关闭',
     'tab.closeOthers': '关闭其他',
+    'tab.moveToNewWindow': '移到新窗口',
+    'tab.moveToMain': '移回主窗口',
+    'tab.moveFailed': '暂时无法移动这个文档：当前富文本编辑无法安全映射到源码。请先保存，再重试。',
     'tab.noPath': '未保存的文件，请先保存',
 
     'split.toggle': '分屏',

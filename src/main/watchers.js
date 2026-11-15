@@ -53,8 +53,55 @@ export function registerWatcherIpc(ipcMain, {
     return true
   })
 
-  ipcMain.handle('watch:file', async (_event, path) => {
-    if (fileWatchers.has(path)) return true
+  // One polling watcher per file, shared by every window that has it open
+  // (multi-window: the same file can be watched by the main window and a
+  // secondary window for a moment while a tab moves). Owners are webContents
+  // ids — watching twice from one window is a no-op and one unwatch stops it,
+  // as before. `file:changed` goes to each owner; a window that goes away
+  // drops its watches. A call without a sender (tests) is owner 0 and is
+  // answered through sendToRenderer.
+  const trackedSenders = new WeakSet()
+  const ownerOf = (event) => {
+    const sender = event?.sender
+    return sender && typeof sender.id === 'number' ? { key: sender.id, sender } : { key: 0, sender: null }
+  }
+  const closeFileWatcher = (path, entry) => {
+    clearTimeout(entry.timer)
+    fileWatchers.delete(path)
+    return Promise.resolve(entry.watcher.close()).catch(() => {})
+  }
+  const dropOwner = (key) => {
+    for (const [path, entry] of [...fileWatchers]) {
+      if (!entry.owners.delete(key)) continue
+      if (!entry.owners.size) void closeFileWatcher(path, entry)
+    }
+  }
+  const trackSender = (sender) => {
+    if (!sender || typeof sender.once !== 'function' || trackedSenders.has(sender)) return
+    trackedSenders.add(sender)
+    const key = sender.id
+    sender.once('destroyed', () => dropOwner(key))
+  }
+  const deliver = (sender, channel, payload) => {
+    if (!sender) {
+      sendToRenderer(channel, payload)
+      return
+    }
+    try {
+      if (!sender.isDestroyed()) sender.send(channel, payload)
+    } catch {
+      /* window closing */
+    }
+  }
+
+  ipcMain.handle('watch:file', async (event, path) => {
+    const { key, sender } = ownerOf(event)
+    trackSender(sender)
+    const existing = fileWatchers.get(path)
+    if (existing) {
+      existing.owners.set(key, sender)
+      return true
+    }
     const watcher = fileWatcherFactory.watch(path, {
       ignoreInitial: true,
       usePolling: true,
@@ -62,7 +109,7 @@ export function registerWatcherIpc(ipcMain, {
       binaryInterval: 1200,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }
     })
-    const entry = { watcher, timer: null }
+    const entry = { watcher, timer: null, owners: new Map([[key, sender]]) }
     const notify = () => {
       clearTimeout(entry.timer)
       entry.timer = setTimeout(async () => {
@@ -72,7 +119,7 @@ export function registerWatcherIpc(ipcMain, {
         } catch {
           /* file may have been removed */
         }
-        sendToRenderer('file:changed', { path, mtimeMs })
+        for (const owner of entry.owners.values()) deliver(owner, 'file:changed', { path, mtimeMs })
       }, 80)
     }
     watcher.on('change', notify).on('add', notify)
@@ -81,12 +128,11 @@ export function registerWatcherIpc(ipcMain, {
     return true
   })
 
-  ipcMain.handle('watch:unfile', async (_event, path) => {
+  ipcMain.handle('watch:unfile', async (event, path) => {
     const entry = fileWatchers.get(path)
     if (entry) {
-      clearTimeout(entry.timer)
-      await entry.watcher.close()
-      fileWatchers.delete(path)
+      entry.owners.delete(ownerOf(event).key)
+      if (!entry.owners.size) await closeFileWatcher(path, entry)
     }
     return true
   })

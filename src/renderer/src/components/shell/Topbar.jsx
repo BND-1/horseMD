@@ -34,11 +34,17 @@ export default function Topbar({
   onToggleReadOnly,
   onToggleImmersive,
   onToggleSplit,
-  onOpenPalette
+  onOpenPalette,
+  // Multi-window (tab tear-off), see Tabs.jsx.
+  onBuildTransfer,
+  onTransferred,
+  onMoveToNewWindow,
+  onMoveToMain,
+  isSecondary = false
 }) {
   return (
     <div className="topbar">
-      {isMobile && (
+      {isMobile && !isSecondary && (
         <button
           className="icon-btn drag-no hm-menu-btn"
           title={t('cmd.files')}
@@ -66,6 +72,11 @@ export default function Topbar({
         onShowHistory={onShowHistory}
         onReorder={onReorder}
         effectiveKeybindings={effectiveKeybindings}
+        onBuildTransfer={onBuildTransfer}
+        onTransferred={onTransferred}
+        onMoveToNewWindow={onMoveToNewWindow}
+        onMoveToMain={onMoveToMain}
+        isSecondary={isSecondary}
       />
       <div className="topbar-spacer" />
       {/* The lock is about the open document: not on Home or Settings. */}

@@ -237,6 +237,10 @@ const standalone = [
     script: 'scripts/test-plain-text-paste-ui.mjs'
   },
   {
+    name: 'Multi-window: move / drag a tab into a new window or another window, OS open routing, close and quit confirms, restore',
+    script: 'scripts/test-multi-window-ui.mjs'
+  },
+  {
     name: '<kbd> / <u> / <b> keys and tags are editable in rich mode, bytes kept, adjacent keys stay two',
     script: 'scripts/test-kbd-edit-ui.mjs'
   },

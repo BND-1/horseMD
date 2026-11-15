@@ -311,6 +311,32 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   built on Ubuntu, pass `dpkg-deb --info`, and be uploaded with
   `gh release upload "$TAG" dist/*.deb --clobber` after validation.
   `gh release create` sometimes leaves a draft (proxy flakiness) — check + `gh release edit --draft=false` to publish.
+- **Multi-window (tab tear-off, 2026-11-15; user decisions)**: one MAIN
+  window + secondary windows (`src/main/windows.js` registry; the renderer
+  reads `window.api.windowRole`, `?hmWindow=secondary&wid=n`). Only main has
+  the activity bar, sidebar, settings, Welcome, update UI and sync; a
+  secondary = tab bar + editor + status bar (`isSecondary` in App.jsx;
+  settings / folder / search actions → `windowToMain`). Gestures: a tab
+  drag carries ONLY `application/x-horsemd-tab` (never text/plain — an
+  editor drop would type it); main decides on `tab:dragEnd` from the cursor
+  (`screen.getCursorScreenPoint()`, tests set `__hmTestCursorPoint`):
+  dropped on another window (its tab bar reports `tab:dropIndex`) → moved
+  there; inside the source's tab-bar band → nothing (reorder); elsewhere →
+  new window at the cursor (a secondary's only tab moves its window).
+  Tab menu 移到新窗口 / 移回主窗口. The payload carries content, saved
+  content, source mode, caret offset and scroll (unsaved edits move; nothing
+  is written). Closing a secondary closes its tabs (one confirm for its
+  unsaved ones; a secondary with no tab closes); closing main = quit: main
+  sends `app-quit-prepare` to every secondary, sums their `dirty`, ONE confirm
+  in main (`extraDirty`; trace steps quit-prepare-sent / quit-prepared /
+  secondary-*). OS opens go to the window already holding the path, else
+  main; every `openPaths` asks `window:claimPaths` first, so a file is never
+  open in two windows. Secondaries persist in `userData/windows.json` (tabs,
+  active tab, bounds) and come back next launch; only main writes
+  `minimd.session.v1`; settings / keybindings / appearance follow the
+  `storage` event. Trust = any registered app window's webContents; dialogs
+  parent to the sender's window; file watchers are per sender. Mobile is
+  untouched (main role only). Locked by `test:multi-window-ui`.
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,
   not on Home). The two panes are **flex siblings inside `.editor-area`** (a flex
@@ -1799,11 +1825,16 @@ CommonMark / GFM spec examples: unchanged reprint is exact, single-character
 edits reprint and stay inside their block). Run both after touching the
 serializer, the parsers' remark plugins, the validator or the reprint engine.
 
+Test tiers (docs/development.md): a small change runs its own and the
+directly related tests; a core change (editor core, reprint / serializer /
+validator, App.jsx shell, main lifecycle / quit / session) or a release runs
+the full `test:ui-regression` (`HM_KEEP_GOING=1`, resume with `HM_FROM=`).
+
 Nightly (mini, launchd `com.horsemd.nightly-rich-source`, 03:30;
 `scripts/nightly-install.sh` / `--remove`): `scripts/nightly-rich-source.mjs`
 builds the LAST COMMIT in its own worktree and runs the full combination test
-and the fuzzer (FORMAT + PASTE) with seeds from the date, plus the spec
-corpus; summary in `~/Library/Logs/HorseMD-nightly/<date>.md`. Read it at the
+and the fuzzer (FORMAT + PASTE) with seeds from the date, the spec
+corpus and the full UI regression; summary in `~/Library/Logs/HorseMD-nightly/<date>.md`. Read it at the
 start of a session and triage new families.
 
 Rich/source sync work: run the seeded fuzzer (`npm run fuzz:rich-source-ui`,

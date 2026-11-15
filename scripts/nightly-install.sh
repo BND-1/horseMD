@@ -48,6 +48,9 @@ cat > "$PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+# launchd refuses a plist others can write ("Bootstrap failed: 5"); a
+# umask of 000 (some shells) leaves it 666.
+chmod 644 "$PLIST"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 echo "installed $LABEL: daily 03:30, results in $LOGS"

@@ -148,7 +148,9 @@ export function createMenuHandlers({
   review,
   requestPdfExport,
   requestHtmlExport,
-  requestPandocExport
+  requestPandocExport,
+  openSettings,
+  isSecondary = false
 }) {
   const exportRendered = async (kind) => {
     const id = pickEditableId()
@@ -248,7 +250,24 @@ export function createMenuHandlers({
     reviewCopyPrompt: () => review.copyReviewPrompt(),
     reviewAcceptAll: () => review.applyReviewDecisionToActive('accept'),
     reviewRejectAll: () => review.applyReviewDecisionToActive('reject'),
-    toggleReadingMode: () => toggleReadingMode?.()
+    toggleReadingMode: () => toggleReadingMode?.(),
+    // Settings page (window:toMain('settings') from a secondary window sends
+    // the main window `menu` 'openSettings' / 'settings').
+    openSettings: () => openSettings?.(),
+    settings: () => openSettings?.()
+  }
+  // A secondary window (tab tear-off) has no sidebar, Settings page, Home or
+  // workspace: these commands bring the main window forward and run there.
+  if (isSecondary) {
+    const toMain = (action) => () => window.api.windowToMain?.(action)
+    handlers.home = toMain('home')
+    handlers.openFolder = toMain('openFolder')
+    handlers.globalSearch = toMain('globalSearch')
+    handlers.toggleSidebar = toMain('toggleSidebar')
+    handlers.toggleFiles = toMain('toggleFiles')
+    handlers.toggleOutline = toMain('toggleOutline')
+    handlers.openSettings = toMain('settings')
+    handlers.settings = toMain('settings')
   }
   for (const name of READ_ONLY_BLOCKED_HANDLERS) {
     const run = handlers[name]
@@ -283,7 +302,8 @@ export function useGlobalKeys({
   activeTabKind,
   setActiveId,
   setHome,
-  effectiveKeybindings
+  effectiveKeybindings,
+  onWindowCloseConfirmed
 }) {
   const keybindings = effectiveKeybindings || getEffectiveKeybindingMap()
   const platform = window.api?.platform || (navigator.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32')
@@ -297,7 +317,7 @@ export function useGlobalKeys({
     // A folder arriving from Explorer's "Open with HorseMD" folder menu: add it
     // to the active workspace (multi-root). Never open a relative path.
     const offFolder = window.api.onOpenFolderPath?.((dir) => {
-      if (!dir || !isAbsolutePath(dir)) return
+      if (!dir || !isAbsolutePath(dir) || !addFolderByPath) return
       addFolderByPath(dir)
       setSidebarMode('files')
       setSidebarOpen(true)
@@ -312,12 +332,18 @@ export function useGlobalKeys({
       flushPendingRichEdits?.()
       flushSession()
       const dirtyTabs = tabsRef.current.filter(isTabDirty)
-      const dirty = dirtyTabs.length > 0
+      // Multi-window (tab tear-off): closing the main window quits HorseMD and
+      // main adds the unsaved documents of every other window (`extraDirty`);
+      // closing a secondary window (`scope: 'window'`) asks about its own.
+      const windowScope = payload?.scope === 'window'
+      const extraDirty = windowScope ? 0 : Math.max(0, Number(payload?.extraDirty) || 0)
+      const dirtyCount = dirtyTabs.length + extraDirty
+      const dirty = dirtyCount > 0
       // The quit flow in the input trace (a quit that never finished left no
       // trace of why: an unanswered confirm, or no answer at all).
       const trace = (step) => {
         if (window.api.inputTraceEnabled !== true) return
-        window.api.writeInputTrace?.({ t: Date.now(), kind: 'quit', step, closeToTray: Boolean(payload?.closeToTray), dirty: dirtyTabs.length, dirtyKinds: dirtyTabs.map((tab) => (tab.path ? 'file' : 'untitled')) })
+        window.api.writeInputTrace?.({ t: Date.now(), kind: 'quit', step, closeToTray: Boolean(payload?.closeToTray), dirty: dirtyTabs.length, dirtyKinds: dirtyTabs.map((tab) => (tab.path ? 'file' : 'untitled')), ...(payload?.scope ? { scope: payload.scope } : {}), ...(extraDirty ? { extraDirty } : {}) })
       }
       trace('close-request-received')
       // Closing to the tray only hides the window: every tab stays alive, so
@@ -329,8 +355,14 @@ export function useGlobalKeys({
         try { await window.api.showForConfirm?.() } catch { /* best effort */ }
         trace('confirm-shown')
       }
-      if (!ask || window.confirm(tRef.current('confirm.quitUnsaved'))) {
+      const question = windowScope
+        ? tRef.current('confirm.closeWindowUnsaved', { n: dirtyCount })
+        : extraDirty > 0
+          ? tRef.current('confirm.quitUnsavedCount', { n: dirtyCount })
+          : tRef.current('confirm.quitUnsaved')
+      if (!ask || window.confirm(question)) {
         trace('confirmed')
+        if (windowScope) onWindowCloseConfirmed?.()
         window.api.confirmAppClose()
       } else {
         trace('cancelled')
@@ -343,7 +375,7 @@ export function useGlobalKeys({
       offClose?.()
       window.removeEventListener('mm:openFolder', onOpenFolderEvt)
     }
-  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushPendingRichEdits, flushSession, tabsRef, tRef, handlers, activeTabKind])
+  }, [openFolder, isAbsolutePath, addFolderByPath, setSidebarMode, setSidebarOpen, commitAllLive, flushPendingRichEdits, flushSession, tabsRef, tRef, handlers, activeTabKind, onWindowCloseConfirmed])
 
   // Tab cycling uses the user keybinding map. The defaults intentionally remain
   // Ctrl+Tab / Ctrl+Shift+Tab on macOS to preserve the historical behavior.

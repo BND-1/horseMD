@@ -28,7 +28,7 @@ const embedStagedImages = async (source, directory) => {
   return { ...source, html }
 }
 
-export function createHtmlExportService({ getMainWindow }) {
+export function createHtmlExportService({ getMainWindow, getParentWindow = () => getMainWindow() }) {
   const previews = new Map()
   const trackedSenders = new WeakSet()
 
@@ -90,7 +90,7 @@ export function createHtmlExportService({ getMainWindow }) {
     // Per-file: default to this document's own folder, or the folder it was
     // last saved to. Other files keep their own defaults.
     const startDir = await getSaveDirFor(preview.sourcePath)
-    const result = await dialog.showSaveDialog(getMainWindow(), {
+    const result = await dialog.showSaveDialog(getParentWindow(event), {
       defaultPath: startDir ? join(startDir, fileName) : fileName,
       filters: [{ name: 'HTML', extensions: ['html'] }]
     })

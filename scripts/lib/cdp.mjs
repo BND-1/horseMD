@@ -3,19 +3,21 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 export async function connectCdp({
   port = Number(process.env.CDP_PORT || 9222),
   attempts = 40,
-  intervalMs = 250
+  intervalMs = 250,
+  // Which page target (several windows): default the first page.
+  match = () => true
 } = {}) {
   const base = `http://127.0.0.1:${port}`
   let targets = []
   for (let i = 0; i < attempts; i += 1) {
     try {
       targets = await (await fetch(`${base}/json/list`)).json()
-      if (targets.some((target) => target.type === 'page')) break
+      if (targets.some((target) => target.type === 'page' && match(target))) break
     } catch {}
     await sleep(intervalMs)
   }
 
-  const page = targets.find((target) => target.type === 'page')
+  const page = targets.find((target) => target.type === 'page' && match(target))
   if (!page) throw new Error(`No Electron page found on CDP port ${port}`)
 
   const ws = new WebSocket(page.webSocketDebuggerUrl)
