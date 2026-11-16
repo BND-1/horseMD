@@ -91,7 +91,9 @@ export class ConnectionRegistry {
     const trimmedName = String(name || '').trim()
     if (!trimmedName) throw new Error('请填写连接名称。')
     if (!String(endpoint || '').trim()) throw new Error('请填写 WebDAV 地址。')
-    if (!String(password || '')) throw new Error('请填写 WebDAV 密码或应用专用密码。')
+    // A password is optional: a NAS / test server may allow anonymous WebDAV
+    // (rclone, Remotely Save); the provider sends Basic auth only when a
+    // username or password is given.
     const normalizedUserAgent = normalizeUserAgent(userAgent)
     const provider = this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent: normalizedUserAgent })
     const check = await provider.testConnection()
@@ -169,7 +171,6 @@ export class ConnectionRegistry {
       const password = String(config.password || '') || credential?.password
       if (!name) throw new Error('请填写连接名称。')
       if (!endpoint) throw new Error('请填写 WebDAV 地址。')
-      if (!password) throw new Error('请填写 WebDAV 密码或应用专用密码。')
       const allowInsecure = Boolean(config.allowInsecure)
       const userAgent = normalizeUserAgent(config.userAgent ?? current.userAgent)
       const check = await this.createWebDavProvider({ endpoint, username, password, allowInsecure, userAgent }).testConnection()
@@ -232,8 +233,8 @@ export class ConnectionRegistry {
     const credential = await this.credentialStore.get(saved.credentialId)
     const connection = await this.withAccessKeyId(saved, credential)
     if (connection.type === 'webdav') {
-      if (!credential?.password) throw new Error('云端密码不可用，请重新连接。')
-      return this.createWebDavProvider({ ...connection, ...options, password: credential.password })
+      if (!credential) throw new Error('云端密码不可用，请重新连接。')
+      return this.createWebDavProvider({ ...connection, ...options, password: credential.password || '' })
     }
     if (connection.type === 's3') {
       if (!credential?.secretAccessKey) throw new Error('S3 密钥不可用，请重新连接。')

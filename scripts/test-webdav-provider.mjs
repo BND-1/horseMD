@@ -54,5 +54,12 @@ assert.equal(
   '"old"'
 )
 assert.throws(() => new WebDavProvider({ endpoint: 'http://dav.example.test', request: async () => response(200) }), /HTTPS/)
+// Plain http is fine on this machine / the local network (NAS, test server).
+for (const endpoint of ['http://127.0.0.1:8091/', 'http://localhost/dav/', 'http://192.168.1.20:5005/', 'http://10.0.0.5/', 'http://172.20.1.1/', 'http://169.254.77.103:8091/', 'http://100.90.139.40:8091/', 'http://nas.local/', 'http://[::1]:8080/']) {
+  assert.doesNotThrow(() => new WebDavProvider({ endpoint, request: async () => response(200) }), endpoint)
+}
+for (const endpoint of ['http://8.8.8.8/', 'http://172.32.0.1/', 'http://100.128.0.1/', 'http://nas.local.example.com/']) {
+  assert.throws(() => new WebDavProvider({ endpoint, request: async () => response(200) }), /HTTPS/, endpoint)
+}
 
-console.log('PASS WebDAV provider: XML, auth, paths, transfer, conditional writes and HTTPS guard')
+console.log('PASS WebDAV provider: XML, auth, paths, transfer, conditional writes and HTTPS guard (http only on the local network)')

@@ -144,7 +144,7 @@ export function ConnectionForm({ connection = null, initial = null, type: reques
       />
       <ConnectionField
         id={fieldId('password')}
-        required={!editing}
+        // Optional: a NAS / test WebDAV may allow anonymous access.
         type="password"
         label={t('sync.password')}
         placeholder={credentialExample('sync.webdavPasswordExample')}

@@ -42,10 +42,30 @@ export function parsePropfind(xml) {
   })
 }
 
+// Plain http only stays on this machine / the local network (a NAS at home,
+// a test server): localhost, loopback, private IPv4 ranges, link-local,
+// Tailscale's 100.64/10, *.local and IPv6 loopback / ULA / link-local.
+// Anything on the public internet must be https (the password would cross
+// the internet in clear text).
+export function isLocalNetworkHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '')
+  if (!host) return false
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)
+  }
+  return host === '::1' || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)
+}
+
 function normalizeEndpoint(endpoint, { allowInsecure = false } = {}) {
   const url = new URL(endpoint)
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('WebDAV 地址必须以 http:// 或 https:// 开头。')
-  if (url.protocol !== 'https:' && !allowInsecure) throw new Error('WebDAV 连接必须使用 HTTPS。')
+  if (url.protocol !== 'https:' && !allowInsecure && !isLocalNetworkHost(url.hostname)) {
+    throw new Error('公网上的 WebDAV 必须使用 HTTPS（http 只能连本机或局域网里的服务器）。')
+  }
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/`
   return url
 }

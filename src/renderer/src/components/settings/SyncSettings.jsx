@@ -53,7 +53,9 @@ function SyncPlanPreview({ preview, onConfirm, onClose, busy = false, t }) {
       </div>
       <p className="sync-plan-preview-note">{preview.massDelete
         ? t('sync.massDeleteNotice', { n: preview.data.summary.delete })
-        : preview.requiresConfirmation ? t('sync.riskNotice') : t('sync.previewNotice')}</p>
+        : preview.strategy === 'push' ? t('sync.pushNotice')
+          : preview.strategy === 'pull' ? t('sync.pullNotice')
+            : preview.requiresConfirmation ? t('sync.riskNotice') : t('sync.previewNotice')}</p>
       {changes.length > 0 && <div className="sync-preview-changes">
         <div className="sync-preview-changes-title">{t('sync.previewChanges')}</div>
         <ul>
@@ -257,7 +259,9 @@ export default function SyncSettings({
   const folderName = (rootPath, entry = null) => (isLibrary(rootPath) ? t('sync.mobile.libraryName') : entry?.name || baseName(rootPath))
   const folderPath = (rootPath) => (isLibrary(rootPath) ? t('sync.mobile.libraryWhere') : rootPath)
   const connectionName = (id) => connections.find((item) => item.id === id)?.name || ''
-  const connectionFor = (entry) => selectedConnections[pathKey(entry.rootPath)] || ''
+  // With exactly one cloud connection there is nothing to choose: it is the
+  // default (a phone with one service needed a trip through the picker).
+  const connectionFor = (entry) => selectedConnections[pathKey(entry.rootPath)] || (connections.length === 1 ? connections[0].id : '')
   const setConnectionFor = (entry, connectionId) => {
     setSelectedConnections((current) => ({ ...current, [pathKey(entry.rootPath)]: connectionId }))
     setRemoteChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: null }))
