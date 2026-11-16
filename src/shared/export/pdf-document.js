@@ -3,6 +3,7 @@ import {
   normalizePdfOptions
 } from '../pdf-options.js'
 import { buildPdfPrintStyles } from './pdf-print-styles.js'
+import { withoutFrontmatter } from './frontmatter.js'
 
 const PAGE_DIMENSIONS_MM = Object.freeze({
   A4: [210, 297],
@@ -76,7 +77,7 @@ export function buildPdfDocument(source, options = {}) {
   const css = buildPdfCss(page)
   const toc = buildPdfToc(payload.headings, page)
   const csp = "default-src 'none'; img-src data: file: https: http:; style-src 'unsafe-inline'; font-src data: file:;"
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${escapeHtml(title)}</title><style>${css}</style></head><body>${toc}<main class="doc">${payload.html || ''}</main></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>${escapeHtml(title)}</title><style>${css}</style></head><body>${toc}<main class="doc">${page.includeFrontmatter ? payload.html || '' : withoutFrontmatter(payload.html)}</main></body></html>`
 }
 
 const templateStyle = 'font-size:8px;color:#777;width:100%;padding:0 12mm;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;display:flex;justify-content:space-between;gap:12px;'

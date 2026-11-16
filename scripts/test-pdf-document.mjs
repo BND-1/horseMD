@@ -113,4 +113,13 @@ assert.ok(templates.footerTemplate.includes('class="pageNumber"'))
 assert.equal(normalizePdfOptions({ pageRanges: '1-3, 5, 8 - 10' }).pageRanges, '1-3, 5, 8-10')
 assert.throws(() => normalizePdfOptions({ pageRanges: '3-1' }), /invalid-page-range/)
 
-console.log('PASS PDF document: page setup, TOC, headers, ranges, CSP, and pagination')
+// YAML front matter (export snapshot section): shown by default, left out when off.
+{
+  const fm = '<section class="hm-frontmatter-export" data-hm-pdf-preserve=""><dl><dt>name</dt><dd>council</dd></dl></section><p>body</p>'
+  assert.equal(normalizePdfOptions({}).includeFrontmatter, true)
+  assert.match(buildPdfDocument({ html: fm }, {}), /hm-frontmatter-export[\s\S]*council[\s\S]*body/)
+  const off = buildPdfDocument({ html: fm }, { includeFrontmatter: false })
+  assert.ok(!off.includes('council') && off.includes('<p>body</p>'))
+}
+
+console.log('PASS PDF document: page setup, TOC, headers, ranges, CSP, pagination and front matter')

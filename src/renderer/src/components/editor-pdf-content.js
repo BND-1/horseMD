@@ -4,11 +4,54 @@ import { renderMermaidForExport } from './editor-mermaid.js'
 import { svgCodeImage } from './editor-html.js'
 import { isSvgCodeLanguage } from './editor-svg-codeblock.js'
 import { materializeCopiedSoftBreaks } from './editor-copy.js'
+import { parseFrontmatterMapping } from './editor-frontmatter.js'
 
 const EXPORT_PREVIEW_DEADLINE_MS = 12000
 const EXPORT_CODE = Symbol('complete export code block')
 
+// The YAML front matter card (an editor control) becomes plain export markup:
+// the same key / value table the card shows (nested keys indented), or the
+// raw YAML when it is not a simple mapping. The templates style it and drop it
+// when the export's includeFrontmatter is off (shared/export/frontmatter.js).
+const buildFrontmatterGrid = (doc, entries) => {
+  const dl = doc.createElement('dl')
+  for (const entry of entries) {
+    const dt = doc.createElement('dt')
+    dt.textContent = entry.key
+    const dd = doc.createElement('dd')
+    if (entry.children.length) dd.appendChild(buildFrontmatterGrid(doc, entry.children))
+    else dd.textContent = entry.value
+    dl.append(dt, dd)
+  }
+  return dl
+}
+
+const materializeFrontmatterForExport = (clone) => {
+  const doc = clone.ownerDocument || document
+  clone.querySelectorAll('.hm-frontmatter-wrap').forEach((wrap) => {
+    const value = wrap.dataset.value || ''
+    if (!value.trim()) {
+      wrap.remove()
+      return
+    }
+    const section = doc.createElement('section')
+    section.className = 'hm-frontmatter-export'
+    // Keep the class through stripEditorAttributes (the templates style it).
+    section.setAttribute('data-hm-pdf-preserve', '')
+    const entries = parseFrontmatterMapping(value)
+    if (entries) {
+      section.appendChild(buildFrontmatterGrid(doc, entries))
+    } else {
+      const pre = doc.createElement('pre')
+      pre.textContent = value
+      section.appendChild(pre)
+    }
+    wrap.replaceWith(section)
+  })
+}
+
 const stripEditorOnlyForExport = (clone) => {
+  materializeFrontmatterForExport(clone)
   clone
     .querySelectorAll(
       'button, select, .language-picker, .language-list, .tools, ' +

@@ -1753,6 +1753,14 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   @codemirror/language-data parser; ivory / white rules skipped for paper);
   HTML block math is `display: block math` (plain `block` left it
   left-aligned). Locked by `test:export-fidelity-ui`.
+  YAML front matter (user report 2026-11-16: an agent SKILL.md exported
+  without its header): the snapshot removed the editor card as a control.
+  It now becomes `<section class="hm-frontmatter-export">` (the card's key /
+  value table, nested keys indented; raw YAML when not a simple mapping;
+  `data-hm-pdf-preserve` keeps its class), styled by both templates.
+  Option 包含 YAML 属性 (`includeFrontmatter`, default on, PDF + HTML)
+  leaves it out (`shared/export/frontmatter.js`). Locked by
+  `test:pdf-document` / `test:html-document`.
 - **HTML export** (`html-export.js` + `html-document.js`): the main-process
   preview returns an opaque token; the saved file is the SAME bytes the token
   refers to (no re-render on save). Output is no-script: the snapshot strips

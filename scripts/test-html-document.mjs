@@ -25,5 +25,13 @@ assert.doesNotMatch(html, /<script/i)
 assert.match(html, /--font-size:19px/)
 assert.match(html, /<article class="doc"><h1 id="h1">正文<\/h1><\/article>/)
 
+{
+  const fm = '<section class="hm-frontmatter-export" data-hm-pdf-preserve=""><dl><dt>name</dt><dd>council</dd></dl></section><p>body</p>'
+  assert.equal(normalizeHtmlOptions({}).includeFrontmatter, true)
+  assert.match(buildHtmlDocument({ html: fm }, {}), /hm-frontmatter-export[\s\S]*council[\s\S]*body/)
+  const off = buildHtmlDocument({ html: fm }, { includeFrontmatter: false })
+  assert.ok(!off.includes('council') && off.includes('<p>body</p>'))
+}
+
 console.log('html document tests passed')
 

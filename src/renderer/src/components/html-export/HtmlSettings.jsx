@@ -31,6 +31,7 @@ export default function HtmlSettings({ options, setOptions, t }) {
       <section>
         <h3>{t('html.section.structure')}</h3>
         <ExportSwitch checked={options.includeDocumentTitle} onChange={(value) => set('includeDocumentTitle', value)} label={t('html.includeTitle')} t={t} />
+        <ExportSwitch checked={options.includeFrontmatter} onChange={(value) => set('includeFrontmatter', value)} label={t('html.includeFrontmatter')} description={t('html.includeFrontmatterHelp')} t={t} />
         <ExportSwitch checked={options.includeToc} onChange={(value) => set('includeToc', value)} label={t('html.includeToc')} description={t('html.includeTocHelp')} t={t} />
         {options.includeToc && (
           <div className="hm-pdf-nested-settings">

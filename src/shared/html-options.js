@@ -7,6 +7,7 @@ export const DEFAULT_HTML_OPTIONS = Object.freeze({
   fontSizePx: 17,
   lineHeight: 1.8,
   includeDocumentTitle: false,
+  includeFrontmatter: true,
   includeToc: false,
   tocDepth: 3,
   tocTitle: 'Contents'
@@ -24,6 +25,7 @@ export function normalizeHtmlOptions(options = {}) {
     fontSizePx: clamp(options.fontSizePx, 12, 24, DEFAULT_HTML_OPTIONS.fontSizePx),
     lineHeight: clamp(options.lineHeight, 1.4, 2.4, DEFAULT_HTML_OPTIONS.lineHeight),
     includeDocumentTitle: options.includeDocumentTitle === true,
+    includeFrontmatter: options.includeFrontmatter !== false,
     includeToc: options.includeToc === true,
     tocDepth: Math.round(clamp(options.tocDepth, 1, 6, DEFAULT_HTML_OPTIONS.tocDepth)),
     tocTitle: String(options.tocTitle || DEFAULT_HTML_OPTIONS.tocTitle).slice(0, 100)

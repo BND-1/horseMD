@@ -104,6 +104,7 @@ export default function PdfSettings({ options, setOptions, rangeError, t, pageEs
             {PDF_PAGINATION.map((value) => <option key={value} value={value}>{t(`pdf.pagination.${value}`)}</option>)}
           </select>
         </label>
+        <ExportSwitch checked={options.includeFrontmatter} onChange={(value) => set('includeFrontmatter', value)} label={t('pdf.includeFrontmatter')} description={t('pdf.includeFrontmatterHelp')} t={t} />
         <ExportSwitch checked={options.includeToc} onChange={(value) => set('includeToc', value)} label={t('pdf.includeToc')} description={t('pdf.includeTocHelp')} t={t} />
         {options.includeToc && (
           <div className="hm-pdf-nested-settings">

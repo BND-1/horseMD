@@ -133,6 +133,16 @@ const BASE_PDF_CSS = `
   .doc li > input[type="checkbox"] { margin: calc((1lh - 1em) / 2 + 0.1em) 0 0; width: 1em; height: 1em; }
   .doc li:has(> input[type="checkbox"]) > :not(input) > :first-child > :first-child,
   .doc li:has(> input[type="checkbox"]) > :not(input) > :first-child { margin-top: 0; }
+  .doc .hm-frontmatter-export {
+    margin: 0 0 1.6em; padding: 0.6em 0.9em; border: 1px solid #e6e1d8; border-radius: 6px;
+    background: #faf8f4; font-size: 0.86em; line-height: 1.5; break-inside: avoid; page-break-inside: avoid;
+  }
+  .doc .hm-frontmatter-export dl {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 1.2em; row-gap: 0.25em; margin: 0;
+  }
+  .doc .hm-frontmatter-export dt { color: #6b655c; font-family: 'SF Mono', SFMono-Regular, Consolas, Monaco, monospace; font-size: 0.92em; }
+  .doc .hm-frontmatter-export dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .doc .hm-frontmatter-export pre { margin: 0; padding: 0; background: transparent; border: 0; white-space: pre-wrap; }
   .pdf-toc { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', sans-serif; color: #2a2620; }
   .pdf-toc.break-after { break-after: page; page-break-after: always; }
   .pdf-toc.break-after + .doc { break-before: page; page-break-before: always; }
