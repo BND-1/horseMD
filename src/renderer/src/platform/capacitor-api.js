@@ -4,8 +4,9 @@
 // there is no preload, so this module provides the SAME interface backed by
 // Capacitor plugins. The renderer (App.jsx etc.) only knows the contract, so it
 // runs unchanged. Desktop-only capabilities (file watching, window controls,
-// native menus, PDF export, image-host exec) degrade to safe no-ops and are
-// also advertised via `capabilities` so the UI can hide what isn't available.
+// native menus, image-host exec) degrade to safe no-ops and are also
+// advertised via `capabilities` so the UI can hide what isn't available.
+// PDF / HTML export run on the phone too (mobile-export.js).
 //
 // File model (MVP): an app-private library under Documents/HorseMD. Paths handed
 // to the renderer are POSIX-relative to that Documents directory (e.g.
@@ -69,6 +70,21 @@ const ext = async (method, args) => {
 const DIR = Capacitor.getPlatform() === 'ios' ? Directory.Documents : Directory.External
 const LIB = 'HorseMD' // library subfolder
 const MD_RE = /\.(md|markdown|mdx)$/i
+
+// The editor resolves a relative image against the document's folder as a
+// file URL (file:///HorseMD/img/a.png for the library). The web view cannot
+// load that; Capacitor serves app files at convertFileSrc(<absolute path>).
+// The library's absolute location is asked once at start (a document opens
+// later than that). Files of folders added from other apps (ext:) have no
+// served URL and keep the link.
+let libraryRootUri = null
+Filesystem.getUri({ path: LIB, directory: DIR })
+  .then(({ uri }) => { libraryRootUri = String(uri || '').replace(/\/+$/, '') })
+  .catch(() => {})
+const displayUrlForFile = (fileUrl) => {
+  if (!libraryRootUri || !/^file:\/\/\/HorseMD(\/|$)/.test(fileUrl)) return fileUrl
+  return Capacitor.convertFileSrc(libraryRootUri + fileUrl.slice('file:///HorseMD'.length))
+}
 
 const stat = async (path) => {
   try {
@@ -677,8 +693,15 @@ const capabilities = {
   closeToTray: false,
   globalShortcuts: false,
   devtools: false,
-  pdfExport: false, // no print-to-PDF save dialog on mobile
-  htmlExport: false,
+  // PDF / HTML Studio (mobile-export.js): rendered natively (HorsePdf), saved
+  // through the share sheet. A native shell without HorsePdf hides PDF.
+  pdfExport: Capacitor.isPluginAvailable('HorsePdf'),
+  htmlExport: true,
+  // What the phone PDF path cannot do: header / footer text and the document
+  // title line (no Chromium header/footer templates) and bookmarks. Page
+  // numbers and page ranges work (pdf-lib, shared/export/pdf-postprocess.js).
+  // Desktop has no pdfOptions: everything is shown there.
+  pdfOptions: { headerFooterText: false, outline: false },
   pandocExport: false,
   imageHostExec: false,
   nativeMenus: false,
@@ -747,6 +770,62 @@ const setupBackButton = () => {
   CapApp.addListener('backButton', () => {
     if (!closeTopLayer()) CapApp.minimizeApp().catch(() => {})
   })
+}
+
+// ---- PDF / HTML export (lazy) --------------------------------------------------
+// mobile-export.js (and pdf-lib with it) loads the first time a studio opens.
+let exportLoading = null
+const loadExport = () => {
+  if (!exportLoading) {
+    exportLoading = import('./mobile-export.js')
+      .then((m) => m.createMobileExport({ readLocalImage, zh }))
+      .catch((error) => {
+        exportLoading = null
+        throw error
+      })
+  }
+  return exportLoading
+}
+// `idle`: what a dispose answers before anything was loaded (nothing to free).
+const exportCall = (name, idle) => async (...args) => {
+  if (idle !== undefined && !exportLoading) return idle
+  return (await loadExport())[name](...args)
+}
+// An exported document's file:// image (editor-images.js resolves a relative
+// src against the document's folder: file:///HorseMD/img/a.png for the
+// library). Library files are read through Filesystem; other absolute paths
+// through Capacitor's local server. Files of folders added from other apps
+// (ext:) have no binary read: those images keep their link.
+const readLocalImage = async (src) => {
+  let path
+  try {
+    path = decodeURIComponent(new URL(src).pathname)
+  } catch {
+    return null
+  }
+  const rel = path.replace(/^\/+/, '')
+  if (!rel || rel.startsWith('ext:')) return null
+  if (rel === LIB || rel.startsWith(LIB + '/')) {
+    try {
+      const { data } = await Filesystem.readFile({ path: rel, directory: DIR })
+      let bytes
+      if (typeof data === 'string') {
+        const binary = atob(data)
+        bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      } else {
+        bytes = new Uint8Array(await data.arrayBuffer())
+      }
+      return { bytes, contentType: '' }
+    } catch { /* fall through */ }
+  }
+  try {
+    const response = await fetch(Capacitor.convertFileSrc('/' + rel))
+    if (!response.ok) return null
+    return { bytes: new Uint8Array(await response.arrayBuffer()), contentType: response.headers.get('content-type') || '' }
+  } catch {
+    return null
+  }
 }
 
 // ---- cloud sync (lazy) -------------------------------------------------------
@@ -856,9 +935,13 @@ export function makeCapacitorApi() {
     searchWorkspace,
     // The app's own folder (Documents/HorseMD): always in the workspace.
     libraryRoot: LIB,
-    previewPDF: async () => ({ ok: false, error: 'unsupported' }),
-    savePDFPreview: async () => ({ ok: false, error: 'unsupported' }),
-    disposePDFPreview: async () => false,
+    // PDF / HTML Studio: the desktop preview/save contract (mobile-export.js).
+    previewPDF: exportCall('previewPDF'),
+    savePDFPreview: exportCall('savePDFPreview'),
+    disposePDFPreview: exportCall('disposePDFPreview', false),
+    previewHTML: exportCall('previewHTML'),
+    saveHTMLPreview: exportCall('saveHTMLPreview'),
+    disposeHTMLPreview: exportCall('disposeHTMLPreview', false),
     allowLocalFonts: async () => false,
 
     // fs
@@ -909,6 +992,7 @@ export function makeCapacitorApi() {
       } catch {}
     },
     shareFile,
+    displayUrlForFile,
 
     // image host (no Node subprocess on mobile)
     uploadImage: async () => ({ ok: false, error: 'unsupported' }),

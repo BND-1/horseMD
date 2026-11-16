@@ -1,0 +1,227 @@
+/* Phones (iOS / Android): PDF Studio and HTML Studio full screen, one pane at
+   a time (预览 | 设置), touch sizes (≥ 44 px targets, 16 px inputs so iOS does
+   not zoom into a focused field). Everything is under .hm-export-phone, which
+   only the phone build sets (ExportPhoneTabs.isExportPhone): desktop is
+   unchanged. */
+.hm-pdf-studio.hm-export-phone {
+  --hm-export-safe-top: var(--safe-top, env(safe-area-inset-top, 0px));
+  grid-template-rows: calc(48px + var(--hm-export-safe-top)) 56px minmax(0, 1fr) auto;
+  font-size: 14px;
+}
+
+.hm-export-phone .hm-pdf-studio-header {
+  padding: var(--hm-export-safe-top) 2px 0 16px;
+}
+
+.hm-export-phone .hm-pdf-studio-header h2 {
+  font-size: 16px;
+}
+
+.hm-export-phone .hm-pdf-close {
+  width: 44px;
+  height: 44px;
+}
+
+.hm-export-phone-tabs {
+  display: flex;
+  gap: 2px;
+  align-self: center;
+  height: 48px;
+  margin: 0 12px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.hm-export-phone-tabs button {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 550;
+}
+
+.hm-export-phone-tabs button.active {
+  color: var(--text-strong);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.hm-pdf-studio.hm-export-phone .hm-pdf-studio-body {
+  grid-template-columns: minmax(0, 1fr);
+  border-top: 1px solid var(--border);
+}
+
+.hm-export-phone-preview .hm-pdf-settings,
+.hm-export-phone-settings .hm-pdf-preview,
+.hm-export-phone-settings .hm-html-preview {
+  display: none;
+}
+
+/* Settings */
+.hm-export-phone .hm-pdf-settings {
+  border-right: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hm-export-phone .hm-pdf-settings section {
+  padding: 18px 16px 20px;
+}
+
+.hm-export-phone .hm-pdf-settings h3 {
+  font-size: 14px;
+}
+
+.hm-export-phone .hm-pdf-field {
+  font-size: 14px;
+}
+
+.hm-export-phone .hm-pdf-field > .hm-pdf-field-help {
+  font-size: 12px;
+}
+
+.hm-export-phone .hm-pdf-field input[type='text'],
+.hm-export-phone .hm-pdf-field input[type='number'],
+.hm-export-phone .hm-pdf-field select,
+.hm-export-phone .hm-pdf-dimension-grid input,
+.hm-export-phone .hm-pdf-margin-grid input {
+  height: 44px;
+  font-size: 16px;
+}
+
+.hm-export-phone .hm-pdf-segmented {
+  height: 44px;
+}
+
+.hm-export-phone .hm-pdf-segmented button {
+  font-size: 15px;
+}
+
+.hm-export-phone .hm-pdf-scale input[type='range'] {
+  min-height: 44px;
+}
+
+.hm-export-phone .hm-pdf-switch {
+  min-height: 48px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+}
+
+.hm-export-phone .hm-pdf-switch-track {
+  width: 40px;
+  height: 24px;
+  border-radius: 12px;
+}
+
+.hm-export-phone .hm-pdf-switch-track::after {
+  width: 18px;
+  height: 18px;
+}
+
+.hm-export-phone .hm-pdf-switch[aria-checked='true'] .hm-pdf-switch-track::after {
+  transform: translateX(16px);
+}
+
+.hm-export-phone .hm-pdf-switch-copy b {
+  font-size: 15px;
+}
+
+.hm-export-phone .hm-pdf-switch-copy small,
+.hm-export-phone .hm-pdf-switch em,
+.hm-export-phone .hm-html-output-note p {
+  font-size: 12px;
+}
+
+/* Preview */
+.hm-export-phone .hm-pdf-preview,
+.hm-export-phone .hm-html-preview {
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+.hm-export-phone .hm-pdf-preview-toolbar,
+.hm-export-phone .hm-html-preview-toolbar {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.hm-export-phone .hm-pdf-page-count {
+  font-size: 13px;
+}
+
+.hm-export-phone .hm-pdf-zoom-controls {
+  grid-template-columns: 44px 64px 44px;
+  height: 40px;
+}
+
+.hm-export-phone .hm-pdf-zoom-controls button {
+  height: 38px;
+}
+
+.hm-export-phone .hm-pdf-zoom-controls .hm-pdf-zoom-value {
+  font-size: 13px;
+}
+
+.hm-export-phone .hm-pdf-preview-scroll {
+  padding: 16px 12px 48px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hm-export-phone .hm-pdf-preview-error {
+  inset: 48px 0 0;
+}
+
+.hm-export-phone .hm-pdf-preview-error button,
+.hm-export-phone .hm-html-preview-error button {
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 15px;
+}
+
+.hm-export-phone .hm-pdf-preview-progress,
+.hm-export-phone .hm-pdf-preview-warning,
+.hm-export-phone .hm-html-preview-progress,
+.hm-export-phone .hm-html-preview-error,
+.hm-export-phone .hm-html-preview-warning {
+  font-size: 13px;
+}
+
+.hm-export-phone .hm-html-preview-stage {
+  padding: 12px;
+  place-items: stretch;
+}
+
+.hm-export-phone .hm-html-preview-stage iframe,
+.hm-export-phone .hm-html-preview-stage.mobile iframe {
+  width: 100%;
+  min-height: 0;
+}
+
+/* Footer: 取消 | 导出并分享, the hint or error above them. */
+.hm-pdf-studio.hm-export-phone .hm-pdf-studio-footer {
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+.hm-export-phone .hm-pdf-export-message {
+  flex: 1 0 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.hm-export-phone .hm-pdf-studio-footer > button {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.hm-export-phone .hm-pdf-studio-footer > button.primary {
+  flex: 2;
+  font-weight: 600;
+}

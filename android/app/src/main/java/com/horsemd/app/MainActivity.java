@@ -13,6 +13,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(HorseHttpPlugin.class);
         registerPlugin(HorseSecureStorePlugin.class);
         registerPlugin(HorseDevicePlugin.class);
+        // PDF export on phones: off-screen WebView print to PDF bytes.
+        registerPlugin(HorsePdfPlugin.class);
         // A re-created activity (process restore, "don't keep activities") gets its
         // launch intent again: the file in it was already delivered once.
         if (savedInstanceState != null) HorseFilesPlugin.markHandled(getIntent());

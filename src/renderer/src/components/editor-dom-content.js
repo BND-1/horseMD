@@ -375,7 +375,9 @@ export function mountEditorContentBindings({
       const winAbsolute = image.tagName !== 'IMG' && /^[a-zA-Z]:[\\/]/.test(raw)
       if (!winAbsolute && !isRelativePath(raw)) continue
       image.dataset.hmResolved = '1'
-      image.setAttribute(attr, winAbsolute ? resolveToFileUrl(raw, '') : resolveToFileUrl(baseDir, raw))
+      const fileUrl = winAbsolute ? resolveToFileUrl(raw, '') : resolveToFileUrl(baseDir, raw)
+      // Phones: a file URL is not loadable in the web view (capacitor-api.js).
+      image.setAttribute(attr, window.api?.displayUrlForFile?.(fileUrl) ?? fileUrl)
       // A changed <source> is only picked up when its player reloads.
       if (image.tagName === 'SOURCE') image.parentElement?.load?.()
     }

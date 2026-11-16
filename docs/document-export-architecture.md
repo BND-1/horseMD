@@ -65,4 +65,23 @@ Pandoc 是用户显式的一次性任务：同一窗口同时只运行一个。�
 
 ## 6. 平台
 
-首版 Pandoc 和 HTML Studio 是 Electron 桌面能力。Capacitor shim 显式声明 capability 为 false，移动端不显示入口。未来 HTML 移动分享需要单独使用 Capacitor Filesystem/Share，不复用 Electron IPC。
+Pandoc 只在桌面。PDF Studio 和 HTML Studio 在手机上也有（2026-11-16），见 §7。
+
+## 7. 手机端 PDF / HTML 导出
+
+手机复用同一套 Studio 组件和同一份结构化快照，后面换成手机实现的预览/保存契约（`src/renderer/src/platform/mobile-export.js`，由 `capacitor-api.js` 在第一次打开 Studio 时懒加载，pdf-lib 不进启动包）：
+
+| 契约 | 桌面 | 手机 |
+|---|---|---|
+| `previewPDF` | 主进程 BrowserWindow + `printToPDF` | `buildPdfDocument` → 原生 `HorsePdf.render`（离屏渲染，渲染完即销毁）→ pdf-lib 后处理 |
+| `previewHTML` | 主进程暂存图片后内嵌 | 渲染进程内嵌图片 → `buildHtmlDocument` |
+| `save*Preview` | 系统保存对话框 + 打开文件 | 写到 `Cache/export/<文件名>`（先删旧的）→ 系统分享面板；关掉面板 = 取消 |
+| latest-request-only | `createLatestTaskRunner` | 同一个 runner（`src/main/latest-task-runner.js`，纯逻辑），每种导出一个 key；新请求等旧的结束（原生一次只渲染一份） |
+
+- 图片：快照里每个占位符换成 `data:` URL。远程图片走原生 HTTP（`HorseHttp`，没有 CORS，30 秒，单张 ≤ 32 MB）；App 自己的地址（`capacitor://`、`https://localhost/_capacitor_file_/…`、`blob:`）用 `fetch`；`file://`（相对路径解析出来的）由 `capacitor-api.js` 的 `readLocalImage` 读：HorseMD 文件夹里的走 Filesystem，其他绝对路径走 `Capacitor.convertFileSrc`；从别的 App 添加的文件夹（`ext:`）没有二进制读取，保留原链接、计为 unresolved。总量 PDF 160 MB、HTML 48 MB（与桌面一致）。
+- PDF：页面尺寸和边距由 mm 换成 pt 交给原生；`scale ≠ 100` 时往 `<style>` 里加 `html{zoom}`（桌面是 printToPDF 的 scale）。原生先执行共享的 `printableResourcesScript`（等图片、字体，折行过宽公式），结果作为 `resources` 返回，警告字段与桌面相同。原生打印没有 Chromium 的页眉页脚模板，也不生成书签，所以页码范围和页码由 `src/shared/export/pdf-postprocess.js` 用 pdf-lib 处理：范围按 `normalizePdfOptions` 的格式，超出总页数的页忽略，一页不剩就报错；页码「n / 总页数」（总数按范围之后算），Helvetica 8 pt、#777777，右对齐、距右边 12 mm、在下边距里垂直居中（对齐桌面页脚的样子）。`npm run test:pdf-postprocess` 锁住。
+- 能力：`capabilities.pdfExport` 只在原生壳带 `HorsePdf` 时为 true；`htmlExport: true`；`pdfOptions: { headerFooterText: false, outline: false }`。PdfSettings 据此隐藏文档标题、页眉、页脚文字和「生成书签」，只留一个「页码」开关（开 = `footerEnabled` + `includePageNumbers`，关 = `footerEnabled: false`），请求里也强制 `headerEnabled: false`、`generateOutline: false`。桌面没有 `pdfOptions`，什么都不变。
+- 界面：Studio 根节点在 iOS / Android 上加 `hm-export-phone`（`components/export/ExportPhoneTabs.jsx`），样式全在 `pdf-export-phone.css`：全屏、安全区、头部 48 px、下面「预览 | 设置」分段（默认预览）、底部「取消」+「导出并分享」，触控目标 ≥ 44 px，输入框 16 px（iOS 不会放大）。PDF 预览默认按宽度适配（手动缩放后不再跟随，点百分比恢复）；HTML 预览固定手机宽度，不显示桌面/手机切换。
+- 入口：状态栏「分享」打开小菜单：分享 Markdown 文件 / 导出 PDF / 导出 HTML（与标签页菜单同一个 `exportPathToPdf` / `exportPathToHtml`）。没保存过的文档还没有文件：分享照旧提示先保存，导出两项变灰并显示同样的提示。
+- iOS 打印的两个差别（2026-11-16 在 iPhone 13 mini 上量，对照同一份文档的桌面 PDF）：WKWebView 的打印 formatter 把 1 个 CSS px 画得比 Chromium 的 0.75 pt 大（不缩放时字是桌面的 1.28 倍），而且在 printableRect 之外又按 CSS `@page` 边距再缩进一次（正文起点右移 15 pt、下移 17 pt）。所以 iOS 上 `html{zoom}` 乘 `IOS_PRINT_ZOOM = 0.92`、`@page` 边距改 0、`viewportWidth` 按缩放后的版心宽度传给原生；调好后正文宽度与桌面相差不到 1%，页数相同。安卓用 CSS 边距（打印属性 NO_MARGINS），与桌面一致。已知差别：WebKit 不认 `break-after: avoid`，iOS 上标题可能落在页尾。
+- 实测（2026-11-16）：安卓 16 模拟器（选项逐个导出核对：页码范围、横向 + 目录、缩放 70% 关页码、Letter + 宽边距 + 紧凑 + 按 H2 分页、超出范围的提示）、华为 nova 5 Pro（鸿蒙 4，WebView 114，走 legacy pdf.js）、iPhone 13 mini（iOS 27）。三台的分享面板都能弹出，关掉面板后 Studio 留着；安卓返回键关闭 Studio。

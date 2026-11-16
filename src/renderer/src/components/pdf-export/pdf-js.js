@@ -2,12 +2,26 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 let pdfJsPromise = null
 
+// pdf.js 4 needs Promise.withResolvers (Chrome 119 / Safari 17.4). A phone
+// whose system WebView is older (Huawei HarmonyOS 4, an un-updated Android
+// WebView) loads pdf.js's legacy build (polyfilled, worker included) instead.
+// Mobile build only: desktop Electron always has it.
+const needsLegacyPdfJs = () => typeof Promise.withResolvers !== 'function'
+
 export function loadPdfJs() {
   if (!pdfJsPromise) {
-    pdfJsPromise = import('pdfjs-dist').then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-      return pdfjs
-    })
+    pdfJsPromise = __MOBILE_BUILD__ && needsLegacyPdfJs()
+      ? Promise.all([
+          import('pdfjs-dist/legacy/build/pdf.min.mjs'),
+          import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
+        ]).then(([pdfjs, worker]) => {
+          pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+          return pdfjs
+        })
+      : import('pdfjs-dist').then((pdfjs) => {
+          pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+          return pdfjs
+        })
   }
   return pdfJsPromise
 }

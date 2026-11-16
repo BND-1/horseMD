@@ -5,6 +5,7 @@ import { loadSettings, saveSettings } from '../../settings.js'
 import { Icon } from '../icons.jsx'
 import PdfPreview from './PdfPreview.jsx'
 import PdfSettings from './PdfSettings.jsx'
+import ExportPhoneTabs, { isExportPhone } from '../export/ExportPhoneTabs.jsx'
 import './pdf-export.css'
 
 export default function PdfExportStudio({ request, saving, saveError, onCancel, onSave, t }) {
@@ -13,13 +14,21 @@ export default function PdfExportStudio({ request, saving, saveError, onCancel, 
     // Seed from the user's last-chosen density so "pick once, persists" holds.
     densityPreset: loadSettings().lastPdfDensityPreset || 'standard'
   }))
+  // Phones (capabilities.pdfOptions) draw no header / footer text and no
+  // bookmarks: the request says so too. Desktop has no pdfOptions.
+  const pdfCaps = window.api.capabilities?.pdfOptions
   const normalized = useMemo(() => {
     try {
-      return { options: normalizePdfOptions(options), error: null }
+      let next = normalizePdfOptions(options)
+      if (pdfCaps?.headerFooterText === false) next = { ...next, headerEnabled: false, footerText: '' }
+      if (pdfCaps?.outline === false) next = { ...next, generateOutline: false }
+      return { options: next, error: null }
     } catch {
       return { options: null, error: 'invalid-page-range' }
     }
-  }, [options])
+  }, [options, pdfCaps])
+  const phone = isExportPhone()
+  const [phoneView, setPhoneView] = useState('preview')
   const preview = usePdfPreview({ request: normalized.options ? request : null, options: normalized.options })
   const [pageCount, setPageCount] = useState(null)
   // 'estimating' while a new preview is generating, else the last known total.
@@ -45,25 +54,26 @@ export default function PdfExportStudio({ request, saving, saveError, onCancel, 
   const canSave = preview.status === 'ready' && !!preview.token && !normalized.error && !saving
 
   return (
-    <div className="hm-pdf-studio" role="dialog" aria-modal="true" aria-labelledby="hm-pdf-studio-title" aria-busy={saving || preview.status === 'previewing'} data-source-headings={request.source?.headings?.length || 0}>
+    <div className={`hm-pdf-studio${phone ? ` hm-export-phone hm-export-phone-${phoneView}` : ''}`} role="dialog" aria-modal="true" aria-labelledby="hm-pdf-studio-title" aria-busy={saving || preview.status === 'previewing'} data-source-headings={request.source?.headings?.length || 0}>
       <header className="hm-pdf-studio-header">
         <div>
           <Icon name="file" size={18} />
           <h2 id="hm-pdf-studio-title">{t('pdf.title')}</h2>
         </div>
-        <button type="button" className="hm-pdf-close" title={t('edit.cancel')} disabled={saving} onClick={onCancel}><Icon name="close" size={18} /></button>
+        <button type="button" className="hm-pdf-close" title={t(phone ? 'common.cancel' : 'edit.cancel')} disabled={saving} onClick={onCancel}><Icon name="close" size={18} /></button>
       </header>
+      {phone && <ExportPhoneTabs value={phoneView} onChange={setPhoneView} t={t} />}
       <div className="hm-pdf-studio-body">
         <PdfSettings options={options} setOptions={setOptions} rangeError={normalized.error} t={t} pageEstimate={pageEstimate} />
-        <PdfPreview {...preview} t={t} onPageCount={setPageCount} />
+        <PdfPreview {...preview} t={t} onPageCount={setPageCount} fitWidth={phone} />
       </div>
       <footer className="hm-pdf-studio-footer">
         <div className="hm-pdf-export-message" role={saveError ? 'alert' : 'status'}>
-          {saveError ? t('pdf.error', { msg: saveError }) : t('pdf.previewHint')}
+          {saveError ? t('pdf.error', { msg: saveError }) : t(phone ? 'pdf.phoneShareHint' : 'pdf.previewHint')}
         </div>
-        <button type="button" disabled={saving} onClick={onCancel}>{t('edit.cancel')}</button>
+        <button type="button" disabled={saving} onClick={onCancel}>{t(phone ? 'common.cancel' : 'edit.cancel')}</button>
         <button type="button" className="primary" disabled={!canSave} onClick={() => onSave(preview.token)}>
-          {saving ? t('pdf.saving') : t('pdf.export')}
+          {saving ? t('pdf.saving') : t(phone ? 'pdf.exportShare' : 'pdf.export')}
         </button>
       </footer>
     </div>

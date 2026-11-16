@@ -93,12 +93,9 @@ const PANE_DEFAULT = 260
 // adopt it, and the main window keeps persisting it in its session as before.
 const APPEARANCE_KEY = 'horsemd.appearance.v1'
 
-const PdfExportStudio = __MOBILE_BUILD__
-  ? null
-  : lazy(() => import('./components/pdf-export/PdfExportStudio.jsx'))
-const HtmlExportStudio = __MOBILE_BUILD__
-  ? null
-  : lazy(() => import('./components/html-export/HtmlExportStudio.jsx'))
+// Phones too (platform/mobile-export.js); Pandoc stays desktop-only.
+const PdfExportStudio = lazy(() => import('./components/pdf-export/PdfExportStudio.jsx'))
+const HtmlExportStudio = lazy(() => import('./components/html-export/HtmlExportStudio.jsx'))
 const PandocExportStatus = __MOBILE_BUILD__
   ? null
   : lazy(() => import('./components/pandoc-export/PandocExportStatus.jsx'))
@@ -1927,6 +1924,8 @@ export default function App() {
           }
           window.api.shareFile?.(activeTab.path)
         }}
+        onExportPdf={activeTab?.path ? () => exportPathToPdf(activeTab.path) : undefined}
+        onExportHtml={activeTab?.path ? () => exportPathToHtml(activeTab.path) : undefined}
         onSettings={openSettingsHere}
         sync={syncWorkspaces}
         autoSync={autoSync}

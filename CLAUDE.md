@@ -1758,6 +1758,36 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   refers to (no re-render on save). Output is no-script: the snapshot strips
   dangerous nodes/attrs, the template ships a strict CSP, the renderer preview
   is a no-permission sandbox iframe. Latest-request-only like PDF.
+- **Phone PDF / HTML export** (2026-11-16, `platform/mobile-export.js`,
+  lazy from `capacitor-api.js`): phones run the same PDF / HTML Studio
+  against the desktop preview/save contract. Images are inlined as data:
+  URLs (remote via HorseHttp, app URLs via fetch, library `file://` via
+  Filesystem; PDF ≤ 160 MB, HTML ≤ 48 MB). PDF = `buildPdfDocument` (scale
+  as `html{zoom}`) rendered off-screen by the native `HorsePdf` plugin
+  (`native-export.js`; WKWebView print formatter / Android WebView print
+  adapter), then page ranges + "n / total" numbers with pdf-lib
+  (`shared/export/pdf-postprocess.js`, `test:pdf-postprocess`). Save =
+  Cache/export/<name> + the share sheet (dismissed = cancel).
+  `capabilities.pdfOptions` `{ headerFooterText: false, outline: false }`
+  hides header / footer text and bookmarks (one 页码 switch); desktop has
+  no pdfOptions. Phone layout (`hm-export-phone`, `ExportPhoneTabs`):
+  预览 | 设置, fit-to-width PDF, phone-width HTML, 导出并分享. The status
+  bar's 分享 opens a sheet: share Markdown / export PDF / HTML. Pandoc
+  stays desktop-only. iOS (measured on an iPhone 13 mini against the
+  desktop PDF of one document): WKWebView's print formatter draws a CSS px
+  larger than Chromium's 0.75 pt and insets the content by the CSS `@page`
+  margin on top of printableRect, so iOS gets `html{zoom: 0.92 × scale}`
+  (`IOS_PRINT_ZOOM`), `@page { margin: 0 }` and a matching
+  `viewportWidth`; text widths then equal desktop within 1 %. Android uses
+  the CSS margin (NO_MARGINS in the print attributes). Known difference:
+  WebKit ignores `break-after: avoid`, so on iOS a heading can end a page.
+  Checked on the Android 16 emulator, the Huawei nova 5 Pro (WebView 114:
+  legacy pdf.js build) and the iPhone 13 mini (2026-11-16). Found on the
+  way: phones never showed a relative image in the editor (the editor's
+  `file:///HorseMD/…` URL is not loadable in the web view);
+  `window.api.displayUrlForFile` maps library files to Capacitor's served
+  URL (`editor-dom-content.js`). Task lists in PDF / HTML export put the
+  checkbox beside the item's text (desktop too; it stood on its own line).
 - **Pandoc export** (`pandoc-export.js` + `pandoc-core.js` + `subprocess.js`):
   the executable is verified by absolute path + `--version`; the target format
   is a whitelist; args are built main-side; Markdown goes via stdin; `shell:

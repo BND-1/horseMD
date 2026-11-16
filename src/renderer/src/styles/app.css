@@ -7539,6 +7539,17 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 
 /* "•••" sheet that folds the crowded status-bar controls into one menu. */
 .app.is-mobile .hm-status-sheet { min-width: 232px; max-width: 80vw; }
+/* 分享 sheet (StatusBar MobileShare): share the Markdown file / export PDF /
+   HTML. Without a saved file the export rows are dimmed and say why. */
+.app.is-mobile .hm-share-sheet .block-menu-item { min-height: 44px; }
+.app.is-mobile .hm-share-sheet .hm-sheet-unavailable { opacity: 0.45; }
+.app.is-mobile .hm-share-sheet .hm-sheet-hint {
+  max-width: 220px;
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .app.is-mobile .hm-sheet-counts {
   padding: 4px 10px 8px;
   font-size: 12px;

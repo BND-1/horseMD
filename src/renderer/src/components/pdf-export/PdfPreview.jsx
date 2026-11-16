@@ -3,7 +3,10 @@ import { Icon } from '../icons.jsx'
 import PdfPage from './PdfPage.jsx'
 import { loadPdfJs, readPdfOutline } from './pdf-js.js'
 
-export default function PdfPreview({ data, status, token, error, warnings, retry, t, onPageCount }) {
+// fitWidth (phones): the page fills the preview's width, and follows it
+// (rotation, the tab switch) until the user zooms; the zoom value button
+// fits it again.
+export default function PdfPreview({ data, status, token, error, warnings, retry, t, onPageCount, fitWidth = false }) {
   const scrollRef = useRef(null)
   const [document, setDocument] = useState(null)
   const [size, setSize] = useState({ width: 595, height: 842 })
@@ -12,6 +15,8 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
   const [outline, setOutline] = useState([])
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [loadedToken, setLoadedToken] = useState('')
+  const [fit, setFit] = useState(!!fitWidth)
+  const minZoom = fitWidth ? 0.25 : 0.5
 
   useEffect(() => {
     if (!data?.length) {
@@ -68,7 +73,31 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
     return () => observer.disconnect()
   }, [document, zoom])
 
-  const zoomBy = (delta) => setZoom((value) => Math.min(1.6, Math.max(0.5, Number((value + delta).toFixed(2)))))
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!fitWidth || !fit || !root) return undefined
+    const apply = () => {
+      const style = getComputedStyle(root)
+      const inner = root.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0')
+      // Hidden (the 设置 tab) → 0: keep the last value.
+      if (inner <= 0 || !size.width) return
+      // + 2: the page's 1 px border on each side.
+      setZoom(Math.min(1.6, Math.max(minZoom, Number((inner / (size.width + 2)).toFixed(3)))))
+    }
+    apply()
+    const observer = new ResizeObserver(apply)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [fitWidth, fit, size.width, minZoom])
+
+  const zoomBy = (delta) => {
+    if (fitWidth) setFit(false)
+    setZoom((value) => Math.min(1.6, Math.max(minZoom, Number((value + delta).toFixed(2)))))
+  }
+  const resetZoom = () => {
+    if (fitWidth) setFit(true)
+    else setZoom(0.9)
+  }
   const goToPage = (page) => {
     const target = scrollRef.current?.querySelector(`[data-pdf-page="${page}"]`)
     target?.scrollIntoView({ block: 'start' })
@@ -88,10 +117,10 @@ export default function PdfPreview({ data, status, token, error, warnings, retry
           </span>
         </div>
         <div className="hm-pdf-zoom-controls">
-          <button type="button" title={t('pdf.zoomOut')} onClick={() => zoomBy(-0.1)} disabled={zoom <= 0.5}>
+          <button type="button" title={t('pdf.zoomOut')} onClick={() => zoomBy(-0.1)} disabled={zoom <= minZoom}>
             <Icon name="search-minus" size={16} />
           </button>
-          <button type="button" className="hm-pdf-zoom-value" title={t('pdf.resetZoom')} onClick={() => setZoom(0.9)}>
+          <button type="button" className="hm-pdf-zoom-value" title={t('pdf.resetZoom')} onClick={resetZoom}>
             {Math.round(zoom * 100)}%
           </button>
           <button type="button" title={t('pdf.zoomIn')} onClick={() => zoomBy(0.1)} disabled={zoom >= 1.6}>

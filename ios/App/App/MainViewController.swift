@@ -10,5 +10,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HorseHttpPlugin())
         bridge?.registerPluginInstance(HorseSecureStorePlugin())
         bridge?.registerPluginInstance(HorseDevicePlugin())
+        // PDF export on phones: off-screen WebKit print to PDF bytes.
+        bridge?.registerPluginInstance(HorsePdfPlugin())
     }
 }

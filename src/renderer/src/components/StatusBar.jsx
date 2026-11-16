@@ -342,11 +342,67 @@ function MobileMore({
   )
 }
 
+// Mobile: the 分享 button opens a small sheet — share the Markdown file, or
+// export it as PDF / HTML (the same studios as the desktop; the studio's
+// 导出并分享 hands the file to the system share sheet). A document that was
+// never saved has no file yet: share keeps its toast, the export rows say the
+// same when tapped.
+function MobileShare({ hasPath, onShare, onExportPdf, onExportHtml, onNeedsSave }) {
+  const { t } = useI18n()
+  const { open, setOpen, ref } = usePopover()
+  const pdf = window.api.capabilities?.pdfExport === true
+  const html = window.api.capabilities?.htmlExport === true
+  const button = (onClick) => (
+    <button className="status-btn hm-share-btn" onClick={onClick} title={t('status.share')}>
+      <Icon name="share" size={17} />
+      <span>{t('status.shareShort')}</span>
+    </button>
+  )
+  if (!pdf && !html) return button(onShare)
+  const run = (action) => () => {
+    setOpen(false)
+    if (!hasPath) {
+      onNeedsSave?.()
+      return
+    }
+    action?.()
+  }
+  return (
+    <div className="block-switch" ref={ref}>
+      {button(() => setOpen((v) => !v))}
+      {open && (
+        <div className="block-switch-menu hm-status-sheet hm-share-sheet" role="menu">
+          <button className="block-menu-item" role="menuitem" onClick={() => { setOpen(false); onShare?.() }}>
+            <Icon name="share" size={15} />
+            <span className="block-menu-name">{t('mobile.shareMarkdown')}</span>
+          </button>
+          <div className="theme-menu-sep" />
+          {pdf && (
+            <button className={`block-menu-item${hasPath ? '' : ' hm-sheet-unavailable'}`} role="menuitem" aria-disabled={!hasPath} onClick={run(onExportPdf)}>
+              <Icon name="file" size={15} />
+              <span className="block-menu-name">{t('mobile.exportPdf')}</span>
+            </button>
+          )}
+          {html && (
+            <button className={`block-menu-item${hasPath ? '' : ' hm-sheet-unavailable'}`} role="menuitem" aria-disabled={!hasPath} onClick={run(onExportHtml)}>
+              <Icon name="globe" size={15} />
+              <span className="block-menu-name">{t('mobile.exportHtml')}</span>
+            </button>
+          )}
+          {!hasPath && <div className="hm-sheet-hint">{t('save.shareNeedsSave')}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function StatusBar({
   tab,
   isMobile,
   onSave,
   onShare,
+  onExportPdf,
+  onExportHtml,
   onSettings,
   sync,
   autoSync,
@@ -469,10 +525,14 @@ export default function StatusBar({
           tab && (
             <>
               {window.api.capabilities?.canShare && (
-                <button className="status-btn hm-share-btn" onClick={onShare} title={t('status.share')}>
-                  <Icon name="share" size={17} />
-                  <span>{t('status.shareShort')}</span>
-                </button>
+                <MobileShare
+                  hasPath={!!tab.path}
+                  onShare={onShare}
+                  onExportPdf={onExportPdf}
+                  onExportHtml={onExportHtml}
+                  // Same toast as sharing an unsaved document (App.jsx onShare).
+                  onNeedsSave={onShare}
+                />
               )}
               <MobileMore
                 dirty={dirty}

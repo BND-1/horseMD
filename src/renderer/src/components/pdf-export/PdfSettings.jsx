@@ -3,6 +3,15 @@ import ExportSwitch from '../export/ExportSwitch.jsx'
 
 export default function PdfSettings({ options, setOptions, rangeError, t, pageEstimate }) {
   const set = (key, value) => setOptions((previous) => ({ ...previous, [key]: value }))
+  // Phones (capabilities.pdfOptions): no header / footer text, no bookmarks;
+  // page numbers are one switch. Desktop has no pdfOptions → all shown.
+  const pdfCaps = window.api.capabilities?.pdfOptions
+  const headerFooterText = pdfCaps?.headerFooterText !== false
+  const outline = pdfCaps?.outline !== false
+  const pageNumbers = options.footerEnabled && options.includePageNumbers
+  const setPageNumbers = (value) => setOptions((previous) => (value
+    ? { ...previous, footerEnabled: true, includePageNumbers: true }
+    : { ...previous, footerEnabled: false }))
   const commitFontSize = (value) => {
     const parsed = Number(value)
     set('fontSizePt', Number.isFinite(parsed) && value !== ''
@@ -102,10 +111,10 @@ export default function PdfSettings({ options, setOptions, rangeError, t, pageEs
             <ExportSwitch checked={options.tocPageBreak} onChange={(value) => set('tocPageBreak', value)} label={t('pdf.tocPageBreak')} t={t} />
           </div>
         )}
-        <ExportSwitch checked={options.generateOutline} onChange={(value) => set('generateOutline', value)} label={t('pdf.generateOutline')} description={t('pdf.generateOutlineHelp')} t={t} />
+        {outline && <ExportSwitch checked={options.generateOutline} onChange={(value) => set('generateOutline', value)} label={t('pdf.generateOutline')} description={t('pdf.generateOutlineHelp')} t={t} />}
       </section>
 
-      <section>
+      {headerFooterText && <section>
         <h3>{t('pdf.section.headerFooter')}</h3>
         <label className="hm-pdf-field"><span>{t('pdf.documentTitle')}</span><input type="text" value={options.documentTitle} onChange={(event) => set('documentTitle', event.target.value)} /></label>
         <ExportSwitch checked={options.headerEnabled} onChange={(value) => set('headerEnabled', value)} label={t('pdf.header')} t={t} />
@@ -123,10 +132,13 @@ export default function PdfSettings({ options, setOptions, rangeError, t, pageEs
             <ExportSwitch checked={options.includePageNumbers} onChange={(value) => set('includePageNumbers', value)} label={t('pdf.includePageNumbers')} t={t} />
           </div>
         )}
-      </section>
+      </section>}
 
       <section>
         <h3>{t('pdf.section.range')}</h3>
+        {!headerFooterText && (
+          <ExportSwitch checked={pageNumbers} onChange={setPageNumbers} label={t('pdf.pageNumbers')} description={t('pdf.pageNumbersHelp')} t={t} />
+        )}
         <label className={`hm-pdf-field${rangeError ? ' invalid' : ''}`}>
           <span>{t('pdf.pageRanges')}</span>
           <input type="text" value={options.pageRanges} placeholder={t('pdf.pageRangesPlaceholder')} onChange={(event) => set('pageRanges', event.target.value)} />
