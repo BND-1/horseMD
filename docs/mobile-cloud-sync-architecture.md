@@ -170,3 +170,9 @@ history       可选 { keep(absPath, bytes, reason) }；手机没有，删除/�
 - http（局域网 NAS 的 WebDAV）放行：iOS `NSAllowsLocalNetworking`，Android network security config。
 - 验证：Android 模拟器 + 本机 WsgiDAV：手机上传、电脑加入同一工作区下载、两边互相修改、不同处自动合并、
   同一处生成带设备名的冲突副本、切回前台自动同步、打开的标签随同步刷新。
+- 真机（2026-11-16）：华为 nova 5 Pro（签名发布包，adb reverse 到 mini 上的无密码 WsgiDAV）和
+  iPhone 13 mini（直接装的开发包，经 USB 链路地址 169.254.x 连 mini）加入同一个云端工作区，和电脑版
+  三方互相修改：上传、加入、下载、打开的标签随同步刷新、保存后约 20–30 秒自动同步、切回前台自动同步，
+  全部通过。iOS 第一次连局域网会问「本地网络」权限（`NSLocalNetworkUsageDescription`），蜂窝数据
+  权限也会问一次。
+
