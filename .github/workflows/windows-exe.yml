@@ -37,7 +37,7 @@ jobs:
         run: npm run build
 
       - name: Build Windows NSIS installer
-        run: npx electron-builder --win nsis --publish never
+        run: npx electron-builder --win nsis --x64 --arm64 --publish never
 
       - name: Verify EXE artifact
         shell: pwsh

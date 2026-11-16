@@ -43,10 +43,13 @@ jobs:
         include:
           - os: windows-latest
             platform: win
+            arch_args: --x64 --arm64
           - os: macos-latest
             platform: mac
+            arch_args: ""
           - os: ubuntu-latest
             platform: linux
+            arch_args: ""
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -83,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USE_HARD_LINKS: 'false'
-        run: npx electron-builder --${{ matrix.platform }} --publish always
+        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.arch_args }} --publish always
 
       # Linux: verify the .deb is a valid package (not a zero-byte stub from
       # cross-build). Cross-building .deb on macOS produces an invalid ~96-byte
