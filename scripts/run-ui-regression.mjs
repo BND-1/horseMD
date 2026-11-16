@@ -17,6 +17,10 @@ async function exists(file) {
   }
 }
 
+// A test that never ends must not hold the run: the nightly of 2026-11-16 sat
+// 7.5 hours in the Issues 66-67 session. HM_TEST_TIMEOUT_MS overrides.
+const TEST_TIMEOUT_MS = Number(process.env.HM_TEST_TIMEOUT_MS) || 30 * 60 * 1000
+
 function runNode(script, args = [], env = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script, ...args], {
@@ -24,9 +28,21 @@ function runNode(script, args = [], env = {}) {
       env: { ...process.env, ...env },
       stdio: 'inherit'
     })
-    child.once('error', reject)
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      console.error(`[ui-regression] ${script} still running after ${Math.round(TEST_TIMEOUT_MS / 60000)} min: stopping it`)
+      child.kill('SIGTERM')
+      setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL') }, 10000).unref()
+    }, TEST_TIMEOUT_MS)
+    child.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
     child.once('exit', (code, signal) => {
-      if (code === 0) resolve()
+      clearTimeout(timer)
+      if (timedOut) reject(new Error(`${script} timed out after ${Math.round(TEST_TIMEOUT_MS / 60000)} min`))
+      else if (code === 0) resolve()
       else reject(new Error(`${script} failed with ${signal || code}`))
     })
   })
