@@ -426,7 +426,8 @@
     "test:default-app": "node scripts/test-default-app.mjs",
     "test:default-app-ui": "node scripts/test-default-app-ui.mjs",
     "test:sync-issue-161-ui": "node scripts/test-sync-issue-161-ui.mjs",
-    "test:incremental-serialize-ui": "node scripts/test-incremental-serialize-ui.mjs"
+    "test:incremental-serialize-ui": "node scripts/test-incremental-serialize-ui.mjs",
+    "test:review-markup-open-ui": "node scripts/test-review-markup-open-ui.mjs"
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",

@@ -161,6 +161,10 @@ const standalone = [
     script: 'scripts/test-reading-mode-ui.mjs'
   },
   {
+    name: 'Review markup opens as written: click + source switch keeps the bytes',
+    script: 'scripts/test-review-markup-open-ui.mjs'
+  },
+  {
     name: 'Links: plain click opens web / #heading / other.md as a tab; link card copy / edit / remove, Mod+K',
     script: 'scripts/test-link-click-ui.mjs'
   },

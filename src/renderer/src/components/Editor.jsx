@@ -941,12 +941,16 @@ export default function Editor({
       // documents (issue #126, 394-fence redis doc) must not eager-mount a
       // CodeMirror per fence.
       defaultValue: (() => {
-        // `$$x$$` lines are math blocks in the parse itself
-        // (remarkSingleLineDisplayMath): rewriting the text here put a block
-        // in the editor that the authored source did not parse to.
-        const normalized = normalizeReviewMarkupMarkdown(firstContent)
-        chooseCodeBlockMountMode(normalized)
-        return normalized
+        // The editor parses the authored bytes as they are. Rewriting them
+        // first (`$$x$$` → three lines, 2026-11-14; review markup
+        // `{== a ==}` → ` {==a==} ` and `{\~\~…` unescaped, 2026-11-16) put a
+        // document in the editor the source did not parse to: after one
+        // click the next sync rewrote untouched lines and the tab turned
+        // dirty with no edit. `$$x$$` is a math block in the parse itself;
+        // escaped substitutions read back the same through micromark +
+        // remarkReconstructSubstitution; edge spaces stay inside the marker.
+        chooseCodeBlockMountMode(firstContent)
+        return firstContent
       })(),
       getT: (key) => tRef.current(key),
       persistImage,

@@ -3,7 +3,6 @@ import { commandsCtx, remarkCtx, serializerCtx } from '@milkdown/kit/core'
 import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
-import { normalizeReviewMarkupMarkdown } from '../reviewMarkup.js'
 import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
 import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
@@ -159,7 +158,9 @@ export function createEditorApi({
       if (!hasPendingRichFlush?.()) {
         recordSourceSnapshot?.({ doc: viewRef.current?.state.doc, source: lastMarkdownRef.current })
       }
-      const next = normalizeReviewMarkupMarkdown(source)
+      // Parsed as written (see Editor.jsx defaultValue): a rewrite here gave
+      // the editor a document the source did not parse to.
+      const next = source
       // Re-choose the code-block mount mode for the incoming document: pasting
       // a block-heavy document into a small one must not eager-mount hundreds
       // of CodeMirror instances (issue #126).
