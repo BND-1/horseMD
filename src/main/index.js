@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut, powerMonitor } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, net, safeStorage, session, clipboard, Tray, nativeImage, globalShortcut, powerMonitor, dialog } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, basename, extname, resolve, sep } from 'node:path'
 import fs from 'node:fs/promises'
@@ -67,6 +67,9 @@ let allowClose = false
 let isQuitting = false
 let localFontGrant = null
 let rendererReady = false
+// The main window's renderer process is gone (render-process-gone): nothing
+// can answer app-close-request until the window is reloaded.
+let mainRendererGone = false
 // Default-app IPC (#170); assigned once the IPC modules register.
 let defaultApp = null
 // Tray icon that keeps the app reachable while the window is hidden. Held in a
@@ -525,11 +528,58 @@ function createWindow() {
   // renderer, so defer the close and ask it; it calls back via 'app:confirm-close'
   // (proceed) or 'app:cancel-close' (abort).
   allowClose = false
+  mainRendererGone = false
   // Windows log off / shut down (see powerMonitor 'shutdown' in whenReady).
   mainWindow.on('session-end', () => updater.markSessionEnding())
+  // The renderer died (crash, OOM, killed): its page is blank and nothing
+  // will ever answer app-close-request, so quit and SIGTERM waited forever
+  // (mini 2026-11-12: a 0.14.0 window without a renderer had to be
+  // SIGKILLed). Like VS Code: say so and offer to reopen the window; a close
+  // or quit no longer waits for an answer that cannot come.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    const win = mainWindow
+    traceQuit('renderer-gone', { reason: details?.reason, exitCode: details?.exitCode, isQuitting })
+    if (!win || win.isDestroyed() || details?.reason === 'clean-exit') return
+    mainRendererGone = true
+    rendererReady = false
+    if (isQuitting) {
+      allowClose = true
+      win.close()
+      return
+    }
+    if (backgroundTestMode) return
+    const zh = String(app.getLocale?.() || '').toLowerCase().startsWith('zh')
+    dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: zh ? ['重新打开窗口', '退出 HorseMD'] : ['Reopen Window', 'Quit HorseMD'],
+      defaultId: 0,
+      cancelId: 1,
+      message: zh ? 'HorseMD 的窗口意外终止了' : 'The HorseMD window terminated unexpectedly',
+      detail: zh
+        ? `原因：${details?.reason || '未知'}。重新打开会恢复上次打开的文档；最后一次保存之后的修改可能没有保留。`
+        : `Reason: ${details?.reason || 'unknown'}. Reopening restores the documents that were open; changes after the last save may be lost.`
+    }).then(({ response }) => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainRendererGone) return
+      traceQuit('renderer-gone-choice', { reopen: response === 0 })
+      if (response === 0) {
+        mainRendererGone = false
+        mainWindow.webContents.reload()
+      } else {
+        isQuitting = true
+        allowClose = true
+        app.quit()
+      }
+    }).catch(() => {})
+  })
+
   mainWindow.on('close', (e) => {
-    traceQuit('window-close', { allowClose, isQuitting, rendererReady })
+    traceQuit('window-close', { allowClose, isQuitting, rendererReady, rendererGone: mainRendererGone })
     if (allowClose) return
+    if (mainRendererGone || mainWindow?.webContents?.isCrashed?.()) {
+      traceQuit('window-close-renderer-gone')
+      allowClose = true
+      return
+    }
     e.preventDefault()
     // Closing to the tray keeps the app (and every open tab) alive, so the
     // renderer only has to flush pending edits — no unsaved-changes confirm.

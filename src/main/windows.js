@@ -450,6 +450,16 @@ export function createWindowManager({
       else win.showInactive()
     })
 
+    // Its renderer died: nothing will answer app-close-request or
+    // app-quit-prepare, so the window closes without asking and a quit does
+    // not wait for it (see render-process-gone in index.js).
+    win.webContents.on('render-process-gone', (_event, details) => {
+      traceQuit('secondary-renderer-gone', { wid: entry.wid, reason: details?.reason })
+      if (details?.reason === 'clean-exit') return
+      entry.ready = false
+      settlePrepare(wcId, 0)
+    })
+
     win.on('close', (event) => {
       traceQuit('secondary-close', { wid: entry.wid, allowClose: entry.allowClose, isQuitting: isQuitting(), ready: entry.ready })
       if (entry.allowClose) return

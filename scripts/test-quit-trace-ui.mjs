@@ -7,6 +7,9 @@
 //  2. An unsaved edit: SIGTERM brings the window forward, shows the
 //     unsaved-changes confirm (traced with the dirty count) and does not quit
 //     behind the user's back.
+//  3. The renderer crashed (CDP Page.crash): SIGTERM still quits — nothing is
+//     left to answer the close request (mini 2026-11-12: a window without a
+//     renderer ignored Cmd+Q and SIGTERM until SIGKILL).
 // On Windows SIGTERM is TerminateProcess (no quit flow at all), so the test
 // closes the window there instead — the close button's path.
 import assert from 'node:assert/strict'
@@ -28,9 +31,20 @@ async function run(name, edit) {
   await mkdir(dir, { recursive: true })
   const file = join(dir, 'doc.md')
   await writeFile(file, '# t\n\nbody\n', 'utf8')
-  const app = await launchBuiltElectron({ profileDir: join(dir, 'profile'), port: name === 'clean' ? 9645 : 9646, appArgs: [file] })
+  const inspectPort = 9649
+  const appArgs = name === 'crashed' ? [file, `--inspect=${inspectPort}`] : [file]
+  const app = await launchBuiltElectron({ profileDir: join(dir, 'profile'), port: { clean: 9645, dirty: 9646, crashed: 9647 }[name], appArgs })
   try {
     await sleep(1500)
+    if (name === 'crashed') {
+      // Kill the window's renderer from the main process (Node inspector).
+      const [target] = await (await fetch(`http://127.0.0.1:${inspectPort}/json/list`)).json()
+      const ws = new WebSocket(target.webSocketDebuggerUrl)
+      await new Promise((resolve) => ws.addEventListener('open', resolve, { once: true }))
+      ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: "require('electron').BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer()", includeCommandLineAPI: true } }))
+      await sleep(1500)
+      ws.close()
+    }
     if (edit) {
       await app.evaluate(`(() => { const v = globalThis.__hmSourceReprintHarness.view(); v.focus(); return true })()`)
       await app.send('Input.insertText', { text: 'X' })
@@ -69,7 +83,13 @@ try {
   assert.ok(!clean.steps.includes('window-shown-for-confirm'), 'a clean quit does not bring the window forward')
   try { dirty.app.child.kill('SIGKILL') } catch { /* gone */ }
   await exitWithin(dirty.app.child, 10000)
-  console.log(`PASS quit trace: clean quit traced (${clean.steps.join(' → ')}); an unsaved edit shows the confirm (${dirty.steps.join(' → ')})`)
+  if (process.platform !== 'win32') {
+    const crashed = await run('crashed', false)
+    assert.ok(crashed.steps.includes('renderer-gone'), `the renderer's death is traced: ${JSON.stringify(crashed.steps)}`)
+    assert.equal(crashed.exited, true, `SIGTERM quits with the renderer gone: ${JSON.stringify(crashed.steps)}`)
+    assert.ok(crashed.steps.includes('window-close-renderer-gone') && crashed.steps.includes('will-quit'), `the close does not wait for the dead renderer: ${JSON.stringify(crashed.steps)}`)
+  }
+  console.log(`PASS quit trace: clean quit traced (${clean.steps.join(' → ')}); an unsaved edit shows the confirm (${dirty.steps.join(' → ')}); a crashed renderer does not hold the quit`)
 } finally {
   // Windows releases a killed process's files a moment after it exits.
   await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
