@@ -207,6 +207,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   restore, show, focus; on macOS `app.focus({ steal: true })`; traced
   `window-shown-for-confirm`). Locked by `test:quit-trace-ui` (Windows closes
   the window: its SIGTERM is TerminateProcess).
+  A dead renderer (crash, OOM; mini 2026-11-12: a blank 0.14.0 window
+  ignored Cmd+Q and SIGTERM until SIGKILL) can never answer
+  app-close-request: main listens to `render-process-gone` (traced
+  `renderer-gone`), a close then goes through at once
+  (`window-close-renderer-gone`), and while running a dialog offers
+  重新打开窗口 (reload; the session restores the tabs) / 退出 (VS Code).
+  A secondary whose renderer died closes without asking and is not waited
+  for by app-quit-prepare. The quit test crashes the renderer through the
+  main process inspector (`forcefullyCrashRenderer`).
 - **Content-visibility keeps the caret's block** (`editor-cv-keep.js`): large
   documents skip layout for off-screen blocks (`.editor-scroll.hm-cv`), and
   Chromium put keys typed at a caret set without scrolling (mode switch,
@@ -1155,7 +1164,15 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   the text first (`normalizeDisplayMath`, now only for Markdown pastes), so
   the editor held a block the authored source did not parse to and the
   first sync after any click rewrote the line as three — dirty with no edit
-  (mobile review 2026-11-14; test cases 6–7). The serializer's authored-style pass
+  (mobile review 2026-11-14; test cases 6–7). Review markup had the same
+  bug (2026-11-16): `normalizeReviewMarkupMarkdown` ran on open, on
+  source → rich and on chunked loads (`{== a ==}` → ` {==a==} `, escaped
+  `{\~\~…` unescaped, also inside code), so a click + source switch rewrote
+  untouched lines. The editor now parses the authored bytes everywhere
+  (micromark + `remarkReconstructSubstitution` read escaped substitutions
+  the same; edge spaces stay inside the highlight); the normalization is
+  left for generated text (`canonicalForSource`). Locked by
+  `test:review-markup-open-ui`. The serializer's authored-style pass
   (`serializer-style.js` `mapSyntaxLines`: two-space hard breaks, bullet /
   `1)` markers, and the hard-break count it detects from) skips fenced code
   AND `$$` math lines — it turned LaTeX `\\` / a trailing `\` into `  `, so

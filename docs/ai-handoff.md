@@ -1,5 +1,12 @@
 # HorseMD AI 接手手册
 
+> **2026-11-17 当前状态（最新，优先于下面所有记录）**
+> - 已发布 **v0.14.3**（2026-11-16）：标签页拖出成新窗口、手机云同步（`src/shared/sync` + 原生 HorseHttp / HorseSecureStore）、手机导出 PDF / HTML（原生 HorsePdf + pdf-lib）、导出带 YAML 属性表、多行纯文本粘贴。GitHub 有全平台安装包 + 安卓 APK + SHA256SUMS；官网 `website/` 要在 Air 上用 Vercel CLI 手动部署（不随推送更新，见 §「官网部署」下方说明）。
+> - v0.14.3 之后的修复：渲染进程崩溃后退出不再卡死（`render-process-gone`，`test:quit-trace-ui`）；打开文件不再先改写 CriticMarkup（`test:review-markup-open-ui`）。完整 UI 回归 5 会话 + 141 项全过（2026-11-16）。
+> - **iOS 上架进行中**（资料在 `~/vibe_the_wrold/App上架/`）：用户定了买断 $2.99、先不上中国大陆区（并行办 APP 备案）、隐私政策已上线 https://horsemd.yangsir.net/privacy 。App Store Connect 已填版本 0.14.3、构建 14003.1、三种语言的文字、分类、年龄分级、内容版权。还缺：截图（iPhone 6.9 寸、iPad 13 寸）、价格和地区、只有用户能做的付费协议 / 税务 / 银行 / 欧盟交易商信息 / 隐私问卷（网页）/ 审核联系电话。提交审核前必须问用户。
+> - 已知未修：iOS 导出 PDF 标题可能落在页尾（WebKit 不认 `break-after: avoid`）；手机 `.horsemd/trash` 只增不减；夜间测试曾在 Issues 66-67 卡住（单跑通过，已加 30 分钟超时）；PR #178（Windows ARM64）用户说先不管。
+> - 官网部署：在 Air 上把 `website/`（不含 `.vercel`）放到临时目录，拷 `~/vibe_everything/horseMD/website/.vercel/project.json`，`zsh -lc "npx -y vercel@65.16.0 deploy --prod --yes"`，部署后删临时目录。
+
 
 > **2026-11-10 当前状态（优先于下文历史记录）**：富文本 → 源码只剩一个写入方——源码重排（`Editor.jsx publishReprint`），保存校验只用投影（`lib/source-sync/projection.js` + 精简后的 `validator.js`）。下文提到的 focused owners、transaction journal、transaction-first 映射器（`__hmTransactionSourcePrimary` 等）、`preserveRichMarkdownSource`、开关 `__hmSourceReprintPrimary` / `__hmReprintOnly` / `HM_TEST_REPRINT_PRIMARY` 都已删除（提交 bf01188 及之后），仅作历史参考。详见 `docs/reprint-root-cause-plan.md`「删除旧写入方」。
 > 面向全新的 AI / 开发者。先读这篇，再按链接深入。更新时间：2026-10-06。
