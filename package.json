@@ -1,6 +1,7 @@
 {
   "name": "horse",
   "version": "0.14.4",
+  "desktopName": "horsemd.desktop",
   "description": "HorseMD Markdown Editor",
   "author": "mini_md",
   "license": "MIT",
@@ -550,6 +551,9 @@
       ]
     },
     "linux": {
+      "desktop": {
+        "StartupWMClass": "horsemd"
+      },
       "target": [
         {
           "target": "deb",
