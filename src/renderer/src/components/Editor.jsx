@@ -380,7 +380,7 @@ export default function Editor({
     const persistImage = createImagePersister({
       docPath,
       getUploadCommand: () => uploadCmdRef.current,
-      getT: (key) => tRef.current(key),
+      getT: (key, vars) => tRef.current(key, vars),
       notify: fireToast
     })
 
@@ -952,7 +952,7 @@ export default function Editor({
         chooseCodeBlockMountMode(firstContent)
         return firstContent
       })(),
-      getT: (key) => tRef.current(key),
+      getT: (key, vars) => tRef.current(key, vars),
       persistImage,
       notify: fireToast,
       copyText: copyToClipboard,
@@ -1763,7 +1763,7 @@ export default function Editor({
           getListConversionContext,
           setCtxMenu,
           setZoom,
-          getT: (key) => tRef.current(key),
+          getT: (key, vars) => tRef.current(key, vars),
           getKeybindings: () => effectiveKeybindingsRef.current,
           getSelectionToolbarEnabled: () => selectionToolbarRef.current,
           onMarkdownInputIntent: (intent) => {
@@ -1874,7 +1874,7 @@ export default function Editor({
           markUserEdit,
           onStructureChange,
           isDestroyed: () => destroyed,
-          getT: (key) => tRef.current(key),
+          getT: (key, vars) => tRef.current(key, vars),
           notify: fireToast,
           publishReprint: ({ canonical }) => {
             const intentPending = hasBlockingListInputIntent()
@@ -1978,7 +1978,8 @@ export default function Editor({
           getSyncReport: (where) => captureSyncReport('rich-edit-not-mapped', where),
           restoreMarkdownOffset,
           markdownOffsetFromSelection,
-          markdownOffsetFromViewportTop
+          markdownOffsetFromViewportTop,
+          getScrollAnchors: api.getScrollAnchors
         })
 
         // Append the remaining chunks of a huge doc in the background so the open

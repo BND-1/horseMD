@@ -257,6 +257,10 @@ const standalone = [
     script: 'scripts/test-plain-text-paste-ui.mjs'
   },
   {
+    name: 'Images copied from a document in another folder come along (copied into ./assets)',
+    script: 'scripts/test-copy-images-between-docs-ui.mjs'
+  },
+  {
     name: 'Multi-window: move / drag a tab into a new window or another window, OS open routing, close and quit confirms, restore',
     script: 'scripts/test-multi-window-ui.mjs'
   },
@@ -540,6 +544,22 @@ const standalone = [
   {
     name: 'Source + rich split: leading caret, preview menu (read-only, Esc), save, scroll links',
     script: 'scripts/test-source-rich-split-ui.mjs'
+  },
+  {
+    name: 'Source + preview scroll link: headings / table rows line up both ways (CRLF, tables, code)',
+    script: 'scripts/test-source-rich-split-scroll-ui.mjs'
+  },
+  {
+    name: 'Table math pipes: \\| reads as |, | typed in a cell saved as \\|, table intact',
+    script: 'scripts/test-table-math-pipes-ui.mjs'
+  },
+  {
+    name: 'Table math pipes: parse / write round trip (pure)',
+    script: 'scripts/test-table-math-pipes.mjs'
+  },
+  {
+    name: 'Pinch zoom: a trackpad pinch magnifies the page (Typora), back to 1x',
+    script: 'scripts/test-pinch-zoom-ui.mjs'
   },
   {
     name: 'Rich list source fidelity: paragraph → Enter → typed dash list',

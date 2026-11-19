@@ -72,3 +72,22 @@ export const textareaOffsetAtScrollTop = (textarea) => {
     mirror.remove()
   }
 }
+
+// The y of many offsets in one mirror layout (offsets in textarea order).
+export const textareaOffsetsY = (textarea, offsets) => {
+  const mirror = createMirror(textarea)
+  try {
+    const value = textarea.value || ''
+    const text = textarea.ownerDocument.createTextNode(value + '​')
+    mirror.appendChild(text)
+    const range = textarea.ownerDocument.createRange()
+    const baseTop = mirror.getBoundingClientRect().top
+    return offsets.map((offset) => {
+      range.setStart(text, Math.max(0, Math.min(offset, value.length)))
+      range.collapse(true)
+      return range.getBoundingClientRect().top - baseTop
+    })
+  } finally {
+    mirror.remove()
+  }
+}

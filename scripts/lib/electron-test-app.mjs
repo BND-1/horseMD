@@ -179,3 +179,20 @@ async function waitForProfileReleased(profileDir, timeoutMs = 10000) {
     return
   }
 }
+
+// New installs start without the floating selection toolbar (settings.js
+// `selectionToolbarFor`). Tests that drive it turn it on the way another
+// window's settings change arrives: stored, then a `storage` event.
+export async function enableSelectionToolbar(evaluate) {
+  await evaluate(`(() => {
+    const key = 'horsemd.settings.v1'
+    const next = JSON.stringify({ ...JSON.parse(localStorage.getItem(key) || '{}'), selectionToolbar: true })
+    localStorage.setItem(key, next)
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue: next, storageArea: localStorage }))
+  })()`)
+  for (let i = 0; i < 100; i += 1) {
+    if (await evaluate(`!document.querySelector('.app')?.classList.contains('hm-selection-toolbar-disabled')`)) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error('Selection toolbar did not turn on')
+}

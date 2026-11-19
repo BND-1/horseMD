@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
+import { enableSelectionToolbar, launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey } from './lib/human-input.mjs'
 
@@ -126,6 +126,7 @@ const launch = async () => {
   app = await launchBuiltElectron({ profileDir: join(root, 'profile'), port, appArgs: [file, '--horsemd-input-trace'] })
   await waitFor(() => app.evaluate(`!!(${editor}) && !!globalThis.__hmSourceReprintHarness`), 'document did not open', 150)
   await sleep(800)
+  await enableSelectionToolbar(app.evaluate)
   await app.evaluate(`(() => { globalThis.__toasts = []
     window.addEventListener('hm:toast', (e) => globalThis.__toasts.push(typeof e.detail === 'string' ? e.detail : e.detail?.msg)) })()`)
 }

@@ -13,6 +13,7 @@ import {
   materializeCopiedSoftBreaks
 } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
+import { markClipboardSource } from './editor-pasted-images.js'
 import { attachPlainTextDropHandler } from './editor-drop-text.js'
 import { hasStructuredWebHtml } from './editor-web-paste.js'
 import { foldedSelectionRange } from './editor-heading-fold.js'
@@ -345,8 +346,20 @@ export function mountEditorContentBindings({
       } catch {
         return null
       }
-    }, prepareRawMarkdownPaste, markUserEdit)
+    }, prepareRawMarkdownPaste, markUserEdit, { getDocPath: () => docPath, isDestroyed })
   )
+  // Copies name their document, so a paste into another folder can bring the
+  // images along (editor-pasted-images.js). Bubble phase: after ProseMirror's
+  // own cut / copy handler and after fillClipboard.
+  const onCopySource = (event) => {
+    if (!view.dom.__hmPlainCopy) markClipboardSource(event, docPath)
+  }
+  view.dom.addEventListener('copy', onCopySource)
+  view.dom.addEventListener('cut', onCopySource)
+  cleanups.push(() => {
+    view.dom.removeEventListener('copy', onCopySource)
+    view.dom.removeEventListener('cut', onCopySource)
+  })
   // Plain-text drops insert literal text at the drop point — without this,
   // ProseMirror's html-flavored block insertion splits the host textblock
   // (trace-61614: a `<br />` drop split a list item into [empty, text] and

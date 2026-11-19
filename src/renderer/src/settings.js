@@ -212,10 +212,11 @@ export const DEFAULT_SETTINGS = {
   // deletion by selecting the formula on the first Backspace/Delete and only
   // deleting it on the second press. "fast" keeps the previous one-key delete.
   inlineMathDeleteMode: 'protect',
-  // Desktop rich editor: leave the compact selection toolbar on by default.
-  // Users who prefer an uninterrupted writing surface can use the expanded
-  // right-click formatting menu instead.
-  selectionToolbar: true,
+  // Desktop rich editor: no floating toolbar on a selection for new installs
+  // (user decision 2026-11-19); formatting, review and conversion are in the
+  // right-click menu. Installs from before keep the toolbar
+  // (`selectionToolbarFor`).
+  selectionToolbar: false,
   // Keep ordinary source newlines visible in rich mode without changing their
   // Markdown meaning or serializing them as explicit hard breaks.
   preserveSoftBreaks: true,
@@ -295,6 +296,22 @@ function normalizeInRange(v, min, max, def) {
   return Math.min(max, Math.max(min, round1(n)))
 }
 
+// A stored choice wins. Without one, an install that already ran (saved
+// settings, a session, onboarding) had the toolbar on by default and keeps
+// it; a new install starts without it. The answer is stored at once, so the
+// new install's own session does not make it "an install that already ran"
+// on the next launch.
+const EXISTING_INSTALL_KEYS = ['minimd.session.v1', 'horsemd.onboarded.v1']
+function selectionToolbarFor(raw) {
+  if (typeof raw.selectionToolbar === 'boolean') return raw.selectionToolbar
+  let value = false
+  try {
+    value = localStorage.getItem(SETTINGS_KEY) != null || EXISTING_INSTALL_KEYS.some((key) => localStorage.getItem(key) != null)
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...raw, selectionToolbar: value }))
+  } catch {}
+  return value
+}
+
 export function loadSettings() {
   try {
     const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
@@ -324,7 +341,7 @@ export function loadSettings() {
       markdownSubscript: raw.markdownSubscript === true,
       markdownSuperscript: raw.markdownSuperscript === true,
       inlineMathDeleteMode: raw.inlineMathDeleteMode === 'fast' ? 'fast' : 'protect',
-      selectionToolbar: raw.selectionToolbar !== false,
+      selectionToolbar: selectionToolbarFor(raw),
       preserveSoftBreaks: raw.preserveSoftBreaks !== false,
       restoreSession: raw.restoreSession !== false,
       autoSaveDelay: AUTO_SAVE_DELAYS.includes(raw.autoSaveDelay) ? raw.autoSaveDelay : 0,

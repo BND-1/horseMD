@@ -538,3 +538,54 @@ export function markdownOffsetToPmPos(markdown, rawOffset, doc, remark) {
   const local = blockLocalIndex(md, rawOffset)
   return { pos: pmPosFromItemIndex(pm, local), atom: false }
 }
+
+// Block pairs for the source + preview scroll link (useSplitScrollSync):
+// [{ raw, pmPos }] in document order, monotonic on both sides — the source
+// line ↔ preview element table of VS Code's Markdown preview. One linear
+// pass: a Markdown block and a ProseMirror block pair when their kind and
+// text agree; on a difference a short window on both sides resyncs (an
+// empty paragraph ProseMirror keeps, a definition, a block typed in the
+// source and not yet in the preview), else same-kind blocks pair in order.
+// Per-position lookups above search the whole list each time; scrolling
+// needs every block, so this keeps it O(n).
+const SCROLL_PAIR_WINDOW = 24
+const scrollPairCache = new WeakMap()
+
+export function scrollAnchorPairs(markdown, doc, remark) {
+  if (!markdown || !doc || !remark) return null
+  const cached = scrollPairCache.get(doc)
+  if (cached && cached.markdown === markdown) return cached.pairs
+  const mdBlocks = mdBlocksFor(markdown, remark)
+  if (!mdBlocks) return null
+  const pmBlocks = pmBlocksFor(doc).filter((b) => !(b.kind === 'paragraph' && b.textblock && !normText(b.text)))
+  const key = (b) => normText(b.matchText ?? b.text)
+  const mdKeys = mdBlocks.map(key)
+  const pmKeys = pmBlocks.map(key)
+  const matches = (i, j) => i < mdBlocks.length && j < pmBlocks.length &&
+    sameKind(mdBlocks[i].kind, pmBlocks[j].kind) && mdKeys[i] === pmKeys[j]
+  const pairs = []
+  let i = 0
+  let j = 0
+  while (i < mdBlocks.length && j < pmBlocks.length) {
+    if (!matches(i, j)) {
+      let skip = null
+      for (let d = 1; d <= SCROLL_PAIR_WINDOW && !skip; d++) {
+        if (matches(i, j + d)) skip = { i, j: j + d }
+        else if (matches(i + d, j)) skip = { i: i + d, j }
+      }
+      if (skip) {
+        i = skip.i
+        j = skip.j
+      } else if (!sameKind(mdBlocks[i].kind, pmBlocks[j].kind)) {
+        i++
+        j++
+        continue
+      }
+    }
+    pairs.push({ raw: mdBlocks[i].start, pmPos: pmBlocks[j].pos })
+    i++
+    j++
+  }
+  scrollPairCache.set(doc, { markdown, pairs })
+  return pairs
+}

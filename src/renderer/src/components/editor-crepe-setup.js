@@ -29,6 +29,7 @@ import {
   brToBreakRemarkPlugin
 } from './editor-tablebreak.js'
 import { mathPreviewPlugin } from './editor-math-preview.js'
+import { inlineMathStringifyHandler, remarkTableMathPipes } from '../lib/remark-table-math-pipes.js'
 import { oneLineBlocksPlugin } from './editor-one-line-blocks.js'
 import { listItemLeadPlugin } from './editor-list-item-lead.js'
 import { listJoinPlugin } from './editor-list-join.js'
@@ -303,7 +304,7 @@ export function createConfiguredCrepe({
       createHtmlSpanPartPlugin(),
       createTaskListInputPlugin(),
       createInlineMathEditingPlugin({ getDeleteMode: getInlineMathDeleteMode }),
-      createKatexDomPrunePlugin(),
+      createKatexDomPrunePlugin({ t }),
       mathPreviewPlugin(getT),
       createSlashPlugin(ctx, getT, onSlashCommand),
       toolbarAutohidePlugin(),
@@ -336,6 +337,7 @@ export function createConfiguredCrepe({
         link: autolinkSafeLinkHandler,
         table: tableStringifyHandler,
         break: tableCellBreakHandler,
+        inlineMath: inlineMathStringifyHandler,
         hmLineBreakRun,
         highlight: highlightStringifyHandler,
         hmHtmlSpan: htmlSpanStringifyHandler,
@@ -383,6 +385,8 @@ export function createConfiguredCrepe({
       { plugin: remarkUnwrapNonAsciiAutolinks, options: undefined },
       { plugin: remarkFrontmatter, options: undefined },
       { plugin: brToBreakRemarkPlugin, options: undefined },
+      // `\|` in a formula in a table cell is a `|` (GitHub, markdown-it).
+      { plugin: remarkTableMathPipes, options: undefined },
       { plugin: remarkMergeInlineHtml, options: undefined },
       { plugin: remarkReconstructSubstitution, options: undefined }
     ])

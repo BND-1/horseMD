@@ -124,6 +124,9 @@ const api = {
   // save an image pasted into an UNSAVED doc to the global paste folder; returns
   // { ok, url } (a file:// URL) so it shows as a real path, not a base64 blob.
   savePaste: (name, bytes) => ipcRenderer.invoke('image:savePaste', name, bytes),
+  // images in content pasted from another document: { ok, results: { url: newUrl } }
+  importPastedImages: (sourceDocPath, targetDocPath, urls) =>
+    ipcRenderer.invoke('image:importPasted', sourceDocPath, targetDocPath, urls),
   // at save time, move base64 / paste-folder images into the doc's assets/ and
   // rewrite the Markdown to relative paths; returns { content, changed }.
   inlineForSave: (content, targetPath) =>

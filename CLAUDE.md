@@ -623,6 +623,68 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   in a table cell the lines join with `<br>`. Markdown-looking text and HTML
   clipboards are unchanged (macOS native apps put RTF, which Chromium turns
   into one `<p>` per line). Locked by `test:plain-text-paste-ui`.
+- **Source + preview scroll link** (`hooks/useSplitScrollSync.js`,
+  `lib/split-scroll-map.js`; user report 2026-11-19, Windows: a table- and
+  code-heavy document drifted by whole sections, rich → source by up to two
+  screens). VS Code's Markdown preview: block pairs (`scrollAnchorPairs` in
+  `editor-source-map.js`, one linear pass, kind + text with a resync
+  window) give each block's source scrollTop (one textarea mirror for all
+  offsets, `textareaOffsetsY`) and preview scrollTop (`view.nodeDOM`); a
+  position between two blocks is interpolated, (0, 0) and both scroll ends
+  are the first / last points. The map is rebuilt when either side's text,
+  width or height changes. Echoes are recognized by position (the pane is
+  still where the hook wrote it), not by a time window; user input on a pane
+  records the other pane's position, so its late scroll events cannot take
+  ownership; the flush runs on a frame or a 50 ms timer (an occluded Windows
+  window got one frame in 1.5 s). The source textarea's Enter scroll guard
+  (#50) works only within 250 ms and stops on wheel / pointer input: run
+  seconds late it pulled a scrolled source (and the preview) back. The old
+  `scrollAnchor` path is only the fallback. Locked by
+  `test:source-rich-split-scroll-ui` (headings both ways, table rows, ends;
+  CRLF) and `test:source-rich-split-ui`; both pass on Windows.
+- **Selection toolbar default** (user decision 2026-11-19,
+  `settings.js` `selectionToolbarFor`): new installs start with
+  `selectionToolbar: false` (formatting / review / conversion in the
+  right-click menu); an install that already ran (stored settings, a
+  session or onboarding) and has no stored choice keeps it on. The answer is
+  stored on first load, so a new install's own session never flips it.
+  Tests that drive the toolbar call `enableSelectionToolbar(evaluate)`
+  (`scripts/lib/electron-test-app.mjs`: stored + a `storage` event).
+  Locked by `test:selection-toolbar-ui`.
+- **Formulas in table cells** (`lib/remark-table-math-pipes.js`, #179
+  follow-up): a cell's `\|` is a `|` inside inline math too (GitHub and
+  markdown-it; mdast-util-gfm-table did it for inline code only, so
+  `$\left\| x \right\|$` drew ‖ and a `|` typed in a cell formula was
+  saved bare and split the table). Parse: the inline-code unescape; write
+  (`inlineMathStringifyHandler`): `|` → `\|`, the formula's own `\|` →
+  `\Vert` (not writable in a cell). A formula KaTeX rejects gets a visible
+  reason under / after it (`editor-katex-dom-prune.js`, attribute + CSS
+  `::after`; #179's formula lacks `\right.` — MathJax rejects it too).
+  Locked by `test:table-math-pipes`, `test:table-math-pipes-ui`.
+- **Pinch zoom** (#180, Typora): app windows allow visual zoom 1–4×
+  (`setVisualZoomLevelLimits` after every load, `installWindowGuards`); the
+  lightbox keeps its own Ctrl+wheel / pinch. Locked by `test:pinch-zoom-ui`.
+- **Images pasted from another document** (user report 2026-11-19): a copy
+  keeps the authored `assets/p.png`, which the target read against its OWN
+  folder — every image broke. A rich copy / cut holding an image (bubble
+  phase, after ProseMirror's handler; not 复制纯文本) and a source-mode copy
+  with image syntax add `application/x-horsemd-source` = `{docPath}`
+  (`editor-pasted-images.js`). A paste from another folder (rich: first step
+  of the md-paste handler; source textarea: `onPaste`) with relative images
+  (`lib/pasted-image-refs.js`: resource images, image reference definitions,
+  `<img src>`, found with mdast positions) waits for main
+  (`image:importPasted`, `main/pasted-images.js`): a file inside the
+  target's folder → a relative path to it; else a copy in the target's
+  `./assets` (same name, `-1`… on a clash, an identical file is reused) —
+  the rule for any image inserted from a local file, and it keeps a synced
+  folder self-contained; an unsaved target → the paste folder (moved into
+  ./assets on first save). Image extensions only (the clipboard can be
+  written by other programs). The clipboard is rewritten at exactly those
+  byte ranges and pasted again through the normal path (re-dispatched
+  paste, `__hmPastedImagesResolved`); same-folder pastes are untouched and
+  synchronous. Not handled: links / attachments, an image host upload.
+  Locked by `test:pasted-images`, `test:copy-images-between-docs-ui` (real
+  system clipboard).
 - **Table paste** (`editor-table-paste.js`, #152): a GFM table is a plain
   grid with one paragraph per cell, so anything else fails the save gate
   closed. Merged cells (colspan/rowspan from Excel/WPS/web) are split by a

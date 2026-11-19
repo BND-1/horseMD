@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
+import { enableSelectionToolbar, launchBuiltElectron, stopBuiltElectron } from './lib/electron-test-app.mjs'
 import { sleep } from './lib/cdp.mjs'
 import { pressKey, typeTextLikeUser } from './lib/human-input.mjs'
 
@@ -128,6 +128,8 @@ async function main() {
       'Rich editor did not become ready'
     )
     assert.equal(await evaluate(`!!document.querySelector('.hm-source-rich-toggle')`), false, 'Source + preview must not occupy the status bar')
+    // The preview hides the floating toolbar even for users who have it on.
+    await enableSelectionToolbar(evaluate)
     await toggleSplitPreview(evaluate)
 
     const layout = await waitFor(() => evaluate(`(() => {

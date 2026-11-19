@@ -20,10 +20,8 @@ const visible = (selector) => `(() => {
   return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
 })()`
 
-const app = await launchBuiltElectron({
-  profileDir: `/tmp/horsemd-selection-toolbar-${process.pid}`,
-  port
-})
+const profileDir = `/tmp/horsemd-selection-toolbar-${process.pid}`
+let app = await launchBuiltElectron({ profileDir, port })
 
 try {
   const { evaluate, send } = app
@@ -56,7 +54,14 @@ try {
   assert.notEqual(formulaLayout.codeMarginTop, '0px',
     `Formula spacing override unexpectedly changed normal code blocks: ${JSON.stringify(formulaLayout)}`)
 
-  // Open Settings -> Editor and turn off the desktop selection toolbar through
+  // A new install starts without the floating toolbar (user decision
+  // 2026-11-19), and that answer is stored right away.
+  assert.equal(await evaluate(`document.querySelector('.app')?.classList.contains('hm-selection-toolbar-disabled')`), true,
+    'A new install showed the floating selection toolbar')
+  assert.equal(await evaluate(`JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').selectionToolbar`), false,
+    'The new-install default was not stored')
+
+  // Open Settings -> Editor and turn the toolbar on, then off again, through
   // the real Toggle component, rather than poking localStorage directly.
   const settingsOpened = await evaluate(`(() => {
     const buttons = [...document.querySelectorAll('button')]
@@ -71,14 +76,18 @@ try {
   await waitFor(evaluate, `(() => [...document.querySelectorAll('button')].some((node) => /编辑器|Editor/.test(node.textContent || '') && node.offsetParent))()`, 'Editor settings tab is missing')
   await evaluate(`(() => [...document.querySelectorAll('button')].find((node) => /编辑器|Editor/.test(node.textContent || '') && node.offsetParent)?.click())()`)
   await waitFor(evaluate, `(() => [...document.querySelectorAll('.settings-row')].some((row) => /选中文字时显示浮动工具栏|Selection toolbar/.test(row.textContent || '')))()`, 'Selection toolbar setting is missing')
-  const disabled = await evaluate(`(() => {
+  const clickToggle = () => evaluate(`(() => {
     const row = [...document.querySelectorAll('.settings-row')]
       .find((node) => /选中文字时显示浮动工具栏|Selection toolbar/.test(node.textContent || ''))
     const toggle = row?.querySelector('.hm-toggle')
     toggle?.click()
     return Boolean(toggle)
   })()`)
-  assert.ok(disabled, 'Selection toolbar toggle is missing')
+  assert.ok(await clickToggle(), 'Selection toolbar toggle is missing')
+  await sleep(150)
+  assert.equal(await evaluate(`document.querySelector('.app')?.classList.contains('hm-selection-toolbar-disabled')`), false,
+    'Enabling selection toolbar did not update the live app state')
+  assert.ok(await clickToggle(), 'Selection toolbar toggle is missing')
   await sleep(150)
   assert.equal(await evaluate(`document.querySelector('.app')?.classList.contains('hm-selection-toolbar-disabled')`), true,
     'Disabling selection toolbar did not update the live app state')
@@ -192,7 +201,25 @@ try {
   })()`)
   assert.equal(reviewResult.applied, true, `Right-click review action did not apply to the preserved selection: ${JSON.stringify(reviewResult)}`)
 
-  console.log('selection toolbar UI ok: formula spacing, live preference, selection preservation, right-click formatting and review')
+  // An install from before the change (a session, no stored choice) keeps
+  // the toolbar it had by default.
+  await evaluate(`(() => {
+    const key = 'horsemd.settings.v1'
+    const { selectionToolbar, ...rest } = JSON.parse(localStorage.getItem(key) || '{}')
+    localStorage.setItem(key, JSON.stringify(rest))
+    if (!localStorage.getItem('minimd.session.v1')) localStorage.setItem('minimd.session.v1', '{}')
+  })()`)
+  await evaluate(`window.api?.flushStorage?.() || null`)
+  await sleep(500)
+  await stopBuiltElectron(app)
+  app = await launchBuiltElectron({ profileDir, port, cleanProfile: false })
+  await waitFor(app.evaluate, `[...document.querySelectorAll('.ProseMirror')].some((node) => node.offsetParent)`, 'Rich editor did not reopen')
+  assert.equal(await app.evaluate(`document.querySelector('.app')?.classList.contains('hm-selection-toolbar-disabled')`), false,
+    'An existing install lost its floating selection toolbar')
+  assert.equal(await app.evaluate(`JSON.parse(localStorage.getItem('horsemd.settings.v1') || '{}').selectionToolbar`), true,
+    'The existing-install default was not stored')
+
+  console.log('selection toolbar UI ok: off for a new install, on for an existing one, formula spacing, live preference, selection preservation, right-click formatting and review')
 } finally {
   await stopBuiltElectron(app)
 }

@@ -6663,6 +6663,19 @@ body.hm-preserve-soft-breaks
   overflow-wrap: break-word;
   word-break: break-word;
 }
+/* Why the formula is not shown (#179), from editor-katex-dom-prune.js. */
+.milkdown .ProseMirror .katex-error[data-hm-math-error]:not([data-hm-math-error=''])::after {
+  content: attr(data-hm-math-error);
+  display: inline-block;
+  margin-left: 0.5em;
+  font: 12px/1.5 var(--font-ui);
+  color: var(--muted);
+  white-space: normal;
+}
+.milkdown .ProseMirror .preview .katex-error[data-hm-math-error]:not([data-hm-math-error=''])::after {
+  display: block;
+  margin: 6px 0 0;
+}
 
 /* Wide tables keep readable columns and scroll inside their own wrapper instead
    of squeezing cells or widening the editor/page. Crepe already provides the

@@ -17,6 +17,7 @@ import { Suspense, lazy, useRef } from 'react'
 import { Icon } from '../icons.jsx'
 import { isPlainTextDoc, shouldUseRichContentVisibility } from '../../paths.js'
 import { attachSourceCaret } from '../editor-source-caret.js'
+import { copySourceSelection, pasteSourceWithImages } from '../editor-pasted-images.js'
 import { updateTextareaSourceFromDom } from '../../source-text-fidelity.js'
 
 const Editor = lazy(() => import('../Editor.jsx'))
@@ -206,8 +207,18 @@ export default function EditorArea({
                 const textarea = e.currentTarget
                 const beforeScrollTop = textarea.scrollTop
                 let attempts = 0
+                // Only the jump of this Enter (the next frames): a window that
+                // gets frames late (Windows, occluded) ran these seconds later
+                // and pulled a source the user had scrolled since — and the
+                // split preview with it — back to where the Enter was.
+                const deadline = performance.now() + 250
+                let cancelled = false
+                const cancel = () => { cancelled = true }
+                const inputs = ['wheel', 'pointerdown', 'touchstart']
+                for (const type of inputs) textarea.addEventListener(type, cancel, { passive: true })
+                setTimeout(() => { for (const type of inputs) textarea.removeEventListener(type, cancel) }, 300)
                 const restoreUnexpectedEnterScroll = () => {
-                  if (!textarea.isConnected) return
+                  if (!textarea.isConnected || cancelled || performance.now() > deadline) return
                   if (Math.abs(textarea.scrollTop - beforeScrollTop) > 50) {
                     textarea.scrollTop = beforeScrollTop
                   }
@@ -232,6 +243,9 @@ export default function EditorArea({
                 const selectedAt = e.currentTarget.__horsemdSourceSelectionAt || 0
                 if (performance.now() - selectedAt > 250) e.currentTarget.__horsemdSourceViewportMoved = true
               }}
+              onCopy={(e) => { if (!plainText) copySourceSelection(e, tab.path) }}
+              onCut={(e) => { if (!readOnly && !plainText) copySourceSelection(e, tab.path, true) }}
+              onPaste={(e) => { if (!readOnly && !plainText) pasteSourceWithImages(e, tab.path) }}
               onCompositionStart={() => onSourceCompositionStart?.(tab.id)}
               onCompositionEnd={() => onSourceCompositionEnd?.(tab.id)}
               onChange={(e) => {

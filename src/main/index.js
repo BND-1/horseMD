@@ -20,6 +20,7 @@ import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingP
 import { loadThemeCss } from './theme-css.js'
 import { userCommandEnv, userCommandPath } from './shell-path.js'
 import { createWindowManager } from './windows.js'
+import { importPastedImages } from './pasted-images.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -477,6 +478,14 @@ function appWindowOptions(extra = {}) {
 // malicious link in a Markdown file), nor open new windows. External URLs open
 // in the user's browser instead. Installed on every app window.
 function installWindowGuards(win) {
+  // A trackpad pinch magnifies the page, as in Typora and the browsers (#180:
+  // looking at the details of a wide diagram). Electron turns it off by
+  // default; it is visual only (no reflow) and the lightbox, which zooms on
+  // Ctrl+wheel itself, keeps its own pinch (preventDefault). Set after every
+  // load: a navigation resets it.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setVisualZoomLevelLimits(1, 4).catch(() => {})
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     void openExternalUrl(url)
     return { action: 'deny' }
@@ -1090,6 +1099,16 @@ ipcMain.handle('image:savePaste', async (_e, name, bytes) => {
     return { ok: true, url: pathToFileURL(file).href }
   } catch (e) {
     return { ok: false, error: e?.message || String(e) }
+  }
+})
+
+// Images in content pasted from another document (main/pasted-images.js):
+// relative urls of the source document → paths valid for the target.
+ipcMain.handle('image:importPasted', async (_e, sourceDocPath, targetDocPath, urls) => {
+  try {
+    return { ok: true, results: await importPastedImages({ sourceDocPath, targetDocPath: targetDocPath || null, urls, pasteDir: pasteImagesDir() }) }
+  } catch (e) {
+    return { ok: false, results: {}, error: e?.message || String(e) }
   }
 })
 

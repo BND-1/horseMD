@@ -10,6 +10,7 @@
 //   (1) raw mermaid code that starts with a diagram header → a mermaid block;
 //   (2) any strong Markdown block marker → parse the whole clipboard as Markdown.
 // Never takes over when pasting INTO a code block (append code there).
+import { planPastedImages, resolvePastedImages } from './editor-pasted-images.js'
 import { Slice, Fragment } from '@milkdown/prose/model'
 import { startsAsMermaid } from './editor-mermaid.js'
 import { normalizeDisplayMath } from './editor-math.js'
@@ -123,8 +124,27 @@ function rawMarkdownCoversStructuredHtml(text, html) {
 }
 
 // Attach a capture-phase paste listener on the editor DOM. Returns a cleanup fn.
-export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markUserEdit) {
+export function attachMdPasteHandler(view, parse, prepareRawMarkdownPaste, markUserEdit, { getDocPath, isDestroyed } = {}) {
   const onPaste = (event) => {
+    // Relative images copied from a document in another folder: let main make
+    // them valid here first, then paste the rewritten clipboard
+    // (editor-pasted-images.js). CodeMirror keeps its own paste.
+    if (getDocPath && !event.__hmPastedImagesResolved && view.editable &&
+      !event.target.closest?.('.milkdown-code-block') &&
+      view.state.selection.$from.parent.type.name !== 'code_block') {
+      const plan = planPastedImages(event.clipboardData, getDocPath())
+      if (plan) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        resolvePastedImages(plan).then(({ data }) => {
+          if (isDestroyed?.() || !view.dom.isConnected) return
+          const again = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data })
+          again.__hmPastedImagesResolved = true
+          view.dom.dispatchEvent(again)
+        })
+        return
+      }
+    }
     // Browsers provide text/plain alongside text/html. Numbered headings and
     // divider-like prose in that fallback can resemble Markdown; keep the
     // structured HTML instead of flattening headings, marks and images.

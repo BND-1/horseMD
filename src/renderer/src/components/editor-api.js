@@ -4,7 +4,7 @@ import { toggleMark } from '@milkdown/prose/commands'
 import { replaceAll } from '@milkdown/utils'
 import { applyReviewMarkupInView } from './editor-review.js'
 import { chooseCodeBlockMountMode } from './editor-codeblock-eager.js'
-import { markdownOffsetToPmPos, pmPosToMarkdownOffset } from './editor-source-map.js'
+import { markdownOffsetToPmPos, pmPosToMarkdownOffset, scrollAnchorPairs } from './editor-source-map.js'
 import { createPdfSourceFromEditor } from './editor-pdf-content.js'
 import { suspendHeadingFolds } from './editor-heading-fold.js'
 import { applyHighlightInView, toggleHighlightCommand } from './editor-highlight.js'
@@ -355,6 +355,20 @@ export function createEditorApi({
     }
   }
 
+  // Source + preview scroll link: block pairs of the Markdown the document
+  // was built from (raw offsets) and the live document (positions).
+  const getScrollAnchors = () => {
+    const v = viewRef.current
+    if (!v || !crepeRef.current) return null
+    try {
+      const markdown = lastMarkdownRef.current || ''
+      const pairs = scrollAnchorPairs(markdown, v.state.doc, crepe.editor.ctx.get(remarkCtx))
+      return pairs ? { markdown, doc: v.state.doc, pairs } : null
+    } catch {
+      return null
+    }
+  }
+
   return {
     setBlock,
     getExportSource: getPdfSource,
@@ -369,6 +383,7 @@ export function createEditorApi({
     getRecoveryMarkdown,
     restoreMarkdownOffset,
     markdownOffsetFromSelection,
-    markdownOffsetFromViewportTop
+    markdownOffsetFromViewportTop,
+    getScrollAnchors
   }
 }
