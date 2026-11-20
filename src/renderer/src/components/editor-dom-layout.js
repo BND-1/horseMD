@@ -597,7 +597,12 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
     const scrollLeft = wrapper.scrollLeft
     if (tableIndex < 0 || !Number.isFinite(scrollLeft)) return
 
-    const guard = { tableIndex, scrollLeft, frames: 0 }
+    // The same press (pointerdown, then mousedown / click) keeps the guard it
+    // started; a guard the user already released by scrolling stays released.
+    if (event.type !== 'pointerdown' && tableControlScrollGuard?.tableIndex === tableIndex) return
+    if (event.type !== 'pointerdown' && releasedPress && Date.now() - releasedPress < 1000) return
+    releasedPress = 0
+    const guard = { tableIndex, scrollLeft, frames: 0, x: event.clientX, y: event.clientY }
     tableControlScrollGuard = guard
     view.dom.__horsemdTableScrollGuard = guard
     let frames = 0
@@ -607,18 +612,45 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       frames += 1
       guard.frames = frames
       if (frames < 16) requestAnimationFrame(restoreAcrossLayout)
-      else if (tableControlScrollGuard === guard) {
-        tableControlScrollGuard = null
-        if (view.dom.__horsemdTableScrollGuard === guard) {
-          delete view.dom.__horsemdTableScrollGuard
-        }
-        const wrapper = getTableWrapper(guard.tableIndex)
-        if (wrapper?.__horsemdTableScrollLeft === guard.scrollLeft) {
-          delete wrapper.__horsemdTableScrollLeft
-        }
-      }
+      else dropTableControlScrollGuard(guard)
     }
     requestAnimationFrame(restoreAcrossLayout)
+  }
+
+  const dropTableControlScrollGuard = (guard = tableControlScrollGuard) => {
+    if (!guard || tableControlScrollGuard !== guard) return
+    tableControlScrollGuard = null
+    if (view.dom.__horsemdTableScrollGuard === guard) {
+      delete view.dom.__horsemdTableScrollGuard
+    }
+    const wrapper = getTableWrapper(guard.tableIndex)
+    if (wrapper?.__horsemdTableScrollLeft === guard.scrollLeft) {
+      delete wrapper.__horsemdTableScrollLeft
+    }
+  }
+
+  // The guard is for a CLICK (a tap or press that stays put). A press that
+  // becomes a swipe, a drag selection or a wheel scroll is the user scrolling
+  // the table: holding it at the press position for 16 frames pulled every
+  // swipe on a phone back to where it started (the first ~14 scroll events of
+  // each swipe were reset; on a slow phone the whole swipe), and a trackpad
+  // scroll right after a click did the same on desktop. Browsers make the
+  // same distinction: pointercancel = the touch became a pan.
+  let releasedPress = 0
+  const releaseOnScrollGesture = (event) => {
+    const guard = tableControlScrollGuard
+    if (!guard) return
+    // A mouse moving after its click (no button held) and a vertical wheel are
+    // not scrolling this table: the click's node view swap may still come.
+    if (event.type === 'pointermove' && !event.buttons) return
+    if (event.type === 'wheel' && !event.shiftKey && Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+    if (event.type === 'pointermove' || event.type === 'touchmove') {
+      const point = event.touches?.[0] || event
+      if (!Number.isFinite(point.clientX) || !Number.isFinite(guard.x)) return
+      if (Math.hypot(point.clientX - guard.x, point.clientY - guard.y) < 6) return
+    }
+    releasedPress = Date.now()
+    dropTableControlScrollGuard(guard)
   }
 
   const onTableScroll = (event) => {
@@ -799,6 +831,9 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
   host.addEventListener('mousedown', preserveTableControlScroll, true)
   host.addEventListener('mousedown', onColumnResizeMouseDown, true)
   host.addEventListener('scroll', onTableScroll, true)
+  for (const type of ['pointercancel', 'pointermove', 'touchmove', 'wheel']) {
+    host.addEventListener(type, releaseOnScrollGesture, { capture: true, passive: true })
+  }
 
   document.addEventListener('selectionchange', schedule)
   window.addEventListener('resize', schedule)
@@ -812,16 +847,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       removeResizeGuide(intent)
     }
     observer.disconnect()
-    if (tableControlScrollGuard) {
-      if (view.dom.__horsemdTableScrollGuard === tableControlScrollGuard) {
-        delete view.dom.__horsemdTableScrollGuard
-      }
-      const wrapper = getTableWrapper(tableControlScrollGuard.tableIndex)
-      if (wrapper?.__horsemdTableScrollLeft === tableControlScrollGuard.scrollLeft) {
-        delete wrapper.__horsemdTableScrollLeft
-      }
-      tableControlScrollGuard = null
-    }
+    dropTableControlScrollGuard()
     view.setProps({ handleScrollToSelection: previousHandleScrollToSelection })
     view.scrollToSelection = originalScrollToSelection
     host.querySelectorAll('.hm-table-controls-open').forEach((block) => {
@@ -834,6 +860,9 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
     host.removeEventListener('mousedown', preserveTableControlScroll, true)
     host.removeEventListener('mousedown', onColumnResizeMouseDown, true)
     host.removeEventListener('scroll', onTableScroll, true)
+    for (const type of ['pointercancel', 'pointermove', 'touchmove', 'wheel']) {
+      host.removeEventListener(type, releaseOnScrollGesture, { capture: true })
+    }
     document.removeEventListener('selectionchange', schedule)
     window.removeEventListener('resize', schedule)
   })

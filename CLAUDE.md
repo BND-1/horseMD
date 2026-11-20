@@ -651,6 +651,27 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   Tests that drive the toolbar call `enableSelectionToolbar(evaluate)`
   (`scripts/lib/electron-test-app.mjs`: stored + a `storage` event).
   Locked by `test:selection-toolbar-ui`.
+- **Wide-table swipe** (`editor-dom-layout.js` `mountTableHandleBounds`,
+  user report 2026-11-20, phone and earlier desktop): a press on a cell or a
+  table control starts a 16-frame guard that holds the table's scrollLeft
+  (Crepe can swap the table node view on the click, and the new wrapper
+  starts at 0). The guard is for a CLICK: it is dropped on pointercancel (the
+  touch became a pan), a pressed pointer / touch moving ≥ 6 px, and a
+  horizontal wheel. Before, every swipe that began on a cell had its first
+  ~14 scroll events reset to the start (the Huawei: a 240 px swipe moved the
+  table 80 px). Locked by `test:table-ui` (`verifySwipeIsNotPulledBack`:
+  every scroll position during a touch swipe ≥ the previous one).
+- **Android keyboard** (`MainActivity.installKeyboardResize`, 2026-11-20):
+  the status bar overlays the WebView (`setOverlaysWebView(true)`), and then
+  Android does not resize the window for the keyboard (AndroidBug5497).
+  Capacitor's SystemBars pads the WebView's parent by the IME inset only on
+  Android 15+ or WebView 140+; below both (Huawei / HarmonyOS: Android 10,
+  WebView 114) the keyboard covered the caret line and the sync unlock box.
+  There the parent is padded by the keyboard's height from the visible frame
+  (@capacitor/keyboard `resizeOnFullScreen`'s method). The manifest keeps
+  the default soft input mode (Android 15+ unchanged). Checked on the
+  Huawei: WebView 918 → 591 px with the keyboard up, the caret line and the
+  unlock field above it (`test-sync-e2ee-phone-ui.mjs` asserts it).
 - **Formulas in table cells** (`lib/remark-table-math-pipes.js`, #179
   follow-up): a cell's `\|` is a `|` inside inline math too (GitHub and
   markdown-it; mdast-util-gfm-table did it for inline code only, so

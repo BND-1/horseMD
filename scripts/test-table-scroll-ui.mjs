@@ -283,6 +283,60 @@ async function verifyHorizontalGesture(send, evaluate, label, touch = false) {
   }
 }
 
+// A swipe that starts on a cell is a scroll, not a click: the click guard
+// (hold the table where the press began for 16 frames, against Crepe's node
+// view swap) used to reset the first ~14 scroll events of EVERY swipe to the
+// start position — on a phone the table jumped back to its first column
+// (user report 2026-11-20). Every scroll position during the swipe must be at
+// or past the previous one, for a swipe from 0 and one from the middle.
+async function verifySwipeIsNotPulledBack(send, evaluate, label) {
+  const point = await evaluate(`(() => {
+    const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
+    const wrapper = rich?.querySelectorAll('.milkdown-table-block')[1]?.querySelector('.table-wrapper')
+    if (!wrapper) return null
+    wrapper.scrollIntoView({ block: 'center' })
+    wrapper.scrollLeft = 0
+    window.__hmSwipeSamples = []
+    if (!wrapper.__hmSwipeListener) {
+      wrapper.__hmSwipeListener = () => window.__hmSwipeSamples.push(wrapper.scrollLeft)
+      wrapper.addEventListener('scroll', wrapper.__hmSwipeListener)
+    }
+    const rect = wrapper.getBoundingClientRect()
+    const x = rect.right - 40
+    const y = rect.top + rect.height / 2
+    return { x, y, hit: document.elementFromPoint(x, y)?.closest('td, th')?.tagName || null }
+  })()`)
+  if (!point?.hit) throw new Error(`${label}: swipe must start on a cell: ${JSON.stringify(point)}`)
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+  let start = 0
+  for (let swipe = 0; swipe < 2; swipe++) {
+    let moved = false
+    for (let attempt = 0; attempt < 3 && !moved; attempt++) {
+      await evaluate('window.__hmSwipeSamples.length = 0')
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: point.x, y: point.y, id: 1 }] })
+      for (let i = 1; i <= 15; i++) {
+        await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x - i * 20, y: point.y, id: 1 }] })
+        await sleep(16)
+      }
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await sleep(1200)
+      const samples = await evaluate('window.__hmSwipeSamples.slice()')
+      const backward = samples.findIndex((value, index) => value < (index ? samples[index - 1] : start) - 1)
+      if (backward >= 0) {
+        throw new Error(`${label}: swipe ${swipe} was pulled back at scroll event ${backward}: ${JSON.stringify({ start, samples })}`)
+      }
+      const end = samples.at(-1) ?? start
+      if (samples.length && samples.slice(0, 10).every((value) => Math.abs(value - start) <= 1)) {
+        throw new Error(`${label}: swipe ${swipe} was held at its start for 10 scroll events: ${JSON.stringify({ start, samples })}`)
+      }
+      moved = end > start + 150
+      if (moved) start = end
+    }
+    if (!moved) throw new Error(`${label}: swipe ${swipe} did not move the table 150 px from ${start}`)
+  }
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
+}
+
 async function verifyWideTableAutoWrap(evaluate, label) {
   const result = await evaluate(`(() => {
     document.body.classList.add('hm-table-auto-wrap')
@@ -1248,6 +1302,7 @@ async function main() {
     const mobile = await inspect(evaluate, true)
     verifyLayout(mobile, 'mobile width')
     await verifyHorizontalGesture(send, evaluate, 'mobile width', true)
+    await verifySwipeIsNotPulledBack(send, evaluate, 'mobile width')
     await verifyWideTableAutoWrap(evaluate, 'mobile width')
 
     console.log(JSON.stringify({ desktop, mobile }, null, 2))
