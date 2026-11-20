@@ -24,6 +24,11 @@ import { importPastedImages } from './pasted-images.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// Linux desktop integration: match horsemd.desktop for Wayland app_id and X11 WM_CLASS
+if (process.platform === 'linux' && typeof app.setDesktopName === 'function') {
+  app.setDesktopName('horsemd.desktop')
+}
+
 // Supported Markdown file types — single source for the open-dialog filter and
 // the extension test used while scanning folders / launch args.
 const MD_EXTS = ['md', 'markdown', 'mdx', 'txt']
