@@ -46,6 +46,19 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     trusted(event)
     return syncService.addS3Connection(config || {})
   })
+  // HorseMD 同步: login code by mail, then the code → a connection.
+  ipcMain.handle('sync:officialLoginStart', async (event, config) => {
+    trusted(event)
+    return syncService.startOfficialLogin(config || {})
+  })
+  ipcMain.handle('sync:officialLoginVerify', async (event, config) => {
+    trusted(event)
+    return syncService.addOfficialConnection(config || {})
+  })
+  ipcMain.handle('sync:officialAccount', async (event, connectionId) => {
+    trusted(event)
+    return syncService.officialAccount(connectionId)
+  })
   ipcMain.handle('sync:connectionUpdate', async (event, connectionId, config) => {
     trusted(event)
     return syncService.updateConnection(connectionId, config || {})

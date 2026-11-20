@@ -5,7 +5,7 @@
 /* ── i18n ─────────────────────────────────────────────────── */
 const I18N = {
   zh: {
-    'nav.features': '特性', 'nav.themes': '主题', 'nav.guide': '教程',
+    'nav.features': '特性', 'nav.themes': '主题', 'nav.guide': '教程', 'nav.account': '账号',
     'hero.kicker': '免费 · 开源 · 不要账号',
     'hero.l1': '一个窗口，', 'hero.l2': '装下所有 .md 文件',
     'hero.sub': '一个免费的 Typora 平替，但不止于此。',
@@ -26,7 +26,7 @@ const I18N = {
     '_desc': 'HorseMD：免费开源的 Typora 平替。标签页 + 文件树 + 所见即所得，Windows、macOS、Linux 与 Android。',
   },
   en: {
-    'nav.features': 'FEATURES', 'nav.themes': 'THEMES', 'nav.guide': 'GUIDE',
+    'nav.features': 'FEATURES', 'nav.themes': 'THEMES', 'nav.guide': 'GUIDE', 'nav.account': 'ACCOUNT',
     'hero.kicker': 'FREE · OPEN SOURCE · NO ACCOUNT',
     'hero.l1': 'One window.', 'hero.l2': 'Every .md file.',
     'hero.sub': 'A free Typora alternative, and then some.',

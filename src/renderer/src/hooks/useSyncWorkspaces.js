@@ -132,6 +132,21 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     return connection
   }, [refresh])
 
+  // HorseMD 同步: a code by mail, then the code → a connection.
+  const startOfficialLogin = useMemo(() => (window.api?.syncStartOfficialLogin
+    ? (config) => window.api.syncStartOfficialLogin(config)
+    : null), [])
+  const addOfficialConnection = useMemo(() => (window.api?.syncAddOfficialConnection
+    ? async (config) => {
+      const connection = await window.api.syncAddOfficialConnection(config)
+      await refresh()
+      return connection
+    }
+    : null), [refresh])
+  const officialAccount = useMemo(() => (window.api?.syncOfficialAccount
+    ? (connectionId) => window.api.syncOfficialAccount(connectionId)
+    : null), [])
+
   const updateConnection = useCallback(async (connectionId, config) => {
     if (!window.api.syncUpdateConnection) throw new Error('当前平台暂不支持云同步。')
     const connection = await window.api.syncUpdateConnection(connectionId, config)
@@ -230,6 +245,9 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     removeFolder,
     addWebDavConnection,
     addS3Connection,
+    startOfficialLogin,
+    addOfficialConnection,
+    officialAccount,
     updateConnection,
     removeConnection,
     testConnection,

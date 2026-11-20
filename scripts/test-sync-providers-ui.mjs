@@ -47,10 +47,11 @@ const state = () => app.evaluate(`(() => {
   const panel = q('.sync-provider-panel')
   return {
     gallery: !!q('.sync-provider-gallery'),
-    tiles: [...document.querySelectorAll('.sync-provider-row:not(.generic)')].map((b) => b.dataset.provider),
+    tiles: [...document.querySelectorAll('.sync-provider-row:not(.generic):not(.official)')].map((b) => b.dataset.provider),
+    first: document.querySelector('.sync-provider-gallery .sync-provider-row')?.dataset.provider || '',
     generic: [...document.querySelectorAll('.sync-provider-row.generic')].map((b) => b.dataset.provider),
     // Each service's own logo, loaded (a broken import shows nothing).
-    logos: [...document.querySelectorAll('.sync-provider-row:not(.generic) .sync-provider-mark.logo img')].map((i) => i.complete && i.naturalWidth > 0 ? i.closest('[data-logo]').dataset.logo : 'broken'),
+    logos: [...document.querySelectorAll('.sync-provider-row:not(.generic):not(.official) .sync-provider-mark.logo img')].map((i) => i.complete && i.naturalWidth > 0 ? i.closest('[data-logo]').dataset.logo : 'broken'),
     addButton: !!q('[data-sync-add]'),
     panel: panel ? panel.querySelector('.sync-provider-panel-title strong')?.textContent : null,
     steps: panel ? panel.querySelectorAll('.sync-provider-prepare li').length : 0,
@@ -93,6 +94,8 @@ try {
   await openSync()
   let s = await waitFor(async () => { const v = await state(); return v.gallery && !v.logos.includes('broken') && v }, 'no gallery / logo not loaded')
   assert.deepEqual(s.tiles, ['jianguoyun', 'cstcloud', 'qiniu', 'r2', 'nextcloud'])
+  // HorseMD 同步 (our own service, SyncOfficial.jsx) heads the list.
+  assert.equal(s.first, 'horsemd')
   assert.deepEqual(s.logos, s.tiles)
   assert.deepEqual(s.generic, ['webdav', 's3'])
   assert.equal(s.addButton, false)

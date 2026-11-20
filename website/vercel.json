@@ -39,6 +39,10 @@
     {
       "source": "/privacy",
       "destination": "/privacy.html"
+    },
+    {
+      "source": "/account",
+      "destination": "/account.html"
     }
   ]
 }

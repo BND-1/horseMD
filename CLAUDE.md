@@ -1094,6 +1094,29 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   phones (debug build with its own package):
   `scripts/test-sync-e2ee-phone.mjs` (API) and
   `scripts/test-sync-e2ee-phone-ui.mjs` (Settings › 云同步 by touch input).
+- **HorseMD 同步 — our own sync service (2026-11-20, prototype, not
+  deployed)**: contract `docs/official-sync-api.md`, design
+  `docs/official-sync-design.md`. Account service `server/` (Node 22, only
+  built-ins + the repo's @smithy signer; `node:sqlite`; `npm run
+  account:dev`; admin CLI `server/admin.mjs grant|revoke|show`): email +
+  6-digit code login (no password), HMAC access tokens (1 h), rotating
+  refresh tokens (a reused one ends the session), plans (`standard` 1 GB /
+  5 MB / 30 d, `plus` 10 GB / 200 MB / 365 d), usage measured per prefix,
+  STS AssumeRole session policy limited to `users/<uid>/` (no plan + data /
+  over quota → read-only), Paddle Billing webhook (signature, idempotent).
+  App: connection type `horsemd` (`connections.js`,
+  `shared/sync/official-account.js`): the credential store holds only the
+  refresh token (renewals serialized); `S3Provider` takes a `credentials`
+  provider (session token) and `beforePut` (read-only / per-file limit);
+  a run renews credentials older than 15 s, so an ended plan is read-only
+  on the next run. Settings: HorseMD 同步 heads the service list
+  (`SyncOfficial.jsx`), its folders default to 端到端加密. The engine no
+  longer rewrites an unchanged manifest (a pull of a read-only cloud works;
+  one PUT less per run). Website: `website/account.html` (login, plan,
+  usage, Paddle checkout when configured; `?api=` for a local service).
+  Locked by `test:official-sync` (service + MinIO + 2 devices + 2 accounts
+  + webhook), `test:official-sync-ui`, `scripts/test-website-account.mjs`
+  (headless Chrome), `scripts/test-official-sync-phone.mjs` (Huawei).
 - **Phone cloud sync (2026-11-15)**: the sync engine lives in
   `src/shared/sync/` on injected platform adapters (contract:
   docs/mobile-cloud-sync-architecture.md §6); desktop wraps it with

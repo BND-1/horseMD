@@ -418,3 +418,261 @@ a { color: inherit; text-decoration: none; }
   .js .reveal, .js .split-line > span { transition: none; transform: none; opacity: 1; }
   html { scroll-behavior: auto; }
 }
+
+/* ───────────────────────────────────────────────────────────
+   账号页 /account — 同一套生成り色、细线、直角
+   ─────────────────────────────────────────────────────────── */
+.nav-links a[aria-current="page"] { color: var(--fg); }
+.nav-links a:focus-visible,
+.footer-links a:focus-visible,
+.nav-brand:focus-visible,
+.lang-toggle:focus-visible,
+.btn:focus-visible,
+.seg-btn:focus-visible,
+.acct-link:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 3px;
+}
+
+.acct-section { padding-top: clamp(56px, 9vh, 96px); max-width: 720px; }
+.acct-plans { padding-top: clamp(64px, 10vh, 104px); max-width: 720px; }
+.acct-lead {
+  margin: 14px 0 0;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
+/* 按钮：主按钮酒红实心（同下载卡），次按钮细线 */
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  padding: 11px 20px;
+  border: 1px solid var(--red);
+  border-radius: 0;
+  background: var(--red);
+  color: #f7f5f0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .3s, border-color .3s, color .3s, opacity .3s;
+}
+.btn:hover { background: #650014; border-color: #650014; }
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--rule-strong);
+}
+.btn-ghost:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn:disabled,
+.btn:disabled:hover {
+  cursor: not-allowed;
+  opacity: .5;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--rule-strong);
+}
+
+.acct-link {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.acct-link:hover { color: var(--red); }
+
+.acct-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin: 0 0 24px;
+  padding: 10px 14px;
+  border: 1px dashed var(--red);
+  font-size: 12.5px;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+
+.acct-msg {
+  margin: 0 0 12px;
+  min-height: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.acct-msg:empty { display: none; }
+.acct-msg.is-error,
+.acct-error { color: var(--red); }
+
+.acct-loading { padding: 8px 0 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+
+/* 表单 */
+.acct-form { margin: 0 0 20px; }
+.acct-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+}
+.acct-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.acct-input {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 16px;            /* 16px 以上 iOS 不会自动放大 */
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  padding: 10px 14px;
+  color: var(--fg);
+  background: #fbfaf6;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  transition: border-color .3s;
+}
+.acct-input::placeholder { color: #a9a499; }
+.acct-input:hover { border-color: var(--muted); }
+.acct-input:focus { outline: none; border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); }
+.acct-input:read-only { background: transparent; color: var(--muted); }
+.acct-input[aria-invalid="true"] { border-color: var(--red); }
+.acct-code { letter-spacing: 0.5em; font-variant-numeric: tabular-nums; }
+.acct-error {
+  margin: 8px 0 0;
+  min-height: 1.5em;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.acct-hint {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* 已登录：规格表（同首页 .card 的细线行） */
+.acct-spec { margin: 0; border-top: 1px solid var(--rule-strong); }
+.acct-spec-row {
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  gap: 16px;
+  align-items: baseline;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.acct-spec-row[hidden] { display: none; }
+.acct-spec dt { font-size: 12px; letter-spacing: 0.18em; color: var(--muted); }
+.acct-spec dd { margin: 0; font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
+.acct-bar {
+  height: 6px;
+  margin: 8px 0 10px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.acct-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--fg);
+  transition: width .6s ease;
+}
+.acct-bar.is-over .acct-bar-fill { background: var(--red); }
+.acct-bar-text { display: block; font-size: 14px; line-height: 1.6; }
+.acct-sub { display: block; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+.acct-note {
+  margin: 20px 0 0;
+  padding: 12px 16px;
+  border-left: 2px solid var(--rule-strong);
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.acct-note.is-warn { border-left-color: var(--red); color: var(--fg); }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+
+/* 套餐 */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  margin-bottom: 24px;
+}
+.seg-btn {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  padding: 9px 22px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-right: 1px solid var(--rule);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background .3s, color .3s;
+}
+.seg-btn:last-child { border-right: none; }
+.seg-btn:hover { color: var(--fg); background: #f1eee7; }
+.seg-btn[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.plan {
+  display: flex; flex-direction: column;
+  padding: 24px 22px 22px;
+  border: 1px solid var(--rule-strong);
+  min-width: 0;
+}
+.plan.is-current { border-color: var(--fg); }
+.plan h3 { font-size: 18px; font-weight: 500; letter-spacing: 0.12em; }
+.plan-price {
+  margin: 6px 0 0;
+  min-height: 2em;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.plan-list {
+  list-style: none;
+  margin: 14px 0 22px;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  flex: 1;
+}
+.plan-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.plan-btn { width: 100%; white-space: normal; }
+#planMsg { margin-top: 16px; }
+
+.acct-e2ee {
+  margin: 28px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.acct-e2ee strong { color: var(--fg); }
+
+@media (max-width: 640px) {
+  .plan-grid { grid-template-columns: 1fr; }
+  .acct-spec-row { grid-template-columns: 1fr; gap: 2px; padding: 14px 2px; }
+}
+@media (max-width: 480px) {
+  .acct-row .btn { flex: 1 1 100%; }
+  .acct-actions .btn { flex: 1 1 100%; }
+  .seg { display: flex; }
+  .seg-btn { flex: 1; }
+}
+
+/* The hidden attribute always hides (author display rules like .acct-loading
+   { display: flex } would otherwise override it). */
+[hidden] { display: none !important; }

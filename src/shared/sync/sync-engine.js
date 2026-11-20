@@ -770,7 +770,12 @@ export class SyncEngine {
     }
     // The manifest is committed last. If another device changed it, conditional
     // write fails before local state advances, so the next run re-plans safely.
-    try {
+    // A run that changed nothing in the cloud (a pull, an all-unchanged
+    // merge) leaves it alone: one PUT less per run (数据胶囊's PUT budget),
+    // and a read-only cloud (HorseMD 同步 after its plan ended) can still
+    // be pulled from.
+    const manifestUnchanged = remote.exists && JSON.stringify(manifest) === JSON.stringify(remote.manifest)
+    if (!manifestUnchanged) try {
       await this.provider.put(manifestPath, platform.bytes.fromText(JSON.stringify(manifest, null, 2) + '\n'), {
         revision: remote.revision,
         createOnly: !remote.exists,

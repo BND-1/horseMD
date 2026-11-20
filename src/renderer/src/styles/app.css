@@ -9479,6 +9479,55 @@ body.dark .sync-provider-mark.generic {
   .sync-protocol-badge { display: none; }
 }
 
+/* ---- HorseMD 同步 (SyncOfficial.jsx) ----
+   Our own service, first in the list: the app icon on its tile, an accent
+   badge, the email + code login and the plan / usage line under its
+   connection. */
+.sync-provider-mark.logo.official img { width: 26px; height: 26px; border-radius: 6px; }
+.sync-protocol-badge.official { background: var(--accent-soft, rgba(201, 100, 66, .12)); color: var(--accent-strong); }
+.sync-provider-list.official .sync-provider-row { border-top: 0; }
+.sync-official-points {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.sync-official-points li { display: flex; align-items: center; gap: 7px; }
+.sync-official-points svg { flex: 0 0 auto; color: var(--accent-strong); }
+.sync-official-email-row { display: flex; gap: 8px; min-width: 0; }
+.sync-official-email-row .sync-input { flex: 1 1 auto; min-width: 0; }
+.sync-official-email-row .settings-action-btn { flex: 0 0 auto; white-space: nowrap; }
+.sync-official-code { letter-spacing: .35em; font-variant-numeric: tabular-nums; max-width: 12em; }
+.sync-official-code-wrap { display: grid; gap: 5px; min-width: 0; }
+.sync-official-sent { display: block; color: var(--muted); font-size: 12px; }
+.sync-official-account {
+  display: grid;
+  gap: 6px;
+  margin: 0 12px 12px 58px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 12.5px;
+}
+.sync-official-account.loading,
+.sync-official-account small { color: var(--muted); }
+.sync-official-account .warn { color: var(--danger, #c0392b); }
+.sync-official-account-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sync-official-account-head > span:not(.sync-provider-actions-spacer) { color: var(--muted); }
+.sync-official-usage {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+.sync-official-usage > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .3s ease; }
+.sync-official-usage > span.full { background: var(--danger, #c0392b); }
+.app.is-mobile .sync-official-account { margin: 0 12px 12px; }
+.app.is-mobile .sync-official-email-row { flex-direction: column; }
+
 /* ---- Tab drag picture (tear-off / merge, lib/tab-transfer.js) ----
    A small document card under the cursor while a tab is dragged. Rendered
    off-screen for the moment setDragImage snapshots it. */

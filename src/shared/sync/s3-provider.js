@@ -51,11 +51,17 @@ async function failureCode(response) {
 }
 
 export class S3Provider {
-  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, request, prefix = '', allowInsecure = false, userAgent = '', pacer = new RequestPacer(), bytes = webBytes, uuid = defaultUuid }) {
+  // `credentials`: instead of fixed keys, an async provider of
+  // { accessKeyId, secretAccessKey, sessionToken } asked before every
+  // signature (HorseMD 同步's temporary credentials renew themselves).
+  // `beforePut(bytes)`: may throw to refuse an upload before it is sent
+  // (HorseMD 同步: read-only plan, per-file limit).
+  constructor({ endpoint, bucket, region, accessKeyId, secretAccessKey, credentials = null, beforePut = null, request, prefix = '', allowInsecure = false, userAgent = '', pacer = new RequestPacer(), bytes = webBytes, uuid = defaultUuid }) {
     const url = new URL(endpoint)
     if (!['https:', 'http:'].includes(url.protocol)) throw new Error('S3 Endpoint 无效。')
     if (url.protocol !== 'https:' && !allowInsecure) throw new Error('S3 连接必须使用 HTTPS。')
-    if (!bucket || !region || !accessKeyId || !secretAccessKey) throw new Error('请填写完整的 S3 连接信息。')
+    if (!bucket || !region || (!credentials && (!accessKeyId || !secretAccessKey))) throw new Error('请填写完整的 S3 连接信息。')
+    this.beforePut = beforePut
     this.endpoint = url
     this.bucket = bucket
     this.prefix = clean(prefix)
@@ -67,7 +73,7 @@ export class S3Provider {
     // object keys are encoded segment-by-segment before both signing and
     // net.fetch. Escaping again here turns a Chinese filename's `%E4...` into
     // `%25E4...` in the canonical request and MinIO rejects the signature.
-    this.signer = new SignatureV4({ credentials: { accessKeyId, secretAccessKey }, region, service: 's3', sha256: Sha256, uriEscapePath: false })
+    this.signer = new SignatureV4({ credentials: credentials || { accessKeyId, secretAccessKey }, region, service: 's3', sha256: Sha256, uriEscapePath: false })
   }
 
   objectKey(path = '') { return [this.prefix, clean(path)].filter(Boolean).join('/') }
@@ -132,6 +138,7 @@ export class S3Provider {
   }
 
   async put(path, bytes, { revision = null, createOnly = false, contentType = 'application/octet-stream', quick = false } = {}) {
+    if (this.beforePut) await this.beforePut(bytes)
     const headers = { 'content-type': contentType }
     if (revision) headers['if-match'] = `"${revision}"`
     if (createOnly) headers['if-none-match'] = '*'

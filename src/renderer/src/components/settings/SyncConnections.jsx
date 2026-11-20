@@ -13,6 +13,7 @@ import {
   providerOfConnection
 } from '../../lib/sync-providers.js'
 import { ConnectionField, ConnectionForm } from './SyncConnectionForm.jsx'
+import { OfficialAccountSummary, OfficialLoginForm, OfficialMark, OfficialRow, isOfficialConnection } from './SyncOfficial.jsx'
 import jianguoyunLogo from '../../assets/providers/jianguoyun.png'
 import cstcloudLogo from '../../assets/providers/cstcloud.png'
 import qiniuLogo from '../../assets/providers/qiniu.svg'
@@ -230,7 +231,7 @@ function ProviderRow({ provider, onPick, t }) {
 
 // The services as one list (macOS 互联网账户 / Raycast): each row a mark,
 // name, one line about it and its protocol; the full forms below.
-function ProviderGallery({ onPick, onClose, t }) {
+function ProviderGallery({ onPick, onPickOfficial, onClose, t }) {
   const services = SYNC_PROVIDERS.filter((provider) => !provider.generic)
   const generic = SYNC_PROVIDERS.filter((provider) => provider.generic)
   return <div className="sync-provider-gallery" role="group" aria-label={t('syncp.pick')}>
@@ -243,6 +244,10 @@ function ProviderGallery({ onPick, onClose, t }) {
         <Icon name="close" size={16} />
       </button>}
     </div>
+    {onPickOfficial && <div className="sync-provider-list official">
+      <OfficialRow onPick={onPickOfficial} t={t} />
+    </div>}
+    {onPickOfficial && <div className="sync-provider-group-label">{t('synco.groupOwn')}</div>}
     <div className="sync-provider-list">
       {services.map((provider) => <ProviderRow key={provider.id} provider={provider} onPick={onPick} t={t} />)}
     </div>
@@ -271,13 +276,14 @@ function ConnectionEditor({ connection, onSubmit, onCancel, t }) {
   return <ProviderForm provider={provider} connection={connection} initial={initial} onSubmit={onSubmit} onCancel={onCancel} onFullForm={() => setFull({})} t={t} />
 }
 
-export default function SyncConnections({ connections, onSubmit, onTest, onRemove, notice, error, t }) {
+export default function SyncConnections({ connections, onSubmit, onTest, onRemove, onOfficialStart = null, onOfficialVerify = null, onOfficialAccount = null, notice, error, t }) {
   // 'gallery' | provider id | null; with no connection the gallery is open.
   const [adding, setAdding] = useState(null)
   const [fullFrom, setFullFrom] = useState(null)
   const [editing, setEditing] = useState(null)
   const showGallery = adding === 'gallery' || (adding === null && connections.length === 0)
-  const picked = adding && adding !== 'gallery' ? SYNC_PROVIDERS.find((item) => item.id === adding) : null
+  const picked = adding && adding !== 'gallery' && adding !== 'horsemd' ? SYNC_PROVIDERS.find((item) => item.id === adding) : null
+  const official = Boolean(onOfficialStart && onOfficialVerify)
   const closeAdd = () => { setAdding(null); setFullFrom(null) }
   const submit = async (type, config, id) => {
     const ok = await onSubmit(type, config, id)
@@ -287,13 +293,17 @@ export default function SyncConnections({ connections, onSubmit, onTest, onRemov
     }
     return ok
   }
+  const verifyOfficial = async (config) => {
+    await onOfficialVerify(config)
+    closeAdd()
+  }
   return <section className="settings-block sync-connections">
     <div className="settings-heading-row">
       <div>
         <h2 className="settings-block-title">{t('sync.connections')}</h2>
         <p className="settings-block-desc">{t('sync.connectionsDesc')}</p>
       </div>
-      {!showGallery && !picked && <button type="button" className="settings-action-btn" data-sync-add onClick={() => setAdding('gallery')}>
+      {!showGallery && !picked && adding !== 'horsemd' && <button type="button" className="settings-action-btn" data-sync-add onClick={() => setAdding('gallery')}>
         <Icon name="plus" size={15} />
         {t('sync.addConnection')}
       </button>}
@@ -302,9 +312,26 @@ export default function SyncConnections({ connections, onSubmit, onTest, onRemov
     {error && <div className="sync-error">{error}</div>}
     {showGallery && <ProviderGallery
       onPick={(provider) => { setAdding(provider.id); setFullFrom(null) }}
+      onPickOfficial={official ? () => { setAdding('horsemd'); setFullFrom(null) } : null}
       onClose={connections.length ? closeAdd : null}
       t={t}
     />}
+    {adding === 'horsemd' && official && <div className="sync-provider-panel" data-provider="horsemd">
+      <div className="sync-provider-panel-head">
+        <button type="button" className="sync-icon-btn" title={t('syncp.back')} aria-label={t('syncp.back')} onClick={() => setAdding('gallery')}>
+          <Icon name="chevron-left" size={17} />
+        </button>
+        <OfficialMark />
+        <div className="sync-provider-panel-title">
+          <strong>{t('synco.name')}</strong>
+          <small>{t('synco.desc')}</small>
+        </div>
+        <span className="sync-protocol-badge official">{t('synco.badge')}</span>
+      </div>
+      <div className="sync-provider-panel-body">
+        <OfficialLoginForm onStart={onOfficialStart} onVerify={verifyOfficial} onCancel={closeAdd} t={t} />
+      </div>
+    </div>}
     {picked && <ProviderPanel provider={fullFrom ? SYNC_PROVIDERS.find((item) => item.id === picked.type) : picked} onBack={() => { setAdding('gallery'); setFullFrom(null) }} t={t}>
       {picked.generic || fullFrom
         ? <ConnectionForm type={picked.type} initial={fullFrom} onSubmit={submit} onCancel={closeAdd} t={t} />
@@ -312,6 +339,22 @@ export default function SyncConnections({ connections, onSubmit, onTest, onRemov
     </ProviderPanel>}
     {connections.length > 0 && <div className="sync-connection-list">
       {connections.map((connection) => {
+        if (isOfficialConnection(connection)) {
+          return <div key={connection.id} className="sync-connection-card official" data-connection-provider="horsemd">
+            <div className="sync-connection-card-row">
+              <OfficialMark />
+              <div className="sync-connection-card-copy">
+                <div className="sync-connection-card-name">{connection.name}</div>
+                <div className="sync-connection-card-detail"><span className="sync-connection-card-where">{connection.email}</span></div>
+              </div>
+              <div className="sync-icon-actions">
+                <IconAction icon="refresh" label={t('sync.testConnection')} onClick={() => onTest(connection.id)} />
+                <IconAction icon="trash" label={t('synco.logout')} onClick={() => onRemove(connection.id)} />
+              </div>
+            </div>
+            <OfficialAccountSummary connection={connection} onLoad={onOfficialAccount} t={t} />
+          </div>
+        }
         const provider = providerOfConnection(connection)
         return <div key={connection.id} className={`sync-connection-card${editing === connection.id ? ' editing' : ''}`} data-connection-provider={provider?.id || ''}>
           <div className="sync-connection-card-row">

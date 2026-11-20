@@ -6,6 +6,8 @@
 // `secretAccessKeyId`: also keep the S3 Access Key ID in the credential store
 // instead of the connections file (phones; the desktop keeps it in the file).
 
+import { OfficialSession, OFFICIAL_PROVIDER_ID, OfficialAccountError, formatBytes, isLoopbackUrl, normalizeServer } from './official-account.js'
+
 const VERSION = 1
 const FILE = 'sync/connections.json'
 const defaultUuid = () => globalThis.crypto.randomUUID()
@@ -25,7 +27,9 @@ function publicConnection(entry) {
   return publicEntry
 }
 
-const SUPPORTED_TYPES = ['webdav', 's3']
+// `horsemd`: HorseMD 同步, our own service (official-account.js); the
+// credential store holds only its rotating refresh token.
+const SUPPORTED_TYPES = ['webdav', 's3', 'horsemd']
 
 // Every stored entry, also of types this version does not know (a newer
 // HorseMD may add e.g. GitHub): they are written back untouched, so using
@@ -57,13 +61,84 @@ async function writeConnections(store, connections) {
 }
 
 export class ConnectionRegistry {
-  constructor({ store, credentialStore, createWebDavProvider, createS3Provider, uuid = defaultUuid, secretAccessKeyId = false }) {
+  // `createAccountClient(server)`: HorseMD 同步's account client;
+  // `officialServer`: its default address (tests point it at a local one).
+  constructor({ store, credentialStore, createWebDavProvider, createS3Provider, createAccountClient = null, officialServer = '', uuid = defaultUuid, secretAccessKeyId = false }) {
     this.store = store
     this.credentialStore = credentialStore
     this.createWebDavProvider = createWebDavProvider
     this.createS3Provider = createS3Provider
+    this.createAccountClient = createAccountClient
+    this.officialServer = officialServer
     this.uuid = uuid
     this.secretAccessKeyId = secretAccessKeyId
+    // connection id → OfficialSession (one per connection, so renewals of
+    // its rotating refresh token never overlap).
+    this.officialSessions = new Map()
+  }
+
+  accountClient(server) {
+    if (!this.createAccountClient) throw new Error('当前平台暂不支持 HorseMD 同步。')
+    return this.createAccountClient(normalizeServer(server || this.officialServer))
+  }
+
+  officialSession(connection) {
+    let session = this.officialSessions.get(connection.id)
+    if (!session) {
+      const credentialId = connection.credentialId
+      session = new OfficialSession({
+        client: this.accountClient(connection.server),
+        loadRefreshToken: async () => (await this.credentialStore.get(credentialId))?.refreshToken || '',
+        saveRefreshToken: (refreshToken) => this.credentialStore.set(credentialId, { refreshToken })
+      })
+      this.officialSessions.set(connection.id, session)
+    }
+    return session
+  }
+
+  // HorseMD 同步, step 1: mail a login code.
+  async startOfficialLogin({ email, server = '' }) {
+    return this.accountClient(server).startLogin(String(email || '').trim())
+  }
+
+  // Step 2: the code → a connection. Logging in again to the same account
+  // renews the saved connection instead of adding a second one.
+  async addOfficial({ email, code, device = '', server = '' }) {
+    const client = this.accountClient(server)
+    const result = await client.verify(String(email || '').trim(), String(code || '').trim(), String(device || '').slice(0, 120))
+    const connections = await readAllConnections(this.store)
+    const existing = connections.find((item) => item.type === 'horsemd' && item.userId === result.user.id && item.server === client.server)
+    const id = existing?.id || this.uuid()
+    const credentialId = existing?.credentialId || `horsemd:${id}`
+    // The old session (if any) may hold a refresh token that is now stale.
+    const old = existing && this.officialSessions.get(id)
+    if (old) await old.logout().catch(() => {})
+    this.officialSessions.delete(id)
+    await this.credentialStore.set(credentialId, { refreshToken: result.refreshToken })
+    const connection = {
+      ...(existing || {}),
+      id,
+      type: 'horsemd',
+      provider: OFFICIAL_PROVIDER_ID,
+      name: existing?.name || 'HorseMD 同步',
+      server: client.server,
+      email: result.user.email,
+      userId: result.user.id,
+      credentialId,
+      ...(existing ? { updatedAt: new Date().toISOString() } : { createdAt: new Date().toISOString() })
+    }
+    if (existing) connections[connections.indexOf(existing)] = connection
+    else connections.push(connection)
+    await writeConnections(this.store, connections)
+    const session = this.officialSession(connection)
+    session.access = { token: result.accessToken, expiresAt: Date.parse(result.accessExpiresAt) || Date.now() + 50 * 60 * 1000 }
+    return publicConnection(connection)
+  }
+
+  async officialAccount(id) {
+    const connection = (await readConnections(this.store)).find((item) => item.id === id && item.type === 'horsemd')
+    if (!connection) throw new Error('找不到 HorseMD 同步连接。')
+    return this.officialSession(connection).me()
   }
 
   // The S3 Access Key ID of a saved connection: from the file, or (phones)
@@ -164,6 +239,15 @@ export class ConnectionRegistry {
     const provider = config.provider === undefined ? (current.provider || '') : normalizeProviderId(config.provider)
     const credential = await this.credentialStore.get(current.credentialId)
 
+    if (current.type === 'horsemd') {
+      const name = String(config.name || '').trim()
+      if (!name) throw new Error('请填写连接名称。')
+      const next = { ...current, name, updatedAt: new Date().toISOString() }
+      connections[index] = next
+      await writeConnections(this.store, connections)
+      return publicConnection(next)
+    }
+
     if (current.type === 'webdav') {
       const name = String(config.name || '').trim()
       const endpoint = String(config.endpoint || '').trim()
@@ -217,6 +301,12 @@ export class ConnectionRegistry {
     const connections = await readAllConnections(this.store)
     const current = connections.find((connection) => connection.id === id)
     if (!current) return false
+    // Signing out ends the session on the service too (best effort: offline
+    // removal still forgets it here).
+    if (current.type === 'horsemd') {
+      await this.officialSession(current).logout().catch(() => {})
+      this.officialSessions.delete(id)
+    }
     await writeConnections(this.store, connections.filter((connection) => connection.id !== id))
     await this.credentialStore.remove(current.credentialId)
     return true
@@ -240,6 +330,45 @@ export class ConnectionRegistry {
       if (!credential?.secretAccessKey) throw new Error('S3 密钥不可用，请重新连接。')
       return this.createS3Provider({ ...connection, ...options, secretAccessKey: credential.secretAccessKey })
     }
+    if (connection.type === 'horsemd') return this.createOfficialProvider(connection, options)
     throw new Error('不支持的云端连接类型。')
   }
+
+  // HorseMD 同步 = S3 under users/<uid>/ with the service's temporary
+  // credentials. A plan that ended or is over quota is read-only: uploads
+  // stop here with a clear reason instead of the storage's 403.
+  async createOfficialProvider(connection, options = {}) {
+    const session = this.officialSession(connection)
+    let grant
+    try {
+      grant = await session.storageGrant({ maxAgeMs: 15 * 1000 })
+    } catch (error) {
+      throw officialError(error)
+    }
+    return this.createS3Provider({
+      endpoint: grant.endpoint,
+      bucket: grant.bucket,
+      region: grant.region,
+      credentials: session.credentialProvider(),
+      prefix: [grant.prefix, options.prefix].filter(Boolean).join('/'),
+      allowInsecure: isLoopbackUrl(grant.endpoint),
+      beforePut: async (bytes) => {
+        const current = await session.storageGrant()
+        if (!current.writable) throw new Error('HorseMD 同步的空间已满或订阅已结束，现在只能下载，不能上传。')
+        const size = bytes?.byteLength ?? bytes?.length ?? 0
+        if (current.fileBytes && size > current.fileBytes) {
+          throw new Error(`有文件超过 HorseMD 同步的单文件上限（${formatBytes(current.fileBytes)}），没有上传。`)
+        }
+      }
+    })
+  }
+}
+
+// The service's own Chinese message, with the cases a person must act on
+// spelled out.
+function officialError(error) {
+  if (!(error instanceof OfficialAccountError)) return error
+  if (error.code === 'refresh-invalid') return new Error('HorseMD 同步已退出登录，请在 设置 › 云同步 里重新登录。')
+  if (error.code === 'no-plan') return new Error('HorseMD 同步还没有订阅：在官网账号页开通后即可同步。')
+  return error
 }

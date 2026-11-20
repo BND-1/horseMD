@@ -240,6 +240,9 @@ export default function SyncSettings({
   onJoinWorkspace,
   onUnlockEncryption,
   onChangeEncryptionPassword,
+  onStartOfficialLogin = null,
+  onAddOfficialConnection = null,
+  onOfficialAccount = null,
   autoSync = null,
   settings = {},
   onUpdateSettings,
@@ -277,7 +280,10 @@ export default function SyncSettings({
     setRemoteChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: null }))
   }
   const noEncryption = { on: false, password: '', confirm: '', error: '' }
-  const encryptionFor = (entry) => encryptionChoices[pathKey(entry.rootPath)] || noEncryption
+  // HorseMD 同步 starts with encryption on (Obsidian Sync's default).
+  const officialDefault = { ...noEncryption, on: true }
+  const encryptionFor = (entry) => encryptionChoices[pathKey(entry.rootPath)] ||
+    (connections.find((item) => item.id === connectionFor(entry))?.type === 'horsemd' ? officialDefault : noEncryption)
   const setEncryptionFor = (entry, value) => setEncryptionChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: value }))
   const markSyncComplete = (rootPath) => setSyncStates((current) => ({ ...current, [pathKey(rootPath)]: 'complete' }))
 
@@ -468,6 +474,14 @@ export default function SyncSettings({
       onSubmit={submitConnection}
       onTest={testConnection}
       onRemove={(id) => safely(() => onRemoveConnection(id))}
+      onOfficialStart={onStartOfficialLogin}
+      onOfficialVerify={onAddOfficialConnection ? async (config) => {
+        setError('')
+        const connection = await onAddOfficialConnection(config)
+        setNotice(t('synco.loggedIn', { email: connection.email }))
+        return connection
+      } : null}
+      onOfficialAccount={onOfficialAccount}
       notice={notice}
       error={error}
       t={t}

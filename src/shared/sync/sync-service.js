@@ -3,6 +3,7 @@
 // src/main/sync-service.js; a phone builds it in the WebView with its own
 // adapters (docs/mobile-cloud-sync-architecture.md §6).
 import { ConnectionRegistry } from './connections.js'
+import { createAccountClient, OFFICIAL_SERVER } from './official-account.js'
 import { WebDavProvider } from './webdav-provider.js'
 import { S3Provider } from './s3-provider.js'
 import { SyncEngine } from './sync-engine.js'
@@ -97,7 +98,12 @@ export class SyncService {
       uuid: platform.uuid,
       secretAccessKeyId,
       createWebDavProvider: (config) => new WebDavProvider({ ...config, ...providerOptions, pacer: newPacer(platform.env) }),
-      createS3Provider: (config) => new S3Provider({ ...config, ...providerOptions, pacer: newPacer(platform.env) })
+      createS3Provider: (config) => new S3Provider({ ...config, ...providerOptions, pacer: newPacer(platform.env) }),
+      // HorseMD 同步: account calls go through the same request (timeout,
+      // trace without bodies). HORSEMD_SYNC_SERVER points tests at a local
+      // account service.
+      createAccountClient: (server) => createAccountClient({ request, server }),
+      officialServer: platform.env?.HORSEMD_SYNC_SERVER || OFFICIAL_SERVER
     })
     this.running = new Set()
     this.runningPaths = new Map()
@@ -115,6 +121,23 @@ export class SyncService {
 
   async listConnections() {
     return this.connections.list()
+  }
+
+  // HorseMD 同步: mail a code, then log in with it (→ a connection).
+  async startOfficialLogin(config) {
+    return this.connections.startOfficialLogin(config)
+  }
+
+  async addOfficialConnection(config) {
+    let device = String(config?.device || '')
+    if (!device) {
+      try { device = String(await this.platform.deviceName?.() || '') } catch { /* label only */ }
+    }
+    return this.connections.addOfficial({ ...config, device })
+  }
+
+  async officialAccount(connectionId) {
+    return this.connections.officialAccount(connectionId)
   }
 
   async updateConnection(connectionId, config) {

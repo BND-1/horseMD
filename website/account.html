@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>账号 — HorseMD</title>
+  <meta name="description" content="登录 HorseMD 账号，查看同步套餐、存储用量并管理订阅。" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" href="./assets/icon.png" />
+  <link rel="canonical" href="https://horsemd.yangsir.net/account" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <header class="nav">
+    <a class="nav-brand" href="/" aria-label="HorseMD">
+      <img src="./assets/icon.png" alt="" width="24" height="24" />
+      <span class="brand-name">HorseMD</span>
+    </a>
+    <nav class="nav-links">
+      <a href="/#features" data-i18n="nav.features">特性</a>
+      <a href="https://guide.horsemd.yangsir.net/" data-i18n="nav.guide">教程</a>
+      <a href="https://github.com/BND-1/horseMD" target="_blank" rel="noopener">GITHUB</a>
+      <a href="/account" aria-current="page" data-i18n="nav.account">账号</a>
+    </nav>
+    <button class="lang-toggle" id="langToggle" type="button" aria-label="Switch language">EN</button>
+  </header>
+
+  <main id="top" class="acct">
+
+    <!-- ───────────── 账号 ───────────── -->
+    <section class="section acct-section" aria-labelledby="acctTitle">
+      <div class="section-head">
+        <h2 id="acctTitle" data-i18n="acct.title">HorseMD 同步账号</h2>
+        <p class="acct-lead" data-i18n="acct.lead">用邮箱登录，查看套餐和存储用量。不需要密码。</p>
+      </div>
+
+      <!-- ?api= 覆盖时提示，避免把测试服务器当成正式服务 -->
+      <div class="acct-banner" id="apiBanner" hidden>
+        <span id="apiBannerText"></span>
+        <button type="button" class="acct-link" id="apiReset" data-i18n="api.reset">改回正式服务器</button>
+      </div>
+
+      <p class="acct-msg" id="globalMsg" role="status" aria-live="polite"></p>
+
+      <!-- 载入中 / 载入失败 -->
+      <div id="loadingView" class="acct-loading" hidden>
+        <p class="label" id="loadingText" data-i18n="acct.loading">正在读取账号…</p>
+        <button type="button" class="btn btn-ghost" id="retryBtn" hidden data-i18n="acct.retry">重试</button>
+      </div>
+
+      <!-- 未登录：邮箱 → 验证码 -->
+      <div id="loginView" hidden>
+        <form id="emailForm" class="acct-form" novalidate>
+          <label class="acct-label" for="emailInput" data-i18n="login.email">邮箱</label>
+          <div class="acct-row">
+            <input class="acct-input" id="emailInput" name="email" type="email" autocomplete="email"
+                   inputmode="email" spellcheck="false" maxlength="254" required
+                   aria-describedby="emailErr" placeholder="you@example.com" />
+            <button type="submit" class="btn" id="sendBtn" data-i18n="login.send">发送验证码</button>
+          </div>
+          <p class="acct-error" id="emailErr" aria-live="polite"></p>
+        </form>
+
+        <form id="codeForm" class="acct-form" novalidate hidden>
+          <p class="acct-hint" id="codeHint"></p>
+          <label class="acct-label" for="codeInput" data-i18n="login.code">验证码</label>
+          <div class="acct-row">
+            <input class="acct-input acct-code" id="codeInput" name="code" type="text" inputmode="numeric"
+                   autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required
+                   aria-describedby="codeErr" placeholder="000000" />
+            <button type="submit" class="btn" id="verifyBtn" data-i18n="login.verify">登录</button>
+          </div>
+          <p class="acct-error" id="codeErr" aria-live="polite"></p>
+          <button type="button" class="acct-link" id="changeEmail" data-i18n="login.change">换一个邮箱</button>
+        </form>
+      </div>
+
+      <!-- 已登录 -->
+      <div id="accountView" hidden>
+        <dl class="acct-spec">
+          <div class="acct-spec-row"><dt data-i18n="me.email">邮箱</dt><dd id="meEmail"></dd></div>
+          <div class="acct-spec-row"><dt data-i18n="me.plan">套餐</dt><dd id="mePlan"></dd></div>
+          <div class="acct-spec-row"><dt data-i18n="me.status">状态</dt><dd id="meStatus"></dd></div>
+          <div class="acct-spec-row" id="meDateRow"><dt id="meDateLabel"></dt><dd id="meDate"></dd></div>
+          <div class="acct-spec-row">
+            <dt data-i18n="me.storage">存储空间</dt>
+            <dd>
+              <div class="acct-bar" id="meBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span class="acct-bar-fill" id="meBarFill"></span>
+              </div>
+              <span class="acct-bar-text" id="meUsage"></span>
+              <span class="acct-sub" id="meMeasured"></span>
+            </dd>
+          </div>
+          <div class="acct-spec-row"><dt data-i18n="me.file">单个文件上限</dt><dd id="meFile"></dd></div>
+          <div class="acct-spec-row"><dt data-i18n="me.history">版本历史</dt><dd id="meHistory"></dd></div>
+        </dl>
+        <p class="acct-note" id="meNote" hidden></p>
+        <div class="acct-actions">
+          <button type="button" class="btn btn-ghost" id="portalBtn" hidden data-i18n="me.manage">管理订阅</button>
+          <button type="button" class="btn btn-ghost" id="logoutBtn" data-i18n="me.logout">退出登录</button>
+        </div>
+        <p class="acct-error" id="actionErr" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- ───────────── 套餐 ───────────── -->
+    <section class="section acct-plans" id="plans" aria-labelledby="plansTitle">
+      <div class="section-head">
+        <h2 id="plansTitle" data-i18n="plans.title">同步套餐</h2>
+      </div>
+
+      <div class="seg" role="group" data-i18n-aria="plans.interval" aria-label="付费周期">
+        <button type="button" class="seg-btn" data-interval="month" aria-pressed="true" data-i18n="plans.month">月付</button>
+        <button type="button" class="seg-btn" data-interval="year" aria-pressed="false" data-i18n="plans.year">年付</button>
+      </div>
+
+      <div class="plan-grid">
+        <article class="plan" data-plan="standard" aria-labelledby="planStandardName">
+          <h3 id="planStandardName" data-i18n="plan.standard">标准版</h3>
+          <p class="plan-price" data-price></p>
+          <ul class="plan-list">
+            <li data-i18n="plan.standard.storage">1 GB 存储空间</li>
+            <li data-i18n="plan.standard.file">单个文件最大 5 MB</li>
+            <li data-i18n="plan.standard.history">1 个月版本历史</li>
+          </ul>
+          <button type="button" class="btn plan-btn" data-buy="standard"></button>
+        </article>
+        <article class="plan" data-plan="plus" aria-labelledby="planPlusName">
+          <h3 id="planPlusName" data-i18n="plan.plus">Plus</h3>
+          <p class="plan-price" data-price></p>
+          <ul class="plan-list">
+            <li data-i18n="plan.plus.storage">10 GB 存储空间</li>
+            <li data-i18n="plan.plus.file">单个文件最大 200 MB</li>
+            <li data-i18n="plan.plus.history">12 个月版本历史</li>
+          </ul>
+          <button type="button" class="btn plan-btn" data-buy="plus"></button>
+        </article>
+      </div>
+
+      <p class="acct-msg" id="planMsg" role="status" aria-live="polite"></p>
+
+      <p class="acct-e2ee" data-i18n="plans.e2ee">
+        <strong>端到端加密。</strong>内容在你的设备上加密后才上传，同步服务看不到文件内容。加密密码只有你知道，丢了无法找回。
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <img src="./assets/icon.png" alt="" width="18" height="18" />
+      <span>HORSEMD · MIT LICENSE</span>
+    </div>
+    <nav class="footer-links">
+      <a href="/" data-i18n="nav.home">首页</a>
+      <a href="https://guide.horsemd.yangsir.net/" data-i18n="nav.guide">教程</a>
+      <a href="/privacy" data-i18n="nav.privacy">隐私</a>
+      <a href="https://github.com/BND-1/horseMD/issues" target="_blank" rel="noopener">ISSUES</a>
+    </nav>
+  </footer>
+
+  <script src="./account.js" defer></script>
+</body>
+</html>
