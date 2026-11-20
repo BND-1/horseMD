@@ -741,12 +741,7 @@ registerHistoryIpc(ipcMain)
 // search scope is exactly what the sidebar tree shows.
 registerGlobalSearchIpc(ipcMain, { markdownPattern: MD_RE })
 
-registerSyncWorkspaceIpc(ipcMain, {
-  getUserDataPath: () => app.getPath('userData'),
-  isTrustedSender: isAppSender
-})
-registerSyncServiceIpc(ipcMain, {
-  syncService: new SyncService({
+const syncService = new SyncService({
     getUserDataPath: () => app.getPath('userData'),
     safeStorage,
     // net.request, not net.fetch: 七牛 sends non-ASCII header bytes that make
@@ -761,7 +756,15 @@ registerSyncServiceIpc(ipcMain, {
         inputTraceQueue = inputTraceQueue.catch(() => {}).then(() => fs.appendFile(inputTracePath(), line, 'utf8'))
       }
       : null
-  }),
+})
+registerSyncWorkspaceIpc(ipcMain, {
+  getUserDataPath: () => app.getPath('userData'),
+  isTrustedSender: isAppSender,
+  // Stop syncing a folder: an encrypted folder's key leaves this device.
+  beforeRemove: (rootPath) => syncService.forgetWorkspaceKey(rootPath)
+})
+registerSyncServiceIpc(ipcMain, {
+  syncService,
   isTrustedSender: isAppSender,
   sendToRenderer
 })

@@ -87,8 +87,11 @@ const api = {
   syncUpdateConnection: (connectionId, config) => ipcRenderer.invoke('sync:connectionUpdate', connectionId, config),
   syncRemoveConnection: (connectionId) => ipcRenderer.invoke('sync:connectionRemove', connectionId),
   syncTestConnection: (connectionId) => ipcRenderer.invoke('sync:connectionTest', connectionId),
-  syncBindWorkspaceConnection: (rootPath, connectionId) =>
-    ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId),
+  syncBindWorkspaceConnection: (rootPath, connectionId, options) =>
+    ipcRenderer.invoke('sync:workspaceBindConnection', rootPath, connectionId, options),
+  syncUnlockWorkspace: (rootPath, password) => ipcRenderer.invoke('sync:workspaceUnlock', rootPath, password),
+  syncChangeEncryptionPassword: (rootPath, oldPassword, newPassword) =>
+    ipcRenderer.invoke('sync:encryptionPassword', rootPath, oldPassword, newPassword),
   syncPreview: (rootPath, strategy) => ipcRenderer.invoke('sync:preview', rootPath, strategy),
   syncRun: (rootPath, strategy, options) => ipcRenderer.invoke('sync:run', rootPath, strategy, options),
   onSyncProgress: on('sync:progress'),
@@ -96,7 +99,7 @@ const api = {
   syncControl: (rootPath, action) => ipcRenderer.invoke('sync:control', rootPath, action),
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncListRemoteWorkspaces: (connectionId) => ipcRenderer.invoke('sync:remoteWorkspaceList', connectionId),
-  syncJoinWorkspace: (rootPath, connectionId, workspaceId) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId),
+  syncJoinWorkspace: (rootPath, connectionId, workspaceId, options) => ipcRenderer.invoke('sync:workspaceJoin', rootPath, connectionId, workspaceId, options),
 
   // watch
   // owner: 'workspace' (default) | 'cloud' — a folder watched for both

@@ -150,10 +150,11 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     return window.api.syncTestConnection(connectionId)
   }, [])
 
-  const bindConnection = useCallback(async (rootPath, connectionId) => {
+  // options.encryption: { password } (end-to-end encrypted).
+  const bindConnection = useCallback(async (rootPath, connectionId, options = undefined) => {
     setBusyRoot(rootPath)
     try {
-      const entry = await window.api.syncBindWorkspaceConnection(rootPath, connectionId)
+      const entry = await window.api.syncBindWorkspaceConnection(rootPath, connectionId, options)
       await refresh()
       return entry
     } finally {
@@ -166,16 +167,27 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     async (connectionId) => window.api.syncListRemoteWorkspaces(connectionId),
     []
   )
-  const joinWorkspace = useCallback(async (rootPath, connectionId, workspaceId) => {
+  const joinWorkspace = useCallback(async (rootPath, connectionId, workspaceId, options = undefined) => {
     setBusyRoot(rootPath)
     try {
-      const entry = await window.api.syncJoinWorkspace(rootPath, connectionId, workspaceId)
+      const entry = await window.api.syncJoinWorkspace(rootPath, connectionId, workspaceId, options)
       await refresh()
       return entry
     } finally {
       setBusyRoot(null)
     }
   }, [refresh])
+  // A locked encrypted folder (preview status / run reason 'e2ee-…').
+  const unlockEncryption = useCallback(async (rootPath, password) => {
+    if (!window.api.syncUnlockWorkspace) throw new Error('当前平台暂不支持加密同步。')
+    const entry = await window.api.syncUnlockWorkspace(rootPath, password)
+    await refresh()
+    return entry
+  }, [refresh])
+  const changeEncryptionPassword = useCallback(async (rootPath, oldPassword, newPassword) => {
+    if (!window.api.syncChangeEncryptionPassword) throw new Error('当前平台暂不支持加密同步。')
+    return window.api.syncChangeEncryptionPassword(rootPath, oldPassword, newPassword)
+  }, [])
   // options.automatic: automatic sync (hooks/useAutoSync.js) — main re-plans
   // right before running; nothing to do → { idle }; an emptied cloud or a
   // mass deletion → { needsConfirmation, reason } with nothing run.
@@ -225,6 +237,8 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
     preview,
     listRemoteWorkspaces,
     joinWorkspace,
+    unlockEncryption,
+    changeEncryptionPassword,
     run
   }
 }

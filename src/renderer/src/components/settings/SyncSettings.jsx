@@ -5,6 +5,7 @@ import { SYNC_AUTO_MINUTES } from '../../settings.js'
 import Toggle from '../ui/Toggle.jsx'
 import { autoSyncText, isMassDelete, keyOf as syncKey } from '../../hooks/useAutoSync.js'
 import SyncConnections from './SyncConnections.jsx'
+import { EncryptionChoice, PasswordForm, SyncUnlock, errorMessage, isEncryptionReason, passwordProblem } from './SyncEncryption.jsx'
 
 const pathKey = (path) => String(path || '').replace(/[\\/]+$/, '').toLowerCase()
 
@@ -237,6 +238,8 @@ export default function SyncSettings({
   onRun,
   onListRemoteWorkspaces,
   onJoinWorkspace,
+  onUnlockEncryption,
+  onChangeEncryptionPassword,
   autoSync = null,
   settings = {},
   onUpdateSettings,
@@ -251,6 +254,13 @@ export default function SyncSettings({
   const [selectedConnections, setSelectedConnections] = useState({})
   const [remoteChoices, setRemoteChoices] = useState({})
   const [syncStates, setSyncStates] = useState({})
+  // End-to-end encryption (SyncEncryption.jsx): the choice for a folder not
+  // yet in the cloud, the encrypted cloud workspace being joined, the folder
+  // whose password is being changed, a folder the sync could not open.
+  const [encryptionChoices, setEncryptionChoices] = useState({})
+  const [joinTarget, setJoinTarget] = useState(null)
+  const [passwordChange, setPasswordChange] = useState(null)
+  const [unlock, setUnlock] = useState(null)
   const byPath = new Map(registered.map((entry) => [pathKey(entry.rootPath), entry]))
   const localOnly = libraryRoot
     ? (byPath.has(pathKey(libraryRoot)) ? [] : [libraryRoot])
@@ -266,6 +276,9 @@ export default function SyncSettings({
     setSelectedConnections((current) => ({ ...current, [pathKey(entry.rootPath)]: connectionId }))
     setRemoteChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: null }))
   }
+  const noEncryption = { on: false, password: '', confirm: '', error: '' }
+  const encryptionFor = (entry) => encryptionChoices[pathKey(entry.rootPath)] || noEncryption
+  const setEncryptionFor = (entry, value) => setEncryptionChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: value }))
   const markSyncComplete = (rootPath) => setSyncStates((current) => ({ ...current, [pathKey(rootPath)]: 'complete' }))
 
   const safely = async (action) => {
@@ -274,8 +287,7 @@ export default function SyncSettings({
     try {
       return await action()
     } catch (cause) {
-      // Electron prefixes main-process errors with the IPC channel name.
-      setError(String(cause?.message || cause).replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, ''))
+      setError(errorMessage(cause))
       return null
     }
   }
@@ -303,6 +315,12 @@ export default function SyncSettings({
   const prepareSync = async (entry, strategy = 'merge', { previewOnly = false } = {}) => {
     const data = await safely(() => onPreview(entry.rootPath, strategy))
     if (!data) return
+    // An encrypted folder this device cannot open: the password, in place.
+    if (isEncryptionReason(data.status)) {
+      setPreview(null)
+      setUnlock({ rootPath: entry.rootPath, reason: data.status })
+      return
+    }
     if (data.status === 'remote-reset') {
       setRecovery({ entry, data })
       return
@@ -349,8 +367,67 @@ export default function SyncSettings({
       setError(t('sync.chooseConnectionFirst'))
       return
     }
-    const bound = await safely(() => onBindConnection(entry.rootPath, connectionId))
+    const encryption = encryptionFor(entry)
+    if (!encryption.on) {
+      const bound = await safely(() => onBindConnection(entry.rootPath, connectionId))
+      if (bound) await prepareSync(bound, 'push')
+      return
+    }
+    const problem = passwordProblem(encryption.password, encryption.confirm, t)
+    if (problem) {
+      setEncryptionFor(entry, { ...encryption, error: problem })
+      return
+    }
+    // Errors stay next to the password (a wrong password for a key already
+    // in the cloud, a folder synced before without encryption).
+    setError('')
+    setNotice('')
+    let bound = null
+    try {
+      bound = await onBindConnection(entry.rootPath, connectionId, { encryption: { password: encryption.password } })
+    } catch (cause) {
+      setEncryptionFor(entry, { ...encryption, error: errorMessage(cause) })
+      return
+    }
+    setEncryptionFor(entry, noEncryption)
     if (bound) await prepareSync(bound, 'push')
+  }
+
+  // Joining an encrypted cloud workspace: the password first (checked before
+  // the folder changes), then download.
+  const joinEncrypted = async (entry, workspaceId, password) => {
+    const connectionId = connectionFor(entry)
+    let joined = null
+    try {
+      joined = await onJoinWorkspace(entry.rootPath, connectionId, workspaceId, { password })
+    } catch (cause) {
+      return errorMessage(cause)
+    }
+    setJoinTarget(null)
+    if (joined) await prepareSync(joined, 'pull')
+    return ''
+  }
+
+  const unlockFolder = async (entry, password) => {
+    try {
+      await onUnlockEncryption(entry.rootPath, password)
+    } catch (cause) {
+      return errorMessage(cause)
+    }
+    setUnlock(null)
+    await prepareSync(entry)
+    return ''
+  }
+
+  const changePassword = async (entry, { old, password }) => {
+    try {
+      await onChangeEncryptionPassword(entry.rootPath, old, password)
+    } catch (cause) {
+      return errorMessage(cause)
+    }
+    setPasswordChange(null)
+    setNotice(t('sync.e2ee.changed'))
+    return ''
   }
 
   const continueWithConnection = async (entry) => {
@@ -368,7 +445,11 @@ export default function SyncSettings({
     setRemoteChoices((current) => ({ ...current, [pathKey(entry.rootPath)]: remote }))
   }
 
-  const joinRemote = async (entry, workspaceId) => {
+  const joinRemote = async (entry, workspaceId, encrypted = false) => {
+    if (encrypted) {
+      setJoinTarget({ rootPath: entry.rootPath, workspaceId })
+      return
+    }
     const connectionId = connectionFor(entry)
     const joined = await safely(() => onJoinWorkspace(entry.rootPath, connectionId, workspaceId))
     if (joined) await prepareSync(joined, 'pull')
@@ -423,12 +504,22 @@ export default function SyncSettings({
               <div className="sync-folder-copy">
                 <div className="sync-folder-name">{folderName(entry.rootPath, entry)}</div>
                 <div className="sync-folder-path">{folderPath(entry.rootPath)}</div>
-                {entry.connectionId ? <div className="sync-folder-status">{connectionName(entry.connectionId)}</div> : <>
+                {entry.connectionId ? <div className="sync-folder-status">
+                  {connectionName(entry.connectionId)}
+                  {entry.encrypted && <span className="sync-e2ee-badge"><Icon name="lock" size={12} />{t('sync.e2ee.badge')}</span>}
+                </div> : <>
                   <div className="sync-folder-status muted">{t('sync.readyToConnect')}</div>
                   <ConnectionPicker
                     connections={connections}
                     value={selectedConnection}
                     onChange={(connectionId) => setConnectionFor(entry, connectionId)}
+                    t={t}
+                  />
+                  <EncryptionChoice
+                    idPrefix={`e2ee-${entry.workspaceId}`}
+                    value={encryptionFor(entry)}
+                    onChange={(value) => setEncryptionFor(entry, value)}
+                    disabled={busy}
                     t={t}
                   />
                   <div className="sync-folder-actions">
@@ -439,12 +530,24 @@ export default function SyncSettings({
                     {remote.map((workspace) => <button
                       key={workspace.workspaceId}
                       type="button"
-                      className="sync-remote-choice"
+                      className={`sync-remote-choice${workspace.encrypted ? ' encrypted' : ''}`}
                       disabled={busy}
-                      onClick={() => joinRemote(entry, workspace.workspaceId)}
+                      onClick={() => joinRemote(entry, workspace.workspaceId, workspace.encrypted === true)}
                     >
-                      {t('sync.joinRemoteItem', { count: workspace.fileCount })}
+                      {workspace.encrypted && <Icon name="lock" size={12} />}
+                      {workspace.encrypted ? t('sync.e2ee.joinItem') : t('sync.joinRemoteItem', { count: workspace.fileCount })}
                     </button>)}
+                    {joinTarget && pathKey(joinTarget.rootPath) === pathKey(entry.rootPath) && <div className="sync-e2ee-join">
+                      <p className="sync-e2ee-note">{t('sync.e2ee.joinHint')}</p>
+                      <PasswordForm
+                        idPrefix={`join-${joinTarget.workspaceId}`}
+                        fields={['password']}
+                        submitLabel={t('sync.e2ee.joinSubmit')}
+                        onSubmit={({ password }) => joinEncrypted(entry, joinTarget.workspaceId, password)}
+                        onCancel={() => setJoinTarget(null)}
+                        t={t}
+                      />
+                    </div>}
                     <button
                       type="button"
                       className="settings-link-btn"
@@ -461,13 +564,52 @@ export default function SyncSettings({
                 <IconAction icon="upload" label={t('sync.pushLocal')} disabled={busy} onClick={() => prepareSync(entry, 'push')} />
                 <IconAction icon="download" label={t('sync.pullRemote')} disabled={busy} onClick={() => prepareSync(entry, 'pull')} />
                 <IconAction icon="list" label={t('sync.viewPreview')} disabled={busy} onClick={() => showPreview(entry)} />
+                {entry.encrypted && <IconAction
+                  icon="lock"
+                  className="sync-e2ee-password-btn"
+                  label={t('sync.e2ee.changePassword')}
+                  disabled={busy}
+                  onClick={() => setPasswordChange((current) => (pathKey(current) === pathKey(entry.rootPath) ? null : entry.rootPath))}
+                />}
               </div>}
               {state && <span className={`sync-state-icon ${state}`} title={state === 'syncing' ? t('sync.syncing') : t('sync.syncCompletedIcon')}>
                 <Icon name={state === 'syncing' ? 'refresh' : 'check'} size={15} />
               </span>}
               <IconAction icon="trash" label={t('sync.stopManaging')} onClick={() => safely(() => onRemoveFolder(entry.rootPath))} />
             </div>
-            {!busy && entry.connectionId && autoSync?.byFolder?.[syncKey(entry.rootPath)] && (autoSync.byFolder[syncKey(entry.rootPath)].kind === 'confirm'
+            {passwordChange && pathKey(passwordChange) === pathKey(entry.rootPath) && <div className="sync-e2ee-change">
+              <div className="sync-e2ee-change-title"><Icon name="lock" size={14} />{t('sync.e2ee.changePassword')}</div>
+              <PasswordForm
+                idPrefix={`change-${entry.workspaceId}`}
+                fields={['old', 'password', 'confirm']}
+                labels={{ password: t('sync.e2ee.newPassword') }}
+                submitLabel={t('sync.e2ee.changeSubmit')}
+                note={t('sync.e2ee.changeNote')}
+                onSubmit={(values) => changePassword(entry, values)}
+                onCancel={() => setPasswordChange(null)}
+                t={t}
+              />
+            </div>}
+            {!busy && entry.connectionId && (() => {
+              // The folder's own unlock box (a manual sync found it locked),
+              // else the automatic sync's.
+              const auto = autoSync?.byFolder?.[syncKey(entry.rootPath)]
+              const reason = unlock && pathKey(unlock.rootPath) === pathKey(entry.rootPath)
+                ? unlock.reason
+                : auto?.kind === 'confirm' && isEncryptionReason(auto.reason) ? auto.reason : null
+              return reason
+                ? <SyncUnlock
+                    key={reason}
+                    entry={entry}
+                    reason={reason}
+                    busy={!!busyRoot}
+                    onUnlock={unlockFolder}
+                    onStop={(item) => { setUnlock(null); safely(() => onRemoveFolder(item.rootPath)) }}
+                    t={t}
+                  />
+                : null
+            })()}
+            {!busy && entry.connectionId && !(unlock && pathKey(unlock.rootPath) === pathKey(entry.rootPath)) && !isEncryptionReason(autoSync?.byFolder?.[syncKey(entry.rootPath)]?.reason) && autoSync?.byFolder?.[syncKey(entry.rootPath)] && (autoSync.byFolder[syncKey(entry.rootPath)].kind === 'confirm'
               ? <SyncAttention
                   entry={entry}
                   status={autoSync.byFolder[syncKey(entry.rootPath)]}

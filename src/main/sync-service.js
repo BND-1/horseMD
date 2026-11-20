@@ -58,9 +58,19 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     trusted(event)
     return syncService.testConnection(connectionId)
   })
-  ipcMain.handle('sync:workspaceBindConnection', async (event, rootPath, connectionId) => {
+  // options.encryption: { password } → end-to-end encrypted (sync-crypto.js).
+  ipcMain.handle('sync:workspaceBindConnection', async (event, rootPath, connectionId, options) => {
     trusted(event)
-    return syncService.bindWorkspace(rootPath, connectionId)
+    const password = options?.encryption?.password
+    return syncService.bindWorkspace(rootPath, connectionId, typeof password === 'string' ? { encryption: { password } } : {})
+  })
+  ipcMain.handle('sync:workspaceUnlock', async (event, rootPath, password) => {
+    trusted(event)
+    return syncService.unlockWorkspace(rootPath, String(password ?? ''))
+  })
+  ipcMain.handle('sync:encryptionPassword', async (event, rootPath, oldPassword, newPassword) => {
+    trusted(event)
+    return syncService.changeEncryptionPassword(rootPath, String(oldPassword ?? ''), String(newPassword ?? ''))
   })
   ipcMain.handle('sync:preview', async (event, rootPath, strategy) => {
     trusted(event)
@@ -98,5 +108,8 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     return syncService.control(rootPath, action)
   })
   ipcMain.handle('sync:remoteWorkspaceList', async (event, connectionId) => { trusted(event); return syncService.listRemoteWorkspaces(connectionId) })
-  ipcMain.handle('sync:workspaceJoin', async (event, rootPath, connectionId, workspaceId) => { trusted(event); return syncService.joinWorkspace(rootPath, connectionId, workspaceId) })
+  ipcMain.handle('sync:workspaceJoin', async (event, rootPath, connectionId, workspaceId, options) => {
+    trusted(event)
+    return syncService.joinWorkspace(rootPath, connectionId, workspaceId, { password: String(options?.password ?? '') })
+  })
 }

@@ -27,6 +27,9 @@ function normalizeEntry(platform, entry) {
     workspaceId: entry.workspaceId,
     rootPath,
     connectionId: typeof entry.connectionId === 'string' ? entry.connectionId : null,
+    // End-to-end encrypted in the cloud (sync-crypto.js); the key is in the
+    // credential store, never here.
+    ...(entry.encrypted === true ? { encrypted: true } : {}),
     createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date(0).toISOString(),
     updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : new Date(0).toISOString()
   }
@@ -168,12 +171,24 @@ export async function unregisterSyncWorkspace(platform, rootPath) {
   return true
 }
 
-export async function bindSyncWorkspace(platform, rootPath, connectionId) {
+export async function bindSyncWorkspace(platform, rootPath, connectionId, { encrypted = false } = {}) {
   const normalizedRoot = await validateRoot(platform, rootPath)
   const registry = await readWorkspaceRegistry(platform)
   const index = registry.findIndex((entry) => entry.rootPath.toLowerCase() === normalizedRoot.toLowerCase())
   if (index < 0) throw new Error('请先将这个文件夹添加为 HorseMD 同步文件夹。')
-  registry[index] = { ...registry[index], connectionId, updatedAt: new Date().toISOString() }
+  const { encrypted: _old, ...rest } = registry[index]
+  registry[index] = { ...rest, connectionId, ...(encrypted ? { encrypted: true } : {}), updatedAt: new Date().toISOString() }
+  await writeWorkspaceRegistry(platform, registry)
+  return displayEntry(platform, registry[index])
+}
+
+// Mark a sync folder as end-to-end encrypted (its key was just unlocked).
+export async function markSyncWorkspaceEncrypted(platform, rootPath) {
+  const registry = await readWorkspaceRegistry(platform)
+  const index = registry.findIndex((entry) => entry.rootPath.toLowerCase() === String(rootPath).replace(/[\\/]+$/, '').toLowerCase())
+  if (index < 0) throw new Error('请先将这个文件夹添加为 HorseMD 同步文件夹。')
+  if (registry[index].encrypted) return displayEntry(platform, registry[index])
+  registry[index] = { ...registry[index], encrypted: true, updatedAt: new Date().toISOString() }
   await writeWorkspaceRegistry(platform, registry)
   return displayEntry(platform, registry[index])
 }

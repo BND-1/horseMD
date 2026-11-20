@@ -15,7 +15,7 @@ export const unregisterSyncWorkspace = (userDataPath, rootPath) => shared.unregi
 export const bindSyncWorkspace = (userDataPath, rootPath, connectionId) => shared.bindSyncWorkspace(platformFor(userDataPath), rootPath, connectionId)
 export const joinSyncWorkspace = (userDataPath, rootPath, remoteWorkspaceId) => shared.joinSyncWorkspace(platformFor(userDataPath), rootPath, remoteWorkspaceId)
 
-export function registerSyncWorkspaceIpc(ipcMain, { getUserDataPath, isTrustedSender }) {
+export function registerSyncWorkspaceIpc(ipcMain, { getUserDataPath, isTrustedSender, beforeRemove = null }) {
   const trusted = (event) => {
     if (isTrustedSender?.(event)) return
     throw new Error('Untrusted renderer.')
@@ -31,6 +31,7 @@ export function registerSyncWorkspaceIpc(ipcMain, { getUserDataPath, isTrustedSe
   })
   ipcMain.handle('sync:workspaceRemove', async (event, rootPath) => {
     trusted(event)
+    await beforeRemove?.(rootPath)
     return unregisterSyncWorkspace(getUserDataPath(), rootPath)
   })
 }

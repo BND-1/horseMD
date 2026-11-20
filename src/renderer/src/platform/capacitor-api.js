@@ -891,6 +891,8 @@ const syncApi = () => (capabilities.cloudSync
       syncRemoveConnection: syncCall('syncRemoveConnection'),
       syncTestConnection: syncCall('syncTestConnection'),
       syncBindWorkspaceConnection: syncCall('syncBindWorkspaceConnection'),
+      syncUnlockWorkspace: syncCall('syncUnlockWorkspace'),
+      syncChangeEncryptionPassword: syncCall('syncChangeEncryptionPassword'),
       syncPreview: syncCall('syncPreview'),
       syncRun: syncCall('syncRun'),
       onSyncProgress: (cb) => {
@@ -914,6 +916,8 @@ const syncApi = () => (capabilities.cloudSync
       syncRemoveConnection: async () => false,
       syncTestConnection: async () => { throw new Error('unsupported') },
       syncBindWorkspaceConnection: async () => { throw new Error('unsupported') },
+      syncUnlockWorkspace: async () => { throw new Error('unsupported') },
+      syncChangeEncryptionPassword: async () => { throw new Error('unsupported') },
       syncPreview: async () => { throw new Error('unsupported') },
       syncRun: async () => { throw new Error('unsupported') },
       syncListRemoteWorkspaces: async () => [],

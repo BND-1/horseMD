@@ -79,14 +79,23 @@ export async function createMobileSync({ directory, root, onLocalChange = null, 
       assertLibrary(rootPath)
       return adoptSyncWorkspace(platform, root)
     },
-    syncRemoveWorkspace: (rootPath) => unregisterSyncWorkspace(platform, rootPath),
+    syncRemoveWorkspace: async (rootPath) => {
+      await service.forgetWorkspaceKey(rootPath)
+      return unregisterSyncWorkspace(platform, rootPath)
+    },
     syncListConnections: () => service.listConnections(),
     syncAddWebDavConnection: (config) => service.addWebDavConnection(config || {}),
     syncAddS3Connection: (config) => service.addS3Connection(config || {}),
     syncUpdateConnection: (connectionId, config) => service.updateConnection(connectionId, config || {}),
     syncRemoveConnection: (connectionId) => service.removeConnection(connectionId),
     syncTestConnection: (connectionId) => service.testConnection(connectionId),
-    syncBindWorkspaceConnection: (rootPath, connectionId) => service.bindWorkspace(rootPath, connectionId),
+    syncBindWorkspaceConnection: (rootPath, connectionId, options) => {
+      const password = options?.encryption?.password
+      return service.bindWorkspace(rootPath, connectionId, typeof password === 'string' ? { encryption: { password } } : {})
+    },
+    syncUnlockWorkspace: (rootPath, password) => service.unlockWorkspace(rootPath, String(password ?? '')),
+    syncChangeEncryptionPassword: (rootPath, oldPassword, newPassword) =>
+      service.changeEncryptionPassword(rootPath, String(oldPassword ?? ''), String(newPassword ?? '')),
     syncPreview: (rootPath, strategy) => service.preview(rootPath, strategy),
     async syncRun(rootPath, strategy, options) {
       const report = (progress) => send({ rootPath, ...progress })
@@ -117,7 +126,8 @@ export async function createMobileSync({ directory, root, onLocalChange = null, 
     },
     syncStatus: () => service.status(),
     syncListRemoteWorkspaces: (connectionId) => service.listRemoteWorkspaces(connectionId),
-    syncJoinWorkspace: (rootPath, connectionId, workspaceId) => service.joinWorkspace(rootPath, connectionId, workspaceId)
+    syncJoinWorkspace: (rootPath, connectionId, workspaceId, options) =>
+      service.joinWorkspace(rootPath, connectionId, workspaceId, { password: String(options?.password ?? '') })
   }
 
   return { api, service, platform, progressListeners }

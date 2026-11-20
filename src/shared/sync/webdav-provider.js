@@ -15,6 +15,12 @@ const parser = new XMLParser({
   htmlEntities: true
 })
 
+// An ETag as the revision we keep: quotes and a weak marker removed. Apache
+// marks the ETag of a file modified within the last second weak
+// (W/"…"); the revision is the same opaque value either way.
+export const normalizeEtag = (value) => String(value || '').trim().replace(/^W\//i, '').replace(/^"|"$/g, '') || null
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const asArray = (value) => (value == null ? [] : Array.isArray(value) ? value : [value])
 const text = (value) => (typeof value === 'object' ? value?.['#text'] || '' : value || '')
 
@@ -35,7 +41,7 @@ export function parsePropfind(xml) {
     const type = prop.resourcetype || {}
     return {
       href: decodeURIComponent(text(response.href)),
-      etag: String(text(prop.getetag) || '').replace(/^"|"$/g, '') || null,
+      etag: normalizeEtag(text(prop.getetag)),
       isDirectory: Object.prototype.hasOwnProperty.call(type, 'collection'),
       size: Number(text(prop.getcontentlength) || 0)
     }
@@ -156,7 +162,7 @@ export class WebDavProvider {
     if (!response.ok) throw new Error(`WebDAV 下载失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
     return {
       bytes: this.bytes.fromArrayBuffer(await response.arrayBuffer()),
-      revision: response.headers.get('etag')?.replace(/^"|"$/g, '') || null
+      revision: normalizeEtag(response.headers.get('etag'))
     }
   }
 
@@ -199,13 +205,16 @@ export class WebDavProvider {
     if (await this.ensurePrefix({ quick }) === false) return { revision: null, throttled: true }
     if (slash > 0 && await this.ensureDirectory(String(path).slice(0, slash), { quick }) === false) return { revision: null, throttled: true }
     const headers = { 'content-type': contentType }
-    if (revision) headers['if-match'] = `"${revision}"`
+    if (revision) headers['if-match'] = `"${normalizeEtag(revision)}"`
     if (createOnly) headers['if-none-match'] = '*'
-    const response = await this.requestPath(path, { method: 'PUT', headers, body: bytes }, { quick })
+    let response = await this.requestPath(path, { method: 'PUT', headers, body: bytes }, { quick })
+    if (response.status === 412 && revision && await this.stillAt(path, revision)) {
+      response = await this.requestPath(path, { method: 'PUT', headers, body: bytes }, { quick })
+    }
     if (quick && (response.status === 429 || response.status === 503)) return { revision: null, throttled: true }
     if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
     if (!response.ok) throw new Error(`WebDAV 上传失败（HTTP ${response.status}${throttleHint(response.status)}）。`)
-    const writtenRevision = response.headers.get('etag')?.replace(/^"|"$/g, '') || null
+    const writtenRevision = normalizeEtag(response.headers.get('etag'))
     // Apache DAV and several self-hosted servers omit ETag on PUT. Fetch the
     // metadata immediately so the next sync still has a conditional revision.
     if (writtenRevision) return { revision: writtenRevision }
@@ -229,9 +238,24 @@ export class WebDavProvider {
     throw new Error(`WebDAV 无法删除空文件夹“${path}”（HTTP ${response.status}${throttleHint(response.status)}）。`)
   }
 
+  // A 412 on a conditional write whose file is still at that revision: the
+  // server's ETag is weak because the file changed within the last second
+  // (Apache; If-Match compares strongly, so a weak ETag never matches).
+  // Wait for it to turn strong, then the caller tries once more. Anything
+  // else is a real change by another device.
+  async stillAt(path, revision) {
+    const current = await this.stat(path).catch(() => null)
+    if (!current?.etag || current.etag !== normalizeEtag(revision)) return false
+    await sleep(1100)
+    return true
+  }
+
   async delete(path, { revision = null } = {}) {
-    const headers = revision ? { 'if-match': `"${revision}"` } : {}
-    const response = await this.requestPath(path, { method: 'DELETE', headers })
+    const headers = revision ? { 'if-match': `"${normalizeEtag(revision)}"` } : {}
+    let response = await this.requestPath(path, { method: 'DELETE', headers })
+    if (response.status === 412 && revision && await this.stillAt(path, revision)) {
+      response = await this.requestPath(path, { method: 'DELETE', headers })
+    }
     if ([200, 204, 404].includes(response.status)) return true
     if (response.status === 412) throw new Error('远端文件已被其他设备修改，请重新同步。')
     throw new Error(`WebDAV 删除失败（HTTP ${response.status}${throttleHint(response.status)}）。`)

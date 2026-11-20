@@ -8226,6 +8226,89 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 .sync-attention-actions .settings-action-btn.primary:hover { filter: brightness(1.05); }
 @media (max-width: 680px) { .sync-attention { margin-left: 0; } }
 
+/* End-to-end encrypted sync (SyncEncryption.jsx). */
+.sync-e2ee-choice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.sync-e2ee-choice.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft)); }
+.sync-e2ee-choice-head {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+.sync-e2ee-icon { margin-top: 2px; color: var(--accent-strong); }
+.sync-e2ee-choice-title { font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
+.sync-e2ee-choice-desc { margin-top: 2px; font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.sync-e2ee-choice-fields,
+.sync-e2ee-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 360px;
+}
+.sync-e2ee-field input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.sync-e2ee-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }
+.sync-e2ee-note { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--warning, #b7791f); }
+.sync-e2ee-error { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--danger, #c53030); }
+.sync-e2ee-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sync-e2ee-actions .settings-action-btn.primary {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+.sync-e2ee-actions .settings-action-btn.primary:disabled { opacity: .6; }
+.sync-e2ee-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  vertical-align: 1px;
+}
+.sync-remote-choice.encrypted { display: inline-flex; align-items: center; gap: 5px; }
+.sync-e2ee-join { margin-top: 4px; }
+.sync-e2ee-join .sync-e2ee-note { color: var(--muted); }
+.sync-e2ee-change {
+  margin: 4px 0 4px 29px;
+  padding: 2px 14px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+.sync-e2ee-unlock .sync-e2ee-form { margin-top: 6px; }
+.sync-e2ee-change-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.sync-e2ee-change-title svg { color: var(--accent-strong); }
+@media (max-width: 680px) { .sync-e2ee-change { margin-left: 0; } }
+.app.is-mobile .sync-e2ee-field input { font-size: 16px; padding: 9px 11px; }
+
 /* Heading folds (editor-heading-fold.js). Hidden blocks are top-level
    children with a decoration class (view-only, never in the Markdown). The
    toggles live in an overlay after the editor DOM, right after the heading

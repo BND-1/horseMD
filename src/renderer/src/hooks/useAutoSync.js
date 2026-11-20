@@ -33,7 +33,8 @@ export function autoSyncText(status, t) {
   } else if (status.kind === 'idle') text = t('sync.auto.idle', { time })
   else if (status.kind === 'confirm') text = status.reason === 'mass-delete'
     ? t('sync.auto.massDelete', { time, n: summary.delete || 0 })
-    : t('sync.auto.remoteReset', { time })
+    : /^e2ee-/.test(status.reason || '') ? t('sync.auto.e2ee', { time })
+      : t('sync.auto.remoteReset', { time })
   else if (status.kind === 'stopped') text = t('sync.auto.stopped', { time })
   else if (status.kind === 'error') text = t('sync.auto.failed', { time, msg: status.message })
   if (text && status.deferred) text += ' ' + t('sync.deferredNotice', { n: status.deferred })
@@ -114,7 +115,8 @@ export function useAutoSync({ sync, enabled: on, minutes, tRef }) {
         record(key, { kind: 'confirm', reason: result.reason, summary })
         noticeOnce(`confirm:${result.reason}:${summary.delete || 0}`, result.reason === 'mass-delete'
           ? t('sync.auto.massDeleteToast', { name: nameOf(entry), n: summary.delete || 0 })
-          : t('sync.auto.remoteResetToast', { name: nameOf(entry) }))
+          : /^e2ee-/.test(result.reason || '') ? t('sync.auto.e2eeToast', { name: nameOf(entry) })
+            : t('sync.auto.remoteResetToast', { name: nameOf(entry) }))
       } else if (result?.stopped) {
         record(key, { kind: 'stopped' })
       } else if (result) {

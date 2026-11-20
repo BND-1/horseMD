@@ -1056,6 +1056,44 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   the field (region / keys / client / network) and show only the server's
   `HTTP …` code. Locked by `test:sync-providers`, `test:sync-providers-ui`
   (real accounts with `HM_QINIU_*` / `HM_CSTCLOUD_*` env only).
+- **End-to-end encrypted sync (2026-11-20)**, step 1 of the official paid
+  sync (`docs/official-sync-design.md`; user decision: app free, revenue from
+  our own sync): `EncryptedProvider` (`src/shared/sync/encrypted-provider.js`)
+  wraps any provider (rclone crypt model). Random 32-byte master key wrapped
+  by the password (PBKDF2-SHA256 600 000, random salt, AES-GCM) in the plain
+  `.horsemd/encryption.json` with a key check; HKDF content key (AES-GCM,
+  `HMX1` + nonce, not path-bound so cloud-trash copies work) and name key
+  (whole path → `o/<hmac>`, trash `t/<stamp>/<hmac>`; no folders, names or
+  manifest fields visible). Empty folders live only in the encrypted
+  manifest; `list()` is empty. Every instance checks the key file before its
+  first request (`KeyChangedError`: a replaced / missing key never looks
+  like an empty workspace). Settings (2026-11-20, `SyncEncryption.jsx`):
+  端到端加密 when a folder first goes to the cloud (password ≥ 8, twice);
+  an encrypted cloud workspace is listed as such and joined with its
+  password (checked before the folder changes); the unlocked key lives in
+  the credential store as `e2ee:<workspaceId>` (removed on stop syncing);
+  修改加密密码 rewraps only (other devices are not asked). `SyncService`
+  checks the cloud key file before every run: no key here / replaced /
+  missing → `SyncLockedError` → `{ needsConfirmation, reason: 'e2ee-…' }`
+  (preview: `status`), nothing written, the folder shows `SyncUnlock`. A
+  folder registered unencrypted whose cloud copy is encrypted stops too
+  (never plain text); one synced before in plain text cannot switch. Found
+  on the way: Apache marks the ETag of a file changed within the last
+  second weak (`W/"…"`), which the WebDAV provider kept as `W/"…` — every
+  If-Match within that second failed (the connection check: PUT then a
+  conditional DELETE). `normalizeEtag` + one retry after 1.1 s when the
+  file is still at that revision (`stillAt`); `test:webdav-apache` now runs
+  Apache multi-process (`-X` made every request wait seconds and hid it).
+  Locked by `test:sync-e2ee`, `test:sync-e2ee-service` (real Apache, S3
+  mock and real MinIO when installed, several devices;
+  `HM_E2EE_REMOTE_DAV=<url>` runs it against another machine's server),
+  `test:sync-e2ee-ui`, `test:mobile-sync-api` (the phone's window.api lists
+  every desktop sync method: 修改加密密码 and the unlock box once said
+  「当前平台暂不支持加密同步」on phones). Manual: two machines through one
+  DAV (`scripts/test-sync-e2ee-cross-machine.mjs`, mini ⇄ Windows);
+  phones (debug build with its own package):
+  `scripts/test-sync-e2ee-phone.mjs` (API) and
+  `scripts/test-sync-e2ee-phone-ui.mjs` (Settings › 云同步 by touch input).
 - **Phone cloud sync (2026-11-15)**: the sync engine lives in
   `src/shared/sync/` on injected platform adapters (contract:
   docs/mobile-cloud-sync-architecture.md §6); desktop wraps it with

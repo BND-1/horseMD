@@ -36,7 +36,7 @@ async function waitForServer(endpoint, child, output, errorLog) {
 
 async function stop(child) {
   if (!child || child.exitCode != null) return
-  child.kill('SIGTERM')
+  try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
   await Promise.race([
     new Promise((resolve) => child.once('exit', resolve)),
     sleep(3000).then(() => child.exitCode == null && child.kill('SIGKILL'))
@@ -59,6 +59,9 @@ try {
 ServerRoot "${root}"
 Listen 127.0.0.1:${port}
 ServerName 127.0.0.1
+StartServers 4
+MinSpareServers 4
+MaxSpareServers 8
 PidFile "${join(root, 'httpd.pid')}"
 ErrorLog "${join(logs, 'error.log')}"
 LogLevel warn
@@ -77,13 +80,28 @@ DocumentRoot "${documentRoot}"
   Options Indexes
 </Directory>
 `, 'utf8')
-  apache = spawn('/usr/sbin/httpd', ['-X', '-f', configPath], { stdio: ['ignore', 'pipe', 'pipe'] })
+  // Several processes, not -X: with one connection at a time every request
+  // waited seconds for an idle kept-alive one, which hid Apache's weak ETag
+  // (W/"…" for a file changed within the last second) — a PUT followed at
+  // once by a conditional DELETE (the connection check) failed with 412.
+  // Detached: Apache signals its whole process group on stop.
+  apache = spawn('/usr/sbin/httpd', ['-DFOREGROUND', '-f', configPath], { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
   apache.stdout.on('data', (chunk) => output.push(chunk.toString()))
   apache.stderr.on('data', (chunk) => output.push(chunk.toString()))
   await waitForServer(endpoint, apache, output, join(logs, 'error.log'))
 
   const provider = new WebDavProvider({ endpoint, username: 'ignored', password: 'ignored', allowInsecure: true, request: fetch })
   await provider.testConnection()
+  // A conditional write right after a write: the server's ETag is still weak.
+  const quick = await provider.put('weak/etag.md', Buffer.from('1'), { createOnly: true })
+  assert.doesNotMatch(String(quick.revision), /^W\/|"/, 'revision kept without the weak marker / quotes')
+  const quick2 = await provider.put('weak/etag.md', Buffer.from('22'), { revision: quick.revision })
+  await provider.delete('weak/etag.md', { revision: quick2.revision })
+  assert.equal(await provider.get('weak/etag.md'), null)
+  // A real change by someone else still fails.
+  const mine = await provider.put('weak/other.md', Buffer.from('mine'), { createOnly: true })
+  await provider.put('weak/other.md', Buffer.from('theirs'), { revision: mine.revision })
+  await assert.rejects(provider.put('weak/other.md', Buffer.from('stale'), { revision: mine.revision }), /已被其他设备修改/)
   const created = await provider.put('nested/note.md', Buffer.from('# DAV\n'), { createOnly: true })
   assert.ok(created.revision)
   assert.equal((await provider.get('nested/note.md')).bytes.toString(), '# DAV\n')
@@ -108,4 +126,4 @@ DocumentRoot "${documentRoot}"
   await rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS WebDAV provider: real Apache DAV transfer, list, conditional update and delete, a new workspace under a missing HorseMD/<id> prefix')
+console.log('PASS WebDAV provider: real Apache DAV (multi-process) transfer, weak ETags right after a write, a stale revision still refused, list, conditional update and delete, a new workspace under a missing HorseMD/<id> prefix')

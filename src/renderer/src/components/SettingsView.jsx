@@ -103,6 +103,8 @@ export default function SettingsView({
             onPreview={syncWorkspaces?.preview}
             onListRemoteWorkspaces={syncWorkspaces?.listRemoteWorkspaces}
             onJoinWorkspace={syncWorkspaces?.joinWorkspace}
+            onUnlockEncryption={syncWorkspaces?.unlockEncryption}
+            onChangeEncryptionPassword={syncWorkspaces?.changeEncryptionPassword}
             onRun={syncWorkspaces?.run}
             autoSync={autoSync}
             settings={settings}
