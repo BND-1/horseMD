@@ -761,6 +761,14 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   (`pasteListItemTextIntoItem`, marker-stripped source hint
   `listItemInlineMarkdown`); two or more items paste as a list. Locked by `test:list-partial-copy-ui` and
   `test:issue-151-cell-copy-ui`.
+- **List markers in a rich copy** (`editor-copy.js` `replaceListLabels`,
+  `restoreClonedTaskLabels`; 2026-11-22): Crepe draws each item's marker as
+  an editor-only SVG label, and a copy carried it along — pasted into
+  公众号 / mail every item had two bullets. The copy drops bullet / number
+  labels; a task item becomes `☐ ` / `☑ ` text with `list-style-type:none`
+  (plain text: the box, no `- `). A selection starting at an item's text
+  clones that `<li>` without its label, so the task state is taken from the
+  live item the range intersects. Locked by `test:list-marker-copy-ui`.
 - **Code-block language** (`editor-codeblock-language.js`): Milkdown's picker
   only selects listed languages. Enter in its search box, or a click on the
   relabelled no-result row, sets the typed name as-is (first word, no

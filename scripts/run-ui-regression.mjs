@@ -325,6 +325,10 @@ const standalone = [
     script: 'scripts/test-list-partial-copy-ui.mjs'
   },
   {
+    name: 'List copy: one marker per item when pasted elsewhere (no editor SVG dot; tasks as ☐ / ☑)',
+    script: 'scripts/test-list-marker-copy-ui.mjs'
+  },
+  {
     name: 'Code-block language picker accepts any typed language name',
     script: 'scripts/test-codeblock-custom-language-ui.mjs'
   },

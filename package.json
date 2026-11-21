@@ -34,6 +34,7 @@
     "test:find-open-mode-switch-ui": "node scripts/test-find-open-mode-switch-ui.mjs",
     "test:table-paste-ui": "node scripts/test-table-paste-ui.mjs",
     "test:list-partial-copy-ui": "node scripts/test-list-partial-copy-ui.mjs",
+    "test:list-marker-copy-ui": "node scripts/test-list-marker-copy-ui.mjs",
     "test:codeblock-custom-language-ui": "node scripts/test-codeblock-custom-language-ui.mjs",
     "test:pdf-empty-table-rows-ui": "node scripts/test-pdf-empty-table-rows-ui.mjs",
     "test:theme-css": "node scripts/test-theme-css.mjs",

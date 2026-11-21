@@ -10,7 +10,8 @@ import {
   copiedMarkdownContent,
   copiedPlainText,
   inlineRichStyles,
-  materializeCopiedSoftBreaks
+  materializeCopiedSoftBreaks,
+  restoreClonedTaskLabels
 } from './editor-copy.js'
 import { attachMdPasteHandler } from './editor-md-paste.js'
 import { markClipboardSource } from './editor-pasted-images.js'
@@ -100,9 +101,11 @@ export function mountEditorContentBindings({
     try {
       const wrapper = document.createElement('div')
       const foldedSlice = folded ? view.state.doc.slice(folded.from, folded.to) : null
+      const range = !foldedSlice && !selectedCells ? selection.getRangeAt(0) : null
       wrapper.appendChild(foldedSlice
         ? view.serializeForClipboard(foldedSlice).dom
-        : selectedCells || selection.getRangeAt(0).cloneContents())
+        : selectedCells || range.cloneContents())
+      if (range) restoreClonedTaskLabels(wrapper, range)
       materializeCopiedSoftBreaks(wrapper)
       // A mid-list selection clones <li> without its list wrapper. Whether the
       // items were ordered is only visible in the LIVE dom — inspect it before

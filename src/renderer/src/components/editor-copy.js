@@ -218,7 +218,9 @@ const listAwarePlainText = (root) => {
       ordinal = integer(item.getAttribute('value'), ordinal)
       const prefix = document.createElement('span')
       prefix.style.whiteSpace = 'pre'
-      prefix.textContent = `${'  '.repeat(depth)}${ordered ? `${ordinal}. ` : '- '}`
+      // A task item (written ☐ / ☑, list-style-type:none) shows its box, not a bullet.
+      const task = /list-style-type:\s*none/.test(item.getAttribute('style') || '')
+      prefix.textContent = `${'  '.repeat(depth)}${task ? '' : ordered ? `${ordinal}. ` : '- '}`
       // A preserved first paragraph must not put the prefix on its own line.
       const first = item.firstElementChild
       const target = first?.tagName === 'P' && !item.firstChild?.nodeValue?.trim() ? first : item
@@ -229,8 +231,51 @@ const listAwarePlainText = (root) => {
   return readClipboardProbe(probe)
 }
 
+// Milkdown draws each list item's marker as an editor-only label:
+// <div class="label-wrapper" contenteditable="false"><span class="milkdown-icon
+// label bullet|checked|unchecked"><svg/></span></div>. The pasted <ul>/<ol>
+// draws its own marker, so a bullet's SVG dot doubled it ("• • text") and a
+// task's checkbox SVG sat after a stray bullet. Drop bullet/number labels;
+// turn task labels into a text box (☑/☐) on an item without a list marker.
+// Runs before class names are stripped — they are the only state we have.
+const replaceListLabels = (root) => {
+  root.querySelectorAll('li > .label-wrapper').forEach((wrapper) => {
+    const label = wrapper.querySelector('.label')
+    const li = wrapper.parentElement
+    if (label?.classList.contains('checked') || label?.classList.contains('unchecked')) {
+      wrapper.replaceWith(document.createTextNode(label.classList.contains('checked') ? '☑ ' : '☐ '))
+      li.setAttribute('data-hm-task', '')
+    } else {
+      wrapper.remove()
+    }
+  })
+}
+
+// A selection that starts inside an item's text clones that <li> WITHOUT its
+// label (the label sits before the selection start), so a task item lost its
+// box and pasted as a plain bullet. Range.cloneContents keeps every <li> the
+// range touches, in document order, so the clone's items pair one to one with
+// the live items the range intersects: give a cloned task item that has no
+// label a copy of its live one (replaceListLabels then writes ☐ / ☑).
+export function restoreClonedTaskLabels(clone, range) {
+  const scope = range?.commonAncestorContainer
+  const host = scope?.nodeType === 1 ? scope : scope?.parentElement
+  if (!host) return
+  // cloneContents copies only what lies inside the common ancestor, so the
+  // candidates are its descendant items (querySelectorAll: document order).
+  const liveItems = [...host.querySelectorAll('li')].filter((li) => range.intersectsNode(li))
+  const clonedItems = [...clone.querySelectorAll('li')]
+  if (clonedItems.length !== liveItems.length) return
+  clonedItems.forEach((li, index) => {
+    if (li.querySelector(':scope > .label-wrapper')) return
+    const live = liveItems[index].querySelector(':scope > .label-wrapper')
+    if (live?.querySelector('.label.checked, .label.unchecked')) li.prepend(live.cloneNode(true))
+  })
+}
+
 export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {
   cleanCopiedTables(root)
+  replaceListLabels(root)
   root.querySelectorAll('*').forEach((el) => {
     // strip editor-only attributes
     el.removeAttribute('class')
@@ -252,6 +297,10 @@ export function inlineRichStyles(root, { selectionOrderedLists = false } = {}) {
     }
     const style = COPY_STYLES[tag]
     if (style) el.setAttribute('style', style)
+    if (tag === 'LI' && el.hasAttribute('data-hm-task')) {
+      el.setAttribute('style', `${style || ''}list-style-type:none;`)
+      el.removeAttribute('data-hm-task')
+    }
   })
   unwrapScaffoldingContainers(root)
   flattenListItemContents(root)
