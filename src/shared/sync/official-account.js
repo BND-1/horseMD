@@ -5,7 +5,7 @@
 // still go straight to object storage through S3Provider, sealed on the
 // device (EncryptedProvider) when the folder is encrypted.
 
-export const OFFICIAL_SERVER = 'https://api.horsemd.yangsir.net'
+export const OFFICIAL_SERVER = 'https://sync.yangsir.net'
 export const OFFICIAL_PROVIDER_ID = 'horsemd'
 
 // Storage credentials are renewed this long before they expire: a throttled

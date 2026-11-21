@@ -227,7 +227,7 @@ function $(id) { return document.getElementById(id) }
 // ?api=<url> points the page at another server (local testing). Only loopback,
 // private-network and our own *.yangsir.net hosts are accepted, so a crafted link
 // cannot send someone's login code to a stranger's server.
-const DEFAULT_API = 'https://api.horsemd.yangsir.net'
+const DEFAULT_API = 'https://sync.yangsir.net'
 const API_KEY = 'horsemd.account.api'
 
 function cleanApi(raw) {

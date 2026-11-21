@@ -16,7 +16,7 @@ the user's own prefix.
 
 ## Conventions
 
-- Base URL: production `https://api.horsemd.yangsir.net` (not deployed yet);
+- Base URL: `https://sync.yangsir.net` (test deployment since 2026-11-22: Dell + MinIO behind the Huawei Cloud nginx, no charging);
   local `http://127.0.0.1:<port>`.
 - JSON in and out, UTF-8. Every response is `{ ok: true, ... }` or
   `{ ok: false, error: <code>, message: <中文说明> }` with a 4xx/5xx status.
