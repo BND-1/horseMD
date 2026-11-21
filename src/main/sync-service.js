@@ -55,6 +55,10 @@ export function registerSyncServiceIpc(ipcMain, { syncService, isTrustedSender, 
     trusted(event)
     return syncService.addOfficialConnection(config || {})
   })
+  ipcMain.handle('sync:officialEnabled', async (event) => {
+    trusted(event)
+    return syncService.officialSyncEnabled()
+  })
   ipcMain.handle('sync:officialAccount', async (event, connectionId) => {
     trusted(event)
     return syncService.officialAccount(connectionId)

@@ -13,6 +13,9 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
   const supported = window.api.capabilities?.cloudSync !== false
   const [registered, setRegistered] = useState([])
   const [connections, setConnections] = useState([])
+  // HorseMD 同步 is offered only where the service says so (test builds, tests,
+  // a device already logged in): public releases hide it.
+  const [officialEnabled, setOfficialEnabled] = useState(false)
   const [loading, setLoading] = useState(supported)
   const [busyRoot, setBusyRootState] = useState(null)
   // Mirrors busyRoot synchronously (isBusy): automatic sync checks it right
@@ -82,12 +85,14 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
       return []
     }
     try {
-      const [entries, connectionItems] = await Promise.all([
+      const [entries, connectionItems, official] = await Promise.all([
         window.api.syncListWorkspaces(),
-        window.api.syncListConnections?.() || []
+        window.api.syncListConnections?.() || [],
+        Promise.resolve(window.api.syncOfficialEnabled?.()).catch(() => false)
       ])
       setRegistered(Array.isArray(entries) ? entries : [])
       setConnections(Array.isArray(connectionItems) ? connectionItems : [])
+      setOfficialEnabled(official === true)
       return entries
     } finally {
       setLoading(false)
@@ -133,16 +138,16 @@ export function useSyncWorkspaces({ folderRoots, addFolder, getDirtyPaths = null
   }, [refresh])
 
   // HorseMD 同步: a code by mail, then the code → a connection.
-  const startOfficialLogin = useMemo(() => (window.api?.syncStartOfficialLogin
+  const startOfficialLogin = useMemo(() => (officialEnabled && window.api?.syncStartOfficialLogin
     ? (config) => window.api.syncStartOfficialLogin(config)
-    : null), [])
-  const addOfficialConnection = useMemo(() => (window.api?.syncAddOfficialConnection
+    : null), [officialEnabled])
+  const addOfficialConnection = useMemo(() => (officialEnabled && window.api?.syncAddOfficialConnection
     ? async (config) => {
       const connection = await window.api.syncAddOfficialConnection(config)
       await refresh()
       return connection
     }
-    : null), [refresh])
+    : null), [refresh, officialEnabled])
   const officialAccount = useMemo(() => (window.api?.syncOfficialAccount
     ? (connectionId) => window.api.syncOfficialAccount(connectionId)
     : null), [])

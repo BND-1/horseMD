@@ -87,6 +87,7 @@ const api = {
   syncStartOfficialLogin: (config) => ipcRenderer.invoke('sync:officialLoginStart', config),
   syncAddOfficialConnection: (config) => ipcRenderer.invoke('sync:officialLoginVerify', config),
   syncOfficialAccount: (connectionId) => ipcRenderer.invoke('sync:officialAccount', connectionId),
+  syncOfficialEnabled: () => ipcRenderer.invoke('sync:officialEnabled'),
   syncUpdateConnection: (connectionId, config) => ipcRenderer.invoke('sync:connectionUpdate', connectionId, config),
   syncRemoveConnection: (connectionId) => ipcRenderer.invoke('sync:connectionRemove', connectionId),
   syncTestConnection: (connectionId) => ipcRenderer.invoke('sync:connectionTest', connectionId),

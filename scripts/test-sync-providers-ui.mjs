@@ -94,8 +94,10 @@ try {
   await openSync()
   let s = await waitFor(async () => { const v = await state(); return v.gallery && !v.logos.includes('broken') && v }, 'no gallery / logo not loaded')
   assert.deepEqual(s.tiles, ['jianguoyun', 'cstcloud', 'qiniu', 'r2', 'nextcloud'])
-  // HorseMD 同步 (our own service, SyncOfficial.jsx) heads the list.
-  assert.equal(s.first, 'horsemd')
+  // HorseMD 同步 (SyncOfficial.jsx) is hidden in a public build (test:official-sync-ui
+  // checks it heads the list where it is offered).
+  assert.notEqual(s.first, 'horsemd', 'HorseMD 同步 is hidden in a public build')
+  assert.equal(await app.evaluate(`!!document.querySelector('.sync-provider-row[data-provider=horsemd]')`), false)
   assert.deepEqual(s.logos, s.tiles)
   assert.deepEqual(s.generic, ['webdav', 's3'])
   assert.equal(s.addButton, false)

@@ -6,6 +6,11 @@
 // device (EncryptedProvider) when the folder is encrypted.
 
 export const OFFICIAL_SERVER = 'https://sync.yangsir.net'
+// HorseMD 同步 is still a test service (user decision 2026-11-22): public
+// releases hide it. Builds made with HM_OFFICIAL_SYNC=1 (TestFlight, test
+// builds) show it; so does HORSEMD_SYNC_SERVER (tests) or a device that
+// already has a HorseMD 同步 connection (SyncService.officialSyncEnabled).
+export const OFFICIAL_SYNC_BUILD = typeof __HM_OFFICIAL_SYNC__ !== 'undefined' && __HM_OFFICIAL_SYNC__ === true
 export const OFFICIAL_PROVIDER_ID = 'horsemd'
 
 // Storage credentials are renewed this long before they expire: a throttled

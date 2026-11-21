@@ -77,6 +77,8 @@ async function login(d, email) {
 try {
   // ---------- 1. login ----------
   const mac = await device('mac')
+  // Public builds hide HorseMD 同步 until this device has a connection.
+  assert.equal(await mac.service.officialSyncEnabled(), false, 'hidden before any HorseMD 同步 connection')
   await assert.rejects(mac.service.startOfficialLogin({ email: 'not-an-email', server }), (error) => /邮箱/.test(error.message))
   await mac.service.startOfficialLogin({ email: 'Alice@Example.com ', server })
   const firstCode = await lastCode('alice@example.com')
@@ -87,6 +89,7 @@ try {
   const alice = await mac.service.addOfficialConnection({ email: 'alice@example.com', code: firstCode, server, device: 'mac' })
   assert.equal(alice.type, 'horsemd')
   assert.equal(alice.email, 'alice@example.com')
+  assert.equal(await mac.service.officialSyncEnabled(), true, 'a device with a HorseMD 同步 connection keeps it')
   assert.ok(!('refreshToken' in alice) && !JSON.stringify(await mac.service.listConnections()).includes('refresh'), 'no token in the connection list')
   const connectionsFile = await fs.readFile(join(root, 'mac/userData/sync/connections.json'), 'utf8')
   assert.ok(!/refresh|accessToken/i.test(connectionsFile.replace(/"credentialId": "[^"]*"/, '')), 'tokens never written to connections.json')

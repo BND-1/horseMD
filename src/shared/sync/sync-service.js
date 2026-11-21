@@ -3,7 +3,7 @@
 // src/main/sync-service.js; a phone builds it in the WebView with its own
 // adapters (docs/mobile-cloud-sync-architecture.md §6).
 import { ConnectionRegistry } from './connections.js'
-import { createAccountClient, OFFICIAL_SERVER } from './official-account.js'
+import { createAccountClient, OFFICIAL_SERVER, OFFICIAL_SYNC_BUILD } from './official-account.js'
 import { WebDavProvider } from './webdav-provider.js'
 import { S3Provider } from './s3-provider.js'
 import { SyncEngine } from './sync-engine.js'
@@ -138,6 +138,12 @@ export class SyncService {
 
   async officialAccount(connectionId) {
     return this.connections.officialAccount(connectionId)
+  }
+
+  // Whether Settings offers HorseMD 同步 (see OFFICIAL_SYNC_BUILD).
+  async officialSyncEnabled() {
+    if (OFFICIAL_SYNC_BUILD || this.platform.env?.HORSEMD_SYNC_SERVER) return true
+    return (await this.listConnections()).some((connection) => connection.type === 'horsemd')
   }
 
   async updateConnection(connectionId, config) {

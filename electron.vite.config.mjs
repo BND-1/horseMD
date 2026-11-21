@@ -13,7 +13,8 @@ export default defineConfig({
     // The updater compares against the package version; unpackaged runs
     // (dev, tests) would otherwise get Electron's own from app.getVersion().
     define: {
-      __APP_VERSION__: JSON.stringify(pkg.version)
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __HM_OFFICIAL_SYNC__: JSON.stringify(process.env.HM_OFFICIAL_SYNC === '1')
     },
     build: {
       rollupOptions: {

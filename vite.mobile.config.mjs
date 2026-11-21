@@ -19,7 +19,8 @@ export default defineConfig({
   base: './',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __MOBILE_BUILD__: 'true'
+    __MOBILE_BUILD__: 'true',
+    __HM_OFFICIAL_SYNC__: JSON.stringify(process.env.HM_OFFICIAL_SYNC === '1')
   },
   build: {
     outDir: resolve(__dirname, 'dist-mobile'),
