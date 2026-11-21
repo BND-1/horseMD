@@ -1118,7 +1118,13 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   provider (session token) and `beforePut` (read-only / per-file limit);
   a run renews credentials older than 15 s, so an ended plan is read-only
   on the next run. Settings: HorseMD 同步 heads the service list
-  (`SyncOfficial.jsx`), its folders default to 端到端加密. The engine no
+  (`SyncOfficial.jsx`), its folders default to 端到端加密. Public builds
+  hide it (user decision 2026-11-22, v0.14.5): shown only with
+  `HM_OFFICIAL_SYNC=1` at build time (TestFlight / test builds), with
+  `HORSEMD_SYNC_SERVER` (tests), or once the device has a horsemd connection
+  (`SyncService.officialSyncEnabled`, IPC `sync:officialEnabled`). Test
+  deployment: `https://sync.yangsir.net` (Dell service + MinIO behind the
+  Huawei Cloud nginx; the website's 账号 link is off until launch). The engine no
   longer rewrites an unchanged manifest (a pull of a read-only cloud works;
   one PUT less per run). Website: `website/account.html` (login, plan,
   usage, Paddle checkout when configured; `?api=` for a local service).
