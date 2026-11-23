@@ -368,11 +368,6 @@ body.hm-has-custom-theme .milkdown .ProseMirror .milkdown-table-block td > p {
   margin: 0 !important;
   padding: 0 !important;
 }
-/* Code blocks keep our CodeMirror look, but Crepe's light surface around it
-   read as a white slab on dark themes. */
-body.hm-has-custom-theme .milkdown .milkdown-code-block {
-  background: none;
-}
 /* Quotes and inline code are unstyled in Typora's base; the theme decides. */
 body.hm-has-custom-theme .milkdown .ProseMirror blockquote {
   background: none;
@@ -3420,6 +3415,13 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .hm-html-table-block td {
 .milkdown .milkdown-toolbar.hm-toolbar-fading {
   opacity: 0;
 }
+/* Not while the mouse button is held (a drag selection): it shows on the
+   release, where the selection ended (editor-toolbar-autohide.js). */
+.milkdown .milkdown-toolbar.hm-toolbar-selecting {
+  visibility: hidden;
+  pointer-events: none;
+  transition: none;
+}
 /* The preference changes live, so hide the existing Crepe toolbar in CSS
    instead of re-creating mounted editors. The right-click menu exposes the
    same common text-format actions while this is off. */
@@ -6173,8 +6175,11 @@ kbd {
 body.light .milkdown {
   --crepe-color-background: var(--bg-editor);
   --crepe-color-on-background: var(--text);
-  --crepe-color-surface: #fffbf7;
-  --crepe-color-surface-low: #f5f3ef;
+  /* Crepe's floating panels (selection toolbar, slash menu, table handles,
+     image placeholder) follow the theme like our own menus: one fixed warm
+     white read as a cream panel on the Morandi themes (2026-11-23). */
+  --crepe-color-surface: var(--popover-bg);
+  --crepe-color-surface-low: var(--hover-elevated);
   --crepe-color-on-surface: var(--text-strong);
   --crepe-color-on-surface-variant: var(--muted);
   --crepe-color-outline: var(--border);
@@ -6192,8 +6197,8 @@ body.light .milkdown {
 body.dark .milkdown {
   --crepe-color-background: var(--bg-editor);
   --crepe-color-on-background: var(--text);
-  --crepe-color-surface: #24201c;
-  --crepe-color-surface-low: #1e1a17;
+  --crepe-color-surface: var(--popover-bg);
+  --crepe-color-surface-low: var(--hover-elevated);
   --crepe-color-on-surface: var(--text-strong);
   --crepe-color-on-surface-variant: var(--muted);
   --crepe-color-outline: var(--border);
@@ -6455,6 +6460,11 @@ body.hm-preserve-soft-breaks
 .milkdown .ProseMirror .milkdown-code-block {
   padding-left: 0;
   padding-right: 0;
+  /* No slab around the code: Crepe paints the block (language row, toolbar,
+     padding) with --crepe-color-surface, one warm white / brown for every
+     theme — a cream slab on the Morandi themes, brown on Morandi Dusk (user
+     report 2026-11-23). The page shows through, whatever the theme. */
+  background: transparent;
 }
 .milkdown .cm-editor .cm-content {
   padding: 0 12px 0 0;
@@ -6810,6 +6820,21 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
 .milkdown .ProseMirror tr:last-child td {
   border-bottom: none;
 }
+/* Column lines (#181: "the table has no vertical lines"; Typora, Obsidian,
+   Notion, Feishu all draw them). Inner lines only: the table's own border and
+   rounded corners stay the frame. */
+.milkdown .ProseMirror th:not(:last-child),
+.milkdown .ProseMirror td:not(:last-child) {
+  border-right: 1px solid var(--border-soft);
+}
+/* A draggable column edge under the pointer (editor-dom-layout.js). */
+.milkdown .milkdown-table-block.hm-col-edge th,
+.milkdown .milkdown-table-block.hm-col-edge td,
+.milkdown .milkdown-table-block.hm-col-edge .line-handle[data-role='y-line-drag-handle'],
+body.hm-table-resizing,
+body.hm-table-resizing * {
+  cursor: col-resize !important;
+}
 
 /* Selected-node indicator. ProseMirror's default is a hard light-blue (#8cf) 2px
    box that looks out of place; replace it with a subtle theme-aware ring (used
@@ -6851,6 +6876,13 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
   width: 1px;
   border-radius: 1px;
 }
+/* Crepe's「+」on a hovered grid line is off (#181: a second, half-hidden
+   plus next to the add bars; inserting in the middle is right-click › 表格).
+   Its line still shows as the drop indicator while a row / column is dragged
+   (display-type indicator). */
+.milkdown .milkdown-table-block .line-handle[data-display-type='tool'] {
+  display: none !important;
+}
 /* Crepe's own boundary affordance remains a fine line with a compact, quiet
    circular plus. It is visually distinct from the resize guide above. */
 .milkdown .milkdown-table-block .line-handle {
@@ -6880,6 +6912,61 @@ body.hm-table-auto-wrap .milkdown .ProseMirror .milkdown-table-block td {
 .milkdown .milkdown-table-block .line-handle .add-button svg {
   width: 14px;
   height: 14px;
+}
+
+/* Insert here: a「+」above the header at a hovered column boundary, left of
+   the table at a row boundary, and that boundary marked
+   (editor-table-insert-buttons.js, #181). */
+.hm-table-insert-layer {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  z-index: 6;
+}
+.hm-table-insert-layer .hm-table-insert {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--accent-strong);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 18%, transparent);
+  cursor: pointer;
+  transition: opacity 0.12s var(--ease-out), transform 0.12s var(--ease-out), background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+/* A larger invisible target around the circle. */
+.hm-table-insert-layer .hm-table-insert::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+.hm-table-insert-layer .hm-table-insert:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-elevated);
+  transform: scale(1.12);
+}
+.hm-table-insert-layer .hm-table-insert-line {
+  position: absolute;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+  opacity: 0.85;
+}
+/* Hidden: out of layout (a stale position after a window resize must not
+   widen the editor's scroll area). */
+.hm-table-insert-layer [data-show='false'] {
+  display: none;
+}
+body.hm-table-resizing .hm-table-insert-layer > * {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Horizontal rule — elegant divider */
@@ -8095,25 +8182,41 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   opacity: 1;
 }
 /* Folded = a 5-line window that still scrolls (wheel/trackpad), not a
-   hard clip. A thin scrollbar keeps the dark surface clean. */
+   hard clip. No scrollbar: it took ~11 px from the code, which then looked
+   narrower than the bar under it (user screenshot 2026-11-23). */
 .milkdown .milkdown-code-block.hm-code-folded .codemirror-host {
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--code-linenum-border) transparent;
+  scrollbar-width: none;
+  /* Scrolled, the code reaches the window's top edge: keep it rounded like
+     the block's top. */
+  border-radius: var(--editor-block-radius) var(--editor-block-radius) 0 0;
 }
-/* The windowed editor loses its bottom edge; the bar closes it as the code
-   block's own footer: same surface, border and radius, then the editor's
-   usual outer gap below. */
+.milkdown .milkdown-code-block.hm-code-folded .codemirror-host::-webkit-scrollbar {
+  display: none;
+}
+/* The code and the bar are ONE surface: the window has no bottom edge of its
+   own (scrolled to the end, the editor's rounded bottom + outer margin showed
+   as a light gap above the bar). */
+.milkdown .milkdown-code-block.hm-code-folded .cm-editor {
+  margin-bottom: 0 !important;
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* The bar closes the block as its footer: same surface and side borders,
+   the bottom radius, the editor's usual outer gap below; a fade over the
+   last visible line says the code goes on. */
 .milkdown .milkdown-code-block > .hm-code-fold-bar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
   margin: 0 0 calc(var(--editor-para-spacing, 0.8em) * 0.6);
-  padding: 5px 10px 6px;
+  padding: 4px 10px 7px;
   border: 1px solid var(--code-block-border);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 0;
   border-radius: 0 0 var(--editor-block-radius) var(--editor-block-radius);
   background: var(--code-block-bg);
   font-family: var(--font-ui);
@@ -8122,6 +8225,17 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   color: var(--code-linenum);
   cursor: pointer;
   user-select: none;
+  transition: color 0.12s var(--ease-out);
+}
+.milkdown .milkdown-code-block > .hm-code-fold-bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 34px;
+  background: linear-gradient(to bottom, transparent, var(--code-block-bg) 88%);
+  pointer-events: none;
 }
 .milkdown .milkdown-code-block > .hm-code-fold-bar svg {
   width: 14px;
@@ -8129,7 +8243,6 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
 }
 .milkdown .milkdown-code-block > .hm-code-fold-bar:hover {
   color: var(--code-linenum-active);
-  background: color-mix(in srgb, var(--code-block-bg) 92%, #fff);
 }
 
 /* Subscript `H~2~O` / superscript `x^2^` (editor-subsup.js): keep the line
@@ -9055,6 +9168,9 @@ body.dark .milkdown .ProseMirror .hm-review-card-text {
   text-align: left;
 }
 .hm-link-card-url:hover { text-decoration: underline; }
+/* Editable link: the address is a text to click into (it edits the link). */
+.hm-link-card-url[data-link-act='editAt'] { cursor: text; }
+.hm-link-card-url[data-link-act='editAt']:hover { text-decoration: none; }
 .hm-link-card-btn {
   flex: none;
   display: grid;

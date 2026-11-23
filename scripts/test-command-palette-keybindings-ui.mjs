@@ -59,10 +59,12 @@ async function main() {
         }))
         await sleep(260)
       }
+      // The activity bar has no collapse button any more (2026-11-23): read
+      // the sidebar pane itself.
       const sidebarState = () => {
-        const button = buttons().find((item) => /侧边栏|Sidebar/i.test(item.title) && item.className.includes('activity-item'))
-        if (!button) throw new Error('Missing sidebar toggle button')
-        return button.title
+        const pane = document.querySelector('.pane-left')
+        if (!pane) throw new Error('Missing sidebar pane')
+        return pane.classList.contains('collapsed') ? 'collapsed' : 'open'
       }
       const openPalette = async () => {
         await clickButton(

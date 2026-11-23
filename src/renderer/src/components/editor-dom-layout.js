@@ -1,6 +1,7 @@
 import { TextSelection } from '@milkdown/prose/state'
 import { TableMap, cellAround } from '@milkdown/prose/tables'
 import { mountTableActionMenuRetention } from './editor-table-action-menu.js'
+import { mountTableInsertButtons } from './editor-table-insert-buttons.js'
 
 const clamp = (value, min, max) => {
   if (max < min) return min
@@ -266,7 +267,14 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
   if (!scrollEl) return
   const margin = 8
   const resizeHoldMs = 220
-  const resizeMoveTolerance = 8
+  // Sideways movement from a column edge that starts a resize at once, and
+  // the band on each side of the line that is the edge (Crepe uses 8 px; at
+  // 6 px a real press ~6 px off the line selected text instead, Air trace
+  // 2026-11-23). Only a vertical move of more than `resizeVerticalCancel`
+  // with no sideways movement yet is not a resize.
+  const resizeDragStart = 2
+  const resizeVerticalCancel = 10
+  const edgeZone = 8
   let raf = 0
   let resizeIntent = null
   let tableControlScrollGuard = null
@@ -669,6 +677,41 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
   const onTablePointer = (event) => {
     if (event.target.closest?.('.milkdown-table-block')) schedule()
   }
+  // The cell under the pointer; through Crepe's 1 px boundary line (it lies
+  // on the edge being grabbed) too.
+  const cellAtPointer = (event) => {
+    const direct = event.target.closest?.('.milkdown-table-block th, .milkdown-table-block td')
+    if (direct) return direct
+    if (!event.target.closest?.('.milkdown-table-block .line-handle[data-role="y-line-drag-handle"]')) return null
+    for (const el of document.elementsFromPoint(event.clientX, event.clientY)) {
+      const cell = el.closest?.('.milkdown-table-block th, .milkdown-table-block td')
+      if (cell && host.contains(cell)) return cell
+    }
+    return null
+  }
+  // A column edge that can be dragged: any cell's right edge, a left edge
+  // after the first column.
+  const resizableEdge = (event, cell) => {
+    const rect = cell.getBoundingClientRect()
+    if (Math.abs(rect.right - event.clientX) <= edgeZone) return true
+    return Math.abs(event.clientX - rect.left) <= edgeZone && cell.cellIndex > 0
+  }
+  let edgeBlock = null
+  const setEdgeBlock = (block) => {
+    if (edgeBlock === block) return
+    edgeBlock?.classList.remove('hm-col-edge')
+    edgeBlock = block
+    edgeBlock?.classList.add('hm-col-edge')
+  }
+  // 宽表自动换行 ignores column widths (Settings): no resize there.
+  const resizeOff = () => !view.editable || document.body.classList.contains('hm-table-auto-wrap')
+  const onEdgeHover = (event) => {
+    if (event.buttons || resizeIntent?.active) return
+    if (resizeOff()) return setEdgeBlock(null)
+    const cell = cellAtPointer(event)
+    setEdgeBlock(cell && resizableEdge(event, cell) ? cell.closest('.milkdown-table-block') : null)
+  }
+
   const clearResizeIntent = () => {
     if (!resizeIntent) return null
     const intent = resizeIntent
@@ -679,16 +722,17 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
     return intent
   }
 
-  // A column boundary has two deliberately distinct interactions: hover shows
-  // Crepe's add-column affordance; holding the mouse down starts resize mode.
-  // This prevents a quick pass over a table edge from looking like a resize
-  // action while keeping the actual drag responsive once it is intentional.
+  // A column boundary resizes like Notion / Feishu / Word (#181: the old
+  // hold-to-resize was never found): the pointer shows col-resize there, and a
+  // press that moves sideways resizes at once (holding still ~0.2 s also
+  // enters resize mode, as before). A click without movement changes nothing;
+  // Crepe's add-column「+」sits above the header on the same line.
   const onColumnResizeMouseDown = (event) => {
-    if (event.button !== 0) return
-    const cell = event.target.closest?.('.milkdown-table-block th, .milkdown-table-block td')
+    if (event.button !== 0 || resizeOff()) return
+    const cell = cellAtPointer(event)
     if (!cell || !host.contains(cell)) return
     const rect = cell.getBoundingClientRect()
-    if (Math.min(Math.abs(event.clientX - rect.left), Math.abs(rect.right - event.clientX)) > 6) return
+    if (!resizableEdge(event, cell)) return
     const table = cell.closest('table.children')
     const side = Math.abs(event.clientX - rect.left) < Math.abs(rect.right - event.clientX)
       ? 'left'
@@ -738,10 +782,14 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
         updateResizeGuide(intent)
         return
       }
-      if (Math.abs(moveEvent.clientX - intent.startX) > resizeMoveTolerance ||
-        Math.abs(moveEvent.clientY - intent.startY) > resizeMoveTolerance) {
-        clearResizeIntent()
+      const dx = Math.abs(moveEvent.clientX - intent.startX)
+      const dy = Math.abs(moveEvent.clientY - intent.startY)
+      if (dx >= resizeDragStart) {
+        activate()
+        intent.onMove(moveEvent)
+        return
       }
+      if (dy > resizeVerticalCancel) clearResizeIntent()
     }
     intent.onMouseUp = (upEvent) => {
       const finished = clearResizeIntent()
@@ -765,9 +813,10 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       }
       schedule()
     }
-    resizeIntent = intent
-    intent.timer = window.setTimeout(() => {
-      if (resizeIntent !== intent) return
+    const activate = () => {
+      if (resizeIntent !== intent || intent.active) return
+      if (intent.timer) clearTimeout(intent.timer)
+      intent.timer = 0
       intent.table.dataset.hmColumnPreview = 'true'
       applyColumnGroupWidths(intent.table, intent.widths)
       const guide = document.createElement('div')
@@ -782,7 +831,9 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       document.body.classList.add('hm-table-resizing')
       intent.table.closest('.milkdown-table-block')?.classList.add('hm-table-resizing')
       updateResizeGuide(intent)
-    }, resizeHoldMs)
+    }
+    resizeIntent = intent
+    intent.timer = window.setTimeout(activate, resizeHoldMs)
     window.addEventListener('mousemove', intent.onMove, true)
     window.addEventListener('mouseup', intent.onMouseUp, true)
     event.preventDefault()
@@ -825,6 +876,7 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
     attributeFilter: ['data-show', 'data-colwidth', 'colspan']
   })
   host.addEventListener('pointermove', onTablePointer, { passive: true })
+  host.addEventListener('pointermove', onEdgeHover, { passive: true })
   host.addEventListener('pointerdown', preserveTableControlScroll, true)
   host.addEventListener('click', preserveTableControlScroll, true)
   host.addEventListener('click', onTablePointer, true)
@@ -854,6 +906,8 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
       block.classList.remove('hm-table-controls-open')
     })
     host.removeEventListener('pointermove', onTablePointer)
+    host.removeEventListener('pointermove', onEdgeHover)
+    setEdgeBlock(null)
     host.removeEventListener('pointerdown', preserveTableControlScroll, true)
     host.removeEventListener('click', preserveTableControlScroll, true)
     host.removeEventListener('click', onTablePointer, true)
@@ -868,11 +922,16 @@ const mountTableHandleBounds = ({ view, host, scrollEl, cleanups, markUserEdit, 
   })
 }
 
-export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, onRichEditPending, reportActiveBlock }) {
+export function mountEditorLayoutBindings({ view, host, cleanups, markUserEdit, onRichEditPending, reportActiveBlock, getT }) {
   const scrollEl = host.closest('.editor-scroll')
   mountSlashMenuBounds({ host, scrollEl, cleanups })
   mountTableHandleBounds({ view, host, scrollEl, cleanups, markUserEdit, onRichEditPending })
   mountTableActionMenuRetention({ host, cleanups })
+  const t = (key, fallback) => {
+    const value = typeof getT === 'function' ? getT(key) : null
+    return value && value !== key ? value : fallback
+  }
+  mountTableInsertButtons({ view, host, cleanups, markUserEdit, onRichEditPending, t })
 
   const onBlankAreaMouseDown = (event) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return

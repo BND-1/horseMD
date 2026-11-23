@@ -33,7 +33,9 @@ export async function launchBuiltElectron({
   cwd = process.cwd(),
   appArgs = [],
   executable = electronPath,
-  entrypoint = INSTALLED_APP ? null : 'out/main/index.cjs',
+  // HM_TEST_ENTRY: another build's main (e.g. out-probe/main/index.cjs) —
+  // to test a change while a regression run holds out/.
+  entrypoint = INSTALLED_APP ? null : (process.env.HM_TEST_ENTRY || 'out/main/index.cjs'),
   background = true,
   // Every test launch records the input trace (user rule): a failure must be
   // diagnosable from horsemd-input-trace-<pid>.jsonl in the user temp dir.

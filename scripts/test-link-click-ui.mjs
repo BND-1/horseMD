@@ -4,7 +4,9 @@
 // system's default Markdown app), other files in their own app; a missing
 // heading / file says so. A click that ends a text selection does not open.
 // Hovering shows ONE link card (Crepe's preview is off): target · 复制 ·
-// 编辑 · 取消链接. 编辑 / Mod+K edit text + link; Mod+K on a selection makes
+// 编辑 · 取消链接. The target is the href as written (`%EF%B8%8F` kept,
+// 2026-11-23); clicking it edits the link with the caret where it was clicked
+// (raw HTML <a>: it opens). 编辑 / Mod+K edit text + link; Mod+K on a selection makes
 // a new link. Every edit saves exactly the expected Markdown, with no
 // rich/source warning. Electron's shell is stubbed in main.
 import assert from 'node:assert/strict'
@@ -31,7 +33,8 @@ const head = [
   '标题 [带标题](https://t.example "原标题") 结束', '',
   '尖括号 [空格](<./my notes.md>) 结束', '',
   '引用 [引用式][1] 结束', '',
-  '[1]: https://ref.example', ''
+  '[1]: https://ref.example', '',
+  '表情 [漂移](#标点符号漂移%EF%B8%8F) 结束', ''
 ]
 const tail = [...filler, '## 第二节', '', '第二节内容', '', ...filler, '## Second Part', '', '英文内容', '', ...filler]
 await writeFile(file, [...head, ...tail].join('\n'))
@@ -156,7 +159,7 @@ try {
   await caretAtEnd('新链接')
   let c = await hover('https://example.com/hm')
   assert.equal(c.url, 'https://example.com/hm')
-  assert.deepEqual(c.acts, ['open', 'copy', 'edit', 'remove'])
+  assert.deepEqual(c.acts, ['editAt', 'copy', 'edit', 'remove'])
   assert.equal(c.crepe, 0, "Crepe's link preview shows too")
   assert.equal(c.inEditor, false, 'the card is inside the editor')
   // Raw HTML <a>: open / copy only.
@@ -178,10 +181,24 @@ try {
   // Mod+click still opens.
   await clickLink('https://example.com/hm', mod)
   assert.equal((await opened()).length, 3)
-  // The card's target opens; its copy button copies.
-  await hover('https://example.com/hm')
+  // The href shows as written: an emoji's percent-encoded variation selector
+  // (invisible when decoded) is kept.
+  c = await hover('#标点符号漂移%EF%B8%8F')
+  assert.equal(c.url, '#标点符号漂移%EF%B8%8F')
+  // A raw HTML <a>'s target opens.
+  await hover('https://example.com/html')
   await cardButton('open')
   assert.equal((await opened()).length, 4)
+  // An editable link's target edits it, the caret where it was clicked.
+  await hover('https://example.com/hm')
+  const at = await app.evaluate(`(() => { const u = [...document.querySelectorAll('.hm-link-card:not([hidden]) .hm-link-card-url')][0]; const range = document.createRange(); range.setStart(u.firstChild, 8); range.collapse(true); const r = range.getClientRects()[0]; return { x: r.left + 1, y: r.top + r.height / 2 } })()`)
+  await clickAt(at)
+  c = await waitFor(async () => { const x = await card(); return x.edit && x }, 'a click on the card target did not edit the link')
+  assert.equal(c.focused, 'href')
+  assert.deepEqual(await app.evaluate(`(() => { const i = document.activeElement; return [i.value, i.selectionStart, i.selectionEnd] })()`), ['https://example.com/hm', 8, 8], 'the caret is where the target was clicked')
+  assert.equal((await opened()).length, 4, 'the click did not open the link')
+  await pressKey(send, { key: 'Escape' })
+  await sleep(300)
   await hover('https://example.com/hm')
   await cardButton('copy')
   await waitFor(async () => (await mainEval("require('electron').clipboard.readText()")) === 'https://example.com/hm', 'copy did not copy')

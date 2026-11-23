@@ -1,6 +1,12 @@
 // Link card (Feishu / Notion / Google Docs): a plain click opens a link, so
 // editing goes through this card instead of a caret inside the link text.
 //   hover a link (0.3 s) → [target] 复制 · 编辑 · 取消链接   (read-only: target · 复制)
+//   The target is the href exactly as written (user report 2026-11-23: a
+//   decoded `#标题%EF%B8%8F` showed as `#标题` — U+FE0F is invisible — and
+//   the user checks the link there). A click on it edits the link with the
+//   caret where it was clicked (a plain click in the text already opens the
+//   link); it opens instead where the link cannot be edited (read-only, raw
+//   HTML <a>) and on touch screens (a tap in the text keeps the caret).
 //   编辑, or Mod+K with the caret in a link → text + link fields, Enter / 确定
 //   Mod+K elsewhere → the same fields for a new link (the selection is its text)
 // The card lives in document.body, outside the contenteditable (a DOM change
@@ -137,17 +143,18 @@ export function mountLinkCard({ view, cleanups, getT, isReadOnly, markUserEdit, 
     mode = 'preview'
     anchorEl = anchor
     range = linkRangeOfAnchor(view, anchor)
-    let shown = href
-    try { shown = decodeURI(href) } catch { /* as written */ }
+    const editable = Boolean(range && view.editable && !isReadOnly?.())
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+    const urlEdits = editable && !coarse
     const url = document.createElement('button')
     url.type = 'button'
     url.className = 'hm-link-card-url'
-    url.dataset.linkAct = 'open'
-    url.title = t('link.open')
-    url.textContent = shown
+    url.dataset.linkAct = urlEdits ? 'editAt' : 'open'
+    url.title = urlEdits ? t('link.editHere') : t('link.open')
+    url.textContent = href
     const parts = [url, button('copy', t('link.copy'), ICONS.copy)]
     // Raw HTML <a> (no link mark) and read-only documents: open / copy only.
-    if (range && view.editable && !isReadOnly?.()) {
+    if (editable) {
       parts.push(button('edit', t('link.edit'), ICONS.edit), button('remove', t('link.remove'), ICONS.remove))
     }
     el.className = 'hm-link-card'
@@ -158,7 +165,7 @@ export function mountLinkCard({ view, cleanups, getT, isReadOnly, markUserEdit, 
 
   // Text + link fields. `target` = an existing link range, or { from, to }
   // of the selection for a new link.
-  const showEdit = (target, isNew) => {
+  const showEdit = (target, isNew, { caret = null } = {}) => {
     clearTimeout(showTimer)
     clearTimeout(hideTimer)
     const el = ensureCard()
@@ -204,7 +211,19 @@ export function mountLinkCard({ view, cleanups, getT, isReadOnly, markUserEdit, 
     const text = el.querySelector('[data-link-field="text"]')
     const focus = isNew && !target.text ? text : href
     focus.focus()
-    focus.select()
+    if (caret != null && focus === href) focus.setSelectionRange(caret, caret)
+    else focus.select()
+  }
+
+  // The character offset in the card's URL text under a click.
+  const offsetInUrl = (event) => {
+    const el = event.target.closest?.('.hm-link-card-url')
+    const textNode = el?.firstChild
+    if (!textNode) return null
+    const at = document.caretRangeFromPoint?.(event.clientX, event.clientY)
+    if (at && at.startContainer === textNode) return at.startOffset
+    const rect = el.getBoundingClientRect()
+    return event.clientX < rect.left + rect.width / 2 ? 0 : textNode.length
   }
 
   const backToEditor = (pos) => {
@@ -292,6 +311,8 @@ export function mountLinkCard({ view, cleanups, getT, isReadOnly, markUserEdit, 
       copyToClipboard(href, t('link.copied'))
     } else if (act === 'edit') {
       if (range) showEdit(range, false)
+    } else if (act === 'editAt') {
+      if (range) showEdit(range, false, { caret: offsetInUrl(event) })
     } else if (act === 'remove') {
       removeLink()
     } else if (act === 'apply') {

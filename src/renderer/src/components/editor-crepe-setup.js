@@ -298,8 +298,12 @@ export function createConfiguredCrepe({
         onEdit: markUserEdit,
         onValueChange: onInlineCodeValueChange
       }),
-      // <kbd>/<samp>/<var>/<tt> edit like inline code (tags shown inside).
-      createHtmlTokenEditingPlugin(),
+      // Editing existing inline code and <kbd>/<samp>/<var>/<tt>: the side at
+      // their edges, arrows, clicks, delimiters shown inside, IME.
+      createHtmlTokenEditingPlugin({
+        onEdit: markUserEdit,
+        onValueChange: onInlineCodeValueChange
+      }),
       // Adjacent-key `part`s follow the edit (as a parse of the source would).
       createHtmlSpanPartPlugin(),
       createTaskListInputPlugin(),

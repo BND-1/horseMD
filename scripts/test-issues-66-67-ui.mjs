@@ -53,7 +53,8 @@ async function main() {
     })()`)
   }
   if (!leftReady) throw new Error('launch fixtures did not settle on the left document')
-  await evaluate(`document.querySelectorAll('.activity-item')[2]?.click()`)
+  // The outline icon toggles (VS Code): click it only when the outline is not showing.
+  await evaluate(`(() => { const b = document.querySelectorAll('.activity-item')[2]; if (b && !b.classList.contains('active')) b.click() })()`)
   await sleep(700)
   let paneCount = await evaluate(`document.querySelectorAll('.editor-scroll.hm-pane-left, .editor-scroll.hm-pane-right').length`)
   if (paneCount !== 2) {

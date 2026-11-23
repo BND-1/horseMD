@@ -57,7 +57,8 @@ export function mountEditorDomBindings({
     cleanups,
     markUserEdit,
     onRichEditPending,
-    reportActiveBlock
+    reportActiveBlock,
+    getT
   })
 
   mountEditorContentBindings({

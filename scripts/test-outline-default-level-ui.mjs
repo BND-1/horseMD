@@ -58,7 +58,8 @@ try {
   await app.send('Runtime.enable')
   await activateTab('a.md')
   await waitFor(() => app.evaluate(`[...document.querySelectorAll('.ProseMirror')].some((n) => n.offsetParent && n.textContent.includes('A4'))`), 'a.md did not open')
-  await app.evaluate(`[...document.querySelectorAll('button')].find((n) => n.offsetParent && /大纲|Outline/i.test(n.title || n.getAttribute('aria-label') || ''))?.click()`)
+  // The activity icon toggles (VS Code): click only when the outline is not showing.
+  await app.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((n) => n.offsetParent && /大纲|Outline/i.test(n.title || n.getAttribute('aria-label') || '')); if (b && !b.classList.contains('active')) b.click() })()`)
   await waitFor(() => app.evaluate(`document.querySelectorAll('.outline-item').length > 0`), 'outline did not show')
 
   // 1. Default: two tiers.

@@ -1,20 +1,29 @@
-// Key-like inline HTML (`<kbd>Esc</kbd>`, <samp>, <var>, <tt>) edits like
-// inline code (editor-inline-code.js), not like a style.
+// Inline code and key-like inline HTML (`<kbd>Esc</kbd>`, <samp>, <var>,
+// <tt>) are TOKENS: they edit the same way (Typora / Obsidian).
 //
-// The html_span mark is inclusive: typing at the end of a Yuque <font> run or
-// a <u> continues it, like bold. For a key that pulled every character typed
-// after `<kbd>Esc</kbd>` into the key (the caret sits on the same document
-// position on both sides of the boundary). Obsidian and Typora show the tags
-// while the caret is in the element and type after it once it is closed.
-//
-// Here, for these tags only:
-//   - at either edge of a key the caret is OUTSIDE unless the user went in
-//     (a click on the key, an arrow from outside, typing / deleting inside);
-//     the side is the stored marks, so typing and IME follow it;
-//   - while the caret is inside, the authored tags show in grey around the
-//     key (decorations, never in the document), as inline code shows `;
-//   - ←/→ at an edge first cross the tag (inside ↔ outside), then move.
-// Font/span/u/b… keep the inclusive behaviour.
+// The caret sits on one document position on both sides of a token's edge
+// (`Esc|` inside the key and `|` after it are the same position), so the
+// side is kept explicitly, in the stored marks; typing and IME follow it.
+//   - at either edge the caret is OUTSIDE unless the user went in (a click
+//     on the token, an arrow from outside, typing / composing inside);
+//   - ←/→ at an edge first cross the delimiter (inside ↔ outside), then
+//     move — so the start and the end of a token are reachable from the
+//     keyboard, and typing there goes where the caret shows;
+//   - while the caret is inside, the delimiters show around the token
+//     (decorations, never in the document): backticks for inline code, the
+//     authored tags in grey for a key — the same whether the caret came by
+//     mouse or by keyboard (user report 2026-11-22: arrows into inline code
+//     showed no backticks, its start could not be typed at).
+//   - IME (user report 2026-11-22: editing a key name with a Chinese IME
+//     went wrong): ProseMirror ends a composition whenever stored marks are
+//     set while it runs, and passes composed text to handleTextInput too.
+//     Setting the side during a composition tore each word apart (a key's
+//     next word went after the key; inline code `ab` became `aabab`). So
+//     nothing here touches the state while an IME composes; composed text
+//     is ProseMirror's own transaction (marked as code when the browser
+//     composed it inside the <code>), and the side is read from the DOM
+//     caret when the composition ends.
+// <font>/<span>/<u>/<b>… keep the inclusive behaviour of a style.
 import { Plugin, PluginKey, TextSelection } from '@milkdown/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/prose/view'
 
@@ -23,11 +32,16 @@ export const HTML_TOKEN_TAGS = new Set(['kbd', 'samp', 'var', 'tt'])
 const tokenKey = new PluginKey('horsemd-html-token-editing')
 const INSIDE = 'hmTokenInside'
 
-const isTokenMark = (mark) => mark.type.name === 'html_span' && HTML_TOKEN_TAGS.has(String(mark.attrs.tag).toLowerCase())
+const isKeyMark = (mark) => mark.type.name === 'html_span' && HTML_TOKEN_TAGS.has(String(mark.attrs.tag).toLowerCase())
+const isCodeMark = (mark) => mark.type.name === 'inlineCode' || mark.type.name === 'code'
+const kindOf = (mark) => (isCodeMark(mark) ? 'code' : isKeyMark(mark) ? 'key' : null)
+const isTokenMark = (mark) => kindOf(mark) !== null
+// The rendered element of a token (where the DOM caret goes when inside).
+const TOKEN_ELEMENTS = '.hm-html-span, code'
 
-// Ranges of key spans in the text block around `$pos`: [{ from, to, mark }].
-// A span is the run of inline nodes carrying the same mark (nested raw
-// html atoms included).
+// Ranges of tokens in the text block around `$pos`: [{ from, to, mark, kind }].
+// A token is the run of inline nodes carrying the same mark (nested raw
+// html atoms, other marks inside included).
 function tokenRanges($pos) {
   const parent = $pos.parent
   if (!parent.isTextblock) return []
@@ -36,21 +50,21 @@ function tokenRanges($pos) {
   let open = null
   parent.forEach((node, offset) => {
     const from = start + offset
-    const mark = node.marks.find(isTokenMark)
+    const mark = (open && node.marks.find((m) => m.eq(open.mark))) || node.marks.find(isTokenMark)
     if (open && mark && mark.eq(open.mark) && open.to === from) {
       open.to = from + node.nodeSize
       return
     }
-    open = mark ? { from, to: from + node.nodeSize, mark } : null
+    open = mark ? { from, to: from + node.nodeSize, mark, kind: kindOf(mark) } : null
     if (open) ranges.push(open)
   })
   return ranges
 }
 
-// Where an empty selection is relative to the keys of its text block.
-//   inside: the key range the caret edits (strictly inside, or at an edge
-//           with that key in the stored marks), else null
-//   before / after: the key ending / starting at the caret
+// Where an empty selection is relative to the tokens of its text block.
+//   inside: the token range the caret edits (strictly inside, or at an edge
+//           with that token in the stored marks), else null
+//   before / after: the token ending / starting at the caret
 function caretContext(state) {
   const { selection } = state
   if (!selection.empty || !(selection instanceof TextSelection)) return null
@@ -70,16 +84,21 @@ function caretContext(state) {
   return { head, before, after, within, inside, ranges }
 }
 
+// The token the caret edits, for other plugins (inline-code typing).
+export function tokenAtCaret(state) {
+  return caretContext(state)?.inside || null
+}
+
 const withoutTokens = (marks) => marks.filter((mark) => !isTokenMark(mark))
 
 // The marks for typing on a given side of `pos`: the marks around the caret
-// without any key, plus `mark` for inside.
+// without any token, plus `range.mark` for inside.
 function sideMarks(state, pos, range) {
   const $pos = state.doc.resolve(pos)
   const base = withoutTokens(range ? markSetAt(state, range) : $pos.marks())
   return range ? range.mark.addToSet(base) : base
 }
-// Marks of the key's own text (so a key inside bold stays bold).
+// Marks of the token's own text (so a key inside bold stays bold).
 function markSetAt(state, range) {
   const node = state.doc.nodeAt(range.from)
   return node ? node.marks : []
@@ -92,6 +111,19 @@ function setSide(state, pos, range) {
   return tr.setMeta(INSIDE, range ? 'in' : 'out')
 }
 
+// `pos` of the state before `transactions`, in the state after them.
+function mapPos(transactions, pos) {
+  return transactions.reduce((at, tr) => tr.mapping.map(at, -1), pos)
+}
+
+// Composed (IME) text reaches handleTextInput while the composition runs
+// and in the read right after it ends.
+function fromComposition(view) {
+  if (view.composing) return true
+  const ended = view.input?.compositionEndedAt
+  return typeof ended === 'number' && typeof performance !== 'undefined' && performance.now() - ended < 150
+}
+
 const tagWidget = (text, title, side) => () => {
   const span = document.createElement('span')
   span.className = `hm-html-token-tag ${side}`
@@ -100,6 +132,15 @@ const tagWidget = (text, title, side) => () => {
   span.textContent = text
   if (title && title !== text) span.title = title
   return span
+}
+
+const backtickWidget = (side) => () => {
+  const delimiter = document.createElement('span')
+  delimiter.className = `hm-inline-code-delimiter ${side}`
+  delimiter.contentEditable = 'false'
+  delimiter.setAttribute('aria-hidden', 'true')
+  delimiter.textContent = '`'
+  return delimiter
 }
 
 function tagLabels(mark) {
@@ -112,6 +153,12 @@ function decorations(state) {
   const context = caretContext(state)
   const range = context?.inside
   if (!range) return null
+  if (range.kind === 'code') {
+    return DecorationSet.create(state.doc, [
+      Decoration.widget(range.from, backtickWidget('open'), { key: 'hm-inline-code-open', side: -1, marks: [] }),
+      Decoration.widget(range.to, backtickWidget('close'), { key: 'hm-inline-code-close', side: 1, marks: [] })
+    ])
+  }
   const labels = tagLabels(range.mark)
   return DecorationSet.create(state.doc, [
     // marks: [] — drawn outside every mark, never inside a neighbouring key.
@@ -120,17 +167,19 @@ function decorations(state) {
   ])
 }
 
-// Put the DOM caret on the side of the key boundary the state says: the
-// browser keeps it inside <kbd> at its end, where Chromium would also
-// compose IME text.
+// Put the DOM caret on the side of the token edge the state says: the
+// browser keeps it inside <kbd> / <code> at its end, where Chromium would
+// also compose IME text.
 function placeDomCaret(view) {
-  if (view.composing || !view.hasFocus?.()) return
+  // While (and right after) an IME composes, the browser's caret is where
+  // the text goes; moving it would move the rest of the composition.
+  if (fromComposition(view) || !view.hasFocus?.()) return
   const context = caretContext(view.state)
   if (!context || context.within) return
   const { head, before, after, inside } = context
   if (!before && !after) return
-  // inside the key ending here → end of its text; inside the key starting
-  // here → start of its text; outside → between the keys / next to them.
+  // inside the token ending here → end of its text; inside the token
+  // starting here → start of its text; outside → between / next to them.
   let side
   if (inside) side = inside === before ? -1 : 1
   else side = before ? 1 : -1
@@ -138,13 +187,13 @@ function placeDomCaret(view) {
     const point = view.domAtPos(head, side)
     const selection = view.dom.ownerDocument.getSelection()
     if (!point || !selection) return
-    const inKey = (node) => {
+    const inToken = (node) => {
       const element = node?.nodeType === 1 ? node : node?.parentElement
-      return Boolean(element?.closest?.('.hm-html-span'))
+      return Boolean(element?.closest?.(TOKEN_ELEMENTS))
     }
     // Already on the right side: leave the browser's caret alone.
     const current = selection.rangeCount ? selection.getRangeAt(0) : null
-    if (current?.collapsed && inKey(current.startContainer) === Boolean(inside) && current.startContainer === point.node && current.startOffset === point.offset) return
+    if (current?.collapsed && inToken(current.startContainer) === Boolean(inside) && current.startContainer === point.node && current.startOffset === point.offset) return
     const range = view.dom.ownerDocument.createRange()
     range.setStart(point.node, point.offset)
     range.collapse(true)
@@ -156,24 +205,85 @@ function placeDomCaret(view) {
   }
 }
 
-/** Raw ProseMirror plugin (prosePluginsCtx). */
-export function createHtmlTokenEditingPlugin() {
+// The token element (of `range`) the DOM caret is in, if any.
+function domCaretInToken(view, range) {
+  const selection = view.dom.ownerDocument.getSelection()
+  const node = selection?.focusNode
+  const element = (node?.nodeType === 1 ? node : node?.parentElement)?.closest?.(TOKEN_ELEMENTS)
+  if (!element || !view.dom.contains(element)) return false
+  try {
+    return element.contains(view.domAtPos(range.from, 1).node)
+  } catch {
+    return false
+  }
+}
+
+// IME text: ProseMirror inserts it (its transaction carries the composition;
+// a replacement transaction broke the composition). Inline code does not
+// continue at its end (inclusive: false), so text the browser composed
+// inside the <code> at its end would be read as text after it — the DOM
+// and the document disagree and the composition is torn apart. Give that
+// text the token's mark in ProseMirror's own transaction.
+function composedIntoToken(view, from, to, text, deflt) {
+  if (typeof deflt !== 'function' || !text) return false
+  const ranges = tokenRanges(view.state.doc.resolve(from))
+  const range = ranges.find((r) => r.to === from) || ranges.find((r) => r.to === to && r.from < from)
+  if (!range || range.kind !== 'code' || !domCaretInToken(view, range)) return false
+  const tr = deflt()
+  if (!tr) return false
+  tr.addMark(from, from + text.length, range.mark)
+  view.dispatch(tr)
+  return true
+}
+
+// After a composition: the caret at a token edge takes the side the DOM
+// caret is on (inside the token's element = inside).
+function alignSideWithDom(view) {
+  const { state } = view
+  const context = caretContext(state)
+  if (!context || context.within) return
+  const range = [context.before, context.after].find((r) => r && domCaretInToken(view, r)) || null
+  if ((context.inside || null) === range || (range && context.inside && context.inside.mark.eq(range.mark) && context.inside.from === range.from)) return
+  if (!range && !context.inside) return
+  view.dispatch(setSide(state, context.head, range))
+}
+
+/** Raw ProseMirror plugin (prosePluginsCtx). `onEdit` / `onValueChange`:
+ * the Editor's edit marker and sync notification for the edits this plugin
+ * dispatches itself (Milkdown does not report every plugin transaction). */
+export function createHtmlTokenEditingPlugin({ onEdit, onValueChange } = {}) {
+  const dispatchEdit = (view, tr) => {
+    onEdit?.()
+    view.dispatch(tr.scrollIntoView())
+    onValueChange?.()
+  }
+  let pluginView = null
   return new Plugin({
     key: tokenKey,
-    // A caret that lands on a key edge without a decided side (click next to
-    // the key, arrows, Home/End, Enter/Backspace joins) is outside, unless an
-    // edit made inside the key left it there (Backspace at the key's end).
+    // A caret that lands on a token edge without a decided side (click next
+    // to the token, arrows, Home/End, Enter/Backspace joins, a typed closing
+    // tag / backtick) is outside, unless an edit made inside the token left
+    // it there (Backspace at its end). After IME: alignSideWithDom.
     appendTransaction(transactions, oldState, newState) {
+      // Never during an IME composition: ProseMirror ends a composition when
+      // stored marks are set (prosemirror-view updateStateInner), which tore
+      // every composed word at a token edge apart. The side is settled from
+      // the DOM once it ends (compositionend → alignSideWithDom).
+      if (pluginView && fromComposition(pluginView)) return null
       if (transactions.some((tr) => tr.getMeta(INSIDE))) return null
-      if (newState.storedMarks) return null
       const context = caretContext(newState)
       if (!context || context.within || (!context.before && !context.after)) return null
-      // An edit inside the key, or a selection reset to the same spot (the
-      // DOM selection read back after a click), keeps the side it had.
+      if (newState.storedMarks) return null
       const edited = transactions.some((tr) => tr.docChanged)
+      // An edit inside the token, or a selection reset to the same spot (the
+      // DOM selection read back after a click), keeps the side it had.
+      // Into another text block (Enter, a join) only from the middle of the
+      // token: Enter inside inline code continues it on the new line, like
+      // bold; Enter at its edge starts the line outside it.
       const old = caretContext(oldState)
       const was = old?.inside
-      if (was && (edited || old.head === context.head)) {
+      const sameBlock = was && mapPos(transactions, oldState.selection.$head.start()) === newState.selection.$head.start()
+      if (was && (sameBlock || old.within) && (edited || old.head === context.head)) {
         const keep = [context.before, context.after].find((r) => r && r.mark.eq(was.mark))
         if (keep) return setSide(newState, context.head, keep)
       }
@@ -208,12 +318,12 @@ export function createHtmlTokenEditingPlugin() {
 
       handleClick(view, pos, event) {
         if (view.editable === false || event.button !== 0 || event.shiftKey) return false
-        const key = event.target?.closest?.('.hm-html-span')
-        if (!key || !view.dom.contains(key)) return false
+        const element = event.target?.closest?.(TOKEN_ELEMENTS)
+        if (!element || !view.dom.contains(element)) return false
         const { state } = view
         const $pos = state.doc.resolve(pos)
-        // The key that was clicked (two adjacent keys share the boundary).
-        const range = tokenRanges($pos).find((r) => r.from <= pos && pos <= r.to && key.contains(view.domAtPos(r.from, 1).node))
+        // The token that was clicked (two adjacent tokens share the boundary).
+        const range = tokenRanges($pos).find((r) => r.from <= pos && pos <= r.to && element.contains(view.domAtPos(r.from, 1).node))
         if (!range || (pos !== range.from && pos !== range.to)) return false
         view.dispatch(setSide(state, pos, range))
         view.focus()
@@ -221,6 +331,14 @@ export function createHtmlTokenEditingPlugin() {
       },
 
       handleDOMEvents: {
+        // After an IME composition the browser's caret is where the text went:
+        // a token edge inside the token's element means the caret is inside.
+        compositionend(view) {
+          setTimeout(() => { if (!view.isDestroyed && !view.composing) alignSideWithDom(view) }, 0)
+          // and once more after ProseMirror's late read of the last change
+          setTimeout(() => { if (!view.isDestroyed && !view.composing) alignSideWithDom(view) }, 200)
+          return false
+        },
         // The tags push the key aside when they appear, so a second click on
         // the same spot lands on a tag: keep the caret in the key (at that
         // tag's edge) instead of leaving it — clicks used to toggle the tags
@@ -238,23 +356,37 @@ export function createHtmlTokenEditingPlugin() {
         }
       },
 
-      // Inside a key at its edge: type into the key and stay inside (the
-      // stored marks are cleared by every edit).
-      handleTextInput(view, from, to, text) {
-        if (from !== to) return false
+      // Inside a token at its edge: type into it and stay inside (the stored
+      // marks are cleared by every edit). A backtick typed at the end of
+      // inline code leaves it (the closing delimiter), as when it was made.
+      handleTextInput(view, from, to, text, deflt) {
         const { state } = view
         const context = caretContext(state)
+        // IME text (or text read from the DOM while the selection is the
+        // composition range): ProseMirror's own transaction, marked right.
+        if (fromComposition(view) || !context) return composedIntoToken(view, from, to, text, deflt)
+        if (from !== to) return false
         const range = context?.inside
         if (!range || context.within) return false
+        if (range.kind === 'code' && text === '`' && range === context.before) {
+          view.dispatch(setSide(state, from, null))
+          return true
+        }
         const marks = state.storedMarks || []
         const tr = state.tr.replaceWith(from, to, state.schema.text(text, marks))
         tr.setSelection(TextSelection.create(tr.doc, from + text.length))
         tr.setStoredMarks(marks)
         tr.setMeta(INSIDE, 'in')
-        view.dispatch(tr.scrollIntoView())
+        dispatchEdit(view, tr)
         return true
       }
     },
-    view: () => ({ update: (view) => placeDomCaret(view) })
+    view: (view) => {
+      pluginView = view
+      return {
+        update: (current) => placeDomCaret(current),
+        destroy: () => { pluginView = null }
+      }
+    }
   })
 }

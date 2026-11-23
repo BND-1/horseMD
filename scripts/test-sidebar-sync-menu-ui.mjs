@@ -56,7 +56,7 @@ try {
     )
     await app.evaluate(`(() => {
       [...document.querySelectorAll('button')]
-        .find((node) => /show files|显示文件浏览器/i.test(node.title || ''))?.click()
+        .find((node) => /show files|显示文件浏览器/i.test(node.title || '') && !node.classList.contains('active'))?.click()
       return true
     })()`)
     await waitFor(app.evaluate, `!![...document.querySelectorAll('.tree-row')].find((node) => node.title === ${JSON.stringify(workspace)})`, 'workspace tree root')

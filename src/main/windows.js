@@ -22,6 +22,8 @@ import { BrowserWindow, screen } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { cleanBounds, nextWindowState } from './window-state-core.js'
+import { fitToDisplays, restoredBounds, windowInfo } from './window-state.js'
 
 const WINDOWS_FILE = 'windows.json'
 const QUIT_PREPARE_TIMEOUT_MS = 2000
@@ -91,14 +93,6 @@ function cleanTabs(list) {
   return list.slice(0, MAX_TABS).map(minimalTab).filter(Boolean)
 }
 
-function cleanBounds(bounds) {
-  if (!isPlainObject(bounds)) return null
-  const { x, y, width, height } = bounds
-  if (![x, y, width, height].every(finite)) return null
-  if (width < 200 || height < 150 || width > 20000 || height > 20000) return null
-  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) }
-}
-
 function cleanRecord(record) {
   if (!isPlainObject(record)) return null
   const tabs = cleanTabs(record.tabs)
@@ -116,31 +110,6 @@ function cleanStripRect(rect) {
   const { left, top, right, bottom } = rect
   if (![left, top, right, bottom].every(finite) || right < left || bottom < top) return null
   return { x: left, y: top, width: right - left, height: bottom - top }
-}
-
-// A saved window must come back where the user can see and drag it: its
-// title-bar area has to lie on some display. Otherwise (a monitor that is
-// gone) it is centred on the primary display, shrunk to fit.
-function clampToDisplays(bounds) {
-  if (!bounds) return null
-  try {
-    const visible = screen.getAllDisplays().some(({ workArea: wa }) => {
-      const w = Math.min(bounds.x + bounds.width, wa.x + wa.width) - Math.max(bounds.x, wa.x)
-      return w >= 100 && bounds.y >= wa.y - 10 && bounds.y <= wa.y + wa.height - 40
-    })
-    if (visible) return bounds
-    const wa = screen.getPrimaryDisplay().workArea
-    const width = Math.min(bounds.width, wa.width)
-    const height = Math.min(bounds.height, wa.height)
-    return {
-      x: wa.x + Math.round((wa.width - width) / 2),
-      y: wa.y + Math.round((wa.height - height) / 2),
-      width,
-      height
-    }
-  } catch {
-    return bounds
-  }
 }
 
 // A new window at a point (the cursor, or another window's corner + 32): kept
@@ -398,7 +367,7 @@ export function createWindowManager({
       createSecondary({
         tabs: tabs.map((tab) => ({ ...tab })),
         activeIndex,
-        bounds: clampToDisplays(record.bounds),
+        bounds: fitToDisplays(record.bounds),
         maximized: record.maximized,
         focus: false
       })
@@ -418,12 +387,15 @@ export function createWindowManager({
       openPaths: cleanPaths(tabs.map((tab) => tab?.path)),
       session: { tabs: cleanTabs(tabs), activePath: cleanPath(tabs[activeIndex]?.path) },
       bounds: null,
-      maximized: false,
+      // Restored maximized: stays so until the window says otherwise (it is
+      // maximized on ready-to-show, after this).
+      maximized: maximized === true,
       initial: { tabs, activeIndex: Math.max(0, Math.min(activeIndex, Math.max(0, tabs.length - 1))) },
       pendingReceive: []
     }
     entries.set(wcId, entry)
-    try { entry.bounds = win.getNormalBounds() } catch { entry.bounds = bounds }
+    const applied = restoredBounds(win, bounds)
+    try { entry.bounds = windowInfo(win, applied).normalBounds } catch { entry.bounds = bounds }
 
     installGuards(win)
     const emitMaxState = () => send(entry, 'window:maximized', alive(win) && win.isMaximized())
@@ -432,9 +404,11 @@ export function createWindowManager({
     win.on('session-end', () => onSessionEnd())
     const trackBounds = () => {
       if (!alive(win)) return
+      // Minimized / full screen: the last normal state is kept
+      // (window-state-core.js nextWindowState).
       try {
-        entry.bounds = win.getNormalBounds()
-        entry.maximized = win.isMaximized()
+        const next = nextWindowState({ bounds: entry.bounds, maximized: entry.maximized }, windowInfo(win, applied))
+        if (next) { entry.bounds = next.bounds; entry.maximized = next.maximized }
       } catch { /* closing */ }
       schedulePersist()
     }
@@ -442,6 +416,7 @@ export function createWindowManager({
     win.on('resize', trackBounds)
     win.on('maximize', trackBounds)
     win.on('unmaximize', trackBounds)
+    win.on('restore', trackBounds)
 
     win.once('ready-to-show', () => {
       if (backgroundTestMode || !alive(win)) return

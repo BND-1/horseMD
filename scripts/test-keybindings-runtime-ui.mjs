@@ -41,10 +41,12 @@ async function main() {
         const title = textOf(row.querySelector('.settings-shortcut-title')).toLowerCase()
         return candidates.some((candidate) => title === candidate.toLowerCase())
       })
+      // The activity bar has no collapse button any more (2026-11-23): read
+      // the sidebar pane itself.
       const sidebarState = () => {
-        const button = buttons().find((item) => /侧边栏|Sidebar/i.test(item.title) && item.className.includes('activity-item'))
-        if (!button) throw new Error('Missing sidebar toggle button')
-        return button.title
+        const pane = document.querySelector('.pane-left')
+        if (!pane) throw new Error('Missing sidebar pane')
+        return pane.classList.contains('collapsed') ? 'collapsed' : 'open'
       }
       const dispatchSidebarShortcut = async () => {
         window.dispatchEvent(new KeyboardEvent('keydown', {

@@ -50,13 +50,11 @@ const tableShape = (app) => app.evaluate(`(() => {
   }
 })()`)
 
+// Rows: the「+」at the last row's bottom boundary (#181). Columns: right-click the
+// first cell › 表格 › 在左侧插入列 (the position Crepe's old grid-line「+」at
+// that cell's left edge inserted at).
 const addAxis = async (app, axis) => {
-  // This test protects serialization, not edge-positioned table controls. Use
-  // the first cell's inside-left edge so a native column-resize widget at a
-  // right boundary cannot turn this test into a browser hit-testing test. The
-  // dedicated table UI regression covers the visible add buttons and edges.
   const target = 'tbody tr:last-child td:first-child'
-  const handleRole = axis === 'row' ? 'x-line-drag-handle' : 'y-line-drag-handle'
   let diagnostics = null
   for (let attempt = 0; attempt < 3; attempt++) {
     const point = await waitFor(() => app.evaluate(`(() => {
@@ -65,51 +63,35 @@ const addAxis = async (app, axis) => {
       const rect = cell?.getBoundingClientRect()
       if (!rect) return null
       const point = ${JSON.stringify(axis)} === 'row'
-        ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.bottom - 4) }
-        : { x: Math.round(rect.left + 4), y: Math.round(rect.top + rect.height / 2) }
-      const candidate = point
-      return cell.contains(document.elementFromPoint(candidate.x, candidate.y)) ? point : null
-    })()`), `Table cell for add-${axis} handle was not hit-testable`)
+        ? { x: Math.round(rect.left + Math.min(24, rect.width / 2)), y: Math.round(rect.bottom - 2) }
+        : { x: Math.round(rect.left + Math.min(24, rect.width / 2)), y: Math.round(rect.top + rect.height / 2) }
+      return cell.contains(document.elementFromPoint(point.x, point.y)) ? point : null
+    })()`), `Table cell for add-${axis} was not hit-testable`)
     const before = await tableShape(app)
-    let button = null
-    const candidates = [point]
-    for (const candidate of candidates) {
-      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...candidate })
-      await sleep(250)
-      button = await app.evaluate(`(() => {
-        const handle = [...document.querySelectorAll('.line-handle')]
-          .find((node) => node.offsetParent && node.dataset.role === ${JSON.stringify(handleRole)} && node.dataset.show === 'true')
-        const add = handle?.querySelector('.add-button')
-        const rect = add?.getBoundingClientRect()
+    if (axis === 'row') {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
+      await sleep(300)
+      const bar = await app.evaluate(`(() => {
+        const bar = [...document.querySelectorAll('.hm-table-insert')]
+          .find((node) => node.closest('.milkdown')?.offsetParent && node.dataset.kind === 'row' && node.dataset.show === 'true')
+        const rect = bar?.getBoundingClientRect()
         return rect ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null
       })()`)
-      if (button) break
-    }
-    if (!button) {
-      diagnostics = await app.evaluate(`(() => {
-        const block = [...document.querySelectorAll('.milkdown-table-block')]
-          .find((node) => node.offsetParent !== null)
-        const describe = (node) => {
-          if (!node) return null
-          const rect = node.getBoundingClientRect()
-          return {
-            className: node.className,
-            role: node.dataset?.role,
-            show: node.dataset?.show,
-            rect: [rect.left, rect.top, rect.right, rect.bottom],
-            display: getComputedStyle(node).display
-          }
-        }
-        return {
-          block: describe(block),
-          target: describe(block?.querySelector(${JSON.stringify(target)})),
-          handles: [...(block?.querySelectorAll('.line-handle') || [])].map(describe),
-          hit: describe(document.elementFromPoint(${point.x}, ${point.y}))
-        }
+      if (!bar) { diagnostics = { bar: null }; continue }
+      await click(app.send, bar)
+    } else {
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+        await app.send('Input.dispatchMouseEvent', { type, ...point, button: 'right', buttons: type === 'mousePressed' ? 2 : 0, clickCount: 1 })
+      }
+      await sleep(300)
+      const clicked = await app.evaluate(`(() => {
+        const item = document.querySelector('[data-table-action="colLeft"]')
+        if (!item || item.disabled) return false
+        item.click()
+        return true
       })()`)
-      continue
+      if (!clicked) { diagnostics = { menu: await app.evaluate(`Boolean(document.querySelector('.block-ctxmenu'))`) }; continue }
     }
-    await click(app.send, button)
     for (let poll = 0; poll < 10; poll++) {
       await sleep(100)
       const after = await tableShape(app)

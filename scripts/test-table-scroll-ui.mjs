@@ -385,19 +385,21 @@ async function verifyColumnResize(send, evaluate) {
   if (!hover) throw new Error('desktop: add-column hover target not found')
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...hover })
   await sleep(180)
+  // Crepe's「+」on a hovered grid line is off (#181: the add bars and the
+  // right-click 表格 menu add rows / columns); hovering an edge only shows.
   const hoverState = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = rich?.querySelector('.milkdown-table-block')
     const addLine = block?.querySelector('[data-role="y-line-drag-handle"]')
     const visibleResizeGuides = document.querySelectorAll('.hm-column-resize-guide').length
     return {
-      addVisible: addLine?.dataset.show === 'true',
+      lineToolShown: Boolean(addLine) && getComputedStyle(addLine).display !== 'none' && addLine.dataset.show === 'true',
       visibleResizeGuides,
       resizing: document.body.classList.contains('hm-table-resizing')
     }
   })()`)
-  if (!hoverState.addVisible || hoverState.visibleResizeGuides || hoverState.resizing) {
-    throw new Error(`desktop: column hover did not stay in add-column mode: ${JSON.stringify(hoverState)}`)
+  if (hoverState.lineToolShown || hoverState.visibleResizeGuides || hoverState.resizing) {
+    throw new Error(`desktop: column hover showed a grid-line「+」or started a resize: ${JSON.stringify(hoverState)}`)
   }
 
   const before = await evaluate(`(() => {
@@ -448,11 +450,13 @@ async function verifyColumnResize(send, evaluate) {
     type: 'mousePressed', x: before.x, y: before.y, button: 'left', buttons: 1, clickCount: 1
   })
   await sleep(60)
+  // A press that moves sideways resizes at once (#181); one that moves away
+  // vertically before the hold is not a resize.
   await send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved', x: before.x + 10, y: before.y, button: 'left', buttons: 1
+    type: 'mouseMoved', x: before.x, y: before.y + 10, button: 'left', buttons: 1
   })
   await send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased', x: before.x + 10, y: before.y, button: 'left', buttons: 0, clickCount: 1
+    type: 'mouseReleased', x: before.x, y: before.y + 10, button: 'left', buttons: 0, clickCount: 1
   })
   await sleep(80)
   const cancelledPress = await evaluate(`(() => {
@@ -464,7 +468,7 @@ async function verifyColumnResize(send, evaluate) {
     }
   })()`)
   if (cancelledPress.colwidth !== before.colwidth || cancelledPress.resizing) {
-    throw new Error(`desktop: moving before the hold threshold changed the table: ${JSON.stringify(cancelledPress)}`)
+    throw new Error(`desktop: moving vertically off the edge changed the table: ${JSON.stringify(cancelledPress)}`)
   }
 
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: before.x, y: before.y })
@@ -1178,20 +1182,21 @@ async function verifyTableAddButtons(send, evaluate) {
   })()`)
   if (!target) throw new Error('desktop: add-button target not found')
 
-  const activateAndClick = async (role, point) => {
+  // The「+」at a hovered column / row boundary (#181): outside the table, not
+  // covered, and a click inserts a column / row there.
+  const activateAndClick = async (kind, point) => {
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
     await sleep(250)
     const button = await evaluate(`(() => {
-      const handle = [...document.querySelectorAll('.line-handle')]
-        .find((node) => node.offsetParent && node.dataset.role === '${role}' && node.dataset.show === 'true')
-      const button = handle?.querySelector('.add-button')
-      const rect = button?.getBoundingClientRect()
+      const node = [...document.querySelectorAll('.hm-table-insert')]
+        .find((n) => n.closest('.milkdown')?.offsetParent && n.dataset.kind === '${kind}' && n.dataset.show === 'true')
+      const rect = node?.getBoundingClientRect()
       if (!rect) return null
       const x = rect.left + rect.width / 2
       const y = rect.top + rect.height / 2
-      return { x, y, hit: button.contains(document.elementFromPoint(x, y)) }
+      return { x, y, hit: node.contains(document.elementFromPoint(x, y)) }
     })()`)
-    if (!button?.hit) throw new Error(`desktop: ${role} add button is clipped: ${JSON.stringify(button)}`)
+    if (!button?.hit) throw new Error(`desktop: ${kind} insert button is missing or covered: ${JSON.stringify(button)}`)
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: button.x, y: button.y })
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: button.x, y: button.y, button: 'left', clickCount: 1 })
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: button.x, y: button.y, button: 'left', clickCount: 1 })
@@ -1203,7 +1208,7 @@ async function verifyTableAddButtons(send, evaluate) {
     const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
     return { rows: block.querySelectorAll('tr').length, cols: block.querySelector('tr').children.length }
   })()`)
-  await activateAndClick('y-line-drag-handle', target.col)
+  await activateAndClick('col', target.col)
   const afterCol = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)
@@ -1221,7 +1226,7 @@ async function verifyTableAddButtons(send, evaluate) {
     })?.getBoundingClientRect()
     return rect ? { x: rect.left + rect.width / 2, y: rect.bottom - 2 } : null
   })()`)
-  await activateAndClick('x-line-drag-handle', rowPoint)
+  await activateAndClick('row', rowPoint)
   const afterRow = await evaluate(`(() => {
     const rich = [...document.querySelectorAll('.ProseMirror')].find((node) => node.offsetParent)
     const block = [...rich.querySelectorAll('.milkdown-table-block')].at(-1)

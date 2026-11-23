@@ -60,7 +60,12 @@ const pointAt = (text, offset) => app.evaluate(`((text, offset) => {
 // Drag-select `text` inside `context` (marks split the DOM text; the walker
 // joins it). `settle`: wait before reading the selection (not when the
 // toolbar comes next: it fades 1.5 s after the selection is made). `hold`: ms
-// the button stays down at the end before the release (a slow drag).
+// the button stays down at the end before the release (a slow drag); the
+// toolbar must be hidden while held and show on the release.
+const toolbarShown = () => app.evaluate(`[...document.querySelectorAll('.milkdown-toolbar')].some((n) => {
+  const st = getComputedStyle(n); const r = n.getBoundingClientRect()
+  return n.dataset.show === 'true' && st.display !== 'none' && st.visibility !== 'hidden' && r.width > 0
+})`)
 const select = async (context, text, settle = true, hold = 0) => {
   const at = context.indexOf(text)
   const from = await pointAt(context, at)
@@ -69,8 +74,17 @@ const select = async (context, text, settle = true, hold = 0) => {
   await mouse('mouseMoved', from)
   await mouse('mousePressed', from)
   for (let i = 1; i <= 6; i += 1) await mouse('mouseMoved', { x: from.x + (to.x - from.x) * i / 6, y: to.y }, true)
-  if (hold) await sleep(hold)
+  if (hold) {
+    await sleep(hold)
+    // While the button is held the toolbar does not show (it used to appear
+    // mid-drag and follow the selection; user report 2026-11-23).
+    assert.equal(await toolbarShown(), false, 'the selection toolbar shows while the mouse button is held')
+  }
   await mouse('mouseReleased', to)
+  if (hold) {
+    await sleep(120)
+    assert.equal(await toolbarShown(), true, 'the selection toolbar shows on the release')
+  }
   if (settle) await sleep(350)
   const selected = await app.evaluate('String(getSelection())')
   assert.equal(selected, text, 'mouse selection')

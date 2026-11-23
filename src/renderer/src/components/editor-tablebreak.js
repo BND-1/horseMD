@@ -13,6 +13,7 @@
 import { keymap } from '@milkdown/prose/keymap'
 import { baseKeymap, chainCommands } from '@milkdown/prose/commands'
 import { styledHardBreak } from '../lib/serializer-style.js'
+import { appendRowFromLastCell, insertRowBelow } from './editor-table-insert.js'
 
 const BR_RE = /^<br\s*\/?>$/i
 // Node types whose children are phrasing content — the only places an inline
@@ -122,5 +123,12 @@ export function tableBreakKeymap() {
     }
     return true
   }
-  return keymap({ Enter: insertBreak, 'Shift-Enter': chainCommands(insertBreak, splitHeading, softBreak), 'Mod-Enter': insertBreak })
+  // Mod+Enter in a cell inserts a row under the current one and Tab in the
+  // last cell adds a row (Typora; #181). Enter stays the in-cell line break.
+  return keymap({
+    Enter: insertBreak,
+    'Shift-Enter': chainCommands(insertBreak, splitHeading, softBreak),
+    'Mod-Enter': insertRowBelow,
+    Tab: appendRowFromLastCell
+  })
 }

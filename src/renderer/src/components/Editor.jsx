@@ -25,6 +25,7 @@ import { copyToClipboard, fireToast } from '../ui.js'
 import { Icon } from './icons.jsx'
 import { createImagePersister } from './editor-image-persistence.js'
 import { runHeadingFold } from './editor-heading-fold.js'
+import { runTableMenuAction } from './editor-table-insert.js'
 import { splitMarkdown, CHUNK_THRESHOLD, CHUNK_SIZE, appendChunks } from './editor-chunked-parse.js'
 import { createBlockControls } from './editor-block-controls.js'
 import { convertListAtSelection, getListConversionContext } from './editor-list-conversion.js'
@@ -1892,6 +1893,16 @@ export default function Editor({
         })
         api.convertList = convertList
         api.convertBlockToList = convertBlockToList
+        // Right-click › 表格 (insert row above / below, column left / right,
+        // delete row / column; #181).
+        api.runTableAction = (action) => {
+          const v = viewRef.current
+          if (!v || !v.editable) return false
+          markUserEdit()
+          const done = runTableMenuAction(v, action)
+          if (done) v.focus()
+          return done
+        }
         const {
           getPdfSource,
           getMarkdown,
@@ -2265,6 +2276,10 @@ export default function Editor({
     if (!changed) setCtxMenu(null)
     return changed
   }
+  const pickTableAction = (action) => {
+    setCtxMenu(null)
+    apiRef.current?.runTableAction?.(action)
+  }
   const pickHeadingFold = (meta) => {
     setCtxMenu(null)
     runHeadingFold(viewRef.current, meta)
@@ -2443,6 +2458,42 @@ export default function Editor({
                         <span className="block-menu-name">{t(labelKey)}</span>
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div className="block-menu-divider" />
+              </>
+            )}
+            {ctxMenu.table && (
+              <>
+                <div className="block-menu-submenu-parent">
+                  <button className="block-menu-item block-menu-submenu-trigger" data-context-submenu-trigger="table" aria-haspopup="menu">
+                    <span className="block-menu-short">▦</span>
+                    <span className="block-menu-name">{t('table.menu')}</span>
+                    <span className="block-menu-arrow" aria-hidden="true">›</span>
+                  </button>
+                  <div className="block-menu-submenu" data-context-submenu="table" role="menu">
+                    {[
+                      ['rowAbove', '↑', ctxMenu.table.canRowAbove],
+                      ['rowBelow', '↓', true, window.api?.platform === 'darwin' ? '⌘↩' : 'Ctrl+Enter'],
+                      ['colLeft', '←', true],
+                      ['colRight', '→', true],
+                      null,
+                      ['deleteRow', '−', ctxMenu.table.canDeleteRow],
+                      ['deleteCol', '−', ctxMenu.table.canDeleteCol]
+                    ].map((item, index) => item ? (
+                      <button
+                        key={item[0]}
+                        className="block-menu-item"
+                        data-table-action={item[0]}
+                        disabled={!item[2]}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickTableAction(item[0])}
+                      >
+                        <span className="block-menu-short">{item[1]}</span>
+                        <span className="block-menu-name">{t('table.' + item[0])}</span>
+                        {item[3] && <span className="block-menu-sc">{item[3]}</span>}
+                      </button>
+                    ) : <div key={'d' + index} className="block-menu-divider" />)}
                   </div>
                 </div>
                 <div className="block-menu-divider" />

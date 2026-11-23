@@ -17,11 +17,17 @@
 // the button is still held (Feishu / Notion): a slow drag used to fade the
 // toolbar mid-drag, and after the release it never came back (no selection
 // change left to re-show it), so the colour picker was out of reach.
+//
+// It does not show while the mouse button is held at all (user report
+// 2026-11-23: it appeared during the drag and followed the selection; Notion,
+// Feishu and Medium show it when the button is released): `hm-toolbar-selecting`
+// hides it (visibility, so Milkdown keeps positioning it) until the mouseup.
 import { Plugin } from '@milkdown/prose/state'
 
 const HIDE_MS = 1000 // visible-for-this-long before the fade starts
 const FADE_MS = 500  // fade-out duration
 const FADING_CLASS = 'hm-toolbar-fading'
+const SELECTING_CLASS = 'hm-toolbar-selecting'
 
 export function toolbarAutohidePlugin() {
   let hideTimer = 0 // fires HIDE_MS → start the fade
@@ -67,22 +73,34 @@ export function toolbarAutohidePlugin() {
 
   return new Plugin({
     view(view) {
-      const onDown = (e) => { if (e.button === 0) dragging = true }
+      const onDown = (e) => {
+        if (e.button !== 0) return
+        dragging = true
+        findToolbar(view)?.classList.add(SELECTING_CLASS)
+      }
+      const release = () => {
+        dragging = false
+        findToolbar(view)?.classList.remove(SELECTING_CLASS)
+      }
       // Capture on window: the release may happen outside the editor.
       const onUp = (e) => {
         if (e.button !== 0 || !dragging) return
-        dragging = false
+        release()
         const el = findToolbar(view)
         if (view.state.selection.empty || !el) return
         restore(el)
         armHide(el)
       }
+      // A release outside the window never reaches it: do not stay hidden.
+      const onBlur = () => { if (dragging) release() }
       view.dom.addEventListener('mousedown', onDown, true)
       window.addEventListener('mouseup', onUp, true)
+      window.addEventListener('blur', onBlur)
       return {
         update: (view, prev) => {
           const el = findToolbar(view)
           bindHover(el)
+          if (dragging) el?.classList.add(SELECTING_CLASS)
           const sel = view.state.selection
           if (sel.empty) { restore(el); return }
           // On a real selection change: restore opacity (cancel any in-flight
@@ -94,6 +112,7 @@ export function toolbarAutohidePlugin() {
           clearTimeout(hideTimer); clearTimeout(fadeTimer)
           view.dom.removeEventListener('mousedown', onDown, true)
           window.removeEventListener('mouseup', onUp, true)
+          window.removeEventListener('blur', onBlur)
         },
       }
     },

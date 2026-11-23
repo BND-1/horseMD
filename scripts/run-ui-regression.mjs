@@ -113,6 +113,18 @@ const standalone = [
     env: { CDP_PORT: '9484' }
   },
   {
+    name: '#181 tables: column lines,「+」at a column / row boundary inserts there, right-click 表格, Mod+Enter / Tab rows, drag column edges',
+    script: 'scripts/test-table-add-ui.mjs'
+  },
+  {
+    name: 'Activity bar toggles the sidebar (VS Code); no collapse button, no status-bar language switch',
+    script: 'scripts/test-activity-bar-toggle-ui.mjs'
+  },
+  {
+    name: 'Theme surfaces: code blocks show the page, Crepe panels follow the theme (all built-in themes)',
+    script: 'scripts/test-theme-surfaces-ui.mjs'
+  },
+  {
     name: 'Source document equivalence, select-all replacement and the dispatch wrapper (pure)',
     script: 'scripts/test-source-transaction-sync.mjs'
   },
@@ -265,8 +277,20 @@ const standalone = [
     script: 'scripts/test-multi-window-ui.mjs'
   },
   {
+    name: 'Window position / size memory rules (missing monitor, oversized, minimized, full screen)',
+    script: 'scripts/test-window-state.mjs'
+  },
+  {
+    name: 'The main window comes back where and as large as it was closed (real app)',
+    script: 'scripts/test-window-state-ui.mjs'
+  },
+  {
     name: '<kbd> / <u> / <b> keys and tags are editable in rich mode, bytes kept, adjacent keys stay two',
     script: 'scripts/test-kbd-edit-ui.mjs'
+  },
+  {
+    name: 'Inline code / <kbd> edges: backticks for mouse and arrows, typing at start / end, IME inside without tearing',
+    script: 'scripts/test-token-edit-ui.mjs'
   },
   {
     name: 'In-app update (#164): prompt, checksum, progress / cancel, background, mirrors',

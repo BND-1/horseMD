@@ -20,6 +20,7 @@ import { defaultMenuAcceleratorFor, menuAcceleratorFor, normalizeMenuKeybindingP
 import { loadThemeCss } from './theme-css.js'
 import { userCommandEnv, userCommandPath } from './shell-path.js'
 import { createWindowManager } from './windows.js'
+import { createMainWindowState } from './window-state.js'
 import { importPastedImages } from './pasted-images.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -125,6 +126,12 @@ const windows = createWindowManager({
   onSessionEnd: () => updater.markSessionEnding()
 })
 const isAppSender = (event) => windows.isAppWindowSender(event)
+// The main window's position / size / maximized state across launches.
+const mainWindowState = createMainWindowState({
+  getUserDataPath: () => app.getPath('userData'),
+  trace: (step, extra) => traceKind('window', step, extra),
+  backgroundTestMode
+})
 
 // Preload asks synchronously so normal builds do not install per-event input
 // listeners or send IPC traffic. The actual trace writer is also gated here,
@@ -512,7 +519,10 @@ function loadAppRenderer(win, query) {
 
 function createWindow() {
   rendererReady = false
-  mainWindow = new BrowserWindow(appWindowOptions())
+  mainWindow = new BrowserWindow(appWindowOptions(mainWindowState.initialOptions()))
+  // Before every other ready-to-show listener: a saved maximized window is
+  // maximized before it is first shown.
+  mainWindowState.attach(mainWindow)
   windows.registerMain(mainWindow)
 
   mainWindow.once('ready-to-show', () => {

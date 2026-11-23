@@ -166,33 +166,6 @@ function ThemePicker({
   )
 }
 
-function LangSwitch({ lang, setLang }) {
-  const { t } = useI18n()
-  const { open, setOpen, ref } = usePopover()
-  return (
-    <div className="block-switch" ref={ref}>
-      <button className="status-btn" onClick={() => setOpen((v) => !v)} title={t('tip.language')}>
-        <Icon name="globe" size={14} /> {lang === 'zh' ? '中文' : 'EN'}
-      </button>
-      {open && (
-        <div className="block-switch-menu">
-          {LANGS.map((l) => (
-            <button
-              key={l.id}
-              className={`block-menu-item${l.id === lang ? ' active' : ''}`}
-              onClick={() => {
-                setLang(l.id)
-                setOpen(false)
-              }}
-            >
-              <span className="block-menu-name">{l.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // Mobile: a single "•••" popover that folds together the controls that crowd
 // the bottom bar on a phone — word counts, source toggle, theme, language,
@@ -602,7 +575,8 @@ export default function StatusBar({
               onOpenThemesFolder={onOpenThemesFolder}
               onGetMoreThemes={onGetMoreThemes}
             />
-            <LangSwitch lang={lang} setLang={setLang} />
+            {/* Language lives in Settings › 通用 (user report 2026-11-23: set
+                once, it took status-bar room; VS Code / Typora). */}
             <button
               className="status-btn"
               onClick={() => window.api.openExternal('https://github.com/BND-1/horseMD')}

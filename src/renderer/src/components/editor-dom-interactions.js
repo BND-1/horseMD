@@ -10,6 +10,7 @@ import {
 import { codeMirrorSelectionInfo } from './editor-codemirror-selection.js'
 import { captureEditorContextCopy } from './editor-context-copy.js'
 import { headingFoldContext } from './editor-heading-fold.js'
+import { tableMenuContext } from './editor-table-insert.js'
 import { readMermaidCodeSource, refreshMermaidPreviewFromCodeBlock } from './editor-mermaid.js'
 
 export function mountEditorInteractionBindings({
@@ -303,6 +304,7 @@ export function mountEditorInteractionBindings({
           x: event.clientX,
           y: event.clientY,
           headingFold: headingFoldContext(currentView.state, at.pos),
+          table: tableMenuContext(currentView.state),
           listConversion,
           blockPos,
           blockListConvertible,

@@ -201,7 +201,8 @@ try {
   // 8. Outline jump into a folded section opens it.
   await click({ x: (await hoverToggle(H1)).x, y: (await hoverToggle(H1)).y })
   await waitFor(async () => !(await shownBlocks()).includes('A正文'), 'fold for outline check')
-  await app.evaluate(`[...document.querySelectorAll('button')].find(n => n.offsetParent && /大纲|Outline/i.test(n.title || n.getAttribute('aria-label') || ''))?.click()`)
+  // The activity icon toggles (VS Code): click only when the outline is not showing.
+  await app.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find(n => n.offsetParent && /大纲|Outline/i.test(n.title || n.getAttribute('aria-label') || '')); if (b && !b.classList.contains('active')) b.click() })()`)
   await waitFor(() => app.evaluate("document.querySelectorAll('.outline-item').length > 0"), 'outline did not open')
   // The outline shows H1-H2 by default: expand it.
   if (!(await app.evaluate("[...document.querySelectorAll('.outline-item')].some(n => n.textContent.includes('小节B'))"))) {

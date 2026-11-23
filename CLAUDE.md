@@ -346,6 +346,28 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   `storage` event. Trust = any registered app window's webContents; dialogs
   parent to the sender's window; file watchers are per sender. Mobile is
   untouched (main role only). Locked by `test:multi-window-ui`.
+- **Window position memory** (`main/window-state.js`, pure
+  `window-state-core.js`; Windows 10 report 2026-11-22 — the main window was
+  never remembered, on any OS: every start was 1280×820 centred): the main
+  window's NORMAL bounds + maximized are kept in `userData/window-state.json`
+  (saved debounced on move / resize / (un)maximize / restore and
+  synchronously on `close`, which also runs for close-to-tray and quits);
+  minimized / full-screen moments keep the last normal state, full screen is
+  not restored (VS Code). On start the bounds are fitted to the displays
+  there are now (`fitToWorkAreas`: title bar ≥ 100 px on a display → as
+  saved, shrunk only if larger than that work area; a monitor that is gone →
+  centred on the primary) and a maximized window is maximized before its
+  first show (`attach` registers its ready-to-show first; a background test
+  run only traces it). Windows mixed-DPI: the bounds are set again when the
+  created window differs (`restoredBounds`). Windows at a fractional scale
+  rounds bounds outwards on every conversion (measured at 125 %: asked
+  1000×640, got 1002–1004 × 642–644; five round trips → 1008×652), so while
+  a restored window still reports exactly what it got, the asked-for bounds
+  are saved (`withRequestedBounds`) — no creep per launch. Secondary windows (windows.json) use the same
+  fitting and minimized / full-screen rule. Trace kind `window`
+  (`window-state-restored` / `-saved`). Locked by `test:window-state`,
+  `test:window-state-ui` (main process via the Node inspector; macOS closes
+  the window then quits).
 - **Split view**: `splitId` in `App.jsx` is the tab shown in the right pane
   (`split` is the live derived flag: right tab exists, differs from `activeId`,
   not on Home). The two panes are **flex siblings inside `.editor-area`** (a flex
@@ -530,7 +552,11 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   The selection toolbar fades 1.5 s after the selection is made
   (`editor-toolbar-autohide.js`); the countdown starts at mouseup, not
   while the button is held (Feishu / Notion) — a slow drag used to fade it
-  mid-drag and it never came back. The same UI test holds a drag 2 s.
+  mid-drag and it never came back. While the button is held it does not
+  show at all (`hm-toolbar-selecting`, visibility: hidden so Milkdown keeps
+  positioning it; user report 2026-11-23: it appeared mid-drag and followed
+  the selection — Notion / Feishu / Medium show it on release). The same UI
+  test holds a drag 2 s and checks hidden while held, shown on release.
 - **Inline serialization** (`lib/inline-serializer.js`, 2026-11-04): a text
   block's marks are written by our own pass, installed by replacing
   `SerializerState.create` (Milkdown's `state.next` per node + private
@@ -732,6 +758,42 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   text puts a blank line between top-level blocks (`spaceTopLevelBlocks`:
   innerText only spaced <p>, so a list glued to a following table). Locked by
   `test:context-copy-ui`.
+- **Table add / resize (#181, 2026-11-23)**: inner cells draw column lines
+  (`border-right`, Typora / Obsidian / Notion; they had been removed).
+  `editor-table-insert-buttons.js` inserts where the pointer is
+  (Feishu; user 2026-11-23: bars at the bottom / right end were rejected — "a
+  column is added after a certain column"): the pointer within 10 px of a
+  column boundary (or in the strip above the header at it) shows a 22 px「+」
+  ABOVE the header at that boundary and marks the boundary with a 2 px accent
+  line; a row boundary shows it LEFT of the table at that line. Every
+  boundary counts (before the first / after the last column, under the last
+  row; not above the header). An overlay next to the editor DOM (like the
+  heading-fold layer), hidden = `display: none` (a stale position widened
+  the scroll area at phone width), 400 ms grace while the pointer travels
+  to the button, never read-only. A new column has no alignment (`---`),
+  caret in its header; a new row's caret is in its first cell. Before the
+  insert the caret is put in the cell beside the boundary as its OWN
+  transaction: undo restores the selection from before the insert, and a
+  button click never moved the caret (often still at the document start) —
+  ⌘Z jumped the page to the top (Air trace 2026-11-23).
+  Crepe's own「+」on a hovered grid line (centred on the table edge: half
+  hidden in the header / first column) is hidden
+  (`.line-handle[data-display-type='tool']`; the same line stays as the
+  drop indicator of a row / column drag). Right-click › 表格 too (Typora:
+  row above / below, column left / right, delete row / column; `tableMenuContext` /
+  `runTableMenuAction`, header row: no row above, not deletable; a GFM table
+  keeps one body row and one column). Keys (`editor-tablebreak.js` →
+  `editor-table-insert.js`): Mod+Enter inserts a row under the caret's row,
+  same column (Typora; it was a second line-break key); Tab in the last cell
+  adds a row (Typora / Word); Enter / Shift+Enter stay the in-cell `<br>`
+  (#7). Column edges (`editor-dom-layout.js`): a draggable edge (8 px each
+  side of the line, Crepe's band; 6 px missed a real press, Air trace) shows
+  `col-resize` (`hm-col-edge` on the block); a press there that moves ≥ 2 px
+  sideways resizes at once (the 220 ms hold still works; only > 10 px of
+  vertical movement with no sideways one cancels; a click changes nothing);
+  off under 宽表自动换行. Widths stay
+  editor-only `colwidth` (GFM has no spelling; lost on reopen, like Typora).
+  Locked by `test:table-add-ui`; `test:table-scroll-ui` checks the rest.
 - **Mouse cell selection** (`editor-table-cell-drag.js`, Windows): a drag
   across cells left the first cell over Crepe's row handle, prosemirror-
   tables set a one-cell CellSelection whose DOM selection covered the press
@@ -791,12 +853,26 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   re-parsed `x\r\n`). The transform normalizes those values to `\n`; owners
   spell line breaks with the file's EOL on write. Locked by
   `test:crlf-code-block-enter-ui`.
+- **Theme surfaces** (user report 2026-11-23): Crepe paints a code block's
+  wrapper (language row, toolbar, padding) and its floating panels with
+  `--crepe-color-surface(-low)`, which were one fixed warm white / brown —
+  a cream or brown slab around every code block on the Morandi themes. The
+  wrapper is transparent in every theme (`.milkdown .ProseMirror
+  .milkdown-code-block`, beats Crepe's lazily injected CSS), and the Crepe
+  surfaces map to the theme's `--popover-bg` / `--hover-elevated`. Locked
+  by `test:theme-surfaces-ui` (all built-in themes).
 - **Code-block fold** (`editor-codeblock-fold.js`): view-only toggle added
   from outside into Crepe's Vue toolbar `.tools-button-group` (first child;
   a MutationObserver re-adds it, and every DOM write is change-guarded or the
   observer loops). Blocks under 8 lines and preview-only (Mermaid) blocks hide
   it; folded = `.codemirror-host` max-height of the measured first 5 lines,
   still scrollable (`overflow-y:auto`), + a footer-style `.hm-code-fold-bar`.
+  Code and bar are one surface (user screenshot 2026-11-23: scrolled to the
+  end, the editor's rounded bottom + margin showed as a light gap and the
+  scrollbar made the code ~11 px narrower than the bar): no scrollbar, the
+  folded `.cm-editor` has no bottom margin / border / radius, the window's
+  top corners are rounded, the bar continues the side borders with a fade
+  (`::before`) over the last visible line.
   Focus entering the CodeMirror unfolds and scrolls the page by the window's
   scrollTop so the clicked line stays put. Toolbar button
   CSS must out-specify Crepe's `.tools .tools-button-group button`. Locked by
@@ -1183,7 +1259,23 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   caret in the key — clicks toggled them before); the DOM caret is put on
   the state's side (IME composes there). A typed opening tag of an editable
   pair stays text until its closing tag (`editor-html-input.js`). Export
-  strips the widgets. Locked by `test:kbd-edit-ui`. A balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
+  strips the widgets. Locked by `test:kbd-edit-ui`. Inline code is the same
+  kind of TOKEN since 2026-11-22 (user report: arrows into inline code
+  showed no backticks — only a click did, its start could not be typed at,
+  editing a key name with a Chinese IME went wrong): one plugin
+  (`editor-html-token-editing.js`) gives both the edge side, ←/→ crossing,
+  clicks at either edge and the delimiters while inside (backticks /
+  grey tags, for mouse and keyboard alike); `editor-inline-code.js` only
+  turns a typed `` `x` `` into code. A backtick typed at the code's end
+  inside leaves it; elsewhere inside it is a literal backtick. IME:
+  ProseMirror ends a composition whenever stored marks are set while it
+  runs (`updateStateInner`), and hands composed text to handleTextInput —
+  setting the side then tore every word apart (inline code `ab` →
+  `aabab`; a key's second word after the key). Nothing touches the state
+  while an IME composes (or 150 ms after); composed text stays
+  ProseMirror's transaction, given the code mark when the browser composed
+  it inside the `<code>` at its end (inclusive: false), and the side is read
+  from the DOM caret on compositionend. Locked by `test:token-edit-ui`. A balanced `<font …>`…`</font>` / `<span …>`…`</span>` pair inside
   one phrasing parent (paragraph/heading/cell/strong/…; never at block level)
   becomes an `hmHtmlSpan` mdast node → the `html_span` mark (attrs: exact
   open/close tag bytes), so Yuque text takes a caret and partial selections
@@ -1256,6 +1348,12 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   drag (no React round-trip) and commits once on pointer-up, so reflowing the whole
   editor per tick stays smooth. `ui/AdjustGroup.jsx` is the shared control, reused by
   both `LayoutControl` (the StatusBar 排版 popover) and the Settings page.
+- **Activity bar** (`shell/ActivityBar.jsx`, user report 2026-11-23, VS
+  Code): files / outline / search toggle — a click on the view that is
+  showing hides the sidebar; an icon is active only while its view shows.
+  No collapse button (Mod+Shift+B stays). The desktop status bar has no
+  language switch (Settings › 通用; the phone's ••• sheet keeps one). Locked
+  by `test:activity-bar-toggle-ui`.
 - **Settings page** (`SettingsView.jsx`): a full-tab view opened from the
   ActivityBar gear (bottom-left) / mobile `•••` sheet. Tabs carry a `kind` field
   (`'doc'` default, `'settings'` for this page); `EditorArea` skips `kind!=='doc'`
@@ -1653,8 +1751,12 @@ guide/                 VitePress user tutorial + versioned current-app screensho
   Editing goes through ONE link card (Crepe's hover preview is switched off
   by name, `LINK_PREVIEW_TOOLTIP_SPEC`; its edit tooltip for the toolbar's
   link button stays): hover 0.3 s (mousemove, so it comes back after a
-  click) → target (opens) · 复制 · 编辑 · 取消链接 (raw HTML `<a>` and
-  read-only: target · 复制); 编辑 / Mod+K in a link → 文本 + 链接 fields;
+  click) → target · 复制 · 编辑 · 取消链接 (raw HTML `<a>` and
+  read-only: target · 复制). The target is the href AS WRITTEN (user report
+  2026-11-23: `decodeURI` turned `#标题%EF%B8%8F` into `#标题` + an invisible
+  U+FE0F); a click on it edits the link with the caret at the clicked
+  character (`editAt`; the text click already opens), except read-only /
+  raw `<a>` / coarse pointers, where it opens; 编辑 / Mod+K in a link → 文本 + 链接 fields;
   Mod+K on a selection → a new link; after applying, typing goes on as
   plain text (stored marks). The card is in document.body, never inside the
   contenteditable. Source bytes: an href/title-only change is the reprint

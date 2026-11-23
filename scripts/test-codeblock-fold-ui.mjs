@@ -82,6 +82,29 @@ try {
   ;[big] = await state()
   assert.ok(big.scrollTop > 0, `wheel scrolls the folded code (scrollTop ${big.scrollTop})`)
   assert.equal(big.folded, true, 'scrolling keeps it folded')
+  // Scrolled to the end, code and bar are one surface (user screenshot
+  // 2026-11-23: a light gap above the bar, and a scrollbar made the code
+  // ~11 px narrower than the bar).
+  for (let i = 0; i < 20; i++) await app.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: wheelAt.x, y: wheelAt.y, deltaX: 0, deltaY: 240 })
+  await sleep(400)
+  const joint = await app.evaluate(`(() => {
+    const b = [...(${editor}).querySelectorAll('.milkdown-code-block')][0]
+    const host = b.querySelector('.codemirror-host')
+    const code = b.querySelector('.cm-editor').getBoundingClientRect()
+    const bar = b.querySelector('.hm-code-fold-bar').getBoundingClientRect()
+    const h = host.getBoundingClientRect()
+    // The colour right above the bar, inside the code: the code surface, not the page.
+    const at = document.elementFromPoint(h.left + 4, bar.top - 2)
+    return { atEnd: host.scrollTop + host.clientHeight >= host.scrollHeight - 1, codeLeft: code.left, codeRight: code.right, codeBottom: code.bottom,
+      barLeft: bar.left, barRight: bar.right, barTop: bar.top, hostBottom: h.bottom, above: Boolean(at?.closest('.cm-editor')) }
+  })()`)
+  assert.equal(joint.atEnd, true, 'scrolled to the end')
+  assert.ok(Math.abs(joint.codeLeft - joint.barLeft) < 1 && Math.abs(joint.codeRight - joint.barRight) < 1, `code and bar are the same width: ${JSON.stringify(joint)}`)
+  assert.ok(Math.abs(joint.barTop - joint.hostBottom) < 1 && joint.codeBottom >= joint.barTop - 1, `no gap between the code and the bar: ${JSON.stringify(joint)}`)
+  assert.equal(joint.above, true, 'right above the bar is the code surface')
+  // Back to where the wheel left it for the next step.
+  await app.evaluate(`[...(${editor}).querySelectorAll('.milkdown-code-block')][0].querySelector('.codemirror-host').scrollTop = ${big.scrollTop}`)
+  await sleep(200)
 
   // Clicking a scrolled-in line unfolds without moving that line.
   const lineBefore = await app.evaluate(`(() => {

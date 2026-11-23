@@ -83,7 +83,8 @@ async function main() {
     )
     const outlineOpened = await app.evaluate(`(() => {
       const button = [...document.querySelectorAll('button')].find((node) => /大纲|outline/i.test(node.title || node.getAttribute('aria-label') || ''))
-      button?.click()
+      // The activity icon toggles (VS Code): click only when the outline is not showing.
+      if (button && !button.classList.contains('active')) button.click()
       return {
         clicked: !!button,
         title: button?.title || '',

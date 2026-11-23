@@ -291,16 +291,20 @@ try {
   await move(1, centre.y)
   await waitFor(async () => (await chrome()).activity, 'left edge did not reveal again')
   await sleep(400)
-  // The sidebar toggle at the bottom of the activity bar (last button).
-  const outlineButton = await app.evaluate(`(() => { const all = [...document.querySelectorAll('.activity-bar button')]; const b = all[all.length - 1]; if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
-  assert.ok(outlineButton, 'sidebar toggle missing in the revealed activity bar')
+  // The outline icon of the activity bar: it toggles the sidebar (VS Code;
+  // a click on the view that is showing hides it).
+  const iconPoint = (selector) => app.evaluate(`(() => { const b = [...document.querySelectorAll('.activity-bar .activity-item')].find(${selector}); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+  const outlineButton = await iconPoint(`(n) => /大纲|Outline/.test(n.title)`)
+  assert.ok(outlineButton, 'outline icon missing in the revealed activity bar')
   const wasOpen = await app.evaluate(`(() => { const p = document.querySelector('.pane-left'); return Boolean(p && !p.classList.contains('collapsed')) })()`)
-  const clickOutline = async () => {
-    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...outlineButton })
+  const clickIcon = async (point) => {
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point })
   }
+  const clickOutline = () => clickIcon(outlineButton)
   if (wasOpen) {
-    // Close it first, so the open below really happens while revealed.
-    await clickOutline()
+    // Close it first (a click on the showing view), so the open below really
+    // happens while revealed.
+    await clickIcon(await iconPoint(`(n) => n.classList.contains('active') && !n.classList.contains('activity-home')`))
     await waitFor(async () => !(await chrome()).sidebar, 'sidebar toggle did not close the sidebar')
     await sleep(400)
     assert.equal(allOut(await chrome()) || (await chrome()).activity, true, 'closing the sidebar hid the bars')

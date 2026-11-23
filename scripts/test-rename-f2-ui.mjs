@@ -119,7 +119,8 @@ try {
   // 3. Sidebar on the outline → the rename dialog.
   await app.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')].find((n) => n.offsetParent && /大纲|Outline/i.test(n.title || n.getAttribute('aria-label') || ''))
-    button?.click()
+    // The activity icon toggles (VS Code): click only when the outline is not showing.
+    if (button && !button.classList.contains('active')) button.click()
   })()`)
   await sleep(300)
   await typeInEditor('', 'beta')
