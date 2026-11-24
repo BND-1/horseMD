@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Linux 桌面与任务栏图标关联**：在 `package.json` 声明 `desktopName: "horsemd.desktop"` 与 `StartupWMClass`，并在主进程顶层调用 `app.setDesktopName`，确保在 Wayland（GNOME Shell / KDE）合成器与 X11 下均能精确匹配系统的 `horsemd.desktop`，解决任务栏/Dock 图标显示为齿轮或空白的问题。
+
 ## [0.13.255] - 2026-10-24
 
 ### Added
